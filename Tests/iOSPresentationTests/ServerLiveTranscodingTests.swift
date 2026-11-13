@@ -39,6 +39,91 @@ final class ServerLiveTranscodingTests: XCTestCase {
         try await verifyServer(.plex, codec: .preferHEVC)
     }
 
+    func testPlexLiveTVChannelSwitchAndReopenRealPlayback() async throws {
+        guard let input = ProcessInfo.processInfo.environment["PLOZZ_LIVE_TV_BROKER"] else {
+            throw XCTSkip("Set PLOZZ_LIVE_TV_BROKER for authorized synthetic Live TV testing.")
+        }
+        let broker = try XCTUnwrap(URL(string: input))
+        guard broker.scheme == "http", broker.host == "127.0.0.1",
+              broker.user == nil, broker.password == nil, broker.query == nil else {
+            throw LivePlaybackConfigurationError()
+        }
+        let (data, response) = try await URLSession.shared.data(
+            for: URLRequest(url: broker.appendingPathComponent("plex"), timeoutInterval: 10)
+        )
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw LivePlaybackConfigurationError()
+        }
+        let configuration = try JSONDecoder().decode(AuthenticatedConfiguration.self, from: data)
+        guard configuration.itemIDs.count == 2, Set(configuration.itemIDs).count == 2,
+              let scheme = configuration.baseURL.scheme, ["http", "https"].contains(scheme),
+              configuration.baseURL.host != nil, configuration.baseURL.user == nil,
+              configuration.baseURL.password == nil, configuration.baseURL.query == nil,
+              !configuration.token.isEmpty else {
+            throw LivePlaybackConfigurationError()
+        }
+        try await PlexProvider.verifyAddress(configuration.baseURL, serverID: configuration.serverID)
+        let provider = PlexProvider(session: UserSession(
+            server: .init(
+                id: configuration.serverID, name: "Internal Live TV verification",
+                baseURL: configuration.baseURL, provider: .plex
+            ),
+            userID: configuration.userID, userName: configuration.username,
+            deviceID: configuration.deviceID, accessToken: configuration.token
+        ))
+        let resolver = ManagedAuthenticatedHTTPResolver()
+        resolver.configure { _ in
+            .init(
+                provider: .plex, accountID: provider.accountID, credentialRevision: provider.credentialRevision,
+                baseURL: configuration.baseURL, token: configuration.token, originProvider: provider
+            )
+        }
+        do {
+            let availability = try await provider.liveTVAvailability()
+            XCTAssertTrue(availability.supportsPlayback)
+            let channels = try await provider.liveTVChannels()
+            for id in configuration.itemIDs {
+                XCTAssertTrue(channels.contains { $0.id == id })
+            }
+            let guide = try await provider.liveTVGuide(
+                channelIDs: configuration.itemIDs, from: Date(), to: Date().addingTimeInterval(3_600)
+            )
+            for id in configuration.itemIDs {
+                XCTAssertTrue(guide.contains { $0.channelID == id })
+            }
+            let sequence = configuration.itemIDs + [configuration.itemIDs[0]]
+            for (index, id) in sequence.enumerated() {
+                let lease = try await provider.openLiveTVChannel(id: id)
+                do {
+                    guard case .authenticatedHTTP(let locator) = lease.playbackSource else {
+                        throw LivePlaybackConfigurationError()
+                    }
+                    if index == 1 {
+                        XCTAssertEqual(locator.resource.path, "video/:/transcode/universal/start.m3u8")
+                    } else {
+                        XCTAssertTrue(locator.resource.path.hasPrefix("livetv/sessions/"))
+                    }
+                    let request = PlaybackRequest(
+                        item: .init(id: id, title: "Synthetic channel", kind: .movie),
+                        playbackSource: lease.playbackSource, sourceProvider: .plex
+                    )
+                    try await play(
+                        request, resolver: resolver, expectedCodec: nil,
+                        caseIndex: index, measurementSeconds: 12
+                    )
+                    await lease.close()
+                } catch {
+                    await lease.close()
+                    throw error
+                }
+            }
+            await provider.teardown()
+        } catch {
+            await provider.teardown()
+            throw error
+        }
+    }
+
     private struct AuthenticatedConfiguration: Decodable {
         let baseURL: URL
         let username: String
@@ -341,7 +426,7 @@ final class ServerLiveTranscodingTests: XCTestCase {
 
     private func play(
         _ request: PlaybackRequest, resolver: ManagedAuthenticatedHTTPResolver,
-        expectedCodec: DirectPlayVideoCodec, caseIndex: Int,
+        expectedCodec: DirectPlayVideoCodec?, caseIndex: Int,
         measurementSeconds: Int = 12, expectsSDR: Bool = false
     ) async throws {
         try await waitUntil(seconds: 10, stage: "foreground scene") {
@@ -383,7 +468,7 @@ final class ServerLiveTranscodingTests: XCTestCase {
         try await Task.sleep(for: .seconds(measurementSeconds))
         let progress = player.currentTime().seconds - initialPosition
         let access = item.accessLog()?.events.last
-        let evidence = "case=\(caseIndex) codec=\(expectedCodec) firstFrame=\(firstFrameTime) playing=\(playingTime) "
+        let evidence = "case=\(caseIndex) codec=\(expectedCodec?.rawValue ?? "unclassified") firstFrame=\(firstFrameTime) playing=\(playingTime) "
             + "size=\(dimensions.width)x\(dimensions.height) range=\(String(describing: engine.streamingOutputDynamicRange)) "
             + "progress=\(progress) wallSeconds=\(measurementSeconds) stalls=\(access?.numberOfStalls ?? -1) "
             + "droppedFrames=\(access?.numberOfDroppedVideoFrames ?? -1) "
@@ -396,7 +481,9 @@ final class ServerLiveTranscodingTests: XCTestCase {
             activity.add(attachment)
         }
         XCTAssertGreaterThan(progress, Double(measurementSeconds - 2), "The real rendition must sustain playback beyond startup.")
-        XCTAssertEqual(engine.streamingOutputVideoCodec, expectedCodec, "Verify decoded output, not URL flags.")
+        if let expectedCodec {
+            XCTAssertEqual(engine.streamingOutputVideoCodec, expectedCodec, "Verify decoded output, not URL flags.")
+        }
         if expectsSDR {
             XCTAssertEqual(engine.streamingOutputDynamicRange, .sdr, "Verify actual HDR-to-SDR output, not request flags.")
         }

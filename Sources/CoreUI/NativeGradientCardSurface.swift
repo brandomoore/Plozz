@@ -1,4 +1,4 @@
-#if os(tvOS)
+#if os(tvOS) || os(iOS)
 import CoreNetworking
 import SwiftUI
 import UIKit

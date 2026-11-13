@@ -131,9 +131,6 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         settings.preferOnlineArtwork = false
         settingsStore.save(settings)
         defer { settingsStore.save(originalSettings) }
-        func backgrounds(in view: UIView) -> [NativeGradientCardFill.View] {
-            (view as? NativeGradientCardFill.View).map { [$0] } ?? view.subviews.flatMap { backgrounds(in: $0) }
-        }
         let scene = try await activeScene()
         for kind in [MediaItemKind.movie, .series] {
             let artwork = try await seedArtwork(color: kind == .movie ? .red : .blue)
@@ -192,12 +189,51 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
                 attachment.lifetime = .keepAlways
                 add(attachment)
                 if enabled {
-                    let fills = backgrounds(in: window).filter {
-                        $0.convert($0.bounds, to: window).intersects(window.bounds) && !$0.bounds.isEmpty
+                    let focusItems = try DetailTintFocusProbe.nativeFocusItems(in: window)
+                    let focusFrames = try focusItems.map {
+                        try DetailTintFocusProbe.nativeFocusFrame($0, in: window)
                     }
-                    XCTAssertFalse(fills.isEmpty)
-                    XCTAssertTrue(fills.allSatisfy { !$0.isHidden && $0.layer.contents != nil },
-                                  "Production detail cards must paint the shared gradient, not the flat fallback.")
+                    let visibleFrames = focusFrames.filter {
+                        !$0.isEmpty && !$0.isNull && !$0.isInfinite
+                            && $0.intersects(window.bounds)
+                    }
+                    let recognition = VNRecognizeTextRequest()
+                    recognition.recognitionLevel = .accurate
+                    recognition.recognitionLanguages = ["en-US"]
+                    try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage))
+                        .perform([recognition])
+                    let observations = try XCTUnwrap(recognition.results)
+                    let aboutHeading = try XCTUnwrap(
+                        observations.first { $0.topCandidates(1).first?.string == "About" },
+                        "\(kind), \(phase): the information section must be visible."
+                    )
+                    let headingFrame = CGRect(
+                        x: aboutHeading.boundingBox.minX * image.size.width,
+                        y: (1 - aboutHeading.boundingBox.maxY) * image.size.height,
+                        width: aboutHeading.boundingBox.width * image.size.width,
+                        height: aboutHeading.boundingBox.height * image.size.height
+                    )
+                    // Series exposes the top of About while its title is clipped.
+                    // Match the native surface directly below the visible heading.
+                    let aboutCards = visibleFrames.filter { frame in
+                        let gap = frame.minY - headingFrame.maxY
+                        return frame.minX <= headingFrame.midX
+                            && frame.maxX > headingFrame.midX
+                            && gap >= 0
+                            && gap <= DetailInformationLayout.headingSpacing + headingFrame.height
+                    }
+                    XCTAssertEqual(
+                        aboutCards.count, 1,
+                        "\(kind), \(phase): a native About card must sit directly below "
+                            + "its visible section heading; unrelated focus targets do not qualify."
+                    )
+                    let geometry = XCTAttachment(string: zip(focusItems, focusFrames).map { item, frame in
+                        "type=\(String(describing: type(of: item))), frame=\(frame), "
+                            + "focused=\(UIFocusSystem.focusSystem(for: window)?.focusedItem === item)"
+                    }.joined(separator: "\n"))
+                    geometry.name = "production-detail-focus-\(kind)-\(phase)"
+                    geometry.lifetime = .keepAlways
+                    add(geometry)
                     let tintDifference = bytes[0] - bytes[2]
                     XCTAssertGreaterThan(kind == .movie ? tintDifference : -tintDifference, 8,
                                          "\(kind) must tint the information-band gutter, not just its hero image: \(bytes)")
@@ -527,6 +563,19 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             controller.play(itemID: "hero", resolvedURL: video, muted: true)
             controller.claimSurface(.detail, itemID: "hero")
             try await waitUntil { controller.isPlaying && controller.duration > 0 }
+            if !controller.isPlaying || controller.duration <= 0 {
+                let attachment = XCTAttachment(string:
+                    "ready=\(controller.isReady) playing=\(controller.isPlaying) paused=\(controller.isPaused) "
+                        + "duration=\(controller.duration) rate=\(controller.player.rate) "
+                        + "status=\(String(describing: controller.player.currentItem?.status)) "
+                        + "itemDuration=\(String(describing: controller.player.currentItem?.duration.seconds)) "
+                        + "timeControl=\(controller.player.timeControlStatus.rawValue) "
+                        + "waiting=\(String(describing: controller.player.reasonForWaitingToPlay))"
+                )
+                attachment.name = "borrowed-trailer-readiness"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+            }
             let request = try XCTUnwrap(controller.beginFullScreen(itemID: "hero", from: .detail))
             let surface = try XCTUnwrap(controller.fullScreenSurface(id: request))
             let engine = BorrowedTrailerEngine(player: controller.player, surface: surface)
@@ -585,14 +634,27 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             model.trailer.isPlaying && model.trailer.player.currentTime().seconds > 0.5
                 && self.trailerLayers(in: window).contains(where: \.isReadyForDisplay)
         }
+        let ambientLayer = try XCTUnwrap(
+            trailerLayers(in: window).first { $0.player === model.trailer.player }
+        )
+        let homeHostLayer = try XCTUnwrap(ambientLayer.superlayer)
         if fromDetail {
             model.openHeroDetail()
             try await waitUntil { model.stackDepth.depth == 1 && model.detail.state.value?.childrenLoaded == true }
+            try await waitUntil {
+                guard let receivingHost = ambientLayer.superlayer?.delegate as? UIView else {
+                    return false
+                }
+                return ambientLayer.superlayer !== homeHostLayer
+                    && receivingHost.window === window
+                    && ambientLayer.isReadyForDisplay
+            }
         }
         let role: HeroTrailerSurfaceRole = fromDetail ? .detail : .home
         let original = try XCTUnwrap(model.trailer.player.currentItem)
-        let ambientLayer = try XCTUnwrap(trailerLayers(in: window).first { $0.player === model.trailer.player })
         let ambientHostLayer = try XCTUnwrap(ambientLayer.superlayer)
+        weak var ambientHost = ambientHostLayer.delegate as? UIView
+        XCTAssertTrue(ambientHost?.window === window)
         let originalPosition = model.trailer.player.currentTime().seconds
         model.fullscreenRequest = try XCTUnwrap(TrailerFullscreenRequest(
             controller: model.trailer, itemID: model.provider.show.id, role: role,
@@ -639,6 +701,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         try await waitUntil { player.isBeingDismissed }
         XCTAssertTrue(ambientLayer.superlayer === ambientHostLayer,
                       "Restore the live background before the full-screen cover starts revealing the hero.")
+        XCTAssertTrue(ambientHost?.window === window)
         XCTAssertTrue(ambientLayer.isReadyForDisplay)
         XCTAssertTrue(model.trailer.isFullScreen,
                       "Keep carousel and focus callbacks suspended until the return transition finishes.")
@@ -652,6 +715,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         }
         XCTAssertTrue(model.trailer.player.currentItem === original)
         XCTAssertTrue(ambientLayer.superlayer === ambientHostLayer)
+        XCTAssertTrue(ambientHost?.window === window)
         XCTAssertNil(returnCover.superview, "Release the transition frame after revealing live video.")
         XCTAssertTrue(model.trailer.isClaimed(by: role, itemID: model.provider.show.id))
         XCTAssertTrue(model.trailer.isMuted, "Restore the ambient mute choice.")
@@ -1596,6 +1660,9 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
                         XCTAssertLessThanOrEqual(last.time - first.time, 0.6,
                                                  "\(style): returning up must not linger longer than a row transition.")
                     }
+                    let arrival = try XCTUnwrap(motion.first { abs($0.y - top) <= 1 })
+                    XCTAssertLessThanOrEqual(arrival.time, SeriesHeroRevealTransition.pageScrollDuration + 0.1,
+                                             "\(style): the page return must not wait for an outgoing focus effect.")
                 }
                 let screenshot = XCTAttachment(image: renderedKeylineSnapshot(in: window))
                 screenshot.name = "related-episode-return-\(scenario)-\(roundTrip)"

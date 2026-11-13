@@ -2208,6 +2208,14 @@ public struct PlexClient: Sendable {
         return alwaysDecodableAudioCodecs.contains(codec) || ["ac3", "eac3", "ec3"].contains(codec)
     }
 
+    func canDirectPlayLiveTV(videoCodec: String?, audioCodec: String?) -> Bool {
+        guard let videoCodec, let audioCodec,
+              let codec = Self.directPlayVideoCodec(forPlexCodec: videoCodec),
+              codec == .h264 || codec == .hevc else { return false }
+        return capabilities.allowedDirectPlayVideoCodecs.contains(codec)
+            && Self.canDirectStreamAudio(codec: audioCodec)
+    }
+
     private func canDirectStreamVideo(media: PlexMedia, part: PlexPart) -> Bool {
         let stream = part.Stream?.first { $0.streamType == 1 }
         guard let codec = Self.directPlayVideoCodec(forPlexCodec: (media.videoCodec ?? stream?.codec ?? "").lowercased()),

@@ -652,7 +652,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
     private func visibleText(in window: UIWindow, attachment name: String, crop: CGRect? = nil) throws -> String {
         window.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat()
-        if crop != nil { format.scale = 2 }
+        format.scale = 2
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }

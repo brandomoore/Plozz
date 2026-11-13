@@ -114,7 +114,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
             let ratingsWidth = tileCount > 1 ? 2 * columnWidth + DetailInformationLayout.sectionSpacing
                 : (compactScore ? compactWidth : columnWidth)
             let columns = hasGuidance ? min(4, max(2, count + 1)) : min(4, count > 4 ? (count + 1) / 2 : count)
-            let cellWidth = (ratingsWidth - CGFloat(columns - 1) * DetailInformationLayout.gutter) / CGFloat(columns)
+            let columnSpacing = DetailInformationLayout.factColumnSpacing
+            let cellWidth = (ratingsWidth - CGFloat(columns - 1) * columnSpacing) / CGFloat(columns)
             for score in ratings.prefix(count) {
                 XCTAssertEqual(score.width, cellWidth, accuracy: 1,
                                "Scores must use equal flexible columns, not fixed 220pt tiles.")
@@ -134,8 +135,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 let guide = try XCTUnwrap(ratings.last)
                 let column = count % columns
                 let span = min(2, columns - column)
-                let rightEdge = ratings[0].minX + CGFloat(column) * (cellWidth + DetailInformationLayout.gutter)
-                    + CGFloat(span) * cellWidth + CGFloat(span - 1) * DetailInformationLayout.gutter
+                let rightEdge = ratings[0].minX + CGFloat(column) * (cellWidth + columnSpacing)
+                    + CGFloat(span) * cellWidth + CGFloat(span - 1) * columnSpacing
                 XCTAssertEqual(guide.maxX, rightEdge, accuracy: 1)
                 XCTAssertLessThanOrEqual(guide.width, 560)
                 if count > 0 {
@@ -144,22 +145,27 @@ final class NativeInformationCardHostedTests: XCTestCase {
                         XCTAssertEqual(guide.minX, ratings[0].minX, accuracy: 1)
                         XCTAssertGreaterThan(guide.minY, lastScore.maxY)
                     } else {
-                        XCTAssertEqual(guide.minX - lastScore.maxX, DetailInformationLayout.gutter, accuracy: 1)
+                        XCTAssertEqual(guide.minX - lastScore.maxX, columnSpacing, accuracy: 1)
                         XCTAssertEqual(guide.minY, lastScore.minY, accuracy: 1)
                         XCTAssertEqual(guide.maxY, lastScore.maxY, accuracy: 1)
                     }
                 }
             }
             if count == 4 && hasGuidance {
+                let image = informationImage(window)
+                let evidence = XCTAttachment(image: image)
+                evidence.name = "rating-gap-measurement"
+                evidence.lifetime = .keepAlways
+                add(evidence)
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
-                try VNImageRequestHandler(cgImage: XCTUnwrap(DetailTransitionSnapshot.image(of: window).cgImage))
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage))
                     .perform([request])
                 let values = try XCTUnwrap(request.results).filter {
                     ["98%", "88%", "8.3", "8.1"].contains($0.topCandidates(1).first?.string ?? "")
                 }.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
                 XCTAssertEqual(values.count, 4)
-                let pixels = try informationPixels(window)
+                let pixels = try informationPixels(image)
                 let paintedValues = values.map { value in
                     paintedTextBounds(pixels, in: CGRect(
                         x: value.boundingBox.minX * 1920,
@@ -177,9 +183,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
                     for y in Int(scores.minY + 24)..<Int(scores.maxY - 24) {
                         for x in Int(value.minX - 100)..<Int(value.minX) {
                             let offset = (y * 1920 + x) * 4
-                            let channels = pixels[offset..<(offset + 3)]
-                            if let high = channels.max(), let low = channels.min(),
-                               high > 160, high - low > 45 {
+                            if isVisibleRatingMark(pixels, at: offset) {
                                 iconLeft = min(iconLeft ?? x, x)
                                 iconRight = max(iconRight ?? x, x)
                             }
@@ -187,7 +191,10 @@ final class NativeInformationCardHostedTests: XCTestCase {
                     }
                     let gap = value.minX - CGFloat(try XCTUnwrap(iconRight) + 1)
                     XCTAssertEqual(gap, 16, accuracy: 2,
-                                   "Visible mark edges, not their centered slots, determine the score gap.")
+                                   "Visible mark edges, not their centered slots, determine the score gap. "
+                                   + "scoreIndex=\(index), score=\(values[index].topCandidates(1).first?.string ?? "unknown"), "
+                                   + "tile=\(scores), text=\(value), "
+                                   + "icon=[\(String(describing: iconLeft)), \(String(describing: iconRight))]")
                     let visibleCenter = (CGFloat(try XCTUnwrap(iconLeft)) + value.maxX) / 2
                     XCTAssertEqual(visibleCenter, scores.midX, accuracy: 2,
                                    "Each complete mark-and-score unit must have balanced space within its column.")
@@ -360,7 +367,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(600))
         XCTAssertTrue(nativeCards(in: window).isEmpty,
                       "Lower metadata must not acquire permanent card surfaces.")
-        let image = DetailTransitionSnapshot.image(of: window)
+        let image = informationImage(window)
+        let pixels = try informationPixels(image)
         let attachment = XCTAttachment(image: image)
         attachment.name = "detail-fact-keylines-and-insets"
         attachment.lifetime = .keepAlways
@@ -372,7 +380,8 @@ final class NativeInformationCardHostedTests: XCTestCase {
         for (index, heading) in ["Details", "Crew", "Playback"].enumerated() {
             let frame = CGRect(x: contentFrame.minX + CGFloat(index) * (columnWidth + spacing),
                                y: 0, width: columnWidth, height: 1080)
-            let crop = try XCTUnwrap(image.cgImage?.cropping(to: frame))
+            let cropFrame = frame.integral
+            let crop = try XCTUnwrap(image.cgImage?.cropping(to: cropFrame))
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
@@ -382,7 +391,19 @@ final class NativeInformationCardHostedTests: XCTestCase {
             let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
             let title = try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string == heading })
             XCTAssertLessThanOrEqual(title.boundingBox.minX * columnWidth, 3)
-            headingYs.append((1 - title.boundingBox.maxY) * 1080)
+            let headingRegion = CGRect(
+                x: cropFrame.minX + title.boundingBox.minX * CGFloat(crop.width),
+                y: cropFrame.minY + (1 - title.boundingBox.maxY) * CGFloat(crop.height),
+                width: title.boundingBox.width * CGFloat(crop.width),
+                height: title.boundingBox.height * CGFloat(crop.height)
+            )
+            // OCR locates the word; recognition-box padding is not an ink edge.
+            let headingInk = paintedTextBounds(pixels, in: headingRegion.insetBy(dx: -4, dy: -4))
+            XCTAssertFalse(
+                headingInk.isNull,
+                "\(heading) must have painted text inside its OCR region: \(headingRegion)"
+            )
+            headingYs.append(headingInk.minY)
             if index == 0 {
                 XCTAssertFalse(text.contains("MORE"), "Short facts must not inherit truncation from a fitting probe: \(text)")
                 XCTAssertTrue(text.contains("TV-MA"), "The complete classification must remain visible: \(text)")
@@ -415,6 +436,23 @@ final class NativeInformationCardHostedTests: XCTestCase {
         }
         XCTAssertEqual(headingYs[0], headingYs[1], accuracy: 3)
         XCTAssertEqual(headingYs[0], headingYs[2], accuracy: 5)
+    }
+
+    func testRatingMarkMeasurementUsesUnpremultipliedColorAndVisibleCoverage() {
+        XCTAssertTrue(isVisibleRatingMark([152, 122, 17, 202], at: 0))
+        XCTAssertTrue(isVisibleRatingMark([192, 154, 21, 255], at: 0))
+        XCTAssertFalse(isVisibleRatingMark([75, 60, 8, 100], at: 0))
+        XCTAssertFalse(isVisibleRatingMark([80, 80, 82, 255], at: 0))
+        XCTAssertFalse(isVisibleRatingMark([100, 90, 20, 255], at: 0))
+    }
+
+    private func isVisibleRatingMark(_ pixels: [UInt8], at offset: Int) -> Bool {
+        let alpha = Int(pixels[offset + 3])
+        guard alpha >= 128 else { return false }
+        let channels = pixels[offset..<(offset + 3)]
+        guard let high = channels.max(), let low = channels.min() else { return false }
+        // UIKit supplies premultiplied BGRA, not the straight RGB in PNG attachments.
+        return Int(high) * 255 / alpha > 160 && Int(high - low) * 255 / alpha > 45
     }
 
     private func paintedTextBounds(_ pixels: [UInt8], in region: CGRect) -> CGRect {
@@ -712,16 +750,34 @@ final class NativeInformationCardHostedTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(20))
             }
             XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === card, "card \(index)")
-            for _ in 0..<8 {
+            var capturedOverlap = false
+            for sampleIndex in 0..<8 {
                 try await Task.sleep(for: .milliseconds(45))
-                let pixels = try informationPixels(window)
+                let sampleImage = informationImage(window)
+                let pixels = try informationPixels(sampleImage)
                 let projected = try paintedCardFrame(card, in: window, pixels: pixels, backgroundX: backgroundX)
-                samples.append("card=\(index) layout=\(try focusFrame(card, in: window)) painted=\(projected)")
+                samples.append("card=\(index) sample=\(sampleIndex) layout=\(try focusFrame(card, in: window)) painted=\(projected)")
                 for (otherIndex, other) in cards.enumerated() where other !== card {
                     let resting = try paintedCardFrame(other, in: window, pixels: pixels, backgroundX: backgroundX)
                     let overlap = projected.intersection(resting)
+                    let focusedLayout = try focusFrame(card, in: window)
+                    let otherLayout = try focusFrame(other, in: window)
+                    if !overlap.isNull, overlap.width >= 1, overlap.height >= 1,
+                       !capturedOverlap {
+                        capturedOverlap = true
+                        try captureInformationOverlap(
+                            image: sampleImage, pixels: pixels,
+                            focusedLayout: focusedLayout, otherLayout: otherLayout,
+                            focusedPainted: projected, otherPainted: resting,
+                            backgroundX: backgroundX,
+                            name: "\(kind)-\(Int(width))-card-\(index)-other-\(otherIndex)-sample-\(sampleIndex)"
+                        )
+                    }
                     XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1,
-                                  "Focused card \(index) overlaps card \(otherIndex) by \(overlap)")
+                                  "\(kind), width=\(width), sample=\(sampleIndex): "
+                                  + "focused card \(index) layout=\(focusedLayout) painted=\(projected); "
+                                  + "other card \(otherIndex) layout=\(otherLayout) painted=\(resting); "
+                                  + "overlap=\(overlap)")
                 }
             }
             let image = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
@@ -986,12 +1042,19 @@ final class NativeInformationCardHostedTests: XCTestCase {
     }
 
     private func informationPixels(_ window: UIWindow) throws -> [UInt8] {
+        try informationPixels(informationImage(window))
+    }
+
+    private func informationImage(_ window: UIWindow) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.preferredRange = .standard
-        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+        return UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
+    }
+
+    private func informationPixels(_ image: UIImage) throws -> [UInt8] {
         let cgImage = try XCTUnwrap(image.cgImage)
         XCTAssertEqual(cgImage.bitsPerPixel, 32)
         XCTAssertEqual(cgImage.bytesPerRow, 1920 * 4)
@@ -1138,6 +1201,67 @@ final class NativeInformationCardHostedTests: XCTestCase {
             environment = current.parentFocusEnvironment
         }
         return try XCTUnwrap(frame, "A native focus item must provide its coordinate space.")
+    }
+
+    private func captureInformationOverlap(
+        image: UIImage, pixels: [UInt8],
+        focusedLayout: CGRect, otherLayout: CGRect,
+        focusedPainted: CGRect, otherPainted: CGRect,
+        backgroundX: Int, name: String
+    ) throws {
+        // Retain the actual failed scan, not a recapture after the animation advances.
+        let full = XCTAttachment(image: image)
+        full.name = "information-overlap-\(name)"
+        full.lifetime = .keepAlways
+        add(full)
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let imageBounds = CGRect(x: 0, y: 0, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+        let crop = focusedLayout.union(otherLayout)
+            .union(focusedPainted).union(otherPainted)
+            .insetBy(dx: -24, dy: -24)
+            .intersection(imageBounds).integral
+        let cropped = try XCTUnwrap(cgImage.cropping(to: crop))
+        let detail = XCTAttachment(image: UIImage(cgImage: cropped))
+        detail.name = "information-overlap-\(name)-crop"
+        detail.lifetime = .keepAlways
+        add(detail)
+        func components(x: Int, y: Int) -> String {
+            guard (0..<cgImage.width).contains(x), (0..<cgImage.height).contains(y) else {
+                return "out-of-bounds"
+            }
+            let offset = y * cgImage.bytesPerRow + x * 4
+            return "\(Array(pixels[offset..<(offset + 3)]))"
+        }
+        var lines = [
+            "focused layout=\(focusedLayout), scan=\(focusedPainted)",
+            "other layout=\(otherLayout), scan=\(otherPainted)",
+            "crop in full-image coordinates=\(crop)",
+            "image scale=\(image.scale), bitmapInfo=\(cgImage.bitmapInfo.rawValue)",
+            "Components below are in bitmap storage order.",
+            "focused baseline=" + components(x: backgroundX, y: Int(focusedLayout.midY)),
+            "other baseline=" + components(x: backgroundX, y: Int(otherLayout.midY))
+        ]
+        let left = focusedLayout.minX < otherLayout.minX ? focusedLayout : otherLayout
+        let right = focusedLayout.minX < otherLayout.minX ? otherLayout : focusedLayout
+        let sharedTop = max(left.minY, right.minY)
+        let sharedBottom = min(left.maxY, right.maxY)
+        let startX = max(0, Int(floor(min(left.maxX, right.minX))) - 24)
+        let endX = min(cgImage.width - 1, Int(ceil(max(left.maxX, right.minX))) + 24)
+        if sharedBottom > sharedTop, startX <= endX {
+            lines.append("resting horizontal gap=\(right.minX - left.maxX)")
+            for fraction in [CGFloat(0.25), 0.5, 0.75] {
+                let y = Int((sharedTop + (sharedBottom - sharedTop) * fraction).rounded())
+                lines.append(
+                    "y=\(y): " + (startX...endX).map { x in
+                        "\(x):\(components(x: x, y: y))"
+                    }.joined(separator: " ")
+                )
+            }
+        }
+        let profile = XCTAttachment(string: lines.joined(separator: "\n"))
+        profile.name = "information-overlap-\(name)-profiles"
+        profile.lifetime = .keepAlways
+        add(profile)
     }
 
     private func paintedCardFrame(

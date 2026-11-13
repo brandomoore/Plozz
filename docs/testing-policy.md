@@ -110,6 +110,24 @@ environment variables, command arguments, configuration files or attachments.
 The broker endpoint must use an unguessable run-specific path and bind only to
 `127.0.0.1`; never publish it as a preview or expose it to the LAN.
 
+### Plex Live TV
+
+`ServerLiveTranscodingTests.testPlexLiveTVChannelSwitchAndReopenRealPlayback`
+uses `PLOZZ_LIVE_TV_BROKER` with the same private `/plex` broker contract.
+Supply exactly two authorized synthetic channel IDs in `itemIDs`, rather than
+library item IDs. The test checks channel and guide discovery, tunes each channel,
+then reopens the first. Each tune must produce a decoded video frame and more
+than ten seconds of playback progress over a twelve-second measurement.
+Supply H.264 first and MPEG-2 second to assert direct playback and compatibility
+conversion respectively. Live TS playlists do not always expose the native
+engine's output-codec diagnostic; this check requires rendered frames and sustained
+progress rather than interpreting missing diagnostics as a playback failure.
+The test closes each lease on success or failure.
+
+The operator owns provisioning and removal of the temporary tuner/guide and must
+stop its synthetic streams and broker after testing. Virtual tuners exercise
+Plex's real DVR APIs but do not establish hardware-specific HDHomeRun behavior.
+
 ## Live watch-state verification
 
 `LiveHomeContentTests` in `AppRuntimeTests` uses the same private broker contract
@@ -1633,12 +1651,20 @@ tests. Run `39857697957` also exhausted a full 40-minute execution window while
 still progressing through the expanded hosted suite. Both attempts of run
 `41421118241` reached the 40-minute compilation deadline before tests could
 start; the retry was still compiling the hosted test target. CI now allows
-60 minutes for compilation and 90 minutes for hosted execution, within a
-170-minute job limit including setup and evidence retention. This changes only
-the cold-build budget, not test assertions, performance thresholds, or the
-execution deadline. Local build and execution defaults remain 40 minutes unless
+60 minutes for compilation and 120 minutes for hosted execution, within a
+200-minute job limit including setup and evidence retention. Run `43265633256`
+completed 966 of 1,131 hosted methods before the former 90-minute execution
+limit interrupted a still-progressing streaming test. Its completed methods
+alone consumed 88.4 minutes; the native-reopen case completed rather than
+hanging. The longer suite budget does not change individual-test allowances,
+test assertions, or performance thresholds. Local build and execution defaults remain 40 minutes unless
 `PLOZZ_FOCUS_BUILD_TIMEOUT` or `PLOZZ_FOCUS_TEST_TIMEOUT` is set;
 test failures, timeouts, and unreadable `xcresult` summaries still fail closed.
+Individual hosted tests also have a ten-minute XCTest execution allowance,
+with failure diagnostics enabled. This exceeds the 330-second rolling-playback
+scenario while preventing one blocked AVFoundation call from consuming the
+entire suite deadline without a test verdict. It does not replace the outer
+build/execution deadlines or turn a timed-out test into a pass.
 Each lane uploads
 uniquely named diagnostics on success or failure, retained for seven days.
 The simulator app build also retains its raw log without replacing a build

@@ -25,6 +25,9 @@ final class ForegroundProfileProtectionHostedTests: XCTestCase {
         fixture.model.pickerInputEnabled = !delayedInput
         fixture.app.profileFlow.lockForForegroundIfNeeded()
         try await waitUntil { !fixture.window.isUserInteractionEnabled }
+        try await waitUntil {
+            fixture.scene.windows.contains { $0.isKeyWindow && $0 !== fixture.window }
+        }
         let shield = try XCTUnwrap(fixture.scene.windows.first {
             $0.isKeyWindow && $0 !== fixture.window
         })
@@ -68,6 +71,9 @@ final class ForegroundProfileProtectionHostedTests: XCTestCase {
 
         fixture.app.profileFlow.lockForForegroundIfNeeded()
         try await waitUntil { !fixture.window.isUserInteractionEnabled }
+        try await waitUntil {
+            fixture.scene.windows.contains { $0.isKeyWindow && $0 !== fixture.window }
+        }
         let shield = try XCTUnwrap(fixture.scene.windows.first {
             $0.isKeyWindow && $0 !== fixture.window
         })

@@ -14,6 +14,9 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
     private let cards: (CGSize) -> Cards
     @Binding private var selectedID: String?
     @State private var viewportWidth: CGFloat = 390
+    #if os(tvOS)
+    @Environment(\.mediaRowSizingViewportWidth) private var sizingViewportWidth
+    #endif
     @Environment(\.plozzNavigationContentInset) private var navigationInset
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.plozzMetrics) private var metrics
@@ -56,6 +59,9 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
     }
 
     private var size: CGSize {
+        #if os(tvOS)
+        let viewportWidth = sizingViewportWidth ?? self.viewportWidth
+        #endif
         if metrics.usesDesktopSizing {
             return DesktopMediaRailLayout.featuredSize(in: viewportWidth, metrics: metrics)
         }
@@ -132,6 +138,7 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
         #if os(tvOS)
+        .modifier(HomeRowPreviewScrollViewport())
         .padding(.vertical, metrics.railClearanceOffset(for: 24))
         #endif
         #if os(iOS)

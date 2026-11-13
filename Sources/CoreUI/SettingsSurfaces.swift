@@ -2,23 +2,30 @@
 import SwiftUI
 
 public struct SettingsPageBackground: View {
+    private var paintsDialogBackground = false
     @Environment(\.themePalette) private var palette
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzDialogBackgroundOwned) private var dialogBackgroundOwned
-    #if os(tvOS)
+    #if os(tvOS) || os(iOS)
     @Environment(\.settingsGradientCardSurface) private var cardSurface
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #endif
+    #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
     #endif
 
     public init() {}
 
+    init(paintsDialogBackground: Bool) {
+        self.paintsDialogBackground = paintsDialogBackground
+    }
+
     public var body: some View {
-        if inheritsBackground {
+        if inheritsBackground && !paintsDialogBackground {
             Color.clear
         } else if gradientEnabled {
             AmbientGradientBackground(palette: palette)
-                #if os(tvOS)
+                #if os(tvOS) || os(iOS)
                 .background {
                     if let cardSurface {
                         NativeGradientViewport(
@@ -35,7 +42,7 @@ public struct SettingsPageBackground: View {
                 }
                 #endif
         } else {
-            palette.settingsBackground.ignoresSafeArea()
+            (inheritsBackground ? palette.overlay.fill : palette.settingsBackground).ignoresSafeArea()
         }
     }
 
@@ -70,6 +77,9 @@ public extension EnvironmentValues {
     }
 }
 
+#endif
+
+#if os(tvOS) || os(iOS)
 private struct SettingsGradientCardSurfaceKey: EnvironmentKey {
     static let defaultValue: NativeGradientCardSurface? = nil
 }
@@ -103,15 +113,25 @@ public struct SettingsPageBackButton: View {
 }
 
 private struct SettingsPageBackgroundModifier: ViewModifier {
-    #if os(tvOS)
+    var paintsDialogBackground = false
+    #if os(tvOS) || os(iOS)
     @State private var cardSurface = NativeGradientCardSurface()
+    #endif
+    #if os(iOS)
+    @Environment(\.settingsGradientCardSurface) private var inheritedSurface
+    @Environment(\.plozzDialogBackgroundOwned) private var dialogBackgroundOwned
     #endif
 
     func body(content: Content) -> some View {
         content
-            .background { SettingsPageBackground() }
+            .background { SettingsPageBackground(paintsDialogBackground: paintsDialogBackground) }
             #if os(tvOS)
             .environment(\.settingsGradientCardSurface, cardSurface)
+            #elseif os(iOS)
+            .environment(
+                \.settingsGradientCardSurface,
+                dialogBackgroundOwned && !paintsDialogBackground ? inheritedSurface : cardSurface
+            )
             #endif
     }
 }
@@ -159,9 +179,13 @@ public struct PlozzDivider: View {
 /// groups, detail cards and dialogs so both platforms resolve the same theme.
 private struct PlozzSurfaceModifier<SurfaceShape: InsettableShape>: ViewModifier {
     @Environment(\.themePalette) private var palette
+    #if os(iOS)
+    @Environment(\.settingsGradientCardSurface) private var cardSurface
+    #endif
     let level: SurfaceLevel
     let shape: SurfaceShape
     var surfaceOverride: SurfaceStyle? = nil
+    var opaqueGradient = false
 
     func body(content: Content) -> some View {
         let style = surfaceOverride ?? palette.surface(level)
@@ -171,7 +195,17 @@ private struct PlozzSurfaceModifier<SurfaceShape: InsettableShape>: ViewModifier
                     if level == .overlay {
                         PlozzDialogBackground().clipShape(shape)
                     } else {
+                        #if os(iOS)
+                        if opaqueGradient {
+                            NativeGradientCardFill(surface: cardSurface, fill: style.fill)
+                                .background(palette.raised.fill)
+                                .clipShape(shape)
+                        } else {
+                            shape.fill(style.fill)
+                        }
+                        #else
                         shape.fill(style.fill)
+                        #endif
                     }
                 }
                     .overlay {
@@ -207,18 +241,26 @@ private struct SettingsGroupSurface<SurfaceShape: InsettableShape>: ViewModifier
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
     func body(content: Content) -> some View {
+        #if os(iOS)
+        content.modifier(PlozzSurfaceModifier(
+            level: .raised, shape: shape,
+            surfaceOverride: gradientEnabled ? palette.gradientSurface : nil,
+            opaqueGradient: gradientEnabled && reduceTransparency
+        ))
+        #else
         let translucent = gradientEnabled && !reduceTransparency
         content.modifier(PlozzSurfaceModifier(
             level: .raised, shape: shape,
             surfaceOverride: translucent ? palette.gradientSurface : nil
         ))
+        #endif
     }
 }
 
 public extension View {
     /// Shares the Settings backdrop with native cards' page-aligned surface.
-    func settingsPageBackground() -> some View {
-        modifier(SettingsPageBackgroundModifier())
+    func settingsPageBackground(paintsDialogBackground: Bool = false) -> some View {
+        modifier(SettingsPageBackgroundModifier(paintsDialogBackground: paintsDialogBackground))
     }
 
     /// Paints an elevated surface behind this view at the given rung, using the

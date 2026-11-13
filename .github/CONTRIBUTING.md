@@ -1,76 +1,57 @@
 # Contributing to Plozz
 
-Thanks for your interest in Plozz — a free, open source client for Jellyfin,
-Plex, Emby, Silo, and local shares, on Apple TV, iPhone, and iPad. It's a small,
-solo-maintained project, so this guide stays lightweight.
+Plozz is a free, open source media client for Apple TV, iPhone, and iPad.
+Bug reports, translation corrections, documentation, and focused code
+contributions are welcome.
 
-Agent-assisted contributions are welcome. Read the repository's
-[agent guidance](../AGENTS.md) for implementation, verification, and safety
-expectations. You remain responsible for reviewing and understanding the changes
-you submit; no particular assistant or model is required.
+Agent-assisted contributions are welcome too. Follow the [agent guidance](../AGENTS.md)
+and review and understand everything you submit; no particular assistant or
+model is required.
 
 ## Reporting bugs & requesting features
 
-Use issues for problems in distributed builds and proposals that need their own
-tracking. [**Open one**](https://github.com/thatcube/Plozz/issues/new/choose)
-and pick a template:
+Search [open and closed issues](https://github.com/brandomoore/Plozz/issues?q=is%3Aissue)
+and their discussions before [choosing a report template](https://github.com/brandomoore/Plozz/issues/new/choose).
+Reuse the existing issue for the same report; link related problems without
+conflating them. A regression after a delivered fix still needs investigation.
 
-- **🐞 Bug report** — captures what makes a bug fixable: steps to reproduce,
-  expected vs actual, and your Plozz version/build and device/OS version.
-  Selecting the affected media source (Jellyfin, Emby, Plex, Silo, SMB, or IPTV)
-  is required. Select all that apply, or "Not applicable / not sure" for bugs
-  before setup or when you don't know the source.
-- **✨ Feature request** — a short form for problems worth solving.
+- **Bug report:** describe expected and actual behavior, reproduction steps when
+  known, affected media source, app version/build, and device/OS.
+- **Feature request:** explain the problem and intended outcome.
+- **Translation correction:** include the language, screen, current wording, and
+  suggested correction.
 
-Please search [existing issues](https://github.com/thatcube/Plozz/issues) first,
-and never paste tokens, passwords, or credentialed server URLs.
-
-Plozz's Discord support forums can also feed the same GitHub backlog once their
-public-mirroring notice and bridge are activated. Forum guidelines explain what
-is copied and how votes work. See [Discord bridge behavior and privacy
-limits](../docs/discord-bridge.md); ordinary chat channels are not mirrored.
-
-The [website roadmap](https://plozz.app/roadmap/) is generated from verified
-GitHub state. See [event-driven refresh and recovery](../docs/website-roadmap.md)
-for its automation setup; do not edit the generated feed manually.
+Never include passwords, tokens, or credentialed URLs in reports or attachments.
+For Discord mirroring and the generated website roadmap, see the
+[Discord bridge](../docs/discord-bridge.md) and [roadmap guide](../docs/website-roadmap.md).
 
 ## Development pipeline
 
-Keep defects, review findings, UI adjustments, and test failures arising from
-active unreleased work in that task or its existing feature issue. Never create
-a new bug issue merely to fix or commit that work, including a problem introduced
-and solved in the same session. Calling it deferred or independently actionable
-does not make it a user-facing defect.
+Discuss substantial features before investing in an implementation. Keep changes
+focused, follow the surrounding conventions, and submit a pull request describing
+the behavior changed, affected platforms/providers, checks run, and known gaps.
+Include screenshots for visible changes.
 
-A commit, push, merge to `main`, or local test installation is not a distributed
-release. Create a new bug issue only for a problem actually affecting users of a
-delivered build (including TestFlight), or an explicit maintainer request to file
-one. Genuine feature requests can be tracked before implementation.
+Keep defects and review findings from active, unreleased work in its current task
+or existing feature issue; do not create a new bug issue just to fix or commit
+them. New bug issues are for problems affecting users of distributed builds
+(including TestFlight), unless a maintainer explicitly requests one. Feature
+requests can precede implementation.
 
-Search open **and closed** issues and their discussions before filing. Reuse the
-canonical issue for the same report, link related-but-distinct problems, and
-preserve genuine post-fix regressions as unresolved work. Keep issue status
-accurate: a branch fix or main merge alone is not delivery.
+A branch push, merge to `main`, or local installation is **not delivery**. Keep
+issue status accurate and distinguish implemented work from released fixes.
 
 ### Commit issue references
 
-When work addresses a GitHub issue, include its reference in the fixing commit's
-subject or body before committing. Use `Refs #123` for an issue in the same
-repository, or `Refs owner/repo#123` when the fix lives in another repository.
-Plain text such as `issue 123` is not a GitHub issue reference.
+Reference an existing issue in the fixing commit itself, using `Refs #123`
+(or `Refs owner/repo#123` across repositories). A PR reference or separate comment
+does not replace the commit reference.
 
-The pushed commit should create GitHub's built-in "added a commit that references
-this issue" timeline entry. A PR reference alone is not a substitute. Do not post
-a separate issue comment just to link the commit.
+For app fixes and features, do not use closing keywords (`Fixes`, `Closes`,
+`Resolves`) in commits or PR descriptions. Reports stay open until the affected
+platforms are available to external TestFlight testers.
 
-For app fixes and features, use the non-closing `Refs` form: merging a fix is not
-delivery. Keep GitHub and linked Discord reports open until the affected
-platforms are available to external TestFlight testers. Do not use GitHub's
-`Fixes`, `Closes`, or `Resolves` keywords in commits or PR descriptions for these
-reports.
-
-When the entire report is resolved, add a final commit-trailer block declaring
-the affected platforms (exactly `tvOS`, `iOS`, or `tvOS,iOS`):
+When the whole report is implemented, add one trailer per resolved issue:
 
 ```text
 Fix episode detail entry
@@ -80,268 +61,170 @@ Refs #177
 TestFlight-Issue: 177 [tvOS]
 ```
 
-Use one trailer per fully resolved issue; partial work keeps only `Refs`.
-The trailer deliberately uses a numeric issue ID without `#` and no closing
-keyword. Do not use the old `TestFlight-Fix: #...` spelling: GitHub interprets
-that as an immediate closing reference even though it is inside a trailer.
-`iOS` includes iPhone and iPad. The hosted watcher records an `awaiting release`
-status and, after verifying tagged source and external TestFlight availability,
-publishes build-specific comments and closes both reports. It does not infer
-resolution from commit subjects or ask an LLM. A reopened issue requires a new
-fixing-commit declaration. See [delivery-gated issue resolution](../docs/discord-bridge.md#delivery-gated-issue-resolution)
-for activation, retries, and limitations. Non-app work that does not ship through
-TestFlight remains a maintainer-managed closure.
+Allowed platform values are exactly `tvOS`, `iOS`, or `tvOS,iOS`; `iOS` includes
+iPhone and iPad. Partial fixes use only `Refs`. A reopened issue needs a new
+fixing-commit declaration. Never use the old `TestFlight-Fix: #...` spelling:
+GitHub treats it as an immediate closing reference.
+
+The delivery watcher verifies tagged source and external availability before
+posting build-specific comments and closing GitHub and linked Discord reports.
+See [delivery-gated issue resolution](../docs/discord-bridge.md#delivery-gated-issue-resolution)
+for activation and recovery. Non-app issue closure remains maintainer-managed.
 
 ## Building & running
 
 ### Requirements
 
-- macOS with the Xcode/SDK configuration supported by [CI](workflows/ci.yml)
-  (currently Xcode 27 on the `xcode-27` runner image, matching the pinned playback
-  engine's toolchain requirement). The app deployment targets remain iOS 18.0
-  and tvOS 18.0.
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
+- macOS and the Xcode/SDK configuration used by [CI](workflows/ci.yml):
+  currently Xcode 27 on the `xcode-27` runner image. The pinned playback engine
+  requires this toolchain; app deployment targets are iOS/tvOS 18.0.
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`.
 
 ### Generate the project and run
 
-The Xcode project is generated, not committed. Use the wrapper rather than
-calling `xcodegen` directly — it also stamps the version and build number:
-
 ```bash
 tools/generate-project.sh
-tools/with-apple-build-lease.sh plozz/disc-runtime -- python3 tools/build-disc-runtime.py --sdk appletvsimulator
 open Plozz.xcodeproj
-# Select the "Plozz" scheme (or "PlozziOS") and a simulator, then Run.
 ```
 
-The bundled disc interpreter must match the destination SDK. Use `appletvos`
-for a TV device build, `iphoneos` for mobile devices, or `iphonesimulator` for a
-mobile simulator. Rebuild when the embed phase reports an outdated receipt.
-See [disc navigation](../docs/playback-engines.md#original-disc-navigation)
-for runtime limits and distribution caveats.
+Choose **Plozz** for tvOS or **PlozziOS** for iOS/iPadOS, select an installed
+simulator, and Run. `project.yml` and `Package.swift` are the source of truth;
+use the generation wrapper, not bare XcodeGen, and do not commit the generated
+project. Regenerate after adding, removing, or renaming source files.
+
+**Normal builds do not need a separate Java disc runtime.** Experimental local
+Debug builds have a separate opt-in procedure in
+[disc navigation](../docs/playback-engines.md#native-only-distribution-and-experimental-local-builds);
+they are not for TestFlight distribution.
+
+Optional integration credentials belong in the gitignored
+`Config/Secrets.local.xcconfig`; [committed defaults](../Config/Secrets.xcconfig)
+describe the keys. Missing registrations disable those integrations, not the
+basic build. Never commit credentials or signing material.
 
 ### Build and deploy to a device
 
-```bash
-tools/deploy-tv.sh --build-only   # compile, don't install
-tools/deploy-tv.sh                # build, install, launch on an Apple TV
-tools/deploy-ios.sh --ipad        # iPad
-```
+Configure your own signing team and provisioning in Xcode and choose your paired
+device. The deployment scripts are maintainer-oriented: inspect their `--help`
+and override device identifiers rather than using their machine-specific defaults
+(`PLOZZ_TV_ID`, `PLOZZ_IPHONE_CORE_ID`, `PLOZZ_IPAD_CORE_ID`).
 
-Device deployment builds use the Debug configuration with Swift optimization
-enabled (`-O`), including package dependencies. This retains diagnostics without
-making hot media-processing loops run at unoptimized debugger speed. Pass
-`--unoptimized` when stepping through code or inspecting locals is more important
-than playback performance. The tvOS `--sim-build` compile-check path remains
-unoptimized.
+`--build-only` compiles without installation; `--iphone` and `--ipad` select mobile
+targets. Device builds use optimized Debug (`-O`); use `--unoptimized` for
+debugger-oriented builds. The tvOS `--sim-build` path remains unoptimized.
 
-To install a branch's build **alongside** the canonical app rather than
-replacing it, add `--branded`:
-
-```bash
-tools/deploy-tv.sh  --branded
-tools/deploy-ios.sh --ipad --branded
-```
-
-That installs `com.thatcube.Plozz.<branch-slug>` as a separate app. It signs
-against stripped entitlements, so it has no cloud sync and won't inherit your
-servers — see [`docs/per-branch-builds.md`](../docs/per-branch-builds.md).
+`--branded` creates a separate branch app with stripped entitlements, no cloud
+sync, and fresh sign-in instead of replacing the canonical app. See
+[per-branch builds](../docs/per-branch-builds.md) for signing and isolation details.
+Build scripts use the [shared build lease](../docs/apple-maintenance-windows.md);
+do not clear shared caches or disrupt another build to recover a failure.
 
 ### Unsigned self-build IPAs
-
-With the same Xcode and XcodeGen requirements as above:
 
 ```bash
 tools/build-unsigned-ipa.sh ios   # iPhone and iPad
 tools/build-unsigned-ipa.sh tvos  # Apple TV
 ```
 
-The script builds tracked working-tree files in an isolated snapshot; stage new
-source files first. It leaves the checkout's generated project, plists, and
-private configuration untouched. Each invocation retains its source, logs, build
-products, unsigned IPA, and a checksum/provenance receipt under
-`.build/unsigned-ipa/<platform>/run-*`. It never installs, signs, uploads, or
-creates a release. Builds in the same checkout run serially.
+These commands snapshot tracked working-tree files; stage new source files first.
+They retain the source, logs, products, IPA, and provenance receipt under
+`.build/unsigned-ipa/<platform>/run-*` without changing the checkout's project,
+plists, or private configuration. They do not sign, install, upload, or release.
 
-For hosted builds, enable Actions in your fork and manually run **Unsigned IPA**
-(the workflow must be present on the fork's default branch to appear in Actions).
-Select iOS, tvOS, or both, and an available macOS runner label with Xcode 27 or
-later selected. The default `xcode-27` matches this repository's CI; it is not
-guaranteed to be available to every fork. Configure a suitable runner or use the
-local commands if your account has no compatible hosted image. No signing or
-App Store Connect secrets are required. Download the IPA and receipt from the
-completed run's artifacts (retained for seven days).
+Alternatively, enable Actions in your fork and run [Unsigned IPA](workflows/unsigned-ipa.yml)
+from its default branch. Select an available macOS runner with Xcode 27 or later;
+the default `xcode-27` image is not available to every fork. No signing or App Store
+Connect secrets are required. Artifacts are retained for seven days.
 
-**An unsigned IPA is not directly installable.** Sign the app, embedded frameworks,
-and tvOS Top Shelf extension with your own compatible identity/provisioning before
-installing; your signing tool and Apple account determine device availability,
-expiration, and identifier changes. The artifact uses `com.thatcube.Plozz.selfbuild`
-and the display name **Plozz Self-build**, separate from the official app.
+**Unsigned IPAs are not directly installable.** Sign the app, embedded frameworks,
+and tvOS Top Shelf extension with compatible provisioning. Device availability and
+expiration depend on your signing tool and Apple account. The separate app is
+**Plozz Self-build** (`com.thatcube.Plozz.selfbuild`).
 
-These builds intentionally omit private metadata/OAuth registrations and the
-crash-reporting endpoint; integrations requiring them are unavailable. Provider
-artwork and keyless enrichment remain. They use the existing stripped-entitlement
-configuration: no iCloud sync, push, associated domains, shared Top Shelf data,
-or tvOS household-keychain entitlement. Expect fresh sign-in and local settings,
-not shared official-app data. They retain the normal playback configuration and
-license notices; unsigned packaging is not licensing or patent clearance.
+Self-builds omit private metadata/OAuth registrations and crash reporting, and
+disable iCloud sync, push, associated domains, shared Top Shelf data, and tvOS
+household-keychain access. Provider artwork and keyless enrichment remain;
+expect fresh sign-in and local settings. Playback configuration and license
+notices remain intact; unsigned packaging is not licensing or patent clearance.
 
 ### Tests
 
+Choose checks for the changed behavior, not an automatic full sweep:
+
 ```bash
-tools/run-tests.sh [SchemeName]
+tools/run-tests.sh CoreModelsTests ProviderPlexTests  # selected package suites
+tools/run-focus-tests.sh -only-testing:PlozzFocusTests/DetailPrimaryFocusHostedTests
 ```
 
-Tests run on a tvOS Simulator. Use the repository's Apple-platform test runners,
-not desktop `swift test`: the package depends on platform frameworks and UIKit.
-See the [testing policy](../docs/testing-policy.md) for affected-suite selection,
-separate app-hosted coverage, and evidence reuse.
+The package runner takes test target names; omitting them runs its full matrix.
+Both examples target tvOS simulators. iOS presentation coverage is separate;
+see the [testing policy](../docs/testing-policy.md) for runners, selection, and
+evidence reuse. Do not use desktop `swift test` for this Apple-platform package.
+Report failures, skips, and untested platforms explicitly.
 
 ### Screenshots
 
-Plozz photographs itself by driving a Simulator; there's no capture card and no
-device to keep plugged in. The marketing and App Store shots, and the ones
-embedded in the README, all come from that pipeline:
-
-```bash
-tools/capture-shots.sh            # Apple TV -> build/shots/
-tools/readme-shots.sh             # web-sized README images
-```
-
-The full explanation, including the traps, is in
-[`docs/screenshots.md`](../docs/screenshots.md).
+See [screenshots](../docs/screenshots.md) for simulator fixtures and capture commands,
+including `tools/capture-shots.sh` and `tools/readme-shots.sh`.
 
 ### Performance debugging
 
-If the app feels laggy, or you see blank artwork or memory crashes on device,
-[`docs/performance-debugging.md`](../docs/performance-debugging.md) is an on-device
-playbook using the watchdog and Instruments (`xctrace`).
+Use the [performance lab](../docs/performance-lab.md) for reproducible simulator
+measurements and [performance debugging](../docs/performance-debugging.md) for
+device profiling. Compare equivalent workloads; test duration alone is not an
+app-performance measurement.
 
 ### Localization
 
-All UI copy is served from one app-owned String Catalog. Adding a string means
-writing it in Swift, running `tools/l10n-sync.py`, and committing both. The
-rules — and the traps — are in [`docs/localization.md`](../docs/localization.md).
-
-Plozz ships complete UI and permission-prompt catalogs for **36 languages**,
-including Arabic/Hebrew RTL layouts and full Slavic plural forms. How
-translations are produced, reviewed, structurally gated, and corrected is in
-[`docs/translations.md`](../docs/translations.md).
+Finalize UI and source wording with the maintainer before translation work.
+Shared UI strings live in the app-owned catalog, not per-module catalogs.
+Follow [source-string rules](../docs/localization.md) and the
+[reviewed translation pipeline](../docs/translations.md) for extraction,
+permission prompts, independent review, import, and source-snapshot updates.
+Do not hand-edit translations or advance the snapshot before checks finish.
 
 ### Releasing to TestFlight
 
-Distribution is automated with fastlane (App Store Connect API key auth). Drop a
-gitignored `.env.fastlane` with `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_KEY_PATH`
-(see `.env.fastlane.example`), then:
+Distribution requires explicit authorization and approved notes for the exact
+candidate. [Release identity and delivery](../docs/release-versioning.md) owns
+version/build selection, fastlane commands, and partial-upload recovery.
+Local credentials use the gitignored `.env.fastlane` described by
+[`.env.fastlane.example`](../.env.fastlane.example).
 
-```bash
-PLOZZ_RELEASE_ID=release/NNN fastlane beta --env fastlane
-fastlane build --env fastlane   # archive a signed .ipa locally, no upload
-PLOZZ_RELEASE_ID=release/NNN fastlane release --env fastlane
-```
-
-**Versioning:** [release identity and delivery](../docs/release-versioning.md)
-defines the public date, the separate Apple marketing version, and the selected
-build number (including dotted hotfix builds). The committed
-`App/Resources/ReleaseNotes.json` entry owns that identity. Obtain approval for
-the exact rendered platform notes and candidate before running a distribution
-lane.
-
-**Package resolution:** Fastlane's supported `build_app` options carry the same
-package paths and locked-version policy through dependency resolution, build
-settings, and archive. Do not duplicate package flags in `xcargs` or bypass
-resolution. `PLOZZ_FASTLANE_CLONED_SOURCE_PACKAGES` overrides the package workspace
-**root**; each invocation and platform gets a private child directory. The
-download cache remains shared (`PLOZZ_PACKAGE_CACHE_PATH`, defaulting to the
-standard SwiftPM cache). The lane preserves the host's git configuration and
-appends `safe.bareRepository=all`.
-
-**TestFlight concurrency:** both signed archives finish and both exported IPAs
-pass version/build/platform checks before either upload starts. Two isolated Ruby
-processes then upload, wait for Apple processing, set their platform-specific
-notes, and submit to **Plozz External**, with notifications enabled. No previous
-builds are expired or rejected. Successful submission is not approval: the final
-report includes Apple's observed internal/external state, which may still be
-`WAITING_FOR_BETA_REVIEW`. The App Store `release` uploads remain serial.
-
-The enclosing shared release lease stays held through both workers, descendant
-cleanup, and tagging. Workers inherit its descriptors and receive the current
-API key only through anonymous pipes. Each worker uses Fastlane's normal
-altool/Java transporter rather than the shell transporter's shared key directory.
-Results and separate platform logs remain under `.build/testflight-uploads/`.
-
-**Partial failure or cancellation:** both workers are reaped; a platform failure
-does not stop the other platform's processing. Cancellation terminates both owned
-process groups, with a bounded grace period before forced termination. No tag or
-GitHub release is created unless both workers succeed. Preserve the signed IPAs,
-logs, and `summary.json`; inspect the exact platform/version/build in App Store
-Connect before recovery. An interrupted upload may already have reached Apple.
-Do not blindly rerun `beta`, increment the build, rebuild, or retry an upload.
-There is no automatic retry or distribution-only lane.
-Known validation failures report fixed safe codes (`external_group_missing`,
-`uploaded_build_mismatch`); invalid worker output reports `invalid_worker_result`.
-Arbitrary exception messages and credentials are not copied into the summary.
-
-App icons, in-app logos, and tvOS **Brand Assets** are generated from
-`App/Resources/Assets.xcassets/PlozzLogo.imageset/plozz_logo.svg` with
-`python3 tools/generate_brand_assets.py`. The tvOS App Store and Top Shelf
-assets live under `App/Resources/Assets.xcassets/…brandassets`.
+A main merge is not a release, and an upload is not external tester availability.
+Preserve release evidence and inspect both platforms before retrying an
+interrupted distribution.
 
 ## Architecture
 
-For proposed, incremental maintainability and performance work, see the
-[architecture roadmap](../docs/architecture-roadmap.md).
+The [Swift package](../Package.swift) supplies shared libraries and platform UI
+to thin XcodeGen app targets. Start with the relevant module or guide:
 
-Plozz is a Swift Package with one library per concern, consumed by thin app
-targets generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen).
-
-| Module | Responsibility |
+| Area | Owners |
 | --- | --- |
-| [`CoreModels`](../Sources/CoreModels/README.md) | Domain models, `AppError`, `LoadState`, caption settings, and the **`MediaProvider`** protocol (the provider abstraction). |
-| [`CoreNetworking`](../Sources/CoreNetworking/README.md) | `HTTPClient`, `Endpoint`, URL normalization, and a secret-safe logger (`PlozzLog`). |
-| [`CoreUI`](../Sources/CoreUI/README.md) | Shared focusable components, theme, image cache, content-state views. |
-| [`ProviderJellyfin`](../Sources/ProviderJellyfin/README.md) | Shared Jellyfin/Emby MediaBrowser client, DTOs, compatibility shims, device profile, and `MediaProvider` implementation. |
-| [`ProviderPlex`](../Sources/ProviderPlex/README.md) | Plex client, DTOs, PIN/auth, connection resolver/selector, and a `MediaProvider` implementation. |
-| [`ProviderTrailers`](../Sources/ProviderTrailers/README.md) | Synthetic `MediaProvider` for online (YouTube) trailers, with stream extraction via YouTubeKit. |
-| [`MetadataKit`](../Sources/MetadataKit/README.md) | Keyless-first artwork & metadata enrichment (AniList, Kitsu, TVmaze, Deezer, MusicBrainz/CAA, Wikidata/Wikipedia) routed by content type with a persistent on-disk cache. Bundled TheTVDB tier + optional maintainer-hosted TMDb tier. |
-| [`RatingsService`](../Sources/RatingsService/README.md) | External ratings enrichment (OMDb optional key, keyless AniList) with on-disk cache. |
-| [`TraktService`](../Sources/TraktService/README.md) | Optional Trakt OAuth, scrobbling, and watched/sync helpers. |
-| [`TopShelfKit`](../Sources/TopShelfKit/README.md) | Domain-to-snapshot mapping for the Top Shelf extension; writes to the shared App Group container. |
-| [`FeatureDiscovery`](../Sources/FeatureDiscovery/README.md) | LAN (UDP) discovery, server validation, server-picker UI, last-server persistence. |
-| [`FeatureAuth`](../Sources/FeatureAuth/README.md) | Quick Connect, Plex Link, password sign-in, the explicit **session state machine**, Keychain-backed account/session stores. |
-| [`FeatureHome`](../Sources/FeatureHome/README.md) | Home rows, item detail, series/season experience, online trailer fallback. |
-| [`FeaturePlayback`](../Sources/FeaturePlayback/README.md) | `AVPlayer` view model/view, engine routing, resume reporting, caption style rules, idle-sleep handling, diagnostics overlay. |
-| [`FeatureSearch`](../Sources/FeatureSearch/README.md) | Search view & view model, deduplication, search policy. |
-| [`FeatureSettings`](../Sources/FeatureSettings/README.md) | Settings (profiles, integrations, server, caption customization, preference detail). |
-| [`FeatureProfiles`](../Sources/FeatureProfiles/README.md) | Profile picker, editor, avatar/photo capture (household "Who's watching?"). |
-| [`FeatureMusic`](../Sources/FeatureMusic/README.md) | Music browsing, mini-player, queue/now-playing, background audio. |
-| [`AppShell`](../Sources/AppShell/README.md) | App state wiring, root navigation, profile selection, provider/registry composition. |
+| Models, provider contracts, networking | [CoreModels](../Sources/CoreModels/README.md), [CoreNetworking](../Sources/CoreNetworking/README.md) |
+| Shared behavior and runtime composition | `Feature*Core` modules, [AppRuntime](../Sources/AppRuntime), [state management](../docs/state-management.md) |
+| Platform UI and shared components | [AppShell](../Sources/AppShell/README.md) (TV), [AppShelliOS](../Sources/AppShelliOS), [CoreUI](../Sources/CoreUI/README.md) |
+| Providers | [Jellyfin/Emby](../Sources/ProviderJellyfin/README.md), [Plex](../Sources/ProviderPlex/README.md), [Silo](../Sources/ProviderSilo/README.md), [Subsonic](../Sources/ProviderSubsonic/README.md), [shares](../Sources/ProviderShare) |
+| Home, playback, music, Live TV | [FeatureHome](../Sources/FeatureHome/README.md), [FeaturePlayback](../Sources/FeaturePlayback/README.md), [FeatureMusic](../Sources/FeatureMusic/README.md), [FeatureLiveTV](../Sources/FeatureLiveTV) |
+| Discovery, accounts, profiles | [FeatureDiscovery](../Sources/FeatureDiscovery/README.md), [FeatureAuth](../Sources/FeatureAuth/README.md), [FeatureProfiles](../Sources/FeatureProfiles/README.md) |
+| Search and settings | [FeatureSearch](../Sources/FeatureSearch/README.md), [FeatureSettings](../Sources/FeatureSettings/README.md) |
+| Metadata, ratings, tracking | [MetadataKit](../Sources/MetadataKit/README.md), [RatingsService](../Sources/RatingsService/README.md), [TraktService](../Sources/TraktService/README.md), [WetrakrService](../Sources/WetrakrService/README.md), [CoreTrackerAuth](../Sources/CoreTrackerAuth/README.md) |
+| Downloads and Top Shelf | [MediaDownloads](../Sources/MediaDownloads/README.md), [TopShelfKit](../Sources/TopShelfKit/README.md) |
 
-Each module's `README.md` documents its responsibility, public surface, and
-invariants. Everything above the provider layer talks to the **`MediaProvider`**
-abstraction rather than a specific backend. Jellyfin and Emby intentionally share
-one conformer so their supported features remain in lockstep.
-
-Stateful behavior that crosses views or platforms belongs in `CoreModels`, the
-relevant `Feature*Core`, or `AppRuntime`; app shells stay wiring-only. Follow the
-[state-management scaffold](../docs/state-management.md) for policies,
-coordinators, surface registration, and deterministic harnesses. Follow the
-[Swift/SwiftUI guidelines](../docs/swiftui-guidelines.md) for language and view
-conventions.
+Keep cross-view/platform state in core or runtime modules, not app shells.
+See the [architecture roadmap](../docs/architecture-roadmap.md) for proposed work.
 
 ## The dual-provider invariant
 
-Plozz treats **Jellyfin and Plex as co-equal, first-class backends**. Any
-contribution that touches data, playback, auth, metadata, search, or navigation
-must work for **both** — neither is a "phase 2" afterthought. Everything above
-the provider layer talks to the `MediaProvider` protocol rather than a specific
-backend; see [Architecture](#architecture). If a change can only work
-for one backend, call that out explicitly in the issue/PR.
+**Jellyfin and Plex are co-equal backends.** Changes to data, playback, auth,
+metadata, search, or navigation must account for both while preserving other
+supported providers. Use `MediaProvider` above the provider layer; disclose
+intentional capability differences. Jellyfin and Emby share a provider
+implementation; Subsonic support is music-only and currently development/TestFlight-only.
 
 ## Coding norms
 
-Keep changes focused and match the surrounding style. Follow the
-[Swift/SwiftUI guidelines](../docs/swiftui-guidelines.md).
-
-Open an issue if you're unsure whether something's a good fit before investing a
-lot of time.
+Follow the [Swift/SwiftUI guidelines](../docs/swiftui-guidelines.md) and existing
+module ownership. Keep changes focused, add relevant regression coverage, and
+update the documentation that owns the changed behavior.

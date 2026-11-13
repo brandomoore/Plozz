@@ -151,6 +151,7 @@ private struct NavigationRailShellContent<Content: View>: View {
                     \.plozzNavigationContentInset,
                     presentation.contentInset
                 )
+                .environment(\.plozzNavigationRootContentInset, NavigationRailMetrics.contentInset)
                 .environment(\.plozzPinnedSidebarActive, true)
                 .environment(\.plozzPinnedSidebarInteraction, pinnedSidebarInteraction)
                 .environment(\.plozzTopNavigationScroll, contentDestination == .home ? homeScroll : nil)

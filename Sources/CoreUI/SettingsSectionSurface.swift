@@ -114,6 +114,7 @@ public struct SettingsInputRow<Input: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)
             }
+            .settingsFormRowLayout()
         } else {
             stackedInput
         }
@@ -249,7 +250,15 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
     }
 
     public var body: some View {
+        #if os(tvOS)
+        let cornerRadius = SettingsFormMetrics.groupCornerRadius
+        let horizontalInset = SettingsFormMetrics.groupInset
+        let verticalInset = SettingsFormMetrics.groupInset
+        #else
         let cornerRadius: CGFloat = 18
+        let horizontalInset: CGFloat = 16
+        let verticalInset: CGFloat = 12
+        #endif
         VStack(alignment: .leading, spacing: 4) {
             if title != nil || accessory != nil {
                 HStack(alignment: .firstTextBaseline) {
@@ -273,8 +282,8 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                     ForEach(subviews) { subview in
                         subview
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, subview.containerValues.settingsActionOwnsInsets ? 0 : 16)
-                            .padding(.vertical, subview.containerValues.settingsActionOwnsInsets ? 0 : 12)
+                            .padding(.horizontal, subview.containerValues.settingsActionOwnsInsets ? 0 : horizontalInset)
+                            .padding(.vertical, subview.containerValues.settingsActionOwnsInsets ? 0 : verticalInset)
                             .contentShape(Rectangle())
                             #if os(iOS)
                             .modifier(SettingsSearchRowHighlight(
@@ -287,7 +296,7 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                             Rectangle()
                                 .fill(palette.separator)
                                 .frame(height: 1)
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, horizontalInset)
                         }
                     }
                 }
@@ -296,11 +305,13 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
             // Subviews resolve their environment before the per-row modifiers are applied.
             .environment(\.settingsSearchRowOwnsHighlight, true)
             #endif
-            .buttonStyle(SettingsSectionButtonStyle())
             .labelStyle(SettingsIconLabelStyle())
             #if os(tvOS)
+            .buttonStyle(SettingsFormButtonStyle())
             .toggleStyle(SettingsSwitchToggleStyle(flushLeading: false))
+            .environment(\.settingsFormRowsFlushLeading, false)
             #else
+            .buttonStyle(SettingsSectionButtonStyle())
             .toggleStyle(SettingsSwitchToggleStyle())
             // A group is one List cell. Automatic pickers can claim the whole
             // cell's primary action, stealing taps from sibling controls.

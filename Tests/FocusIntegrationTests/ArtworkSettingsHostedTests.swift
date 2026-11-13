@@ -109,14 +109,24 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 .frame(width: SettingsFormMetrics.pageWidth)
             ) { window in
                 let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                let cards = try self.focusItems(in: window).map {
+                    try self.nativeFrame($0, in: window)
+                }.filter { $0.height > 150 && $0.width < SettingsFormMetrics.pageWidth / 2 }
+                    .sorted { $0.minX < $1.minX }
+                XCTAssertEqual(cards.count, MusicPlayerAppearance.pickerOrder.count)
                 var previous: CGRect?
-                for option in MusicPlayerAppearance.pickerOrder {
+                for (option, card) in zip(MusicPlayerAppearance.pickerOrder, cards) {
+                    XCTAssertTrue(window.bounds.contains(card), "Every player choice must fit")
                     let parts = option == .matchTheme ? ["Match App", "Theme"] : [String(localized: option.displayName)]
                     var frame = CGRect.null
                     for part in parts {
-                        frame = frame.union(try XCTUnwrap(self.collectionLabelFrames(
-                            in: window, matchingText: part
-                        ).first).frame)
+                        let labels = try self.collectionLabelFrames(
+                            in: window, attachmentName: "music-search-\(target)-\(option.rawValue)-\(part)",
+                            matchingText: part, scale: 2, region: card
+                        )
+                        frame = frame.union(try XCTUnwrap(
+                            labels.first, "\(target): missing \(part) in \(option)"
+                        ).frame)
                     }
                     XCTAssertTrue(window.bounds.contains(frame), "Every player choice must fit")
                     if let previous { XCTAssertLessThan(previous.maxX, frame.minX) }
@@ -124,8 +134,15 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 }
                 let title = target == "music-style" ? "Dark" : "Show album, quality & lyrics source"
                 let label = try XCTUnwrap(self.collectionLabelFrames(in: window, matchingText: title).first)
+                let center = CGPoint(x: label.frame.midX, y: label.frame.midY)
+                let deadline = ContinuousClock.now + .seconds(3)
+                while ContinuousClock.now < deadline {
+                    if let focused = system.focusedItem,
+                       try self.nativeFrame(focused, in: window).contains(center) { break }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
                 let focused = try self.nativeFocusedFrame(system, in: window)
-                XCTAssertTrue(focused.contains(CGPoint(x: label.frame.midX, y: label.frame.midY)), target)
+                XCTAssertTrue(focused.contains(center), "\(target): focused \(focused), label \(label)")
                 XCTAssertEqual(appearance, .dark)
                 XCTAssertFalse(showsDetails)
             }
@@ -386,8 +403,11 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             ) { window in
                 var text = try await self.capture(window, name: "card-labels-\(scope)", includeMaster: true)
                 let page = try XCTUnwrap(scope.pages.first)
+                let episodeDescriptionControl = page.controls.contains(.episodes)
+                    && cards.captions.showsLabels(in: .episodes) ? 1 : 0
                 XCTAssertEqual(self.focusItems(in: window).count,
-                               page.controls.count + 1 + (scope.pages.count > 1 ? 1 : 0))
+                               page.controls.count + 1 + (scope.pages.count > 1 ? 1 : 0)
+                                   + episodeDescriptionControl)
                 XCTAssertTrue(text.contains(scope == .home ? "Card labels" : "Customize labels"), text)
                 XCTAssertTrue(text.contains(String(localized: page.title)), text)
                 XCTAssertEqual(text.contains("Overrides"), page.hasOverrides, text)
@@ -889,7 +909,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             }
             .padding(40)
             .frame(width: 1100)) { window in
-                let text = try await self.capture(window, name: "settings-scale-\(title)", includeMaster: true)
+                let text = try await self.capture(window, name: "settings-scale-\(title)", includeMaster: true, scale: 2)
                 XCTAssertTrue(text.contains(title), text)
                 XCTAssertTrue(text.contains("LIQUID GLASS"), text)
                 XCTAssertTrue(text.contains("tvOS Default"), text)
@@ -937,6 +957,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         models.heroSettingsModel.settings.autoAdvance = false
         models.heroSettingsModel.settings.showsRatings = false
         models.heroBackgroundModel.settings.homeTrailerEnabled = false
+        models.heroBackgroundModel.settings.detailMode = .off
         let navigation = SettingsDetailNavigation()
         try await withScreen(content: SettingsDetailPages(navigation: navigation) {
             ScrollView {
@@ -952,6 +973,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         }
         .frame(width: 1100)
         .environment(models.heroSettingsModel)
+        .environment(models.themeMusicModel)
         .environment(models.heroBackgroundModel)) { window in
             let root = try await self.capture(window, name: "hero-inline-titles", includeMaster: true)
             for title in ["Content sources", "Items to show", "Advance automatically"] {
@@ -1005,7 +1027,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 navigation.push(pageID: page.rawValue, animated: false)
                 let shown = try await self.capture(window, name: "hero-\(page.rawValue)", includeMaster: true)
                 let expected = page == .titles ? "Continue Watching"
-                    : page == .ratings ? "Show ratings" : "Play trailers"
+                    : page == .ratings ? "Show ratings" : "Home autoplay"
                 XCTAssertTrue(shown.contains(expected), shown)
                 if page == .titles {
                     XCTAssertTrue(shown.contains("Content sources"), shown)
@@ -1030,6 +1052,20 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 while (navigation.awaitingFocus || system.focusedItem == nil),
                       ContinuousClock.now < returnDeadline {
                     try await Task.sleep(for: .milliseconds(20))
+                }
+                if navigation.awaitingFocus || system.focusedItem == nil {
+                    let candidates = self.focusItems(in: window).map {
+                        "\(type(of: $0)): \((try? self.nativeFrame($0, in: window)).map(String.init(describing:)) ?? "missing")"
+                    }
+                    let attachment = XCTAttachment(string:
+                        "page=\(page.rawValue) returnGeneration=\(navigation.returnFocusGeneration) "
+                            + "presented=\(navigation.isPresented) awaitingFocus=\(navigation.awaitingFocus) "
+                            + "keyWindow=\(window.isKeyWindow) focused=\(String(describing: system.focusedItem))\n"
+                            + candidates.joined(separator: "\n")
+                    )
+                    attachment.name = "hero-return-focus-\(page.rawValue)"
+                    attachment.lifetime = .keepAlways
+                    self.add(attachment)
                 }
                 XCTAssertFalse(navigation.awaitingFocus, "Wait for native return focus before blocking on OCR.")
                 let returned = try await self.capture(window, name: "hero-return-\(page.rawValue)", includeMaster: true)
@@ -1078,6 +1114,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         .frame(width: 1100)
         .environment(parent)
         .environment(models.heroSettingsModel)
+        .environment(models.themeMusicModel)
         .environment(models.heroBackgroundModel)) { window in
             _ = try await self.capture(window, name: "hero-grouped-title-sources", includeMaster: true)
             let sourceLabels = try self.collectionLabelFrames(in: window, attachmentName: "hero-source-label-metrics")
@@ -1166,6 +1203,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         }
         .frame(width: 1100)
         .environment(models.heroSettingsModel)
+        .environment(models.themeMusicModel)
         .environment(models.heroBackgroundModel)) { window in
             let adult = try await self.capture(window, name: "hero-discovery-providers", includeMaster: true)
             XCTAssertTrue(adult.contains("Show provider labels"), adult)
@@ -1181,6 +1219,10 @@ final class ArtworkSettingsHostedTests: XCTestCase {
     }
 
     func testEmptyHeroPagesEnterTheirSingleBackControl() async throws {
+        let suite = "HeroEmptyHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let music = ThemeMusicSettingsModel(store: ThemeMusicSettingsStore(defaults: defaults))
         let hero = HeroSettingsModel(store: InMemoryHeroSettingsStore())
         hero.setDiscoveryPolicy { false }
         let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
@@ -1194,6 +1236,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             }
                 .frame(width: 1100)
                 .environment(hero)
+                .environment(music)
                 .environment(background)) { window in
                 _ = try await self.capture(window, name: "hero-empty-\(page.rawValue)", includeMaster: true)
                 let back = try self.backButton(beside: String(localized: page.title), in: window)
@@ -1480,10 +1523,11 @@ final class ArtworkSettingsHostedTests: XCTestCase {
     }
 
     private func collectionLabelFrames(
-        in window: UIWindow, attachmentName: String? = nil, matchingText: String? = nil
+        in window: UIWindow, attachmentName: String? = nil, matchingText: String? = nil,
+        scale: CGFloat = 1, region: CGRect? = nil
     ) throws -> [(text: String, frame: CGRect)] {
         window.layoutIfNeeded()
-        let image = renderWindow(window)
+        let image = renderWindow(window, scale: scale)
         if let attachmentName {
             let attachment = XCTAttachment(image: image)
             attachment.name = attachmentName
@@ -1493,7 +1537,20 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]
+        if let region {
+            request.regionOfInterest = CGRect(
+                x: region.minX / window.bounds.width, y: 1 - region.maxY / window.bounds.height,
+                width: region.width / window.bounds.width, height: region.height / window.bounds.height
+            )
+        }
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        if let attachmentName {
+            let recognized = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            let attachment = XCTAttachment(string: recognized.joined(separator: "\n"))
+            attachment.name = "\(attachmentName)-recognized-text"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         return try (request.results ?? []).compactMap { result in
             guard let candidate = result.topCandidates(1).first else { return nil }
             let text = candidate.string
@@ -1505,9 +1562,11 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             } else {
                 bounds = result.boundingBox
             }
+            let coordinateBounds = region ?? window.bounds
             return (text, CGRect(
-                x: bounds.minX * window.bounds.width, y: (1 - bounds.maxY) * window.bounds.height,
-                width: bounds.width * window.bounds.width, height: bounds.height * window.bounds.height
+                x: coordinateBounds.minX + bounds.minX * coordinateBounds.width,
+                y: coordinateBounds.minY + (1 - bounds.maxY) * coordinateBounds.height,
+                width: bounds.width * coordinateBounds.width, height: bounds.height * coordinateBounds.height
             ))
         }
     }
@@ -2236,9 +2295,9 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         try await inspect(window)
     }
 
-    private func renderWindow(_ window: UIWindow) -> UIImage {
+    private func renderWindow(_ window: UIWindow, scale: CGFloat = 1) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
+        format.scale = scale
         format.opaque = true
         format.preferredRange = .standard
         return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { context in
@@ -2248,10 +2307,12 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         }
     }
 
-    private func capture(_ window: UIWindow, name: String, includeMaster: Bool = false) async throws -> String {
+    private func capture(
+        _ window: UIWindow, name: String, includeMaster: Bool = false, scale: CGFloat = 1
+    ) async throws -> String {
         try await Task.sleep(for: .milliseconds(250))
         try await waitForHostedLayout(window)
-        let image = renderWindow(window)
+        let image = renderWindow(window, scale: scale)
         let attachment = XCTAttachment(image: image)
         attachment.name = name
         attachment.lifetime = .keepAlways

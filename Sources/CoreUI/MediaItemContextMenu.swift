@@ -408,6 +408,22 @@ final class NativeMediaItemMenuCoordinator: NSObject, UIContextMenuInteractionDe
     private var presentationRevision = 0
     var onPresentationChanged: ((Bool) -> Void)?
 
+    func dismantle() {
+        generation += 1
+        presentationRevision += 1
+        // SwiftUI is invalidating the owning graph; callbacks must not write its State.
+        configuration = nil
+        onPresentationChanged = nil
+        button = nil
+        locale = nil
+        menu = nil
+        isPresented = false
+        let interaction = self.interaction
+        self.interaction = nil
+        interaction?.dismissMenu()
+        if let interaction { interaction.view?.removeInteraction(interaction) }
+    }
+
     func update(_ configuration: NativeMediaItemMenu?, locale: Locale, button: UIButton, interactionView: UIView) {
         let siblingsMatch = (self.configuration?.context.orderedSiblings ?? []).elementsEqual(
             configuration?.context.orderedSiblings ?? []

@@ -380,7 +380,7 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
                         attachment.name = "detail-band-\(width)-\(palette)-\(gradientEnabled)-\(reduceTransparency)"
                         attachment.lifetime = .keepAlways
                         add(attachment)
-                        let revealsGradient = gradientEnabled && !reduceTransparency
+                        let revealsGradient = gradientEnabled
                         host.rootView = AnyView(
                             Group {
                                 if revealsGradient { background }

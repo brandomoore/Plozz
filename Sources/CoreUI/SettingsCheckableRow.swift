@@ -34,7 +34,7 @@ public struct SettingsCheckableRow: View {
     /// hugging the card's border. Default true (flush-left, for split panes).
     var flushLeading: Bool = true
     var size: SettingsRowSize = .standard
-    /// Matches SettingsSectionGroup insets, keeping them inside the focus target.
+    /// Owns mobile group insets; TV retains the group's clearance outside its focus target.
     var usesGroupInsets = false
     let action: () -> Void
     @Environment(\.settingsFormRowsFlushLeading) private var groupFlushLeading
@@ -80,6 +80,13 @@ public struct SettingsCheckableRow: View {
     }
     private var minRowHeight: CGFloat { SettingsRowMetrics.minHeight(prominence) }
     private var verticalPadding: CGFloat { SettingsRowMetrics.verticalPadding(prominence) }
+    private var ownsGroupInsets: Bool {
+        #if os(tvOS)
+        false
+        #else
+        usesGroupInsets
+        #endif
+    }
 
     public var body: some View {
         Button(action: action) {
@@ -110,9 +117,9 @@ public struct SettingsCheckableRow: View {
                 Spacer(minLength: rowSpacing)
                 SettingsCheckmark(isChecked: isChecked, prominence: prominence)
             }
-            .frame(minHeight: usesGroupInsets ? 44 : minRowHeight)
-            .padding(.vertical, usesGroupInsets ? 12 : verticalPadding)
-            .padding(.horizontal, usesGroupInsets ? 16 : labelInset)
+            .frame(minHeight: ownsGroupInsets ? 44 : minRowHeight)
+            .padding(.vertical, ownsGroupInsets ? 12 : verticalPadding)
+            .padding(.horizontal, ownsGroupInsets ? 16 : labelInset)
             .contentShape(Rectangle())
             .opacity(isEnabled ? 1 : 0.35)
         }
@@ -120,7 +127,7 @@ public struct SettingsCheckableRow: View {
         .disabled(!isEnabled)
         .padding(.leading, !usesGroupInsets && flushLeading && groupFlushLeading ? -labelInset : 0)
         .accessibilityAddTraits(isChecked ? .isSelected : [])
-        .containerValue(\.settingsActionOwnsInsets, usesGroupInsets)
+        .containerValue(\.settingsActionOwnsInsets, ownsGroupInsets)
     }
 }
 

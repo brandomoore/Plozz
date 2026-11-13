@@ -190,6 +190,9 @@ with that environment value; use a separate entrypoint-private package workspace
 and DerivedData for experimental builds. Normal Xcode launches without that
 environment remain native-only.
 
+Normal CI builds and hosted tests use this native-only graph as well. Their
+preparation does not build the experimental Java runtime or require its receipt.
+
 Release compilation rejects an experimental package graph, even if it was cached
 from Debug. The embed phase also rejects experimental Release, archive/install
 actions and release-channel builds. Native-only embedding does not require a
@@ -847,19 +850,25 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/55430e28df74ba11b36fea367ad22af0d685a68b)
-at commit `55430e28df74ba11b36fea367ad22af0d685a68b`, integrating upstream
-**7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
-Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/064b152d0242a722de171471b85389116775a8bf)
+at commit `064b152d0242a722de171471b85389116775a8bf`, integrating upstream
+**7.66.0** (`8e74bbb5cfde75287305c535c243c1ef9d96549c`).
+Playback diagnostics show `AetherEngine v7.66.0`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
 attributions because the upstream version does not identify Plozz's patches.
 Native audio readback and subtitle selection use bounded off-main media-selection
 reads, so an unresponsive media service does not block the UI actor. Plozz treats
 AVFoundation's media-services reset as one fresh same-engine recovery, not a
 codec failure, and retains numeric audio-session failure evidence.
-The 7.51.0 integration includes 7.50.0's 24-bit PCM spatial-bed output with
-route-selected APAC for AirPlay. The 7.53.1 update advances FFmpegBuild to
-3.11.1; LibDovi 2.1.0 and LibTrueHD 3.1.0 remain unchanged.
+The 7.66.0 integration advances FFmpegBuild to 3.15.0 and LibDovi to 2.2.0.
+It adds upstream AAC/PCE handling, PCM decoder coverage, subtitle-seek corrections
+and bounded packet-cache waits. Our authored intervals, custom-title MEL
+inspection and cancellation, and native selection-reader fixes remain intact.
+Plozz keeps Now Playing ownership; the new engine-owned publishers stay off.
+All optional package traits remain disabled, and both live and on-demand options
+explicitly disable FEL curve folding. MEL conversion and FEL/unknown HDR10
+fallback are unchanged. The native audio menu and disk-admission options retain
+their upstream opt-in defaults.
 It corrects the remote-HLS buffered frontier, uses measured producer throughput
 for short forward seeks, bounds bitmap subtitle retention after backward seeks,
 and supports HLS byte-range segments. The fork preserves AAC timing compensation,
@@ -965,8 +974,8 @@ LibDTSX **1.0.1**. Upstream 7.36.0 added another object-audio rendering path, co
 spatial speaker positions and a tvOS spatial-output activator for receivers that need it.
 It also includes live-replay recovery, software-video recovery after a screen lock,
 and the intervening 7.35.x playback fixes; these are upstream changes, not new
-Plozz-specific implementations. The current pin uses FFmpegBuild **3.11.1**
-and LibDovi **2.1.x**. LibTrueHD and LibDTSX are no longer linked in Plozz. It also includes
+Plozz-specific implementations. The current pin uses FFmpegBuild **3.15.0**
+and LibDovi **2.2.x**. LibTrueHD and LibDTSX are no longer linked in Plozz. It also includes
 single-connection spatial-audio probe safeguards and system-composited Dolby Vision
 held pictures. The fork retains the persistent HTTP body-reader isolation
 correction from its previous integration.
@@ -1104,27 +1113,31 @@ search result are removed on tvOS and iOS/iPadOS. The adapter explicitly sets
 package trait is disabled. Legacy `dolbyVisionFELEnabled` values are ignored when
 loading or transferring profile settings and omitted on the next save.
 
-Plozz selects `DolbyVisionHandling.profile7BaseLayer` for on-demand playback,
-previews and engine-demuxed live playback. Both Profile 7 MEL and FEL play their
-authored HDR10 base, without P7-to-8.1 RPU conversion or enhancement-layer
-reconstruction. The engine classifies its demuxed source, including verified
-record corrections, rather than trusting possibly missing or inaccurate provider
-metadata. Its native remux uses plain `hvc1`, strips the Dolby configuration
+Plozz selects `DolbyVisionHandling.profile7MELOnly` for on-demand playback,
+previews and engine-demuxed live playback. Confirmed HEVC Profile 7 MEL uses the
+existing P7-to-8.1 RPU conversion and native playback path. FEL and unclassified
+P7 retain their authored HDR10 base, without enhancement-layer reconstruction.
+The engine inspects a bounded number of actual source packets before output
+configuration and keeps those packets for playback; provider profile labels do
+not decide MEL versus FEL. Live P7 is not inspected and retains HDR10 fallback.
+
+For MEL conversion, the remux drops the EL, converts RPUs and signals Profile 8.1.
+For the P7 base-layer fallback, it uses plain `hvc1`, strips the Dolby configuration
 record, omits Dolby supplemental codecs, and requests base-layer display criteria.
-Source diagnostics can still identify Profile 7; output must not claim converted
-Profile 8.1. RPU/EL NALs remain unconverted and are ignored by the base-layer decoder.
+Source diagnostics can still identify P7; conversion telemetry identifies P8.1
+only when that stream is actually served. Read/input-limit failures during the
+inspection abort preparation rather than reuse an interrupted parser.
 
-This intentionally gives up Profile 7 dynamic metadata, including MEL, and FEL
-residual detail. Supported single-layer Dolby Vision profiles, ordinary audio
-paths, and native E-AC-3/JOC stream-copy remain unchanged. Software still-image
-reshaping remains disabled. Direct remote HLS handed to AVPlayer, server
-transcoding, and external players own their delivered format; this policy does not
-rewrite those streams or infer their format from original-file metadata.
+Supported single-layer Dolby Vision profiles, ordinary audio paths, and native
+E-AC-3/JOC stream-copy remain unchanged. FEL reconstruction and all optional
+height-audio/still-image reshaping components remain excluded. Direct remote HLS
+handed to AVPlayer, server transcoding, and external players own their delivered
+format; this policy does not rewrite those streams or infer their format from
+original-file metadata. No new preference or playback prompt is introduced.
 
-Removing the optional reconstruction path does not establish licensing clearance
-for every remaining video or audio feature. Avoiding P7 conversion reduces custom
-processing; it does not remove all Dolby-related code from the distributed engine
-or establish patent permission. Open-source licensing and Apple API availability
+Keeping FEL reconstruction disabled does not establish licensing clearance
+for every remaining video or audio feature. The engine still includes Dolby-related
+code, including MEL metadata conversion. Open-source licensing and Apple API availability
 are not a substitute for reviewing the actual shipped implementation and applicable
 third-party rights.
 

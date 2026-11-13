@@ -98,7 +98,8 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
             .forPlacement(.detailBackdrop)
         let key = ArtworkResolveKey.make(
             references: [], variant: .heroPreview, maxAspectRatio: 3,
-            pinIdentity: "detail:\(model.id)", providerPolicyIdentity: policy.identity
+            pinIdentity: "detail:\(model.id)", providerPolicyIdentity: policy.identity,
+            prefersLandscape: true
         )
         ArtworkSeedMemo.store(
             .init(image: preview, reference: .remote(delayed), variant: .heroPreview), for: key

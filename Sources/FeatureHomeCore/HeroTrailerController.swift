@@ -110,6 +110,7 @@ public final class HeroTrailerController {
     @ObservationIgnored private weak var homeHost: HeroTrailerVideoLayer.HostView?
     @ObservationIgnored private weak var detailHost: HeroTrailerVideoLayer.HostView?
     @ObservationIgnored private weak var featuredHost: HeroTrailerVideoLayer.HostView?
+    @ObservationIgnored private weak var fullScreenReturnHost: HeroTrailerVideoLayer.HostView?
     #endif
 
     /// Fired on the main actor when the current trailer plays through to its end,
@@ -443,6 +444,9 @@ public final class HeroTrailerController {
     /// mode-off so the single player never lingers.
     public func stop() {
         fullScreenSession = nil
+        #if canImport(UIKit)
+        fullScreenReturnHost = nil
+        #endif
         featuredOwnerID = nil
         suspendedHeroPause = nil
         guard isPlaying || currentItemID != nil else { return }
@@ -493,6 +497,9 @@ public final class HeroTrailerController {
               isClaimed(by: role, itemID: itemID), isPlaying, isReady,
               !isPlaybackSuppressed, !isFeaturedReserved else { return nil }
         let id = UUID()
+        #if canImport(UIKit)
+        fullScreenReturnHost = surfaceView.superview as? HeroTrailerVideoLayer.HostView
+        #endif
         fullScreenSession = (id, role, isMuted, false)
         activeSurfaceRole = .fullScreen
         #if canImport(UIKit)
@@ -552,6 +559,7 @@ public final class HeroTrailerController {
         surfaceView.transform = .identity
         surfaceView.playerLayer.videoGravity = .resizeAspectFill
         moveSurfaceToActiveHost()
+        fullScreenReturnHost = nil
         #endif
         let position = player.currentTime().seconds
         if duration > 0, position.isFinite, position >= duration - 0.1 {
@@ -577,13 +585,24 @@ public final class HeroTrailerController {
 
     private func moveSurfaceToActiveHost() {
         let role = fullScreenSession?.returning == true ? fullScreenSession?.role : activeSurfaceRole
-        let host: HeroTrailerVideoLayer.HostView?
+        var host: HeroTrailerVideoLayer.HostView?
         switch role {
         case .home: host = homeHost
         case .detail: host = detailHost
         case .featured: host = featuredHost
         case .fullScreen: return
         case nil: host = nil
+        }
+        // SwiftUI can re-register a transient host while fullscreen borrows the
+        // renderer. Keep the actual entry destination when it is still mounted.
+        if let returnHost = fullScreenReturnHost,
+           returnHost.window != nil, returnHost.controller === self, returnHost.role == role {
+            host = returnHost
+            switch role {
+            case .home: homeHost = returnHost
+            case .detail: detailHost = returnHost
+            default: break
+            }
         }
         // Keep the outgoing picture until the receiving host actually mounts.
         guard let host, host.window != nil, host.controller === self,

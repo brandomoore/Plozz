@@ -274,6 +274,10 @@ for a covered page, another item's theme, or a settings preview.
   layer returns to the hero before the dissolve begins. Carousel and focus
   callbacks remain suspended until dismissal completes; the hero is never
   revealed while its video surface is still in the full-screen player.
+  The session weakly remembers the actual entry host so transient SwiftUI
+  registrations cannot displace a still-mounted return destination. If that
+  host leaves the window or changes owner/role, the current registered host
+  remains the fallback; ending or stopping the session clears the reference.
   A pending or failed Home trailer keeps the normal artwork dwell, not the
   advertised trailer duration. Preparation is bounded to eight seconds and
   abandoned when its item is replaced. Only ready playback extends the timeline;

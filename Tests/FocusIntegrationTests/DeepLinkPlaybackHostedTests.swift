@@ -94,6 +94,7 @@ final class DeepLinkPlaybackHostedTests: XCTestCase {
         XCTAssertNil(host.probe.playRequest)
         XCTAssertEqual(host.probe.resumePrompt?.id, "resume")
         XCTAssertEqual(host.probe.opened, ["first"])
+        try await waitUntil { host.probe.engines[0].status == .idle }
         XCTAssertEqual(host.probe.engines[0].status, .idle)
     }
 

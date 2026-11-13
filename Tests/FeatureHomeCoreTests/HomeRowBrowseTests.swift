@@ -346,10 +346,10 @@ final class HomeRowBrowseTests: XCTestCase {
         let choice = try XCTUnwrap(shared.first { $0.id == .global(.recentlyAdded) })
         let section = LibrarySection(id: "shelf", title: "Shelf", items: items(20), hasMore: true)
         for (loading, failure): (Bool, AppError?) in [(true, nil), (false, .serverUnreachable)] {
-            let row = HomePresentationRow(
+            let retained = HomePresentationRow(
                 choice: choice, source: .library(.init(section: section, isLoading: loading, failure: failure))
             )
-            XCTAssertTrue(row.canBrowse, "Cached cards remain usable while their source refreshes or fails.")
+            XCTAssertTrue(retained.canBrowse, "Cached cards remain usable while their source refreshes or fails.")
             let empty = LibrarySection(id: "shelf", title: "Shelf", items: [], hasMore: true)
             XCTAssertFalse(HomePresentationRow(
                 choice: choice, source: .library(.init(section: empty, isLoading: loading, failure: failure))

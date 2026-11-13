@@ -484,6 +484,11 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         XCTAssertLessThan(blurred[0], 230)
         XCTAssertEqual(cell.accessibilityLabel, "Episode 4")
         item.resumePosition = 30
+        XCTAssertFalse(item.hasVisiblePlaybackProgress)
+        XCTAssertTrue(hidden.shouldHideThumbnail(for: item))
+        item.resumePosition = 60
+        XCTAssertTrue(item.hasVisiblePlaybackProgress)
+        XCTAssertFalse(hidden.shouldHideThumbnail(for: item))
         let visible = try artworkPixel(configuredArtwork(cell, item: item, spoilers: hidden), x: 0.47)
         XCTAssertGreaterThan(visible[0], 240)
         XCTAssertLessThan(visible[2], 10)
@@ -1318,6 +1323,8 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
                 Focus animations: \(String(describing: coordinator?.focusAnimations))
                 Scroll offset: \(String(describing: scroll?.contentOffset))
                 Cells: \(nativePosters(in: window).map { "\($0.accessibilityLabel ?? "nil"): focusable=\($0.canBecomeFocused), focused=\($0.isFocused)" })
+                Focus events:
+                \(model.focusEvents.joined(separator: "\n"))
                 """)
             state.name = "Episode panel focus state"
             state.lifetime = .keepAlways
@@ -1406,6 +1413,7 @@ private enum EpisodeArtworkFixtureError: Error { case focusTimeout }
 
 @MainActor @Observable
 private final class EpisodeArtworkFixtureModel {
+    @ObservationIgnored private(set) var focusEvents: [String] = []
     var target: PlayerEpisodeEntry.ID?
     var focusRequestID = UUID()
     var appliedFocusRequestID: UUID?
@@ -1414,6 +1422,11 @@ private final class EpisodeArtworkFixtureModel {
     var source: PlayerSequencePanel.Source = .episodes
     var panelAppearances = 0
     var panelDisappearances = 0
+
+    func recordFocus(_ event: String) {
+        if focusEvents.count == 64 { focusEvents.removeFirst() }
+        focusEvents.append("t=\(CACurrentMediaTime()) \(event)")
+    }
 }
 
 private struct EpisodeArtworkFixture: View {
@@ -1471,16 +1484,22 @@ private struct ProductionEpisodeFixture: View {
         .environment(\.plozzCardFocusStyle, .system)
         .task(id: model.focusRequestID) {
             let requestID = model.focusRequestID
+            model.recordFocus("reset request=\(requestID)")
             focus = nil
             await Task.yield()
             guard !Task.isCancelled else { return }
             focus = .button(.episodes)
             model.appliedFocusRequestID = requestID
+            model.recordFocus("applied request=\(requestID)")
         }
         .onChange(of: model.target) { _, id in
+            model.recordFocus("target=\(String(describing: id))")
             focus = id.map(PlayerControls.FocusSlot.episodeItem) ?? .button(.episodes)
         }
-        .onChange(of: focus) { _, value in model.observedFocus = value }
+        .onChange(of: focus) { _, value in
+            model.recordFocus("observed=\(String(describing: value))")
+            model.observedFocus = value
+        }
     }
 }
 

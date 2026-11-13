@@ -321,17 +321,21 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   and prepared rail target are retained; the rail does not claim initial focus
   or bypass the cinematic entrance. Returning from a child page retains the
   existing focus-restoration behavior rather than claiming Play again.
+  Series with loose episodes but no season tabs retain the same browser-stage
+  spacing, so the Episodes heading cannot overlap the resting hero action.
   Episode-rail re-entry measures the remembered card before revealing it.
   An already-visible card keeps its horizontal position instead of snapping to
   the leading edge when focus moves to Seasons, the hero, or lower details.
   Ratings and Details count as leaving the browser, so returning restores its
   full vertical stage without replacing the browsed card with a loading slot.
-  Direct returns from Related to an episode restore that stage inside UIKit's
-  coordinated focus animation. A SwiftUI focus-entry scroll alone can be
+  Direct returns from Related to an episode restore that stage during UIKit's
+  focus handoff. A SwiftUI focus-entry scroll alone can be
   overwritten by the native card's reveal, leaving actual focus offscreen.
-  The page return overrides the short native focus-effect timing with a
-  0.6-second ease-in/ease-out animation, paced against the native downward
-  reveal. It remains interruptible and applies its destination immediately
+  The page return starts its own 0.6-second ease-in/ease-out animation immediately,
+  rather than waiting for the outgoing focus effect before starting another
+  clock. The scroll guard prevents a competing native reveal; a generation check
+  prevents an older completion from releasing a newer return. It remains
+  interruptible and applies its destination immediately
   with Reduce Motion. Leaving the browser releases its scroll guard during the
   native focus handoff, before UIKit reveals the next row; stale SwiftUI reveal
   state cannot relock the page during rapid Up/Down reversals.
