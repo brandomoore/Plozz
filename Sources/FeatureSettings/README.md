@@ -1543,6 +1543,13 @@ watch history and planning-list behavior are documented in
   unavailability uses a readable status while retaining the original diagnostic.
   Recovery still requires verified account ownership, and later foreground or
   manual sync can try again after the bounded retries finish.
+  Local snapshot cancellations caused by concurrent changes are recaptured up to
+  four times; cancellation of the caller or a superseded lifecycle never publishes
+  stale data or errors. A genuine preparation failure remains tied to its channel
+  until that channel captures and persists successfully. Unrelated network
+  completions cannot clear it or advance the successful-sync time. Retryable
+  CloudKit conflicts stay in Syncing during a bounded 30-second recovery window;
+  repeated failures cannot extend that window indefinitely.
 - **Profile-namespaced settings.** Per-user prefs (theme, captions,
   diagnostics, spoiler) are namespaced by the active profile id; the
   default profile uses no suffix so an upgrading install keeps existing

@@ -169,6 +169,7 @@ public actor CloudConfigSyncService {
         let applySnapshot: (@Sendable (SyncChannelSnapshot) async -> Void)?
         let snapshotAuthority: @Sendable () -> String
         var ledgerAuthority: String?
+        var captureRevision: UInt64 = 0
         var currentAuthority: String? { captureSnapshot == nil ? nil : snapshotAuthority() }
         var snapshotSequence: UInt64 = 0
         let captureRecords: @Sendable (_ fallback: [SyncRecordID: Data]) async -> [SyncRecordID: Data]
@@ -288,6 +289,7 @@ public actor CloudConfigSyncService {
     }()
     private var engine: CKSyncEngine?
     private var failures = CloudSyncFailures()
+    private var activeCaptures = 0
     private var explicitFetches = 0
     private var explicitSends = 0
     /// Bumped every time the engine is rebuilt; events from an older engine are
@@ -399,7 +401,7 @@ public actor CloudConfigSyncService {
 
     // MARK: Status helpers
 
-    private func setStatus(
+    func setStatus(
         _ phase: CloudSyncStatus.Phase, syncedNow: Bool = false, error: String? = nil,
         reason: CloudSyncStatus.ErrorReason? = nil
     ) {
@@ -410,17 +412,27 @@ public actor CloudConfigSyncService {
         let effectivePhase: CloudSyncStatus.Phase
         if phase == .idle || phase == .syncing {
             effectivePhase = failures.error != nil ? .error
-                : (phase == .idle && syncedNow ? failures.phase(hasPendingChanges: hasPendingChanges) : phase)
+                : (phase == .idle ? failures.phase(hasPendingChanges: hasPendingChanges) : phase)
         } else {
             effectivePhase = phase
         }
         let message = error ?? failures.error?.localizedDescription
-        let diagnostic = failures.error.map(Self.describe)
-        let errorReason = reason ?? (error == nil && (failures.error as? CKError)?.code == .accountTemporarilyUnavailable
-            ? .accountTemporarilyUnavailable : nil)
+        let captureFailure = failures.error as? CloudSyncFailures.LocalCaptureFailure
+        let diagnostic = failures.error.map { failure in
+            if let capture = failure as? CloudSyncFailures.LocalCaptureFailure {
+                let underlying = capture.underlying as NSError
+                return "Channel capture unavailable in \(capture.zoneID.zoneName) (\(underlying.domain) code \(underlying.code))"
+            }
+            return Self.describe(failure)
+        }
+        let errorReason = reason ?? (error == nil && captureFailure != nil ? .localDataUnavailable
+            : (error == nil && (failures.error as? CKError)?.code == .accountTemporarilyUnavailable
+                ? .accountTemporarilyUnavailable : nil))
+        let retryGrace: Duration? = error == nil && failures.canRetryAutomatically ? .seconds(30) : nil
         Task { @MainActor in
             if effectivePhase == .error {
-                status.setError(message ?? "Couldn't sync", diagnostic: diagnostic, reason: errorReason)
+                status.setError(message ?? "Couldn't sync", diagnostic: diagnostic,
+                                reason: errorReason, retryGrace: retryGrace)
             } else {
                 status.setPhase(effectivePhase, syncedNow: syncedNow && effectivePhase == .idle)
             }
@@ -429,6 +441,7 @@ public actor CloudConfigSyncService {
 
     private var hasPendingChanges: Bool {
         isFullResyncing
+            || activeCaptures > 0
             || explicitFetches > 0 || explicitSends > 0
             || engine?.state.pendingRecordZoneChanges.isEmpty == false
             || engine?.state.pendingDatabaseChanges.isEmpty == false
@@ -744,7 +757,7 @@ public actor CloudConfigSyncService {
         reportRecordCount()
         if let syncError {
             setDiagnostic("sync: \(Self.describe(syncError))")
-            setStatus(.error, error: (syncError as NSError).localizedDescription)
+            setStatus(.error)
         } else if inventoryReconciled {
             setStatus(.idle, syncedNow: true)
         } else {
@@ -786,6 +799,7 @@ public actor CloudConfigSyncService {
             let published = await publish(channel, engine: engine, bypassBaselineGate: bypassBaselineGate)
             completed = completed && published
         }
+        if isActive, config.isEnabled(), engine === self.engine { setStatus(.idle) }
         return completed
     }
 
@@ -824,27 +838,42 @@ public actor CloudConfigSyncService {
         // synchronous and therefore atomic once we have a clean snapshot.
         var desired: [SyncRecordID: Data] = [:]
         var stabilized = false
+        activeCaptures += 1
+        defer { activeCaptures -= 1 }
+        channel.captureRevision += 1
+        let captureRevision = channel.captureRevision
         for _ in 0..<4 {
             guard persist() else { return false }
+            guard !Task.isCancelled, isActive, engine === self.engine,
+                  generation == engineGeneration, config.isEnabled(),
+                  captureRevision == channel.captureRevision else { return false }
             let rev = channel.ledger.remoteRevision
+            let authority = channel.currentAuthority
             if let capture = channel.captureSnapshot {
                 do { desired = try await capture(channel.snapshot()) }
                 catch {
-                    setDiagnostic("Channel capture unavailable in \(channel.schema.zoneName) (code \((error as NSError).code))")
-                    setStatus(.error, error: "Some local data could not be prepared for sync. Saved data has not been removed.")
+                    guard !Task.isCancelled, !isErasing, isActive, engine === self.engine,
+                          generation == engineGeneration, config.isEnabled(),
+                          captureRevision == channel.captureRevision,
+                          authority == channel.currentAuthority else { return false }
+                    if error is CancellationError { continue }
+                    reportLocalCaptureFailure(error, channel: channel)
                     return false
                 }
             } else {
                 desired = await channel.captureRecords(channel.ledger.syncedValues())
             }
-            guard !isErasing, isActive, engine === self.engine, generation == engineGeneration, config.isEnabled() else { return false }
+            guard !Task.isCancelled, !isErasing, isActive, engine === self.engine,
+                  generation == engineGeneration, config.isEnabled(),
+                  captureRevision == channel.captureRevision,
+                  authority == channel.currentAuthority else { return false }
             if channel.ledger.remoteRevision == rev { stabilized = true; break }
         }
         // S4: if a remote apply kept interleaving every capture, the snapshot may
         // predate the latest baseline. Do NOT reconcile an unverified capture (it could
         // clobber the just-arrived change) — skip this publish; a later one retries.
         guard stabilized else {
-            PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: publish deferred — capture kept racing remote applies; will retry")
+            reportLocalCaptureFailure(CancellationError(), channel: channel)
             return false
         }
         let plan = channel.ledger.reconcileLocal(
@@ -854,6 +883,7 @@ public actor CloudConfigSyncService {
             setDiagnostic("refused \(plan.refusedDeletions.count) deletion(s) in \(channel.schema.zoneName) — capture looked incomplete; not wiping peers")
         }
         guard persist() else { return false }
+        failures.record(nil, for: .captureZone(channel.schema.zoneID))
         guard !plan.isEmpty else {
             PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: publish — nothing changed")
             return true
@@ -865,6 +895,15 @@ public actor CloudConfigSyncService {
         reportRecordCount()
         PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: queued \(plan.uploads.count) save(s), \(plan.deletes.count) delete(s)")
         return true
+    }
+
+    private func reportLocalCaptureFailure(_ error: any Error, channel: Channel) {
+        failures.record(CloudSyncFailures.LocalCaptureFailure(
+            zoneID: channel.schema.zoneID, underlying: error
+        ), for: .captureZone(channel.schema.zoneID))
+        let underlying = error as NSError
+        setDiagnostic("Channel capture unavailable in \(channel.schema.zoneName) (\(underlying.domain) code \(underlying.code))")
+        setStatus(.error)
     }
 
     /// Publish and immediately send is intentionally NOT used — forcing sendChanges
@@ -1259,7 +1298,7 @@ public actor CloudConfigSyncService {
             guard isActive, engine === self.engine else { throw CancellationError() }
             failures.record(error, for: .fetchDatabase)
             setDiagnostic("fetch: \(Self.describe(error))")
-            setStatus(.error, error: error.localizedDescription)
+            setStatus(.error)
             throw error
         }
         guard isActive, engine === self.engine else { throw CancellationError() }
@@ -1279,7 +1318,7 @@ public actor CloudConfigSyncService {
             guard isActive, engine === self.engine else { throw CancellationError() }
             failures.record(error, for: .sendChanges)
             setDiagnostic("send: \(Self.describe(error))")
-            setStatus(.error, error: error.localizedDescription)
+            setStatus(.error)
             throw error
         }
         guard isActive, engine === self.engine else { throw CancellationError() }
@@ -1486,12 +1525,23 @@ public actor CloudConfigSyncService {
     /// Capture against the verified previous baseline without uploading. A fetch
     /// must not erase edits made while disabled or before the debounce completed.
     func stageLocalChangesBeforeFetch() async -> Bool {
-        guard !isFullResyncing, verifiedAccountIdentity != nil, restorePersistedStateIfNeeded() else { return false }
+        guard !isErasing, !isFullResyncing, verifiedAccountIdentity != nil,
+              restorePersistedStateIfNeeded() else { return false }
+        activeCaptures += 1
+        defer { activeCaptures -= 1 }
         let generation = accountGeneration
+        let engineRevision = engineGeneration
         for channel in channels where channel.ledger.hasServerBaseline {
             var staged = false
+            channel.captureRevision += 1
+            let captureRevision = channel.captureRevision
             for _ in 0..<4 {
+                guard isActive, !Task.isCancelled, !isErasing, !isFullResyncing,
+                      generation == accountGeneration, config.isEnabled(),
+                      engineRevision == engineGeneration,
+                      captureRevision == channel.captureRevision else { return false }
                 let revision = channel.ledger.remoteRevision
+                let authority = channel.currentAuthority
                 do {
                     let desired: [SyncRecordID: Data]
                     if let capture = channel.captureSnapshot {
@@ -1499,7 +1549,11 @@ public actor CloudConfigSyncService {
                     } else {
                         desired = await channel.captureRecords(channel.ledger.syncedValues())
                     }
-                    guard !isFullResyncing, generation == accountGeneration, config.isEnabled() else { return false }
+                    guard isActive, !Task.isCancelled, !isErasing, !isFullResyncing,
+                          generation == accountGeneration, config.isEnabled(),
+                          engineRevision == engineGeneration,
+                          captureRevision == channel.captureRevision,
+                          authority == channel.currentAuthority else { return false }
                     guard revision == channel.ledger.remoteRevision else { continue }
                     _ = channel.ledger.reconcileLocal(
                         desired: desired.filter { !Self.isDirectTrackerRecord($0.key, schema: channel.schema) },
@@ -1507,11 +1561,22 @@ public actor CloudConfigSyncService {
                     staged = true
                     break
                 } catch {
-                    setDiagnostic("Local changes could not be preserved before fetching cloud changes")
+                    guard isActive, !Task.isCancelled, !isErasing, !isFullResyncing,
+                          generation == accountGeneration, config.isEnabled(),
+                          engineRevision == engineGeneration,
+                          captureRevision == channel.captureRevision,
+                          authority == channel.currentAuthority else { return false }
+                    if error is CancellationError { continue }
+                    reportLocalCaptureFailure(error, channel: channel)
                     return false
                 }
             }
-            guard staged else { return false }
+            guard staged else {
+                reportLocalCaptureFailure(CancellationError(), channel: channel)
+                return false
+            }
+            guard persist() else { return false }
+            failures.record(nil, for: .captureZone(channel.schema.zoneID))
         }
         return persist()
     }

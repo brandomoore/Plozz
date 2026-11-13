@@ -49,6 +49,7 @@ public enum CloudSyncRecoveryAction: Sendable {
 public final class CloudSyncStatus {
     enum ErrorReason: Equatable, Sendable {
         case accountTemporarilyUnavailable
+        case localDataUnavailable
     }
 
     public enum Phase: Equatable, Sendable {
@@ -82,6 +83,7 @@ public final class CloudSyncStatus {
     /// own retry shouldn't flash a scary "Couldn't sync". The error is only shown if
     /// it's still pending after a short grace period without verified recovery.
     @ObservationIgnored private var pendingErrorTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingErrorIsRetrying = false
 
     public init() {}
 
@@ -103,6 +105,7 @@ public final class CloudSyncStatus {
     /// debounced error, since we've made forward progress.
     func setPhase(_ newPhase: Phase, syncedNow: Bool = false) {
         pendingErrorTask?.cancel(); pendingErrorTask = nil
+        pendingErrorIsRetrying = false
         phase = newPhase
         if syncedNow {
             lastSyncedAt = Date()
@@ -114,17 +117,28 @@ public final class CloudSyncStatus {
 
     /// Record an error, but only surface it after a grace period — so a blip that
     /// the engine immediately resolves (a following idle) never shows red.
-    func setError(_ message: String, diagnostic: String?, reason: ErrorReason? = nil) {  // l10n:content — OS/CloudKit-supplied, already-localized error text
+    func setError(
+        _ message: String, diagnostic: String?, reason: ErrorReason? = nil,
+        retryGrace: Duration? = nil
+    ) {  // l10n:content — OS/CloudKit-supplied, already-localized error text
         lastErrorMessage = message
         lastErrorReason = reason
         if let diagnostic { lastDiagnostic = diagnostic }
+        if retryGrace != nil, phase != .error { phase = .syncing }
+        if retryGrace == nil, pendingErrorIsRetrying {
+            pendingErrorTask?.cancel()
+            pendingErrorTask = nil
+            pendingErrorIsRetrying = false
+        }
         // Repeated completion/retry events must not postpone a persistent error.
         guard phase != .error, pendingErrorTask == nil else { return }
+        pendingErrorIsRetrying = retryGrace != nil
         pendingErrorTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            try? await Task.sleep(for: retryGrace ?? .milliseconds(3_500))
             guard !Task.isCancelled, let self else { return }
             self.phase = .error
             self.pendingErrorTask = nil
+            self.pendingErrorIsRetrying = false
         }
     }
 
@@ -137,6 +151,9 @@ public final class CloudSyncStatus {
         case .error:
             if lastErrorReason == .accountTemporarilyUnavailable {
                 return "iCloud is temporarily unavailable. Try again shortly."
+            }
+            if lastErrorReason == .localDataUnavailable {
+                return "Some local data could not be prepared for sync. Saved data has not been removed."
             }
             return lastErrorMessage.map { "Couldn’t sync — \($0)" } ?? "Couldn’t sync"
         case .idle:

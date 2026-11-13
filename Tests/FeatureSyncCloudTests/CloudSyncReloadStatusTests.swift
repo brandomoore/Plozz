@@ -4,6 +4,44 @@ import XCTest
 
 @MainActor
 final class CloudSyncReloadStatusTests: XCTestCase {
+    func testConcurrentWriteRetryShowsSyncingAndClearsOnlyAfterSuccess() async throws {
+        let status = CloudSyncStatus()
+        status.setPhase(.idle, syncedNow: true)
+        let synced = status.lastSyncedAt
+        status.setError("Concurrent write", diagnostic: "zone busy", retryGrace: .milliseconds(50))
+        XCTAssertEqual(status.phase, .syncing)
+        XCTAssertEqual(status.lastSyncedAt, synced)
+        XCTAssertEqual(status.lastDiagnostic, "zone busy")
+        status.setPhase(.idle, syncedNow: true)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(status.phase, .idle)
+        XCTAssertNil(status.lastErrorMessage)
+        XCTAssertNil(status.lastDiagnostic)
+    }
+
+    func testRepeatedRetryEventsDoNotHidePersistentFailuresIndefinitely() async throws {
+        let status = CloudSyncStatus()
+        status.setPhase(.idle)
+        status.setError("Busy", diagnostic: "first", retryGrace: .milliseconds(50))
+        for _ in 0..<10 {
+            try await Task.sleep(for: .milliseconds(20))
+            status.setError("Still busy", diagnostic: "latest", retryGrace: .milliseconds(50))
+        }
+        XCTAssertEqual(status.phase, .error)
+        XCTAssertEqual(status.lastDiagnostic, "latest")
+        XCTAssertNil(status.lastSyncedAt)
+        status.setPhase(.disabled)
+    }
+
+    func testLocalDataFailureUsesReadableSummaryWithoutDiscardingTheDiagnostic() {
+        let status = CloudSyncStatus()
+        status.setPhase(.error)
+        status.setError("Underlying error", diagnostic: "capture zone", reason: .localDataUnavailable)
+        XCTAssertEqual(String(localized: status.summary),
+                       "Some local data could not be prepared for sync. Saved data has not been removed.")
+        XCTAssertEqual(status.lastDiagnostic, "capture zone")
+    }
+
     func testTemporaryAccountSummaryPreservesDiagnosticsAndClearsAfterRecovery() {
         let status = CloudSyncStatus()
         status.setPhase(.error)

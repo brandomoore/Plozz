@@ -8,6 +8,172 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
     private struct Persisted: Encodable { let ledger: SyncLedger }
 
     @MainActor
+    func testCloudCompletionCannotClearFailedCaptureUntilSameChannelRecovers() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("media.json")
+        var ledger = SyncLedger()
+        _ = ledger.applyFetched(saved: [.init(recordName: "item", value: Data("saved".utf8),
+                                              editedAt: 1, systemFields: Data())], deleted: [], now: 1)
+        try JSONEncoder().encode(Persisted(ledger: ledger)).write(to: file)
+        let calls = AccountCheckCounter()
+        let status = CloudSyncStatus()
+        status.setPhase(.idle, syncedNow: true)
+        let lastSuccess = status.lastSyncedAt
+        let service = CloudConfigSyncService(.init(
+            containerIdentifier: "iCloud.test", stateFileURL: folder.appendingPathComponent("config.json"),
+            isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }, status: status),
+            channels: [.init(
+                schema: .mediaStateV1, stateFileURL: file, captureRecords: { $0 }, applyRecords: { _ in },
+                captureSnapshot: { snapshot in
+                    if await calls.next() == 1 { throw CocoaError(.fileReadCorruptFile) }
+                    return snapshot.records
+                })])
+        let admitted = await service.confirmAccountIdentity("account")
+        XCTAssertTrue(admitted)
+        let failed = await service.stageLocalChangesBeforeFetch()
+        XCTAssertFalse(failed)
+        try await waitForStatus { status.lastErrorReason == .localDataUnavailable }
+        status.setPhase(.error)
+        await service.setStatus(.idle, syncedNow: true)
+        await service.setStatus(.syncing)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(status.phase, .error)
+        XCTAssertEqual(status.lastSyncedAt, lastSuccess)
+        XCTAssertNotNil(status.lastDiagnostic)
+        let recovered = await service.stageLocalChangesBeforeFetch()
+        XCTAssertTrue(recovered)
+        await service.setStatus(.idle, syncedNow: true)
+        try await waitForStatus { status.phase == .idle && status.lastErrorReason == nil }
+        XCTAssertNotEqual(status.lastSyncedAt, lastSuccess)
+        XCTAssertNil(status.lastDiagnostic)
+    }
+
+    @MainActor
+    func testPersistentCaptureFailuresPreserveDataAndReportOnlyAfterBoundedAttempts() async throws {
+        for cancelledSnapshot in [false, true] {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let file = folder.appendingPathComponent("media.json")
+            var ledger = SyncLedger()
+            _ = ledger.applyFetched(saved: [.init(recordName: "item", value: Data("saved".utf8),
+                                                  editedAt: 1, systemFields: Data())], deleted: [], now: 1)
+            try JSONEncoder().encode(Persisted(ledger: ledger)).write(to: file)
+            let calls = AccountCheckCounter()
+            let status = CloudSyncStatus()
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test", stateFileURL: folder.appendingPathComponent("config.json"),
+                isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }, status: status),
+                channels: [.init(
+                    schema: .mediaStateV1, stateFileURL: file, captureRecords: { $0 }, applyRecords: { _ in },
+                    captureSnapshot: { _ in
+                        _ = await calls.next()
+                        if cancelledSnapshot { throw CancellationError() }
+                        throw CocoaError(.fileReadCorruptFile)
+                    })])
+            let admitted = await service.confirmAccountIdentity("account")
+            XCTAssertTrue(admitted)
+            let staged = await service.stageLocalChangesBeforeFetch()
+            XCTAssertFalse(staged)
+            let count = await calls.count
+            XCTAssertEqual(count, cancelledSnapshot ? 4 : 1)
+            try await waitForStatus { status.lastErrorReason == .localDataUnavailable }
+            XCTAssertTrue(status.lastDiagnostic?.contains("Channel capture unavailable") == true)
+            let ledgers = try await service.restoredLedgers()
+            XCTAssertEqual(ledgers[1].entries["item"]?.localValue, Data("saved".utf8))
+            await service.deactivate()
+        }
+    }
+
+    @MainActor
+    func testSupersededOrDisabledPreparationCannotCommitOrReportAStaleFailure() async throws {
+        for interrupt in ["supersede", "deactivate", "cancel", "consent", "authority"] {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let file = folder.appendingPathComponent("media.json")
+            var ledger = SyncLedger()
+            _ = ledger.applyFetched(saved: [.init(recordName: "item", value: Data("old".utf8),
+                                                  editedAt: 1, systemFields: Data())], deleted: [], now: 1)
+            try JSONEncoder().encode(Persisted(ledger: ledger)).write(to: file)
+            let calls = AccountCheckCounter()
+            let gate = AdmissionGate()
+            let consent = TestAuthority()
+            let authority = TestAuthority()
+            let status = CloudSyncStatus()
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test", stateFileURL: folder.appendingPathComponent("config.json"),
+                isEnabled: { consent.value == "0" }, captureRecords: { $0 }, applyRecords: { _ in }, status: status),
+                channels: [.init(
+                    schema: .mediaStateV1, stateFileURL: file, captureRecords: { $0 }, applyRecords: { _ in },
+                    captureSnapshot: { _ in
+                        if await calls.next() == 1 {
+                            await gate.pauseFirstReset()
+                            throw CocoaError(.fileReadCorruptFile)
+                        }
+                        return ["item": Data("new".utf8)]
+                    }, snapshotAuthority: { authority.value })])
+            let admitted = await service.confirmAccountIdentity("account")
+            XCTAssertTrue(admitted)
+            let older = Task { await service.stageLocalChangesBeforeFetch() }
+            await gate.waitUntilStarted()
+            if interrupt == "supersede" {
+                let latest = await service.stageLocalChangesBeforeFetch()
+                XCTAssertTrue(latest)
+            } else if interrupt == "deactivate" {
+                await service.deactivate()
+            } else if interrupt == "consent" {
+                consent.renew()
+            } else if interrupt == "authority" {
+                authority.renew()
+            } else {
+                older.cancel()
+            }
+            await gate.release()
+            let staged = await older.value
+            XCTAssertFalse(staged)
+            XCTAssertNil(status.lastErrorMessage)
+            let ledgers = try await service.restoredLedgers()
+            XCTAssertEqual(ledgers[1].entries["item"]?.localValue,
+                           Data((interrupt == "supersede" ? "new" : "old").utf8))
+        }
+    }
+
+    @MainActor
+    func testSupersededLocalCaptureRetriesWithoutReportingDataFailure() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("media.json")
+        var ledger = SyncLedger()
+        _ = ledger.applyFetched(saved: [.init(recordName: "item", value: Data("old".utf8),
+                                              editedAt: 1, systemFields: Data())], deleted: [], now: 1)
+        try JSONEncoder().encode(Persisted(ledger: ledger)).write(to: file)
+        let calls = AccountCheckCounter()
+        let status = CloudSyncStatus()
+        let service = CloudConfigSyncService(.init(
+            containerIdentifier: "iCloud.test", stateFileURL: folder.appendingPathComponent("config.json"),
+            isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }, status: status),
+            channels: [.init(
+                schema: .mediaStateV1, stateFileURL: file, captureRecords: { $0 }, applyRecords: { _ in },
+                captureSnapshot: { _ in
+                    if await calls.next() == 1 { throw CancellationError() }
+                    return ["item": Data("new".utf8)]
+                })])
+        let admitted = await service.confirmAccountIdentity("account")
+        XCTAssertTrue(admitted)
+        let staged = await service.stageLocalChangesBeforeFetch()
+        XCTAssertTrue(staged, "A superseded snapshot must be recaptured, not treated as damaged local data")
+        let count = await calls.count
+        XCTAssertEqual(count, 2)
+        let ledgers = try await service.restoredLedgers()
+        XCTAssertEqual(ledgers[1].entries["item"]?.localValue, Data("new".utf8))
+        XCTAssertNil(status.lastErrorMessage)
+    }
+
+    @MainActor
     func testTemporaryAccountFailuresRetryStatusAndIdentityWithoutSkippingAdmission() async throws {
         for failureStage in ["status", "status-error", "identity"] {
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
