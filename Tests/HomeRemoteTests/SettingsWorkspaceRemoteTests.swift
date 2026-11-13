@@ -3,6 +3,273 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testNewRowExitOnlyPromptsForChangesAndCanDiscard() throws {
+        let app = try launchCollectionExitFixture()
+        defer { app.terminate() }
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["fixture-open-row"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists, "An untouched row must close without prompting.")
+
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        try activateCollectionEditorButton("home-content-choice-watchlist", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["collection-section-source"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Returning from Content must retain the draft silently.")
+
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForExistence(timeout: 5))
+        try activateRowExitAction("Keep Editing", in: app)
+        XCTAssertTrue(app.buttons["collection-section-source"].waitForExistence(timeout: 5))
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        XCTAssertTrue(app.buttons["home-content-remove-watchlist"].waitForExistence(timeout: 5))
+        try activateCollectionEditorButton("home-content-remove-watchlist", in: app)
+        XCUIRemote.shared.press(.menu)
+        try activateCollectionEditorButton("settings-workspace-back", in: app)
+        XCTAssertTrue(app.buttons["fixture-open-row"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Reverting every edit must clear the exit confirmation.")
+
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        try activateCollectionEditorButton("home-content-choice-watchlist", in: app)
+        XCUIRemote.shared.press(.menu)
+        try activateCollectionEditorButton("settings-workspace-back", in: app)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForExistence(timeout: 5))
+        try activateRowExitAction("Discard", in: app)
+        XCTAssertTrue(app.staticTexts["Saved rows: 0"].waitForExistence(timeout: 5))
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        XCTAssertFalse(app.buttons["collection-section-save"].isEnabled)
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["fixture-open-row"].waitForExistence(timeout: 5))
+    }
+
+    func testNewRowCanAddToHomeFromExitConfirmation() throws {
+        let app = try launchCollectionExitFixture()
+        defer { app.terminate() }
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        try activateCollectionEditorButton("home-content-choice-watchlist", in: app)
+        try activateCollectionEditorButton("home-content-done", in: app)
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForExistence(timeout: 5))
+        try activateRowExitAction("Add to Home", in: app)
+        XCTAssertTrue(app.staticTexts["Saved rows: 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+    }
+
+    func testNewRowWithOnlyLayoutChangesCannotSaveOnExit() throws {
+        let app = try launchCollectionExitFixture()
+        defer { app.terminate() }
+        try activateCollectionEditorButton("fixture-open-row", in: app)
+        try activateCollectionEditorButton("collection-section-card-style", in: app)
+        let choice = app.cells.containing(.any, identifier: "Landscape").firstMatch
+        try focus(choice, in: app)
+        XCUIRemote.shared.press(.select)
+        try focus(pageBack(in: app), in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.buttons.matching(identifier: "Add to Home")
+            .matching(NSPredicate(format: "enabled == false")).firstMatch.exists)
+        try activateRowExitAction("Keep Editing", in: app)
+        XCTAssertTrue(app.buttons["collection-section-title-logo"].waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        try activateRowExitAction("Discard", in: app)
+        XCTAssertTrue(app.staticTexts["Saved rows: 0"].waitForExistence(timeout: 5))
+    }
+
+    private func activateRowExitAction(_ title: String, in app: XCUIApplication) throws {
+        let button = app.alerts["Save this row?"].buttons.matching(identifier: title).firstMatch
+        try focus(button, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.alerts["Save this row?"].waitForNonExistence(timeout: 5))
+    }
+
+    private func launchCollectionExitFixture() throws -> XCUIApplication {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("Simulator-only custom-row fixture.")
+        #else
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--collection-row-editor-fixture", "--collection-row-isolated",
+            "--collection-row-exit", "-AppleLanguages", "(en)"
+        ]
+        app.launch()
+        return app
+        #endif
+    }
+
+    func testCustomRowContentNavigationHasVisibleNativeFocus() throws {
+        let app = try launchIsolatedCollectionEditor(existing: false)
+        defer { app.terminate() }
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        for identifier in ["home-content-collections", "home-content-playlists"] {
+            let row = app.buttons[identifier]
+            try focus(row, in: app)
+            capture("\(identifier)-visible-focus", in: app)
+            XCTAssertTrue(hasFocus(row))
+            try assertStandardFormFocusFill(row)
+        }
+    }
+
+    func testCustomRowMovieCollectionCheckmarkRedrawsAfterSelectAndDeselect() throws {
+        try verifyContainerCheckmark(playlists: false)
+    }
+
+    func testCustomRowMoviePlaylistCheckmarkRedrawsAfterSelectAndDeselect() throws {
+        try verifyContainerCheckmark(playlists: true)
+    }
+
+    func testExistingCustomRowPreservesMixedSourceOrderAndLastSelection() throws {
+        let app = try launchIsolatedCollectionEditor(existing: true)
+        defer { app.terminate() }
+        try activateCollectionEditorButton("collection-section-source", in: app)
+        let original = app.buttons["Remove Weekend picks"]
+        XCTAssertTrue(original.waitForExistence(timeout: 5))
+        XCTAssertFalse(original.isEnabled)
+        for (route, title) in [
+            ("home-content-collections", "Movie classics"), ("home-content-playlists", "Movie marathon")
+        ] {
+            try activateCollectionEditorButton(route, in: app)
+            let choice = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "hero-collection-choice:", title
+            )).firstMatch
+            try focus(choice, in: app)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(choice.isSelected)
+            try leaveContainerPicker(in: app)
+        }
+        let classics = app.buttons["Remove Movie classics"]
+        let marathon = app.buttons["Remove Movie marathon"]
+        XCTAssertLessThan(original.frame.midY, classics.frame.midY)
+        XCTAssertLessThan(classics.frame.midY, marathon.frame.midY, "Mixed types must retain selection order.")
+        capture("mixed-source-selection-order", in: app)
+        for removal in [original, classics] {
+            try focus(removal, in: app)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(removal.waitForNonExistence(timeout: 5))
+        }
+        XCTAssertFalse(marathon.isEnabled, "An existing row cannot lose its last source.")
+        try activateCollectionEditorButton("home-content-playlists", in: app)
+        let last = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "hero-collection-choice:", "Movie marathon"
+        )).firstMatch
+        try focus(last, in: app)
+        XCTAssertTrue(last.isSelected)
+        let checked = try trailingCheckmarkInk(in: last)
+        XCUIRemote.shared.press(.select)
+        capture("last-playlist-selection-retained", in: app)
+        XCTAssertTrue(last.isSelected)
+        XCTAssertLessThanOrEqual(abs(try trailingCheckmarkInk(in: last) - checked), 30)
+        try leaveContainerPicker(in: app)
+        XCTAssertTrue(marathon.waitForExistence(timeout: 5))
+        XCTAssertFalse(marathon.isEnabled)
+    }
+
+    private func verifyContainerCheckmark(playlists: Bool) throws {
+        for existing in [false, true] {
+            let app = try launchIsolatedCollectionEditor(existing: existing)
+            defer { app.terminate() }
+            try activateCollectionEditorButton("collection-section-source", in: app)
+            try activateCollectionEditorButton(
+                playlists ? "home-content-playlists" : "home-content-collections", in: app
+            )
+            let source = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "hero-collection-source:", "Movies"
+            )).firstMatch
+            XCTAssertTrue(source.waitForExistence(timeout: 5), app.debugDescription)
+            try focus(source, in: app)
+            XCUIRemote.shared.press(.select)
+            let title = playlists ? "Movie marathon" : "Movie classics"
+            let row = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "hero-collection-choice:", title
+            )).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+            try focus(row, in: app)
+            let prefix = "\(playlists ? "playlist" : "collection")-\(existing ? "existing" : "new")"
+            capture("\(prefix)-unchecked", in: app)
+            XCTAssertFalse(row.isSelected)
+            let unchecked = try trailingCheckmarkInk(in: row)
+            XCUIRemote.shared.press(.select)
+            capture("\(prefix)-checked", in: app)
+            XCTAssertTrue(row.isSelected, "Selection must redraw without leaving Movies.")
+            let checked = try trailingCheckmarkInk(in: row)
+            XCTAssertGreaterThan(checked, unchecked + 30, "The selected state must paint a visible checkmark.")
+            XCUIRemote.shared.press(.select)
+            capture("\(prefix)-deselected", in: app)
+            XCTAssertFalse(row.isSelected, "A second click must immediately clear the selection.")
+            XCTAssertLessThanOrEqual(
+                try trailingCheckmarkInk(in: row), unchecked + 30,
+                "The checkmark must disappear without reopening the picker."
+            )
+            try leaveContainerPicker(in: app)
+            let removals = app.buttons.matching(identifier: "home-content-remove-server")
+            XCTAssertTrue(removals.firstMatch.waitForExistence(timeout: 5))
+            XCTAssertEqual(
+                removals.count, 1,
+                "Deselecting restores the original sources without adding or removing unrelated content."
+            )
+        }
+    }
+
+    private func launchIsolatedCollectionEditor(existing: Bool) throws -> XCUIApplication {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("Simulator-only custom-row fixture.")
+        #else
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--collection-row-editor-fixture", "--collection-row-isolated", "-AppleLanguages", "(en)"
+        ] + (existing ? ["--collection-row-existing"] : [])
+        app.launch()
+        return app
+        #endif
+    }
+
+    private func activateCollectionEditorButton(_ identifier: String, in app: XCUIApplication) throws {
+        let button = app.buttons.matching(identifier: identifier)
+            .matching(NSPredicate(format: "enabled == true")).firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5), app.debugDescription)
+        try focus(button, in: app)
+        XCUIRemote.shared.press(.select)
+    }
+
+    private func leaveContainerPicker(in app: XCUIApplication) throws {
+        // A redrawn, single-label SwiftUI choice can retain visible native focus without its AX trait.
+        // The fixture's sole result is immediately above Done.
+        XCUIRemote.shared.press(.down)
+        try activateCollectionEditorButton("home-content-done", in: app)
+    }
+
+    private func trailingCheckmarkInk(in row: XCUIElement) throws -> Int {
+        let image = try XCTUnwrap(row.screenshot().image.cgImage)
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(
+                data: buffer.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        let scale = CGFloat(image.width) / row.frame.width
+        let leading = max(0, image.width - Int(90 * scale))
+        let trailing = max(leading, image.width - Int(20 * scale))
+        var count = 0
+        for y in (image.height / 4)..<(image.height * 3 / 4) {
+            for x in leading..<trailing {
+                let offset = (y * image.width + x) * 4
+                if bytes[offset] < 100 && bytes[offset + 1] < 100 && bytes[offset + 2] < 100 { count += 1 }
+            }
+        }
+        return count
+    }
+
     func testSavedRowSortAndFilterUseNativeMenusAndSurviveRelaunch() throws {
         #if targetEnvironment(simulator)
         continueAfterFailure = false

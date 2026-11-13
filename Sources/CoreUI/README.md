@@ -32,6 +32,12 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+TV Settings editors can use `settingsPageBackConfirmation` to request confirmation
+for both the header Back button and remote Back on the current page. Pass `nil`
+when no unsaved changes need protection. Explicit `SettingsPageDismiss`
+still dismisses directly after saving or confirming discard; retained parent
+pages do not intercept a nested page's Back.
+
 `RetainedFullscreenWorkspace` presents the same tvOS hosting controller outside
 app navigation, then returns it to its original container. Place the feature's
 state and focus owners inside it, and inject required app models into its content.
@@ -290,6 +296,11 @@ single-line navigation, menus, and form controls share their minimum height and
 interior padding. Explicit content insets retain compact source-row sizing.
 Padding-free disclosure labels and bare form actions use `SettingsFormButtonStyle`,
 which puts the shared minimum height and padding inside the TV focus fill.
+`SettingsSectionGroup` supplies this style by default on TV, with the same
+uniform outer focus clearance and corner radius as other Settings form groups.
+Grouped checkable rows leave that outer clearance to the group on TV; their
+mobile hit-area inset ownership is unchanged. Horizontal `SettingsInputRow`
+uses the shared form layout so its label joins the other control labels.
 `SettingsFocusButtonStyle` is only for labels that already supply their own
 control geometry. Standalone and inline actions use `plozzActionButton`; do not
 use a text-height focus strip as a smaller action-button variant.

@@ -773,6 +773,14 @@ watch history and planning-list behavior are documented in
   playlist drill-ins do not repeat that summary. Done returns one level without
   saving a new row: mobile retains the editor's toolbar save, TV existing rows
   autosave, and TV new rows still require Add to Home.
+  Leaving a changed new row on TV, using either the header Back button or the
+  remote, asks whether to Add to Home, Discard, or Keep Editing. Add to Home
+  remains unavailable without valid content, and a failed save keeps the editor
+  open with its error. Untouched or fully reverted drafts leave without prompting;
+  navigating into Content does not count as leaving the editor.
+  Container selections project the original sources binding through a writable
+  key path, so checkmarks update immediately in retained TV destinations without
+  a separate selection cache.
   The editor separates Content from Layout (see [Home terminology](../../CONTEXT.md)).
   Content, a single-line **Name** input, **Sort**, **Filter**, and **Layout** share one Settings group;
   the name label stacks above its input at accessibility text sizes.
@@ -785,8 +793,15 @@ watch history and planning-list behavior are documented in
   The preview uses Home's actual heading, rail spacing, viewport-fitted card
   widths, captions, artwork preferences and spoiler protection through
   CoreUI's `HomeRowPreviewView`. Featured sizing and focus also share Home's
-  presentation owner. The editor removes its surrounding horizontal gutter
-  only for the rail, avoiding a second inset. Preview cards cannot navigate,
+  presentation owner. On TV, the preview aligns with the settings group and
+  sizes cards against the containing page stack's full content viewport, not
+  the narrower editor column. The horizontal scroll viewport extends to both
+  screen edges; its initial content margin keeps the first card aligned with
+  the settings group while scrolled cards remain visible outside that column.
+  Sizing preserves Home's navigation gutter and poster trailing-safe-area
+  behavior without carrying the navigation gutter or fade into the preview.
+  Mobile removes the surrounding gutter only for the rail, avoiding a second inset.
+  Preview cards cannot navigate,
   play, or mutate titles; TV focus and scrolling remain usable.
   Sort defaults to Source order, preserving playlist sequence. The saved sort,
   direction and media/watch-status filters also apply to Home and the initial

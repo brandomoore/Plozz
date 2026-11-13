@@ -181,6 +181,7 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
     let destination: (Route) -> Destination
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var contentViewport: HomeRowPreviewViewport?
 
     public init(
         navigation: SettingsPageNavigation<Route>, pageWidth: CGFloat,
@@ -210,6 +211,12 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
                     subpages(in: geometry.size)
                 }
             }
+            .onGeometryChange(for: HomeRowPreviewViewport.self) {
+                HomeRowPreviewViewport(
+                    width: $0.size.width, trailingSafeAreaInset: $0.safeAreaInsets.trailing,
+                    leadingSafeAreaInset: $0.safeAreaInsets.leading
+                )
+            } action: { contentViewport = $0 }
         }
         .plozzFullScreenCover(isPresented: Binding(
             get: { presentsSubpagesFullScreen && !navigation.pages.isEmpty },
@@ -228,7 +235,7 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
                     .environment(\.settingsInWorkspace, false)
             }
         }
-        .mask { Rectangle().ignoresSafeArea(.container, edges: .vertical) }
+        .mask { Rectangle().ignoresSafeArea(.container) }
         .onChange(of: reduceMotion, initial: true) { _, value in
             navigation.animationsEnabled = !value
         }
@@ -280,19 +287,21 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
             }
         )
         return content()
+            .environment(\.homeRowPreviewViewport, contentViewport ?? HomeRowPreviewViewport(
+                width: viewport.width, trailingSafeAreaInset: 0
+            ))
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .frame(width: viewport.width, height: viewport.height, alignment: .top)
             .environment(\.settingsPageContext, context)
-            .environment(\.settingsPageBackButton, id.map { _ in
-                AnyView(SettingsBackButton(action: context.pop)
-                    .settingsPageEntryFocus().accessibilityIdentifier("settings-workspace-back"))
-            })
             .environment(\.isEnabled, isEnabled && interactive)
             .allowsHitTesting(interactive)
             .accessibilityElement(children: interactive ? .contain : .ignore)
             .accessibilityHidden(!interactive)
             .settingsPageVisibility(current)
-            .onExitCommand(perform: current && (id != nil || onRootBack != nil) ? context.pop : nil)
+            .modifier(SettingsPageBackHandler(
+                isCurrent: current, showsBack: id != nil,
+                canGoBack: id != nil || onRootBack != nil, action: context.pop
+            ))
     }
 }
 
@@ -317,6 +326,58 @@ private struct SettingsPageEntryFocus: ViewModifier {
 public extension View {
     func settingsPageEntryFocus(enabled: Bool = true) -> some View {
         modifier(SettingsPageEntryFocus(enabled: enabled))
+    }
+
+    /// Requests confirmation for user Back, but not an explicit SettingsPageDismiss.
+    func settingsPageBackConfirmation(_ confirmation: SettingsPageBackConfirmation?) -> some View {
+        preference(key: SettingsPageBackConfirmationKey.self, value: confirmation)
+    }
+}
+
+@MainActor
+@Observable
+public final class SettingsPageBackConfirmation: Equatable {
+    public var isPresented = false
+
+    public init() {}
+
+    public nonisolated static func == (lhs: SettingsPageBackConfirmation, rhs: SettingsPageBackConfirmation) -> Bool {
+        lhs === rhs
+    }
+}
+
+private struct SettingsPageBackConfirmationKey: PreferenceKey {
+    static var defaultValue: SettingsPageBackConfirmation? { nil }
+
+    static func reduce(value: inout SettingsPageBackConfirmation?, nextValue: () -> SettingsPageBackConfirmation?) {
+        value = nextValue() ?? value
+    }
+}
+
+private struct SettingsPageBackHandler: ViewModifier {
+    let isCurrent: Bool
+    let showsBack: Bool
+    let canGoBack: Bool
+    let action: () -> Void
+    @State private var confirmation: SettingsPageBackConfirmation?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.settingsPageBackButton, showsBack
+                ? AnyView(SettingsBackButton(action: requestBack)
+                    .settingsPageEntryFocus().accessibilityIdentifier("settings-workspace-back"))
+                : nil)
+            .onPreferenceChange(SettingsPageBackConfirmationKey.self) { confirmation = $0 }
+            .onExitCommand(perform: isCurrent && canGoBack ? requestBack : nil)
+    }
+
+    private func requestBack() {
+        guard isCurrent else { return }
+        if let confirmation {
+            confirmation.isPresented = true
+        } else {
+            action()
+        }
     }
 }
 
