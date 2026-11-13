@@ -2266,10 +2266,12 @@ The same small internal radius applies at rest,
 during scrubbing, and when TV focus expands the bar from 12pt to 20pt.
 Live programme tracks use the same geometry.
 TV and touch skip-marker timelines both require 20pt of solid section width
-between retained cuts. Both boundaries around an undersized marked or unmarked
-interval are omitted together, based on the original neighboring intervals,
-including the timeline ends. Crowded endings remain continuous instead of forming
-slivers; isolated readable cuts keep their exact timestamps. This threshold is
+between retained cuts. First, skip windows too narrow to display are omitted
+from the visual layout. Spacing is then measured again between the remaining
+boundaries, so a short nearby window cannot erase a long credits section.
+Both cuts around any still-undersized unmarked interval are omitted together;
+cuts too close to the timeline ends are also hidden. Crowded endings avoid
+slivers; readable cuts keep their exact timestamps. This threshold is
 fixed while focus or touch expands the bar, and does not depend on progress.
 Only the visual cuts are suppressed: stored ranges, skip buttons, post-credits
 gaps, and autoplay decisions are unchanged. Live programme boundaries retain

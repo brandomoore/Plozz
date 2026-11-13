@@ -145,6 +145,35 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         }
     }
 
+    func testLongFinalCreditsKeepTheirCutBesideAnUnreadableEarlierWindow() async throws {
+        let duration = 3_116.96
+        let longCredits = MediaSegment(kind: .credits, start: 2_809.416, end: duration)
+        try await withWindow { window in
+            for performance in [false, true] {
+                for focused in [false, true] {
+                    let model = showTrack(
+                        in: window, focused: focused, performance: performance,
+                        background: Color(red: 0.15, green: 0.35, blue: 0.6)
+                    )
+                    model.duration = duration
+                    model.currentSeconds = 2_629.416
+                    model.bufferedSeconds = model.currentSeconds
+                    model.skipSegments.segments = [longCredits]
+                    let reference = try await render(in: window)
+                    model.skipSegments.segments.insert(
+                        .init(kind: .credits, start: 2_749.416, end: 2_773.416), at: 0
+                    )
+                    let actual = try await render(in: window)
+                    XCTAssertTrue(actual.bytes == reference.bytes,
+                                  "The real One Piece timeline must keep the long credits boundary.")
+                    let boundary = Int((320 + 1280 * longCredits.start / duration).rounded())
+                    XCTAssertEqual(actual.color(boundary, 590), actual.color(boundary, 450))
+                    XCTAssertNotEqual(actual.color(boundary + 10, 590), actual.color(boundary + 10, 450))
+                }
+            }
+        }
+    }
+
     private func withWindow(_ body: (UIWindow) async throws -> Void) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),

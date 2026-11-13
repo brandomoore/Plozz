@@ -86,6 +86,25 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
         }
     }
 
+    func testRealLongCreditsRemainVisibleBesideShortEarlierWindow() throws {
+        let duration = 3_116.96
+        let longCredits = MediaSegment(kind: .credits, start: 100 * 2_809.416 / duration, end: 100)
+        let shortCredits = MediaSegment(
+            kind: .credits, start: 100 * 2_749.416 / duration, end: 100 * 2_773.416 / duration
+        )
+        for width in [320, 960] {
+            for scheme in [ColorScheme.light, .dark] {
+                let expected = try render(width: width, segments: [longCredits], colorScheme: scheme)
+                let actual = try render(width: width, segments: [shortCredits, longCredits], colorScheme: scheme)
+                XCTAssertTrue(actual.bytes == expected.bytes,
+                              "A short neighboring window must not hide the five-minute credits section.")
+                let boundary = Int((Double(width) * longCredits.start / 100).rounded())
+                let index = (22 * width + boundary) * 4
+                XCTAssertEqual(Array(actual.bytes[index..<(index + 3)]), [0, 255, 255])
+            }
+        }
+    }
+
     func testTinyUnmarkedNeighborDoesNotLeaveAnIsolatedSliver() throws {
         for width in [320, 390] {
             let adjacent = try render(width: width, segments: [

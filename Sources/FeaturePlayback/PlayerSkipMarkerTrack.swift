@@ -34,22 +34,28 @@ enum SkipMarkerTrackLayout {
 
     static func segmentedSections(
         ranges: [Range<Double>], size: CGSize, minimumSectionWidth: CGFloat = 0,
-        restingHeight: CGFloat? = nil
+        restingHeight: CGFloat? = nil, omitShortRanges: Bool = false
     ) -> [CGRect] {
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return [] }
+        let maximumHalfGap: CGFloat = 2
+        let minimumInterval = minimumSectionWidth + 2 * maximumHalfGap
         var boundaries: [CGFloat] = [0]
         for range in ranges {
+            // Discard unreadable skip windows before measuring the remaining gaps.
+            // Otherwise a tiny window can erase the start of a long credits section.
+            if omitShortRanges, minimumSectionWidth > 0,
+               size.width * CGFloat(range.upperBound) - size.width * CGFloat(range.lowerBound) < minimumInterval {
+                continue
+            }
             for fraction in [range.lowerBound, range.upperBound] where fraction > 0 && fraction < 1 {
                 boundaries.append(size.width * CGFloat(fraction))
             }
         }
         boundaries.append(size.width)
-        let maximumHalfGap: CGFloat = 2
         if minimumSectionWidth > 0 {
-            // Inspect the original neighbors, including unmarked intervals. Removing
+            // Inspect the remaining neighbors, including unmarked intervals. Removing
             // both cuts around a tiny piece avoids replacing it with a misleading
             // enlarged segment or a cut through its center.
-            let minimumInterval = minimumSectionWidth + 2 * maximumHalfGap
             boundaries = boundaries.indices.compactMap { index in
                 guard index > 0, index < boundaries.count - 1 else { return boundaries[index] }
                 guard boundaries[index] - boundaries[index - 1] >= minimumInterval,
@@ -113,10 +119,11 @@ enum SkipMarkerTrackLayout {
 
     static func maskPath(
         ranges: [Range<Double>], size: CGSize, minimumSectionWidth: CGFloat = 0,
-        restingHeight: CGFloat? = nil
+        restingHeight: CGFloat? = nil, omitShortRanges: Bool = false
     ) -> Path {
         let sections = segmentedSections(
-            ranges: ranges, size: size, minimumSectionWidth: minimumSectionWidth, restingHeight: restingHeight
+            ranges: ranges, size: size, minimumSectionWidth: minimumSectionWidth,
+            restingHeight: restingHeight, omitShortRanges: omitShortRanges
         )
         var mask = Path()
         for index in sections.indices {
@@ -198,7 +205,7 @@ struct PlayerSkipMarkerTrack: View, Equatable {
         Canvas { context, size in
             let mask = SkipMarkerTrackLayout.maskPath(
                 ranges: ranges, size: size, minimumSectionWidth: minimumSectionWidth,
-                restingHeight: restingHeight
+                restingHeight: restingHeight, omitShortRanges: true
             )
             context.fill(mask, with: .color(.white))
         }
