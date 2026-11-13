@@ -126,7 +126,10 @@ extension PlexProvider: ServerLiveTVProviding {
             }
             try Task.checkCancellation()
             guard await !liveTVLeases.isRetired else { throw CancellationError() }
-            let query = Self.liveTVDecisionQuery(sessionPath: sessionPath, playbackID: playbackID)
+            let query = Self.liveTVDecisionQuery(
+                sessionPath: sessionPath, playbackID: playbackID,
+                directPlay: openingClient.canDirectPlayLiveTV(videoCodec: tuned.videoCodec, audioCodec: tuned.audioCodec)
+            )
                 + openingClient.liveTVPlaybackIdentityQuery
             let decisionData = try await Task.detached {
                 try await openingClient.liveTVSessionRequest(
@@ -188,21 +191,26 @@ extension PlexProvider: ServerLiveTVProviding {
     }
 
     private static func liveTVDecisionQuery(
-        sessionPath: String, playbackID: String
+        sessionPath: String, playbackID: String, directPlay: Bool
     ) -> [URLQueryItem] {
         [
             URLQueryItem(name: "path", value: sessionPath),
             URLQueryItem(name: "mediaIndex", value: "0"),
             URLQueryItem(name: "partIndex", value: "0"),
             URLQueryItem(name: "protocol", value: "hls"),
-            URLQueryItem(name: "directPlay", value: "1"),
+            URLQueryItem(name: "directPlay", value: directPlay ? "1" : "0"),
             URLQueryItem(name: "directStream", value: "1"),
             URLQueryItem(name: "directStreamAudio", value: "1"),
             URLQueryItem(name: "hasMDE", value: "1"),
             URLQueryItem(name: "offset", value: "0"),
             URLQueryItem(name: "context", value: "streaming"),
             URLQueryItem(name: "session", value: playbackID),
-            URLQueryItem(name: "transcodeSessionId", value: playbackID)
+            URLQueryItem(name: "transcodeSessionId", value: playbackID),
+            URLQueryItem(name: "X-Plex-Client-Profile-Name", value: "Generic"),
+            URLQueryItem(
+                name: "X-Plex-Client-Profile-Extra",
+                value: "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264&audioCodec=aac&replace=true)"
+            )
         ]
     }
 

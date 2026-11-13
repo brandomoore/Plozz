@@ -97,7 +97,7 @@ public enum PlozzAttributions {
                 "Playback is powered by AetherEngine by Vincent Herbst, under "
                 + "LGPL-3.0 with an Apple Store exception. "
                 + "Upstream: https://github.com/superuser404notfound/AetherEngine. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/55430e28df74ba11b36fea367ad22af0d685a68b",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/064b152d0242a722de171471b85389116775a8bf",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -105,17 +105,17 @@ public enum PlozzAttributions {
             detail:
                 "FFmpeg n8.1.3 provides libavcodec, libavformat, libavutil, "
                 + "libswresample, libswscale and libavfilter for media decoding "
-                + "and the playback bridge. Packaged by FFmpegBuild 3.11.1. "
+                + "and the playback bridge. Packaged by FFmpegBuild 3.15.0. "
                 + "Source and component notices: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1. "
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.15.0. "
                 + "Upstream: https://ffmpeg.org.",
             licenses: [.init("LGPL-2.1+", family: .lgpl)]
         ),
         PlozzAttribution(
             title: "libdovi",
             detail:
-                "Dolby Vision metadata parsing uses libdovi, packaged by LibDovi 2.1.0. "
-                + "Source: https://github.com/superuser404notfound/LibDovi/tree/2.1.0.",
+                "Dolby Vision metadata parsing uses libdovi, packaged by LibDovi 2.2.0. "
+                + "Source: https://github.com/superuser404notfound/LibDovi/tree/2.2.0.",
             licenses: [.init("MIT", family: .mit)]
         ),
         PlozzAttribution(
@@ -163,7 +163,7 @@ public enum PlozzAttributions {
             detail:
                 "AV1 video decoding uses dav1d 1.5.4 by VideoLAN and contributors. "
                 + "Source and notices are included in FFmpegBuild: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1.",
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.15.0.",
             licenses: [.init("BSD-2-Clause", family: .bsd)]
         ),
         PlozzAttribution(
@@ -171,7 +171,7 @@ public enum PlozzAttributions {
             detail:
                 "Image scaling and color conversion use zimg 3.0.6 under the WTFPL. "
                 + "Source: https://github.com/sekrit-twc/zimg. "
-                + "License: https://github.com/superuser404notfound/FFmpegBuild/blob/3.11.1/LICENSES/zimg.WTFPL.txt."
+                + "License: https://github.com/superuser404notfound/FFmpegBuild/blob/3.15.0/LICENSES/zimg.WTFPL.txt."
         ),
         PlozzAttribution(
             title: "libzvbi",
@@ -180,7 +180,7 @@ public enum PlozzAttributions {
                 + "The library is LGPL-2.0-or-later, distributed under LGPL-2.1; "
                 + "ure.c uses the MIT license. "
                 + "Source, build modifications and notices: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1/LICENSES.",
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.15.0/LICENSES.",
             licenses: [
                 .init("LGPL-2.1", family: .lgpl),
                 .init("MIT", family: .mit),

@@ -20,8 +20,6 @@ with **iCloud**.
   <a href="https://testflight.apple.com/join/EKfReNMu">TestFlight</a>
 </p>
 
-## On every screen
-
 <p align="center">
   <img src="docs/assets/app-store/apple-tv-c41faea853.jpg" width="800" alt="Plozz on Apple TV: Sol Levante on the Home screen with Continue Watching, from the App Store gallery" />
 </p>
@@ -43,8 +41,9 @@ with **iCloud**.
   <a href="https://plozz.app/silo/"><img src="docs/assets/integrations/silo.png" height="40" alt="Silo" /></a>
 </p>
 
-Bring your servers together or browse each one separately. Search, filter and
-sort your collection, jump to a letter, and pick up where you left off.
+**All your media servers and network shares merge together into one library.**
+Browse and search everything in one place, without switching between sources.
+You can still browse each source separately and pick up where you left off.
 
 ## Network shares
 

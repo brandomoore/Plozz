@@ -110,6 +110,24 @@ environment variables, command arguments, configuration files or attachments.
 The broker endpoint must use an unguessable run-specific path and bind only to
 `127.0.0.1`; never publish it as a preview or expose it to the LAN.
 
+### Plex Live TV
+
+`ServerLiveTranscodingTests.testPlexLiveTVChannelSwitchAndReopenRealPlayback`
+uses `PLOZZ_LIVE_TV_BROKER` with the same private `/plex` broker contract.
+Supply exactly two authorized synthetic channel IDs in `itemIDs`, rather than
+library item IDs. The test checks channel and guide discovery, tunes each channel,
+then reopens the first. Each tune must produce a decoded video frame and more
+than ten seconds of playback progress over a twelve-second measurement.
+Supply H.264 first and MPEG-2 second to assert direct playback and compatibility
+conversion respectively. Live TS playlists do not always expose the native
+engine's output-codec diagnostic; this check requires rendered frames and sustained
+progress rather than interpreting missing diagnostics as a playback failure.
+The test closes each lease on success or failure.
+
+The operator owns provisioning and removal of the temporary tuner/guide and must
+stop its synthetic streams and broker after testing. Virtual tuners exercise
+Plex's real DVR APIs but do not establish hardware-specific HDHomeRun behavior.
+
 ## Live watch-state verification
 
 `LiveHomeContentTests` in `AppRuntimeTests` uses the same private broker contract

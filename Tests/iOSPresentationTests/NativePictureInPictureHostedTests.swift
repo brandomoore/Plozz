@@ -139,8 +139,17 @@ final class NativePictureInPictureHostedTests: XCTestCase {
         pip.toggle()
         try await waitUntil { pip.isActive }
         XCTAssertTrue(engine.continuesPlaybackInBackground)
-        pip.toggle()
+
+        let notifications = NotificationCenter.default
+        notifications.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        XCTAssertTrue(pip.isActive, "In-app PiP must remain active without a background transition")
+        notifications.post(name: UIApplication.willResignActiveNotification, object: nil)
+        notifications.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        XCTAssertTrue(pip.isActive, "Transient inactivity must not restore the player")
+        notifications.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        notifications.post(name: UIApplication.didBecomeActiveNotification, object: nil)
         try await waitUntil { !pip.continuesPlayback }
+        XCTAssertFalse(engine.continuesPlaybackInBackground)
         pip.detach()
         XCTAssertFalse(pip.isAvailable)
         XCTAssertFalse(engine.continuesPlaybackInBackground)

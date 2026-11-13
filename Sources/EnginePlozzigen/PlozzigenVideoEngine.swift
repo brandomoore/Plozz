@@ -1120,7 +1120,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         )
         options.objectAudioRendering = .off
         options.preferDualLayerDolbyVision = false
-        options.dolbyVisionHandling = .profile7BaseLayer
+        options.foldsDolbyVisionFEL = false
+        options.dolbyVisionHandling = .profile7MELOnly
         // Aether uses approximately four-second segments and clamps the maximum
         // to 2,700, retaining its free-space budget and producer backpressure.
         switch readAhead {
@@ -1173,7 +1174,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             nativeRemoteHLS: format == .hls,
             nativeRemoteHLSIngestFallback: true
         )
-        options.dolbyVisionHandling = .profile7BaseLayer
+        options.foldsDolbyVisionFEL = false
+        options.dolbyVisionHandling = .profile7MELOnly
         return options
     }
 
