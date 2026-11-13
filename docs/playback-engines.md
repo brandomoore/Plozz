@@ -850,8 +850,8 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/55430e28df74ba11b36fea367ad22af0d685a68b)
-at commit `55430e28df74ba11b36fea367ad22af0d685a68b`, integrating upstream
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/723f0863f507706e4a4337ea1f53fb72be3791d4)
+at commit `723f0863f507706e4a4337ea1f53fb72be3791d4`, integrating upstream
 **7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
 Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
@@ -1107,27 +1107,31 @@ search result are removed on tvOS and iOS/iPadOS. The adapter explicitly sets
 package trait is disabled. Legacy `dolbyVisionFELEnabled` values are ignored when
 loading or transferring profile settings and omitted on the next save.
 
-Plozz selects `DolbyVisionHandling.profile7BaseLayer` for on-demand playback,
-previews and engine-demuxed live playback. Both Profile 7 MEL and FEL play their
-authored HDR10 base, without P7-to-8.1 RPU conversion or enhancement-layer
-reconstruction. The engine classifies its demuxed source, including verified
-record corrections, rather than trusting possibly missing or inaccurate provider
-metadata. Its native remux uses plain `hvc1`, strips the Dolby configuration
+Plozz selects `DolbyVisionHandling.profile7MELOnly` for on-demand playback,
+previews and engine-demuxed live playback. Confirmed HEVC Profile 7 MEL uses the
+existing P7-to-8.1 RPU conversion and native playback path. FEL and unclassified
+P7 retain their authored HDR10 base, without enhancement-layer reconstruction.
+The engine inspects a bounded number of actual source packets before output
+configuration and keeps those packets for playback; provider profile labels do
+not decide MEL versus FEL. Live P7 is not inspected and retains HDR10 fallback.
+
+For MEL conversion, the remux drops the EL, converts RPUs and signals Profile 8.1.
+For the P7 base-layer fallback, it uses plain `hvc1`, strips the Dolby configuration
 record, omits Dolby supplemental codecs, and requests base-layer display criteria.
-Source diagnostics can still identify Profile 7; output must not claim converted
-Profile 8.1. RPU/EL NALs remain unconverted and are ignored by the base-layer decoder.
+Source diagnostics can still identify P7; conversion telemetry identifies P8.1
+only when that stream is actually served. Read/input-limit failures during the
+inspection abort preparation rather than reuse an interrupted parser.
 
-This intentionally gives up Profile 7 dynamic metadata, including MEL, and FEL
-residual detail. Supported single-layer Dolby Vision profiles, ordinary audio
-paths, and native E-AC-3/JOC stream-copy remain unchanged. Software still-image
-reshaping remains disabled. Direct remote HLS handed to AVPlayer, server
-transcoding, and external players own their delivered format; this policy does not
-rewrite those streams or infer their format from original-file metadata.
+Supported single-layer Dolby Vision profiles, ordinary audio paths, and native
+E-AC-3/JOC stream-copy remain unchanged. FEL reconstruction and all optional
+height-audio/still-image reshaping components remain excluded. Direct remote HLS
+handed to AVPlayer, server transcoding, and external players own their delivered
+format; this policy does not rewrite those streams or infer their format from
+original-file metadata. No new preference or playback prompt is introduced.
 
-Removing the optional reconstruction path does not establish licensing clearance
-for every remaining video or audio feature. Avoiding P7 conversion reduces custom
-processing; it does not remove all Dolby-related code from the distributed engine
-or establish patent permission. Open-source licensing and Apple API availability
+Keeping FEL reconstruction disabled does not establish licensing clearance
+for every remaining video or audio feature. The engine still includes Dolby-related
+code, including MEL metadata conversion. Open-source licensing and Apple API availability
 are not a substitute for reviewing the actual shipped implementation and applicable
 third-party rights.
 

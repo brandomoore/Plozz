@@ -47,7 +47,7 @@ public extension MediaVersion {
 
     private func selectionHDRHint(for capabilities: MediaCapabilities) -> SourceDynamicRange? {
         let video = sourceMetadata?.video
-        // Matches the adapter's profile7BaseLayer policy, not source branding.
+        // Provider metadata cannot confirm MEL; score P7 by its HDR10 fallback.
         if video?.dolbyVisionProfile == 7 { return .hdr10 }
         func normalized(_ token: String?) -> String? {
             token?.uppercased().replacingOccurrences(of: "+", with: "PLUS")
