@@ -157,6 +157,8 @@ Plozz's native navigation bar and back gesture remain in place.
 As in Mozz, compact heroes extend through the top safe area; wide framed heroes
 fade from the deep page color into the artwork color. Only foreground content
 clears the native navigation inset, avoiding a separate dark navigation band.
+Framed heroes draw above the following section so artwork shadows can fade into
+its background without a hard edge or extra layout spacing.
 Native back controls remain, without an additional navigation-bar background or
 iOS 26 top-edge scrim over the hero.
 

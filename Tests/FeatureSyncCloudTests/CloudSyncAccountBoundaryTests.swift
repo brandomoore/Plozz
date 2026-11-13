@@ -7,6 +7,140 @@ import CoreModels
 final class CloudSyncAccountBoundaryTests: XCTestCase {
     private struct Persisted: Encodable { let ledger: SyncLedger }
 
+    @MainActor
+    func testOnlyConfirmedNoAccountRequestsSignIn() async throws {
+        for accountStatus in [CKAccountStatus.noAccount, .restricted, .couldNotDetermine, .temporarilyUnavailable] {
+            let status = CloudSyncStatus()
+            status.setPhase(.idle)
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test",
+                stateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }, status: status))
+            let available = await service.checkAccountAvailability(
+                accountStatus: { accountStatus },
+                accountIdentity: { XCTFail("Unavailable accounts must not fetch an identity"); return "" })
+            XCTAssertFalse(available)
+            try await waitForStatus { status.phase == .signedOut || status.lastErrorMessage != nil }
+            if accountStatus == .noAccount {
+                XCTAssertEqual(status.phase, .signedOut)
+                XCTAssertNil(status.lastErrorMessage)
+            } else {
+                XCTAssertNotEqual(status.phase, .signedOut)
+                XCTAssertNotNil(status.lastErrorMessage)
+                XCTAssertNotNil(status.lastDiagnostic)
+            }
+        }
+    }
+
+    @MainActor
+    func testAccountAndIdentityLookupFailuresReportErrorsNotSignOut() async throws {
+        for failIdentity in [false, true] {
+            let status = CloudSyncStatus()
+            status.setPhase(.idle)
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test",
+                stateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }, status: status))
+            let available = await service.checkAccountAvailability(
+                accountStatus: {
+                    if !failIdentity { throw CKError(.networkFailure) }
+                    return .available
+                },
+                accountIdentity: { throw CKError(.networkFailure) })
+            XCTAssertFalse(available)
+            try await waitForStatus { status.lastErrorMessage != nil }
+            XCTAssertNotEqual(status.phase, .signedOut)
+            XCTAssertNotNil(status.lastDiagnostic)
+        }
+    }
+
+    @MainActor
+    func testUnreadableIdentityMarkerReportsErrorWithoutAdmittingAccount() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("config.json")
+        try Data("invalid marker".utf8).write(to: file.appendingPathExtension("account"))
+        let status = CloudSyncStatus()
+        status.setPhase(.idle)
+        let service = CloudConfigSyncService(.init(
+            containerIdentifier: "iCloud.test", stateFileURL: file, isEnabled: { true },
+            captureRecords: { $0 }, applyRecords: { _ in }, status: status))
+        let available = await service.checkAccountAvailability(
+            accountStatus: { .available }, accountIdentity: { "A" })
+        XCTAssertFalse(available)
+        try await waitForStatus { status.lastErrorMessage != nil }
+        XCTAssertNotEqual(status.phase, .signedOut)
+        XCTAssertEqual(try Data(contentsOf: file.appendingPathExtension("account")), Data("invalid marker".utf8))
+    }
+
+    @MainActor
+    func testCancelledOrDeactivatedLookupCannotOverwriteCurrentStatus() async throws {
+        for deactivate in [false, true] {
+            let status = CloudSyncStatus()
+            status.setPhase(.idle)
+            let gate = AdmissionGate()
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test",
+                stateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }, status: status))
+            let lookup = Task {
+                await service.checkAccountAvailability(
+                    accountStatus: { await gate.pauseFirstReset(); return .noAccount },
+                    accountIdentity: { XCTFail("Stale lookup must not fetch identity"); return "" })
+            }
+            await gate.waitUntilStarted()
+            if deactivate {
+                await service.deactivate()
+                try await waitForStatus { status.phase == .disabled }
+            } else {
+                lookup.cancel()
+            }
+            await gate.release()
+            let available = await lookup.value
+            XCTAssertFalse(available)
+            XCTAssertEqual(status.phase, deactivate ? .disabled : .idle)
+            XCTAssertNil(status.lastErrorMessage)
+        }
+    }
+
+    @MainActor
+    func testNewerLookupSupersedesSuspendedIdentityAdmission() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("config.json")
+        try JSONEncoder().encode("A").write(to: file.appendingPathExtension("account"))
+        let gate = AdmissionGate()
+        let status = CloudSyncStatus()
+        let service = CloudConfigSyncService(.init(
+            containerIdentifier: "iCloud.test", stateFileURL: file, isEnabled: { true },
+            captureRecords: { $0 }, applyRecords: { _ in },
+            onAccountSwitch: { await gate.pauseFirstReset() }, status: status))
+        let older = Task {
+            await service.checkAccountAvailability(accountStatus: { .available }, accountIdentity: { "B" })
+        }
+        await gate.waitUntilStarted()
+        let latest = await service.checkAccountAvailability(accountStatus: { .noAccount }, accountIdentity: { "" })
+        XCTAssertFalse(latest)
+        try await waitForStatus { status.phase == .signedOut }
+        await gate.release()
+        let superseded = await older.value
+        XCTAssertFalse(superseded)
+        XCTAssertEqual(status.phase, .signedOut)
+        XCTAssertNil(status.lastErrorMessage)
+        XCTAssertEqual(try JSONDecoder().decode(String.self, from: Data(contentsOf: file.appendingPathExtension("account"))), "A")
+    }
+
+    @MainActor
+    private func waitForStatus(_ predicate: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !predicate(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(predicate(), "The account check must publish its status")
+    }
+
     func testOlderAdmissionCannotOverwriteANewerAccountDuringReset() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

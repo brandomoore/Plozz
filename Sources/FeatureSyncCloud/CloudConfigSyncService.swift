@@ -294,6 +294,7 @@ public actor CloudConfigSyncService {
     /// ignored (generation fencing).
     private var engineGeneration = 0
     private var accountGeneration = 0
+    private var accountCheckRevision = 0
     private var identityAdmissionRevision = 0
     private var fullResyncChanges: [String: SyncLocalChanges] = [:]
     private var fullResyncReceipts: [String: [SyncRecordID: Data]] = [:]
@@ -559,7 +560,7 @@ public actor CloudConfigSyncService {
             setStatus(.disabled)
             return false
         }
-        guard await accountIsAvailable() else { setStatus(.signedOut); return false }
+        guard await accountIsAvailable() else { return false }
         guard !isErasing, isActive, config.isEnabled() else { return false }
         guard await stageLocalChangesBeforeFetch() else { return false }
         ensureEngine()
@@ -616,6 +617,8 @@ public actor CloudConfigSyncService {
     public func deactivate() {
         guard isActive || engine != nil else { return }
         isActive = false
+        accountCheckRevision += 1
+        identityAdmissionRevision += 1
         engineGeneration += 1   // fence any in-flight delegate calls tied to the old engine
         engine = nil
         setStatus(.disabled)
@@ -719,7 +722,7 @@ public actor CloudConfigSyncService {
             deactivate()
             return
         }
-        guard await accountIsAvailable() else { setStatus(.signedOut); return }
+        guard await accountIsAvailable() else { return }
         guard await stageLocalChangesBeforeFetch() else { return }
         ensureEngine()
         guard let engine else { return }
@@ -1015,7 +1018,7 @@ public actor CloudConfigSyncService {
     @discardableResult
     public func redownloadFromCloud() async -> CloudSyncRecoveryResult {
         guard isActive, config.isEnabled() else { return .unavailable }
-        guard await accountIsAvailable() else { setStatus(.signedOut); return .unavailable }
+        guard await accountIsAvailable() else { return .unavailable }
         guard !isFullResyncing else { return .interrupted }
         guard restorePersistedStateIfNeeded() else { return .failed }
         let previousLedgers = channels.map(\.ledger)
@@ -1324,27 +1327,78 @@ public actor CloudConfigSyncService {
         // false makes them all no-op instead of trapping. See
         // `hasCloudKitEntitlement`.
         guard hasCloudKitEntitlement else { return false }
+        let container = container
+        return await checkAccountAvailability(
+            accountStatus: { try await container.accountStatus() },
+            accountIdentity: { try await container.userRecordID().recordName }
+        )
+    }
+
+    func checkAccountAvailability(
+        accountStatus: @Sendable () async throws -> CKAccountStatus,
+        accountIdentity: @Sendable () async throws -> String
+    ) async -> Bool {
+        guard isActive, config.isEnabled(), !Task.isCancelled else { return false }
+        accountCheckRevision += 1
+        identityAdmissionRevision += 1
+        let revision = accountCheckRevision
+        let generation = accountGeneration
         do {
-            let generation = accountGeneration
-            let status = try await container.accountStatus()
-            guard generation == accountGeneration else { return false }
-            guard status == .available else {
-                if status == .noAccount, verifiedAccountIdentity != nil {
-                    try await resetForAccountChange()
+            let status = try await accountStatus()
+            guard generation == accountGeneration, revision == accountCheckRevision,
+                  isActive, config.isEnabled(), !Task.isCancelled else { return false }
+            if status == .noAccount {
+                if verifiedAccountIdentity != nil {
+                    do {
+                        try await resetForAccountChange()
+                    } catch {
+                        guard revision == accountCheckRevision, isActive, config.isEnabled(),
+                              !Task.isCancelled, !(error is CancellationError) else { return false }
+                        reportAccountCheckFailure(error)
+                        return false
+                    }
                 }
+                guard revision == accountCheckRevision, isActive, config.isEnabled(),
+                      !Task.isCancelled else { return false }
+                setStatus(.signedOut)
                 return false
             }
-            let identity = try await container.userRecordID().recordName
-            guard generation == accountGeneration, config.isEnabled(), isActive else { return false }
+            guard status == .available else {
+                let code: CKError.Code
+                switch status {
+                case .restricted: code = .permissionFailure
+                case .temporarilyUnavailable: code = .accountTemporarilyUnavailable
+                default: code = .internalError
+                }
+                reportAccountCheckFailure(CKError(code))
+                return false
+            }
+            let identity = try await accountIdentity()
+            guard generation == accountGeneration, revision == accountCheckRevision,
+                  config.isEnabled(), isActive, !Task.isCancelled else { return false }
             return await confirmAccountIdentity(identity)
+        } catch {
+            guard generation == accountGeneration, revision == accountCheckRevision,
+                  isActive, config.isEnabled(), !Task.isCancelled,
+                  !(error is CancellationError) else { return false }
+            reportAccountCheckFailure(error)
+            return false
         }
-        catch { PlozzLog.sync.error("CloudSync: accountStatus failed: \(error.localizedDescription)"); return false }
+    }
+
+    private func reportAccountCheckFailure(_ error: Error) {
+        setDiagnostic("Cloud account verification: \(Self.describe(error))")
+        setStatus(.error, error: error.localizedDescription)
     }
 
     /// Validate ownership before loading a cursor into CKSyncEngine or admitting
     /// cached credentials. The marker survives sign-out and process termination.
     func confirmAccountIdentity(_ identity: String) async -> Bool {
-        guard !identity.isEmpty else { return false }
+        guard isActive, config.isEnabled(), !Task.isCancelled else { return false }
+        guard !identity.isEmpty else {
+            reportAccountCheckFailure(CKError(.internalError))
+            return false
+        }
         identityAdmissionRevision += 1
         let admission = identityAdmissionRevision
         if verifiedAccountIdentity == identity { return true }
@@ -1359,15 +1413,18 @@ public actor CloudConfigSyncService {
             } else {
                 generation = accountGeneration
             }
-            guard generation == accountGeneration, admission == identityAdmissionRevision else { return false }
+            guard generation == accountGeneration, admission == identityAdmissionRevision,
+                  isActive, config.isEnabled(), !Task.isCancelled else { return false }
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(identity).write(to: url, options: .atomic)
             verifiedAccountIdentity = identity
             return true
         } catch {
-            guard admission == identityAdmissionRevision, !(error is CancellationError) else { return false }
+            guard admission == identityAdmissionRevision, isActive, config.isEnabled(),
+                  !Task.isCancelled, !(error is CancellationError) else { return false }
             verifiedAccountIdentity = nil
             setDiagnostic("Cloud account identity could not be verified; synchronization remains paused")
+            setStatus(.error, error: error.localizedDescription)
             return false
         }
     }

@@ -248,6 +248,7 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
                         artistHero(width: geometry.size.width, topInset: geometry.safeAreaInsets.top)
                     } else {
                         framedHero(width: geometry.size.width, wide: wide, topInset: geometry.safeAreaInsets.top)
+                            .zIndex(1)
                     }
                     content()
                         .padding(.horizontal, wide ? 32 : 20)

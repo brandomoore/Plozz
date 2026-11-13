@@ -1532,6 +1532,10 @@ watch history and planning-list behavior are documented in
   use the shared transient-status presenter for progress and the actual result,
   and disable both actions while either is running. Reset still requires
   confirmation. Pending Live TV source repair rows remain in Troubleshooting.
+  Both platforms describe supported sign-in syncing consistently with onboarding.
+  Only confirmed iCloud account absence prompts sign-in; account lookup and
+  identity-verification failures retain an error diagnostic. Cancelled or
+  superseded account checks must not overwrite the current sync status.
 - **Profile-namespaced settings.** Per-user prefs (theme, captions,
   diagnostics, spoiler) are namespaced by the active profile id; the
   default profile uses no suffix so an upgrading install keeps existing

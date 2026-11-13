@@ -49,7 +49,7 @@ public enum CloudSyncRecoveryAction: Sendable {
 public final class CloudSyncStatus {
     public enum Phase: Equatable, Sendable {
         case disabled       // feature flag off
-        case signedOut      // no usable iCloud account
+        case signedOut      // confirmed absence of an iCloud account
         case idle           // up to date, nothing in flight
         case syncing        // a fetch or send is in progress
         case error          // last attempt failed (see message)

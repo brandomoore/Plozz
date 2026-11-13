@@ -8,6 +8,67 @@ import XCTest
 
 @MainActor
 final class MusicDetailPresentationTests: XCTestCase {
+    func testWideArtworkShadowExtendsBelowTheHeroIntoTheContentBackground() async throws {
+        let url = URL(string: "https://music-detail.invalid/\(UUID()).png")!
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).image { context in
+            UIColor.cyan.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
+        }
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(artwork.pngData())),
+            for: URLRequest(url: url)
+        )
+        defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
+        let loaded = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+        XCTAssertNotNil(loaded)
+
+        for size in [CGSize(width: 834, height: 1_194), CGSize(width: 1_194, height: 834)] {
+            for gradients in [true, false] {
+                for playlist in [false, true] {
+                    let page = Group {
+                        if playlist {
+                            MobileMusicPlaylistDetail(
+                                playlist: MusicPlaylist(id: "playlist", title: "Playlist", artworkURL: url),
+                                tracks: [], nowPlayingTrack: nil, isPlaying: false,
+                                onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
+                            )
+                        } else {
+                            MobileMusicAlbumDetail(
+                                album: MusicAlbum(id: "album", title: "Album", artworkURL: url),
+                                tracks: [], nowPlayingTrack: nil, isPlaying: false,
+                                onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
+                            )
+                        }
+                    }
+                    .environment(\.themePalette, .light)
+                    .environment(\.gradientBackgroundsEnabled, gradients)
+                    try await mount(page, size: size, name: "Artwork shadow \(size.width) \(gradients) \(playlist)") { _, window in
+                        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                        }
+                        let edge = min(size.width * 0.32, 300)
+                        let centerX = max(0, (size.width - 1_000) / 2) + 32 + edge / 2
+                        let coverRows = try (0..<600).filter { y in
+                            let color = try self.pixel(in: image, at: CGPoint(x: centerX, y: CGFloat(y)))
+                            return color[0] < 0.1 && color[1] > 0.9 && color[2] > 0.9
+                        }
+                        let bottom = try XCTUnwrap(coverRows.last, "Measure the loaded artwork, not a placeholder")
+                        let sampleY = CGFloat(bottom) + 16
+                        let shadow = try self.pixel(in: image, at: CGPoint(x: centerX, y: sampleY))
+                        let background = try self.pixel(in: image, at: CGPoint(x: size.width - 16, y: sampleY))
+                        XCTAssertGreaterThan(background[1] - shadow[1], 0.015,
+                                             "The next section must not paint over the artwork shadow below the hero")
+                    }
+                }
+            }
+        }
+    }
+
     func testNativeNavigationHasNoDarkSeamAboveTheHero() async throws {
         let url = URL(string: "https://music-detail.invalid/\(UUID().uuidString).png")!
         let artwork = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).image { context in

@@ -295,6 +295,10 @@ registry.
   invalidate cached authority and suppress old local credentials until fresh
   authentication rather than uploading them to a different account. Encryption
   does not imply Apple lacks key access without Advanced Data Protection.
+  The CloudKit schema must include `PlozzProviderCredentialsV1Record` with
+  `kind` (String), `editedAt` (Int64), and `value` (Encrypted Bytes). Deploy that
+  schema to Production before distributing this channel through TestFlight or
+  the App Store; Development schema availability alone is not sufficient.
 
 - **Bounded setup summaries.** Both sending and receiving use CoreUI's shared
   scrolling summary on TV and mobile. Group accounts by physical server, retain
