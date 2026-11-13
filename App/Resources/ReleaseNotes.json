@@ -23,9 +23,8 @@
         {
           "category": "Updated",
           "items": [
-            "Custom Home rows now support playlists, libraries and lists like Continue Watching.",
-            "Combine multiple sources in a custom Home row.",
-            "Sort and filter custom Home rows.",
+            "Custom Home rows now support playlists, libraries and lists like Continue Watching, individually or combined.",
+            "Custom Home rows now support sorting and filtering.",
             "Clearer iCloud setup and restoration progress.",
             "Video-version selection, including an option to use server order.",
             "More consistent title details, resume choices and metadata language.",
