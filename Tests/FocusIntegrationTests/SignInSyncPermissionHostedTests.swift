@@ -29,7 +29,7 @@ final class SignInSyncPermissionHostedTests: XCTestCase {
         XCTAssertTrue(alert.message?.contains("iCloud account") == true)
         XCTAssertTrue(alert.message?.contains("Save these sign-ins to this device's iCloud account") == true)
         XCTAssertTrue(alert.message?.contains("sign in automatically on your other devices") == true)
-        XCTAssertTrue(alert.message?.contains("Check the account in system Settings") == true)
+        XCTAssertFalse(alert.message?.contains("Settings") == true)
         XCTAssertFalse(alert.message?.contains("permission to share") == true)
         XCTAssertTrue(alert.message?.contains("Living Room Server") == true)
         XCTAssertEqual(Set(alert.actions.compactMap(\.title)), ["Keep on This Device", "Save to iCloud"])

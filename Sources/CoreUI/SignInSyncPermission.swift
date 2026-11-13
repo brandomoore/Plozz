@@ -20,7 +20,7 @@ private struct SignInSyncPermission<Request: Identifiable & Equatable>: ViewModi
                 Button("Keep on This Device", role: .cancel) { resolve(pending, false) }
                 Button("Save to iCloud") { resolve(pending, true) }
             } message: { pending in
-                Text("Save these sign-ins to this device's iCloud account to sign in automatically on your other devices. Check the account in system Settings.\n\n\(sourceNames(pending))",
+                Text("Save these sign-ins to this device's iCloud account to sign in automatically on your other devices.\n\n\(sourceNames(pending))",
                      comment: "Permission to upload existing server credentials; the substitution lists the affected sources.")
             }
     }
