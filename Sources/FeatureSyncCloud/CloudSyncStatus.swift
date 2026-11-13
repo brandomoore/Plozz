@@ -118,9 +118,9 @@ public final class CloudSyncStatus {
     /// Record an error, but only surface it after a grace period — so a blip that
     /// the engine immediately resolves (a following idle) never shows red.
     func setError(
-        _ message: String, diagnostic: String?, reason: ErrorReason? = nil,
+        _ message: String, diagnostic: String?, reason: ErrorReason? = nil, // l10n:content — OS/CloudKit-supplied, already-localized error text
         retryGrace: Duration? = nil
-    ) {  // l10n:content — OS/CloudKit-supplied, already-localized error text
+    ) {
         lastErrorMessage = message
         lastErrorReason = reason
         if let diagnostic { lastDiagnostic = diagnostic }
