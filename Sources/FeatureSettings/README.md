@@ -1536,6 +1536,13 @@ watch history and planning-list behavior are documented in
   Only confirmed iCloud account absence prompts sign-in; account lookup and
   identity-verification failures retain an error diagnostic. Cancelled or
   superseded account checks must not overwrite the current sync status.
+  Temporary account unavailability (CloudKit error 36) retries account and identity
+  verification after 2, 5 and 15 seconds, including before the engine first starts.
+  Retries stop on cancellation, revoked consent, deactivation or a newer check;
+  other failures are not retried by this account-check policy. Persistent
+  unavailability uses a readable status while retaining the original diagnostic.
+  Recovery still requires verified account ownership, and later foreground or
+  manual sync can try again after the bounded retries finish.
 - **Profile-namespaced settings.** Per-user prefs (theme, captions,
   diagnostics, spoiler) are namespaced by the active profile id; the
   default profile uses no suffix so an upgrading install keeps existing

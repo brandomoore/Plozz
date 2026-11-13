@@ -47,6 +47,10 @@ public enum CloudSyncRecoveryAction: Sendable {
 @MainActor
 @Observable
 public final class CloudSyncStatus {
+    enum ErrorReason: Equatable, Sendable {
+        case accountTemporarilyUnavailable
+    }
+
     public enum Phase: Equatable, Sendable {
         case disabled       // feature flag off
         case signedOut      // confirmed absence of an iCloud account
@@ -60,6 +64,7 @@ public final class CloudSyncStatus {
     public internal(set) var lastSyncedAt: Date?
     /// Short, non-secret description of the last failure (for the error state).
     public internal(set) var lastErrorMessage: String?
+    private(set) var lastErrorReason: ErrorReason?
     /// A PERSISTENT diagnostic detail (last CloudKit error), shown until the next
     /// success clears it. Survives the phase flicker so it's actually readable.
     public internal(set) var lastDiagnostic: String?
@@ -99,13 +104,19 @@ public final class CloudSyncStatus {
     func setPhase(_ newPhase: Phase, syncedNow: Bool = false) {
         pendingErrorTask?.cancel(); pendingErrorTask = nil
         phase = newPhase
-        if syncedNow { lastSyncedAt = Date(); lastDiagnostic = nil; lastErrorMessage = nil }
+        if syncedNow {
+            lastSyncedAt = Date()
+            lastDiagnostic = nil
+            lastErrorMessage = nil
+            lastErrorReason = nil
+        }
     }
 
     /// Record an error, but only surface it after a grace period — so a blip that
     /// the engine immediately resolves (a following idle) never shows red.
-    func setError(_ message: String, diagnostic: String?) {  // l10n:content — OS/CloudKit-supplied, already-localized error text
+    func setError(_ message: String, diagnostic: String?, reason: ErrorReason? = nil) {  // l10n:content — OS/CloudKit-supplied, already-localized error text
         lastErrorMessage = message
+        lastErrorReason = reason
         if let diagnostic { lastDiagnostic = diagnostic }
         // Repeated completion/retry events must not postpone a persistent error.
         guard phase != .error, pendingErrorTask == nil else { return }
@@ -123,7 +134,11 @@ public final class CloudSyncStatus {
         case .disabled:  return "Off"
         case .signedOut: return "Sign in to iCloud to sync"
         case .syncing:   return "Syncing…"
-        case .error:     return lastErrorMessage.map { "Couldn’t sync — \($0)" } ?? "Couldn’t sync"
+        case .error:
+            if lastErrorReason == .accountTemporarilyUnavailable {
+                return "iCloud is temporarily unavailable. Try again shortly."
+            }
+            return lastErrorMessage.map { "Couldn’t sync — \($0)" } ?? "Couldn’t sync"
         case .idle:
             guard let lastSyncedAt else { return "On" }
             return "Up to date · synced \(Self.relative(lastSyncedAt))"

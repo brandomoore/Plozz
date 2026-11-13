@@ -8,6 +8,110 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
     private struct Persisted: Encodable { let ledger: SyncLedger }
 
     @MainActor
+    func testTemporaryAccountFailuresRetryStatusAndIdentityWithoutSkippingAdmission() async throws {
+        for failureStage in ["status", "status-error", "identity"] {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let file = folder.appendingPathComponent("config.json")
+            let calls = AccountCheckCounter()
+            let status = CloudSyncStatus()
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test", stateFileURL: file, isEnabled: { true },
+                captureRecords: { $0 }, applyRecords: { _ in }, status: status))
+            let available = await service.checkAccountAvailability(
+                accountStatus: {
+                    let call = await calls.next()
+                    if call == 1 && failureStage == "status" { return .temporarilyUnavailable }
+                    if call == 1 && failureStage == "status-error" { throw CKError(.accountTemporarilyUnavailable) }
+                    return .available
+                },
+                accountIdentity: {
+                    if failureStage == "identity", await calls.count == 1 {
+                        throw CKError(.accountTemporarilyUnavailable)
+                    }
+                    return "verified-account"
+                },
+                retryDelays: [.zero, .zero])
+            XCTAssertTrue(available, failureStage)
+            let count = await calls.count
+            XCTAssertEqual(count, 2)
+            XCTAssertEqual(try JSONDecoder().decode(
+                String.self, from: Data(contentsOf: file.appendingPathExtension("account"))), "verified-account")
+        }
+    }
+
+    @MainActor
+    func testTemporaryAccountRetriesAreBoundedAndOtherFailuresAreNotRetried() async throws {
+        for code in [CKError.Code.accountTemporarilyUnavailable, .networkFailure, .permissionFailure] {
+            let calls = AccountCheckCounter()
+            let status = CloudSyncStatus()
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test",
+                stateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }, status: status))
+            let available = await service.checkAccountAvailability(
+                accountStatus: { _ = await calls.next(); throw CKError(code) },
+                accountIdentity: { XCTFail("Failed checks must not admit identity"); return "" },
+                retryDelays: [.zero, .zero])
+            XCTAssertFalse(available)
+            let count = await calls.count
+            XCTAssertEqual(count, code == .accountTemporarilyUnavailable ? 3 : 1)
+            try await waitForStatus { status.lastErrorMessage != nil }
+            XCTAssertEqual(status.lastErrorReason, code == .accountTemporarilyUnavailable
+                           ? .accountTemporarilyUnavailable : nil)
+            XCTAssertNotNil(status.lastDiagnostic)
+        }
+    }
+
+    @MainActor
+    func testRetryWaitRespectsCancellationDeactivationConsentAndNewerChecks() async throws {
+        for interruption in ["cancel", "deactivate", "consent", "supersede"] {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let file = folder.appendingPathComponent("config.json")
+            let calls = AccountCheckCounter()
+            let gate = AdmissionGate()
+            let consent = TestAuthority()
+            let status = CloudSyncStatus()
+            status.setPhase(.idle)
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test", stateFileURL: file,
+                isEnabled: { consent.value == "0" },
+                captureRecords: { $0 }, applyRecords: { _ in }, status: status))
+            let lookup = Task {
+                await service.checkAccountAvailability(
+                    accountStatus: { _ = await calls.next(); return .temporarilyUnavailable },
+                    accountIdentity: { XCTFail("Interrupted retries must not fetch identity"); return "" },
+                    retryDelays: [.seconds(15)],
+                    waitBeforeRetry: { _ in await gate.pauseFirstReset() })
+            }
+            await gate.waitUntilStarted()
+            switch interruption {
+            case "cancel": lookup.cancel()
+            case "deactivate":
+                await service.deactivate()
+                try await waitForStatus { status.phase == .disabled }
+            case "consent": consent.renew()
+            default:
+                let available = await service.checkAccountAvailability(
+                    accountStatus: { .noAccount }, accountIdentity: { "" },
+                    retryDelays: [.zero],
+                    waitBeforeRetry: { _ in XCTFail("Confirmed no-account must not retry") })
+                XCTAssertFalse(available)
+                try await waitForStatus { status.phase == .signedOut }
+            }
+            await gate.release()
+            let available = await lookup.value
+            XCTAssertFalse(available)
+            let count = await calls.count
+            XCTAssertEqual(count, 1)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.appendingPathExtension("account").path))
+            if interruption == "deactivate" { XCTAssertEqual(status.phase, .disabled) }
+            if interruption == "supersede" { XCTAssertEqual(status.phase, .signedOut) }
+        }
+    }
+
+    @MainActor
     func testOnlyConfirmedNoAccountRequestsSignIn() async throws {
         for accountStatus in [CKAccountStatus.noAccount, .restricted, .couldNotDetermine, .temporarilyUnavailable] {
             let status = CloudSyncStatus()
@@ -269,6 +373,11 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
 private actor ResetCounter {
     var count = 0
     func increment() { count += 1 }
+}
+
+private actor AccountCheckCounter {
+    var count = 0
+    func next() -> Int { count += 1; return count }
 }
 
 private final class TestAuthority: @unchecked Sendable {

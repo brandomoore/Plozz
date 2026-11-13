@@ -399,7 +399,10 @@ public actor CloudConfigSyncService {
 
     // MARK: Status helpers
 
-    private func setStatus(_ phase: CloudSyncStatus.Phase, syncedNow: Bool = false, error: String? = nil) {
+    private func setStatus(
+        _ phase: CloudSyncStatus.Phase, syncedNow: Bool = false, error: String? = nil,
+        reason: CloudSyncStatus.ErrorReason? = nil
+    ) {
         failures.resolveUnneededSaves { id in
             channels.first(where: { $0.schema.contains(id) })?.ledger.entries[id.recordName]?.dirty == true
         }
@@ -413,9 +416,11 @@ public actor CloudConfigSyncService {
         }
         let message = error ?? failures.error?.localizedDescription
         let diagnostic = failures.error.map(Self.describe)
+        let errorReason = reason ?? (error == nil && (failures.error as? CKError)?.code == .accountTemporarilyUnavailable
+            ? .accountTemporarilyUnavailable : nil)
         Task { @MainActor in
             if effectivePhase == .error {
-                status.setError(message ?? "Couldn't sync", diagnostic: diagnostic)
+                status.setError(message ?? "Couldn't sync", diagnostic: diagnostic, reason: errorReason)
             } else {
                 status.setPhase(effectivePhase, syncedNow: syncedNow && effectivePhase == .idle)
             }
@@ -1330,65 +1335,86 @@ public actor CloudConfigSyncService {
         let container = container
         return await checkAccountAvailability(
             accountStatus: { try await container.accountStatus() },
-            accountIdentity: { try await container.userRecordID().recordName }
+            accountIdentity: { try await container.userRecordID().recordName },
+            retryDelays: [.seconds(2), .seconds(5), .seconds(15)]
         )
     }
 
     func checkAccountAvailability(
         accountStatus: @Sendable () async throws -> CKAccountStatus,
-        accountIdentity: @Sendable () async throws -> String
+        accountIdentity: @Sendable () async throws -> String,
+        retryDelays: [Duration] = [],
+        waitBeforeRetry: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async -> Bool {
         guard isActive, config.isEnabled(), !Task.isCancelled else { return false }
         accountCheckRevision += 1
         identityAdmissionRevision += 1
         let revision = accountCheckRevision
         let generation = accountGeneration
-        do {
-            let status = try await accountStatus()
+        var retries = 0
+        while true {
             guard generation == accountGeneration, revision == accountCheckRevision,
                   isActive, config.isEnabled(), !Task.isCancelled else { return false }
-            if status == .noAccount {
-                if verifiedAccountIdentity != nil {
-                    do {
-                        try await resetForAccountChange()
-                    } catch {
-                        guard revision == accountCheckRevision, isActive, config.isEnabled(),
-                              !Task.isCancelled, !(error is CancellationError) else { return false }
-                        reportAccountCheckFailure(error)
-                        return false
+            do {
+                let status = try await accountStatus()
+                guard generation == accountGeneration, revision == accountCheckRevision,
+                      isActive, config.isEnabled(), !Task.isCancelled else { return false }
+                if status == .noAccount {
+                    if verifiedAccountIdentity != nil {
+                        do {
+                            try await resetForAccountChange()
+                        } catch {
+                            guard revision == accountCheckRevision, isActive, config.isEnabled(),
+                                  !Task.isCancelled, !(error is CancellationError) else { return false }
+                            reportAccountCheckFailure(error)
+                            return false
+                        }
                     }
+                    guard revision == accountCheckRevision, isActive, config.isEnabled(),
+                          !Task.isCancelled else { return false }
+                    setStatus(.signedOut)
+                    return false
                 }
-                guard revision == accountCheckRevision, isActive, config.isEnabled(),
-                      !Task.isCancelled else { return false }
-                setStatus(.signedOut)
-                return false
-            }
-            guard status == .available else {
-                let code: CKError.Code
-                switch status {
-                case .restricted: code = .permissionFailure
-                case .temporarilyUnavailable: code = .accountTemporarilyUnavailable
-                default: code = .internalError
+                guard status == .available else {
+                    let code: CKError.Code
+                    switch status {
+                    case .restricted: code = .permissionFailure
+                    case .temporarilyUnavailable: code = .accountTemporarilyUnavailable
+                    default: code = .internalError
+                    }
+                    throw CKError(code)
                 }
-                reportAccountCheckFailure(CKError(code))
-                return false
+                let identity = try await accountIdentity()
+                guard generation == accountGeneration, revision == accountCheckRevision,
+                      config.isEnabled(), isActive, !Task.isCancelled else { return false }
+                return await confirmAccountIdentity(identity)
+            } catch {
+                guard generation == accountGeneration, revision == accountCheckRevision,
+                      isActive, config.isEnabled(), !Task.isCancelled,
+                      !(error is CancellationError) else { return false }
+                reportAccountCheckFailure(error)
+                guard (error as? CKError)?.code == .accountTemporarilyUnavailable,
+                      retries < retryDelays.count else { return false }
+                let delay = retryDelays[retries]
+                retries += 1
+                do {
+                    try await waitBeforeRetry(delay)
+                } catch {
+                    guard generation == accountGeneration, revision == accountCheckRevision,
+                          isActive, config.isEnabled(), !Task.isCancelled,
+                          !(error is CancellationError) else { return false }
+                    reportAccountCheckFailure(error)
+                    return false
+                }
             }
-            let identity = try await accountIdentity()
-            guard generation == accountGeneration, revision == accountCheckRevision,
-                  config.isEnabled(), isActive, !Task.isCancelled else { return false }
-            return await confirmAccountIdentity(identity)
-        } catch {
-            guard generation == accountGeneration, revision == accountCheckRevision,
-                  isActive, config.isEnabled(), !Task.isCancelled,
-                  !(error is CancellationError) else { return false }
-            reportAccountCheckFailure(error)
-            return false
         }
     }
 
     private func reportAccountCheckFailure(_ error: Error) {
         setDiagnostic("Cloud account verification: \(Self.describe(error))")
-        setStatus(.error, error: error.localizedDescription)
+        setStatus(.error, error: error.localizedDescription,
+                  reason: (error as? CKError)?.code == .accountTemporarilyUnavailable
+                    ? .accountTemporarilyUnavailable : nil)
     }
 
     /// Validate ownership before loading a cursor into CKSyncEngine or admitting

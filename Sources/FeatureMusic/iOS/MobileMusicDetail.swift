@@ -318,10 +318,7 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
         .padding(.bottom, 8)
         .frame(maxWidth: 1_000)
         .frame(maxWidth: .infinity)
-        .background {
-            LinearGradient(colors: [wide ? deepColor : heroColor, heroColor],
-                           startPoint: .top, endPoint: .bottom)
-        }
+        .background(heroColor)
     }
 
     private func artistHero(width: CGFloat, topInset: CGFloat) -> some View {
@@ -409,8 +406,9 @@ struct MusicDetailColors {
             self = .neutral
             return
         }
-        hero = Color(hue: hue, saturation: min(1, saturation * 1.15), brightness: min(brightness, 0.36))
-        deep = Color(hue: hue, saturation: min(saturation, 0.6), brightness: 0.18)
+        let heroBrightness = min(brightness, 0.36)
+        hero = Color(hue: hue, saturation: min(1, saturation * 1.15), brightness: heroBrightness)
+        deep = Color(hue: hue, saturation: min(saturation, 0.6), brightness: heroBrightness / 2)
     }
 }
 #endif

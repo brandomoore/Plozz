@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class CloudSyncReloadStatusTests: XCTestCase {
+    func testTemporaryAccountSummaryPreservesDiagnosticsAndClearsAfterRecovery() {
+        let status = CloudSyncStatus()
+        status.setPhase(.error)
+        status.setError("CKErrorDomain error 36", diagnostic: "Cloud account verification: 36",
+                        reason: .accountTemporarilyUnavailable)
+        XCTAssertEqual(String(localized: status.summary),
+                       "iCloud is temporarily unavailable. Try again shortly.")
+        XCTAssertEqual(status.lastErrorMessage, "CKErrorDomain error 36")
+        XCTAssertEqual(status.lastDiagnostic, "Cloud account verification: 36")
+        status.setError("Network unavailable", diagnostic: nil)
+        XCTAssertNil(status.lastErrorReason)
+        XCTAssertTrue(String(localized: status.summary).contains("Network unavailable"))
+        status.setError("CKErrorDomain error 36", diagnostic: nil, reason: .accountTemporarilyUnavailable)
+        status.setPhase(.idle, syncedNow: true)
+        XCTAssertNil(status.lastErrorReason)
+        XCTAssertNil(status.lastErrorMessage)
+        XCTAssertNil(status.lastDiagnostic)
+    }
+
     func testRepeatedFailuresKeepLatestDiagnosticWithoutAdvancingSuccessfulSyncTime() {
         let status = CloudSyncStatus()
         status.setPhase(.idle, syncedNow: true)
