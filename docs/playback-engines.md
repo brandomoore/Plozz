@@ -190,6 +190,9 @@ with that environment value; use a separate entrypoint-private package workspace
 and DerivedData for experimental builds. Normal Xcode launches without that
 environment remain native-only.
 
+Normal CI builds and hosted tests use this native-only graph as well. Their
+preparation does not build the experimental Java runtime or require its receipt.
+
 Release compilation rejects an experimental package graph, even if it was cached
 from Debug. The embed phase also rejects experimental Release, archive/install
 actions and release-channel builds. Native-only embedding does not require a

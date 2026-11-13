@@ -94,7 +94,7 @@ enum CrashPerformanceContext {
         if let provider = raw["provider"] {
             // Deliberately explicit: a future provider kind needs a privacy review before export.
             guard let provider = provider as? String,
-                  ["jellyfin", "plex", "emby", "silo", "iptv", "mediaShare"].contains(provider) else { return nil }
+                  ["jellyfin", "plex", "emby", "silo", "iptv", "mediaShare", "subsonic"].contains(provider) else { return nil }
             safe["provider"] = provider
         }
         if active {

@@ -45,6 +45,8 @@ final class DiscPlayerHandoffHostedTests: XCTestCase {
         state.image = nil
         try await Task.sleep(for: .milliseconds(200))
         state.isOpening = false
+        state.hasPresentedVideoFrame = true
+        XCTAssertFalse(state.presentsMenu)
         try await Task.sleep(for: .milliseconds(700))
         let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem
         let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in

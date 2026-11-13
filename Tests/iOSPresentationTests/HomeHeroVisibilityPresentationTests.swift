@@ -723,7 +723,8 @@ private struct HomeWidthFixture: View {
     }
 }
 
-private struct SeriesHeaderMobileProvider: MediaProvider {
+struct SeriesHeaderMobileProvider: MediaProvider {
+    var artworkURL: URL? = nil
     var kind: ProviderKind { .jellyfin }
     var session: UserSession {
         UserSession(
@@ -736,6 +737,7 @@ private struct SeriesHeaderMobileProvider: MediaProvider {
         MediaItem(
             id: "show", title: "Village stories", kind: .series,
             overview: "A quiet village beside the ocean.",
+            posterURL: artworkURL, backdropURL: artworkURL,
             ratings: [.init(source: .imdb, value: 8.7, scale: .outOfTen)],
             allowsTitleBasedMetadataMatching: false, sourceAccountID: "header-fixture"
         )

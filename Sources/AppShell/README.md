@@ -44,6 +44,9 @@ registry.
   account resolution and profile authorization still apply. Request producers
   clear the competing play/resume binding synchronously, so coalesced updates
   preserve the latest intent rather than inferring its order during rendering.
+- `ShareLocationList` recycles native folder rows. Viewport-height and edge-fade
+  updates invalidate only its container, not the hosted row content. Rows rebuild
+  for focus, press, or environment changes, not repeated identical UIKit state.
 - `AppInfo` — version / build / display-name helpers read from
   `Info.plist`.
 

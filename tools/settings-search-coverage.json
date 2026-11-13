@@ -23,7 +23,6 @@
     "CustomExternalPlayerControls",
     "DetailHeaderRatingsSettingsForm",
     "DetailPageDetailView",
-    "DolbyVisionFELControl",
     "ExternalPlayerChoices",
     "HelpDiagnosticsDetailView",
     "HeroAutomaticChangeControls",
@@ -35,7 +34,7 @@
     "HeroSettingsScreen",
     "HeroTitleControls",
     "HeroTitleSources",
-    "HeroTrailerControls",
+    "TrailersAndMusicSettingsView",
     "HomeFilteringSettingsView",
     "HomeHeroSettingsView",
     "HomeHeroEnabledPicker",
@@ -95,7 +94,7 @@
     "PlozziOSStreamingSettings",
     "PlozziOSSubtitleSettingsView",
     "PlozziOSSyncSetupSettingsView",
-    "PlozziOSThemeSettingsView",
+    "PlozziOSAppearanceSettingsView",
     "PlozziOSTrackerSettingsView",
     "ProfileActionsList",
     "ProfileDetailView",
@@ -110,7 +109,6 @@
     "SkipMarkerEnableControl",
     "SkipMarkerRuleControls",
     "SkipMarkerSettingsView",
-    "SpatialAudioLayoutControl",
     "SpoilerRowsBuilder",
     "StreamingCustomQualityEditor",
     "StreamingQualityPicker",
@@ -218,8 +216,6 @@
     "Sources/FeatureSettings/SettingsSplitLayout.swift",
     "Sources/FeatureSettings/SettingsView.swift",
     "Sources/FeatureSettings/SkipMarkerSettingsControl.swift",
-    "Sources/FeatureSettings/SpatialAudioControl.swift",
-    "Sources/FeatureSettings/SpatialAudioLayoutControl.swift",
     "Sources/FeatureSettings/ThemeMusicVolumeControl.swift",
     "Sources/FeatureSettings/TopShelfSettingsView.swift",
     "Sources/FeatureSettings/TopShelfStylePicker.swift",
@@ -253,7 +249,6 @@
     "SettingsSegmentedPicker",
     "SettingsStepper",
     "SettingsSwitchButton",
-    "SpatialAudioControl",
     "StreamingQualityPicker",
     "ViewCustomizationMenu",
     "ViewCustomizationRow",
@@ -344,13 +339,6 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/LosslessAudioControl.swift|LosslessAudioControl|body|Toggle|<dynamic>": 1
-      }
-    },
-    "SpatialAudioControl": {
-      "kind": "input",
-      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
-      "controls": {
-        "Sources/FeatureSettings/SpatialAudioControl.swift|SpatialAudioControl|body|Toggle|\"Spatial audio (height channel support)\"": 1
       }
     },
     "StreamingQualityPicker": {
@@ -1017,11 +1005,11 @@
       ],
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|body|Button|<dynamic>": {
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|body|Button|<dynamic>": {
       "count": 1,
       "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input."
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|\"Sign In Again\"": {
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|libraryFailure|Button|\"Sign In Again\"": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -1348,15 +1336,8 @@
       ],
       "count": 1
     },
-    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|TextField|\"Row name\"": {
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|nameInput|TextField|\"Row name\"": {
       "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
-      "covered_by": [
-        "home-row-arrangement"
-      ],
-      "count": 1
-    },
-    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Button|\"Remove from Home\"": {
-      "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
       "covered_by": [
         "home-row-arrangement"
       ],
@@ -1397,10 +1378,10 @@
       ],
       "count": 1
     },
-    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeSectionSettingsView|body|Button|\"Remove from Home\"": {
-      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeRowRemoveAction|body|Button|<dynamic>": {
+      "reason": "Removes the explicitly selected Home or collection row; the indexed row editor owns selection and confirmation.",
       "covered_by": [
-        "library-covers"
+        "home-row-arrangement"
       ],
       "count": 1
     },
@@ -1464,7 +1445,7 @@
       "count": 1,
       "reason": "credential: Generic TMDB-key setup page only; never key values."
     },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|\"Sign In Again\"": {
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|libraryStatusMessage|Button|\"Sign In Again\"": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -1564,7 +1545,7 @@
       "reason": "Confirms the selected servers during explicit Plex account setup.",
       "count": 1
     },
-    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|if isNavigationRoot { Text(\"Cancel\") } else { Label(\"Back\", systemImage: \"chevron.backward\").labelStyle(.iconOnly) }": {
+    "Sources/AppShelliOS/AddServerView.swift|PlexServerSignInView|body|Button|if isNavigationRoot { Label(\"Cancel\", systemImage: \"xmark\") } else { Label(\"Back\", systemImage: \"chevron.backward\").labelStyle(.iconOnly) }": {
       "reason": "Leaves the current Plex setup step, retaining its existing cancellation confirmation.",
       "count": 1
     },
@@ -1652,15 +1633,15 @@
       ],
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|\"Edit connection\"": {
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|libraryFailure|Button|\"Edit connection\"": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|serverGroup|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|libraryFailure|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesSettingsView|addUserButton|Button|Label( group.providerKind == .plex ? \"Add Another Plex Account\" : \"Add Another User\", systemImage: \"person.badge.plus\" )": {
+    "Sources/AppShelliOS/PlozziOSServerSettingsViews.swift|PlozziOSMyLibrariesContent|addUserButton|Button|Label( group.providerKind == .plex ? \"Add Another Plex Account\" : \"Add Another User\", systemImage: \"person.badge.plus\" )": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -2248,7 +2229,7 @@
       ],
       "count": 1
     },
-    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Button|if isNew { Text(\"Add to Home\") } else { Text(\"Save changes\") }": {
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|explicitSaveAction|Button|Group { if isNew { Text(\"Add to Home\") } else { Text(\"Save changes\") } } .plozzPageActionLabel()": {
       "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
       "covered_by": [
         "home-row-arrangement"
@@ -2362,7 +2343,7 @@
       ],
       "count": 1
     },
-    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeAddSectionView|body|Button|HomeSectionChoiceLabel(choice: choice, accessory: \"plus\", accounts: accounts)": {
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeAddSectionView|body|Button|HomeSectionChoiceLabel( choice: choice, accessory: \"plus\", accounts: accounts, visibility: visibility.visibility )": {
       "reason": "Existing choice/confirmation within an indexed editor. Search reaches the editor without selecting a runtime value or bypassing confirmation.",
       "covered_by": [
         "home-row-arrangement"
@@ -2442,19 +2423,19 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|addServerSection|Button|<dynamic>": {
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|addServerSection|Button|<dynamic>": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|librarySection|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|librarySection|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|\"Edit connection\"": {
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|libraryStatusMessage|Button|\"Edit connection\"": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
-    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesDetailView|libraryStatusMessage|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
+    "Sources/FeatureSettings/MyLibrariesDetailView.swift|MyLibrariesContentView|libraryStatusMessage|Button|Label(\"Retry\", systemImage: \"arrow.clockwise\")": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 1
     },
@@ -2705,13 +2686,6 @@
     },
     "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|content|Button|SettingsDisclosureLabel { Text(kind.settingsTitle) }": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "count": 1
-    },
-    "Sources/FeatureSettings/SpatialAudioLayoutControl.swift|SpatialAudioLayoutControl|body|Picker|\"Rendering layout\"": {
-      "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
-      "covered_by": [
-        "spatial-layout"
-      ],
       "count": 1
     },
     "Sources/AppShelliOS/AddServerView.swift|PlozziOSAccountReauthenticationView|recoveryContent|Button|\"Cancel\"": {
@@ -2970,6 +2944,144 @@
     },
     "Sources/FeatureSettings/ThemeMusicVolumeControl.swift|ThemeMusicVolumeControl|body|Button|if ownsPreview { Label(\"Stop preview\", systemImage: \"stop.fill\") } else { Label(\"Play preview\", systemImage: \"play.fill\") }": {
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/ServerOnboardingViews.swift|ServerProviderChoices|body|Button|HStack(spacing: 16) { ProviderBrandMark(provider: .subsonic, size: 40).accessibilityHidden(true) Text(verbatim: ProviderKind.subsonic.displayName) Spacer(minLength: 8) Image(systemName: \"chevron.forward\").accessibilityHidden(true) } .frame(minHeight: 44)": {
+      "reason": "Chooses Navidrome/Subsonic for an explicit new source connection; not a preference value.",
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSAppearanceSettingsView|body|Button|SettingsDisclosureLabel { Text(Page.musicPlayer.title) }": {
+      "reason": "Navigation to the independently indexed music appearance editor.",
+      "covered_by": ["music-style"],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSDetailPageSettingsView|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Trailers & music\") }": {
+      "reason": "Navigation to the indexed trailer sources and detail background controls.",
+      "covered_by": ["trailer-sources", "detail-background"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|DetailPageDetailView|heroRows.rows|SettingsPageLink|SettingsDisclosureLabel { Text(\"Trailers & music\") }": {
+      "reason": "Navigation to the indexed trailer sources and detail background controls.",
+      "covered_by": ["trailer-sources", "detail-background"],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSeerrSettingsView.swift|PlozziOSSeerrSettingsView|connectionFields|TextField|\"Server address\"": {
+      "reason": "Connection field inside the SettingsInputRow that owns the Seerr setup search anchor.",
+      "covered_by": ["seerr-profile-user"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/SeerDetailView.swift|SeerDetailView|connectPanel|TextField|\"Server address\"": {
+      "reason": "Connection field inside the SettingsInputRow that owns the Seerr setup search anchor.",
+      "covered_by": ["seerr-profile-user"],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|TextField|\"Preferred language code\"": {
+      "reason": "The enclosing SettingsInputRow owns the subtitle-language anchor and row highlight.",
+      "covered_by": ["subtitle-language"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/ExternalPlayerSettingsView.swift|CustomExternalPlayerControls|body|TextField|\"Player URL template\"": {
+      "reason": "The enclosing SettingsInputRow owns the custom player template anchor and row highlight.",
+      "covered_by": ["external-template"],
+      "count": 1
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Picker|\"Disc playback\"": {
+      "reason": "The containing stack owns the disc-playback anchor, keeping its compatibility notice with the picker.",
+      "covered_by": ["disc-playback"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|discRows|SettingsMenuRow|\"Disc playback\"": {
+      "reason": "The containing stack owns the disc-playback anchor, keeping its compatibility notice with the menu.",
+      "covered_by": ["disc-playback"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|discRows|Picker|\"Disc playback\"": {
+      "reason": "Choices within the disc-playback menu; the containing stack owns search reveal.",
+      "covered_by": ["disc-playback"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroSettingsControls.swift|TrailersAndMusicSettingsView|sourcePicker.picker|Picker|\"Trailers\"": {
+      "reason": "The sourcePicker use in body owns the trailer-sources anchor and disabled-autoplay fallback.",
+      "covered_by": ["trailer-sources"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroSettingsControls.swift|TrailersAndMusicSettingsView|sourcePicker|SettingsMenuRow|\"Trailers\"": {
+      "reason": "The sourcePicker use in body owns the trailer-sources anchor and disabled-autoplay fallback.",
+      "covered_by": ["trailer-sources"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroSettingsControls.swift|TrailersAndMusicSettingsView|detailPicker.picker|Picker|\"Detail background\"": {
+      "reason": "The detailPicker use in body owns the detail-background anchor and unavailable muted/volume fallbacks.",
+      "covered_by": ["detail-background"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HeroSettingsControls.swift|TrailersAndMusicSettingsView|detailPicker|SettingsMenuRow|\"Detail background\"": {
+      "reason": "The detailPicker use in body owns the detail-background anchor and unavailable muted/volume fallbacks.",
+      "covered_by": ["detail-background"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CardCaptionCustomizationContent.swift|CardCaptionCustomizationContent|defaultSection.controls|ViewCustomizationRow|\"Only show descriptions on focus\"": {
+      "reason": "Conditional episode-description behavior within the indexed episode-label editor; search selects the episode page without enabling hidden labels.",
+      "covered_by": ["card-label-view-episodes"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|SettingsMenuRow|\"Layout\"": {
+      "reason": "Layout of the explicitly selected collection row within the indexed Home row editor.",
+      "covered_by": ["home-row-arrangement"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|SettingsMenuRow|\"Logo\"": {
+      "reason": "Logo style of the explicitly selected landscape collection row within the indexed Home row editor.",
+      "covered_by": ["home-row-arrangement"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Picker|\"Logo\"": {
+      "reason": "Logo choices for the selected collection row; search does not select or create a row.",
+      "covered_by": ["home-row-arrangement"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/CollectionSectionSettingsView.swift|CollectionSectionSettingsView|body|Button|\"Retry\"": {
+      "reason": "Retries saving the selected collection row's preferences after an error.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeEditorAutosavingNameInput.swift|HomeEditorAutosavingNameInput|body|TextField|<dynamic>": {
+      "reason": "Contextual rename field used by Home rows, collection rows and navigation destinations; the indexed editor requires an explicit row selection.",
+      "covered_by": ["home-row-arrangement", "navigation-order"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeEditorAutosavingNameInput.swift|HomeEditorAutosavingNameInput|body|Button|\"Retry\"": {
+      "reason": "Retries saving an explicitly selected row or navigation destination's name.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeEditorSaveAction|body|Button|<dynamic>": {
+      "reason": "Confirms the current Home or navigation editor draft; search must never submit it.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeEditorSaveAction|body|Button|\"OK\"": {
+      "reason": "Dismisses the current editor's save-error alert.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeRowNameEditor|body|Button|\"Save changes\"": {
+      "reason": "Confirms the selected Home row's name; search must never submit the draft.",
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeRowNameEditor|nameField|TextField|\"Row name\"": {
+      "reason": "Renames the explicitly selected Home row within the indexed row editor.",
+      "covered_by": ["home-row-arrangement"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/HomeSectionSettingsViews.swift|HomeSectionSettingsView|body|Button|\"Show empty message\"": {
+      "reason": "Restores a dismissed empty-state message for the explicitly selected Home row.",
+      "covered_by": ["home-row-arrangement"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/NavigationLibrariesDetailView.swift|NavigationNameEditor|body|TextField|\"Name\"": {
+      "reason": "Renames an explicitly selected navigation destination within the indexed navigation editor.",
+      "covered_by": ["navigation-order"],
+      "count": 1
+    },
+    "Sources/FeatureSettings/NavigationLibrariesDetailView.swift|NavigationNameEditor|body|Button|<dynamic>": {
+      "reason": "Confirms the selected navigation destination's name; search must never submit the draft.",
       "count": 1
     }
   }

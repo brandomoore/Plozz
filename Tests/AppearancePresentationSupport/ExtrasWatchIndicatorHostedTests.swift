@@ -140,11 +140,23 @@ final class ExtrasWatchIndicatorHostedTests: XCTestCase {
     }
 
     private func artworkSnapshot(_ window: UIWindow) -> UIImage {
+        window.layoutIfNeeded()
         #if os(tvOS)
         func poster(in view: UIView) -> NativePosterButton? {
             (view as? NativePosterButton) ?? view.subviews.lazy.compactMap { poster(in: $0) }.first
         }
-        if let image = poster(in: window)?.image { return image }
+        if let button = poster(in: window), let image = button.image {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = image.scale
+            format.preferredRange = .standard
+            return UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+                image.draw(at: .zero)
+                // Watched badges occupy the installed foreground; unwatched flags remain baked in.
+                if !button.indicatorView.isHidden {
+                    button.indicatorView.image?.draw(in: CGRect(origin: .zero, size: image.size))
+                }
+            }
+        }
         #endif
         return snapshot(window)
     }

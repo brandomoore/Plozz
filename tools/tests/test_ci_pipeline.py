@@ -160,7 +160,7 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIn("    needs: guards\n", block)
                 self.assertEqual(block.count("needs:"), 1)
                 self.assertIn("    runs-on: xcode-27\n", block)
-                timeout = {"app-build": 60, "package-tests": 80, "hosted-focus": 170}[lane]
+                timeout = {"app-build": 60, "package-tests": 80, "hosted-focus": 200}[lane]
                 self.assertIn(f"    timeout-minutes: {timeout}\n", block)
                 self.assertIn(f"          lane: {lane}\n", block)
                 self.assertIn("uses: ./.github/actions/ci-prepare", block)
@@ -202,10 +202,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertGreaterEqual(package_job_minutes * 60 - package_deadline, 15 * 60,
                                 "Keep setup, timeout teardown, and diagnostic uploads inside the outer job budget.")
         self.assertIn("run: tools/run-focus-tests.sh\n", JOBS["hosted-focus"])
-        self.assertIn('PLOZZ_FOCUS_TEST_TIMEOUT: "5400"', JOBS["hosted-focus"])
+        self.assertIn('PLOZZ_FOCUS_TEST_TIMEOUT: "7200"', JOBS["hosted-focus"])
         self.assertEqual(
             re.findall(r"PLOZZ_FOCUS_TEST_TIMEOUT:\s*([^\n]+)", WORKFLOW + PREPARE),
-            ['"5400"'],
+            ['"7200"'],
         )
         self.assertEqual(
             re.findall(r"PLOZZ_FOCUS_BUILD_TIMEOUT:\s*([^\n]+)", WORKFLOW + PREPARE),
@@ -230,6 +230,16 @@ class WorkflowTests(unittest.TestCase):
         ):
             self.assertNotIn(unsafe, WORKFLOW + PREPARE)
 
+    def test_hosted_individual_hangs_retain_a_bounded_failure_verdict(self):
+        runner = (ROOT / "tools/run-focus-tests.sh").read_text()
+        execution = runner.split("xcodebuild test-without-building", 1)[1]
+        self.assertIn("-test-timeouts-enabled YES", execution)
+        self.assertIn("-default-test-execution-time-allowance 600", execution)
+        self.assertIn("-maximum-test-execution-time-allowance 600", execution)
+        self.assertIn("-collect-test-diagnostics on-failure", execution)
+        self.assertNotIn("-collect-test-diagnostics never", execution)
+        self.assertIn('xcresult-summary.py verdict "$RUN_DIR/summary.json"', execution)
+
     def test_all_macos_lanes_use_the_engine_supported_toolchain(self):
         for lane in ("guards", *CACHE.LANES):
             with self.subTest(lane=lane):
@@ -248,6 +258,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(PREPARE.index("ci-cache.py keys"), PREPARE.index("actions/cache/restore"))
         self.assertNotIn("cache-hit ==", PREPARE)
         self.assertNotIn("xcodegen generate", PREPARE)
+
+    def test_normal_ci_does_not_build_or_enable_the_experimental_java_runtime(self):
+        source = WORKFLOW + PREPARE + SAVE
+        self.assertNotIn("build-disc-runtime.py", source)
+        self.assertNotIn("PLOZZ_EXPERIMENTAL_BDJ", source)
 
     def test_cache_saves_are_successful_main_only_and_have_one_package_writer(self):
         self.assertEqual(WORKFLOW.count("if: ${{ " + TRUST + " }}"), 3)

@@ -761,7 +761,15 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         for adoptionDelay in [0, 10, 100, 500] {
             phase = "prepare Full before \(adoptionDelay)ms adoption"
             engine.selectSubtitleTrack(full)
-            try await waitUntil { model.primary.compactMap(\.text) == ["Alpha", "Bravo"] }
+            try await waitUntil(
+                detail: "\(phase): visible=\(model.primary.compactMap(\.text)), "
+                    + "decoded=\(cues), time=\(engine.subtitlePresentationTime), "
+                    + "paused=\(engine.isPaused), "
+                    + "selected=\(String(describing: item.currentMediaSelection.selectedMediaOption(in: group))), "
+                    + "history=\(cueHistory.joined(separator: "\n"))"
+            ) {
+                model.primary.compactMap(\.text) == ["Alpha", "Bravo"]
+            }
             let fullOutput = try XCTUnwrap(item.outputs.compactMap { $0 as? AVPlayerItemLegibleOutput }.first)
             phase = "external Alternate \(adoptionDelay)ms"
             item.select(alternateOption, in: group)

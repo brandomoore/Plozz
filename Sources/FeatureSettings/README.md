@@ -198,6 +198,10 @@ anchor, missing destination anchor, stale exclusion or changed boundary fails.
 Review a failure rather than accepting the current inventory as a new baseline.
 When extracting connection-setup subviews, keep their files traversable and
 update only the reviewed control keys and counts, not broad component exemptions.
+When a containing input row or stack owns the search anchor, record the exact
+inner control with `covered_by` pointing to that indexed destination; do not
+give every child of an anchored container implicit coverage. Repository-backed
+regressions keep refactored editors discoverable and reject removed row anchors.
 Runtime navigation, provider access, lazy reveal and native focus still require
 behavioral tests; static coverage is not proof that a screen works.
 

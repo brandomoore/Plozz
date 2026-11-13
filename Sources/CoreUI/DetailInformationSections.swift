@@ -55,6 +55,7 @@ public struct DetailInformationSections: View {
     @State private var overviewVisibleHeight: CGFloat = 0
     @Environment(\.themePalette) private var palette
     @Environment(\.locale) private var locale
+    @Environment(\.plozzCardFocusStyle) private var cardFocusStyle
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzShowsContentRatings) private var showsContentRatings
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
@@ -1017,7 +1018,13 @@ public struct DetailInformationSections: View {
     }
 
     private var informationColumnSpacing: CGFloat {
-        DetailInformationLayout.gutter
+        #if os(tvOS)
+        if cardFocusStyle.usesSystemEffect {
+            // Both neighboring native cards can remain enlarged during a focus handoff.
+            return DetailInformationLayout.factColumnSpacing
+        }
+        #endif
+        return DetailInformationLayout.gutter
     }
 
     private var informationRowSpacing: CGFloat {

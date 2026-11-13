@@ -11,6 +11,59 @@ import XCTest
 
 @MainActor
 final class HomeVerticalMotionHostedTests: XCTestCase {
+    func testBoundarySwipesDoNotCompeteWithNativeFocusPanning() throws {
+        let stage = HeroShowcaseStage.Controller(
+            state: HeroShowcaseState(), hero: AnyView(Color.clear),
+            showcase: AnyView(Color.clear), rows: AnyView(Color.clear)
+        )
+        stage.loadViewIfNeeded()
+        defer { stage.stopAnimations() }
+        let swipes = try XCTUnwrap(stage.view.gestureRecognizers).compactMap { $0 as? UISwipeGestureRecognizer }
+        XCTAssertEqual(swipes.count, 2)
+        let nativePan = UIPanGestureRecognizer()
+        let input = try XCTUnwrap(stage.view.gestureRecognizers?
+            .first { $0 is HeroShowcaseStage.BoundaryInputObserver })
+        for swipe in swipes + [input] {
+            XCTAssertFalse(swipe.canBePrevented(by: nativePan),
+                           "Native focus panning must not cancel the hidden-destination swipe fallback.")
+            XCTAssertFalse(swipe.canPrevent(nativePan), "Ordinary row and horizontal navigation stays native.")
+            XCTAssertFalse(swipe.cancelsTouchesInView)
+            XCTAssertFalse(swipe.delaysTouchesBegan)
+            XCTAssertFalse(swipe.delaysTouchesEnded)
+            XCTAssertEqual(swipe.allowedTouchTypes, [NSNumber(value: UITouch.TouchType.indirect.rawValue)])
+        }
+        XCTAssertTrue(swipes.allSatisfy { $0.allowedPressTypes.isEmpty })
+    }
+
+    func testBoundaryInputReleasesOnFreshContactPressCancellationAndInvalidation() {
+        let input = HeroShowcaseStage.BoundaryInputObserver()
+        let touch = UITouch()
+        let event = UIEvent()
+        let press = UIPress()
+        let pressEvent = UIPressesEvent()
+        input.consumeBoundary(.down)
+        XCTAssertFalse(input.blocks(.down), "Button-only handoffs must not acquire a swipe guard.")
+        for release in [
+            { input.touchesBegan([touch], with: event) },
+            { input.pressesBegan([press], with: pressEvent) },
+            { input.touchesCancelled([touch], with: event) },
+            { input.invalidate() }
+        ] {
+            input.touchesBegan([touch], with: event)
+            input.consumeBoundary(.down)
+            input.touchesMoved([touch], with: event)
+            XCTAssertTrue(input.blocks(.down), "Continued contact must not advance into another row.")
+            XCTAssertFalse(input.blocks(.up))
+            XCTAssertFalse(input.blocks(.right))
+            XCTAssertFalse(input.blocks([]), "Programmatic focus restoration stays available.")
+            input.touchesEnded([touch], with: event)
+            input.reset()
+            XCTAssertTrue(input.blocks(.down), "Lift and recognizer reset must not release native momentum.")
+            release()
+            XCTAssertFalse(input.blocks(.down), "Fresh input must work immediately, without a cooldown.")
+        }
+    }
+
     func testNativeOriginWaitsForMotionWithoutDelayingFocusAndCancelsOnReversal() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -204,6 +257,18 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
     }
 
     func testHeroShowcaseRestoresActualNativeFocusBetweenItsHosts() async throws {
+        try await checkHeroShowcaseFocusHandoff(usingSwipes: false)
+    }
+
+    func testRecognizedBoundarySwipesRestoreActualNativeFocusBetweenHosts() async throws {
+        try await checkHeroShowcaseFocusHandoff(usingSwipes: true)
+    }
+
+    func testNativeBoundaryPanConsumesOnlyTheCrossingContact() async throws {
+        try await checkHeroShowcaseFocusHandoff(usingSwipes: false, usingTouch: true)
+    }
+
+    private func checkHeroShowcaseFocusHandoff(usingSwipes: Bool, usingTouch: Bool = false) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -226,8 +291,37 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(400))
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: stage.view))
         XCTAssertTrue(stage.contains(system.focusedItem, in: stage.hero))
+        let input = try XCTUnwrap(stage.view.gestureRecognizers?
+            .compactMap { $0 as? HeroShowcaseStage.BoundaryInputObserver }.first)
+        let touch = UITouch()
+        let event = UIEvent()
         for expanded in [false, true, false, true] {
-            stage.beginBoundaryMove(expanded ? .up : .down)
+            let heading: UIFocusHeading = expanded ? .up : .down
+            if usingSwipes || usingTouch {
+                input.touchesBegan([touch], with: event)
+            }
+            if usingSwipes {
+                let swipes = try XCTUnwrap(stage.view.gestureRecognizers)
+                    .compactMap { $0 as? UISwipeGestureRecognizer }
+                let swipe = try XCTUnwrap(swipes.first { $0.direction == (expanded ? .up : .down) })
+                let opposite = try XCTUnwrap(swipes.first { $0 !== swipe })
+                XCTAssertFalse(stage.gestureRecognizerShouldBegin(opposite))
+                if expanded {
+                    stage.canReturn = { false }
+                } else {
+                    stage.canEnterRows = { false }
+                }
+                XCTAssertFalse(stage.gestureRecognizerShouldBegin(swipe),
+                               "Unavailable rows and deeper-row Up must stay with native navigation.")
+                stage.canReturn = { true }
+                stage.canEnterRows = { true }
+                XCTAssertTrue(stage.gestureRecognizerShouldBegin(swipe))
+                swipe.state = .ended
+            } else if usingTouch {
+                XCTAssertFalse(stage.allowsFocusUpdate(from: system.focusedItem, to: nil, heading: heading))
+            } else {
+                stage.beginBoundaryMove(heading)
+            }
             let host = expanded ? stage.hero : stage.rows
             let focused = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in
@@ -235,6 +329,37 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
                 }, object: nil
             )
             await fulfillment(of: [focused], timeout: 2)
+            XCTAssertEqual(stage.state.isExpanded, expanded)
+            if usingSwipes || usingTouch {
+                let target = try XCTUnwrap(system.focusedItem)
+                XCTAssertFalse(stage.allowsFocusUpdate(from: target, to: nil, heading: heading))
+                XCTAssertNil(stage.boundaryDestination(for: heading, from: target))
+                XCTAssertTrue(stage.allowsFocusUpdate(from: target, to: nil, heading: .right))
+                XCTAssertTrue(stage.allowsFocusUpdate(from: target, to: target, heading: []))
+                input.touchesEnded([touch], with: event)
+                XCTAssertFalse(stage.allowsFocusUpdate(from: target, to: nil, heading: heading),
+                               "Momentum from the crossing swipe must not move again after lift.")
+                input.touchesBegan([touch], with: event)
+                XCTAssertTrue(stage.allowsFocusUpdate(from: target, to: nil, heading: heading),
+                              "A fresh swipe must immediately resume native navigation.")
+                input.touchesEnded([touch], with: event)
+            }
+        }
+        if usingSwipes || usingTouch {
+            for cancel in [
+                { input.touchesCancelled([touch], with: event) },
+                { stage.resetToFeatured() },
+                { stage.beginAppearanceTransition(false, animated: false); stage.endAppearanceTransition() }
+            ] {
+                input.touchesBegan([touch], with: event)
+                stage.beginBoundaryMove(.down)
+                cancel()
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.main.async { continuation.resume() }
+                }
+                XCTAssertTrue(stage.state.isExpanded, "Cancelled or hidden handoffs must not run later.")
+                XCTAssertFalse(input.blocks(.down))
+            }
         }
     }
 
