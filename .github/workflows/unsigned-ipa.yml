@@ -1,18 +1,8 @@
 name: Unsigned IPA
 
 on:
-  workflow_dispatch:
-    inputs:
-      platform:
-        description: Device platform
-        type: choice
-        options: [both, ios, tvos]
-        default: both
-      runner:
-        description: Available macOS runner label with Xcode 27 or later
-        type: string
-        default: xcode-27
-        required: true
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -20,14 +10,14 @@ permissions:
 jobs:
   build:
     name: Unsigned ${{ matrix.platform }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: xcode-27
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        platform: ${{ inputs.platform == 'both' && fromJSON('["ios","tvos"]') || fromJSON(format('["{0}"]', inputs.platform)) }}
+        platform: [ios, tvos]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -39,7 +29,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: tools/build-unsigned-ipa.sh "$PLATFORM"
       - name: Upload unsigned IPA and provenance
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Plozz-${{ matrix.platform }}-unsigned
           path: |
@@ -47,3 +37,29 @@ jobs:
             ${{ steps.build.outputs.receipt_path }}
           if-no-files-found: error
           retention-days: 7
+
+  release:
+    name: Attach unsigned IPAs to release
+    needs: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Download unsigned IPAs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: Plozz-*-unsigned
+          merge-multiple: true
+          path: dist
+      - name: Verify the release exists
+        run: gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null
+      - name: Upload unsigned IPAs
+        run: |
+          set -euo pipefail
+          mapfile -t ipas < <(find dist -type f -name '*.ipa' | sort)
+          test "${#ipas[@]}" -gt 0
+          gh release upload "$RELEASE_TAG" "${ipas[@]}" --clobber --repo "$GITHUB_REPOSITORY"
