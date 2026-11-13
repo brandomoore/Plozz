@@ -2261,7 +2261,7 @@ The base 4pt gaps are centered on the original time boundaries. Each half-gap is
 capped at a quarter of either neighboring section's width so a tiny range is
 not consumed or enlarged. Outer timeline ends remain unchanged.
 Only the two outer ends retain full rounding. Internal cuts have vertical sides
-with small 2pt corner curves, constrained by either neighboring section's width.
+with small 3pt corner curves, constrained by either neighboring section's width.
 The same small internal radius applies at rest,
 during scrubbing, and when TV focus expands the bar from 12pt to 20pt.
 Live programme tracks use the same geometry.

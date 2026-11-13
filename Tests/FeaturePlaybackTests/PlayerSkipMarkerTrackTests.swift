@@ -357,7 +357,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         let mask = SkipMarkerTrackLayout.maskPath(ranges: [0.025..<0.5], size: size)
         XCTAssertFalse(mask.contains(CGPoint(x: 10.1, y: 0.1)),
                        "The internal cut retains a small rounded corner.")
-        XCTAssertTrue(mask.contains(CGPoint(x: 10.1, y: 3)),
+        XCTAssertTrue(mask.contains(CGPoint(x: 10.1, y: 4)),
                       "Below the small corner, the cut is vertical rather than a capsule.")
         XCTAssertTrue(mask.contains(CGPoint(x: 10.5, y: 10)))
     }
@@ -405,8 +405,11 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             XCTAssertTrue(mask.contains(CGPoint(x: 319.9, y: height / 2)))
             for section in sections.dropFirst() {
                 XCTAssertFalse(mask.contains(CGPoint(x: section.minX + 0.1, y: 0.1)))
-                XCTAssertTrue(mask.contains(CGPoint(x: section.minX + 0.1, y: 2.1)))
-                XCTAssertTrue(mask.contains(CGPoint(x: section.minX + 0.1, y: height - 2.1)))
+                XCTAssertFalse(mask.contains(CGPoint(x: section.minX + 0.1, y: 2.1)),
+                               "Internal corners have more rounding than the former 2pt radius.")
+                XCTAssertFalse(mask.contains(CGPoint(x: section.minX + 0.1, y: height - 2.1)))
+                XCTAssertTrue(mask.contains(CGPoint(x: section.minX + 0.1, y: 4)))
+                XCTAssertTrue(mask.contains(CGPoint(x: section.minX + 0.1, y: height - 4)))
             }
         }
     }
@@ -429,7 +432,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             }
             XCTAssertLessThan(mask.red(x: 42, y: top), 255, "The internal edge retains a soft corner.")
             XCTAssertGreaterThan(mask.red(x: 43, y: top), 0, "Internal cuts are not full capsule caps.")
-            XCTAssertEqual(mask.red(x: 42, y: top + 3), 255, "The cut below its corner stays vertical.")
+            XCTAssertEqual(mask.red(x: 42, y: top + 5), 255, "The cut below its corner stays vertical.")
             for background in [Color.black, .gray, .cyan] {
                 let plain = try pixels(track(segments: [], height: height, background: background))
                 let divided = try pixels(track(segments: [marker], height: height, background: background))

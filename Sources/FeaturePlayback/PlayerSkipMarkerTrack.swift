@@ -148,7 +148,7 @@ enum SkipMarkerTrackLayout {
     }
 
     private static func cutCornerSize(section: CGRect, neighbor: CGRect) -> CGSize {
-        let radius = min(2, section.height / 2, section.width / 2, neighbor.width / 2)
+        let radius = min(3, section.height / 2, section.width / 2, neighbor.width / 2)
         return CGSize(width: radius, height: radius)
     }
 
