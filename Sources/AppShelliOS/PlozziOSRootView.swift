@@ -112,6 +112,23 @@ public struct PlozziOSRootView: View {
                     .task { consumeDeferredPairingURL() }
             }
         }
+        .signInSyncPermission(
+            appModel.providerCredentialSync.publicationPermission,
+            canPresent: setupPresentationReady && appModel.isActiveProfileAuthorized
+                && !appModel.managementRequiresParentalPIN && !appModel.profiles.activeProfile.needsSetup
+                && !needsDiagnosticConsent && !appModel.syncSetup.needsOnboardingChoice
+                && appModel.initialSetupRestoration.phase == .hidden
+                && !appModel.isSettingsPresented && !releaseNotes.hasPendingStartupNotes
+                && appModel.pendingSyncSetupOffer == nil,
+            sourceNames: { $0.accounts.map { "\($0.server.name) — \($0.userName)" }.joined(separator: "\n") }
+        ) { request, allow in
+            if appModel.providerCredentialSync.resolvePublicationPermission(request, allow: allow) {
+                appModel.scheduleCloudPublish()
+            } else {
+                appModel.transientStatusPresenter.present(
+                    icon: "exclamationmark.triangle", text: "Couldn't save sign-in sync permission.")
+            }
+        }
         .onChange(
             of: appModel.isActiveProfileAuthorized && !appModel.profiles.activeProfile.needsSetup
                 && !appModel.isOfflineMode && appModel.initialSetupRestoration.phase == .hidden,

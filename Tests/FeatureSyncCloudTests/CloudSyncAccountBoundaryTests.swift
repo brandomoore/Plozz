@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 import CloudKit
 import CoreModels
+import CoreSecureStore
 @testable import FeatureSyncCloud
 
 final class CloudSyncAccountBoundaryTests: XCTestCase {
@@ -30,7 +31,7 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
                     if await calls.next() == 1 { throw CocoaError(.fileReadCorruptFile) }
                     return snapshot.records
                 })])
-        let admitted = await service.confirmAccountIdentity("account")
+        let admitted = await service.confirmAccountIdentity("account", reverifyIdentity: { "account" })
         XCTAssertTrue(admitted)
         let failed = await service.stageLocalChangesBeforeFetch()
         XCTAssertFalse(failed)
@@ -73,7 +74,7 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
                         if cancelledSnapshot { throw CancellationError() }
                         throw CocoaError(.fileReadCorruptFile)
                     })])
-            let admitted = await service.confirmAccountIdentity("account")
+            let admitted = await service.confirmAccountIdentity("account", reverifyIdentity: { "account" })
             XCTAssertTrue(admitted)
             let staged = await service.stageLocalChangesBeforeFetch()
             XCTAssertFalse(staged)
@@ -115,7 +116,7 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
                         }
                         return ["item": Data("new".utf8)]
                     }, snapshotAuthority: { authority.value })])
-            let admitted = await service.confirmAccountIdentity("account")
+            let admitted = await service.confirmAccountIdentity("account", reverifyIdentity: { "account" })
             XCTAssertTrue(admitted)
             let older = Task { await service.stageLocalChangesBeforeFetch() }
             await gate.waitUntilStarted()
@@ -162,7 +163,7 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
                     if await calls.next() == 1 { throw CancellationError() }
                     return ["item": Data("new".utf8)]
                 })])
-        let admitted = await service.confirmAccountIdentity("account")
+        let admitted = await service.confirmAccountIdentity("account", reverifyIdentity: { "account" })
         XCTAssertTrue(admitted)
         let staged = await service.stageLocalChangesBeforeFetch()
         XCTAssertTrue(staged, "A superseded snapshot must be recaptured, not treated as damaged local data")
@@ -422,16 +423,77 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
             containerIdentifier: "iCloud.test", stateFileURL: file, isEnabled: { true },
             captureRecords: { $0 }, applyRecords: { _ in },
             onAccountSwitch: { await gate.pauseFirstReset() }))
-        let older = Task { await service.confirmAccountIdentity("B") }
+        let older = Task { await service.confirmAccountIdentity("B", reverifyIdentity: { "B" }) }
         await gate.waitUntilStarted()
-        let latest = await service.confirmAccountIdentity("C")
+        let latest = await service.confirmAccountIdentity("C", reverifyIdentity: { "C" })
         XCTAssertTrue(latest)
         await gate.release()
         let superseded = await older.value
         XCTAssertFalse(superseded)
         XCTAssertEqual(try JSONDecoder().decode(String.self, from: Data(contentsOf: file.appendingPathExtension("account"))), "C")
-        let same = await service.confirmAccountIdentity("C")
+        let same = await service.confirmAccountIdentity("C", reverifyIdentity: { "C" })
         XCTAssertTrue(same)
+    }
+
+    func testFirstVerifiedIdentityReachesCredentialChannelBeforeCapture() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let calls = AccountCheckCounter()
+        let service = CloudConfigSyncService(.init(
+            containerIdentifier: "iCloud.test", stateFileURL: folder.appendingPathComponent("config.json"),
+            isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }),
+            channels: [.init(
+                schema: .providerCredentialsV1, stateFileURL: folder.appendingPathComponent("credentials.json"),
+                captureRecords: { $0 }, applyRecords: { _ in },
+                stateCodec: .init(context: "identity-test", secureStore: InMemorySecureStore()),
+                captureSnapshot: { snapshot in
+                    XCTAssertEqual(snapshot.cloudAccountID, "A")
+                    let count = await calls.count
+                    XCTAssertEqual(count, 1)
+                    return snapshot.records
+                },
+                snapshotAuthority: { "authority" },
+                onAccountVerified: { identity, authority in
+                    XCTAssertEqual(identity, "A")
+                    XCTAssertEqual(authority, "authority")
+                    _ = await calls.next()
+                }, accountVerificationAuthority: { "authority" })])
+        let admitted = await service.confirmAccountIdentity("A", reverifyIdentity: { "A" })
+        XCTAssertTrue(admitted)
+        let staged = await service.stageLocalChangesBeforeFetch()
+        XCTAssertTrue(staged)
+    }
+
+    func testSupersededVerifiedIdentityCallbackCannotAdmitOldCloudAccount() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let gate = AdmissionGate()
+        let authority = TestAuthority()
+        let service = CloudConfigSyncService(.init(
+            containerIdentifier: "iCloud.test", stateFileURL: folder.appendingPathComponent("config.json"),
+            isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }),
+            channels: [.init(
+                schema: .providerCredentialsV1, stateFileURL: folder.appendingPathComponent("credentials.json"),
+                captureRecords: { $0 }, applyRecords: { _ in }, onAccountSwitch: { authority.renew() },
+                stateCodec: .init(context: "identity-race-test", secureStore: InMemorySecureStore()),
+                captureSnapshot: { snapshot in
+                    XCTAssertEqual(snapshot.cloudAccountID, "B")
+                    return snapshot.records
+                },
+                snapshotAuthority: { authority.value },
+                onAccountVerified: { identity, expected in
+                    if identity == "A" { await gate.pauseFirstReset() }
+                    guard authority.value == expected else { throw CancellationError() }
+                }, accountVerificationAuthority: { authority.value })])
+        let older = Task { await service.confirmAccountIdentity("A", reverifyIdentity: { "A" }) }
+        await gate.waitUntilStarted()
+        let admitted = await service.confirmAccountIdentity("B", reverifyIdentity: { "B" })
+        XCTAssertTrue(admitted)
+        await gate.release()
+        let superseded = await older.value
+        XCTAssertFalse(superseded)
+        let staged = await service.stageLocalChangesBeforeFetch()
+        XCTAssertTrue(staged)
     }
 
     func testAccountResetCanChangeChannelAuthorityWithoutRestartLoop() async throws {
@@ -450,12 +512,89 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
                 onAccountSwitch: { authority.renew() },
                 captureSnapshot: { $0.records }, applySnapshot: { _ in },
                 snapshotAuthority: { authority.value })])
-        let admitted = await service.confirmAccountIdentity("B")
+        let admitted = await service.confirmAccountIdentity("B", reverifyIdentity: { "B" })
         XCTAssertTrue(admitted)
         XCTAssertEqual(try JSONDecoder().decode(String.self, from: Data(contentsOf: file.appendingPathExtension("account"))), "B")
-        let again = await service.confirmAccountIdentity("B")
+        let again = await service.confirmAccountIdentity("B", reverifyIdentity: { "B" })
         XCTAssertTrue(again)
         XCTAssertEqual(authority.value, "1")
+    }
+
+    func testVerificationWithdrawalDuringIdentityLookupCannotAdmitCachedAccount() async throws {
+        for previous in ["", "B"] {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let file = folder.appendingPathComponent("config.json")
+            if !previous.isEmpty {
+                try JSONEncoder().encode(previous).write(to: file.appendingPathExtension("account"))
+            }
+            let gate = AdmissionGate()
+            let authority = TestAuthority()
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test", stateFileURL: file,
+                isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }),
+                channels: [.init(
+                    schema: .mediaStateV1, stateFileURL: folder.appendingPathComponent("channel.json"),
+                    captureRecords: { $0 }, applyRecords: { _ in }, onAccountSwitch: { authority.renew() },
+                    onAccountVerified: { _, expected in
+                        guard authority.value == expected else { throw CancellationError() }
+                    }, accountVerificationAuthority: { authority.value })])
+            let older = Task {
+                await service.checkAccountAvailability(accountStatus: { .available }, accountIdentity: {
+                    await gate.pauseFirstReset()
+                    return "A"
+                })
+            }
+            await gate.waitUntilStarted()
+            authority.renew()
+            await gate.release()
+            let admitted = await older.value
+            XCTAssertFalse(admitted, previous)
+            XCTAssertEqual(authority.value, "1", "Withdrawn verification must not start an account reset")
+            let fresh = await service.checkAccountAvailability(accountStatus: { .available }, accountIdentity: { "A" })
+            XCTAssertTrue(fresh, previous)
+        }
+    }
+
+    func testAccountSwitchRequiresFreshIdentityUnderItsPostResetFence() async throws {
+        for mode in ["success", "changed", "withdrawn"] {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let file = folder.appendingPathComponent("config.json")
+            try JSONEncoder().encode("A").write(to: file.appendingPathExtension("account"))
+            let gate = AdmissionGate()
+            let calls = AccountCheckCounter()
+            let authority = TestAuthority()
+            let service = CloudConfigSyncService(.init(
+                containerIdentifier: "iCloud.test", stateFileURL: file,
+                isEnabled: { true }, captureRecords: { $0 }, applyRecords: { _ in }),
+                channels: [.init(
+                    schema: .mediaStateV1, stateFileURL: folder.appendingPathComponent("channel.json"),
+                    captureRecords: { $0 }, applyRecords: { _ in }, onAccountSwitch: { authority.renew() },
+                    onAccountVerified: { _, expected in
+                        guard authority.value == expected else { throw CancellationError() }
+                    }, accountVerificationAuthority: { authority.value })])
+            let lookup = Task {
+                await service.checkAccountAvailability(accountStatus: { .available }, accountIdentity: {
+                    guard await calls.next() > 1 else { return "B" }
+                    await gate.pauseFirstReset()
+                    return mode == "changed" ? "C" : "B"
+                })
+            }
+            await gate.waitUntilStarted()
+            XCTAssertEqual(authority.value, "1")
+            if mode == "withdrawn" { authority.renew() }
+            await gate.release()
+            let admitted = await lookup.value
+            XCTAssertEqual(admitted, mode == "success", mode)
+            let count = await calls.count
+            XCTAssertEqual(count, 2)
+            XCTAssertEqual(try JSONDecoder().decode(
+                String.self, from: Data(contentsOf: file.appendingPathExtension("account"))),
+                mode == "success" ? "B" : "A")
+        }
     }
 
     func testStagedOfflineDeletionRemainsInTheDurableSendQueue() async throws {
@@ -471,7 +610,7 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
         let service = CloudConfigSyncService(.init(
             containerIdentifier: "iCloud.test", stateFileURL: file, isEnabled: { true },
             captureRecords: { _ in ["keep": Data("keep".utf8)] }, applyRecords: { _ in }))
-        let admitted = await service.confirmAccountIdentity("A")
+        let admitted = await service.confirmAccountIdentity("A", reverifyIdentity: { "A" })
         XCTAssertTrue(admitted)
         let staged = await service.stageLocalChangesBeforeFetch()
         XCTAssertTrue(staged)
@@ -497,13 +636,13 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
             containerIdentifier: "iCloud.test", stateFileURL: file, isEnabled: { true },
             captureRecords: { $0 }, applyRecords: { _ in },
             onAccountSwitch: { await reset.increment() }))
-        let admitted = await service.confirmAccountIdentity("account-B")
+        let admitted = await service.confirmAccountIdentity("account-B", reverifyIdentity: { "account-B" })
         XCTAssertTrue(admitted)
         let restored = try await service.restoredLedgers()
         XCTAssertTrue(try XCTUnwrap(restored.first).entries.isEmpty)
         let count = await reset.count
         XCTAssertEqual(count, 1)
-        let again = await service.confirmAccountIdentity("account-B")
+        let again = await service.confirmAccountIdentity("account-B", reverifyIdentity: { "account-B" })
         XCTAssertTrue(again)
         let sameCount = await reset.count
         XCTAssertEqual(sameCount, 1)
@@ -523,7 +662,7 @@ final class CloudSyncAccountBoundaryTests: XCTestCase {
         let service = CloudConfigSyncService(.init(
             containerIdentifier: "iCloud.test", stateFileURL: file, isEnabled: { true },
             captureRecords: { _ in [key: latest] }, applyRecords: { _ in }))
-        let admitted = await service.confirmAccountIdentity("account-A")
+        let admitted = await service.confirmAccountIdentity("account-A", reverifyIdentity: { "account-A" })
         XCTAssertTrue(admitted)
         let staged = await service.stageLocalChangesBeforeFetch()
         XCTAssertTrue(staged)

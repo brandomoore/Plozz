@@ -297,9 +297,31 @@ registry.
   identity, consent, household removal, local dismissal and parental authority,
   including after asynchronous enrollment. Generated SSH keys remain local;
   Silo requires bound independent-device enrollment and never transfers PIN
-  proofs. Failed automatic sign-ins retain manual setup. Apple-account changes
-  invalidate cached authority and suppress old local credentials until fresh
-  authentication rather than uploading them to a different account. Encryption
+  proofs. Failed automatic sign-ins retain manual setup. Publication checks a
+  device-local, household-visible owner for each server sign-in against the
+  verified CloudKit account. Authentication and cloud restoration establish
+  ownership bound to the credential revision and a private Keychain digest of
+  the authorized material. Silo's automatic token refresh retains its login
+  identity; explicit credential replacements cannot inherit an old grant,
+  even after a partial metadata write. Household playback access does not
+  grant export permission, including on a TV system user's first launch.
+  Credential snapshots are per-system-user, and identity/authority fences reject
+  stale captures, restoration and permission responses after account changes.
+  Only fresh account verification can admit publication; cached snapshots cannot
+  reopen withdrawn admission. Account switches reverify identity after resetting
+  admission, rather than authorizing new fences with a pre-reset lookup.
+  Restoration persists its ownership grant before
+  exposing credentials, and migration responses bind the displayed credential
+  material as well as its revision.
+  Existing sign-ins without ownership require one explicit permission before
+  upload. The same safe fallback applies when a local sign-in completes before
+  an iCloud identity can be verified. Declining preserves local playback and is
+  remembered for that credential revision. Consent cannot claim a known foreign
+  owner; it is permission, not proof of who created an older sign-in. Mobile's
+  legacy Keychain publication observes the same server ownership gate, captures
+  immutable authorized bytes, and cancels queued writes before backgrounding
+  and foreground account revalidation.
+  Encryption
   does not imply Apple lacks key access without Advanced Data Protection.
   The CloudKit schema must include `PlozzProviderCredentialsV1Record` with
   `kind` (String), `editedAt` (Int64), and `value` (Encrypted Bytes). Deploy that

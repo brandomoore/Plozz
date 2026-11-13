@@ -219,6 +219,7 @@ extension PlozziOSAppModel {
     /// Drop state derived from a previous iCloud account on an account switch, so it's
     /// never re-published into the new Apple ID.
     func clearRemoteDerivedSyncState() {
+        portableCredentialPublisher.cancelPendingPublication()
         var store = PendingSyncedServersStore()
         store.removeAll()
         var removed = RemovedAccountsStore()
@@ -684,15 +685,17 @@ extension PlozziOSAppModel {
     func syncCloudOnForeground() {
         guard !isOfflineMode else { return }
         guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
+        portableCredentialPublisher.cancelPendingPublication()
+        providerCredentialSync.cancel()
         accountsProviders.reloadAccounts()
         let config = cloudSync
         Task {
             await config?.fetchNow()
             providerCredentialSync.reconcile()
+            publishPortableCredentials()
         }
         heartbeatHouseholdPresence()
         checkForSyncSetupOffer()
-        publishPortableCredentials()
         autoConnectFromSyncedCredentials()    // sign in from synced logins first…
         refreshPendingSyncedServers()         // …so already-synced servers don't prompt
     }

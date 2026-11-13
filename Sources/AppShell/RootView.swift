@@ -588,6 +588,20 @@ public struct RootView: View {
                     }
             }
         }
+        .signInSyncPermission(
+            appState.providerCredentialSync.publicationPermission,
+            canPresent: startupPresentationReady && rootPresentation.active == nil
+                && presentationRequests.isEmpty && appState.isActiveProfileAuthorized
+                && !settingsCoverPresented && !appState.profileFlow.managementRequiresParentalPIN,
+            sourceNames: { $0.accounts.map { "\($0.server.name) — \($0.userName)" }.joined(separator: "\n") }
+        ) { request, allow in
+            if appState.providerCredentialSync.resolvePublicationPermission(request, allow: allow) {
+                appState.scheduleCloudPublish()
+            } else {
+                appState.transientStatusPresenter.present(
+                    icon: "exclamationmark.triangle", text: "Couldn't save sign-in sync permission.")
+            }
+        }
         .onChange(
             of: appState.isActiveProfileAuthorized && !appState.profilesModel.activeProfile.needsSetup
                 && appState.initialSetupRestoration.phase == .hidden,

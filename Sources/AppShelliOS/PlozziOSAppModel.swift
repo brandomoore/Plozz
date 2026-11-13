@@ -461,7 +461,7 @@ final class PlozziOSAppModel {
     private(set) var requiresLaunchProfileSelection: Bool
     private(set) var settings: PlozziOSSettingsModel
     @ObservationIgnored
-    private var applicationIsActive = true
+    private(set) var applicationIsActive = true
     @ObservationIgnored
     private var downloadProfileGeneration = 0
     @ObservationIgnored
@@ -886,6 +886,9 @@ final class PlozziOSAppModel {
         accountsProviders.tokenResolver = { [weak self] accountID in
             self?.plexHomeUsers.resolvedToken(for: accountID)
         }
+        accountsProviders.onLocalAccountAuthentication = { [weak self] accountID in
+            self?.providerCredentialSync.didAuthenticateLocally(accountID: accountID)
+        }
         accountsProviders.onAccountsInvalidated = { [weak self] in
             self?.mediaItemActionHandler.invalidateAccountCaches()
             self?.universalWatchlistProfileID = nil
@@ -1219,6 +1222,7 @@ final class PlozziOSAppModel {
         sceneSessionIDs = sceneSessionIDs.filter { connected.contains($0.key) }
         if let transition = applicationLifecycle.replaceScenes(scenes) {
             applicationIsActive = transition.isActive
+            if !transition.isActive { portableCredentialPublisher.cancelPendingPublication() }
             if transition.isActive { retryWatchOutboxIfAllowed() }
         }
     }

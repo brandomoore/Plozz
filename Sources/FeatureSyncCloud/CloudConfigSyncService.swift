@@ -124,6 +124,8 @@ public actor CloudConfigSyncService {
         public var captureSnapshot: (@Sendable (SyncChannelSnapshot) async throws -> [SyncRecordID: Data])?
         public var applySnapshot: (@Sendable (SyncChannelSnapshot) async -> Void)?
         public var snapshotAuthority: @Sendable () -> String
+        public var onAccountVerified: @Sendable (String, String) async throws -> Void
+        public var accountVerificationAuthority: @Sendable () -> String
         public var captureRecords: @Sendable (_ fallback: [SyncRecordID: Data]) async -> [SyncRecordID: Data]
         public var applyRecords: @Sendable (SyncLocalChanges) async -> Void
         public var onAccountSwitch: @Sendable () async -> Void
@@ -139,7 +141,9 @@ public actor CloudConfigSyncService {
             stateCodec: CloudSyncStateCodec? = nil,
             captureSnapshot: (@Sendable (SyncChannelSnapshot) async throws -> [SyncRecordID: Data])? = nil,
             applySnapshot: (@Sendable (SyncChannelSnapshot) async -> Void)? = nil,
-            snapshotAuthority: @escaping @Sendable () -> String = { "" }
+            snapshotAuthority: @escaping @Sendable () -> String = { "" },
+            onAccountVerified: @escaping @Sendable (String, String) async throws -> Void = { _, _ in },
+            accountVerificationAuthority: @escaping @Sendable () -> String = { "" }
         ) {
             self.schema = schema
             self.stateFileURL = stateFileURL
@@ -151,6 +155,8 @@ public actor CloudConfigSyncService {
             self.captureSnapshot = captureSnapshot
             self.applySnapshot = applySnapshot
             self.snapshotAuthority = snapshotAuthority
+            self.onAccountVerified = onAccountVerified
+            self.accountVerificationAuthority = accountVerificationAuthority
         }
     }
 
@@ -168,6 +174,8 @@ public actor CloudConfigSyncService {
         let captureSnapshot: (@Sendable (SyncChannelSnapshot) async throws -> [SyncRecordID: Data])?
         let applySnapshot: (@Sendable (SyncChannelSnapshot) async -> Void)?
         let snapshotAuthority: @Sendable () -> String
+        let onAccountVerified: @Sendable (String, String) async throws -> Void
+        let accountVerificationAuthority: @Sendable () -> String
         var ledgerAuthority: String?
         var captureRevision: UInt64 = 0
         var currentAuthority: String? { captureSnapshot == nil ? nil : snapshotAuthority() }
@@ -192,7 +200,9 @@ public actor CloudConfigSyncService {
             usesRecordLedger: Bool = false,
             captureSnapshot: (@Sendable (SyncChannelSnapshot) async throws -> [SyncRecordID: Data])? = nil,
             applySnapshot: (@Sendable (SyncChannelSnapshot) async -> Void)? = nil,
-            snapshotAuthority: @escaping @Sendable () -> String = { "" }
+            snapshotAuthority: @escaping @Sendable () -> String = { "" },
+            onAccountVerified: @escaping @Sendable (String, String) async throws -> Void = { _, _ in },
+            accountVerificationAuthority: @escaping @Sendable () -> String = { "" }
         ) {
             self.isPrimary = isPrimary
             self.schema = schema
@@ -207,6 +217,8 @@ public actor CloudConfigSyncService {
             self.captureSnapshot = captureSnapshot
             self.applySnapshot = applySnapshot
             self.snapshotAuthority = snapshotAuthority
+            self.onAccountVerified = onAccountVerified
+            self.accountVerificationAuthority = accountVerificationAuthority
             self.ledgerAuthority = captureSnapshot == nil ? nil : snapshotAuthority()
         }
 
@@ -218,7 +230,7 @@ public actor CloudConfigSyncService {
 
         func snapshot(
             deleted: Set<SyncRecordID> = [], changes: SyncLocalChanges = [:],
-            deletedCaptureDigests: [SyncRecordID: Data] = [:]
+            deletedCaptureDigests: [SyncRecordID: Data] = [:], cloudAccountID: String? = nil
         ) -> SyncChannelSnapshot {
             snapshotSequence += 1
             return SyncChannelSnapshot(
@@ -228,7 +240,7 @@ public actor CloudConfigSyncService {
                 localCaptureDigests: deletedCaptureDigests.merging(
                     ledger.entries.compactMapValues(\.localCaptureDigest)
                 ) { _, current in current },
-                changes: changes
+                changes: changes, cloudAccountID: cloudAccountID
             )
         }
     }
@@ -302,6 +314,7 @@ public actor CloudConfigSyncService {
     private var fullResyncReceipts: [String: [SyncRecordID: Data]] = [:]
     private var fullResyncOwner: UUID?
     private var verifiedAccountIdentity: String?
+    private var pendingAccountIdentity: String?
     private var isReconcilingInventory = false
     /// Set after an iCloud account SWITCH: blocks publishing until we've successfully
     /// fetched the new account's real state, so this device never uploads the previous
@@ -380,7 +393,8 @@ public actor CloudConfigSyncService {
                     : nil),
                 usesRecordLedger: extra.schema == .liveTVStateV1,
                 captureSnapshot: extra.captureSnapshot, applySnapshot: extra.applySnapshot,
-                snapshotAuthority: extra.snapshotAuthority
+                snapshotAuthority: extra.snapshotAuthority, onAccountVerified: extra.onAccountVerified,
+                accountVerificationAuthority: extra.accountVerificationAuthority
             ))
         }
         self.channels = built
@@ -850,7 +864,7 @@ public actor CloudConfigSyncService {
             let rev = channel.ledger.remoteRevision
             let authority = channel.currentAuthority
             if let capture = channel.captureSnapshot {
-                do { desired = try await capture(channel.snapshot()) }
+                do { desired = try await capture(channel.snapshot(cloudAccountID: verifiedAccountIdentity)) }
                 catch {
                     guard !Task.isCancelled, !isErasing, isActive, engine === self.engine,
                           generation == engineGeneration, config.isEnabled(),
@@ -1340,7 +1354,7 @@ public actor CloudConfigSyncService {
         if let applySnapshot = channel.applySnapshot {
             let snapshot = channel.snapshot(
                 deleted: Set(changes.filter { $0.value == nil }.keys), changes: changes,
-                deletedCaptureDigests: deletedCaptureDigests
+                deletedCaptureDigests: deletedCaptureDigests, cloudAccountID: verifiedAccountIdentity
             )
             await outsideDelegateContext { await applySnapshot(snapshot) }
         } else {
@@ -1390,6 +1404,7 @@ public actor CloudConfigSyncService {
         identityAdmissionRevision += 1
         let revision = accountCheckRevision
         let generation = accountGeneration
+        let verificationAuthorities = channels.map { $0.accountVerificationAuthority() }
         var retries = 0
         while true {
             guard generation == accountGeneration, revision == accountCheckRevision,
@@ -1399,7 +1414,7 @@ public actor CloudConfigSyncService {
                 guard generation == accountGeneration, revision == accountCheckRevision,
                       isActive, config.isEnabled(), !Task.isCancelled else { return false }
                 if status == .noAccount {
-                    if verifiedAccountIdentity != nil {
+                    if verifiedAccountIdentity != nil || pendingAccountIdentity != nil {
                         do {
                             try await resetForAccountChange()
                         } catch {
@@ -1426,7 +1441,8 @@ public actor CloudConfigSyncService {
                 let identity = try await accountIdentity()
                 guard generation == accountGeneration, revision == accountCheckRevision,
                       config.isEnabled(), isActive, !Task.isCancelled else { return false }
-                return await confirmAccountIdentity(identity)
+                return await confirmAccountIdentity(
+                    identity, verificationAuthorities: verificationAuthorities, reverifyIdentity: accountIdentity)
             } catch {
                 guard generation == accountGeneration, revision == accountCheckRevision,
                       isActive, config.isEnabled(), !Task.isCancelled,
@@ -1458,7 +1474,11 @@ public actor CloudConfigSyncService {
 
     /// Validate ownership before loading a cursor into CKSyncEngine or admitting
     /// cached credentials. The marker survives sign-out and process termination.
-    func confirmAccountIdentity(_ identity: String) async -> Bool {
+    func confirmAccountIdentity(
+        _ identity: String,
+        verificationAuthorities: [String]? = nil,
+        reverifyIdentity: @Sendable () async throws -> String
+    ) async -> Bool {
         guard isActive, config.isEnabled(), !Task.isCancelled else { return false }
         guard !identity.isEmpty else {
             reportAccountCheckFailure(CKError(.internalError))
@@ -1466,7 +1486,8 @@ public actor CloudConfigSyncService {
         }
         identityAdmissionRevision += 1
         let admission = identityAdmissionRevision
-        if verifiedAccountIdentity == identity { return true }
+        var authorities = verificationAuthorities ?? channels.map { $0.accountVerificationAuthority() }
+        guard authorities == channels.map({ $0.accountVerificationAuthority() }) else { return false }
         let url = config.stateFileURL.appendingPathExtension("account")
         do {
             let previous: String?
@@ -1475,19 +1496,33 @@ public actor CloudConfigSyncService {
             let generation: Int
             if let previous, previous != identity {
                 generation = try await resetForAccountChange()
+                guard generation == accountGeneration, admission == identityAdmissionRevision,
+                      isActive, config.isEnabled(), !Task.isCancelled else { return false }
+                authorities = channels.map { $0.accountVerificationAuthority() }
+                // Reset renews admission fences, so the pre-reset identity cannot authorize them.
+                guard try await reverifyIdentity() == identity else { throw CancellationError() }
             } else {
                 generation = accountGeneration
             }
             guard generation == accountGeneration, admission == identityAdmissionRevision,
+                  authorities == channels.map({ $0.accountVerificationAuthority() }),
                   isActive, config.isEnabled(), !Task.isCancelled else { return false }
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(identity).write(to: url, options: .atomic)
+            pendingAccountIdentity = identity
+            for (index, channel) in channels.enumerated() {
+                try await channel.onAccountVerified(identity, authorities[index])
+                guard generation == accountGeneration, admission == identityAdmissionRevision,
+                      isActive, config.isEnabled(), !Task.isCancelled else { return false }
+            }
+            pendingAccountIdentity = nil
             verifiedAccountIdentity = identity
             return true
         } catch {
             guard admission == identityAdmissionRevision, isActive, config.isEnabled(),
                   !Task.isCancelled, !(error is CancellationError) else { return false }
             verifiedAccountIdentity = nil
+            pendingAccountIdentity = nil
             setDiagnostic("Cloud account identity could not be verified; synchronization remains paused")
             setStatus(.error, error: error.localizedDescription)
             return false
@@ -1497,6 +1532,7 @@ public actor CloudConfigSyncService {
     @discardableResult
     private func resetForAccountChange() async throws -> Int {
         verifiedAccountIdentity = nil
+        pendingAccountIdentity = nil
         fullResyncOwner = nil
         isFullResyncing = false
         fullResyncChanges = [:]
@@ -1545,7 +1581,7 @@ public actor CloudConfigSyncService {
                 do {
                     let desired: [SyncRecordID: Data]
                     if let capture = channel.captureSnapshot {
-                        desired = try await capture(channel.snapshot())
+                        desired = try await capture(channel.snapshot(cloudAccountID: verifiedAccountIdentity))
                     } else {
                         desired = await channel.captureRecords(channel.ledger.syncedValues())
                     }
