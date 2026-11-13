@@ -501,7 +501,15 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
     }
 
     func testGeneralSourceEntryPointsOpenTheSharedChooser() throws {
-        let app = try launchSettings(style: "tabBar", syncEnabled: false)
+        try verifyGeneralSourceEntryPoints(style: "tabBar")
+    }
+
+    func testSidebarSourceEntryPointsOpenTheSharedChooser() throws {
+        try verifyGeneralSourceEntryPoints(style: "sidebar")
+    }
+
+    private func verifyGeneralSourceEntryPoints(style: String) throws {
+        let app = try launchSettings(style: style, syncEnabled: false)
         defer { app.terminate() }
         for (route, identifier) in [
             ("servers", "sources-add-source"),
@@ -521,6 +529,16 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
             XCTAssertTrue(app.staticTexts["Jellyfin"].waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(app.staticTexts["Add Source"].exists)
             capture("source-destination-\(route)", in: app)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(app.screenshot().image.cgImage)).perform([request])
+            let visibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            XCTAssertTrue(visibleText.contains("Jellyfin"),
+                          "The chooser must be visible above Settings, not merely in its accessibility tree: \(visibleText)")
+            let plex = app.buttons.matching(NSPredicate(format: "label == %@", "Plex")).firstMatch
+            try focus(plex, in: app)
+            XCTAssertTrue(hasFocus(plex), "The foreground chooser must respond to the remote.")
             XCUIRemote.shared.press(.menu)
             XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
             XCUIRemote.shared.press(.menu)

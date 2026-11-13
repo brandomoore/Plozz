@@ -98,6 +98,7 @@ public struct RootView: View {
     @State private var rootPresentation = RootPresentationCoordinator()
     @State private var startupNotesPrepared = false
     @State private var startupLogoIntroCompleted = false
+    @State private var settingsCoverPresented = false
     @State private var deferredStartupURL: URL?
     @State private var presentedSetupOffer: SyncPairingRendezvous?
     /// Home's view model, owned here because this is the highest view whose
@@ -872,9 +873,20 @@ public struct RootView: View {
         }
         .modifier(AccountSetupOverlay(
             appState: appState, deviceColorScheme: systemColorScheme,
-            presentationEnabled: !showsStartupLogo,
+            presentationEnabled: !showsStartupLogo && !settingsCoverPresented,
             onAppearanceSelected: completeAppearanceIntroductions
         ))
+        .environment(\.settingsPageCoverWrapper, { content in
+            // Sidebar settings live above the root in a native cover, so that
+            // cover must own account setup while retaining its navigation path.
+            AnyView(content
+                .modifier(AccountSetupOverlay(
+                    appState: appState, deviceColorScheme: systemColorScheme,
+                    onAppearanceSelected: completeAppearanceIntroductions
+                ))
+                .onAppear { settingsCoverPresented = true }
+                .onDisappear { settingsCoverPresented = false })
+        })
         .background { AppBackground(palette: resolvedPalette) }
         .environment(\.themePalette, resolvedPalette)
         .environment(contentRefreshCoordinator)

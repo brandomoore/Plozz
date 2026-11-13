@@ -52,6 +52,12 @@ registry.
 
 ## Invariants
 
+- **Account setup stays above its originating Settings page.** Sidebar Settings
+  uses a native full-screen cover, which owns the account-setup overlay while
+  presented. The root relinquishes that overlay until the cover closes; there
+  must not be a second hidden chooser or disabled Sources page covering it.
+  Cancel returns to the retained Sources or Libraries page in every navigation style.
+
 - **First-run iCloud opt-in shows restoration, not an empty setup page.**
   Both shells use `InitialSetupRestoration` and `ICloudRestorationView` until
   the initial configuration, provider credentials, Live TV sources and queued

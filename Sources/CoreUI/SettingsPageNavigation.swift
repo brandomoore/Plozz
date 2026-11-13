@@ -167,6 +167,15 @@ public extension EnvironmentValues {
         get { self[SettingsPageContextKey.self] }
         set { self[SettingsPageContextKey.self] = newValue }
     }
+
+    var settingsPageCoverWrapper: (@MainActor @Sendable (AnyView) -> AnyView)? {
+        get { self[SettingsPageCoverWrapperKey.self] }
+        set { self[SettingsPageCoverWrapperKey.self] = newValue }
+    }
+}
+
+private struct SettingsPageCoverWrapperKey: EnvironmentKey {
+    static let defaultValue: (@MainActor @Sendable (AnyView) -> AnyView)? = nil
 }
 
 /// Retains every parent while one current page owns input, accessibility and Back.
@@ -181,6 +190,7 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
     let destination: (Route) -> Destination
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.settingsPageCoverWrapper) private var coverWrapper
     @State private var contentViewport: HomeRowPreviewViewport?
 
     public init(
@@ -225,19 +235,27 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
             navigation.completeFullScreenDismissal()
             onSubpagesDismiss?()
         }) {
-            GeometryReader { geometry in
-                subpages(in: geometry.size)
-            }
-            .safeAreaPadding(.top, 36)
-            .ignoresSafeArea(.container, edges: .vertical)
-            .background {
-                SettingsPageBackground()
-                    .environment(\.settingsInWorkspace, false)
+            if let coverWrapper {
+                coverWrapper(AnyView(coverContent))
+            } else {
+                coverContent
             }
         }
         .mask { Rectangle().ignoresSafeArea(.container) }
         .onChange(of: reduceMotion, initial: true) { _, value in
             navigation.animationsEnabled = !value
+        }
+    }
+
+    private var coverContent: some View {
+        GeometryReader { geometry in
+            subpages(in: geometry.size)
+        }
+        .safeAreaPadding(.top, 36)
+        .ignoresSafeArea(.container, edges: .vertical)
+        .background {
+            SettingsPageBackground()
+                .environment(\.settingsInWorkspace, false)
         }
     }
 

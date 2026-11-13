@@ -13,9 +13,12 @@
           "items": [
             "Rename Home rows and navigation items.",
             "Restore compatible server sign-ins through iCloud.",
-            "Navidrome and compatible Subsonic music servers (beta).",
             {
-              "text": "Music browsing and streaming on iPhone and iPad (beta).",
+              "text": "Navidrome and compatible Subsonic music servers, joining Plex, Jellyfin and Emby (beta).",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Music browsing and streaming from Plex, Jellyfin, Emby, Navidrome and compatible Subsonic servers (beta).",
               "platforms": ["iOS"]
             }
           ]
