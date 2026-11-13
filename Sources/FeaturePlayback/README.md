@@ -1248,6 +1248,9 @@ even if the layer does not. PiP continuation and background-audio preferences
 remain independent. Native captions switch drawing ownership for external
 presentation and revert to the shared overlay afterward; stop clears the
 presentation state and detaches the old player.
+Returning after backgrounding restores active PiP to the inline player on iOS
+and iPadOS. PiP opened while browsing in the app stays active; transient
+inactivity such as Control Center does not trigger restoration.
 
 ## Invariants
 
