@@ -850,19 +850,25 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/723f0863f507706e4a4337ea1f53fb72be3791d4)
-at commit `723f0863f507706e4a4337ea1f53fb72be3791d4`, integrating upstream
-**7.53.1** (`0839aeee18dd0818c5c307a3c5ecba8ea3161b22`).
-Playback diagnostics show `AetherEngine v7.53.1`, read from the linked engine
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/064b152d0242a722de171471b85389116775a8bf)
+at commit `064b152d0242a722de171471b85389116775a8bf`, integrating upstream
+**7.66.0** (`8e74bbb5cfde75287305c535c243c1ef9d96549c`).
+Playback diagnostics show `AetherEngine v7.66.0`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
 attributions because the upstream version does not identify Plozz's patches.
 Native audio readback and subtitle selection use bounded off-main media-selection
 reads, so an unresponsive media service does not block the UI actor. Plozz treats
 AVFoundation's media-services reset as one fresh same-engine recovery, not a
 codec failure, and retains numeric audio-session failure evidence.
-The 7.51.0 integration includes 7.50.0's 24-bit PCM spatial-bed output with
-route-selected APAC for AirPlay. The 7.53.1 update advances FFmpegBuild to
-3.11.1; LibDovi 2.1.0 and LibTrueHD 3.1.0 remain unchanged.
+The 7.66.0 integration advances FFmpegBuild to 3.15.0 and LibDovi to 2.2.0.
+It adds upstream AAC/PCE handling, PCM decoder coverage, subtitle-seek corrections
+and bounded packet-cache waits. Our authored intervals, custom-title MEL
+inspection and cancellation, and native selection-reader fixes remain intact.
+Plozz keeps Now Playing ownership; the new engine-owned publishers stay off.
+All optional package traits remain disabled, and both live and on-demand options
+explicitly disable FEL curve folding. MEL conversion and FEL/unknown HDR10
+fallback are unchanged. The native audio menu and disk-admission options retain
+their upstream opt-in defaults.
 It corrects the remote-HLS buffered frontier, uses measured producer throughput
 for short forward seeks, bounds bitmap subtitle retention after backward seeks,
 and supports HLS byte-range segments. The fork preserves AAC timing compensation,
@@ -968,8 +974,8 @@ LibDTSX **1.0.1**. Upstream 7.36.0 added another object-audio rendering path, co
 spatial speaker positions and a tvOS spatial-output activator for receivers that need it.
 It also includes live-replay recovery, software-video recovery after a screen lock,
 and the intervening 7.35.x playback fixes; these are upstream changes, not new
-Plozz-specific implementations. The current pin uses FFmpegBuild **3.11.1**
-and LibDovi **2.1.x**. LibTrueHD and LibDTSX are no longer linked in Plozz. It also includes
+Plozz-specific implementations. The current pin uses FFmpegBuild **3.15.0**
+and LibDovi **2.2.x**. LibTrueHD and LibDTSX are no longer linked in Plozz. It also includes
 single-connection spatial-audio probe safeguards and system-composited Dolby Vision
 held pictures. The fork retains the persistent HTTP body-reader isolation
 correction from its previous integration.
