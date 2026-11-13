@@ -16,6 +16,7 @@ public struct ProviderBrandMark: View {
     private let size: CGFloat
     private let showsBackground: Bool
     private let mediaShareTransport: MediaShareTransportKind?
+    private let siteURL: URL?
     @Environment(\.settingsRowIsFocused) private var rowFocused
     @Environment(\.colorScheme) private var colorScheme
 
@@ -23,12 +24,14 @@ public struct ProviderBrandMark: View {
         provider: ProviderKind,
         size: CGFloat = 14,
         showsBackground: Bool = true,
-        mediaShareTransport: MediaShareTransportKind? = nil
+        mediaShareTransport: MediaShareTransportKind? = nil,
+        siteURL: URL? = nil
     ) {
         self.provider = provider
         self.size = size
         self.showsBackground = showsBackground
         self.mediaShareTransport = mediaShareTransport
+        self.siteURL = siteURL
     }
 
     private var tint: Color {
@@ -85,6 +88,18 @@ public struct ProviderBrandMark: View {
     }
 
     public var body: some View {
+        #if canImport(UIKit)
+        if provider == .iptv, let siteURL {
+            ProviderSiteIcon(url: siteURL, size: size) { brandMark }
+        } else {
+            brandMark
+        }
+        #else
+        brandMark
+        #endif
+    }
+
+    private var brandMark: some View {
         ZStack {
             if showsBackground {
                 Circle().fill(badgeBackground)

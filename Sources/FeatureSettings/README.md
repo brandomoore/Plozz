@@ -1,5 +1,9 @@
 # FeatureSettings
 
+The household Sources page places Add Source before saved sources on TV and
+mobile. On TV, Add Source is also the workspace entry focus target. IPTV source
+rows share the origin-only website-logo lookup and generic fallback across platforms.
+
 Mobile customization choice groups use the same Settings cards and content
 insets, including contained groups such as Hero content sources. TV row sizing
 does not select a different mobile section style. Enabled switches keep the

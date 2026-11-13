@@ -18,6 +18,18 @@ struct PlozziOSServersSettingsView: View {
 
     var body: some View {
         SettingsPageList {
+            SettingsSectionGroup {
+                Button(action: onAddServer) {
+                    Label {
+                        Text(SettingsCopy.addSource)
+                    } icon: {
+                        Image(systemName: "plus")
+                    }
+                }
+                .settingsActionRow()
+                .accessibilityIdentifier("sources-add-source")
+            }
+
             SettingsSectionGroup(SettingsCopy.sources) {
                 if groups.isEmpty {
                     Text("No sources have been added yet.")
@@ -40,18 +52,6 @@ struct PlozziOSServersSettingsView: View {
             } footer: {
                 Text("Sign-ins and network shares are available to every profile on this \(deviceName).")
             }
-
-            SettingsSectionGroup {
-                Button(action: onAddServer) {
-                    Label {
-                        Text(SettingsCopy.addSource)
-                    } icon: {
-                        Image(systemName: "plus")
-                    }
-                }
-                .settingsActionRow()
-                .accessibilityIdentifier("sources-add-source")
-            }
         }
         .navigationTitle(Text(SettingsCopy.sources))
         .navigationDestination(item: $selectedServerKey) { key in
@@ -65,7 +65,8 @@ struct PlozziOSServersSettingsView: View {
             ProviderBrandMark(
                 provider: group.providerKind,
                 size: 32,
-                mediaShareTransport: group.transportKind
+                mediaShareTransport: group.transportKind,
+                siteURL: group.accounts.first?.server.baseURL
             )
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.serverName)

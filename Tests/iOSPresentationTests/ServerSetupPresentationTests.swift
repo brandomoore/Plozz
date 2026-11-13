@@ -11,6 +11,110 @@ import XCTest
 
 @MainActor
 final class ServerSetupPresentationTests: XCTestCase {
+    func testSourcesPutAddFirstAndUseTheAvailableWebsiteLogo() async throws {
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+            UIColor(red: 0, green: 1, blue: 0.25, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        let data = try XCTUnwrap(artwork.pngData())
+        let server = try IPTVTestHTTPServer { request in
+            XCTAssertTrue(request.hasPrefix("GET /favicon.ico "))
+            XCTAssertFalse(request.lowercased().contains("authorization:"))
+            XCTAssertFalse(request.lowercased().contains("cookie:"))
+            return .init(data: data, headers: ["Content-Type": "image/png"])
+        }
+        do {
+            let origin = try await server.start()
+            let suite = "SourcePresentation.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let accounts = AccountStore(secureStore: InMemorySecureStore())
+            try accounts.add(Account(
+                id: "fixture", server: .init(id: "fixture", name: "Example source",
+                baseURL: origin.appendingPathComponent("playlist.m3u"), provider: .iptv),
+                userID: "viewer", userName: "Viewer", deviceID: "fixture"
+            ), token: "fixture")
+            accounts.setActiveAccountIDs([])
+            let app = PlozziOSAppModel(
+                appAdmissionStore: AppAdmissionStore(defaults: defaults),
+                accountStore: accounts, profileStore: ProfileStore(defaults: defaults)
+            )
+            for width in [CGFloat(390), 834] {
+                let image = try await render(
+                    NavigationStack {
+                        PlozziOSServersSettingsView(appModel: app, onAddServer: {})
+                    }.environment(\.themePalette, .dark),
+                    size: .init(width: width, height: 1024), light: false
+                ) { _ in
+                    try await Task.sleep(for: .milliseconds(500))
+                }
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: image).perform([request])
+                attach(image, name: "Sources-add-first-website-logo-\(width)")
+                let recognized = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                let add = try XCTUnwrap(request.results?.first {
+                    $0.topCandidates(1).first?.string == "Add Source"
+                }, "\(recognized)")
+                let source = try XCTUnwrap(request.results?.first {
+                    $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("Example source") == true
+                }, "\(recognized)")
+                XCTAssertGreaterThan(add.boundingBox.minY, source.boundingBox.maxY,
+                                     "Add Source must appear above the saved sources")
+                let bytes = try rgba(image)
+                let logoPixels = stride(from: 0, to: bytes.count, by: 4).filter {
+                    bytes[$0] < 20 && bytes[$0 + 1] > 230 && bytes[$0 + 2] < 100
+                }.count
+                XCTAssertGreaterThan(logoPixels, 100, "Use the site's actual artwork, not the generic IPTV mark")
+            }
+            let requests = await server.requestCount
+            XCTAssertGreaterThan(requests, 0)
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
+    func testUnavailableWebsiteLogoKeepsTheSharedProviderFallback() async throws {
+        for status in [404, 200] {
+            let server = try IPTVTestHTTPServer { _ in
+                .init(data: Data("not an image".utf8), status: status)
+            }
+            do {
+                let origin = try await server.start()
+                var images: [CGImage] = []
+                for url in [Optional(origin), nil] {
+                    images.append(try await render(
+                        ProviderBrandMark(provider: .iptv, size: 48, siteURL: url)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(.black),
+                        size: .init(width: 160, height: 240), light: false
+                    ) { _ in
+                        try await Task.sleep(for: .milliseconds(500))
+                    })
+                }
+                let actual = try rgba(images[0])
+                let expected = try rgba(images[1])
+                func coralPixels(_ bytes: [UInt8]) -> Int {
+                    stride(from: 0, to: bytes.count, by: 4).filter {
+                        bytes[$0] > 160 && bytes[$0 + 1] < 140 && bytes[$0 + 2] < 140
+                    }.count
+                }
+                XCTAssertGreaterThan(coralPixels(expected), 100)
+                XCTAssertEqual(coralPixels(actual), coralPixels(expected),
+                               "Missing or invalid website artwork must retain the shared IPTV mark")
+                let requests = await server.requestCount
+                XCTAssertGreaterThan(requests, 0)
+                await server.stop()
+            } catch {
+                await server.stop()
+                throw error
+            }
+        }
+    }
+
     func testHomeEmptyStatesRenderBlueMascotInBothAppearances() async throws {
         XCTAssertNotNil(UIImage(named: "PlozzLogo"))
         for size in [CGSize(width: 390, height: 844), CGSize(width: 768, height: 1024)] {

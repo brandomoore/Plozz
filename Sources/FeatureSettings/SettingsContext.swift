@@ -535,17 +535,9 @@ struct ProviderIcon: View {
         // Delegates to the shared CoreUI mark so provider logos, brand tints,
         // the media-share drive glyph, and its transport badge have one
         // implementation across the app.
-        #if os(tvOS)
-        if provider == .iptv {
-            ProviderSiteIcon(url: siteURL, size: size) {
-                ProviderBrandMark(provider: provider, size: size)
-            }
-        } else {
-            ProviderBrandMark(provider: provider, size: size, mediaShareTransport: mediaShareTransport)
-        }
-        #else
-        ProviderBrandMark(provider: provider, size: size, mediaShareTransport: mediaShareTransport)
-        #endif
+        ProviderBrandMark(
+            provider: provider, size: size, mediaShareTransport: mediaShareTransport, siteURL: siteURL
+        )
     }
 
     static func tint(_ provider: ProviderKind) -> Color {
