@@ -11,7 +11,6 @@
         {
           "category": "New",
           "items": [
-            "Custom Home rows combining collections, playlists, libraries and feeds, with sorting and filters.",
             "Rename Home rows and navigation items.",
             "Restore compatible server sign-ins through iCloud.",
             "Navidrome and compatible Subsonic music servers (beta).",
@@ -24,6 +23,7 @@
         {
           "category": "Updated",
           "items": [
+            "Custom Home rows now support playlists, libraries and lists like Continue Watching, plus combining sources, sorting and filtering.",
             "Clearer iCloud setup and restoration progress.",
             "Video-version selection, including an option to use server order.",
             "More consistent title details, resume choices and metadata language.",
