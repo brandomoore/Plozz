@@ -539,6 +539,24 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
             let plex = app.buttons.matching(NSPredicate(format: "label == %@", "Plex")).firstMatch
             try focus(plex, in: app)
             XCTAssertTrue(hasFocus(plex), "The foreground chooser must respond to the remote.")
+            if route == "servers" {
+                let music = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Navidrome")).firstMatch
+                try focus(music, in: app)
+                XCUIRemote.shared.press(.select)
+                let signIn = app.buttons["subsonic-sign-in"]
+                let cancel = app.buttons["subsonic-cancel"]
+                XCTAssertTrue(signIn.waitForExistence(timeout: 10), app.debugDescription)
+                XCTAssertTrue(cancel.exists)
+                XCTAssertFalse(signIn.isEnabled, "An empty form must not submit.")
+                XCTAssertEqual(signIn.frame.width, 840, accuracy: 2,
+                               "The native Sign In button must fill the form, not just its text.")
+                XCTAssertEqual(cancel.frame.width, signIn.frame.width, accuracy: 2)
+                XCTAssertEqual(cancel.frame.minX, signIn.frame.minX, accuracy: 2)
+                capture("source-navidrome-actions-\(style)", in: app)
+                try focus(cancel, in: app)
+                XCUIRemote.shared.press(.select)
+                XCTAssertTrue(plex.waitForExistence(timeout: 10), app.debugDescription)
+            }
             XCUIRemote.shared.press(.menu)
             XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
             XCUIRemote.shared.press(.menu)

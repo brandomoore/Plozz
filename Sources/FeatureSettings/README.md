@@ -1,7 +1,8 @@
 # FeatureSettings
 
 The household Sources page places Add Source before saved sources on TV and
-mobile. On TV, Add Source is also the workspace entry focus target. IPTV source
+mobile. On TV, Add Source is also the workspace entry focus target and occupies
+its own connected card above saved sources, using the same grouped surfaces as Audio. IPTV source
 rows share the origin-only website-logo lookup and generic fallback across platforms.
 
 Mobile customization choice groups use the same Settings cards and content
