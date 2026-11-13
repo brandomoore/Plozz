@@ -2261,18 +2261,19 @@ The base 4pt gaps are centered on the original time boundaries. Each half-gap is
 capped at a quarter of either neighboring section's width so a tiny range is
 not consumed or enlarged. Outer timeline ends remain unchanged.
 Only the two outer ends retain full rounding. Internal cuts have vertical sides
-with small 2pt corner curves, constrained by either neighboring section's width
-so tiny pieces remain visible. The same small internal radius applies at rest,
+with small 2pt corner curves, constrained by either neighboring section's width.
+The same small internal radius applies at rest,
 during scrubbing, and when TV focus expands the bar from 12pt to 20pt.
 Live programme tracks use the same geometry.
-Tight TV joins also gain up to 1pt of optical spacing at rest, increasing to
-2pt at full focus, taken only from the wider neighbor. The smaller piece stays
-in place, and the original time boundary remains inside the gap. Spacing tapers
-away as neighboring sections become roomy and is bounded so a section contributing
-to both neighboring gaps retains at least half its width. Neither seek positions
-nor marker times change.
-Touch timelines retain their existing minimum-width suppression, so expanding
-the bar does not introduce tiny sections or change its established rounded caps.
+TV and touch skip-marker timelines both require 20pt of solid section width
+between retained cuts. Both boundaries around an undersized marked or unmarked
+interval are omitted together, based on the original neighboring intervals,
+including the timeline ends. Crowded endings remain continuous instead of forming
+slivers; isolated readable cuts keep their exact timestamps. This threshold is
+fixed while focus or touch expands the bar, and does not depend on progress.
+Only the visual cuts are suppressed: stored ranges, skip buttons, post-credits
+gaps, and autoplay decisions are unchanged. Live programme boundaries retain
+their separate layout policy.
 The mask applies to the base, buffered, and played fills and glass backing
 together, never the white playhead. Each section retains the bar's exact
 material and opacity; only its rounded ends and full-height gaps reveal the

@@ -90,7 +90,7 @@ final class PlayerAdaptiveSkipMarkerTrackTests: XCTestCase {
         }
     }
 
-    func testDefaultTVLayoutRetainsItsTinySectionPolicy() throws {
+    func testRawLayoutCanRetainTinySectionsWithoutAdaptiveSuppression() throws {
         let size = CGSize(width: 360, height: 20)
         let ranges = [(60.0 / 2_700)..<(68.0 / 2_700)]
         let original = SkipMarkerTrackLayout.segmentedSections(ranges: ranges, size: size)
@@ -98,6 +98,35 @@ final class PlayerAdaptiveSkipMarkerTrackTests: XCTestCase {
         let middle = try XCTUnwrap(original.dropFirst().first)
         XCTAssertEqual(middle.width, 360 * (8.0 / 2_700) / 2, accuracy: 0.000001)
         XCTAssertEqual(sections(ranges, size: size), [CGRect(origin: .zero, size: size)])
+    }
+
+    func testDenseMovieEndingDisappearsWithoutRemovingAnIsolatedIntroOrChangingMarkers() {
+        let duration = 8_142.656
+        let credits: [MediaSegment] = [
+            .init(kind: .credits, start: 7_754.39, end: 7_784.39),
+            .init(kind: .credits, start: 7_816.39, end: 7_852.39),
+            .init(kind: .credits, start: 7_962.39, end: 8_032.39),
+            .init(kind: .credits, start: 8_072.39, end: 8_110.39)
+        ]
+        let intro = MediaSegment(kind: .intro, start: duration * 0.1, end: duration * 0.15)
+        let ranges = SkipMarkerTrackLayout.ranges(segments: credits, duration: duration)
+        let combined = SkipMarkerTrackLayout.ranges(segments: [intro] + credits, duration: duration)
+        for width in [CGFloat(960), 1280, 1760] {
+            for height in [CGFloat(12), 14, 16, 18, 20] {
+                let size = CGSize(width: width, height: height)
+                XCTAssertEqual(
+                    SkipMarkerTrackLayout.segmentedSections(
+                        ranges: ranges, size: size, minimumSectionWidth: minimumSectionWidth, restingHeight: 12
+                    ),
+                    [CGRect(origin: .zero, size: size)]
+                )
+                XCTAssertEqual(sections(combined, size: size), sections([0.1..<0.15], size: size),
+                               "Only the crowded tail should lose its cuts.")
+            }
+        }
+        XCTAssertEqual(credits.activeSkippable(at: 7_770)?.start, 7_754.39)
+        XCTAssertNil(credits.activeSkippable(at: 7_800),
+                     "A visually continuous tail must not turn its unmarked gap into a skip range.")
     }
 
     func testEmptyFullLengthAndInvalidSizesAreSafe() {
