@@ -91,6 +91,17 @@ Plex DVR tuning uses the lineup's native channel `id`, never its display number
 validated as a single path component; invalid IDs do not fall back to another
 channel or tuner.
 
+Tune responses may wrap `MediaGrabOperation` in `MediaSubscription`.
+Playback parsing follows that envelope but excludes its `Timeline` and
+`AlsoAiring` guide metadata: those records must not select a stream or change
+the owned session's cleanup identity.
+
+Live TV uses the native HLS player. Only known, native-compatible source codecs
+enable Plex's `directPlay` flag; MPEG-2, incompatible audio, and unknown codec
+metadata request H.264/AAC compatibility conversion. The decision and start
+requests share that profile and viewer identity. Compatible H.264/HEVC channels
+retain direct playback.
+
 Failed tune requests use the consent-gated playback diagnostics sink under
 `plexLiveTune`. Evidence retains HTTP status, numeric Plex failure status,
 response format, and bounded transport error codes, never server messages,

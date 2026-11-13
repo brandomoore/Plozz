@@ -101,6 +101,8 @@ struct PlexLiveTVPlaybackDocument: Sendable {
     let directPlaylist: String?
     let decisionCode: Int?
     let status: Int?
+    let videoCodec: String?
+    let audioCodec: String?
 
     init(data: Data) throws {
         guard data.count <= 2_097_152,
@@ -112,6 +114,8 @@ struct PlexLiveTVPlaybackDocument: Sendable {
         var mediaUUIDs: Set<String> = []
         var ratings: Set<String> = []
         var playlists: Set<String> = []
+        var videoCodecs: Set<String> = []
+        var audioCodecs: Set<String> = []
         func scalar(_ value: Any?) -> String? {
             if let value = value as? String { return value }
             return (value as? NSNumber)?.stringValue
@@ -133,11 +137,19 @@ struct PlexLiveTVPlaybackDocument: Sendable {
                    Self.validHandle(uuid) {
                     mediaUUIDs.insert(uuid)
                 }
+                if branch == "Media" {
+                    if let codec = node["videoCodec"] as? String { videoCodecs.insert(codec.lowercased()) }
+                    if let codec = node["audioCodec"] as? String { audioCodecs.insert(codec.lowercased()) }
+                }
                 if branch == "Part", node["decision"] as? String == "directplay",
                    let key = node["key"] as? String {
                     playlists.insert(key)
                 }
-                for child in ["Metadata", "Video", "MediaGrabOperation", "Media", "Part"] {
+                var children = ["Metadata", "Video", "MediaGrabOperation", "Media", "Part"]
+                if branch == "MediaContainer" {
+                    children.append("MediaSubscription")
+                }
+                for child in children {
                     if let childValue = node[child] {
                         try visit(childValue, branch: child, depth: depth + 1)
                     }
@@ -160,6 +172,8 @@ struct PlexLiveTVPlaybackDocument: Sendable {
         decisionCode = scalar(container["mdeDecisionCode"]).flatMap(Int.init)
             ?? scalar(container["generalDecisionCode"]).flatMap(Int.init)
         status = scalar(container["status"]).flatMap(Int.init)
+        videoCodec = videoCodecs.count == 1 ? videoCodecs.first : nil
+        audioCodec = audioCodecs.count == 1 ? audioCodecs.first : nil
     }
 
     static func validHandle(_ value: String) -> Bool {
