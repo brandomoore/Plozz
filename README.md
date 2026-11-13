@@ -41,7 +41,7 @@ with **iCloud**.
   <a href="https://plozz.app/silo/"><img src="docs/assets/integrations/silo.png" height="40" alt="Silo" /></a>
 </p>
 
-**All your media servers and network shares come together in one library.**
+**All your media servers and network shares merge together into one library.**
 Browse and search everything in one place, without switching between sources.
 You can still browse each source separately and pick up where you left off.
 
