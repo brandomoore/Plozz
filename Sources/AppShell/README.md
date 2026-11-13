@@ -312,7 +312,10 @@ registry.
   admission, rather than authorizing new fences with a pre-reset lookup.
   Restoration persists its ownership grant before
   exposing credentials, and migration responses bind the displayed credential
-  material as well as its revision.
+  material as well as its revision. Background server-name or route refreshes
+  retain the pending consent request for the same server/user identities and
+  credentials, so a response from the visible native alert stays valid.
+  Changed credentials, account sets or iCloud authority still invalidate it.
   Existing sign-ins without ownership require one explicit permission before
   upload. The same safe fallback applies when a local sign-in completes before
   an iCloud identity can be verified. Declining preserves local playback and is

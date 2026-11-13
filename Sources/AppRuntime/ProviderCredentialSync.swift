@@ -47,6 +47,16 @@ public final class ProviderCredentialSync {
         fileprivate let cloudAccountID: String
         fileprivate let authority: String
         fileprivate let credentialDigests: [String: Data]
+
+        fileprivate func matchesSignIns(_ current: [Account]) -> Bool {
+            accounts.count == current.count && accounts.allSatisfy { expected in
+                current.contains {
+                    $0.id == expected.id && $0.credentialRevision == expected.credentialRevision
+                        && $0.server.provider == expected.server.provider && $0.server.id == expected.server.id
+                        && $0.userID == expected.userID
+                }
+            }
+        }
     }
 
     private struct State: Codable {
@@ -375,9 +385,11 @@ public final class ProviderCredentialSync {
         guard !unowned.isEmpty else { publicationPermission = nil; return }
         var digests: [String: Data] = [:]
         for account in unowned { digests[account.id] = try credentialDigest(for: account) }
-        if publicationPermission?.accounts == unowned,
-           publicationPermission?.cloudAccountID == cloudAccountID,
-           publicationPermission?.credentialDigests == digests { return }
+        // Discovery can refresh names and routes while the native alert still
+        // holds its original request. Keep that request for unchanged sign-ins.
+        if let pending = publicationPermission, pending.matchesSignIns(unowned),
+           pending.cloudAccountID == cloudAccountID, pending.authority == authority.value,
+           pending.credentialDigests == digests { return }
         publicationPermission = .init(
             id: UUID(), accounts: unowned, cloudAccountID: cloudAccountID,
             authority: authority.value, credentialDigests: digests)

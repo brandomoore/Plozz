@@ -340,6 +340,37 @@ final class ProviderCredentialSyncTests: XCTestCase {
         }
     }
 
+    func testMigrationConsentSurvivesServerMetadataRefreshAndRemembersTheDisplayedChoice() throws {
+        for allow in [true, false] {
+            let suite = "ProviderMigrationMetadata.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let accounts = AccountStore(secureStore: InMemorySecureStore())
+            let account = makeAccount(.jellyfin)
+            try accounts.add(account, token: "local")
+            let bridge = ProviderCredentialSync(
+                accounts: accounts, storage: InMemorySecureStore(), ownership: InMemorySecureStore(),
+                defaults: defaults, enabled: { true }, didRestore: {})
+            try bridge.accountVerified("A", authority: bridge.snapshotAuthority)
+            let displayed = try XCTUnwrap(bridge.publicationPermission)
+
+            var server = account.server
+            server.name = "Refreshed server name"
+            server.version = "10.11.0"
+            try accounts.updateServerMetadata(expected: account, server: server)
+            XCTAssertTrue(try bridge.capture(fallback: [:]).isEmpty)
+
+            XCTAssertEqual(bridge.publicationPermission, displayed,
+                           "Background metadata discovery must not replace the visible consent request")
+            XCTAssertTrue(bridge.resolvePublicationPermission(displayed, allow: allow))
+            XCTAssertNil(bridge.publicationPermission)
+            bridge.cancel()
+            try bridge.accountVerified("A", authority: bridge.snapshotAuthority)
+            XCTAssertNil(bridge.publicationPermission, "Reverification must not ask about the same sign-in again")
+            XCTAssertEqual(try bridge.capture(fallback: [:]).count, allow ? 1 : 0)
+        }
+    }
+
     func testMigrationConsentCannotAuthorizeChangedCredentialsOrAnotherAccount() async throws {
         for interruption in ["account", "credential", "disabled", "parental", "removed"] {
             let suite = "ProviderMigrationRace.\(UUID())"
