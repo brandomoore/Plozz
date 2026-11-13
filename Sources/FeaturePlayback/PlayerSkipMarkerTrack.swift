@@ -121,15 +121,15 @@ enum SkipMarkerTrackLayout {
         var mask = Path()
         for index in sections.indices {
             let section = sections[index]
-            let leading = cornerSize(
-                sectionWidth: section.width,
-                neighborWidth: index == 0 ? section.width : sections[index - 1].width,
+            let outer = cornerSize(
+                sectionWidth: section.width, neighborWidth: section.width,
                 height: section.height, referenceHeight: restingHeight
             )
-            let trailing = cornerSize(
-                sectionWidth: section.width,
-                neighborWidth: index == sections.count - 1 ? section.width : sections[index + 1].width,
-                height: section.height, referenceHeight: restingHeight
+            let leading = index == 0 ? outer : cutCornerSize(
+                section: section, neighbor: sections[index - 1]
+            )
+            let trailing = index == sections.count - 1 ? outer : cutCornerSize(
+                section: section, neighbor: sections[index + 1]
             )
             if leading == trailing {
                 mask.addRoundedRect(in: section, cornerSize: leading)
@@ -138,6 +138,11 @@ enum SkipMarkerTrackLayout {
             }
         }
         return mask
+    }
+
+    private static func cutCornerSize(section: CGRect, neighbor: CGRect) -> CGSize {
+        let radius = min(2, section.height / 2, section.width / 2, neighbor.width / 2)
+        return CGSize(width: radius, height: radius)
     }
 
     private static func sectionPath(_ rect: CGRect, leading: CGSize, trailing: CGSize) -> Path {

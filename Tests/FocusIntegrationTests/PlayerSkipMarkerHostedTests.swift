@@ -34,7 +34,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         }
     }
 
-    func testSegmentedTracksKeepNativeFillsAndRoundEverySectionWithoutInternalCutouts() async throws {
+    func testSegmentedTracksKeepNativeFillsWithSoftVerticalInternalCuts() async throws {
         XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.10)
         try await withWindow { window in
             for performance in [false, true] {
@@ -45,12 +45,16 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                         background: background
                     )
                     let unmarked = try await render(in: window)
-                    model.skipSegments.segments = [.init(kind: .intro, start: 12.5, end: 87.5)]
+                    model.skipSegments.segments = [
+                        .init(kind: .intro, start: 12.5, end: 37.5),
+                        .init(kind: .credits, start: 62.5, end: 87.5)
+                    ]
                     let frame = try await render(in: window)
                     let top = focused ? 580 : 584
                     let bottom = focused ? 600 : 596
                     for y in frame.pixels(top..<bottom) {
-                        for x in [479, 480, 481, 1439, 1440, 1441].flatMap({ frame.pixels($0..<($0 + 1)) }) {
+                        for x in [479, 480, 481, 799, 800, 801, 1119, 1120, 1121, 1439, 1440, 1441]
+                            .flatMap({ frame.pixels($0..<($0 + 1)) }) {
                             XCTAssertEqual(frame.colorAtPixel(x, y), frame.colorAtPixel(x, frame.pixel(450)),
                                            "The entire gap, including the glass backing, reveals the picture.")
                         }
@@ -63,7 +67,10 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                             }
                         }
                     }
-                    XCTAssertEqual(frame.color(483, top), frame.color(483, 450), "The new section has rounded corners.")
+                    XCTAssertNotEqual(frame.color(482, top), frame.color(482, 590),
+                                      "The internal cut retains a small rounded corner.")
+                    XCTAssertNotEqual(frame.color(483, top + 3), frame.color(483, 450),
+                                      "The cut is straight below its corner, not fully pill-shaped.")
                     XCTAssertNotEqual(frame.color(483, 590), frame.color(483, 450))
                     XCTAssertEqual(frame.color(832, 590), [255, 255, 255])
                     attach(frame.image, name: "Rounded sections - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
@@ -75,7 +82,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         }
     }
 
-    func testTinyOpeningSectionUsesSoftMatchingCornersAndKeepsRoomyJoinsRounded() async throws {
+    func testTinyOpeningSectionAndRoomyJoinsUseSmallInternalCorners() async throws {
         try await withWindow { window in
             for performance in [false, true] {
                 for focused in [false, true] {
@@ -89,29 +96,18 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                     let widerSectionStart = focused ? 330 : 329
                     XCTAssertNotEqual(frame.color(widerSectionStart + 2, top + 1), frame.color(widerSectionStart + 2, 450),
                                       "The wide section must not use an oversized cap beside the tiny opening.")
-                    XCTAssertEqual(frame.color(widerSectionStart, top), frame.color(widerSectionStart, 450),
-                                   "The constrained join must still have a visibly rounded top corner.")
-                    if focused {
-                        XCTAssertEqual(frame.color(widerSectionStart, top + 1), frame.color(widerSectionStart, 450),
-                                       "Focus must grow the corner curve vertically instead of leaving it boxy.")
-                        let backdrop = frame.color(widerSectionStart + 1, 450)
-                        let corner = frame.color(widerSectionStart + 1, top + 1)
-                        let solid = frame.color(widerSectionStart + 1, 590)
-                        for channel in 0..<3 {
-                            XCTAssertLessThan(
-                                2 * (Int(corner[channel]) - Int(backdrop[channel])),
-                                Int(solid[channel]) - Int(backdrop[channel]),
-                                "The wider corner should reveal more picture than track at its outer curve."
-                            )
-                        }
-                    }
+                    XCTAssertNotEqual(frame.color(widerSectionStart, top), frame.color(widerSectionStart, 590),
+                                      "The constrained join still has a small rounded corner.")
+                    XCTAssertNotEqual(frame.color(widerSectionStart + 1, top + 3),
+                                      frame.color(widerSectionStart + 1, 450),
+                                      "Focus keeps the internal edge vertical below its corner.")
                     for y in frame.pixels(top..<(focused ? 600 : 596)) {
                         for x in frame.pixels(326..<widerSectionStart) {
                             XCTAssertEqual(frame.colorAtPixel(x, y), frame.colorAtPixel(x, frame.pixel(450)))
                         }
                     }
-                    XCTAssertEqual(frame.color(643, top), frame.color(643, 450),
-                                   "The other intro boundary still has room for maximum rounding.")
+                    XCTAssertNotEqual(frame.color(642, top), frame.color(642, 590),
+                                      "The roomy internal edge uses the same small corner.")
                     XCTAssertNotEqual(frame.color(643, 590), frame.color(643, 450))
                     attach(frame.image, name: "Soft matching opening cut - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
                 }

@@ -2260,24 +2260,17 @@ There are no internal cutouts, patterns, or user-selectable marker styles.
 The base 4pt gaps are centered on the original time boundaries. Each half-gap is
 capped at a quarter of either neighboring section's width so a tiny range is
 not consumed or enlarged. Outer timeline ends remain unchanged.
-Both sides of each gap use the narrower rendered section to size their corners,
-with a small amount of extra rounding capped at half the bar height. Slivers use
-slightly taller elliptical corners without exceeding their available width;
-wider neighbors can use the corresponding circular corner. Base facing corners meet
-the gap at the same height. Roomy joins retain full rounding, and rounding never
-removes a divider. Live programme tracks use the same geometry.
-On TV, constrained corners grow vertically from the 12pt resting geometry as
-focus expands the bar to 20pt. Their horizontal width stays constrained while
-the curves retain their resting proportions instead of becoming squarer.
-The wider side of a tight join gains up to 1.5pt of additional rounding during
-focus, without changing the smaller piece or exceeding a fully rounded end.
+Only the two outer ends retain full rounding. Internal cuts have vertical sides
+with small 2pt corner curves, constrained by either neighboring section's width
+so tiny pieces remain visible. The same small internal radius applies at rest,
+during scrubbing, and when TV focus expands the bar from 12pt to 20pt.
+Live programme tracks use the same geometry.
 Tight TV joins also gain up to 1pt of optical spacing at rest, increasing to
 2pt at full focus, taken only from the wider neighbor. The smaller piece stays
 in place, and the original time boundary remains inside the gap. Spacing tapers
-away at fully rounded joins and is bounded so a section contributing to both
-neighboring gaps retains at least half its width. Neither seek positions nor
-marker times change.
-Full-radius roomy joins are unchanged.
+away as neighboring sections become roomy and is bounded so a section contributing
+to both neighboring gaps retains at least half its width. Neither seek positions
+nor marker times change.
 Touch timelines retain their existing minimum-width suppression, so expanding
 the bar does not introduce tiny sections or change its established rounded caps.
 The mask applies to the base, buffered, and played fills and glass backing

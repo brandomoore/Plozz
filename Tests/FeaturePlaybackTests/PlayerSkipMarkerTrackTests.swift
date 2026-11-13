@@ -231,38 +231,27 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
-    func testFocusedNarrowJoinsLeaveOpticalSpaceAndPreserveEverySection() throws {
+    func testFocusedNarrowCutsKeepStraightSidesAndPreserveEverySection() throws {
         let size = CGSize(width: 320, height: 20)
         for ranges in [[0.02..<0.25], [0.4..<0.42], [0.5..<0.98]] {
-            let sections = SkipMarkerTrackLayout.segmentedSections(ranges: ranges, size: size)
-            let narrowIndex = try XCTUnwrap(sections.firstIndex { $0.width < 12 })
-            let radius = sections[narrowIndex].width / 2 * 1.25
-            let unscaled = SkipMarkerTrackLayout.maskPath(ranges: ranges, size: size)
-            let expanded = SkipMarkerTrackLayout.maskPath(
+            let sections = SkipMarkerTrackLayout.segmentedSections(
                 ranges: ranges, size: size, restingHeight: 12
             )
-            let unscaledFrame = try pixels(
-                unscaled.fill(.white).frame(width: size.width, height: size.height).background(.black)
+            let expanded = SkipMarkerTrackLayout.maskPath(
+                ranges: ranges, size: size, restingHeight: 12
             )
             let frame = try pixels(
                 expanded.fill(.white).frame(width: size.width, height: size.height).background(.black)
             )
-            for index in [narrowIndex - 1, narrowIndex + 1] where sections.indices.contains(index) {
+            for index in sections.indices {
                 let section = sections[index]
-                let minX = index < narrowIndex ? section.maxX - radius : section.minX
-                let maxX = index < narrowIndex ? section.maxX : section.minX + radius
-                let cornerHeight = Int(ceil(radius * size.height / 12))
-                for rows in [0..<cornerHeight, (Int(size.height) - cornerHeight)..<Int(size.height)] {
-                    var unscaledCoverage = 0
-                    var expandedCoverage = 0
-                    for x in Int(floor(minX))..<Int(ceil(maxX)) {
-                        for y in rows {
-                            unscaledCoverage += Int(unscaledFrame.red(x: x, y: y))
-                            expandedCoverage += Int(frame.red(x: x, y: y))
-                        }
-                    }
-                    XCTAssertLessThan(expandedCoverage, unscaledCoverage,
-                                      "Focused joins must leave more visible picture beside the sliver.")
+                if index > 0 {
+                    XCTAssertTrue(expanded.contains(CGPoint(x: section.minX + 0.1, y: 3)))
+                    XCTAssertTrue(expanded.contains(CGPoint(x: section.minX + 0.1, y: 17)))
+                }
+                if index < sections.count - 1 {
+                    XCTAssertTrue(expanded.contains(CGPoint(x: section.maxX - 0.1, y: 3)))
+                    XCTAssertTrue(expanded.contains(CGPoint(x: section.maxX - 0.1, y: 17)))
                 }
             }
             for section in sections {
@@ -345,7 +334,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
-    func testShortOpeningAndEndingPiecesKeepSymmetricRoundedCorners() throws {
+    func testShortEndPiecesKeepTopBottomSymmetryWithDifferentInnerAndOuterCorners() throws {
         let size = CGSize(width: 320, height: 20)
         for ranges in [[0.025..<0.5], [0.5..<0.975]] {
             let sections = SkipMarkerTrackLayout.segmentedSections(ranges: ranges, size: size)
@@ -354,14 +343,8 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             let actual = try pixels(mask.fill(.white).frame(width: size.width, height: size.height).background(.black))
             for offset in 0..<Int(section.width) {
                 let left = Int(section.minX) + offset
-                let right = Int(section.maxX) - 1 - offset
                 for y in 0..<Int(size.height) {
-                    // Antialiased coverage can differ by one 8-bit step at mirrored curve edges.
                     for channel in 0..<3 {
-                        XCTAssertEqual(
-                            Int(actual.rgb(x: left, y: y)[channel]), Int(actual.rgb(x: right, y: y)[channel]),
-                            accuracy: 1, "The short end piece needs symmetric inner and outer corners at \(left),\(y)."
-                        )
                         XCTAssertEqual(
                             Int(actual.rgb(x: left, y: y)[channel]),
                             Int(actual.rgb(x: left, y: Int(size.height) - 1 - y)[channel]),
@@ -372,18 +355,19 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             }
         }
         let mask = SkipMarkerTrackLayout.maskPath(ranges: [0.025..<0.5], size: size)
-        XCTAssertFalse(mask.contains(CGPoint(x: 10.5, y: 0.5)),
-                       "The adjoining long section must keep visibly soft corners, not a nearly square cut.")
+        XCTAssertFalse(mask.contains(CGPoint(x: 10.1, y: 0.1)),
+                       "The internal cut retains a small rounded corner.")
+        XCTAssertTrue(mask.contains(CGPoint(x: 10.1, y: 3)),
+                      "Below the small corner, the cut is vertical rather than a capsule.")
         XCTAssertTrue(mask.contains(CGPoint(x: 10.5, y: 10)))
     }
 
-    func testRoomySectionsAndMobileSuppressionKeepTheOriginalRoundedMask() throws {
+    func testUnbrokenTracksKeepTheOriginalRoundedMask() throws {
         for height in [CGFloat(8), 12, 20] {
             for (ranges, minimumWidth) in [
                 ([Range<Double>](), CGFloat(0)),
                 ([0..<1], 0),
-                ([0.125..<0.875], 0),
-                ([0.01..<0.5, 0.6..<0.61], 20)
+                ([0.01..<0.99], 20)
             ] {
                 let size = CGSize(width: 320, height: height)
                 var reference = Path()
@@ -409,6 +393,24 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
+    func testMultipleMarkersKeepCapsuleOuterEndsAndSoftVerticalInnerCuts() {
+        for height in [CGFloat(8), 12, 20] {
+            let size = CGSize(width: 320, height: height)
+            let ranges = [0.125..<0.375, 0.625..<0.875]
+            let sections = SkipMarkerTrackLayout.segmentedSections(ranges: ranges, size: size)
+            let mask = SkipMarkerTrackLayout.maskPath(ranges: ranges, size: size)
+            XCTAssertFalse(mask.contains(CGPoint(x: 0.1, y: 0.1)))
+            XCTAssertFalse(mask.contains(CGPoint(x: 319.9, y: 0.1)))
+            XCTAssertTrue(mask.contains(CGPoint(x: 0.1, y: height / 2)))
+            XCTAssertTrue(mask.contains(CGPoint(x: 319.9, y: height / 2)))
+            for section in sections.dropFirst() {
+                XCTAssertFalse(mask.contains(CGPoint(x: section.minX + 0.1, y: 0.1)))
+                XCTAssertTrue(mask.contains(CGPoint(x: section.minX + 0.1, y: 2.1)))
+                XCTAssertTrue(mask.contains(CGPoint(x: section.minX + 0.1, y: height - 2.1)))
+            }
+        }
+    }
+
     func testDefaultMaskHasFullHeightTransparentGapsButNoInternalTexture() throws {
         XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.10)
         for height in [CGFloat(12), 20] {
@@ -425,8 +427,9 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                     XCTAssertEqual(mask.red(x: x, y: y), 255, "The segment's interior remains solid.")
                 }
             }
-            XCTAssertEqual(mask.red(x: 43, y: top), 0, "Each new section has a rounded corner.")
-            XCTAssertEqual(mask.red(x: 43, y: 22), 255, "The rounded cap still reaches the middle of the bar.")
+            XCTAssertLessThan(mask.red(x: 42, y: top), 255, "The internal edge retains a soft corner.")
+            XCTAssertGreaterThan(mask.red(x: 43, y: top), 0, "Internal cuts are not full capsule caps.")
+            XCTAssertEqual(mask.red(x: 42, y: top + 3), 255, "The cut below its corner stays vertical.")
             for background in [Color.black, .gray, .cyan] {
                 let plain = try pixels(track(segments: [], height: height, background: background))
                 let divided = try pixels(track(segments: [marker], height: height, background: background))
