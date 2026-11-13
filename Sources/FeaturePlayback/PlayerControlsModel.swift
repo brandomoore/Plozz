@@ -343,6 +343,16 @@ public final class SkipSegmentsModel {
     /// the existing skip/Up Next policy; timeline annotations do not fetch more.
     public var segments: [MediaSegment] = []
 
+    /// True when the resolved credits marker is followed by an after-credits
+    /// scene. The Up Next card and automatic next-episode advance must stay out of
+    /// the way while that scene is still playable.
+    public var hasPostCredits = false
+
+    /// True while the community post-credits lookup is still in flight. The
+    /// credits skip button stays available, but auto-skip and Up Next wait for the
+    /// final decision so a provisional credits marker cannot end the episode early.
+    public var isResolvingPostCredits = false
+
     /// Set while the user has dismissed the skip button for the *current* segment,
     /// so it doesn't keep re-grabbing focus for the rest of that window.
     public var dismissedSegmentID: String?
@@ -665,7 +675,10 @@ public final class PlayerControlsModel {
     /// (A deep seek into credits clears ``activeCreditsSegment``, so a deliberate
     /// jump still falls through to normal handling.)
     public var creditsOwnedByUpNext: Bool {
-        upNextCard.info != nil && activeCreditsSegment != nil
+        upNextCard.info != nil
+            && activeCreditsSegment != nil
+            && !skipSegments.hasPostCredits
+            && !skipSegments.isResolvingPostCredits
     }
 
     /// Seconds before the end at which the Up Next card appears when there is NO
@@ -699,7 +712,10 @@ public final class PlayerControlsModel {
     /// final ``markerlessUpNextLeadSeconds`` by time. Marker-based content is
     /// unaffected — it still triggers exactly on its credits segment.
     public var upNextActive: Bool {
-        guard !upNextCard.dismissed, upNextCard.info != nil else { return false }
+        guard !upNextCard.dismissed,
+              !skipSegments.hasPostCredits,
+              !skipSegments.isResolvingPostCredits,
+              upNextCard.info != nil else { return false }
         if creditsOwnedByUpNext { return true }
         return !hasCreditsMarker && isNearEndByTime
     }
@@ -714,7 +730,10 @@ public final class PlayerControlsModel {
     /// time-based fallback on marker-less content). Drives whether the Skip
     /// button is surfaced, auto-skipped after a delay, or skipped instantly.
     public var skipMode: SkipIntrosMode {
-        skipModes.mode(for: activeSkipSegment?.kind ?? .credits)
+        if activeSkipSegment?.kind == .credits, skipSegments.isResolvingPostCredits {
+            return .on
+        }
+        return skipModes.mode(for: activeSkipSegment?.kind ?? .credits)
     }
 
     public var automaticSkipDelay: TimeInterval {

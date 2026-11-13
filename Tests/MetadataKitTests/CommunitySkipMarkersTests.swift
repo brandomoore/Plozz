@@ -336,6 +336,79 @@ final class CommunitySkipMarkersTests: XCTestCase {
         XCTAssertTrue(TheIntroDBClient.segments(from: response, duration: .nan).allSatisfy { $0.end.isFinite })
     }
 
+    func testCommunityMergeSquashesSingularCreditsIntoOneLaterWindow() {
+        let intro = CommunitySkipMarkers(segments: [
+            .init(id: "intro", kind: .credits, start: 10, end: 20)
+        ])
+        let theIntro = CommunitySkipMarkers(segments: [
+            .init(id: "the", kind: .credits, start: 12, end: 18)
+        ])
+        let merged = CommunitySkipMarkerService.merge(intro: intro, theIntro: theIntro)
+        XCTAssertEqual(merged.segments.count, 1)
+        XCTAssertEqual(merged.segments[0].start, 12)
+        XCTAssertEqual(merged.segments[0].end, 20)
+    }
+
+    func testCommunityMergeUsesTheArraySourceWhenItHasMultipleCandidates() {
+        let intro = CommunitySkipMarkers(segments: [
+            .init(id: "intro", kind: .credits, start: 10, end: 20)
+        ])
+        let theIntro = CommunitySkipMarkers(segments: [
+            .init(id: "the-0", kind: .credits, start: 10, end: 20),
+            .init(id: "the-1", kind: .credits, start: 12, end: 18)
+        ])
+        let merged = CommunitySkipMarkerService.merge(intro: intro, theIntro: theIntro)
+        XCTAssertEqual(merged.segments.count, 1)
+        XCTAssertEqual(merged.segments[0].start, 12)
+        XCTAssertEqual(merged.segments[0].end, 20)
+    }
+
+    func testCommunityMergeKeepsDifferentKindsFromTheirOwnSources() {
+        let intro = CommunitySkipMarkers(segments: [
+            .init(id: "intro", kind: .intro, start: 10, end: 40)
+        ])
+        let theIntro = CommunitySkipMarkers(segments: [
+            .init(id: "the", kind: .credits, start: 120, end: 180)
+        ])
+        let merged = CommunitySkipMarkerService.merge(intro: intro, theIntro: theIntro)
+        XCTAssertEqual(Set(merged.segments.map(\.kind)), [.intro, .credits])
+        XCTAssertEqual(merged.segments.first { $0.kind == .intro }?.id, "intro")
+        XCTAssertEqual(merged.segments.first { $0.kind == .credits }?.id, "the")
+    }
+
+    func testCommunityMergeKeepsExplicitPostCreditsFromIntroDB() {
+        let intro = CommunitySkipMarkers(
+            segments: [.init(id: "intro", kind: .credits, start: 10, end: 20)],
+            postCredits: .init(id: "post", kind: .unknown, start: 20, end: 25)
+        )
+        let merged = CommunitySkipMarkerService.merge(intro: intro, theIntro: .empty)
+        XCTAssertEqual(merged.postCredits?.id, "post")
+        XCTAssertTrue(merged.hasPostCredits)
+    }
+
+    func testIntroDBDecodesPostCredits() throws {
+        let json = #"""
+        {"intro":{"start_ms":10000,"end_ms":40000},
+         "outro":{"start_ms":3431000,"end_ms":3500000},
+         "post_credits":{"start_ms":3500000,"end_ms":3560000}}
+        """#
+        let response = try JSONDecoder().decode(IntroDBClient.Response.self, from: Data(json.utf8))
+        XCTAssertEqual(IntroDBClient.postCredits(from: response)?.start, 3500)
+        XCTAssertEqual(IntroDBClient.postCredits(from: response)?.end, 3560)
+        XCTAssertEqual(IntroDBClient.segments(from: response).map(\.kind), [.intro, .credits])
+    }
+
+    func testMalformedPostCreditsDoesNotDropRegularMarkers() throws {
+        let json = #"""
+        {"intro":{"start_ms":10000,"end_ms":40000},
+         "outro":{"start_ms":3431000,"end_ms":3500000},
+         "post_credits":{"start_ms":5000,"end_ms":4000}}
+        """#
+        let response = try JSONDecoder().decode(IntroDBClient.Response.self, from: Data(json.utf8))
+        XCTAssertNil(IntroDBClient.postCredits(from: response))
+        XCTAssertEqual(IntroDBClient.segments(from: response).map(\.kind), [.intro, .credits])
+    }
+
     func testEpisodeOrderingSurvivesPersistenceAndOldCachesRemainReadable() throws {
         var item = episode(providerIDs: [:])
         item.episodeOrdering = .dvd

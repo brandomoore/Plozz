@@ -143,27 +143,81 @@ public struct CommunitySkipMarkerSources: OptionSet, Sendable {
     public static let theIntroDB = CommunitySkipMarkerSources(rawValue: 1 << 1)
 }
 
-/// Seam over the community databases so the player can be tested without network.
-public protocol CommunitySkipMarkerFetching: Sendable {
-    func segments(for query: CommunitySkipMarkerQuery, sources: CommunitySkipMarkerSources) async -> [MediaSegment]
+/// The merged community result for one item. A single source is chosen per
+/// skippable kind; a source with multiple candidates for a kind wins over a
+/// source that only reports one, and those candidates are collapsed into one
+/// effective marker. ``postCredits`` is explicit only (IntroDB); inferred
+/// post-credits are derived from a finite credits end by the playback builder.
+public struct CommunitySkipMarkers: Sendable, Equatable {
+    public var segments: [MediaSegment]
+    public var postCredits: MediaSegment?
+    public var hasPostCredits: Bool { postCredits != nil }
+
+    public static let empty = CommunitySkipMarkers(segments: [], postCredits: nil)
+
+    public init(segments: [MediaSegment] = [], postCredits: MediaSegment? = nil) {
+        self.segments = segments
+        self.postCredits = postCredits
+    }
 }
 
-/// Asks the enabled community databases in turn: IntroDB first, then TheIntroDB
-/// only when IntroDB lacks an intro or credits marker, filling the kinds it lacks.
-/// One at a time rather than both at once, so a title IntroDB already covers is
-/// never sent to TheIntroDB too.
+/// Seam over the community databases so the player can be tested without network.
+public protocol CommunitySkipMarkerFetching: Sendable {
+    func markers(for query: CommunitySkipMarkerQuery, sources: CommunitySkipMarkerSources) async -> CommunitySkipMarkers
+}
+
+/// Asks both enabled community databases, then reconciles their results per
+/// kind. A source with multiple candidates for a kind is authoritative for that
+/// kind; otherwise the singular candidates are merged. A kind never mixes an
+/// array from one source with a single value from another.
 public struct CommunitySkipMarkerService: CommunitySkipMarkerFetching {
     public init() {}
 
-    public func segments(
+    public func markers(
         for query: CommunitySkipMarkerQuery,
         sources: CommunitySkipMarkerSources
-    ) async -> [MediaSegment] {
-        var segments = sources.contains(.introDB) ? await IntroDBClient.segments(for: query) : []
-        if sources.contains(.theIntroDB), !segments.coversIntroAndCredits, !Task.isCancelled {
-            segments = segments.filling(from: await TheIntroDBClient.segments(for: query))
+    ) async -> CommunitySkipMarkers {
+        guard !sources.isEmpty else { return .empty }
+        let intro: CommunitySkipMarkers
+        if sources.contains(.introDB) {
+            intro = await IntroDBClient.markers(for: query)
+        } else {
+            intro = .empty
         }
-        return segments
+        guard !Task.isCancelled else { return .empty }
+        let theIntro: CommunitySkipMarkers
+        if sources.contains(.theIntroDB) {
+            theIntro = await TheIntroDBClient.markers(for: query)
+        } else {
+            theIntro = .empty
+        }
+        guard !Task.isCancelled else { return .empty }
+        return Self.merge(intro: intro, theIntro: theIntro)
+    }
+
+    static func merge(intro: CommunitySkipMarkers, theIntro: CommunitySkipMarkers) -> CommunitySkipMarkers {
+        var segments: [MediaSegment] = []
+        for kind in MediaSegment.Kind.skippable {
+            let introCandidates = intro.segments.filter { $0.kind == kind }
+            let theIntroCandidates = theIntro.segments.filter { $0.kind == kind }
+            let chosen: [MediaSegment]
+            if theIntroCandidates.count > 1 {
+                chosen = theIntroCandidates
+            } else if introCandidates.count > 1 {
+                chosen = introCandidates
+            } else if !introCandidates.isEmpty && !theIntroCandidates.isEmpty {
+                chosen = introCandidates + theIntroCandidates
+            } else if !introCandidates.isEmpty {
+                chosen = introCandidates
+            } else {
+                chosen = theIntroCandidates
+            }
+            segments.append(contentsOf: chosen.squashingDuplicateKinds())
+        }
+        return CommunitySkipMarkers(
+            segments: segments,
+            postCredits: intro.postCredits ?? theIntro.postCredits
+        )
     }
 }
 
@@ -174,12 +228,13 @@ enum IntroDBClient {
 
     struct Response: Decodable {
         struct Segment: Decodable {
-            let start_ms: Double
-            let end_ms: Double
+            let start_ms: Double?
+            let end_ms: Double?
         }
         let intro: Segment?
         let recap: Segment?
         let outro: Segment?
+        let post_credits: Segment?
     }
 
     static func url(for query: CommunitySkipMarkerQuery) -> URL? {
@@ -201,10 +256,19 @@ enum IntroDBClient {
         return components?.url
     }
 
-    static func segments(for query: CommunitySkipMarkerQuery) async -> [MediaSegment] {
+    static func markers(for query: CommunitySkipMarkerQuery) async -> CommunitySkipMarkers {
+        guard !Task.isCancelled else { return .empty }
         guard let url = url(for: query),
-              let response = await MetadataHTTP.get(Response.self, url: url) else { return [] }
-        return segments(from: response)
+              let response = await MetadataHTTP.get(Response.self, url: url) else { return .empty }
+        guard !Task.isCancelled else { return .empty }
+        return CommunitySkipMarkers(
+            segments: segments(from: response),
+            postCredits: postCredits(from: response)
+        )
+    }
+
+    static func segments(for query: CommunitySkipMarkerQuery) async -> [MediaSegment] {
+        await markers(for: query).segments
     }
 
     static func segments(from response: Response) -> [MediaSegment] {
@@ -212,12 +276,21 @@ enum IntroDBClient {
             (.intro, response.intro), (.recap, response.recap), (.credits, response.outro)
         ]
         return pairs.compactMap { kind, segment in
-            guard let segment else { return nil }
-            let start = segment.start_ms / 1000
-            let end = segment.end_ms / 1000
-            guard end > start else { return nil }
+            guard let segment, let start_ms = segment.start_ms, let end_ms = segment.end_ms else { return nil }
+            let start = start_ms / 1000
+            let end = end_ms / 1000
+            guard start.isFinite, end.isFinite, start >= 0, end > start else { return nil }
             return MediaSegment(id: "introdb-\(kind.rawValue)", kind: kind, start: start, end: end)
         }
+    }
+
+    static func postCredits(from response: Response) -> MediaSegment? {
+        guard let segment = response.post_credits,
+              let start_ms = segment.start_ms, let end_ms = segment.end_ms else { return nil }
+        let start = start_ms / 1000
+        let end = end_ms / 1000
+        guard start.isFinite, end.isFinite, start >= 0, end > start else { return nil }
+        return MediaSegment(id: "introdb-post-credits", kind: .unknown, start: start, end: end)
     }
 }
 
@@ -281,24 +354,34 @@ enum TheIntroDBClient {
         return components?.url
     }
 
-    static func segments(
+    static func markers(
         for query: CommunitySkipMarkerQuery,
         session: URLSession = MetadataHTTP.session
-    ) async -> [MediaSegment] {
-        guard !Task.isCancelled else { return [] }
+    ) async -> CommunitySkipMarkers {
+        guard !Task.isCancelled else { return .empty }
         guard let url = url(for: query) else {
             PlozzLog.playback.debug("TheIntroDB lookup omitted: unsupported identity, episode order or coordinates")
-            return []
+            return .empty
         }
         let result = await MetadataHTTP.getWithStatus(Response.self, url: url, session: session)
-        guard !Task.isCancelled else { return [] }
+        guard !Task.isCancelled else { return .empty }
         guard let response = result.value else {
             if !result.reachable {
                 PlozzLog.playback.debug("TheIntroDB lookup failed; retaining server markers")
             }
-            return []
+            return .empty
         }
-        return segments(from: response, duration: query.duration)
+        return CommunitySkipMarkers(
+            segments: segments(from: response, duration: query.duration),
+            postCredits: nil
+        )
+    }
+
+    static func segments(
+        for query: CommunitySkipMarkerQuery,
+        session: URLSession = MetadataHTTP.session
+    ) async -> [MediaSegment] {
+        await markers(for: query, session: session).segments
     }
 
     static func segments(from response: Response, duration: TimeInterval?) -> [MediaSegment] {

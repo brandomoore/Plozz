@@ -111,6 +111,18 @@ Both databases use `MetadataHTTP`, which sends the identifying
 `User-Agent: Plozz/1.0 (+https://github.com/thatcube/Plozz)` header.
 Request-level tests cover that header on TheIntroDB movie and episode lookups.
 
+Both enabled community databases are queried and reconciled per kind rather
+than concatenated. A source reporting multiple candidates for one kind wins
+over a source reporting a single candidate; otherwise the singular candidates
+merge. The selected candidates are collapsed to one effective marker per kind:
+credits use the later start and later end, while intro/recap/preview/commercial
+use the later start and earlier end and fall back to the earlier candidate when
+the windows do not overlap. This prevents a source's duplicate reports (or an
+early false credits marker) from becoming a second scrub-bar section.
+IntroDB's explicit `post_credits` wins. When it is absent, a finite credits end
+with a real tail before the item duration is treated as an after-credits scene;
+a null/open credits end is not.
+
 TheIntroDB prefers TVDB identity, then TMDB/IMDb when ordering is unspecified.
 An episode's own TVDB ID is sent as `tvdb_episode_id`, never as the show's ID.
 Series IDs and explicit episode ordering come from the owning provider.

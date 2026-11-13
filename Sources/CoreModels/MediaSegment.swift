@@ -167,6 +167,21 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// The effective markers for one playback item, after duplicate candidates from a
+/// single source have been collapsed. ``postCredits`` is deliberately not a
+/// skippable marker: it is the after-credits scene the player should land on, not
+/// another section to offer a Skip button for.
+public struct MergedSkipMarkers: Sendable, Equatable {
+    public var segments: [MediaSegment]
+    public var postCredits: MediaSegment?
+    public var hasPostCredits: Bool { postCredits != nil }
+
+    public init(segments: [MediaSegment] = [], postCredits: MediaSegment? = nil) {
+        self.segments = segments
+        self.postCredits = postCredits
+    }
+}
+
 public extension Array where Element == MediaSegment {
     /// This list with `fallback`'s segments added for every kind this list has
     /// none of. Used to layer community markers (IntroDB / TheIntroDB) under the
@@ -182,11 +197,138 @@ public extension Array where Element == MediaSegment {
         contains { $0.kind == .intro } && contains { $0.kind == .credits }
     }
 
+    /// Collapses multiple candidates for the same kind into one effective marker.
+    ///
+    /// Credits are intentionally treated as a *later* window: a later start wins
+    /// so an early false "outro" cannot trigger before the real credits, and the
+    /// later end wins so a later-starting candidate's short end cannot cut the
+    /// credits short. Other kinds use the intersection of their candidates
+    /// (later start, earlier end), falling back to the earlier candidate when the
+    /// candidates do not overlap. Unknown kinds are not skippable and are omitted.
+    func squashingDuplicateKinds() -> [MediaSegment] {
+        MediaSegment.Kind.skippable.compactMap { kind in
+            let candidates = filter {
+                $0.kind == kind
+                    && $0.start.isFinite && $0.end.isFinite
+                    && $0.start >= 0 && $0.end > $0.start
+            }
+            guard !candidates.isEmpty else { return nil }
+            if candidates.count == 1 { return candidates[0] }
+
+            if kind == .credits {
+                let start = candidates.map(\.start).max()!
+                let end = candidates.map(\.end).max()!
+                return candidates.mergedCandidate(start: start, end: end, kind: kind)
+            }
+
+            let start = candidates.map(\.start).max()!
+            let end = candidates.map(\.end).min()!
+            if start < end {
+                return candidates.mergedCandidate(start: start, end: end, kind: kind)
+            }
+            // Disjoint candidates: keep the earlier one, matching the user's
+            // "earlier of the two positions" policy for non-credits.
+            return candidates.min { $0.start < $1.start }
+        }
+    }
+
+    /// Builds the effective playback markers for a known duration.
+    ///
+    /// A source's explicit post-credit marker wins. Otherwise a finite credits end
+    /// that leaves a real tail before the duration is treated as post-credits
+    /// content. Credits are capped at that post-credit start when one exists, and
+    /// extended to the item duration when it does not, so an auto-skip lands on the
+    /// next episode rather than on an earlier, partial credits end.
+    func mergedForPlayback(
+        duration: TimeInterval?,
+        explicitPostCredits: MediaSegment? = nil
+    ) -> MergedSkipMarkers {
+        var segments = squashingDuplicateKinds()
+        let creditsIndex = segments.firstIndex { $0.kind == .credits }
+        let creditsStart = creditsIndex.map { segments[$0].start }
+
+        var postCredits = explicitPostCredits.flatMap {
+            $0.sanitizedPostCredits(duration: duration, creditsStart: creditsStart)
+        }
+
+        if postCredits == nil, let creditsIndex, let duration, duration.isFinite {
+            let credits = segments[creditsIndex]
+            if duration > credits.start, duration - credits.end >= 5 {
+                postCredits = MediaSegment(
+                    id: "inferred-post-credits",
+                    kind: .unknown,
+                    start: credits.end,
+                    end: duration
+                )
+            }
+        }
+
+        if let postCredits, let creditsIndex {
+            let credits = segments[creditsIndex]
+            if credits.start < postCredits.start {
+                segments[creditsIndex] = MediaSegment(
+                    id: credits.id,
+                    kind: .credits,
+                    start: credits.start,
+                    end: postCredits.start
+                )
+            }
+        } else if let creditsIndex, let duration, duration.isFinite, duration > 0,
+                  let creditsStart, creditsStart < duration {
+            segments[creditsIndex] = MediaSegment(
+                id: segments[creditsIndex].id,
+                kind: .credits,
+                start: creditsStart,
+                end: duration
+            )
+        }
+
+        return MergedSkipMarkers(segments: segments.filter(\.isSkippable), postCredits: postCredits)
+    }
+
     /// The skippable segment whose window currently contains `position`, if any.
     /// Intros win ties over credits since an intro can never overlap credits in
     /// practice; if data is malformed the earliest-starting match is returned.
     func activeSkippable(at position: TimeInterval) -> MediaSegment? {
         self.filter { $0.isSkippable && $0.contains(position) }
             .min { $0.start < $1.start }
+    }
+}
+
+private extension Array where Element == MediaSegment {
+    /// Preserves a candidate's identity when the merged bounds are exactly one of
+    /// its own ranges; otherwise synthesises a stable ID for the merged range.
+    func mergedCandidate(start: TimeInterval, end: TimeInterval, kind: MediaSegment.Kind) -> MediaSegment {
+        if let exact = first(where: {
+            abs($0.start - start) < 0.001 && abs($0.end - end) < 0.001
+        }) {
+            return exact
+        }
+        return MediaSegment(
+            id: "squashed-\(kind.rawValue)-\(Int((start * 1000).rounded()))-\(Int((end * 1000).rounded()))",
+            kind: kind,
+            start: start,
+            end: end
+        )
+    }
+}
+
+private extension MediaSegment {
+    /// Validates a post-credit candidate and returns it as a non-skippable marker.
+    /// A candidate that starts before the credits, or at/after the duration, is
+    /// rejected rather than silently becoming a second skip section.
+    func sanitizedPostCredits(
+        duration: TimeInterval?,
+        creditsStart: TimeInterval?
+    ) -> MediaSegment? {
+        guard start.isFinite, end.isFinite, start >= 0, end > start else { return nil }
+        if let creditsStart, start <= creditsStart { return nil }
+        if let duration, duration.isFinite, duration > 0 {
+            guard start < duration else { return nil }
+            let end = min(end, duration)
+            guard end > start else { return nil }
+            return MediaSegment(id: id, kind: .unknown, start: start, end: end)
+        }
+        return MediaSegment(id: id, kind: .unknown, start: start, end: end)
     }
 }

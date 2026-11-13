@@ -4,6 +4,7 @@ import CoreModels
 import CoreUI
 import MediaPlayer
 import MetadataKit
+import SwiftUI
 @testable import FeaturePlayback
 #if canImport(UIKit)
 import UIKit
@@ -514,7 +515,7 @@ final class PlayerViewModelEOFTests: XCTestCase {
         }
         let segments = await lookup.value
         let queries = await service.queries
-        XCTAssertTrue(segments.isEmpty)
+        XCTAssertTrue(segments.segments.isEmpty)
         XCTAssertTrue(queries.isEmpty)
     }
 
@@ -768,6 +769,170 @@ final class PlayerViewModelEOFTests: XCTestCase {
         XCTAssertEqual(viewModel.pendingPlaylistSelection?.item.sourceAccountID, "account")
         XCTAssertNil(viewModel.pendingNextEpisode)
         XCTAssertFalse(viewModel.shouldDismiss)
+        await viewModel.stop()
+    }
+
+    func testPostCreditsSuppressUpNextAndSkipAutoSkip() {
+        let controls = PlayerControlsModel()
+        controls.skipModes = SkipMarkerModes(base: .on)
+        controls.skipSegments.segments = [
+            .init(id: "credits", kind: .credits, start: 100, end: 200)
+        ]
+        controls.currentSeconds = 120
+        controls.upNextCard.info = UpNextInfo(
+            episode: .init(id: "next", title: "Next", kind: .episode),
+            showName: Text(verbatim: "Show"),
+            metaLine: nil,
+            thumbnailURLs: [],
+            blurThumbnail: false
+        )
+        controls.skipSegments.hasPostCredits = true
+
+        XCTAssertFalse(controls.upNextActive)
+        XCTAssertFalse(controls.creditsOwnedByUpNext)
+        XCTAssertTrue(controls.skipButtonVisible)
+        XCTAssertEqual(controls.skipMode, .on)
+    }
+
+    func testResolvingPostCreditsWaitsForTheDecision() {
+        let controls = PlayerControlsModel()
+        controls.skipModes = .allOff
+        controls.skipSegments.segments = [
+            .init(id: "credits", kind: .credits, start: 100, end: 200)
+        ]
+        controls.currentSeconds = 120
+        controls.upNextCard.info = UpNextInfo(
+            episode: .init(id: "next", title: "Next", kind: .episode),
+            showName: Text(verbatim: "Show"),
+            metaLine: nil,
+            thumbnailURLs: [],
+            blurThumbnail: false
+        )
+        controls.skipSegments.isResolvingPostCredits = true
+
+        XCTAssertFalse(controls.upNextActive)
+        XCTAssertFalse(controls.creditsOwnedByUpNext)
+        XCTAssertTrue(controls.skipButtonVisible)
+        XCTAssertEqual(controls.skipMode, .on)
+    }
+
+    func testPostCreditsSuppressAutomaticNextEpisodeAtPlaybackEnd() async {
+        let first = MediaItem(id: "first", title: "First", kind: .episode, seriesID: "series", seasonID: "season")
+        let next = MediaItem(id: "second", title: "Second", kind: .episode)
+        let request = PlaybackRequest(
+            item: first, streamURL: URL(string: "https://example.test/first.m3u8")!
+        )
+        let provider = RecordingPlaybackProvider(request: request)
+        let engine = SpyVideoEngine()
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: first.id, episodeItem: first,
+            playbackSettings: .init(autoPlayNextEpisode: true),
+            engineFactory: EngineFactory(makeNative: { _ in engine }),
+            neighborResolver: { (nil, next) }
+        )
+        await viewModel.load()
+        viewModel.controls.skipSegments.hasPostCredits = true
+        engine.onEnded?()
+        XCTAssertTrue(viewModel.shouldDismiss)
+        XCTAssertNil(viewModel.pendingNextEpisode)
+        await viewModel.stop()
+    }
+
+    func testResolvingPostCreditsSuppressesAutomaticNextEpisodeAtPlaybackEnd() async {
+        let first = MediaItem(id: "first", title: "First", kind: .episode, seriesID: "series", seasonID: "season")
+        let next = MediaItem(id: "second", title: "Second", kind: .episode)
+        let request = PlaybackRequest(
+            item: first, streamURL: URL(string: "https://example.test/first.m3u8")!
+        )
+        let provider = RecordingPlaybackProvider(request: request)
+        let engine = SpyVideoEngine()
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: first.id, episodeItem: first,
+            playbackSettings: .init(autoPlayNextEpisode: true),
+            engineFactory: EngineFactory(makeNative: { _ in engine }),
+            neighborResolver: { (nil, next) }
+        )
+        await viewModel.load()
+        viewModel.controls.skipSegments.isResolvingPostCredits = true
+        engine.onEnded?()
+        XCTAssertTrue(viewModel.shouldDismiss)
+        XCTAssertNil(viewModel.pendingNextEpisode)
+        await viewModel.stop()
+    }
+
+    func testServerDuplicateCreditsAreSquashedBeforePlayback() async {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+            segments: [
+                .init(id: "early", kind: .credits, start: 10, end: 20),
+                .init(id: "late", kind: .credits, start: 12, end: 18)
+            ]
+        )
+        let engine = SpyVideoEngine()
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(useCommunityMarkers: false),
+            engineFactory: EngineFactory(makeNative: { _ in engine })
+        )
+        await viewModel.load()
+        for _ in 0..<1_000 where viewModel.controls.skipSegments.segments.isEmpty {
+            await Task.yield()
+        }
+        XCTAssertEqual(viewModel.controls.skipSegments.segments.count, 1)
+        XCTAssertEqual(viewModel.controls.skipSegments.segments[0].start, 12)
+        XCTAssertEqual(viewModel.controls.skipSegments.segments[0].end, 20)
+        await viewModel.stop()
+    }
+
+    func testCommunityCreditsReplaceEmptyServerAndStaySingle() async {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!)
+        )
+        let community = RecordingCommunityMarkers(result: .init(segments: [
+            .init(id: "early", kind: .credits, start: 10, end: 20),
+            .init(id: "late", kind: .credits, start: 12, end: 18)
+        ]))
+        let engine = SpyVideoEngine()
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(useCommunityMarkers: true),
+            communitySkipMarkers: community,
+            engineFactory: EngineFactory(makeNative: { _ in engine })
+        )
+        await viewModel.load()
+        for _ in 0..<1_000 where viewModel.controls.skipSegments.segments.isEmpty {
+            await Task.yield()
+        }
+        XCTAssertEqual(viewModel.controls.skipSegments.segments.count, 1)
+        XCTAssertEqual(viewModel.controls.skipSegments.segments[0].start, 12)
+        XCTAssertEqual(viewModel.controls.skipSegments.segments[0].end, 20)
+        await viewModel.stop()
+    }
+
+    func testServerCreditsWinOverCommunityCredits() async {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let server = MediaSegment(id: "server", kind: .credits, start: 10, end: 20)
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+            segments: [server]
+        )
+        let community = RecordingCommunityMarkers(result: .init(segments: [
+            .init(id: "community", kind: .credits, start: 12, end: 25)
+        ]))
+        let engine = SpyVideoEngine()
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(useCommunityMarkers: true),
+            communitySkipMarkers: community,
+            engineFactory: EngineFactory(makeNative: { _ in engine })
+        )
+        await viewModel.load()
+        for _ in 0..<1_000 where viewModel.controls.skipSegments.segments.isEmpty {
+            await Task.yield()
+        }
+        XCTAssertEqual(viewModel.controls.skipSegments.segments.map(\.id), ["server"])
         await viewModel.stop()
     }
 
@@ -2802,9 +2967,15 @@ private final class PreCommitYieldGate {
 
 private actor RecordingCommunityMarkers: CommunitySkipMarkerFetching {
     private(set) var queries: [CommunitySkipMarkerQuery] = []
-    func segments(for query: CommunitySkipMarkerQuery, sources: CommunitySkipMarkerSources) async -> [MediaSegment] {
+    private let result: CommunitySkipMarkers
+
+    init(result: CommunitySkipMarkers = .empty) {
+        self.result = result
+    }
+
+    func markers(for query: CommunitySkipMarkerQuery, sources: CommunitySkipMarkerSources) async -> CommunitySkipMarkers {
         queries.append(query)
-        return []
+        return result
     }
 }
 

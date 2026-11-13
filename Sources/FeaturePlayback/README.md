@@ -759,6 +759,17 @@ delay, including the credits-based Up Next countdown when autoplay is enabled.
 Countdown deadlines and rings share that duration and remain tied to playback
 time, preserving pause, seek-entry, dismissal and focus behavior.
 
+Credits are normalized to one effective marker: the latest reported start and
+the latest reported end, so an early outro cannot end playback before the real
+credits. Without an after-credits scene, the credits marker extends to the item
+end so auto-skip follows the normal next-episode/Up Next path. When IntroDB or
+TheIntroDB reports or implies after-credits content, the credits end at that
+scene's start, the scene plays, and next-episode auto-advance and the Up Next
+card are suppressed. While the community after-credits decision is still
+resolving, the credits Skip button remains manual and Up Next waits. Duplicate
+server, IntroDB, or TheIntroDB reports for the same kind are squashed before
+they reach the timeline.
+
 The on-demand and Live touch timelines keep the native glass surface continuous wherever
 segment cuts would strand tiny pieces. Each uses its measured track width, not
 orientation or device type: a cut needs enough room on both sides for the
@@ -767,8 +778,11 @@ marker or short unmarked interval are omitted, including near the track ends.
 The same threshold applies at rest and while dragging, so touching does not
 change which cuts appear. Wider layouts retain cuts wherever they fit.
 
-Marker ranges are never enlarged or retimed; skip behavior, linear seeking, and
-existing touch targets remain unchanged. On iPhone and iPad, progress is shown
+The timeline itself does not retime ranges or invent boundaries inside a
+contiguous skip range; source normalization may merge duplicate reports and
+extend closing credits to the item end or after-credit start before the track
+sees them. Skip behavior, linear seeking, and existing touch targets remain
+unchanged. On iPhone and iPad, progress is shown
 only by the advancing fill, without a vertical playhead at rest or while dragging.
 The track is 8 points tall at rest and 20 while dragging. The dimmer buffered or
 aired fill remains behind it. Live preserves programme timing, rewind availability,
