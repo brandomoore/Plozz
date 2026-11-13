@@ -659,13 +659,17 @@ public final class PlayerControlsModel {
         return segment
     }
 
-    /// Credits with a queued next episode are "owned" by Up Next: the Skip
+    /// Terminal credits with a queued next episode are "owned" by Up Next: the Skip
     /// Credits button is never offered for that window — the card, an auto-advance,
     /// or a dismissal handles it — so the two affordances can never both appear.
     /// (A deep seek into credits clears ``activeCreditsSegment``, so a deliberate
     /// jump still falls through to normal handling.)
     public var creditsOwnedByUpNext: Bool {
-        upNextCard.info != nil && activeCreditsSegment != nil
+        guard upNextCard.info != nil, let credits = activeCreditsSegment,
+              duration.isFinite, duration > 0 else { return false }
+        // A finite credits window can end at another scene, even when it is the
+        // last reported marker. Only a window reaching EOF can hand off early.
+        return credits.end >= duration
     }
 
     /// Seconds before the end at which the Up Next card appears when there is NO

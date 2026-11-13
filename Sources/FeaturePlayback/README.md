@@ -759,6 +759,15 @@ delay, including the credits-based Up Next countdown when autoplay is enabled.
 Countdown deadlines and rings share that duration and remain tied to playback
 time, preserving pause, seek-entry, dismissal and focus behavior.
 
+Separate credits windows remain separate: a mid-credits scene is not a duplicate
+marker. Up Next owns only a credits window that reaches the known playback
+duration. A finite earlier window retains its normal Skip Credits behavior and
+lands at its own end; neither a short unmarked tail nor a missing scene marker
+justifies skipping to the next item. Natural EOF still follows episode/playlist
+autoplay preferences. Unknown duration defers the credits-based handoff.
+Exact duplicate ranges and invalid markers are removed without coalescing
+different windows or overriding a kind's Off/manual/automatic setting.
+
 The on-demand and Live touch timelines keep the native glass surface continuous wherever
 segment cuts would strand tiny pieces. Each uses its measured track width, not
 orientation or device type: a cut needs enough room on both sides for the
@@ -767,8 +776,8 @@ marker or short unmarked interval are omitted, including near the track ends.
 The same threshold applies at rest and while dragging, so touching does not
 change which cuts appear. Wider layouts retain cuts wherever they fit.
 
-Marker ranges are never enlarged or retimed; skip behavior, linear seeking, and
-existing touch targets remain unchanged. On iPhone and iPad, progress is shown
+The timeline does not enlarge or retime normalized marker ranges; linear seeking
+and existing touch targets remain unchanged. On iPhone and iPad, progress is shown
 only by the advancing fill, without a vertical playhead at rest or while dragging.
 The track is 8 points tall at rest and 20 while dragging. The dimmer buffered or
 aired fill remains behind it. Live preserves programme timing, rewind availability,

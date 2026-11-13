@@ -11,6 +11,44 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    func testPostCreditsTailPreservesOrdinaryEOFAutoplayAcrossProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for autoplay in [true, false] {
+                let first = MediaItem(id: "first", title: "First", kind: .episode, runtime: 300)
+                let next = MediaItem(id: "next", title: "Next", kind: .episode)
+                let provider = RecordingPlaybackProvider(
+                    request: .init(item: first, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+                    kind: kind, segments: [.init(id: "credits", kind: .credits, start: 100, end: 250)]
+                )
+                let engine = SpyVideoEngine()
+                engine.duration = 300
+                let model = PlayerViewModel(
+                    provider: provider, itemID: first.id, episodeItem: first,
+                    playbackSettings: .init(useCommunityMarkers: false, autoPlayNextEpisode: autoplay),
+                    engineFactory: .init(makeNative: { _ in engine }),
+                    neighborResolver: { (nil, next) }
+                )
+                await model.load()
+                let deadline = ContinuousClock.now + .seconds(3)
+                while model.controls.skipSegments.segments.isEmpty, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                XCTAssertEqual(model.controls.skipSegments.segments.first?.end, 250)
+                XCTAssertEqual(model.nextEpisode?.id, next.id)
+                model.controls.currentSeconds = 120
+                XCTAssertFalse(model.controls.upNextActive)
+                model.controls.currentSeconds = 275
+                XCTAssertFalse(model.controls.upNextActive)
+                XCTAssertNil(model.controls.activeSkipSegment)
+                engine.currentTime = 300
+                engine.onEnded?()
+                XCTAssertEqual(model.pendingNextEpisode?.id, autoplay ? next.id : nil)
+                XCTAssertEqual(model.shouldDismiss, !autoplay)
+                await model.stop()
+            }
+        }
+    }
+
     #if canImport(UIKit)
     func testDiscPlaylistSelectionIsBoundToCatalogAndSuppressesLibraryProgress() async throws {
         let request = try discRequest()

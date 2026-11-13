@@ -137,6 +137,21 @@ do not use single-episode community markers. Empty/episode-list/version-list
 responses yield no timestamps; open ends need a known runtime, and negative,
 reversed or out-of-runtime segments are discarded.
 
+TheIntroDB arrays represent separate intervals, not competing candidates to
+collapse into one late window. IntroDB's explicit `post_credits` interval is
+non-skippable: it can shorten or split that source's overlapping credits, never
+extend them. Malformed or zero-start scene reports are ignored without losing
+valid markers. A finite credits end alone does not establish a scene or permit
+extending the range. Server-first, per-kind source precedence and optional
+fallback requests remain unchanged; marker count is not a confidence score.
+
+Real-media checks against Plex, Jellyfin, both community APIs, and decoded
+ending frames found separate credits/scene windows in Iron Man, Deadpool and
+The Avengers, and ordinary closing credits in Inception. They also found
+misplaced server markers, shifted community timing, and a zero-start community
+scene. These checks validate range-preserving behavior, not universal marker
+accuracy or compatibility between different releases of a title.
+
 ## Discovery sources
 
 The dedicated Discover destination uses `TMDbDiscoveryProvider.browse` when

@@ -2217,11 +2217,12 @@ public final class PlayerViewModel {
         let itemID = itemID
         let looksUpCommunity = modes.fetchesMarkers && playbackSettings.useCommunityMarkers
         let item = request?.item
-        let duration = controls.duration > 0 ? controls.duration : nil
+        let duration = controls.duration > 0 ? controls.duration : item?.runtime
         let seriesIDResolver = seriesIDResolver
         let community = communitySkipMarkers
         segmentsTask = Task { @MainActor [weak self] in
-            let server = (try? await provider.mediaSegments(for: itemID)) ?? []
+            let server = ((try? await provider.mediaSegments(for: itemID)) ?? [])
+                .normalizedSkipMarkers(duration: duration)
             guard !Task.isCancelled else { return }
             self?.controls.skipSegments.segments = server.filter(\.isSkippable)
             guard looksUpCommunity, !server.coversIntroAndCredits else { return }
@@ -2230,7 +2231,8 @@ public final class PlayerViewModel {
                 provider: provider, seriesIDResolver: seriesIDResolver, service: community
             )
             guard !Task.isCancelled, !fallback.isEmpty else { return }
-            self?.controls.skipSegments.segments = server.filling(from: fallback).filter(\.isSkippable)
+            self?.controls.skipSegments.segments = server.filling(from: fallback)
+                .normalizedSkipMarkers(duration: duration)
         }
     }
 

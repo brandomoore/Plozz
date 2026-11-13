@@ -77,6 +77,46 @@ final class CommunitySkipMarkersTests: XCTestCase {
 
     // MARK: TheIntroDB
 
+    func testIntroDBProtectsAnExplicitSceneWithoutExtendingCredits() throws {
+        let response = try JSONDecoder().decode(IntroDBClient.Response.self, from: Data(#"""
+        {"outro":{"start_ms":100000,"end_ms":300000},
+         "post_credits":{"start_ms":200000,"end_ms":250000}}
+        """#.utf8))
+        let segments = IntroDBClient.segments(from: response)
+        XCTAssertEqual(segments.map(\.start), [100, 250])
+        XCTAssertEqual(segments.map(\.end), [200, 300])
+        XCTAssertNil(segments.activeSkippable(at: 225))
+    }
+
+    func testMalformedIntroDBPostCreditsAndPartialIntroPreserveValidOutro() throws {
+        for post in [
+            #"{"start_ms":0,"end_ms":147000}"#,
+            #"{"start_ms":null,"end_ms":147000}"#,
+            #"{"start_ms":200000,"end_ms":150000}"#
+        ] {
+            let json = """
+            {"intro":{"start_ms":null,"end_ms":10000},
+             "outro":{"start_ms":100000,"end_ms":200000},"post_credits":\(post)}
+            """
+            let response = try JSONDecoder().decode(IntroDBClient.Response.self, from: Data(json.utf8))
+            let segments = IntroDBClient.segments(from: response)
+            XCTAssertEqual(segments.map(\.kind), [.credits])
+            XCTAssertEqual(segments.first?.end, 200)
+        }
+    }
+
+    func testTheIntroDBKeepsDistinctCreditsWindowsAroundAScene() throws {
+        let response = try JSONDecoder().decode(TheIntroDBClient.Response.self, from: Data(#"""
+        {"credits":[{"start_ms":100000,"end_ms":200000},
+                    {"start_ms":100000,"end_ms":200000},
+                    {"start_ms":250000,"end_ms":null}]}
+        """#.utf8))
+        let segments = TheIntroDBClient.segments(from: response, duration: 300)
+        XCTAssertEqual(segments.map(\.start), [100, 250])
+        XCTAssertEqual(segments.map(\.end), [200, 300])
+        XCTAssertNil(segments.activeSkippable(at: 225))
+    }
+
     func testTheIntroDBRequestsIdentifyPlozz() async throws {
         let session = URLSession(configuration: StubURLProtocol.makeEphemeralSession())
         defer {
