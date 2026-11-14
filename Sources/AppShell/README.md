@@ -234,10 +234,11 @@ registry.
   background is hidden for this item so it cannot merge or stretch the circle.
   No second glass button style is added. Photos, emoji, and symbols keep their
   original colors; reduced-transparency and pre-iOS 26 systems use the shared frosted surface.
-  Home suppresses the full-width top-edge backdrop and the regular-width tab-bar
-  background so the hero stays visible behind that row. The individual native
-  glass controls remain; other destinations and compact bottom-tab backgrounds
-  retain their existing treatment.
+  Home keeps the native top scroll-edge blur behind the status bar while hiding
+  the regular-width tab-bar background so the hero stays visible behind that row.
+  The individual native glass controls remain; other destinations and compact
+  bottom-tab backgrounds retain their existing treatment. Search's collapsing
+  title row does not clip the profile control's native pressed expansion.
 
 - **Mac rails fit complete cards plus a next-card preview.** Home, library
   recommendations, related titles, extras, episodes, and cast derive widths from

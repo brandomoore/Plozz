@@ -661,6 +661,9 @@ final class HomeLoadingLayoutTests: XCTestCase {
     }
 
     func testRenderedIPadContinueWatchingKeepsWholeCardsAndPosterPeek() async throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else {
+            throw XCTSkip("The iPad-only rail layout requires an iPad simulator.")
+        }
         let fixture = try Fixture()
         defer { fixture.close() }
         let url = try XCTUnwrap(URL(string: "https://ipad-rail.invalid/\(UUID()).png"))

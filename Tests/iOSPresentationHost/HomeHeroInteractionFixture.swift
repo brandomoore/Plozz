@@ -268,6 +268,7 @@ private struct HeroInteractionNavigationChrome<Content: View>: View {
                 Tab("Search", systemImage: "magnifyingglass", value: 3, role: .search) { Text("Search fixture") }
             }
             .tabViewStyle(.sidebarAdaptable)
+            .modifier(PlozziOSNavigationBackground(hidesRegularTabBackdrop: selection == 0))
             .background {
                 PlozziOSHomeSidebarOverlapProbe(enabled: selection == 0, geometryModel: sidebar)
                     .frame(width: 0, height: 0)

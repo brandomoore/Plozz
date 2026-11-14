@@ -80,7 +80,7 @@ final class ProfileToolbarPresentationTests: XCTestCase {
                         Tab("Discover", systemImage: "sparkles") { Color.black }
                     }
                     .tabViewStyle(.sidebarAdaptable)
-                    .modifier(PlozziOSNavigationBackground(hidesTopBackdrop: true))
+                    .modifier(PlozziOSNavigationBackground(hidesRegularTabBackdrop: true))
                 }
             }
             .environment(app)

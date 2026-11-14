@@ -185,7 +185,6 @@ private struct PlozziOSSearchHeader: View {
             .padding(.bottom, hidesTitle ? 0 : 12)
             .frame(height: hidesTitle ? 0 : nil, alignment: .top)
             .opacity(hidesTitle ? 0 : 1)
-            .clipped()
             .allowsHitTesting(!hidesTitle)
             .accessibilityHidden(hidesTitle)
 

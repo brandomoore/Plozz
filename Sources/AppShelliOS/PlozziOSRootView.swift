@@ -998,7 +998,7 @@ private struct PlozziOSScreenshotTabRouter: View {
 }
 
 struct PlozziOSNavigationBackground: ViewModifier {
-    var hidesTopBackdrop = false
+    var hidesRegularTabBackdrop = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
@@ -1006,13 +1006,13 @@ struct PlozziOSNavigationBackground: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        let hidesTabBackdrop = isRunningOnMac || (hidesTopBackdrop && horizontalSizeClass == .regular)
+        let hidesTabBackdrop = isRunningOnMac || (hidesRegularTabBackdrop && horizontalSizeClass == .regular)
         if #available(iOS 26.0, *) {
             let opaqueChrome = systemReduceTransparency || reduceTransparency
             content
                 .toolbarBackground(hidesTabBackdrop || opaqueChrome ? .hidden : .automatic, for: .tabBar)
                 // Hide only the full-width edge backdrop; native controls keep their opaque treatment.
-                .scrollEdgeEffectHidden(hidesTopBackdrop || isRunningOnMac || opaqueChrome, for: .top)
+                .scrollEdgeEffectHidden(isRunningOnMac || opaqueChrome, for: .top)
                 .scrollEdgeEffectHidden(opaqueChrome, for: .bottom)
         } else {
             content
@@ -1501,7 +1501,7 @@ struct PlozziOSTabShell: View {
 
         .tabViewStyle(.sidebarAdaptable)
         .modifier(PlozziOSNavigationBackground(
-            hidesTopBackdrop: effectiveSelectedDestination == .home && !isShowingMorePage
+            hidesRegularTabBackdrop: effectiveSelectedDestination == .home && !isShowingMorePage
         ))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if usesOpaqueBottomBar {

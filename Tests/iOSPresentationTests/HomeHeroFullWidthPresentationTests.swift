@@ -599,7 +599,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    func testHomeAndMacNavigationBackgroundKeepArtworkClearAndNativeControlsVisible() async throws {
+    func testHomeKeepsNativeTopBlurWhileMacKeepsArtworkClear() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let item = try await artworkItem()
@@ -607,9 +607,9 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil,
             insets: .zero, pull: PlozziOSHomeHeroPullModel()
         ) { window, host in
-            for (isRunningOnMac, hidesTopBackdrop) in [(false, false), (false, true), (true, false), (false, false)] {
+            for (isRunningOnMac, hidesRegularTabBackdrop) in [(false, false), (false, true), (true, false), (false, false)] {
                 host.rootView = AnyView(
-                    MacNavigationBackgroundFixture(hidesTopBackdrop: hidesTopBackdrop)
+                    MacNavigationBackgroundFixture(hidesRegularTabBackdrop: hidesRegularTabBackdrop)
                         .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
                         .environment(\.colorScheme, .dark)
                 )
@@ -622,11 +622,11 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
                         .first { $0.contentSize.height > $0.bounds.height })
                     XCTAssertEqual(scroll.topEdgeEffect.isHidden,
-                                   hidesTopBackdrop || isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled)
+                                   isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled)
                     XCTAssertEqual(scroll.bottomEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
                     XCTAssertFalse(navigation.isNavigationBarHidden)
                     XCTAssertEqual(tabs.sidebar.isHidden, sidebarHidden)
-                    let image = snapshot(window, name: "navigation-background-home-\(hidesTopBackdrop)-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)")
+                    let image = snapshot(window, name: "navigation-background-home-\(hidesRegularTabBackdrop)-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)")
                     let trailing = CGRect(x: image.size.width - 240, y: 0, width: 240, height: 150)
                     let controlImage = UIImage(
                         cgImage: try XCTUnwrap(image.cgImage?.cropping(to: trailing.applying(
@@ -636,17 +636,22 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     let controls = try HeroTextInk.frames(in: controlImage, terms: ["PROFILE"])
                     let profile = try XCTUnwrap(controls["PROFILE"])
                     XCTAssertTrue(window.bounds.contains(profile.offsetBy(dx: trailing.minX, dy: 0)))
-                    if hidesTopBackdrop || isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled {
-                        let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
-                        let x = bar.minX + 4
-                        let top = try pixel(image, at: CGPoint(x: x, y: bar.midY))
-                        let content = try pixel(image, at: CGPoint(x: x, y: bar.maxY + 120))
+                    let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+                    let x = bar.minX + 4
+                    let top = try pixel(image, at: CGPoint(x: x, y: bar.midY))
+                    let content = try pixel(image, at: CGPoint(x: x, y: bar.maxY + 120))
+                    if isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled {
                         for channel in 0..<3 {
                             XCTAssertLessThan(
                                 abs(Int(top[channel]) - Int(content[channel])), 10,
                                 "The navigation area must not add a backdrop over the artwork."
                             )
                         }
+                    } else {
+                        XCTAssertGreaterThan(
+                            Int(content[1]) - Int(top[1]), 20,
+                            "The native top-edge treatment must render over the cyan artwork at rest."
+                        )
                     }
                 }
             }
@@ -1572,7 +1577,7 @@ private struct PushedDetailTransparencyFixture: View {
 
 @available(iOS 26.0, *)
 private struct MacNavigationBackgroundFixture: View {
-    var hidesTopBackdrop = false
+    var hidesRegularTabBackdrop = false
 
     var body: some View {
         TabView {
@@ -1598,7 +1603,7 @@ private struct MacNavigationBackgroundFixture: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .scrollEdgeEffectStyle(.hard, for: .top)
-        .modifier(PlozziOSNavigationBackground(hidesTopBackdrop: hidesTopBackdrop))
+        .modifier(PlozziOSNavigationBackground(hidesRegularTabBackdrop: hidesRegularTabBackdrop))
     }
 }
 
