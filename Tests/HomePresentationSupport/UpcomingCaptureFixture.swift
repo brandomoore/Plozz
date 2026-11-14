@@ -131,36 +131,29 @@ struct UpcomingCaptureFixture: View {
             try await Task.sleep(for: .milliseconds(500))
             precondition(abs(today.convert(today.bounds, to: window).minY - before.minY) < 2,
                          "Upcoming actions moved while scrolling")
-            guard let backdrop = descendants(window).first(where: {
+            precondition(!descendants(window).contains(where: {
                 $0.accessibilityIdentifier == "upcoming.navigationBackdrop"
-            }) as? UIVisualEffectView else {
-                preconditionFailure("Upcoming requires a real native navigation backdrop")
-            }
-            let backdropFrame = backdrop.convert(backdrop.bounds, to: window)
-            precondition(abs(backdropFrame.minX) < 1 && abs(backdropFrame.width - window.bounds.width) < 1)
-            precondition(abs(backdropFrame.minY) < 1 && backdropFrame.maxY > before.maxY)
-            precondition(!backdrop.isUserInteractionEnabled, "The backdrop must not intercept toolbar actions")
-            precondition((backdrop.effect is UIBlurEffect) != arguments.contains("--capture-opaque"))
-            precondition(backdrop.mask?.bounds == backdrop.bounds, "UIKit must own the correctly sized blur mask")
+            }), "Upcoming must not stack a material overlay over the system scroll edge")
             if #available(iOS 26.0, *) {
                 precondition(
                     scroll.topEdgeEffect.isHidden == arguments.contains("--capture-opaque"),
                     "Upcoming must respect the shell's scroll-edge transparency policy"
                 )
                 precondition(scroll.topEdgeEffect.style == .soft, "Upcoming must use a soft native scroll edge")
-            }
-            if arguments.contains("--capture-backdrop-comparison") {
-                for enabled in [true, false] {
-                    backdrop.effect = enabled ? UIBlurEffect(style: .systemUltraThinMaterial) : nil
-                    try await Task.sleep(for: .milliseconds(500))
-                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                        precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                if arguments.contains("--capture-edge-comparison") {
+                    let originalHidden = scroll.topEdgeEffect.isHidden
+                    defer { scroll.topEdgeEffect.isHidden = originalHidden }
+                    for enabled in [true, false] {
+                        scroll.topEdgeEffect.isHidden = !enabled
+                        try await Task.sleep(for: .milliseconds(500))
+                        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                            precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                        }
+                        let path = URL(fileURLWithPath: NSTemporaryDirectory())
+                            .appendingPathComponent(enabled ? "upcoming-edge-enabled.png" : "upcoming-edge-disabled.png")
+                        try image.pngData()!.write(to: path)
                     }
-                    let path = URL(fileURLWithPath: NSTemporaryDirectory())
-                        .appendingPathComponent(enabled ? "upcoming-backdrop-enabled.png" : "upcoming-backdrop-disabled.png")
-                    try image.pngData()!.write(to: path)
                 }
-                backdrop.effect = UIBlurEffect(style: .systemUltraThinMaterial)
             }
         }
         if showsCalendar {

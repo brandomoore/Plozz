@@ -39,12 +39,11 @@ keeps its appearance bridge inside `NavigationStack`, so UIKit can recognize the
 stack and merge its inline-large toolbar into the iPad tab-bar line. Wrapping the
 stack in that bridge's background breaks the merge even when the bridge is inactive.
 Content insets belong to the agenda, not the scroll viewport. Content scrolls
-behind a full-width UIKit material blur beneath the native toolbar. Its height
-tracks the top safe area, and a feathered lower edge avoids a solid background
-strip. The backdrop cannot intercept touches and turns off for reduced transparency.
-The soft native scroll edge remains enabled when transparency is allowed, but
-does not substitute for the material: in the merged iPad toolbar it can merely
-dim content. The mobile
+behind the native toolbar using the system's soft scroll-edge effect on iOS 26+.
+There is no additional material, gradient mask, or full-width background overlay:
+stacking one over the native edge obscures rows and tints the page background.
+The system owns the transition's blur and opacity; reduced transparency retains
+the shell's existing fallback. The mobile
 calendar is a native graphical date picker in a content-sized popover anchored to
 Calendar; selecting a date closes it. TV uses native secondary glass controls
 below the selected navigation chrome.
@@ -63,7 +62,10 @@ They also support
 `--capture-scrolled`, `--capture-calendar` and
 `--capture-selection` to exercise pinned controls, the real calendar presentation
 and dismissal after choosing a date. Add `--capture-opaque` to the scrolled capture
-to check the app's reduced-transparency fallback. Add `--capture-landscape` to an
+to check the app's reduced-transparency fallback. Add `--capture-edge-comparison`
+to save same-position native-window renders with only the system's top edge effect
+enabled and disabled (`tmp/upcoming-edge-enabled.png` and `tmp/upcoming-edge-disabled.png`).
+Add `--capture-landscape` to an
 action capture to render a 1194-by-834 native test window with the sidebar collapsed;
 this checks wide layout, not device rotation. That render is saved to
 `tmp/upcoming-landscape.png` in the presentation host's data container.

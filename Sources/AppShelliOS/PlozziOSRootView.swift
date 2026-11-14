@@ -1023,52 +1023,10 @@ struct PlozziOSNavigationBackground: ViewModifier {
     }
 }
 
-private struct UpcomingNavigationBarBackdrop: UIViewRepresentable {
-    let enabled: Bool
-
-    func makeUIView(context: Context) -> Backdrop { Backdrop() }
-
-    func updateUIView(_ view: Backdrop, context: Context) {
-        if enabled != (view.effect != nil) {
-            view.effect = enabled ? UIBlurEffect(style: .systemUltraThinMaterial) : nil
-        }
-    }
-
-    final class Backdrop: UIVisualEffectView {
-        private let fade = CAGradientLayer()
-        private let fadeMask = UIView()
-
-        init() {
-            super.init(effect: nil)
-            isUserInteractionEnabled = false
-            accessibilityIdentifier = "upcoming.navigationBackdrop"
-            fade.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
-            fadeMask.layer.addSublayer(fade)
-        }
-
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            guard fadeMask.frame != bounds else { return }
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            fadeMask.frame = bounds
-            fade.frame = fadeMask.bounds
-            fade.locations = [0, NSNumber(value: Double(max(0, bounds.height - 32) / max(1, bounds.height))), 1]
-            // UIKit must copy the mask into its backdrop views; masking the outer layer loses the blur.
-            mask = nil
-            mask = fadeMask
-            CATransaction.commit()
-        }
-    }
-}
-
 struct PlozziOSTabShell: View {
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.themePalette) private var palette
-    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
@@ -1394,20 +1352,6 @@ struct PlozziOSTabShell: View {
             UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
                 .plozziOSItemNavigation(appModel: appModel)
                 .toolbarBackground(.automatic, for: .navigationBar)
-                .overlay {
-                    GeometryReader { geometry in
-                        VStack(spacing: 0) {
-                            UpcomingNavigationBarBackdrop(
-                                enabled: !isRunningOnMac && !reduceTransparency && !systemReduceTransparency
-                            )
-                                .frame(height: geometry.safeAreaInsets.top + 32)
-                                .offset(y: -geometry.safeAreaInsets.top)
-                            Spacer(minLength: 0)
-                        }
-                    }
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
                 .background { AppBackground(palette: palette) }
         case .discover:
             PlozziOSDiscoverView(appModel: appModel, onShowSettings: showSettings)

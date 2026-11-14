@@ -158,17 +158,9 @@ extension HomeRowArrangementHostedTests {
                     XCTAssertEqual(control.convert(control.bounds, to: window).minY, before.minY, accuracy: 2)
                 }
                 #if os(iOS)
-                let backdrop = try XCTUnwrap(descendants(window).first {
+                XCTAssertNil(descendants(window).first {
                     $0.accessibilityIdentifier == "upcoming.navigationBackdrop"
-                } as? UIVisualEffectView)
-                let backdropFrame = backdrop.convert(backdrop.bounds, to: window)
-                XCTAssertEqual(backdropFrame.minX, 0, accuracy: 1)
-                XCTAssertEqual(backdropFrame.width, window.bounds.width, accuracy: 1)
-                XCTAssertEqual(backdropFrame.minY, 0, accuracy: 1)
-                XCTAssertGreaterThan(backdropFrame.maxY, frames[0].maxY)
-                XCTAssertEqual(backdrop.effect is UIBlurEffect, !reducedTransparency)
-                XCTAssertFalse(backdrop.isUserInteractionEnabled)
-                XCTAssertEqual(backdrop.mask?.bounds, backdrop.bounds)
+                }, "Upcoming must not stack a material overlay over the system scroll edge")
                 if #available(iOS 26.0, *) {
                     XCTAssertEqual(scroll.topEdgeEffect.isHidden, reducedTransparency)
                     XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
