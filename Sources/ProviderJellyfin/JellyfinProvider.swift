@@ -236,13 +236,20 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
     /// ordered by effective recency. `Int.max` drains both feeds through bounded
     /// HTTP pages and deliberately applies no final cap.
     public func continueWatching(limit: Int) async throws -> [MediaItem] {
+        try await continueWatching(limit: limit, includeSeriesRecency: true)
+    }
+
+    public func continueWatching(limit: Int, includeSeriesRecency: Bool) async throws -> [MediaItem] {
         let outcome = try await continueWatchingDTOs(limit: limit, parentID: nil)
         guard outcome.successfulEndpointCount > 0,
               !outcome.items.isEmpty || outcome.firstError == nil else {
             throw outcome.firstError ?? AppError.invalidResponse
         }
         let merged = outcome.items
-        let seriesDates = try await seriesLastPlayedDatesBestEffort(for: merged)
+        var seriesDates: [String: Date] = [:]
+        if includeSeriesRecency {
+            seriesDates = try await seriesLastPlayedDatesBestEffort(for: merged)
+        }
         // Stamp NextUp recency BEFORE capping: a just-finished show's next episode
         // must be able to survive the `limit` cut on its stamped recency rather than
         // being dropped merely because in-progress Resume items filled the limit

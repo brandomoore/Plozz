@@ -48,6 +48,7 @@ public enum UpcomingFeedLoader {
         interval: DateInterval,
         requestedMovies: @escaping @Sendable () async throws -> [MediaItem],
         isCurrent: @escaping @MainActor @Sendable () -> Bool,
+        onProgress: @escaping @MainActor @Sendable ([UpcomingRelease]) -> Void = { _ in },
         schedule: @escaping @Sendable (MediaItem, DateInterval) async throws -> [UpcomingEpisode] = {
             try await SeriesScheduleResolver.shared.calendarEpisodes(for: MetadataQuery($0), in: $1)
         },
@@ -55,74 +56,109 @@ public enum UpcomingFeedLoader {
             await ExternalTitleMetadataResolver.shared.availability(for: $0, regionCode: $1)
         }
     ) async throws -> UpcomingFeedSnapshot {
-        let watched = await map(accounts) { account -> (items: [MediaItem], failed: Bool) in
-            do {
-                return try await watchedSeries(account: account, isCurrent: isCurrent)
-            } catch is CancellationError {
-                return ([], false)
-            } catch {
-                PlozzLog.networking.error("Upcoming viewing history could not be refreshed")
-                return ([], true)
-            }
-        }
         try await checkScope(isCurrent)
-        var requests: [MediaItem] = []
-        var failures = watched.filter(\.failed).count
-        var requestsFailed = false
-        do {
-            requests = try await requestedMovies().filter { $0.kind == .movie }
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            PlozzLog.networking.error("Upcoming personal requests could not be refreshed")
-            failures += 1
-            requestsFailed = true
-        }
-        try await checkScope(isCurrent)
-        let shows = MediaItemMerger.merge(watched.flatMap(\.items))
         let savedMovies = watchlist.filter { $0.kind == .movie }
-        let movies = MediaItemMerger.merge(savedMovies + requests)
-        let requested = requests
-        let titles = shows + movies
-        let batches = await map(titles) { item -> (releases: [UpcomingRelease], failed: Bool) in
-            guard !Task.isCancelled, await isCurrent() else { return ([], false) }
-            do {
-                if item.kind == .series {
-                    let episodes = try await schedule(item, interval)
-                    return (UpcomingReleaseBuilder.episodes(episodes, for: item), false)
+        let limiter = ConcurrencyLimiter(limit: 4)
+        @Sendable func resolve(_ titles: [MediaItem], requested: [MediaItem] = []) async throws -> UpcomingFeedSnapshot
+        {
+            let batches = await map(titles) { item -> (releases: [UpcomingRelease], failed: Bool) in
+                do {
+                    let releases = try await limiter.runUnlessCancelled {
+                        try await checkScope(isCurrent)
+                        if item.kind == .series {
+                            let episodes = try await schedule(item, interval)
+                            return UpcomingReleaseBuilder.episodes(episodes, for: item)
+                        }
+                        guard let regionCode else { return [UpcomingRelease]() }
+                        var interests = Set<UpcomingInterest>()
+                        if savedMovies.contains(where: { sameTitle($0, item) }) { interests.insert(.watchlist) }
+                        if requested.contains(where: { sameTitle($0, item) }) { interests.insert(.requested) }
+                        let availability = await movieAvailability(item, regionCode)
+                        guard availability.releaseDatesAvailable != false else { throw AppError.notFound }
+                        return UpcomingReleaseBuilder.movies(
+                            availability.releaseEvents,
+                            for: item, interests: interests, regionCode: regionCode
+                        ).filter { $0.date >= interval.start && $0.date < interval.end }
+                    }
+                    try await checkScope(isCurrent)
+                    if !releases.isEmpty { await onProgress(releases) }
+                    return (releases, false)
+                } catch is CancellationError {
+                    return ([], false)
+                } catch {
+                    PlozzLog.networking.error("Upcoming release dates could not be refreshed")
+                    return ([], true)
                 }
-                guard let regionCode else { return ([], false) }
-                var interests = Set<UpcomingInterest>()
-                if savedMovies.contains(where: { sameTitle($0, item) }) { interests.insert(.watchlist) }
-                if requested.contains(where: { sameTitle($0, item) }) { interests.insert(.requested) }
-                let availability = await movieAvailability(item, regionCode)
-                guard availability.releaseDatesAvailable != false else { throw AppError.notFound }
-                return (
-                    UpcomingReleaseBuilder.movies(
-                        availability.releaseEvents.filter { $0.date >= interval.start && $0.date < interval.end },
-                        for: item, interests: interests, regionCode: regionCode
-                    ), false
-                )
-            } catch is CancellationError {
-                return ([], false)
-            } catch {
-                PlozzLog.networking.error("Upcoming release dates could not be refreshed")
-                return ([], true)
             }
+            try await checkScope(isCurrent)
+            return UpcomingFeedSnapshot(
+                releases: batches.flatMap(\.releases), failedSourceCount: batches.filter(\.failed).count,
+                failedTitleKeys: Set(
+                    zip(titles, batches).compactMap { item, batch in
+                        batch.failed ? UpcomingRelease.titleKey(for: item) : nil
+                    })
+            )
         }
-        try await checkScope(isCurrent)
-        let failedAccounts = Set(
-            zip(accounts, watched).compactMap { account, result in
-                result.failed ? account.account.id : nil
-            })
-        return UpcomingFeedSnapshot(
-            releases: batches.flatMap(\.releases), failedSourceCount: failures + batches.filter(\.failed).count,
-            failedAccountIDs: failedAccounts, requestsFailed: requestsFailed,
-            failedTitleKeys: Set(
-                zip(titles, batches).compactMap { item, batch in
-                    batch.failed ? UpcomingRelease.titleKey(for: item) : nil
-                })
-        )
+
+        return try await withThrowingTaskGroup(of: UpcomingFeedSnapshot.self) { group in
+            group.addTask {
+                let watched = await map(accounts) { account -> (items: [MediaItem], failed: Bool) in
+                    do {
+                        return try await watchedSeries(account: account, isCurrent: isCurrent)
+                    } catch is CancellationError {
+                        return ([], false)
+                    } catch {
+                        PlozzLog.networking.error("Upcoming viewing history could not be refreshed")
+                        return ([], true)
+                    }
+                }
+                try await checkScope(isCurrent)
+                let shows = MediaItemMerger.merge(watched.flatMap(\.items)).sorted {
+                    let lhs = schedulePriority($0)
+                    let rhs = schedulePriority($1)
+                    if lhs != rhs { return lhs < rhs }
+                    if $0.lastPlayedAt != $1.lastPlayedAt {
+                        return ($0.lastPlayedAt ?? .distantPast) > ($1.lastPlayedAt ?? .distantPast)
+                    }
+                    return $0.stablePresentationID < $1.stablePresentationID
+                }
+                var snapshot = try await resolve(shows)
+                snapshot.failedAccountIDs = Set(
+                    zip(accounts, watched).compactMap { account, result in
+                        result.failed ? account.account.id : nil
+                    })
+                snapshot.failedSourceCount += snapshot.failedAccountIDs.count
+                return snapshot
+            }
+            group.addTask {
+                var requests: [MediaItem] = []
+                var requestsFailed = false
+                do {
+                    requests = try await requestedMovies().filter { $0.kind == .movie }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    PlozzLog.networking.error("Upcoming personal requests could not be refreshed")
+                    requestsFailed = true
+                }
+                try await checkScope(isCurrent)
+                var snapshot = try await resolve(MediaItemMerger.merge(savedMovies + requests), requested: requests)
+                snapshot.requestsFailed = requestsFailed
+                if requestsFailed { snapshot.failedSourceCount += 1 }
+                return snapshot
+            }
+            var combined = UpcomingFeedSnapshot()
+            for try await snapshot in group {
+                combined.releases += snapshot.releases
+                combined.failedSourceCount += snapshot.failedSourceCount
+                combined.failedAccountIDs.formUnion(snapshot.failedAccountIDs)
+                combined.failedTitleKeys.formUnion(snapshot.failedTitleKeys)
+                combined.requestsFailed = combined.requestsFailed || snapshot.requestsFailed
+            }
+            try await checkScope(isCurrent)
+            combined.releases = UpcomingReleaseBuilder.merging(combined.releases)
+            return combined
+        }
     }
 
     static func sameTitle(_ lhs: MediaItem, _ rhs: MediaItem) -> Bool {
@@ -131,6 +167,14 @@ public enum UpcomingFeedLoader {
         let right = MediaItemIdentity.identities(for: rhs)
         guard !MediaItemIdentity.externalIdentitiesConflict(left, right) else { return false }
         return lhs.stablePresentationID == rhs.stablePresentationID || !Set(left).isDisjoint(with: right)
+    }
+
+    private static func schedulePriority(_ item: MediaItem) -> Int {
+        switch item.seriesStatus {
+        case .returning: 0
+        case nil: 1
+        case .ended, .canceled: 2
+        }
     }
 
     private static func watchedSeries(
@@ -179,7 +223,9 @@ public enum UpcomingFeedLoader {
         // episode count yet. History above still retains caught-up series.
         try await checkScope(isCurrent)
         do {
-            let continuing = try await account.provider.continueWatching(limit: 200, inLibraries: nil)
+            let continuing = try await account.provider.continueWatching(
+                limit: .max, includeSeriesRecency: false
+            )
             var known = Set(series.map(\.id))
             for episode in continuing where episode.kind == .episode {
                 guard let id = episode.seriesID, known.insert(id).inserted else { continue }

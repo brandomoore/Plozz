@@ -13,28 +13,7 @@ public enum UpcomingInterest: String, CaseIterable, Codable, Hashable, Sendable 
 }
 
 public enum UpcomingReleaseKind: String, CaseIterable, Codable, Hashable, Sendable {
-    case episode, digital, theatrical, physical, premiere, television
-
-    public var title: LocalizedStringResource {
-        switch self {
-        case .episode: "Episode"
-        case .digital: "Digital"
-        case .theatrical: "In theaters"
-        case .physical: "Physical"
-        case .premiere: "Premiere"
-        case .television: "On TV"
-        }
-    }
-
-    public init(_ kind: TitleReleaseEvent.Kind) {
-        switch kind {
-        case .digital: self = .digital
-        case .theatrical, .theatricalLimited: self = .theatrical
-        case .physical: self = .physical
-        case .premiere: self = .premiere
-        case .television: self = .television
-        }
-    }
+    case episode, digital
 }
 
 /// An announced release, not a promise that the media is in a server library.
@@ -67,8 +46,8 @@ public struct UpcomingRelease: Identifiable, Equatable, Sendable {
         self.regionCode = regionCode
     }
 
-    public var subtitle: LocalizedStringResource {
-        guard kind == .episode else { return kind.title }
+    public var subtitle: LocalizedStringResource? {
+        guard kind == .episode else { return nil }
         if let season = episodes.first?.seasonNumber {
             if episodes.count > 1 { return "Season \(season) · \(episodes.count) episodes" }
             if let number = episodes.first?.episodeNumber {
@@ -104,16 +83,13 @@ public struct UpcomingFilters: Equatable, Codable, Sendable {
 
     public var mediaType: MediaType = .all
     public var interests = Set(UpcomingInterest.allCases)
-    public var releaseKinds = Set(UpcomingReleaseKind.allCases)
     public var premieresOnly = false
     public var hideWatchedMovies = false
 
     public init() {}
 
     public func includes(_ release: UpcomingRelease) -> Bool {
-        guard !interests.isDisjoint(with: release.interests),
-            releaseKinds.contains(release.kind)
-        else { return false }
+        guard !interests.isDisjoint(with: release.interests) else { return false }
         if mediaType == .shows && release.kind != .episode { return false }
         if mediaType == .movies && release.kind == .episode { return false }
         if hideWatchedMovies && release.item.kind == .movie && release.item.isPlayed { return false }
@@ -125,6 +101,20 @@ public struct UpcomingFilters: Equatable, Codable, Sendable {
 }
 
 public enum UpcomingReleaseBuilder {
+    public static func merging(_ releases: [UpcomingRelease]) -> [UpcomingRelease] {
+        var merged: [String: UpcomingRelease] = [:]
+        for release in releases {
+            let key = release.kind == .digital ? "\(release.titleKey)|digital" : release.id
+            if var existing = merged[key] {
+                existing.interests.formUnion(release.interests)
+                merged[key] = existing
+            } else {
+                merged[key] = release
+            }
+        }
+        return merged.values.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
+    }
+
     public static func episodes(
         _ episodes: [UpcomingEpisode], for item: MediaItem,
         calendar: Calendar = .current
@@ -165,20 +155,21 @@ public enum UpcomingReleaseBuilder {
         interests: Set<UpcomingInterest>, regionCode: String,
         calendar: Calendar = .current
     ) -> [UpcomingRelease] {
+        guard
+            let event = events.filter({
+                $0.kind == .digital && $0.regionCode.caseInsensitiveCompare(regionCode) == .orderedSame
+            }).min(by: { $0.date < $1.date })
+        else { return [] }
         let titleKey = UpcomingRelease.titleKey(for: item)
-        var seen = Set<String>()
-        return events.sorted { $0.date < $1.date }.compactMap { event in
-            guard event.regionCode.caseInsensitiveCompare(regionCode) == .orderedSame else { return nil }
-            let kind = UpcomingReleaseKind(event.kind)
-            let key =
-                "\(titleKey)|\(kind.rawValue)|\(regionCode.uppercased())|\(calendar.startOfDay(for: event.date).timeIntervalSince1970)"
-            guard seen.insert(key).inserted else { return nil }
-            return UpcomingRelease(
+        let key =
+            "\(titleKey)|digital|\(regionCode.uppercased())|\(calendar.startOfDay(for: event.date).timeIntervalSince1970)"
+        return [
+            UpcomingRelease(
                 id: key, titleKey: titleKey, item: item, date: event.date,
-                datePrecision: .dateOnly, kind: kind, interests: interests,
+                datePrecision: .dateOnly, kind: .digital, interests: interests,
                 regionCode: regionCode.uppercased()
             )
-        }
+        ]
     }
 
     public static func home(

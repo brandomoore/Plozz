@@ -30,42 +30,67 @@ final class UpcomingEpisodeTests: XCTestCase {
         XCTAssertEqual(release.datePrecision, .dateAndTime)
     }
 
-    func testMoviesKeepRegionalReleaseKindsAndMergeDuplicateCinemaEvents() {
+    func testMoviesShowOnlyTheirFirstRegionalDigitalRelease() {
         let date = sample().airDate
         let movie = MediaItem(id: "film", title: "Film", kind: .movie)
         let events = [
             TitleReleaseEvent(kind: .theatricalLimited, date: date, regionCode: "US"),
             TitleReleaseEvent(kind: .theatrical, date: date, regionCode: "US"),
+            TitleReleaseEvent(kind: .physical, date: date, regionCode: "US"),
+            TitleReleaseEvent(kind: .premiere, date: date, regionCode: "US"),
+            TitleReleaseEvent(kind: .television, date: date, regionCode: "US"),
+            TitleReleaseEvent(kind: .digital, date: date.addingTimeInterval(86_400), regionCode: "US"),
             TitleReleaseEvent(kind: .digital, date: date, regionCode: "US"),
-            TitleReleaseEvent(kind: .digital, date: date, regionCode: "GB")
+            TitleReleaseEvent(kind: .digital, date: date.addingTimeInterval(-86_400), regionCode: "GB")
         ]
         let releases = UpcomingReleaseBuilder.movies(
             events, for: movie, interests: [.watchlist, .requested], regionCode: "US"
         )
-        XCTAssertEqual(Set(releases.map(\.kind)), [.theatrical, .digital])
-        XCTAssertEqual(releases.count, 2)
+        XCTAssertEqual(releases.map(\.date), [date])
+        XCTAssertEqual(releases.map(\.kind), [.digital])
+        XCTAssertNil(releases.first?.subtitle)
         XCTAssertTrue(releases.allSatisfy { $0.regionCode == "US" && $0.item == movie })
+        XCTAssertTrue(UpcomingReleaseBuilder.movies(
+            events.filter { $0.kind != .digital }, for: movie, interests: [.watchlist], regionCode: "US"
+        ).isEmpty, "Theatrical and other dates must not substitute for an unknown digital date")
     }
 
     func testHomeKeepsOneFutureReleasePerTitleWhileAgendaRetainsYesterday() {
         let calendar = Calendar(identifier: .gregorian)
         let now = calendar.startOfDay(for: sample().airDate)
-        let movie = MediaItem(id: "film", title: "Film", kind: .movie)
-        let events = [-1, 1, 2].map {
-            TitleReleaseEvent(
-                kind: .digital, date: calendar.date(byAdding: .day, value: $0, to: now)!,
-                regionCode: "US"
-            )
+        let series = MediaItem(id: "show", title: "Show", kind: .series)
+        let episodes = [-1, 1, 2].map {
+            var episode = sample()
+            episode.absoluteEpisodeNumber = 100 + $0
+            episode.airDate = calendar.date(byAdding: .day, value: $0, to: now)!
+            return episode
         }
-        let releases = UpcomingReleaseBuilder.movies(
-            events, for: movie, interests: [.watchlist], regionCode: "US", calendar: calendar
-        )
+        let releases = UpcomingReleaseBuilder.episodes(episodes, for: series, calendar: calendar)
         XCTAssertEqual(releases.count, 3)
         let home = UpcomingReleaseBuilder.home(releases, now: now, calendar: calendar)
-        XCTAssertEqual(home.map(\.date), [events[1].date])
+        XCTAssertEqual(home.map(\.date), [episodes[1].airDate])
         XCTAssertTrue(UpcomingReleaseBuilder.home(
-            releases, hiddenTitles: [UpcomingRelease.titleKey(for: movie)], now: now, calendar: calendar
+            releases, hiddenTitles: [UpcomingRelease.titleKey(for: series)], now: now, calendar: calendar
         ).isEmpty)
+    }
+
+    func testProgressReplacesAnOldMovieDateWithoutDuplicatingTheTitle() {
+        let movie = MediaItem(id: "film", title: "Film", kind: .movie)
+        let originalDate = sample().airDate
+        let revisedDate = originalDate.addingTimeInterval(86_400)
+        let original = UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: originalDate, regionCode: "US")],
+            for: movie, interests: [.watchlist], regionCode: "US"
+        )
+        let revised = UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: revisedDate, regionCode: "US")],
+            for: movie, interests: [.requested], regionCode: "US"
+        )
+
+        let merged = UpcomingReleaseBuilder.merging(revised + original)
+
+        XCTAssertEqual(merged.map(\.date), [revisedDate])
+        XCTAssertEqual(merged.first?.interests, [.watchlist, .requested])
     }
 
     func testInterestAndMediaFiltersSelectOnlyMatchingReleases() throws {

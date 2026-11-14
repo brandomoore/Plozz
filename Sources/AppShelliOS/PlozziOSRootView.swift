@@ -1076,14 +1076,14 @@ struct PlozziOSTabShell: View {
         }
         await sharedHomeViewModel.upcoming.refresh(
             scope: scope, namespace: appModel.profiles.activeNamespace, isCurrent: isCurrent
-        ) {
+        ) { progress in
             try await UpcomingFeedLoader.load(
                 accounts: accounts, watchlist: saved, regionCode: region,
                 interval: UpcomingFeedLoader.window(),
                 requestedMovies: {
                     try await seer.personallyRequestedMovies(identity: identity, language: language)
                 },
-                isCurrent: isCurrent
+                isCurrent: isCurrent, onProgress: progress
             )
         }
     }
@@ -1345,6 +1345,7 @@ struct PlozziOSTabShell: View {
         case .upcoming:
             UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
                 .plozziOSItemNavigation(appModel: appModel)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .background { AppBackground(palette: palette) }
         case .discover:
             PlozziOSDiscoverView(appModel: appModel, onShowSettings: showSettings)
@@ -1530,6 +1531,7 @@ struct PlozziOSTabShell: View {
         }
 
         .tabViewStyle(.sidebarAdaptable)
+        .tint(palette.primaryText)
         .modifier(PlozziOSNavigationBackground())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if usesOpaqueBottomBar {

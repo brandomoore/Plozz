@@ -35,11 +35,7 @@ public final class UpcomingFeedModel {
     public private(set) var lastHiddenTitle: String?
     public var refreshRevision = 0 {
         didSet {
-            task?.cancel()
-            task = nil
-            generation = UUID()
             refreshedAt = nil
-            isLoading = false
         }
     }
     @ObservationIgnored private var hiddenKey: String?
@@ -106,6 +102,20 @@ public final class UpcomingFeedModel {
         isCurrent: @escaping @MainActor () -> Bool,
         load: @escaping @Sendable () async throws -> UpcomingFeedSnapshot
     ) async {
+        await refresh(scope: scope, namespace: namespace, force: force, isCurrent: isCurrent) { _ in
+            try await load()
+        }
+    }
+
+    public func refresh(
+        scope: String, namespace: String?, force: Bool = false,
+        isCurrent: @escaping @MainActor () -> Bool,
+        load:
+            @escaping @Sendable (
+                @escaping @MainActor @Sendable ([UpcomingRelease]) -> Void
+            ) async throws -> UpcomingFeedSnapshot
+    ) async {
+        guard !Task.isCancelled else { return }
         if scopeKey != scope {
             invalidate()
             scopeKey = scope
@@ -119,11 +129,17 @@ public final class UpcomingFeedModel {
         }
         if let task {
             await task.value
+            guard !Task.isCancelled, scopeKey == scope, isCurrent() else { return }
+            if refreshedAt == nil {
+                await refresh(scope: scope, namespace: namespace, force: force, isCurrent: isCurrent, load: load)
+            }
             return
         }
-        if !force, let refreshedAt, Date().timeIntervalSince(refreshedAt) < 6 * 60 * 60 { return }
+        let freshness: TimeInterval = failedSourceCount == 0 ? 6 * 60 * 60 : 60
+        if !force, let refreshedAt, Date().timeIntervalSince(refreshedAt) < freshness { return }
         isLoading = true
         let generation = generation
+        let revision = refreshRevision
         let work = Task { [weak self] in
             defer {
                 if let self, self.generation == generation {
@@ -132,7 +148,10 @@ public final class UpcomingFeedModel {
                 }
             }
             do {
-                let snapshot = try await load()
+                let snapshot = try await load { [weak self] releases in
+                    guard let self, self.generation == generation, isCurrent() else { return }
+                    self.releases = UpcomingReleaseBuilder.merging(releases + self.releases)
+                }
                 try Task.checkCancellation()
                 guard let self, self.generation == generation, isCurrent() else { return }
                 let retained = self.releases.filter { previous in
@@ -160,13 +179,14 @@ public final class UpcomingFeedModel {
                         $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date
                     }
                 self.failedSourceCount = snapshot.failedSourceCount
-                self.refreshedAt = snapshot.failedSourceCount == 0 ? Date() : nil
+                self.refreshedAt = self.refreshRevision == revision ? Date() : nil
             } catch is CancellationError {
                 // Scope invalidation owns clearing the previous identity's data.
             } catch {
                 guard let self, self.generation == generation, isCurrent() else { return }
                 PlozzLog.networking.error("Upcoming releases could not be refreshed")
                 self.failedSourceCount = max(1, self.failedSourceCount)
+                self.refreshedAt = self.refreshRevision == revision ? Date() : nil
             }
         }
         task = work

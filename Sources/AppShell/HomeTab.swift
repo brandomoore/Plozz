@@ -299,14 +299,14 @@ struct HomeTab: View {
         }
         await sharedHomeViewModel.upcoming.refresh(
             scope: scope, namespace: libraryPreferencesNamespace, isCurrent: isCurrent
-        ) {
+        ) { progress in
             try await UpcomingFeedLoader.load(
                 accounts: accounts, watchlist: saved, regionCode: region,
                 interval: UpcomingFeedLoader.window(),
                 requestedMovies: {
                     try await seer.personallyRequestedMovies(identity: identity, language: language)
                 },
-                isCurrent: isCurrent
+                isCurrent: isCurrent, onProgress: progress
             )
         }
     }

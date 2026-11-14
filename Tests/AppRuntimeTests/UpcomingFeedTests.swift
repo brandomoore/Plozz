@@ -95,6 +95,25 @@ final class UpcomingFeedTests: XCTestCase {
         }
     }
 
+    func testLaterDigitalDateDoesNotReintroduceAnAlreadyReleasedMovie() async throws {
+        let film = MediaItem(id: "film", title: "Film", kind: .movie, providerIDs: ["Tmdb": "17"])
+        let date = Self.day
+        let snapshot = try await UpcomingFeedLoader.load(
+            accounts: [], watchlist: [film], regionCode: "US", interval: Self.interval,
+            requestedMovies: { [] }, isCurrent: { true },
+            movieAvailability: { _, region in
+                .init(
+                    regionCode: region,
+                    releaseEvents: [
+                        .init(kind: .digital, date: date.addingTimeInterval(-90 * 86_400), regionCode: region),
+                        .init(kind: .digital, date: date, regionCode: region),
+                    ])
+            }
+        )
+        XCTAssertTrue(snapshot.releases.isEmpty)
+        XCTAssertEqual(snapshot.failedSourceCount, 0)
+    }
+
     func testContinueWatchingFailureDoesNotDiscardConfirmedWatchedSeries() async throws {
         var series = MediaItem(id: "watched", title: "Watched", kind: .series)
         series.hasBeenPlayed = true
@@ -146,9 +165,10 @@ final class UpcomingFeedTests: XCTestCase {
         let newRelease = Self.release("new")
         var current = "old"
         let old = Task {
-            await model.refresh(scope: "old", namespace: "old", isCurrent: { current == "old" }) {
+            await model.refresh(scope: "old", namespace: "old", isCurrent: { current == "old" }) { progress in
                 started.fulfill()
                 await gate.wait()
+                await progress([oldRelease])
                 return .init(releases: [oldRelease])
             }
         }
@@ -161,6 +181,101 @@ final class UpcomingFeedTests: XCTestCase {
         await old.value
         XCTAssertEqual(model.releases.map(\.item.id), ["new"])
         XCTAssertFalse(model.isLoading)
+    }
+
+    func testEpisodesPublishWhilePersonalRequestsAreStillLoading() async throws {
+        var series = MediaItem(id: "show", title: "Show", kind: .series)
+        series.hasBeenPlayed = true
+        series.seriesStatus = .returning
+        let ended = (0..<4).map {
+            var show = MediaItem(id: "ended-\($0)", title: "Ended", seriesStatus: .ended, kind: .series)
+            show.hasBeenPlayed = true
+            return show
+        }
+        let provider = UpcomingFixtureProvider(kind: .jellyfin, items: ended + [series])
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        let model = UpcomingFeedModel()
+        let requests = UpcomingTestGate()
+        let visible = expectation(description: "Episode visible before requests finish")
+        let episode = Self.episode()
+        let task = Task {
+            await model.refresh(scope: "viewer", namespace: nil, isCurrent: { true }) { progress in
+                try await UpcomingFeedLoader.load(
+                    accounts: [account], watchlist: [], regionCode: "US", interval: Self.interval,
+                    requestedMovies: {
+                        await requests.wait()
+                        return []
+                    }, isCurrent: { true },
+                    onProgress: {
+                        progress($0)
+                        visible.fulfill()
+                    },
+                    schedule: { item, _ in
+                        if item.seriesStatus == .ended {
+                            await requests.wait()
+                            return []
+                        }
+                        return [episode]
+                    }
+                )
+            }
+        }
+        await fulfillment(of: [visible], timeout: 2)
+        XCTAssertEqual(model.releases.map(\.item.id), ["show"])
+        XCTAssertTrue(model.isLoading, "Progress is not a completed refresh")
+        await requests.open()
+        await task.value
+        XCTAssertEqual(model.releases.count, 1)
+        XCTAssertFalse(model.isLoading)
+        XCTAssertEqual(model.failedSourceCount, 0)
+    }
+
+    func testSameScopeInvalidationFinishesUsefulWorkThenLoadsLatestInputs() async {
+        let model = UpcomingFeedModel()
+        let gate = UpcomingTestGate()
+        let started = expectation(description: "Original refresh entered")
+        let old = Self.release("old")
+        let fresh = Self.release("fresh")
+        let original = Task {
+            await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
+                started.fulfill()
+                await gate.wait()
+                XCTAssertFalse(Task.isCancelled, "A same-viewer change must not restart the full scan")
+                return .init(releases: [old])
+            }
+        }
+        await fulfillment(of: [started], timeout: 2)
+        model.refreshRevision += 1
+        XCTAssertTrue(model.isLoading)
+        let latest = Task {
+            await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
+                .init(releases: [fresh])
+            }
+        }
+        await gate.open()
+        await original.value
+        await latest.value
+        XCTAssertEqual(model.releases.map(\.item.id), ["fresh"])
+        XCTAssertFalse(model.isLoading)
+    }
+
+    func testPartialFailureDoesNotRescanOnImmediateRevisitButExplicitRetryRecovers() async {
+        let model = UpcomingFeedModel()
+        let release = Self.release("show")
+        await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
+            .init(releases: [release], failedSourceCount: 1, failedTitleKeys: ["unavailable"])
+        }
+        await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
+            XCTFail("One unavailable title must not repeatedly rescan all viewing history")
+            return .init()
+        }
+        XCTAssertEqual(model.releases.count, 1)
+        XCTAssertEqual(model.failedSourceCount, 1)
+        model.refreshRevision += 1
+        await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
+            .init(releases: [release])
+        }
+        XCTAssertEqual(model.failedSourceCount, 0)
     }
 
     func testPartialRefreshRetainsOnlyFailedSourcesAndHideIsProfileScoped() async throws {
@@ -197,16 +312,16 @@ final class UpcomingFeedTests: XCTestCase {
 }
 
 private actor UpcomingTestGate {
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
     private var isOpen = false
     func wait() async {
         if isOpen { return }
-        await withCheckedContinuation { continuation = $0 }
+        await withCheckedContinuation { continuations.append($0) }
     }
     func open() {
         isOpen = true
-        continuation?.resume()
-        continuation = nil
+        for continuation in continuations { continuation.resume() }
+        continuations = []
     }
 }
 

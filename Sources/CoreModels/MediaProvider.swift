@@ -42,6 +42,10 @@ public protocol MediaProvider: Sendable {
     /// bounded request sizes rather than send that value as a server limit.
     func continueWatching(limit: Int) async throws -> [MediaItem]
 
+    /// The same Resume/Next Up feeds, optionally omitting extra parent-series
+    /// recency reads. Use `Int.max` when membership, rather than ordering, is needed.
+    func continueWatching(limit: Int, includeSeriesRecency: Bool) async throws -> [MediaItem]
+
     /// Recently added items across the user's libraries.
     func latest(limit: Int) async throws -> [MediaItem]
 
@@ -587,6 +591,10 @@ public extension MediaProvider {
         limit: Int, inLibraries libraryIDs: [String]?, separateNextUp: Bool
     ) async throws -> [MediaItem] {
         try await continueWatching(limit: limit, inLibraries: libraryIDs)
+    }
+
+    func continueWatching(limit: Int, includeSeriesRecency: Bool) async throws -> [MediaItem] {
+        try await continueWatching(limit: limit)
     }
 
     func homeNextUp(libraryID: String, limit: Int) async throws -> [MediaItem] { [] }

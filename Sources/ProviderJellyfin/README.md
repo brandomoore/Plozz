@@ -232,6 +232,9 @@ feed cannot turn that failure into authoritative empty history. Home and
 series-resume callers receive the failure instead. Support details identify
 Resume and Next Up separately; bounded recent activity records only scope,
 endpoint counts and the number of successful feeds, without media or account IDs.
+Upcoming requests the same complete membership with `includeSeriesRecency: false`.
+That skips parent-date and last-played-episode enrichment only; it must not drop
+Next Up, since series containers can omit otherwise valid viewing history.
 
 Series-specific resume lookups allow resumable `/Shows/NextUp` candidates.
 Compatible bridges can return an empty series-scoped `/Items/Resume` even when

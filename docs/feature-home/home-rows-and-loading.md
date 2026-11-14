@@ -7,7 +7,10 @@
 `UpcomingFeedLoader` builds the personal release agenda from the active profile's
 authorized accounts, resolved universal watchlist and own Seerr requests. It reads
 watched series across paged provider libraries, including caught-up shows, and
-uses Continue Watching to include a first unfinished episode. Merely owning,
+uses the complete Resume/Next Up feed to include a first unfinished episode and
+history missing from a series container. It omits optional parent-recency reads,
+not feed membership; Upcoming orders by release date rather than playback recency.
+Ordinary Continue Watching keeps its existing recency enrichment. Merely owning,
 watchlisting or requesting an unwatched show does not enroll it. Movies come from
 the watchlist and personal requests; the household request list is never used.
 Seerr is optional.
@@ -17,7 +20,12 @@ listings, AniList's next episode, and regional TMDB movie release events. A
 calendar query has a separate cache identity and cannot replace the detail
 page's next-episode record with yesterday's episode. No announcement is treated
 as proof of library ownership or playability; cards open existing title details.
-Movie dates are omitted when no device region is available.
+Movies have one entry, on their first announced digital release date in the
+device region. Theatrical, premiere, broadcast, and physical-disc dates neither
+create cards nor substitute for an unknown digital date. Later digital entries
+do not reintroduce an already-released movie. Movie dates are omitted when no
+device region is available. There are no release-type filters or repetitive
+movie-release labels; episode cards retain season/episode information.
 
 The current window is 30 days back through 90 days ahead. TV starts at Today;
 earlier days are selected through the calendar, keeping Up from the first card
@@ -27,10 +35,17 @@ Filters are page-local; hidden titles persist per profile and also affect Home.
 
 `HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
 request-connection changes invalidate in-flight results. Viewing/watchlist
-mutations, request attempts, foreground entry and opening Upcoming refresh the
-feed. Concurrent requests coalesce; successful unchanged feeds remain fresh for
-six hours. A failed source is reported and its previous same-scope entries remain
-available rather than turning an outage into a successful empty agenda.
+mutations, request attempts and foreground entry refresh the feed. Opening
+Upcoming reuses Home's existing work and data rather than restarting it.
+Episode calendars and personal-movie loading run independently, publishing each
+completed title while the rest continue. Calendar concurrency remains bounded;
+returning and recently watched series are checked first without omitting older
+or ended series. Same-scope changes finish useful in-flight work and coalesce
+into a follow-up refresh using the latest inputs. Successful unchanged feeds
+remain fresh for six hours; partial/error results have a one-minute automatic-retry
+cooldown, while explicit Retry bypasses it. A failed source is reported and its
+previous same-scope entries remain available rather than turning an outage into
+a successful empty agenda.
 Successful empty calendar listings retain their completeness in the provider
 cache. Unavailable listings are not cached as authoritative negatives, so Retry
 can recover subject to the provider's existing outage cooldown.
@@ -47,7 +62,15 @@ including Showcase card-focus reporting and the standard browse action.
 (`PLOZZ_UPCOMING_LIVE=1`). It checks the production calendar path against the full
 episode listing, including the history window, without media-server credentials.
 The deterministic runtime tests separately cover provider paging, first-episode
-history, personal interests, scope cancellation and partial-source retention.
+history, personal interests, progressive publication, scope cancellation,
+coalesced refreshes and partial-source retention. `UpcomingLivePerformanceTests`
+uses an explicitly authorized ephemeral internal-server broker to measure first
+content, first upcoming content, full completion, repeat visits and real request
+counts against production Jellyfin/Plex providers and metadata. These are
+data-publication timings, not rendered-frame or physical-device measurements.
+Both dedicated identities must have watched returning shows with announced
+future episodes: an empty future feed cannot pass as fast loading. Repeat
+visits must preserve the feed without additional server requests.
 
 ## History diagnostics
 

@@ -6,6 +6,7 @@
     public struct UpcomingView: View {
         @Bindable private var model: UpcomingFeedModel
         @Environment(\.horizontalSizeClass) private var sizeClass
+        @Environment(\.themePalette) private var palette
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
         @State private var didScrollInitially = false
@@ -59,7 +60,7 @@
                 }
                 .padding(.horizontal)
                 .navigationTitle("Upcoming")
-                .onAppear { model.refreshRevision += 1 }
+                .tint(palette.primaryText)
                 .sheet(isPresented: $showingCalendar) {
                     UpcomingCalendar(selectedDay: $selectedDay, interval: interval)
                 }
@@ -143,22 +144,6 @@
                                         model.filters.interests.insert(interest)
                                     } else {
                                         model.filters.interests.remove(interest)
-                                    }
-                                }
-                            ))
-                    }
-                }
-                Section("Movie releases") {
-                    ForEach(UpcomingReleaseKind.allCases.filter { $0 != .episode }, id: \.self) { kind in
-                        Toggle(
-                            kind.title,
-                            isOn: Binding(
-                                get: { model.filters.releaseKinds.contains(kind) },
-                                set: { enabled in
-                                    if enabled {
-                                        model.filters.releaseKinds.insert(kind)
-                                    } else {
-                                        model.filters.releaseKinds.remove(kind)
                                     }
                                 }
                             ))
@@ -255,7 +240,10 @@
                             })
                         else { return nil }
                         let date = release.date.formatted(.dateTime.month(.abbreviated).day())
-                        return "\(date) · \(String(localized: release.subtitle))"
+                        if let subtitle = release.subtitle {
+                            return "\(date) · \(String(localized: subtitle))"
+                        }
+                        return LocalizedStringResource("\(date)")
                     },
                     onSelect: { navigate?($0) }
                 )
@@ -323,7 +311,9 @@
                         .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 6) {
                             Text(verbatim: release.item.title).font(.headline).lineLimit(2)
-                            Text(release.subtitle).font(.subheadline).foregroundStyle(.secondary)
+                            if let subtitle = release.subtitle {
+                                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                            }
                             if showsDate {
                                 Text(release.date, format: .dateTime.month(.abbreviated).day())
                                     .font(.caption).foregroundStyle(.secondary)
