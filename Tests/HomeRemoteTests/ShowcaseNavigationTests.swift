@@ -20,11 +20,17 @@ final class ShowcaseNavigationTests: XCTestCase {
         try checkShortRows(navigation: "--top-bar-home")
     }
 
-    private func checkShortRows(navigation: String, showsHero: Bool = true) throws {
+    func testHighlightedShowcaseChoosesNearestCardInShortRows() throws {
+        try checkShortRows(navigation: "--native-sidebar-home", focusStyle: "highlight")
+    }
+
+    private func checkShortRows(
+        navigation: String, showsHero: Bool = true, focusStyle: String = "system"
+    ) throws {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = [
-            "--production-home-fixture", navigation, "--short-showcase-rows",
+            "--production-home-fixture", navigation, "--short-showcase-rows", "--focus-style=\(focusStyle)",
             showsHero ? "--hero-showcase-home" : "--immersive-home"
         ]
         app.launch()
@@ -68,13 +74,33 @@ final class ShowcaseNavigationTests: XCTestCase {
             moveToRightSide()
             XCUIRemote.shared.press(.down)
             try assertRow(shortStart..<(shortStart + count))
+            XCTAssertEqual(focusedCard(in: app).label, "Fixture movie \(shortStart + count - 1)",
+                           "Entering from the right must choose the nearest card, not the row's first card.")
             XCUIRemote.shared.press(.down)
             try assertRow(wideStart..<(wideStart + 20))
             moveToRightSide()
             XCUIRemote.shared.press(.up)
             try assertRow(shortStart..<(shortStart + count))
+            XCTAssertEqual(focusedCard(in: app).label, "Fixture movie \(shortStart + count - 1)")
             XCUIRemote.shared.press(.down)
             try assertRow(wideStart..<(wideStart + 20))
+            for _ in 0..<20 {
+                if focusedCard(in: app).label == "Fixture movie \(wideStart)" { break }
+                XCUIRemote.shared.press(.left)
+            }
+            try assertRow(wideStart..<(wideStart + 1))
+            XCUIRemote.shared.press(.up)
+            try assertRow(shortStart..<(shortStart + 1))
+            XCUIRemote.shared.press(.down)
+            try assertRow(wideStart..<(wideStart + 20))
+            if count == 3 {
+                XCUIRemote.shared.press(.right)
+                try assertRow((wideStart + 1)..<(wideStart + 2))
+                XCUIRemote.shared.press(.up)
+                try assertRow((shortStart + 1)..<(shortStart + 2))
+                XCUIRemote.shared.press(.down)
+                try assertRow(wideStart..<(wideStart + 20))
+            }
         }
     }
 

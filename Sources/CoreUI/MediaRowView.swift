@@ -771,8 +771,8 @@ public struct MediaRowView: View {
                     // action row (commit eddd937e). Ordinary rows leave this inner
                     // viewport unsectioned so vertical navigation
                     // keeps tvOS's column-aligned X-projection (the "focus jumps to the
-                    // opposite side" bug, commit f812fe64). Showcase bridges short-row
-                    // gutters at its outer row boundary instead.
+                    // opposite side" bug, commit f812fe64). Showcase bridges empty
+                    // gutters to the nearest edge card with native focus guides.
                     .focusSectionIf(gatesFocus || episodeEntry != nil)
                     .navigationEntryFocus(reservesLoadingFocus && !items.isEmpty ? .content : nil)
                     .onAppear { applyInitialFocus(using: proxy) }
