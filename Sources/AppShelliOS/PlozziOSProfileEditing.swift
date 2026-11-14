@@ -34,7 +34,16 @@ struct PlozziOSSettingsToolbarItem: ToolbarContent {
         #endif
     }
 
+    @ToolbarContentBuilder
     private var item: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            profileItem.sharedBackgroundVisibility(.hidden)
+        } else {
+            profileItem
+        }
+    }
+
+    private var profileItem: some ToolbarContent {
         ToolbarItem(placement: placement) {
             PlozziOSSettingsAvatarButton(action: action)
         }
@@ -63,7 +72,7 @@ struct PlozziOSSettingsAvatarButton: View {
 
     var body: some View {
         let profile = appModel.profiles.activeProfile
-        Button(action: action) {
+        let button = Button(action: action) {
             // Native toolbars can extract the Image without its view modifiers,
             // especially on Mac. Bake the crop, size and original colors into
             // the image while leaving the native button and hit target intact.
@@ -71,6 +80,15 @@ struct PlozziOSSettingsAvatarButton: View {
         }
         .buttonBorderShape(.circle)
         .accessibilityLabel(Text("Settings for \(profile.name)"))
+
+        if #available(iOS 26.0, *) {
+            button
+                .buttonStyle(.glass)
+                .buttonSizing(.flexible)
+                .frame(width: size + 8, height: size + 8)
+        } else {
+            button
+        }
     }
 }
 

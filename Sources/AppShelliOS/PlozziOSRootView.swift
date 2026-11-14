@@ -1249,8 +1249,8 @@ struct PlozziOSTabShell: View {
                     }
                     .environment(\.plozziOSIsOverflowDestination, isOverflow)
                     .environment(\.plozziOSOverflowNavigation, overflowNavigation)
+                    .plozzOpaqueNavigationChrome()
             }
-            .plozzOpaqueNavigationChrome()
             .id(destination == .downloads ? downloadNavigationID : nil)
         }
     }

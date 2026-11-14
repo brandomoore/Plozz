@@ -839,6 +839,7 @@ private struct HomeWidthFixture: View {
 
 struct SeriesHeaderMobileProvider: MediaProvider {
     var artworkURL: URL? = nil
+    var latestItems: [MediaItem] = []
     var kind: ProviderKind { .jellyfin }
     var session: UserSession {
         UserSession(
@@ -880,7 +881,7 @@ struct SeriesHeaderMobileProvider: MediaProvider {
     }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [episode] }
-    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { Array(latestItems.prefix(limit)) }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         MediaPage(items: [], startIndex: 0, totalCount: 0)
     }

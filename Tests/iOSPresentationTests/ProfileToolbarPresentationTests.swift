@@ -2,6 +2,8 @@
 import CoreModels
 import CoreNetworking
 import CoreUI
+import FeatureAuth
+import FeatureHomeCore
 import SwiftUI
 import UIKit
 import XCTest
@@ -9,6 +11,132 @@ import XCTest
 
 @MainActor
 final class ProfileToolbarPresentationTests: XCTestCase {
+    func testHomeProfileSharesTheTopTabRowAcrossSidebarChanges() async throws {
+        try await assertHomeProfileAlignment(reduceTransparency: false)
+    }
+
+    func testOpaqueHomeProfileSharesTheTopTabRowAcrossSidebarChanges() async throws {
+        try await assertHomeProfileAlignment(reduceTransparency: true)
+    }
+
+    func testAppShellKeepsProfileInTheNativeTabRow() async throws {
+        try await assertHomeProfileAlignment(reduceTransparency: false, usesShell: true)
+    }
+
+    private func assertHomeProfileAlignment(reduceTransparency: Bool, usesShell: Bool = false) async throws {
+        let suite = "HomeToolbar-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let profile = app.profiles.add(name: "Toolbar Fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer { app.profiles.remove(profile.id) }
+        app.settings.hero.settings.sources = [.recentlyAdded]
+        app.settings.hero.settings.isEnabled = true
+        app.settings.hero.settings.autoAdvance = false
+        app.settings.hero.settings.trailersEnabled = false
+        var provider = SeriesHeaderMobileProvider(artworkURL: try await photoURL())
+        provider.latestItems = [provider.show]
+        let account = Account(id: "header-fixture", from: provider.session)
+        let model = HomeViewModel(
+            accounts: [ResolvedAccount(account: account, provider: provider)],
+            layoutStore: InMemoryHomeLayoutStore(), contentStore: NoOpHomeContentStore()
+        )
+        defer { model.invalidate() }
+        await model.load()
+        let sidebar = PlozziOSSidebarGeometryModel()
+        let homeBox = LazyViewState<HomeViewModel>()
+        defer { homeBox.discard { $0.invalidate() } }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView:
+            Group {
+                if usesShell {
+                    PlozziOSTabShell(
+                        appModel: app, homeViewModelBox: homeBox, onAddServer: {},
+                        showingSettings: .constant(false), showingProfileSwitcher: .constant(false),
+                        deferredPairingURL: .constant(nil), systemColorScheme: .dark
+                    )
+                } else {
+                    TabView {
+                        Tab("Home", systemImage: "house") {
+                            NavigationStack {
+                                PlozziOSHomeView(appModel: app, viewModel: model, onAddServer: {}, onShowSettings: {})
+                                    .background {
+                                        PlozziOSHomeSidebarOverlapProbe(enabled: true, geometryModel: sidebar)
+                                            .frame(width: 0, height: 0)
+                                    }
+                                    .plozzOpaqueNavigationChrome()
+                            }
+                        }
+                        Tab("Music", systemImage: "music.note") { Color.black }
+                        Tab("Downloads", systemImage: "arrow.down") { Color.black }
+                        Tab("Search", systemImage: "magnifyingglass") { Color.black }
+                        Tab("Discover", systemImage: "sparkles") { Color.black }
+                    }
+                    .tabViewStyle(.sidebarAdaptable)
+                }
+            }
+            .environment(app)
+            .environment(sidebar)
+            .environment(HeroTrailerController())
+            .environment(\.themePalette, .dark)
+            .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.plozzReduceTransparency, reduceTransparency)
+            .preferredColorScheme(.dark)
+        )
+        window.frame = CGRect(x: 0, y: 0, width: 1194, height: 834)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitForHostedLayout(window)
+        let tabs = try XCTUnwrap(controller(UITabBarController.self, in: host))
+        for size in [CGSize(width: 1194, height: 834), CGSize(width: 834, height: 1194)] {
+            window.frame.size = size
+            try await waitForHostedLayout(window)
+            for hidden in [true, false, true] {
+                tabs.sidebar.isHidden = hidden
+                try await waitForHostedLayout(window)
+                let avatar = try XCTUnwrap(avatarButton(in: window), hierarchy(window))
+                let frame = avatar.convert(avatar.bounds, to: window)
+                _ = capture(window, name: "home-profile-\(Int(size.width))-sidebar-hidden-\(hidden)")
+                XCTAssertEqual(tabs.sidebar.isHidden, hidden)
+                XCTAssertTrue(window.bounds.contains(frame))
+                if hidden {
+                    let tab = try XCTUnwrap(descendants(window).first {
+                        ($0 as? UILabel)?.text == "Home"
+                            && $0.convert($0.bounds, to: window).minY >= 0
+                            && $0.convert($0.bounds, to: window).maxY < 100
+                            && $0.bounds.height > 10
+                    }, hierarchy(window))
+                    let tabFrame = tab.convert(tab.bounds, to: window)
+                    XCTAssertEqual(frame.midY, tabFrame.midY, accuracy: 3,
+                                   "The profile button must share the top navigation row, not sit below it.")
+                }
+            }
+        }
+    }
+
+    private func controller<T: UIViewController>(_ type: T.Type, in owner: UIViewController) -> T? {
+        if let match = owner as? T { return match }
+        for child in owner.children {
+            if let match = controller(type, in: child) { return match }
+        }
+        return nil
+    }
+
+    private func descendants(_ view: UIView) -> [UIView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+
     func testNativeToolbarKeepsPhotoCompactAndInOriginalColors() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfile
@@ -23,6 +151,14 @@ final class ProfileToolbarPresentationTests: XCTestCase {
             XCTAssertLessThanOrEqual(button.bounds.width, 64, "A profile photo must not widen the toolbar.")
             XCTAssertLessThanOrEqual(button.bounds.height, 64)
             let image = self.capture(button, name: "native-toolbar-photo")
+            XCTAssertEqual(button.bounds.width, button.bounds.height, accuracy: 0.5,
+                           "The native profile control must remain circular.")
+            let bounds = try self.greenPixelBounds(image)
+            XCTAssertEqual(bounds.width, bounds.height, accuracy: 1)
+            for inset in [bounds.minX, bounds.minY, image.size.width - bounds.maxX, image.size.height - bounds.maxY] {
+                XCTAssertGreaterThanOrEqual(inset, 2)
+                XCTAssertLessThanOrEqual(inset, 4.5)
+            }
             XCTAssertGreaterThan(try self.greenPixelCount(image), 100,
                                  "The photo must keep its pixels instead of becoming a template-colored square.")
             XCTAssertTrue(button.isUserInteractionEnabled)
@@ -106,7 +242,10 @@ final class ProfileToolbarPresentationTests: XCTestCase {
            let customView = item.customView {
             return customView
         }
-        return view.subviews.lazy.compactMap { self.avatarButton(in: $0) }.first
+        for child in view.subviews {
+            if let button = avatarButton(in: child) { return button }
+        }
+        return nil
     }
 
     private func hierarchy(_ view: UIView, depth: Int = 0) -> String {
@@ -123,7 +262,7 @@ final class ProfileToolbarPresentationTests: XCTestCase {
             UIColor.red.setFill()
             context.fill(CGRect(origin: .zero, size: size))
             UIColor.green.setFill()
-            context.fill(CGRect(x: 100, y: 0, width: 100, height: 100))
+            context.fill(CGRect(x: 80, y: 0, width: 140, height: 100))
         }
         let data = try XCTUnwrap(image.pngData())
         let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
@@ -154,6 +293,26 @@ final class ProfileToolbarPresentationTests: XCTestCase {
 
     private func greenPixelCount(_ image: UIImage) throws -> Int {
         try pixelCount(image) { r, g, b in g > 180 && r < 80 && b < 80 }
+    }
+
+    private func greenPixelBounds(_ image: UIImage) throws -> CGRect {
+        let cg = try XCTUnwrap(image.cgImage)
+        var bytes = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(
+                data: buffer.baseAddress, width: cg.width, height: cg.height, bitsPerComponent: 8,
+                bytesPerRow: cg.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        }
+        let pixels = stride(from: 0, to: bytes.count, by: 4).filter {
+            bytes[$0 + 1] > 180 && bytes[$0] < 80 && bytes[$0 + 2] < 80
+        }.map { CGPoint(x: ($0 / 4) % cg.width, y: ($0 / 4) / cg.width) }
+        let left = try XCTUnwrap(pixels.map(\.x).min())
+        let top = try XCTUnwrap(pixels.map(\.y).min())
+        return CGRect(x: left, y: top, width: try XCTUnwrap(pixels.map(\.x).max()) - left + 1,
+                      height: try XCTUnwrap(pixels.map(\.y).max()) - top + 1)
     }
 
     private func redPixelCount(_ image: UIImage) throws -> Int {

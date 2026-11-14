@@ -206,6 +206,14 @@ registry.
   effect. Native sidebar, tab, and profile controls remain available with their
   system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
 
+- **iPad tabs and profile actions share the native top row.** Apply opaque
+  navigation chrome inside each tab's `NavigationStack`, not around the stack:
+  an outer background host prevents UIKit from integrating the navigation bar
+  with the top tabs. Sidebar transitions retain native placement. On iOS 26 and
+  later, profile actions use a circular native glass button with a 36-point avatar
+  and four-point inset, without a second shared toolbar background. Photos, emoji,
+  and symbols keep their original colors; older systems retain native toolbar styling.
+
 - **Mac rails fit complete cards plus a next-card preview.** Home, library
   recommendations, related titles, extras, episodes, and cast derive widths from
   their actual content viewport. `DesktopMediaRailLayout` chooses a whole-card
