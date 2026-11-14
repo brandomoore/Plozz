@@ -15,7 +15,7 @@ evidence gaps, not duplicate implementation instructions.
 | Priority | Evidence / uncertainty | Next action and acceptance criterion |
 | --- | --- | --- |
 | Remaining schedule size | The old "Live TV preferences" category included generated-channel definitions and full library-item snapshots. Downloaded IPTV guides/catalogues remain local. Existing published duplicates and overlapping-but-different item sets still occupy space. | Use the separated breakdown, including pending bytes, to attribute actual data. A more compact cross-device format needs explicit migration/older-client compatibility, not removal of required schedule inputs. |
-| Remaining guide work | Large downloads now reuse temporary file-backed data. Each channel batch still parses the document, and the first download still assembles Data. | Profile the remaining parsing/peak-memory cost before adding an indexed representation. Preserve exact matching, windows, cancellation and HTTP cache directives. |
+| Remaining guide work | Downloads now stream into temporary file-backed data and account guides use reusable station indexes. Expired documents are still downloaded before digest comparison. | Measure revalidation traffic before adding HTTP validators. Preserve exact matching, windows, cancellation and HTTP cache directives. |
 | Playback fault breadth | Bounded synthetic sessions are not an evening of real-provider viewing. | Cover discontinuities and key/init changes independently of session renewal. Require advancing decoded images, bounded recovery, preserved pause intent and zero owned requests after stop. |
 | Plex shutdown | Shared and Plex lease owners serialize updates before closing; obsolete queued reports may delay cleanup behind a slow request. No user-visible failure is demonstrated. | Reproduce blocked transport plus queued updates before changing ordering. Preserve exactly-once owned-session cleanup and never release another viewer's tuner. |
 | Real-provider confirmation | Simulator fixtures do not establish Dispatcharr interoperability or resolution of the Level Up report. | Exercise representative authorized server/feed inputs, including audio on hardware. Keep this distinct from local installation success. |
@@ -119,9 +119,11 @@ and its fixture resources for the actual workload.
 
 ## Deferred behavior and features
 
-Partial guide publication requires explicit incomplete-coverage/error semantics;
-the current array-or-error API can discard new partial rows when a later required
-source fails. Do not silently turn that into success or weaken auth/cancellation.
+Independent guide-source failures now carry usable rows through
+`ServerLiveTVPartialGuideError`; consumers preserve the failure and old listings
+for uncovered channels. Publishing part of a malformed XML document remains
+deliberately unsupported. Do not silently turn either failure into success or
+weaken auth/cancellation.
 Dedicated Dispatcharr onboarding, DVR, provider archive catch-up, recommendation
 shelves and sports integrations remain deferred, not reliability work.
 
@@ -150,7 +152,7 @@ Behavioral references, not copied implementations:
   safeguards, and logs numeric locations/codes instead of source fragments.
 - [Jellyfin.XmlTv](https://github.com/jellyfin/Jellyfin.XmlTv/blob/6c8c302c8520e5f41cd51dd392ac631f97179d82/src/Jellyfin.XmlTv/XmlTvReader.cs)
   accepts reduced-precision dates and disables character checks in its XML
-  reader. Plozz accepts minute precision but does not copy broad character
+  reader. Plozz accepts reduced precision but does not copy broad character
   validation bypasses or guess repairs for malformed XML. Its text selection
   now follows the same requested-language, untagged, first-usable fallback order
   without retaining every translation.
@@ -197,3 +199,109 @@ parse summaries distinguish unmatched stations, out-of-window listings and
 unusable row fields without exposing feed content. These changes use Plozz's
 existing implementations; no reference source was transplanted. They do not
 establish compatibility with an unavailable failing provider feed.
+
+### Refresh coordination and real-guide evidence
+
+Lume's [refresh gate](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Sync/EPGSyncService.swift)
+prevents background EPG work from racing playlist sync and cancels an already
+running background refresh when content sync starts. Plozz's catalogue and guide
+transfers previously had independent admission. The new provider-local queue
+serializes catalogue imports, XMLTV downloads and Xtream per-channel guide requests.
+It prioritizes queued catalogue work but keeps an active transfer intact rather
+than throwing away its bytes. Saved playback-locator reads remain available.
+This is an independently implemented policy, not copied reference code.
+
+Public snapshots captured November 14, 2026:
+
+| Feed | Declared stations | Source programmes | Exact-ID sample | Compared listings |
+| --- | ---: | ---: | ---: | ---: |
+| Pluto TV US | 457 | 9,224 | 12 stations | 259 |
+| EPGShare US2 | 792 | 82,203 | 12 stations | 1,482 |
+
+The capture tool uses an independent XML/date reader to record explicit schedule
+intervals. Production gzip parsing and indexed streaming agree with those intervals
+for all 24 sampled stations, not merely with each other. The sample IDs are drawn
+from guide declarations: this is not evidence of automatic matching against a
+real subscriber's playlist, correct regional assignment, or broadcast accuracy.
+Raw snapshots, names and listings stay in ignored local storage, not this document.
+
+A separate opt-in live run used real URLSession networking and the production
+downloader, then indexed every declared station through the production parser.
+Pluto returned 998,824 compressed bytes and 9,224 windowed listings across 457
+stations; EPGShare returned 6,833,546 bytes and 70,740 windowed listings across
+792 stations. The latter count differs from the source total because ingestion
+applies the requested time window. Full-feed ingestion is not an independent
+correctness comparison for every listing; the exact interval comparison above
+remains limited to the 24 sampled stations.
+
+The same captured payloads also exercise a controlled single-connection transport.
+An uncoordinated production-HTTP control receives one HTTP 503 when catalogue and
+guide requests overlap. The coordinated client completes both with one active
+refresh request and zero refusals. Tests cover both arrival orders, queued
+catalogue priority, cancellation, teardown, cache reuse and account isolation.
+This proves the scheduling decision under that declared constraint, not that a
+particular public or commercial provider applies it. No concurrency stress is
+sent to the public endpoints and no stream is opened.
+
+Do not copy Lume's daily guide default without checking coverage: the sampled
+Pluto stations had only 15.38-19.41 hours of future listings at capture, while the
+EPGShare sample had 53.16-60.49 hours. A fixed 24-hour-only refresh could outlive
+the first sample's guide horizon. This change therefore leaves Plozz's existing
+freshness/window behavior and settings unchanged. Proactive cadence and per-feed
+account controls remain separate product work, not claims of this change.
+
+### Recommended automatic refresh policy
+
+The reference players do not establish a universal paid-provider interval:
+
+| Primary source | Verified behavior |
+| --- | --- |
+| [Lume frequency settings](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Sync/SyncFrequency.swift#L77-L105) | Guide default is daily, independently of the three-day playlist default. Six-hour, daily, three-day and weekly choices exist. |
+| [Jellyfin guide task](https://github.com/jellyfin/jellyfin/blob/2953ed632c9277351483eff04f87a8276390691c/src/Jellyfin.LiveTv/Guide/RefreshGuideScheduledTask.cs#L62-L73) and [XMLTV cache](https://github.com/jellyfin/jellyfin/blob/2953ed632c9277351483eff04f87a8276390691c/src/Jellyfin.LiveTv/Listings/XmlTvListingsProvider.cs#L30-L159) | The task defaults to 24 hours. Its separate one-hour document cache/failure cooldown preserves the last downloaded file on ordinary refresh failure. Cache lifetime is not the scheduled refresh interval. |
+| [Kodi IPTV Simple settings](https://github.com/kodi-pvr/pvr.iptvsimple/blob/0159d1149b33df2fcb4123087790af1fa4f516f2/pvr.iptvsimple/resources/instance-settings.xml#L63-L105) | Combined M3U/XMLTV auto-refresh defaults to disabled. Optional repeated refresh defaults to 60 minutes; optional daily refresh defaults to 04:00. The 60-minute value is not an enabled default. |
+
+Official TiviMate and Sparkle pages confirm user-supplied playlist/guide support,
+but did not establish current refresh defaults. Reseller claims and user-count
+assumptions are not evidence of provider publication cadence or connection limits.
+No authorized paid IPTV account was available for this comparison.
+
+Recommend an automatic daily baseline with an earlier coverage-aware check, not
+an interval the user must understand or a promise to refresh while the OS has
+suspended the app. On authorized foreground/resume and guide use, show stored
+listings immediately and coalesce due work through the existing preparation
+owner. A catalogue change should invalidate affected mappings and request needed
+guide preparation, not unconditionally download an unchanged feed again.
+
+As initial policy values, check earlier when previously populated, relevant
+stations approach six hours of remaining listings; allow at most one automatic
+early attempt per hour per feed. These are proposed safety margins, not measured
+optima. Use actual populated programme intervals, not the index's requested
+window bounds or one distant outlier. Missing/unsupported stations must not keep
+the whole feed permanently due. First use or a missing requested window still
+needs on-demand preparation.
+
+An unchanged response is a successful freshness check, not new coverage.
+Back off repeated unchanged or failed early checks, respect provider Retry-After,
+retain last-good authorized rows and expose partial feed failures. Do not
+invent listings or refetch continuously when the provider itself has a gap.
+Keep a manual refresh action, without bypassing provider refusal/cooldown rules.
+Account, profile, source and authorization fences apply to every trigger.
+
+Public response headers also support measuring conditional revalidation before
+adding more automatic traffic: Pluto's final response advertised an ETag and
+300-second max-age; EPGShare advertised ETag, Last-Modified and 14,400-second
+max-age. Neither value proves how often new programme data is published.
+One conditional GET against each unchanged feed returned HTTP 304 with zero
+response-body bytes, compared with 7,832,370 combined bytes for the full bodies.
+This measures avoided body transfer, not total network traffic or Plozz behavior;
+the conditional requests were a separate HTTP probe.
+Validators must remain scoped to the exact source and authorization context and
+honor no-store/no-cache semantics. This patch does not implement validators or
+the proposed cadence.
+
+Before enabling that policy, replay advancing time, an unchanged short-horizon
+feed, a permanently unmapped station, partial source failure and a long provider
+cooldown. Measure completed request/byte counts and actual available guide
+coverage across publication cycles. Include an authorized paid-provider lineup
+when one is available; the public corpus does not establish subscriber matching
+or the distribution of real users' provider behaviors.

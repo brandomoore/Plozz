@@ -524,6 +524,16 @@ conditional fetching, this path still downloads expired bodies before comparing
 their digest. A changed catalog projection, language, or requested interval outside
 the retained horizon requires a new import.
 
+Catalogue imports, XMLTV downloads and Xtream per-channel guide requests share
+cancellable admission within each IPTV provider instance. They do not compete
+for a provider connection. A started transfer finishes without being discarded;
+queued catalogue work precedes the next guide transfer. Cached guide reads and
+saved playback-locator reads need no admission, and other account instances remain
+independent. Teardown rejects queued work; retry backoff does not hold admission.
+This intentionally trades waiting behind an active transfer for avoiding its
+cancellation and re-download. It does not serialize playback streams or promise
+that unrelated provider APIs never overlap.
+
 The bounded-retry comparison used
 [Kodi IPTV Simple's XMLTV loader](https://github.com/kodi-pvr/pvr.iptvsimple/blob/f4071e16c747e1a13d4710e249cb03ff11204f17/src/iptvsimple/Epg.cpp)
 and [Jellyfin's XMLTV download/cache handling](https://github.com/jellyfin/jellyfin/blob/5b385862fb97201d954a6ac7c9c745d791a738fa/src/Jellyfin.LiveTv/Listings/XmlTvListingsProvider.cs).
@@ -583,6 +593,17 @@ outside the window, unmatched station or unresolved missing stop). Account index
 imports identify themselves as `stationIndex`, not final per-channel matches.
 Both account projections and standalone cache settings include the parser version,
 so an older empty index cannot mask newly supported timestamps.
+
+`tools/iptv-guide-corpus.py` captures two public XMLTV feeds into ignored local
+storage, with hashes and independent exact-ID schedule references. The opt-in
+`IPTVGuideRefreshTests` replay those bytes through production networking/parsing
+and a controlled single-connection transport; ordinary tests do not download
+guides. A separate `PLOZZ_LIVE_GUIDE_PROBE=1` opt-in exercises the public endpoints
+through the production downloader and full station-index parser. Neither route
+opens a stream or establishes commercial-provider limits. See
+[the comparison evidence](live-tv-reliability.md#refresh-coordination-and-real-guide-evidence)
+for the measured sample and remaining limitations.
+
 Playlist and imported-file accounts without an explicit or playlist-declared
 guide immediately report no guide capability. Both platforms show "No program
 guide available" and skip guide warmup and browsing requests instead of showing

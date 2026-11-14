@@ -35,6 +35,16 @@ actor IPTVClient: ApplicationStorageParticipant {
     private let progress: @Sendable (IPTVImportProgress) -> Void
     var pendingCatalogRequestCount: Int { refreshWaiters.count }
     private var didReclaimJournal = false
+    private enum RefreshWork: String { case catalog, guide }
+    private struct RefreshAdmission {
+        let id: UUID
+        let kind: RefreshWork
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+    private var activeRefreshWork: UUID?
+    private var refreshAdmissions: [RefreshAdmission] = []
+    private var isClosed = false
+    var pendingRefreshAdmissionCount: Int { refreshAdmissions.count }
 
     private func reclaimJournalOnce() throws {
         try storageLifecycle.checkAccess()
@@ -73,6 +83,7 @@ actor IPTVClient: ApplicationStorageParticipant {
     func prepareForSuspension() {
         guard !storageLifecycle.isActive else { return }
         refresh?.cancel()
+        cancelRefreshAdmissions()
         didReclaimJournal = false
         do { try catalog.closeForSuspension() }
         catch { PlozzLog.networking.error("IPTV catalogue suspension close failed") }
@@ -249,6 +260,8 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     private func importCatalog(_ library: String) async throws {
+        let admission = try await acquireRefreshWork(.catalog)
+        defer { releaseRefreshWork(admission) }
         let diagnostic = IPTVSetupDiagnostics.current
         if credential.mode == .xtream,
            authenticatedAt.map({ Date().timeIntervalSince($0) > 300 }) != false {
@@ -709,9 +722,12 @@ actor IPTVClient: ApplicationStorageParticipant {
         guard credential.mode == .xtream else { return [] }
         let channel = try await record(channelID)
         guard let nativeID = channel.streamID else { throw AppError.notFound }
+        let admission = try await acquireRefreshWork(.guide)
+        defer { releaseRefreshWork(admission) }
         let data = try await object(url: endpoint(action: "get_simple_data_table", extra: [
             URLQueryItem(name: "stream_id", value: nativeID)
         ]))
+        guard !isClosed else { throw CancellationError() }
         if data.object("user_info").integer("auth") == 0 || data.integer("auth") == 0 {
             throw IPTVError.authentication
         }
@@ -811,6 +827,13 @@ actor IPTVClient: ApplicationStorageParticipant {
             IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
             return XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true)
         }
+        let admission = try await acquireRefreshWork(.guide)
+        defer { releaseRefreshWork(admission) }
+        // Another admitted reader may have populated the cache while this one waited.
+        if retainsRawResponse, let cachedGuide, cachedGuide.url == url, cachedGuide.expires > Date() {
+            IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
+            return XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true)
+        }
         let (bytes, response) = try await http.bytes(
             url: url, headers: credential.guideHeaders(for: url), guideRequest: true,
             receivedResponse: receivedResponse
@@ -854,6 +877,8 @@ actor IPTVClient: ApplicationStorageParticipant {
             }
         }
         try Task.checkCancellation()
+        guard !isClosed else { throw CancellationError() }
+        try storageLifecycle.checkAccess()
         try writer.append(buffer)
         let data = try writer.finish()
         progress?(.init(stage: .downloading, completed: received, total: total))
@@ -900,10 +925,66 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     func cancel() {
+        isClosed = true
         refresh?.cancel()
+        cancelRefreshAdmissions()
         clearGuideCache()
         guideRefreshes.removeAll()
         http.cancel()
+    }
+
+    /// Catalogue and guide transfers share one provider account. Keep a started
+    /// transfer intact; admit queued catalogues before the next guide transfer.
+    private func acquireRefreshWork(_ kind: RefreshWork) async throws -> UUID {
+        try Task.checkCancellation()
+        try storageLifecycle.checkAccess()
+        guard !isClosed else { throw CancellationError() }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if activeRefreshWork == nil {
+                    activeRefreshWork = id
+                    continuation.resume()
+                } else {
+                    refreshAdmissions.append(.init(id: id, kind: kind, continuation: continuation))
+                    PlozzLog.networking.info("IPTV_REFRESH event=queued kind=\(kind.rawValue)")
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelRefreshAdmission(id) }
+        }
+        do {
+            try Task.checkCancellation()
+            try storageLifecycle.checkAccess()
+            guard !isClosed else { throw CancellationError() }
+            return id
+        } catch {
+            releaseRefreshWork(id)
+            throw error
+        }
+    }
+
+    private func releaseRefreshWork(_ id: UUID) {
+        precondition(activeRefreshWork == id)
+        activeRefreshWork = nil
+        guard !refreshAdmissions.isEmpty else { return }
+        let index = refreshAdmissions.firstIndex { $0.kind == .catalog } ?? 0
+        let next = refreshAdmissions.remove(at: index)
+        activeRefreshWork = next.id
+        next.continuation.resume()
+    }
+
+    private func cancelRefreshAdmission(_ id: UUID) {
+        guard let index = refreshAdmissions.firstIndex(where: { $0.id == id }) else { return }
+        refreshAdmissions.remove(at: index).continuation.resume(throwing: CancellationError())
+    }
+
+    private func cancelRefreshAdmissions() {
+        let waiting = refreshAdmissions
+        refreshAdmissions.removeAll()
+        for entry in waiting { entry.continuation.resume(throwing: CancellationError()) }
     }
 
     private func store(_ record: IPTVRecord, overwrite: Bool = true, into table: IPTVCatalog.Table = .entries) throws {

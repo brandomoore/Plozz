@@ -820,8 +820,8 @@ final class LiveTVXMLTVParserTests: XCTestCase {
                 XCTAssertEqual(programs.first?.end, now.addingTimeInterval(3_600), prefix)
             }
         }
-        XCTAssertEqual(XMLTVDateParser.date(from: "202602"), date("20260201000000"))
-        XCTAssertEqual(XMLTVDateParser.date(from: "20240229"), date("20240229000000"))
+        XCTAssertEqual(XMLTVDateParser.date(from: "202602"), date("20260201000000 +0000"))
+        XCTAssertEqual(XMLTVDateParser.date(from: "20240229"), date("20240229000000 +0000"))
         for invalid in ["202", "20260", "2026010", "202601010", "20260101000", "0000",
                         "202600", "202613", "20260100", "20260229", "2026010124",
                         "2026 CST", "2026 +010", "2026 +2460", "2026 trailing", "202٦"] {
