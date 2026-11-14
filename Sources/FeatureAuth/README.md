@@ -74,6 +74,7 @@ session persistence.
   20-point page insets and a 640-point content cap across the server flows.
   Welcome, Add Source, Silo, and IPTV page actions share `plozzPageActionLabel`
   inside native large buttons, including alternative sign-in methods.
+  Navidrome's Sign In and Cancel actions also fill the form width on TV.
   The mobile navigation owner supplies Cancel at the modal root and Back on
   subsequent steps, using semantic cancellation placement and title-plus-symbol
   labels so native bars can adapt their edge. Silo and IPTV suppress their standalone

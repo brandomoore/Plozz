@@ -76,6 +76,7 @@ public struct SubsonicSignInView: View {
                         if model.isConnecting { ProgressView("Signing in…") }
                         else { Text("Sign In") }
                     }
+                    .frame(maxWidth: .infinity)
                     .plozzPageActionLabel()
                 }
                 .plozzPageActionButton()
@@ -83,9 +84,10 @@ public struct SubsonicSignInView: View {
                 .accessibilityIdentifier("subsonic-sign-in")
                 if showsCancelButton {
                     Button(role: .cancel, action: cancel) {
-                        Text("Cancel").plozzPageActionLabel()
+                        Text("Cancel").frame(maxWidth: .infinity).plozzPageActionLabel()
                     }
                     .plozzPageActionButton(role: .secondary)
+                    .accessibilityIdentifier("subsonic-cancel")
                 }
             }
             .controlSize(.large)

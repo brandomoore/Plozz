@@ -135,8 +135,20 @@ uses symmetric horizontal viewport insets so its screen-wide backdrop stays
 centered on the display, including under pinned navigation's asymmetric row
 viewport. The Showcase host extends to the physical right edge while preserving
 its leading details inset. The row host retains its original bounds.
+Showcase bridges empty row gutters with native focus guides targeting the nearest
+visible edge card. Up and Down enter the adjacent row without skipping short rows:
+entering from beyond its right edge selects its last card, not an arbitrary first
+or remembered card. Within the cards, native column-aligned entry is unchanged.
+Guides are disabled while focus is inside their row or outside Showcase rows,
+preserving horizontal scrolling, sidebar entry, hero handoff, and detail return.
 Focus ownership includes SwiftUI virtual items and nested native controls,
 not only UIView-backed controls.
+`ShowcaseNavigationTests` covers exact entry into controlled one-, two-, and
+three-card rows. The opt-in Showcase cases in `LiveJellyfinHomeRemoteTests`
+also traverse unmodified Jellyfin and Plex Home rows through the read-only
+loopback credential broker, including any short rows in those live libraries.
+They compare card positions rather than titles, since real episodes can share
+the same displayed series title.
 While featured content loads, its full-size skeleton remains a native focus
 target so Down can still enter already-loaded rows and Up can return.
 The peeking rows are not eligible for focus while the featured hero is active,
@@ -168,6 +180,12 @@ resets both the Showcase rows and the featured stage before content focus return
 resetting the row offset alone leaves the hero hidden. Right from the sidebar and
 returning from another destination do not issue this explicit reset. With Hero
 disabled, reselection returns to the first row instead.
+Back from native-Sidebar Showcase rows smoothly returns to the featured hero,
+or the first row when Hero is disabled, without opening navigation. Showcase
+handles this through its own row/stage motion because its native offset guard
+rejects UIKit's independent scroll-to-top. Once at the top, Back is left to the
+native sidebar. Left, sidebar reselection, and detail-page Back retain their
+existing behavior; reduced motion uses the same nonanimated fallback as row navigation.
 This padding is a coordinate origin, separate from
 the row destination and height stops. Changing it rebases the native scroll
 target without adding a spring or restarting the in-flight viewport-height
@@ -189,7 +207,7 @@ Top Bar has no display-link-to-SwiftUI follower or independent SwiftUI animation
 Using the full stage distance would hide it early and reveal it late.
 Detach and reduced-motion updates clear owned animations. The return chevron sits 48 points from the top in all navigation styles,
 without reserving space for the now-hidden Top Bar.
-Back still reveals navigation immediately, cancelling its remaining translations.
+Top Bar Back still reveals navigation immediately, cancelling its remaining translations.
 The row scroll bridge retains its requested stage motion across temporary detach
 and reattachment, rebinding only while mounted; it does not depend on a later
 SwiftUI update to restore navigation. Featured and Showcase artwork reporters

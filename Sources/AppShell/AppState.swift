@@ -1376,6 +1376,9 @@ public final class AppState {
             guard let self else { throw CancellationError() }
             return try await self.plexHomeUsers.resolveCloudToken(for: account, expectedRevision: revision)
         }
+        accountsProviders.onLocalAccountAuthentication = { [weak self] accountID in
+            self?.providerCredentialSync.didAuthenticateLocally(accountID: accountID)
+        }
         accountsProviders.onAccountsInvalidated = { [weak self] in
             self?.mediaItemActionHandler.invalidateAccountCaches()
             self?.universalWatchlistProfileID = nil

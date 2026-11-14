@@ -276033,6 +276033,226 @@
         }
       }
     },
+    "Couldn't save sign-in sync permission." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذّر حفظ اختيارك بشأن السماح بمزامنة بيانات تسجيل الدخول."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Изборът ви за синхронизиране на данните за вход не можа да бъде запазен."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No s'ha pogut desar la teva decisió sobre la sincronització de les credencials d'accés."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodařilo se uložit vaši volbu ohledně synchronizace přihlašovacích údajů."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dit valg om synkronisering af loginoplysninger kunne ikke gemmes."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deine Entscheidung zur Synchronisierung der Anmeldedaten konnte nicht gespeichert werden."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν αποθηκεύτηκε η επιλογή σας για τον συγχρονισμό των στοιχείων σύνδεσης."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo guardar tu decisión sobre la sincronización de los datos de acceso."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تصمیم شما دربارهٔ اجازهٔ همگام‌سازی اطلاعات ورود ذخیره نشد."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kirjautumistietojen synkronointia koskevaa valintaasi ei voitu tallentaa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible d’enregistrer votre choix concernant la synchronisation des identifiants."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא ניתן היה לשמור את בחירתך לגבי סנכרון פרטי ההתחברות."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "साइन-इन विवरण सिंक करने की अनुमति पर आपका निर्णय सहेजा नहीं जा सका।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nije moguće spremiti odluku o dopuštenju za sinkronizaciju podataka za prijavu."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nem sikerült menteni a bejelentkezési adatok szinkronizálásának engedélyezéséről hozott döntést."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat menyimpan pilihan izin sinkronisasi data login."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile salvare la scelta sull'autorizzazione alla sincronizzazione delle credenziali."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "サインイン情報の同期を許可するかどうかの設定を保存できませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "로그인 정보 동기화 동의 여부를 저장하지 못했습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pilihan kebenaran untuk menyegerakkan maklumat log masuk tidak dapat disimpan."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke lagre valget ditt om synkronisering av påloggingsopplysninger."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Je toestemmingskeuze voor het synchroniseren van inloggegevens kon niet worden opgeslagen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się zapisać decyzji o zgodzie na synchronizację danych logowania."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível salvar sua decisão sobre a permissão para sincronizar credenciais."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nu s-a putut salva acordul pentru sincronizarea datelor de autentificare."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось сохранить разрешение на синхронизацию учётных данных."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodarilo sa uložiť súhlas so synchronizáciou prihlasovacích údajov."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dovoljenja za sinhronizacijo prijavnih podatkov ni bilo mogoče shraniti."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Čuvanje saglasnosti za sinhronizaciju podataka za prijavu nije uspelo."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunde inte spara samtycket till synkronisering av inloggningsuppgifter."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ไม่สามารถบันทึกตัวเลือกการอนุญาตให้ซิงค์ข้อมูลการลงชื่อเข้าใช้ได้"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Giriş bilgilerini eşzamanlama izniyle ilgili tercihiniz kaydedilemedi."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося зберегти ваш вибір щодо дозволу на синхронізацію облікових даних."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể lưu lựa chọn cho phép đồng bộ thông tin đăng nhập."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法保存你是否允许同步登录信息的选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法儲存你是否允許同步登入資訊的選擇。"
+          }
+        }
+      }
+    },
     "Couldn't save the source. Try again." : {
       "localizations" : {
         "ar" : {
@@ -446173,6 +446393,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "繼續走，我們快到了。\n火車 9:45 發車。"
+          }
+        }
+      }
+    },
+    "Keep on This Device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الاحتفاظ بها على هذا الجهاز"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запазване на това устройство"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conservar en aquest dispositiu"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ponechat na tomto zařízení"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Behold på denne enhed"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auf diesem Gerät behalten"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Διατήρηση σε αυτή τη συσκευή"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conservar en este dispositivo"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نگه‌داشتن در این دستگاه"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Säilytä tällä laitteella"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conserver sur cet appareil"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "להשאיר במכשיר זה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "इसी डिवाइस पर रखें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zadrži na ovom uređaju"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Maradjanak ezen az eszközön"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tetap di perangkat ini"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mantieni su questo dispositivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "このデバイスに残す"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 기기에 보관"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kekalkan pada peranti ini"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Behold på denne enheten"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Op dit apparaat bewaren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zachowaj na tym urządzeniu"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Manter neste dispositivo"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Păstrați pe acest dispozitiv"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Оставить на этом устройстве"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ponechať na tomto zariadení"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ohrani v tej napravi"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zadrži na ovom uređaju"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Behåll på den här enheten"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เก็บไว้บนอุปกรณ์นี้"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu Aygıtta Tut"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Залишити на цьому пристрої"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Giữ trên thiết bị này"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保留在此设备上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保留在此裝置上"
           }
         }
       }
@@ -740099,6 +740539,226 @@
         }
       }
     },
+    "Save Sign-ins to iCloud?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "حفظ بيانات تسجيل الدخول في iCloud؟"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запазване на данните за вход в iCloud?"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Desar les credencials d'accés a l'iCloud?"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uložit přihlašovací údaje na iCloud?"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gem loginoplysninger i iCloud?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anmeldedaten in iCloud sichern?"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αποθήκευση στοιχείων σύνδεσης στο iCloud;"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "¿Guardar datos de acceso en iCloud?"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اطلاعات ورود در iCloud ذخیره شود؟"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tallennetaanko kirjautumistiedot iCloudiin?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Enregistrer les identifiants dans iCloud ?"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לשמור פרטי התחברות ב-iCloud?"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "साइन-इन विवरण iCloud में सहेजें?"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spremiti podatke za prijavu na iCloud?"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bejelentkezési adatok mentése az iCloudba?"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Simpan data login ke iCloud?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvare le credenziali su iCloud?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "サインイン情報をiCloudに保存しますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "로그인 정보를 iCloud에 저장할까요?"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Simpan maklumat log masuk ke iCloud?"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lagre påloggingsopplysninger i iCloud?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inloggegevens opslaan in iCloud?"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zapisać dane logowania w iCloud?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvar credenciais no iCloud?"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvați datele de autentificare în iCloud?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сохранить учётные данные в iCloud?"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uložiť prihlasovacie údaje do služby iCloud?"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Želite shraniti prijavne podatke v iCloud?"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sačuvati podatke za prijavu u iCloud?"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spara inloggningsuppgifter i iCloud?"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "บันทึกข้อมูลการลงชื่อเข้าใช้ไปยัง iCloud หรือไม่?"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Giriş bilgileri iCloud'a kaydedilsin mi?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Зберегти облікові дані в iCloud?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lưu thông tin đăng nhập vào iCloud?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "将登录信息保存到 iCloud？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "將登入資訊儲存到 iCloud？"
+          }
+        }
+      }
+    },
     "Save and use custom player" : {
       "localizations" : {
         "ar" : {
@@ -741419,6 +742079,227 @@
         }
       }
     },
+    "Save these sign-ins to this device's iCloud account to sign in automatically on your other devices.\n\n%@" : {
+      "comment" : "Permission to upload existing server credentials; the substitution lists the affected sources.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "احفظ بيانات تسجيل الدخول هذه في حساب iCloud على هذا الجهاز لتسجيل الدخول تلقائيًا على أجهزتك الأخرى.\n\n%@"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запазете тези данни за вход в iCloud акаунта на това устройство, за да влизате автоматично на другите си устройства.\n\n%@"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Desa aquestes credencials d'accés al compte d'iCloud d'aquest dispositiu per iniciar sessió automàticament als teus altres dispositius.\n\n%@"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uložte tyto přihlašovací údaje do účtu iCloud tohoto zařízení, abyste se na svých ostatních zařízeních mohli přihlašovat automaticky.\n\n%@"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gem disse loginoplysninger på denne enheds iCloud-konto, så du automatisk kan logge ind på dine andre enheder.\n\n%@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sichere diese Anmeldedaten im iCloud-Konto dieses Geräts, um dich auf deinen anderen Geräten automatisch anzumelden.\n\n%@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αποθηκεύστε αυτά τα στοιχεία σύνδεσης στον λογαριασμό iCloud αυτής της συσκευής, ώστε να συνδέεστε αυτόματα στις άλλες συσκευές σας.\n\n%@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Guarda estos datos de acceso en la cuenta de iCloud de este dispositivo para iniciar sesión automáticamente en tus otros dispositivos.\n\n%@"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "این اطلاعات ورود را در حساب iCloud این دستگاه ذخیره کنید تا در دستگاه‌های دیگرتان به‌طور خودکار وارد شوید.\n\n%@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tallenna nämä kirjautumistiedot tämän laitteen iCloud-tilille, jotta voit kirjautua automaattisesti muilla laitteillasi.\n\n%@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Enregistrez ces identifiants dans le compte iCloud de cet appareil pour vous connecter automatiquement sur vos autres appareils.\n\n%@"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שמירת פרטי ההתחברות האלה בחשבון ה-iCloud של מכשיר זה תאפשר התחברות אוטומטית במכשירים האחרים שלך.\n\n%@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "अपने अन्य डिवाइसों पर अपने-आप साइन इन करने के लिए ये साइन-इन विवरण इस डिवाइस के iCloud खाते में सहेजें।\n\n%@"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spremite ove podatke za prijavu na iCloud račun ovog uređaja za automatsku prijavu na svojim drugim uređajima.\n\n%@"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mentse ezeket a bejelentkezési adatokat az eszköz iCloud-fiókjába, hogy a többi eszközén automatikusan bejelentkezhessen.\n\n%@"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Simpan data login ini ke akun iCloud perangkat ini agar Anda dapat masuk otomatis di perangkat Anda yang lain.\n\n%@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salva queste credenziali nell'account iCloud di questo dispositivo per accedere automaticamente sugli altri tuoi dispositivi.\n\n%@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "このサインイン情報をこのデバイスのiCloudアカウントに保存すると、ほかのデバイスで自動的にサインインできます。\n\n%@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 로그인 정보를 이 기기의 iCloud 계정에 저장하면 다른 기기에서 자동으로 로그인할 수 있습니다.\n\n%@"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Simpan maklumat log masuk ini ke akaun iCloud peranti ini untuk log masuk secara automatik pada peranti anda yang lain.\n\n%@"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lagre disse påloggingsopplysningene i iCloud-kontoen på denne enheten for å logge på automatisk på de andre enhetene dine.\n\n%@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sla deze inloggegevens op in het iCloud-account van dit apparaat om automatisch in te loggen op je andere apparaten.\n\n%@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zapisz te dane logowania na koncie iCloud tego urządzenia, aby logować się automatycznie na swoich pozostałych urządzeniach.\n\n%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salve estas credenciais na conta do iCloud deste dispositivo para entrar automaticamente nos seus outros dispositivos.\n\n%@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvați aceste date de autentificare în contul iCloud al acestui dispozitiv pentru a vă autentifica automat pe celelalte dispozitive.\n\n%@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сохраните эти учётные данные в учётной записи iCloud этого устройства, чтобы автоматически входить на других устройствах.\n\n%@"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uložte tieto prihlasovacie údaje do účtu iCloud tohto zariadenia, aby ste sa na ostatných zariadeniach prihlasovali automaticky.\n\n%@"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shranite te prijavne podatke v račun iCloud te naprave za samodejno prijavo v svojih drugih napravah.\n\n%@"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sačuvajte ove podatke za prijavu na iCloud nalogu ovog uređaja radi automatskog prijavljivanja na svojim drugim uređajima.\n\n%@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spara de här inloggningsuppgifterna i enhetens iCloud-konto för automatisk inloggning på dina andra enheter.\n\n%@"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "บันทึกข้อมูลการลงชื่อเข้าใช้เหล่านี้ไปยังบัญชี iCloud ของอุปกรณ์นี้ เพื่อลงชื่อเข้าใช้โดยอัตโนมัติบนอุปกรณ์อื่นๆ ของคุณ\n\n%@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diğer aygıtlarınızda otomatik giriş yapmak için bu giriş bilgilerini bu aygıtın iCloud hesabına kaydedin.\n\n%@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Збережіть ці облікові дані в обліковому записі iCloud цього пристрою, щоб автоматично входити на інших своїх пристроях.\n\n%@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lưu thông tin đăng nhập này vào tài khoản iCloud của thiết bị này để tự động đăng nhập trên các thiết bị khác của bạn.\n\n%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "将这些登录信息保存到此设备的 iCloud 账户，以便在你的其他设备上自动登录。\n\n%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "將這些登入資訊儲存到此裝置的 iCloud 帳號，以便在你的其他裝置上自動登入。\n\n%@"
+          }
+        }
+      }
+    },
     "Save this row?" : {
       "localizations" : {
         "ar" : {
@@ -741635,6 +742516,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "儲存此橫列？"
+          }
+        }
+      }
+    },
+    "Save to iCloud" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "حفظ في iCloud"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запазване в iCloud"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Desar a l'iCloud"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uložit na iCloud"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gem i iCloud"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In iCloud sichern"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αποθήκευση στο iCloud"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Guardar en iCloud"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ذخیره در iCloud"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tallenna iCloudiin"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Enregistrer dans iCloud"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לשמור ב-iCloud"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud में सहेजें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spremi na iCloud"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mentés az iCloudba"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Simpan ke iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salva su iCloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloudに保存"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud에 저장"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Simpan ke iCloud"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lagre i iCloud"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opslaan in iCloud"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zapisz w iCloud"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvar no iCloud"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salvați în iCloud"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сохранить в iCloud"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uložiť do služby iCloud"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Shrani v iCloud"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sačuvaj u iCloud"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Spara i iCloud"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "บันทึกไปยัง iCloud"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud'a Kaydet"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Зберегти в iCloud"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lưu vào iCloud"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保存到 iCloud"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "儲存到 iCloud"
           }
         }
       }
@@ -834267,6 +835368,226 @@
         }
       }
     },
+    "Some local data could not be prepared for sync. Saved data has not been removed." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذّر تجهيز بعض البيانات المحلية للمزامنة. لم تُحذف البيانات المحفوظة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Някои локални данни не можаха да бъдат подготвени за синхронизиране. Запазените данни не са премахнати."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No s'han pogut preparar algunes dades locals per sincronitzar-les. No s'ha eliminat cap dada desada."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Některá místní data se nepodařilo připravit k synchronizaci. Uložená data nebyla odstraněna."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nogle lokale data kunne ikke klargøres til synkronisering. Gemte data er ikke blevet fjernet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einige lokale Daten konnten nicht für die Synchronisierung vorbereitet werden. Gespeicherte Daten wurden nicht gelöscht."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν ήταν δυνατή η προετοιμασία ορισμένων τοπικών δεδομένων για συγχρονισμό. Τα αποθηκευμένα δεδομένα δεν έχουν διαγραφεί."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudieron preparar algunos datos locales para la sincronización. No se han eliminado los datos guardados."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "برخی داده‌های محلی برای همگام‌سازی آماده نشدند. داده‌های ذخیره‌شده حذف نشده‌اند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Joitakin paikallisia tietoja ei voitu valmistella synkronointia varten. Tallennettuja tietoja ei ole poistettu."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Certaines données locales n’ont pas pu être préparées pour la synchronisation. Les données enregistrées n’ont pas été supprimées."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא ניתן היה להכין חלק מהנתונים המקומיים לסנכרון. הנתונים השמורים לא נמחקו."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "कुछ स्थानीय डेटा सिंक के लिए तैयार नहीं किया जा सका। सहेजा गया डेटा हटाया नहीं गया है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neke lokalne podatke nije bilo moguće pripremiti za sinkronizaciju. Spremljeni podaci nisu uklonjeni."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Néhány helyi adatot nem sikerült előkészíteni a szinkronizáláshoz. A mentett adatok nem törlődtek."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sebagian data lokal tidak dapat disiapkan untuk sinkronisasi. Data yang tersimpan tidak dihapus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Non è stato possibile preparare alcuni dati locali per la sincronizzazione. I dati salvati non sono stati rimossi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "一部のローカルデータを同期用に準備できませんでした。保存済みデータは削除されていません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "일부 로컬 데이터의 동기화를 준비하지 못했습니다. 저장된 데이터는 삭제되지 않았습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sesetengah data setempat tidak dapat disediakan untuk penyegerakan. Data yang disimpan tidak dipadamkan."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Noen lokale data kunne ikke klargjøres for synkronisering. Lagrede data er ikke slettet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sommige lokale gegevens konden niet worden klaargemaakt voor synchronisatie. Opgeslagen gegevens zijn niet verwijderd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się przygotować części danych lokalnych do synchronizacji. Zapisane dane nie zostały usunięte."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível preparar alguns dados locais para a sincronização. Os dados salvos não foram removidos."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Unele date locale nu au putut fi pregătite pentru sincronizare. Datele salvate nu au fost șterse."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось подготовить некоторые локальные данные к синхронизации. Сохранённые данные не удалены."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Niektoré lokálne údaje sa nepodarilo pripraviť na synchronizáciu. Uložené údaje neboli odstránené."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nekaterih lokalnih podatkov ni bilo mogoče pripraviti za sinhronizacijo. Shranjeni podatki niso bili odstranjeni."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neki lokalni podaci nisu mogli da se pripreme za sinhronizaciju. Sačuvani podaci nisu uklonjeni."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vissa lokala data kunde inte förberedas för synkronisering. Sparade data har inte tagits bort."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ไม่สามารถเตรียมข้อมูลในอุปกรณ์บางส่วนสำหรับการซิงค์ได้ ข้อมูลที่บันทึกไว้ไม่ได้ถูกลบ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yerel verilerin bir kısmı eşzamanlama için hazırlanamadı. Kayıtlı veriler silinmedi."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося підготувати деякі локальні дані до синхронізації. Збережені дані не видалено."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể chuẩn bị một số dữ liệu trên thiết bị để đồng bộ. Dữ liệu đã lưu không bị xóa."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法为部分本地数据做好同步准备。已保存的数据未被删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法為部分本機資料做好同步準備。已儲存的資料並未刪除。"
+          }
+        }
+      }
+    },
     "Some network shares stay in Plozz when background streaming is unavailable." : {
       "localizations" : {
         "ar" : {
@@ -866876,6 +868197,7 @@
       }
     },
     "Syncs profiles, settings, and servers. Logins stay on each device." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1107980,6 +1109302,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "iCloud 身分：%@…  （所有裝置必須相符）"
+          }
+        }
+      }
+    },
+    "iCloud is temporarily unavailable. Try again shortly." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud غير متاح مؤقتًا. حاول مجددًا بعد قليل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud временно е недостъпен. Опитайте отново след малко."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L'iCloud no està disponible temporalment. Torna-ho a provar d'aquí a poc."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud je dočasně nedostupný. Zkuste to za chvíli znovu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud er midlertidigt utilgængelig. Prøv igen om lidt."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud ist vorübergehend nicht verfügbar. Versuche es in Kürze erneut."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Το iCloud δεν είναι διαθέσιμο αυτή τη στιγμή. Δοκιμάστε ξανά σε λίγο."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud no está disponible en este momento. Inténtalo de nuevo en breve."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud موقتاً در دسترس نیست. کمی بعد دوباره تلاش کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud ei ole tällä hetkellä käytettävissä. Yritä hetken kuluttua uudelleen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud est temporairement indisponible. Réessayez dans quelques instants."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud אינו זמין כרגע. יש לנסות שוב בעוד זמן קצר."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud फ़िलहाल उपलब्ध नहीं है। थोड़ी देर में फिर कोशिश करें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud je privremeno nedostupan. Pokušajte ponovno uskoro."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az iCloud átmenetileg nem érhető el. Próbálja újra kis idő múlva."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud tidak tersedia untuk sementara. Coba beberapa saat lagi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud è temporaneamente non disponibile. Riprova tra poco."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloudを一時的に利用できません。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud tidak tersedia buat sementara waktu. Cuba lagi sebentar lagi."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud er midlertidig utilgjengelig. Prøv igjen om litt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud is tijdelijk niet beschikbaar. Probeer het zo opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usługa iCloud jest tymczasowo niedostępna. Spróbuj ponownie za chwilę."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O iCloud está temporariamente indisponível. Tente novamente em instantes."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud este temporar indisponibil. Reîncercați în scurt timp."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud временно недоступен. Повторите попытку чуть позже."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Služba iCloud je dočasne nedostupná. Skúste to znova o chvíľu."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud začasno ni na voljo. Poskusite znova čez nekaj trenutkov."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud je privremeno nedostupan. Pokušajte ponovo uskoro."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud är tillfälligt otillgängligt. Försök igen om en stund."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud ไม่พร้อมใช้งานชั่วคราว โปรดลองอีกครั้งในอีกสักครู่"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud geçici olarak kullanılamıyor. Birazdan tekrar deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud тимчасово недоступний. Спробуйте ще раз незабаром."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud tạm thời không khả dụng. Hãy thử lại sau một lát."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud 暂时不可用。请稍后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud 暫時無法使用。請稍後再試。"
           }
         }
       }

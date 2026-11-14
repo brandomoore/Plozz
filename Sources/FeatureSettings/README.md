@@ -1,5 +1,10 @@
 # FeatureSettings
 
+The household Sources page places Add Source before saved sources on TV and
+mobile. On TV, Add Source is also the workspace entry focus target and occupies
+its own connected card above saved sources, using the same grouped surfaces as Audio. IPTV source
+rows share the origin-only website-logo lookup and generic fallback across platforms.
+
 Mobile customization choice groups use the same Settings cards and content
 insets, including contained groups such as Hero content sources. TV row sizing
 does not select a different mobile section style. Enabled switches keep the
@@ -1532,6 +1537,24 @@ watch history and planning-list behavior are documented in
   use the shared transient-status presenter for progress and the actual result,
   and disable both actions while either is running. Reset still requires
   confirmation. Pending Live TV source repair rows remain in Troubleshooting.
+  Both platforms describe supported sign-in syncing consistently with onboarding.
+  Only confirmed iCloud account absence prompts sign-in; account lookup and
+  identity-verification failures retain an error diagnostic. Cancelled or
+  superseded account checks must not overwrite the current sync status.
+  Temporary account unavailability (CloudKit error 36) retries account and identity
+  verification after 2, 5 and 15 seconds, including before the engine first starts.
+  Retries stop on cancellation, revoked consent, deactivation or a newer check;
+  other failures are not retried by this account-check policy. Persistent
+  unavailability uses a readable status while retaining the original diagnostic.
+  Recovery still requires verified account ownership, and later foreground or
+  manual sync can try again after the bounded retries finish.
+  Local snapshot cancellations caused by concurrent changes are recaptured up to
+  four times; cancellation of the caller or a superseded lifecycle never publishes
+  stale data or errors. A genuine preparation failure remains tied to its channel
+  until that channel captures and persists successfully. Unrelated network
+  completions cannot clear it or advance the successful-sync time. Retryable
+  CloudKit conflicts stay in Syncing during a bounded 30-second recovery window;
+  repeated failures cannot extend that window indefinitely.
 - **Profile-namespaced settings.** Per-user prefs (theme, captions,
   diagnostics, spoiler) are namespaced by the active profile id; the
   default profile uses no suffix so an upgrading install keeps existing

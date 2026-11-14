@@ -47,9 +47,14 @@ public enum CloudSyncRecoveryAction: Sendable {
 @MainActor
 @Observable
 public final class CloudSyncStatus {
+    enum ErrorReason: Equatable, Sendable {
+        case accountTemporarilyUnavailable
+        case localDataUnavailable
+    }
+
     public enum Phase: Equatable, Sendable {
         case disabled       // feature flag off
-        case signedOut      // no usable iCloud account
+        case signedOut      // confirmed absence of an iCloud account
         case idle           // up to date, nothing in flight
         case syncing        // a fetch or send is in progress
         case error          // last attempt failed (see message)
@@ -60,6 +65,7 @@ public final class CloudSyncStatus {
     public internal(set) var lastSyncedAt: Date?
     /// Short, non-secret description of the last failure (for the error state).
     public internal(set) var lastErrorMessage: String?
+    private(set) var lastErrorReason: ErrorReason?
     /// A PERSISTENT diagnostic detail (last CloudKit error), shown until the next
     /// success clears it. Survives the phase flicker so it's actually readable.
     public internal(set) var lastDiagnostic: String?
@@ -77,6 +83,7 @@ public final class CloudSyncStatus {
     /// own retry shouldn't flash a scary "Couldn't sync". The error is only shown if
     /// it's still pending after a short grace period without verified recovery.
     @ObservationIgnored private var pendingErrorTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingErrorIsRetrying = false
 
     public init() {}
 
@@ -98,22 +105,40 @@ public final class CloudSyncStatus {
     /// debounced error, since we've made forward progress.
     func setPhase(_ newPhase: Phase, syncedNow: Bool = false) {
         pendingErrorTask?.cancel(); pendingErrorTask = nil
+        pendingErrorIsRetrying = false
         phase = newPhase
-        if syncedNow { lastSyncedAt = Date(); lastDiagnostic = nil; lastErrorMessage = nil }
+        if syncedNow {
+            lastSyncedAt = Date()
+            lastDiagnostic = nil
+            lastErrorMessage = nil
+            lastErrorReason = nil
+        }
     }
 
     /// Record an error, but only surface it after a grace period — so a blip that
     /// the engine immediately resolves (a following idle) never shows red.
-    func setError(_ message: String, diagnostic: String?) {  // l10n:content — OS/CloudKit-supplied, already-localized error text
+    func setError(
+        _ message: String, diagnostic: String?, reason: ErrorReason? = nil, // l10n:content — OS/CloudKit-supplied, already-localized error text
+        retryGrace: Duration? = nil
+    ) {
         lastErrorMessage = message
+        lastErrorReason = reason
         if let diagnostic { lastDiagnostic = diagnostic }
+        if retryGrace != nil, phase != .error { phase = .syncing }
+        if retryGrace == nil, pendingErrorIsRetrying {
+            pendingErrorTask?.cancel()
+            pendingErrorTask = nil
+            pendingErrorIsRetrying = false
+        }
         // Repeated completion/retry events must not postpone a persistent error.
         guard phase != .error, pendingErrorTask == nil else { return }
+        pendingErrorIsRetrying = retryGrace != nil
         pendingErrorTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            try? await Task.sleep(for: retryGrace ?? .milliseconds(3_500))
             guard !Task.isCancelled, let self else { return }
             self.phase = .error
             self.pendingErrorTask = nil
+            self.pendingErrorIsRetrying = false
         }
     }
 
@@ -123,7 +148,14 @@ public final class CloudSyncStatus {
         case .disabled:  return "Off"
         case .signedOut: return "Sign in to iCloud to sync"
         case .syncing:   return "Syncing…"
-        case .error:     return lastErrorMessage.map { "Couldn’t sync — \($0)" } ?? "Couldn’t sync"
+        case .error:
+            if lastErrorReason == .accountTemporarilyUnavailable {
+                return "iCloud is temporarily unavailable. Try again shortly."
+            }
+            if lastErrorReason == .localDataUnavailable {
+                return "Some local data could not be prepared for sync. Saved data has not been removed."
+            }
+            return lastErrorMessage.map { "Couldn’t sync — \($0)" } ?? "Couldn’t sync"
         case .idle:
             guard let lastSyncedAt else { return "On" }
             return "Up to date · synced \(Self.relative(lastSyncedAt))"

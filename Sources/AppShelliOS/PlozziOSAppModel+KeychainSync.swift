@@ -115,12 +115,18 @@ extension PlozziOSAppModel {
     /// published (the private key must never leave the device) — `buildSecretsBundle`
     /// already omits those, so they still require a manual re-add on each device.
     func publishPortableCredentials() {
-        guard !isOfflineMode else { return }
+        guard !isOfflineMode, applicationIsActive else { return }
         guard SyncSetupFeatureFlag().allowsAutomaticSync else { return }
-        let accounts = accountsProviders.accounts
-        let accountStore = accountStore
+        let captured = Self.buildSecretsBundle(accounts: accountsProviders.accounts, accountStore: accountStore)
+        let bundle = SyncSecretsBundle(
+            accounts: captured.accounts.filter {
+                providerCredentialSync.mayPublish(accountID: $0.accountID, credential: $0.token)
+            },
+            shares: captured.shares.filter {
+                providerCredentialSync.mayPublish(accountID: $0.accountID, credential: $0.credentialEnvelope)
+            },
+            seerr: captured.seerr)
         portableCredentialPublisher.publish {
-            let bundle = Self.buildSecretsBundle(accounts: accounts, accountStore: accountStore)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             var records: [String: String] = [:]

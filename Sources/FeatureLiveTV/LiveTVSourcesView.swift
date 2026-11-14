@@ -1371,18 +1371,17 @@ private struct LiveTVPlaylistSourceRow: View {
             title: Text(verbatim: source.name),
             contentInsets: liveTVSourceRowInsets,
             icon: {
-                #if os(tvOS)
-                ProviderSiteIcon(url: source.playlistURL, size: 40) {
+                ProviderSiteIcon(url: source.playlistURL, size: iconSize) {
+                    #if os(tvOS)
                     Image(systemName: source.importedPlaylistID == nil ? "antenna.radiowaves.left.and.right" : "doc")
                         .font(.body)
                         .settingsRowIcon()
+                    #else
+                    Image(systemName: source.importedPlaylistID == nil ? "list.bullet.rectangle" : "doc")
+                        .font(.system(size: 22))
+                        .settingsRowIcon()
+                    #endif
                 }
-                #else
-                Image(systemName: source.importedPlaylistID == nil ? "list.bullet.rectangle" : "doc")
-                    .font(.system(size: 22))
-                    .settingsRowIcon()
-                    .frame(width: SettingsRowMetrics.iconColumnWidth, height: SettingsRowMetrics.iconColumnWidth)
-                #endif
             },
             secondary: {
                 HStack(spacing: 6) {
@@ -1401,5 +1400,13 @@ private struct LiveTVPlaylistSourceRow: View {
             },
             trailing: { LiveTVSourceChevron() }
         )
+    }
+
+    private var iconSize: CGFloat {
+        #if os(tvOS)
+        40
+        #else
+        SettingsRowMetrics.iconColumnWidth
+        #endif
     }
 }

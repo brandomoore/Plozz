@@ -95,7 +95,11 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
             if phase == "native-motion-frame" { motionFrames += 1 }
         }
         for expanded in [false, true] {
-            stage.present(expanded: expanded, focus: true)
+            if expanded {
+                stage.resetToFeatured(focus: true)
+            } else {
+                stage.present(expanded: false, focus: true)
+            }
             XCTAssertEqual(state.isExpanded, expanded)
             XCTAssertNotEqual(state.nativeRowsExpanded, expanded, "Native chrome must not block focus admission.")
             XCTAssertTrue(stage.contains(system.focusedItem, in: expanded ? stage.hero : stage.rows))
@@ -104,6 +108,10 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(10))
             }
             XCTAssertEqual(state.nativeRowsExpanded, expanded)
+            let paintedOffset = try XCTUnwrap(stage.rows.view.layer.presentation()).transform.m42
+            XCTAssertGreaterThan(paintedOffset, 0.5)
+            XCTAssertLessThan(paintedOffset, state.motion.distance - 0.5,
+                              "Returning to the hero must render intermediate frames, not jump to the top.")
             try await Task.sleep(for: .seconds(1))
         }
         XCTAssertEqual(motionFrames, 2, "Each origin change must follow an observed moving compositor frame.")

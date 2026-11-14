@@ -1197,7 +1197,7 @@ public struct SettingsView: View {
                 if let onSetSyncEnabled {
                     SettingsPanel(
                         title: "iCloud Sync",
-                        footer: "Syncs profiles, settings, and servers. Logins stay on each device."
+                        footer: "Keep profiles, settings, watchlist, and supported sign-ins in sync across your devices."
                     ) {
                         Toggle("Sync With iCloud", isOn: Binding(
                             get: { syncEnabled }, set: { onSetSyncEnabled($0) }

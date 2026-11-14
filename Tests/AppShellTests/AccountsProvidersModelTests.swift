@@ -222,6 +222,8 @@ final class AccountsProvidersModelTests: XCTestCase {
         model.reloadAccounts()
         let account = try XCTUnwrap(model.accounts.first)
         var completed = false
+        var authenticatedIDs: [String] = []
+        model.onLocalAccountAuthentication = { authenticatedIDs.append($0) }
         let recovery = model.makeAccountReauthentication(
             account: account, isAuthorized: { true }, onComplete: { completed = true }
         )
@@ -229,6 +231,7 @@ final class AccountsProvidersModelTests: XCTestCase {
         profiles.select(other.id)
         XCTAssertThrowsError(try recovery.complete(account.session(token: "NEW")))
         XCTAssertFalse(completed)
+        XCTAssertTrue(authenticatedIDs.isEmpty)
         XCTAssertEqual(store.token(for: account.id), "token-a")
 
         let currentRecovery = model.makeAccountReauthentication(
@@ -236,6 +239,7 @@ final class AccountsProvidersModelTests: XCTestCase {
         )
         try currentRecovery.complete(account.session(token: "NEW"))
         XCTAssertTrue(completed)
+        XCTAssertEqual(authenticatedIDs, [account.id])
         XCTAssertEqual(store.token(for: account.id), "NEW")
         XCTAssertEqual(model.accounts, store.loadAccounts())
         XCTAssertNotEqual(model.accounts.first?.credentialRevision, account.credentialRevision)

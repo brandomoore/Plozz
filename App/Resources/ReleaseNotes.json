@@ -2,6 +2,71 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/072",
+      "version": "2026.11.13",
+      "marketingVersion": "2026.11.12",
+      "build": 72,
+      "releasedAt": "2026-11-13",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Rename Home rows and navigation items.",
+            "Restore compatible server sign-ins through iCloud.",
+            {
+              "text": "Navidrome and compatible Subsonic music servers, joining Plex, Jellyfin and Emby (beta).",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Music browsing and streaming from Plex, Jellyfin, Emby, Navidrome and compatible Subsonic servers (beta).",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Custom Home rows now support playlists, libraries and lists like Continue Watching, individually or combined.",
+            "Custom Home rows now support sorting and filtering.",
+            "Clearer iCloud setup and restoration progress.",
+            "Source settings and sign-in screens.",
+            "Video-version selection, including an option to use server order.",
+            "More consistent title details, resume choices and metadata language.",
+            "Faster Plex library loading and fewer repeated Jellyfin requests.",
+            {
+              "text": "Live TV Multiview controls, layouts and audio indication.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Home, detail and Live TV navigation.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Appearance settings and Liquid Glass Off support.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Watched status and resume progress not updating reliably.",
+            "Older iCloud updates removing newer Watchlist items.",
+            "Connecting to local Jellyfin and Emby servers using HTTP.",
+            "Profile loss during migration and duplicate Plex Home imports.",
+            {
+              "text": "Inconsistent German playback labels on Home.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Hangs when opening Home movie rows on iOS 18.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/071.6",
       "version": "2026.11.9",
       "marketingVersion": "2026.11.6",

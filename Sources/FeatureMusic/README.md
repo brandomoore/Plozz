@@ -154,9 +154,12 @@ playlist-entry selection identity, and a neutral current-track highlight.
 `iOS/MobileMusicDetail.swift` caps content width at 1,000 points and stacks the
 hero/actions at accessibility text sizes. Page headings scroll with content;
 Plozz's native navigation bar and back gesture remain in place.
-As in Mozz, compact heroes extend through the top safe area; wide framed heroes
-fade from the deep page color into the artwork color. Only foreground content
-clears the native navigation inset, avoiding a separate dark navigation band.
+Compact and wide framed heroes start with the artwork color through the top safe
+area; the following content fades into a darker, muted base, including for dark
+artwork. Only foreground content clears the native navigation inset, avoiding
+a separate dark navigation band.
+Framed heroes draw above the following section so artwork shadows can fade into
+its background without a hard edge or extra layout spacing.
 Native back controls remain, without an additional navigation-bar background or
 iOS 26 top-edge scrim over the hero.
 

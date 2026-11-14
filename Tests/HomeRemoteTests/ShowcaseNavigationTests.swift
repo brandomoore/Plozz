@@ -4,6 +4,106 @@ import notify
 
 @MainActor
 final class ShowcaseNavigationTests: XCTestCase {
+    func testNativeSidebarShowcaseCannotSkipShortRows() throws {
+        try checkShortRows(navigation: "--native-sidebar-home")
+    }
+
+    func testPinnedShowcaseCannotSkipShortRows() throws {
+        try checkShortRows(navigation: "--pinned-home")
+    }
+
+    func testShowcaseWithoutHeroCannotSkipShortRows() throws {
+        try checkShortRows(navigation: "--native-sidebar-home", showsHero: false)
+    }
+
+    func testTopBarShowcaseCannotSkipShortRows() throws {
+        try checkShortRows(navigation: "--top-bar-home")
+    }
+
+    func testHighlightedShowcaseChoosesNearestCardInShortRows() throws {
+        try checkShortRows(navigation: "--native-sidebar-home", focusStyle: "highlight")
+    }
+
+    private func checkShortRows(
+        navigation: String, showsHero: Bool = true, focusStyle: String = "system"
+    ) throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--production-home-fixture", navigation, "--short-showcase-rows", "--focus-style=\(focusStyle)",
+            showsHero ? "--hero-showcase-home" : "--immersive-home"
+        ]
+        app.launch()
+        defer { app.terminate() }
+        if showsHero {
+            let hero = app.buttons["home-hero-action-row"]
+            XCTAssertTrue(hero.waitForExistence(timeout: 30))
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in hero.hasFocus }, object: nil
+            )], timeout: 15), .completed, app.debugDescription)
+            XCUIRemote.shared.press(.down)
+        } else {
+            XCTAssertTrue(app.buttons["Fixture movie 0"].waitForExistence(timeout: 30))
+        }
+        waitForStableCard(in: app)
+
+        func assertRow(_ indices: Range<Int>) throws {
+            waitForStableCard(in: app)
+            let card = focusedCard(in: app)
+            let index = try XCTUnwrap(Int(card.label.split(separator: " ").last ?? ""))
+            XCTAssertTrue(indices.contains(index), "Expected row \(indices), focused \(card.label).")
+            XCTAssertTrue(card.isHittable)
+        }
+        func moveToRightSide() {
+            for _ in 0..<5 { XCUIRemote.shared.press(.right) }
+            waitForStableCard(in: app)
+            XCTAssertGreaterThan(focusedCard(in: app).frame.midX, app.frame.width * 0.6)
+        }
+
+        moveToRightSide()
+        let departure = focusedCard(in: app).frame
+        XCUIRemote.shared.press(.down)
+        try assertRow(24..<44)
+        let arrival = focusedCard(in: app).frame
+        XCTAssertLessThanOrEqual(abs(arrival.midX - departure.midX), (arrival.width + departure.width) / 2,
+                                 "Full rows must retain native column-aligned entry.")
+
+        for count in 1...3 {
+            let shortStart = 44 + (count - 1) * 40
+            let wideStart = shortStart + 20
+            moveToRightSide()
+            XCUIRemote.shared.press(.down)
+            try assertRow(shortStart..<(shortStart + count))
+            XCTAssertEqual(focusedCard(in: app).label, "Fixture movie \(shortStart + count - 1)",
+                           "Entering from the right must choose the nearest card, not the row's first card.")
+            XCUIRemote.shared.press(.down)
+            try assertRow(wideStart..<(wideStart + 20))
+            moveToRightSide()
+            XCUIRemote.shared.press(.up)
+            try assertRow(shortStart..<(shortStart + count))
+            XCTAssertEqual(focusedCard(in: app).label, "Fixture movie \(shortStart + count - 1)")
+            XCUIRemote.shared.press(.down)
+            try assertRow(wideStart..<(wideStart + 20))
+            for _ in 0..<20 {
+                if focusedCard(in: app).label == "Fixture movie \(wideStart)" { break }
+                XCUIRemote.shared.press(.left)
+            }
+            try assertRow(wideStart..<(wideStart + 1))
+            XCUIRemote.shared.press(.up)
+            try assertRow(shortStart..<(shortStart + 1))
+            XCUIRemote.shared.press(.down)
+            try assertRow(wideStart..<(wideStart + 20))
+            if count == 3 {
+                XCUIRemote.shared.press(.right)
+                try assertRow((wideStart + 1)..<(wideStart + 2))
+                XCUIRemote.shared.press(.up)
+                try assertRow((shortStart + 1)..<(shortStart + 2))
+                XCUIRemote.shared.press(.down)
+                try assertRow(wideStart..<(wideStart + 20))
+            }
+        }
+    }
+
     func testPinnedNavigationReturnsToFeaturedHeroWithOneRightPress() throws {
         try checkPinnedReturn(showcase: true, fromRows: false)
     }

@@ -1077,6 +1077,7 @@ public final class PlexHomeUsersModel {
                 }
                 do {
                     try self.accountsProviders.accountStore.replaceAuthenticatedSession(session, expected: account)
+                    self.accountsProviders.onLocalAccountAuthentication(account.id)
                 } catch {
                     PlozzLog.auth.error("Unable to save recovered Plex account")
                     throw error

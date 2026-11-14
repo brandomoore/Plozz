@@ -33,6 +33,7 @@ import CoreUI
 @MainActor
 @Observable
 public final class AccountsProvidersModel {
+    @ObservationIgnored public var onLocalAccountAuthentication: (String) -> Void = { _ in }
     /// All signed-in accounts, in stable order.
     public private(set) var accounts: [Account] = []
     /// The subset of `accounts` currently included in the active set. Sourced
@@ -150,6 +151,7 @@ public final class AccountsProvidersModel {
             },
             onComplete: { [weak self] in
                 guard let self else { return }
+                self.onLocalAccountAuthentication(account.id)
                 self.registry.invalidate(accountID: account.id)
                 self.reloadAccounts()
                 onComplete()

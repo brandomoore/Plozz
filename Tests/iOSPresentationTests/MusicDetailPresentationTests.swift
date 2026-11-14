@@ -8,6 +8,129 @@ import XCTest
 
 @MainActor
 final class MusicDetailPresentationTests: XCTestCase {
+    func testPlaylistBackdropStartsWithArtworkColorAndMutesWhileScrolling() async throws {
+        let url = URL(string: "https://music-detail.invalid/\(UUID()).png")!
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).image { context in
+            UIColor.cyan.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
+        }
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(artwork.pngData())),
+            for: URLRequest(url: url)
+        )
+        defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
+        let loaded = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+        XCTAssertNotNil(loaded)
+        let colors = MusicDetailColors(image: artwork)
+        let renderer = ImageRenderer(content: colors.hero.frame(width: 10, height: 10))
+        let expected = try pixel(in: XCTUnwrap(renderer.uiImage), at: CGPoint(x: 5, y: 5))
+        let tracks = (1...24).map {
+            MusicTrack(id: "\($0)", title: "Song \($0)", artistName: "Artist", duration: 230)
+        }
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 834, height: 1_194)] {
+            let page = MobileMusicPlaylistDetail(
+                playlist: MusicPlaylist(id: "playlist", title: "Playlist", artworkURL: url),
+                tracks: tracks, nowPlayingTrack: nil, isPlaying: false,
+                onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
+            )
+            .environment(\.themePalette, .pureBlack)
+            .environment(\.gradientBackgroundsEnabled, true)
+            try await mount(page, size: size, name: "Playlist color direction \(size.width)") { host, window in
+                try await Task.sleep(for: .milliseconds(500))
+                func capture() -> UIImage {
+                    UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    }
+                }
+                let image = capture()
+                let top = try self.pixel(in: image, at: CGPoint(x: size.width - 12, y: 100))
+                for channel in 0..<3 {
+                    XCTAssertEqual(top[channel], expected[channel], accuracy: 0.025,
+                                   "The opening header must start with the artwork color, not the deep page base")
+                }
+                var previous = top[1]
+                for y in stride(from: 140, through: Int(size.height) - 100, by: 40) {
+                    let color = try self.pixel(in: image, at: CGPoint(x: size.width - 12, y: CGFloat(y)))
+                    XCTAssertLessThanOrEqual(color[1], previous + 0.015,
+                                            "The background must not brighten farther down the page")
+                    previous = color[1]
+                }
+                let scroll = try XCTUnwrap(self.scrollViews(in: host.view).first)
+                scroll.setContentOffset(CGPoint(x: 0, y: 900), animated: false)
+                host.view.layoutIfNeeded()
+                let scrolled = try self.pixel(in: capture(), at: CGPoint(x: size.width - 12, y: 100))
+                XCTAssertLessThan(scrolled[1], top[1] - 0.04, "Scrolling must settle onto the muted base")
+                self.attach(window, name: "Playlist muted after scrolling \(size.width)")
+            }
+        }
+    }
+
+    func testWideArtworkShadowExtendsBelowTheHeroIntoTheContentBackground() async throws {
+        let url = URL(string: "https://music-detail.invalid/\(UUID()).png")!
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).image { context in
+            UIColor.cyan.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
+        }
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(artwork.pngData())),
+            for: URLRequest(url: url)
+        )
+        defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
+        let loaded = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+        XCTAssertNotNil(loaded)
+
+        for size in [CGSize(width: 834, height: 1_194), CGSize(width: 1_194, height: 834)] {
+            for gradients in [true, false] {
+                for playlist in [false, true] {
+                    let page = Group {
+                        if playlist {
+                            MobileMusicPlaylistDetail(
+                                playlist: MusicPlaylist(id: "playlist", title: "Playlist", artworkURL: url),
+                                tracks: [], nowPlayingTrack: nil, isPlaying: false,
+                                onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
+                            )
+                        } else {
+                            MobileMusicAlbumDetail(
+                                album: MusicAlbum(id: "album", title: "Album", artworkURL: url),
+                                tracks: [], nowPlayingTrack: nil, isPlaying: false,
+                                onPlay: {}, onShuffle: {}, onPlayTrack: { _ in }
+                            )
+                        }
+                    }
+                    .environment(\.themePalette, .light)
+                    .environment(\.gradientBackgroundsEnabled, gradients)
+                    try await mount(page, size: size, name: "Artwork shadow \(size.width) \(gradients) \(playlist)") { _, window in
+                        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                        }
+                        let edge = min(size.width * 0.32, 300)
+                        let centerX = max(0, (size.width - 1_000) / 2) + 32 + edge / 2
+                        let coverRows = try (0..<600).filter { y in
+                            let color = try self.pixel(in: image, at: CGPoint(x: centerX, y: CGFloat(y)))
+                            return color[0] < 0.1 && color[1] > 0.9 && color[2] > 0.9
+                        }
+                        let bottom = try XCTUnwrap(coverRows.last, "Measure the loaded artwork, not a placeholder")
+                        let sampleY = CGFloat(bottom) + 16
+                        let shadow = try self.pixel(in: image, at: CGPoint(x: centerX, y: sampleY))
+                        let background = try self.pixel(in: image, at: CGPoint(x: size.width - 16, y: sampleY))
+                        XCTAssertGreaterThan(background[1] - shadow[1], 0.015,
+                                             "The next section must not paint over the artwork shadow below the hero")
+                    }
+                }
+            }
+        }
+    }
+
     func testNativeNavigationHasNoDarkSeamAboveTheHero() async throws {
         let url = URL(string: "https://music-detail.invalid/\(UUID().uuidString).png")!
         let artwork = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).image { context in
@@ -156,12 +279,18 @@ final class MusicDetailPresentationTests: XCTestCase {
     }
 
     func testArtworkPaletteKeepsWhiteTextLegible() throws {
-        for color in [UIColor.red, .green, .blue, .yellow, .white, .black, .gray] {
+        for color in [UIColor.red, .green, .blue, .yellow, .white, .black, .gray,
+                      UIColor(red: 0.02, green: 0.1, blue: 0.12, alpha: 1)] {
             let image = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48)).image { context in
                 color.setFill()
                 context.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
             }
             let palette = MusicDetailColors(image: image)
+            var heroBrightness: CGFloat = 0, deepBrightness: CGFloat = 0
+            UIColor(palette.hero).getHue(nil, saturation: nil, brightness: &heroBrightness, alpha: nil)
+            UIColor(palette.deep).getHue(nil, saturation: nil, brightness: &deepBrightness, alpha: nil)
+            XCTAssertLessThanOrEqual(deepBrightness, heroBrightness,
+                                     "Dark covers must not fade into a brighter background")
             for background in [palette.hero, palette.deep] {
                 var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
                 XCTAssertTrue(UIColor(background).getRed(&r, green: &g, blue: &b, alpha: &a))

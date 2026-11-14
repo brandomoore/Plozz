@@ -1006,6 +1006,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Provider marks** — IPTV uses coral-red while Media Share keeps teal.
   `ProviderBrandMark` owns their shared icon and badge tints, including deeper
   colors on white focus cards and brighter colors on black focus cards.
+  When an IPTV source supplies `siteURL`, it uses the source origin's favicon
+  on TV and mobile, falling back to the shared IPTV mark if unavailable.
+  Requests omit source credentials, cookies, paths, and query parameters;
+  no third-party favicon service is used.
   Silo retains its multicolor logo over a warm-stone (`#CDB795`) tint at the
   same 18% badge opacity as the other providers. Its narrow artwork is 15%
   larger within the unchanged badge bounds.

@@ -781,7 +781,7 @@ the following settings down by the full list height.
 Saved sources use icon/name/status rows instead of repeating every control and hostname.
 Provider/type and status share one secondary line, with compact row insets rather
 than another full layer of group padding. Long content can still wrap.
-Playlist icons optionally load the source origin's favicon, with a generic
+Playlist icons on TV, iPhone, and iPad optionally load the source origin's favicon, with a generic
 fallback; no playlist credentials or third-party favicon service are used.
 Connected media servers reuse `ProviderBrandMark`, including the same Plex,
 Jellyfin, and Emby logos and focus-aware colors used elsewhere in Settings.
