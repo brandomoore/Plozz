@@ -12,6 +12,11 @@ button. Its field, section headings, and artwork share the header's horizontal
 inset. The title still collapses while searching, and results scroll behind the
 transparent field header without replacing the text field.
 
+On iOS, tapping the selected navigation item returns the current page's vertical
+scroller to the top, including with the opaque tab bar. Switching destinations
+preserves their scroll positions. Horizontal media rows remain untouched, Settings
+remains an action, and native navigation/delegate handling is preserved.
+
 The composition root. Wires every other module into a single running app
 and owns the top-level navigation, profile selection, and provider
 registry.

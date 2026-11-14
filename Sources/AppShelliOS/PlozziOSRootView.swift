@@ -1042,6 +1042,7 @@ struct PlozziOSTabShell: View {
     @State private var retainsExplicitDownloadEntry = false
     @State private var downloadNavigationID: UUID?
     @State private var hasChosenNavigationDestination = false
+    @State private var scrollToTopRequest = 0
     let homeViewModelBox: LazyViewState<HomeViewModel>
     var sharedHomeViewModel: HomeViewModel {
         homeViewModelBox.value(forKey: homeContentIdentity, onDiscard: { $0.invalidate() }) {
@@ -1194,7 +1195,13 @@ struct PlozziOSTabShell: View {
     private var destinationSelection: Binding<PlozziOSDestination> {
         Binding(
             get: { effectiveSelectedDestination },
-            set: openDestination
+            set: { destination in
+                if usesOpaqueBottomBar, destination == effectiveSelectedDestination,
+                   destination != .settings, !isShowingMorePage {
+                    scrollToTopRequest &+= 1
+                }
+                openDestination(destination)
+            }
         )
     }
 
@@ -1514,7 +1521,8 @@ struct PlozziOSTabShell: View {
                     && appModel.music?.player.controller.hasActivePlayback == true,
                 musicDockUsesBottomBar: !usesVerticalToolbar,
                 hasOpaqueBottomBar: usesOpaqueBottomBar,
-                overflowNavigation: overflowNavigation
+                overflowNavigation: overflowNavigation,
+                scrollToTopRequest: scrollToTopRequest
             )
             .frame(width: 0, height: 0)
         }
@@ -1918,6 +1926,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
     var musicDockUsesBottomBar = true
     var hasOpaqueBottomBar = false
     var overflowNavigation: PlozziOSOverflowNavigation?
+    var scrollToTopRequest = 0
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
 
@@ -1932,6 +1941,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.hasOpaqueBottomBar = hasOpaqueBottomBar
         controller.overflowNavigation = overflowNavigation
         controller.install()
+        controller.receiveScrollToTopRequest(scrollToTopRequest)
     }
 
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
@@ -1968,6 +1978,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         private var reportedBottomBarVisibility: Bool?
         private var reportedOverflowVisibility: Bool?
         private var previousTabBarHidden: Bool?
+        private var lastScrollToTopRequest: Int?
         private weak var owner: UITabBarController?
         private weak var previousDelegate: (any UITabBarControllerDelegate)?
         private weak var overflowTable: UITableView?
@@ -2314,7 +2325,10 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                 action?()
                 return false
             }
-            return previousDelegate?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
+            let reselectsCurrentTab = tabBarController.selectedTab === tab
+            let allowed = previousDelegate?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
+            if allowed && reselectsCurrentTab { scrollSelectedPageToTop() }
+            return allowed
         }
 
         func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
@@ -2323,7 +2337,50 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                 action?()
                 return false
             }
-            return previousDelegate?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
+            let reselectsCurrentTab = tabBarController.selectedViewController === viewController
+            let allowed = previousDelegate?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
+            if allowed && reselectsCurrentTab && viewController !== tabBarController.moreNavigationController {
+                scrollSelectedPageToTop()
+            }
+            return allowed
+        }
+
+        func receiveScrollToTopRequest(_ request: Int) {
+            defer { lastScrollToTopRequest = request }
+            guard let previous = lastScrollToTopRequest, previous != request else { return }
+            scrollSelectedPageToTop()
+        }
+
+        private func scrollSelectedPageToTop() {
+            guard let owner, var selected = owner.selectedViewController else { return }
+            if selected === owner.moreNavigationController {
+                guard let destination = owner.moreNavigationController.topViewController,
+                      destination !== owner.moreNavigationController.viewControllers.first else { return }
+                selected = destination
+            }
+            guard selected.presentedViewController == nil,
+                  let root = selected.viewIfLoaded else { return }
+
+            // The outer vertical scroller owns the page; nested horizontal media
+            // rails and other retained tabs must keep their positions.
+            func pageScroll(in view: UIView) -> UIScrollView? {
+                guard !view.isHidden, view.alpha > 0.01 else { return nil }
+                if let scroll = view as? UIScrollView,
+                   scroll.isScrollEnabled,
+                   scroll.convert(scroll.bounds, to: root).intersects(root.bounds),
+                   scroll.alwaysBounceVertical || scroll.contentSize.height
+                    + scroll.adjustedContentInset.top + scroll.adjustedContentInset.bottom > scroll.bounds.height {
+                    return scroll
+                }
+                return view.subviews.lazy.compactMap { pageScroll(in: $0) }.first
+            }
+            guard let scroll = pageScroll(in: root) else { return }
+            let top = -scroll.adjustedContentInset.top
+            guard scroll.contentOffset.y > top else { return }
+            scroll.setContentOffset(
+                CGPoint(x: scroll.contentOffset.x, y: top),
+                animated: !UIAccessibility.isReduceMotionEnabled
+            )
         }
 
         override func responds(to selector: Selector!) -> Bool {

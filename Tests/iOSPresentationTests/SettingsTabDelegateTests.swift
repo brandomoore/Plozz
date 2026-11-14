@@ -5,6 +5,134 @@ import XCTest
 
 @MainActor
 final class SettingsTabDelegateTests: XCTestCase {
+    func testReselectionScrollsOnlyTheCurrentPageForNativeAndLegacyTabs() {
+        for native in [false, true] {
+            let root = UIViewController()
+            let tabs = UITabBarController()
+            let pages = (0..<3).map { _ in UIViewController() }
+            let scroll = pageScroll(in: pages[0])
+            let otherScroll = pageScroll(in: pages[2])
+            let horizontal = UIScrollView(frame: CGRect(x: 0, y: 60, width: 300, height: 100))
+            horizontal.contentSize = CGSize(width: 1800, height: 100)
+            horizontal.contentOffset.x = 160
+            scroll.addSubview(horizontal)
+            if native {
+                tabs.tabs = pages.enumerated().map { index, page in
+                    UITab(title: "\(index)", image: nil, identifier: "\(index)") { _ in page }
+                }
+                tabs.selectedTab = tabs.tabs[0]
+            } else {
+                tabs.viewControllers = pages
+                tabs.selectedViewController = pages[0]
+            }
+            root.addChild(tabs)
+            let controller = bridge(in: root)
+            defer { controller.restore() }
+            var settingsActions = 0
+            controller.action = { settingsActions += 1 }
+            controller.install()
+
+            if native {
+                XCTAssertTrue(controller.tabBarController(tabs, shouldSelectTab: tabs.tabs[2]))
+                XCTAssertFalse(controller.tabBarController(tabs, shouldSelectTab: tabs.tabs[1]))
+            } else {
+                XCTAssertTrue(controller.tabBarController(tabs, shouldSelect: pages[2]))
+                XCTAssertFalse(controller.tabBarController(tabs, shouldSelect: pages[1]))
+            }
+            XCTAssertEqual(scroll.contentOffset.y, 250)
+            XCTAssertEqual(otherScroll.contentOffset.y, 250)
+            XCTAssertEqual(settingsActions, 1)
+            if native {
+                XCTAssertTrue(controller.tabBarController(tabs, shouldSelectTab: tabs.tabs[0]))
+            } else {
+                XCTAssertTrue(controller.tabBarController(tabs, shouldSelect: pages[0]))
+            }
+            XCTAssertEqual(scroll.contentOffset.y, -scroll.adjustedContentInset.top)
+            XCTAssertEqual(scroll.contentOffset.x, 30)
+            XCTAssertEqual(horizontal.contentOffset.x, 160)
+            XCTAssertEqual(otherScroll.contentOffset.y, 250)
+        }
+    }
+
+    func testOpaqueReselectionRequestsDoNotReplayOnMountOrUnrelatedUpdates() {
+        let root = UIViewController()
+        let tabs = UITabBarController()
+        let page = UIViewController()
+        let scroll = pageScroll(in: page)
+        tabs.viewControllers = [page, UIViewController()]
+        root.addChild(tabs)
+        let controller = bridge(in: root)
+        defer { controller.restore() }
+        controller.install()
+        controller.receiveScrollToTopRequest(8)
+        XCTAssertEqual(scroll.contentOffset.y, 250)
+        controller.receiveScrollToTopRequest(9)
+        XCTAssertEqual(scroll.contentOffset.y, -scroll.adjustedContentInset.top)
+        scroll.contentOffset.y = 200
+        controller.receiveScrollToTopRequest(9)
+        XCTAssertEqual(scroll.contentOffset.y, 200)
+    }
+
+    func testRejectedReselectionKeepsThePagePosition() {
+        let root = UIViewController()
+        let tabs = UITabBarController()
+        let page = UIViewController()
+        let scroll = pageScroll(in: page)
+        tabs.tabs = [UITab(title: "Home", image: nil, identifier: "home") { _ in page }]
+        let original = Delegate()
+        tabs.delegate = original
+        root.addChild(tabs)
+        let controller = bridge(in: root)
+        defer { controller.restore() }
+        controller.install()
+        XCTAssertFalse(controller.tabBarController(tabs, shouldSelectTab: tabs.tabs[0]))
+        XCTAssertFalse(controller.tabBarController(tabs, shouldSelect: page))
+        XCTAssertEqual(scroll.contentOffset.y, 250)
+    }
+
+    func testOpaqueReselectionScrollsOverflowContentWithoutChangingMoreNavigation() throws {
+        let root = UIViewController()
+        let tabs = UITabBarController()
+        let pages = (0..<12).map { _ in UIViewController() }
+        let scroll = pageScroll(in: pages[11])
+        tabs.viewControllers = pages
+        root.addChild(tabs)
+        let more = tabs.moreNavigationController
+        let moreRoot = try XCTUnwrap(more.viewControllers.first)
+        tabs.selectedViewController = more
+        more.setViewControllers([moreRoot, pages[11]], animated: false)
+        let controller = bridge(in: root)
+        defer { controller.restore() }
+        controller.install()
+
+        XCTAssertTrue(controller.tabBarController(tabs, shouldSelect: more))
+        XCTAssertEqual(scroll.contentOffset.y, 250, "More keeps its native back-to-list behavior.")
+        controller.receiveScrollToTopRequest(0)
+        controller.receiveScrollToTopRequest(1)
+        XCTAssertEqual(scroll.contentOffset.y, -scroll.adjustedContentInset.top)
+        XCTAssertTrue(more.topViewController === pages[11])
+    }
+
+    private func pageScroll(in controller: UIViewController) -> UIScrollView {
+        controller.view = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
+        let hidden = ImmediateScrollView(frame: controller.view.bounds)
+        hidden.contentSize = CGSize(width: 320, height: 2000)
+        hidden.isHidden = true
+        controller.view.addSubview(hidden)
+        let scroll = ImmediateScrollView(frame: controller.view.bounds)
+        scroll.contentSize = CGSize(width: 600, height: 2400)
+        scroll.contentInset.top = 24
+        scroll.contentOffset = CGPoint(x: 30, y: 250)
+        controller.view.addSubview(scroll)
+        return scroll
+    }
+
+    private final class ImmediateScrollView: UIScrollView {
+        override func setContentOffset(_ contentOffset: CGPoint, animated: Bool) {
+            super.setContentOffset(contentOffset, animated: false)
+        }
+    }
+
     func testNativeTabsIdentifyOverflowWhenLegacyControllersAreEmpty() async throws {
         let root = UIViewController()
         let tabs = NativeOnlyTabs()

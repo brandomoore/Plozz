@@ -26,6 +26,64 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false)
     }
 
+    func testRetappingNavigationScrollsThePageToTopWithoutResettingOtherTabs() throws {
+        for opaque in [false, true] {
+            launchNavigation(arguments: ["--navigation-scroll-fixture"] + (opaque ? ["--opaque-navigation"] : []))
+            let movies = app.buttons.matching(NSPredicate(format: "label == %@", "Movies")).firstMatch
+            XCTAssertTrue(movies.waitForExistence(timeout: 10), app.debugDescription)
+            movies.tap()
+            let browse = app.buttons["library-mode-titles"]
+            XCTAssertTrue(browse.waitForExistence(timeout: 5))
+            browse.tap()
+            let first = app.staticTexts["Navigation item 01"].firstMatch
+            XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
+            let originalY = first.frame.minY
+            scrollPageDown()
+            XCTAssertFalse(first.isHittable)
+            let retained = try XCTUnwrap(app.staticTexts.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "Navigation item")
+            ).allElementsBoundByIndex.first { $0.isHittable })
+            let retainedLabel = retained.label
+            let retainedY = retained.frame.minY
+
+            let search = app.buttons.matching(NSPredicate(format: "label == %@", "Search")).firstMatch
+            search.tap()
+            let field = app.textFields["Search your libraries"]
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.tap()
+            field.typeText("navigation")
+            let searchFirst = app.staticTexts["Search Navigation item 01"].firstMatch
+            XCTAssertTrue(searchFirst.waitForExistence(timeout: 10))
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
+                .withOffset(CGVector(dx: 0, dy: 40)).tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            let searchY = searchFirst.frame.minY
+            scrollPageDown()
+            XCTAssertFalse(searchFirst.isHittable)
+            search.tap()
+            XCTAssertTrue(searchFirst.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            XCTAssertEqual(searchFirst.frame.minY, searchY, accuracy: 2)
+            XCTAssertEqual(field.value as? String, "navigation")
+
+            movies.tap()
+            let restored = app.staticTexts[retainedLabel].firstMatch
+            XCTAssertTrue(restored.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            XCTAssertEqual(restored.frame.minY, retainedY, accuracy: 2)
+            movies.tap()
+            XCTAssertTrue(first.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            XCTAssertEqual(first.frame.minY, originalY, accuracy: 2)
+            capture("navigation-retap-\(opaque ? "opaque" : "native")")
+            app.terminate()
+        }
+    }
+
+    private func scrollPageDown() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)
+            ))
+    }
+
     func testOpaqueNavigationPreservesSettingsBackAndTabActions() {
         verifyNavigationRetention(
             directPresentation: false, settingsFirst: true, arguments: ["--opaque-navigation"]
