@@ -581,6 +581,64 @@ final class VideoZoomPresentationTests: XCTestCase {
         }
     }
 
+    func testDarkPictureCropsWhilePlaybackAdvancesWithoutABrightScene() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let folder = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Fixtures", withExtension: nil))
+        for native in [true, false] {
+            let engine: any VideoEngine
+            if native {
+                engine = NativeVideoEngine(startsMuted: true, activePictureAnalyzer: PlozzigenNativePictureAnalyzer())
+            } else {
+                let aether = try PlozzigenVideoEngine()
+                aether.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+                engine = aether
+            }
+            let view = VideoPresentationView(frame: host.view.bounds)
+            host.view.addSubview(view)
+            view.attach(engine)
+            view.update(zoom: PlayerVideoZoom(mode: .picture))
+            defer {
+                view.removeFromSuperview()
+                engine.stopActivePictureAnalysis()
+                engine.stop()
+            }
+            let started = ProcessInfo.processInfo.systemUptime
+            await engine.load(request: PlaybackRequest(
+                item: MediaItem(id: "dark-picture", title: "Synthetic dark picture", kind: .movie, runtime: 6),
+                streamURL: folder.appendingPathComponent("active-picture-dark.mp4"),
+                sourceMetadata: .init(video: .init(codec: "h264", videoRange: "SDR"))
+            ), startPosition: 0)
+            try await waitUntil(timeout: 30) { engine.hasPresentedVideoFrame && engine.isPlaybackPositionReady }
+            XCTAssertEqual(engine.nowPlayingPlayer != nil, native)
+            let firstFrame = ProcessInfo.processInfo.systemUptime
+            let firstPosition = engine.currentTime
+            view.update(zoom: PlayerVideoZoom(mode: .picture))
+            try await waitUntil(timeout: 3) {
+                guard let picture = view.activePictureRect, let video = view.videoRect else { return false }
+                return picture.height < video.height * 0.75 && picture.height > video.height * 0.65
+            }
+            XCTAssertGreaterThan(engine.currentTime - firstPosition, 0.5, "Detection must not pause playback.")
+            XCTContext.runActivity(named: native ? "Dark native crop" : "Dark software crop") { activity in
+                let evidence = XCTAttachment(string:
+                    "firstFrameMilliseconds=\((firstFrame - started) * 1000)\n"
+                    + "cropAfterFirstFrameMilliseconds=\((ProcessInfo.processInfo.systemUptime - firstFrame) * 1000)")
+                evidence.lifetime = .keepAlways
+                activity.add(evidence)
+            }
+        }
+    }
+
     func testNativeHDRPictureAnalysisLeavesDisplayedPixelsUnchanged() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
