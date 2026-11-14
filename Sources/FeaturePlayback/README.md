@@ -1486,18 +1486,21 @@ establish a crop. Native quarter-turn rotation and mirroring map measurements
 into the upright display canvas after clean-aperture/sample-aspect correction.
 Multiview keeps its original slots and defaults; visible
 panes share the engine's bounded four-session analysis admission.
-Native analysis requests CPU-readable NV12 for SDR, P010 for PQ/HLG, and
-converted half-float RGB for Dolby Vision or unknown source color. It does not
+Native analysis borrows the decoder's original pixel format and size. A bounded
+worker converts its private copy to CPU-readable NV12 for SDR, P010 for PQ/HLG,
+and half-float RGB for Dolby Vision or unknown source color. It does not
 interpret a Profile 5/10 IPT base layer as ordinary PQ luma or change playback
 color settings. Output selection follows source color, not the panel-clamped
 playback badge, including on SDR displays. `NativeVideoEngine` receives the shared analyzer from both app
 composition roots; its default/test initializer remains explicitly unsupported
 without injection. Load, seek, teardown and PiP release or invalidate analysis.
-AVFoundation may materialize/decompress that output; the 2 Hz analysis limit
-does not bound system-side output cost. HDR and particularly half-float outputs
-can require larger surfaces internally. The tap requests only 320x180 pixels;
-its original display canvas is retained separately and size changes invalidate
-pending results. Disabling analysis releases only its owned tap.
+Pixel-format and size requirements must not be placed on the AVPlayer output:
+they also renegotiate the displayed format and can persist after the tap is
+removed, affecting HDR/Dolby Vision presentation. Private conversion runs at the
+2 Hz analysis cadence into a buffer no larger than 320x180; the borrowed decoder
+buffer can remain full resolution. Its original display canvas is retained
+separately and size changes invalidate pending results. Disabling analysis
+releases only its owned tap.
 
 The hosted active-picture regression uses original `testsrc2` fixtures at
 320x180/24 fps for 18 seconds: 28-pixel top/bottom bars before 8 seconds and
@@ -1515,7 +1518,11 @@ changing the video layer, playback position, or subtitle text geometry.
 The rotated fixture is a stream copy of `active-picture.mp4`, produced with
 FFmpeg `-display_rotation 90 -i active-picture.mp4 -map 0:v:0 -c copy
 active-picture-rotated.mp4`. Native analysis must retain the original upright
-aspect and crop axis while returning buffers no larger than 320x180.
+aspect and crop axis while retaining the native output's original dimensions.
+Engine regressions bound the worker-owned buffers to 320x180. A hosted HDR
+regression compares the same displayed frame's native format and linear RGB
+before, during, and after analysis, including the half-float conversion policy.
+This does not substitute for physical-device Dolby Vision output verification.
 
 The optional `testLocalPictureRelativePGSStaysInsideMeasuredPicture` hosted
 test accepts an authorized local HDR clip through `PLOZZ_PICTURE_MEDIA_REPRO`

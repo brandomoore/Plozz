@@ -581,6 +581,86 @@ final class VideoZoomPresentationTests: XCTestCase {
         }
     }
 
+    func testNativeHDRPictureAnalysisLeavesDisplayedPixelsUnchanged() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let url = try XCTUnwrap(SubtitleHDRPreview.assetURL)
+        // Exercise both native conversion policies on the same authored HDR frame.
+        for range in [SourceDynamicRange.hdr10, .dolbyVision] {
+            let engine = NativeVideoEngine(startsMuted: true)
+            let analyzer = PlozzigenNativePictureAnalyzer()
+            let surface = engine.makeVideoOutputView()
+            surface.frame = host.view.bounds
+            host.view.addSubview(surface)
+            defer {
+                analyzer.stop()
+                engine.stop()
+                surface.removeFromSuperview()
+            }
+            await engine.load(request: PlaybackRequest(
+                item: MediaItem(id: "hdr-crop", title: "Synthetic HDR", kind: .movie, runtime: 16),
+                streamURL: url
+            ), startPosition: 0)
+            try await waitUntil(timeout: 30) { engine.hasPresentedVideoFrame }
+            let player = try XCTUnwrap(engine.nowPlayingPlayer)
+            let item = try XCTUnwrap(player.currentItem)
+            let layer = try XCTUnwrap(surface.layer as? AVPlayerLayer)
+            let context = CIContext(options: [.cacheIntermediates: false])
+            func snapshot() async throws -> (format: OSType, pixels: [Float]) {
+                player.pause()
+                let landed = await player.seek(
+                    to: CMTime(seconds: 2, preferredTimescale: 600),
+                    toleranceBefore: .zero, toleranceAfter: .zero)
+                XCTAssertTrue(landed)
+                try await Task.sleep(for: .milliseconds(400))
+                let buffer = try XCTUnwrap(layer.displayedPixelBuffer())
+                let image = CIImage(cvPixelBuffer: buffer)
+                let sampled = image.transformed(by: CGAffineTransform(
+                    scaleX: 32 / image.extent.width, y: 18 / image.extent.height))
+                var pixels = [Float](repeating: 0, count: 32 * 18 * 4)
+                context.render(sampled, toBitmap: &pixels, rowBytes: 32 * 16,
+                               bounds: CGRect(x: 0, y: 0, width: 32, height: 18),
+                               format: .RGBAf, colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+                return (CVPixelBufferGetPixelFormatType(buffer), pixels)
+            }
+            let baseline = try await snapshot()
+            player.play()
+            var measured = false
+            let deadline = ContinuousClock.now + .seconds(8)
+            while !measured && ContinuousClock.now < deadline {
+                if case .measured = await analyzer.sample(player: player, generation: 0, dynamicRange: range) {
+                    measured = true
+                }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            XCTAssertTrue(measured, "Color isolation must not disable border detection.")
+            XCTAssertEqual(item.outputs.filter { $0 is AVPlayerItemVideoOutput }.count, 1)
+            let active = try await snapshot()
+            analyzer.stop()
+            player.play()
+            try await Task.sleep(for: .milliseconds(500))
+            let stopped = try await snapshot()
+            for result in [active, stopped] {
+                XCTAssertEqual(result.format, baseline.format, "Analysis must not renegotiate the displayed format.")
+                let differences = zip(result.pixels, baseline.pixels).map { abs($0 - $1) }
+                XCTAssertTrue(differences.allSatisfy { $0.isFinite && $0 <= 0.00001 },
+                              "Only private analysis pixels may be converted; maximum difference: \(differences.max() ?? 0).")
+            }
+            XCTAssertFalse(item.outputs.contains { $0 is AVPlayerItemVideoOutput })
+            XCTAssertTrue(player.currentItem === item)
+        }
+    }
+
     #if os(iOS)
     func testNativeSafeAreaFittingKeepsPlaybackAndOrdinarySubtitleLayoutStable() async throws {
         try await verify(engine: NativeVideoEngine(), fitsInsideSafeArea: true)
@@ -660,8 +740,9 @@ final class VideoZoomPresentationTests: XCTestCase {
             let output = try XCTUnwrap(player.currentItem?.outputs.compactMap { $0 as? AVPlayerItemVideoOutput }.first)
             var displayed = CMTime.invalid
             let buffer = try XCTUnwrap(output.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: &displayed))
-            XCTAssertLessThanOrEqual(CVPixelBufferGetWidth(buffer), 320)
-            XCTAssertLessThanOrEqual(CVPixelBufferGetHeight(buffer), 180)
+            XCTAssertEqual(CVPixelBufferGetWidth(buffer), fixture.contains("rotated") ? 320 : 720)
+            XCTAssertEqual(CVPixelBufferGetHeight(buffer), fixture.contains("rotated") ? 180 : 576,
+                           "The native tap must retain source sizing; only the worker's private copy is downscaled.")
             engine.stopActivePictureAnalysis()
         }
         engine.pause()
