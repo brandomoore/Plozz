@@ -85,9 +85,10 @@ struct UpcomingCaptureFixture: View {
         let collapsesCalendar = arguments.contains("--capture-calendar-collapsed")
         let resizesCalendar = arguments.contains("--capture-calendar-resize")
         let narrow = arguments.contains("--capture-narrow")
+        let thirty = arguments.contains("--capture-thirty")
         guard arguments.contains("--capture-scrolled") || arguments.contains("--capture-landscape")
             || arguments.contains("--capture-dense") || showsCalendar || collapsesCalendar
-            || resizesCalendar || narrow else { return }
+            || resizesCalendar || narrow || thirty else { return }
         try await Task.sleep(for: .seconds(1))
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows).first(where: \.isKeyWindow) else {
@@ -106,7 +107,7 @@ struct UpcomingCaptureFixture: View {
         func controllers(_ controller: UIViewController) -> [UIViewController] {
             [controller] + controller.children.flatMap(controllers)
         }
-        if arguments.contains("--capture-landscape") || narrow {
+        if arguments.contains("--capture-landscape") || narrow || thirty {
             for controller in window.rootViewController.map(controllers) ?? [] {
                 (controller as? UITabBarController)?.sidebar.isHidden = true
             }
@@ -156,7 +157,7 @@ struct UpcomingCaptureFixture: View {
         }
         let before = navigationBar.convert(navigationBar.bounds, to: window)
         precondition(before.maxY <= window.safeAreaInsets.top + 64, "Upcoming toolbar occupies a second row")
-        if arguments.contains("--capture-dense") {
+        func renderedText() throws -> [(String, CGRect)] {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
             }
@@ -164,9 +165,12 @@ struct UpcomingCaptureFixture: View {
             request.recognitionLevel = .accurate
             request.recognitionLanguages = ["en-US"]
             try VNImageRequestHandler(cgImage: image.cgImage!).perform([request])
-            let text = (request.results ?? []).compactMap { observation -> (String, CGRect)? in
+            return (request.results ?? []).compactMap { observation -> (String, CGRect)? in
                 observation.topCandidates(1).first.map { ($0.string, observation.boundingBox) }
             }
+        }
+        if arguments.contains("--capture-dense") {
+            let text = try renderedText()
             let frames = ["The Simpsons", "Severance", "Silo"].map { title in
                 guard let frame = text.filter({ $0.0 == title }).map(\.1).min(by: { $0.minY < $1.minY }) else {
                     preconditionFailure("Missing Upcoming poster caption: \(title)")
@@ -194,7 +198,8 @@ struct UpcomingCaptureFixture: View {
             }) else {
                 preconditionFailure("Upcoming capture requires a scrollable agenda")
             }
-            scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 250), animated: false)
+            let offset = thirty ? scroll.contentSize.height - scroll.bounds.height : scroll.contentOffset.y + 250
+            scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
             try await Task.sleep(for: .milliseconds(500))
             if let inlinePicker, let inlineFrame {
                 precondition(abs(inlinePicker.convert(inlinePicker.bounds, to: window).minY - inlineFrame.minY) < 2,
@@ -261,7 +266,7 @@ struct UpcomingCaptureFixture: View {
                 preconditionFailure("Calendar toggle capture requires an inline picker and scrollable agenda")
             }
             let expandedWidth = agenda.bounds.width
-            let selected = Calendar.current.date(byAdding: .day, value: 1, to: inlinePicker.date)!
+            let selected = Calendar.current.date(byAdding: .day, value: thirty ? 0 : 1, to: inlinePicker.date)!
             inlinePicker.setDate(selected, animated: false)
             inlinePicker.sendActions(for: .valueChanged)
             try await Task.sleep(for: .milliseconds(500))
@@ -297,6 +302,20 @@ struct UpcomingCaptureFixture: View {
                 }
                 precondition(Calendar.current.isDate(restored.date, inSameDayAs: selected), "Restoring lost the selected date")
             }
+        }
+        if thirty {
+            let releases = fixture.home.upcoming.visibleReleases.filter { Calendar.current.isDateInToday($0.date) }
+            precondition(releases.count == 30 && Set(releases.map(\.id)).count == 30,
+                         "Busy-day preview must contain exactly thirty distinct cards")
+            precondition(releases.first?.item.title == "01. The Simpsons" && releases.last?.item.title == "30. Foundation",
+                         "Numbered preview cards must retain their reading order")
+            let text = try renderedText()
+            let expected = arguments.contains("--capture-scrolled") ? "30. Foundation" : "01. The Simpsons"
+            precondition(text.contains { $0.0 == expected }, "Busy-day preview did not render \(expected)")
+            if arguments.contains("--capture-scrolled") {
+                precondition(text.contains { $0.0 == "A saved movie" }, "The following date must remain reachable")
+            }
+            FileHandle.standardOutput.write(Data("Upcoming thirty-card preview verified\n".utf8))
         }
         if arguments.contains("--capture-landscape") || narrow {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -528,8 +547,16 @@ private struct UpcomingCaptureProvider: MediaProvider {
     static var releases: [UpcomingRelease] {
         let today = Calendar.current.startOfDay(for: Date())
         let dense = ProcessInfo.processInfo.arguments.contains("--capture-dense")
-        var result = Self.series.prefix(dense ? Self.series.count : 3).enumerated().flatMap { index, item -> [UpcomingRelease] in
-            let day = Calendar.current.date(byAdding: .day, value: dense || index == 0 ? 0 : 1, to: today)!
+        let thirty = ProcessInfo.processInfo.arguments.contains("--capture-thirty")
+        let items = thirty ? (0..<30).map { index in
+            var item = Self.series[index % Self.series.count]
+            let number = String(format: "%02d", index + 1)
+            item.id = "capture-busy-show-\(number)"
+            item.title = "\(number). \(item.title)"
+            return item
+        } : Array(Self.series.prefix(dense ? Self.series.count : 3))
+        var result = items.enumerated().flatMap { index, item -> [UpcomingRelease] in
+            let day = Calendar.current.date(byAdding: .day, value: thirty || dense || index == 0 ? 0 : 1, to: today)!
             let episodes = (0..<(index == 1 ? 3 : 1)).map { offset in
                 UpcomingEpisode(
                     seriesIdentity: .external(source: "capture", value: "\(index)"),
@@ -545,7 +572,7 @@ private struct UpcomingCaptureProvider: MediaProvider {
             [.init(kind: .digital, date: Calendar.current.date(byAdding: .day, value: 2, to: today)!, regionCode: "US")],
             for: movie, interests: [.watchlist], regionCode: "US"
         )
-        if ["--capture-scrolled", "--capture-selection", "--capture-calendar-collapsed", "--capture-calendar-resize"]
+        if !thirty, ["--capture-scrolled", "--capture-selection", "--capture-calendar-collapsed", "--capture-calendar-resize"]
             .contains(where: ProcessInfo.processInfo.arguments.contains) {
             for index in 3..<20 {
                 let item = series[index % series.count]

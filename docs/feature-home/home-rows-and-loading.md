@@ -70,6 +70,9 @@ Mobile previews mount the production `PlozziOSTabShell`, including its navigatio
 and appearance bridges, with a seeded feed loader rather than live release lookup.
 `--capture-dense` puts five shows on one date and checks rendered poster spacing,
 phone wrapping, and single/grouped episode captions.
+`--capture-thirty` instead places thirty uniquely numbered sample cards on Today,
+reusing the fixture artwork. Its scrolled capture reaches the last card and the
+following date; its minimized capture retains Today to compare the same grid.
 They also support
 `--capture-scrolled`, `--capture-calendar` and
 `--capture-selection` to exercise pinned controls, the real calendar presentation
