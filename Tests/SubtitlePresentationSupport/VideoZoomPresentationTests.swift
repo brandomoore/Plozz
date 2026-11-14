@@ -717,6 +717,230 @@ final class VideoZoomPresentationTests: XCTestCase {
         if let originalItem { XCTAssertTrue(engine.nowPlayingPlayer?.currentItem === originalItem) }
     }
 
+    private struct CropReference: Decodable {
+        let from: Double
+        let to: Double
+        let rect: [CGFloat]
+    }
+
+    private struct CropScene: Decodable {
+        let label: String
+        let url: URL
+        let start: Double
+        let videoRange: String
+        let references: [CropReference]
+    }
+
+    func testLocalActivePictureVariety() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_CROP_VARIETY_REPRO"] else {
+            throw XCTSkip("Requires explicitly supplied local media and independently checked frame boundaries.")
+        }
+        let scenes = try JSONDecoder().decode(
+            [CropScene].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        guard !scenes.isEmpty, scenes.count <= 12 else { throw CocoaError(.fileReadCorruptFile) }
+        for scene in scenes {
+            do {
+                try await replayCropScene(scene)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                XCTFail("\(scene.label): \(error)")
+            }
+        }
+    }
+
+    private func replayCropScene(_ configuration: CropScene) async throws {
+        guard configuration.url.isFileURL || configuration.url.host == "127.0.0.1",
+              configuration.start.isFinite, configuration.start >= 0,
+              ["SDR", "HDR10", "DolbyVision"].contains(configuration.videoRange),
+              !configuration.references.isEmpty,
+              configuration.references.allSatisfy({
+                  $0.from.isFinite && $0.to.isFinite && $0.from >= 0 && $0.to > $0.from
+                      && $0.rect.count == 4 && $0.rect.allSatisfy(\.isFinite)
+                      && VideoActivePictureGeometry.isValid(CGRect(
+                          x: $0.rect[0], y: $0.rect[1], width: $0.rect[2], height: $0.rect[3]))
+              }) else { throw CocoaError(.fileReadCorruptFile) }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let view = VideoPresentationView(frame: host.view.bounds)
+        host.view.addSubview(view)
+        view.attach(engine)
+        defer {
+            view.removeFromSuperview()
+            engine.stopActivePictureAnalysis()
+            engine.stop()
+        }
+        let loadStarted = ProcessInfo.processInfo.systemUptime
+        await engine.load(request: PlaybackRequest(
+            item: MediaItem(id: "local-crop-variety", title: "Local crop variety", kind: .movie),
+            streamURL: configuration.url,
+            sourceMetadata: .init(video: .init(codec: "hevc", videoRange: configuration.videoRange))
+        ), startPosition: configuration.start)
+        try await waitUntil(timeout: 30) { engine.hasPresentedVideoFrame && engine.isPlaybackPositionReady }
+        let firstFrameMilliseconds = (ProcessInfo.processInfo.systemUptime - loadStarted) * 1000
+        let player = engine.nowPlayingPlayer
+        let item = player?.currentItem
+        let surface = engine.makeVideoOutputView()
+        var nativeLayer: AVPlayerLayer?
+        var layers = [surface.layer]
+        while let layer = layers.popLast() {
+            if let candidate = layer as? AVPlayerLayer, candidate.player === player, player != nil {
+                nativeLayer = candidate
+                break
+            }
+            layers.append(contentsOf: layer.sublayers ?? [])
+        }
+        let referenceTime = player?.currentTime()
+        func snapshot() async throws -> (format: OSType, pixels: [Float])? {
+            guard let player, let referenceTime else { return nil }
+            let layer = try XCTUnwrap(nativeLayer, "Native playback must expose its presenting layer.")
+            return try await snapshotDisplayedPicture(player: player, layer: layer, time: referenceTime)
+        }
+        var baseline: (format: OSType, pixels: [Float])?
+        var colorError: String?
+        do {
+            baseline = try await snapshot()
+        } catch {
+            colorError = String(describing: error)
+            XCTFail("\(configuration.label): native baseline capture failed: \(error)")
+        }
+        engine.play()
+        let firstPosition = engine.currentTime
+        let analysisStarted = ProcessInfo.processInfo.systemUptime
+        view.update(zoom: PlayerVideoZoom(mode: .picture))
+        var observations: [[String: Any]] = []
+        var firstAccurate: Double?
+        var overcropped = 0
+        var inaccurate = 0
+        var confidenceDropouts = 0
+        var hadMeasurement = false
+        var accurateReferenceSamples = [Int](repeating: 0, count: configuration.references.count)
+        let deadline = ContinuousClock.now + .seconds(12)
+        while true {
+            let elapsed = ProcessInfo.processInfo.systemUptime - analysisStarted
+            let position = engine.currentTime
+            var observation: [String: Any] = ["elapsed": elapsed, "position": position]
+            if let video = view.videoRect {
+                observation["presentedVideoRect"] = [video.minX, video.minY, video.width, video.height]
+            }
+            switch await engine.sampleActivePicture() {
+            case let .measured(rect, size):
+                hadMeasurement = true
+                observation["rect"] = [rect.minX, rect.minY, rect.width, rect.height]
+                observation["displaySize"] = [size.width, size.height]
+                if let referenceIndex = configuration.references.firstIndex(where: {
+                    let relative = position - configuration.start
+                    return relative >= $0.from && relative < $0.to
+                }) {
+                    let reference = configuration.references[referenceIndex]
+                    let expected = CGRect(x: reference.rect[0], y: reference.rect[1],
+                                          width: reference.rect[2], height: reference.rect[3])
+                    let error = max(abs(rect.minX - expected.minX), abs(rect.maxX - expected.maxX),
+                                    abs(rect.minY - expected.minY), abs(rect.maxY - expected.maxY))
+                    let cutsPicture = !rect.contains(expected.insetBy(dx: 0.015, dy: 0.015))
+                    observation["boundaryError"] = error
+                    observation["cutsPicture"] = cutsPicture
+                    if cutsPicture { overcropped += 1 }
+                    if error > 0.015 {
+                        inaccurate += 1
+                    } else {
+                        accurateReferenceSamples[referenceIndex] += 1
+                        if firstAccurate == nil { firstAccurate = elapsed }
+                    }
+                }
+            case let result:
+                observation["state"] = String(describing: result)
+                if hadMeasurement { confidenceDropouts += 1 }
+            }
+            observations.append(observation)
+            if ContinuousClock.now >= deadline { break }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        let advanced = engine.currentTime - firstPosition
+        var report: [String: Any] = [
+            "label": configuration.label, "videoRange": configuration.videoRange,
+            "nativePlayback": player != nil, "firstFrameMilliseconds": firstFrameMilliseconds,
+            "advancedSeconds": advanced, "overcroppedSamples": overcropped,
+            "inaccurateSamples": inaccurate, "confidenceDropoutSamples": confidenceDropouts,
+            "accurateReferenceSamples": accurateReferenceSamples,
+            "observations": observations,
+        ]
+        if let firstAccurate { report["firstAccurateSeconds"] = firstAccurate }
+        if let baseline {
+            do {
+                let activeSnapshot = try await snapshot()
+                let active = try XCTUnwrap(activeSnapshot)
+                view.update(zoom: PlayerVideoZoom())
+                let stoppedSnapshot = try await snapshot()
+                let stopped = try XCTUnwrap(stoppedSnapshot)
+                let differences = [active, stopped].flatMap {
+                    zip($0.pixels, baseline.pixels).map { abs($0 - $1) }
+                }
+                let finite = differences.allSatisfy(\.isFinite)
+                if finite { report["nativeColorMaxDifference"] = differences.max() }
+                report["nativeColorFinite"] = finite
+                report["nativeFormatUnchanged"] = active.format == baseline.format && stopped.format == baseline.format
+                XCTAssertTrue(finite && differences.allSatisfy { $0 <= 0.00001 }, configuration.label)
+                XCTAssertEqual(active.format, baseline.format, configuration.label)
+                XCTAssertEqual(stopped.format, baseline.format, configuration.label)
+            } catch {
+                colorError = String(describing: error)
+                XCTFail("\(configuration.label): native color comparison failed: \(error)")
+            }
+        } else {
+            report["colorComparison"] = player == nil
+                ? "Unavailable on software presentation; no native displayed-buffer readback."
+                : "Native baseline capture failed; see colorComparisonError."
+        }
+        if let colorError { report["colorComparisonError"] = colorError }
+        let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+        XCTContext.runActivity(named: configuration.label) { activity in
+            let evidence = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            evidence.lifetime = .keepAlways
+            activity.add(evidence)
+        }
+        XCTAssertLessThanOrEqual(try XCTUnwrap(firstAccurate, configuration.label), 3, configuration.label)
+        XCTAssertEqual(overcropped, 0, configuration.label)
+        XCTAssertEqual(inaccurate, 0, configuration.label)
+        XCTAssertEqual(confidenceDropouts, 0, configuration.label)
+        XCTAssertTrue(accurateReferenceSamples.allSatisfy { $0 > 0 },
+                      "\(configuration.label): every reference interval must be exercised.")
+        XCTAssertGreaterThan(advanced, 10, configuration.label)
+        XCTAssertTrue(engine.makeVideoOutputView() === surface)
+        if let item { XCTAssertTrue(engine.nowPlayingPlayer?.currentItem === item) }
+    }
+
+    private func snapshotDisplayedPicture(
+        player: AVPlayer, layer: AVPlayerLayer, time: CMTime
+    ) async throws -> (format: OSType, pixels: [Float]) {
+        player.pause()
+        let landed = await player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+        guard landed else { throw CocoaError(.coderValueNotFound) }
+        try await Task.sleep(for: .milliseconds(400))
+        let buffer = try XCTUnwrap(layer.displayedPixelBuffer())
+        let image = CIImage(cvPixelBuffer: buffer)
+        let sampled = image.transformed(by: CGAffineTransform(
+            scaleX: 32 / image.extent.width, y: 18 / image.extent.height))
+        var pixels = [Float](repeating: 0, count: 32 * 18 * 4)
+        CIContext(options: [.cacheIntermediates: false]).render(
+            sampled, toBitmap: &pixels, rowBytes: 32 * 16,
+            bounds: CGRect(x: 0, y: 0, width: 32, height: 18),
+            format: .RGBAf, colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+        return (CVPixelBufferGetPixelFormatType(buffer), pixels)
+    }
+
     func testNativeHDRPictureAnalysisLeavesDisplayedPixelsUnchanged() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -751,23 +975,9 @@ final class VideoZoomPresentationTests: XCTestCase {
             let player = try XCTUnwrap(engine.nowPlayingPlayer)
             let item = try XCTUnwrap(player.currentItem)
             let layer = try XCTUnwrap(surface.layer as? AVPlayerLayer)
-            let context = CIContext(options: [.cacheIntermediates: false])
             func snapshot() async throws -> (format: OSType, pixels: [Float]) {
-                player.pause()
-                let landed = await player.seek(
-                    to: CMTime(seconds: 2, preferredTimescale: 600),
-                    toleranceBefore: .zero, toleranceAfter: .zero)
-                XCTAssertTrue(landed)
-                try await Task.sleep(for: .milliseconds(400))
-                let buffer = try XCTUnwrap(layer.displayedPixelBuffer())
-                let image = CIImage(cvPixelBuffer: buffer)
-                let sampled = image.transformed(by: CGAffineTransform(
-                    scaleX: 32 / image.extent.width, y: 18 / image.extent.height))
-                var pixels = [Float](repeating: 0, count: 32 * 18 * 4)
-                context.render(sampled, toBitmap: &pixels, rowBytes: 32 * 16,
-                               bounds: CGRect(x: 0, y: 0, width: 32, height: 18),
-                               format: .RGBAf, colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
-                return (CVPixelBufferGetPixelFormatType(buffer), pixels)
+                try await snapshotDisplayedPicture(
+                    player: player, layer: layer, time: CMTime(seconds: 2, preferredTimescale: 600))
             }
             let baseline = try await snapshot()
             player.play()

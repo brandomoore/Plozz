@@ -1553,6 +1553,32 @@ fidelity. Inspect the entire trace for subsequent confidence loss. Credentials,
 source media, and captures stay outside source control; the operator owns and
 closes any authenticated loopback source.
 
+`testLocalActivePictureVariety` extends real-media coverage through a private
+`PLOZZ_CROP_VARIETY_REPRO` JSON file (`TEST_RUNNER_PLOZZ_CROP_VARIETY_REPRO` from
+xcodebuild). Supply an array of at most twelve cases, each with `label`, local-file
+or loopback `url`, `start` seconds, `videoRange` (`SDR`, `HDR10`, or `DolbyVision`),
+and independently inspected `references`. Each reference contains `from`/`to`
+seconds relative to `start` and a normalized `[x, y, width, height]` `rect`.
+Use reference intervals only where source framing is known; leave transition
+intervals out rather than pretending sparse screenshots locate an exact cut.
+Verify source signaling independently and do not derive reference bounds from
+the detector being tested.
+
+The twelve-second replay retains per-case first-frame readiness, first accurate
+measurement, advancing source positions, unknown states, geometry and route.
+It checks recognition within three seconds of enabling analysis, boundary error
+within 0.015 per normalized edge, no clipping beyond that tolerance, no later
+confidence loss, at least one accurate sample in every reference interval, and
+more than ten seconds of playback progress. Each case runs
+even if an earlier case fails. Native presentation additionally compares a paused,
+same-time displayed frame before, during and after analysis using the HDR
+regression's readback helper; software presentation explicitly reports that
+native color readback is unavailable. This is neither a startup-overhead benchmark
+nor physical-device Dolby Vision verification. Preserve complete traces, including
+failed cases; a single early correct measurement does not establish stability.
+Reference thumbnails may be brightened privately to inspect boundaries, but
+their appearance is not evidence of HDR color fidelity.
+
 The optional `testLocalPictureRelativePGSStaysInsideMeasuredPicture` hosted
 test accepts an authorized local HDR clip through `PLOZZ_PICTURE_MEDIA_REPRO`
 (`TEST_RUNNER_PLOZZ_PICTURE_MEDIA_REPRO` when invoking xcodebuild). It verifies
