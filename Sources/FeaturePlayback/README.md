@@ -1384,6 +1384,13 @@ sessions are not rewound. Paused/recovering heartbeat callbacks cannot report
 false playback at zero, and a stop retains the saved position even after load
 generation invalidation.
 
+On iPhone/iPad, `PlayerSceneLifecycleReader` forwards UIKit lifecycle notifications
+from the player's own window scene, including when a full-screen UIKit host has
+retained an active SwiftUI environment. It detaches with the player and ignores
+other scenes. This is the mobile lifecycle source; the SwiftUI scene observer
+remains the tvOS source. A paused engine released in the background must rebuild
+even when its playback clock still contains the saved position.
+
 Diagnostics resolve the active internal AVPlayer on each sample, including
 Plozzigen player/item replacements. The player buffer, engine cache frontier,
 stall count, and dropped-frame count are separate measurements; unavailable
