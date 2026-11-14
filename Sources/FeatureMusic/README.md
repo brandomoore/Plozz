@@ -124,6 +124,11 @@ The overlay stays outside that reservation so its position does not move.
 Both docks emphasize play/pause (30-point glyph) over previous/next (22 in the
 wide dock, 24 in the compact dock) and shuffle/repeat (18), without changing
 control spacing or hit regions.
+In tall regular-width windows, the expanded artwork, metadata, scrubber and
+transport form one vertically centered group with bounded internal spacing.
+Opening lyrics or the queue preserves that grouping in the player column;
+landscape and compact-width players retain their existing spacing. The utility
+row remains at the safe-area bottom.
 Both dock sizes reuse the expanded player's scaling play/pause transition and
 press feedback. Play/pause retains its press scaling and haptics without a
 circular background highlight, in both the docks and expanded player.
