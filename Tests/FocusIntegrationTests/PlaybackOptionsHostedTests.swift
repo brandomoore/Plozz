@@ -9,6 +9,34 @@ import XCTest
 
 @MainActor
 final class PlaybackOptionsHostedTests: XCTestCase {
+    func testFELConversionRowUsesNativeFocusAndUpdatesSelection() async throws {
+        try await withPanel { probe, _, window in
+            probe.model.felConversion.isAvailable = true
+            try await self.waitUntil {
+                (try? self.text(in: DetailTransitionSnapshot.image(of: window))
+                    .contains { $0.text.contains("FEL") }) == true
+            }
+            probe.request(.row(3))
+            try await self.waitUntil { probe.focus == .row(3) }
+            try await Task.sleep(for: .milliseconds(350))
+            try self.assertFocusedText("Dolby Vision FEL conversion", in: window)
+            XCTAssertTrue(try self.text(in: DetailTransitionSnapshot.image(of: window))
+                .contains { $0.text.contains("Playback Speed") })
+            let rows = PlaybackOptionsPane.rows(
+                model: probe.model, zoom: probe.model.videoZoom,
+                actions: .init(setDolbyVisionFELConversion: { probe.model.felConversion.isEnabled = $0 }),
+                openScreen: { _ in }
+            )
+            let row = try XCTUnwrap(rows.first { $0.slot == 3 })
+            guard case let .toggle(isOn, flip) = row.kind else { return XCTFail("Expected a native toggle row") }
+            XCTAssertTrue(isOn)
+            flip()
+            XCTAssertFalse(probe.model.felConversion.isEnabled)
+            try await Task.sleep(for: .milliseconds(100))
+            self.attach(window, name: "FEL conversion playback override")
+        }
+    }
+
     func testNativeInputHostPreservesPresentationEnvironmentWithoutCopyingFocus() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }

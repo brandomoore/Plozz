@@ -917,6 +917,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         actions.selectSubtitle = { viewModel.selectSubtitleOption(id: $0); onInteraction() }
         actions.setDialogueEnhancement = { viewModel.setDialogEnhanceEnabled($0); onInteraction() }
         actions.setSpeed = { viewModel.setPlaybackSpeed($0); onInteraction() }
+        actions.setDolbyVisionFELConversion = { viewModel.setDolbyVisionFELConversion($0); onInteraction() }
         return actions
     }
 

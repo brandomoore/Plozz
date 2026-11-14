@@ -79,6 +79,7 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
 ///    lives above the engine, not inside it.
 @MainActor
 public protocol VideoEngine: AnyObject {
+    var canChangeDolbyVisionFELConversion: Bool { get }
     #if canImport(UIKit)
     var discMenu: DiscMenuPlaybackState? { get }
     func discVideos() async throws -> [DiscVideo]
@@ -387,6 +388,7 @@ public protocol VideoEngine: AnyObject {
 }
 
 public extension VideoEngine {
+    var canChangeDolbyVisionFELConversion: Bool { false }
     #if canImport(UIKit)
     var discMenu: DiscMenuPlaybackState? { nil }
     func discVideos() async throws -> [DiscVideo] { throw CocoaError(.featureUnsupported) }

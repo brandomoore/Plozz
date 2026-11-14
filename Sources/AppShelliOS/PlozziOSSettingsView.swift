@@ -2718,6 +2718,14 @@ struct PlozziOSPlaybackSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .settingsSearchGroup(["lossless-audio", "identify-songs"])
+            if AppReleaseChannel.current.isBeta {
+                SettingsSectionGroup("Video") {
+                    Toggle("Dolby Vision FEL conversion", isOn: $model.settings.dolbyVisionFELConversion)
+                    Text("Estimates enhancement-layer brightness for supported videos. Turn off to use HDR10. Fine detail is not recovered.")
+                        .settingsHelperText()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             SettingsSectionGroup("Discs") {
                 VStack(alignment: .leading, spacing: 6) {
                     Picker("Disc playback", selection: $model.settings.discPlayback) {

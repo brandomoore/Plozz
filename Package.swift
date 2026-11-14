@@ -257,13 +257,13 @@ let package = Package(
         // Audio shaping and low-resolution upscaling remain opt-in and disabled.
         // Resume preroll backfill no longer opens a false native-scrub landing watch.
         // 7.66.0 includes AAC/PCE, subtitle-seek and packet-wait fixes.
-        // FEL curve folding and engine-owned Now Playing remain disabled.
+        // FEL curve folding is available for beta on-demand playback; engine-owned Now Playing stays off.
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
-        // Selective P7 MEL conversion preserves FEL/unknown HDR10 fallback and other DV routes.
+        // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "064b152d0242a722de171471b85389116775a8bf",
-            traits: []
+            revision: "cc3cb49f4014a208f841bde8d1e0a5af0ff885e9",
+            traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision
         // RPU parser) are transitive dependencies — AetherEngine declares and

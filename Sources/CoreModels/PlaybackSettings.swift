@@ -174,6 +174,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// Listen to the playing audio with ShazamKit and show the song in the
     /// player's Info card (#351). Per profile, ON by default.
     public var identifySongs: Bool
+    public var dolbyVisionFELConversion: Bool
 
     /// Optional player tabs, per profile. Availability still depends on content.
     public var chaptersInPlayer: Bool
@@ -221,6 +222,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         rememberAudioTrackPerSeries: Bool = true,
         rememberSubtitleTrackPerSeries: Bool = true,
         identifySongs: Bool = true,
+        dolbyVisionFELConversion: Bool = true,
         chaptersInPlayer: Bool = true,
         castInPlayer: Bool = true,
         episodesInPlayer: Bool = true,
@@ -265,6 +267,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.rememberAudioTrackPerSeries = rememberAudioTrackPerSeries
         self.rememberSubtitleTrackPerSeries = rememberSubtitleTrackPerSeries
         self.identifySongs = identifySongs
+        self.dolbyVisionFELConversion = dolbyVisionFELConversion
         self.chaptersInPlayer = chaptersInPlayer
         self.castInPlayer = castInPlayer
         self.episodesInPlayer = episodesInPlayer
@@ -449,6 +452,7 @@ public extension PlaybackSettings {
         case rememberAudioTrackPerSeries
         case rememberSubtitleTrackPerSeries
         case identifySongs
+        case dolbyVisionFELConversion
         case chaptersInPlayer
         case castInPlayer
         case episodesInPlayer
@@ -589,6 +593,9 @@ public extension PlaybackSettings {
         self.identifySongs =
             (try? container.decodeIfPresent(Bool.self, forKey: .identifySongs))
             .flatMap { $0 } ?? defaults.identifySongs
+        self.dolbyVisionFELConversion =
+            (try? container.decodeIfPresent(Bool.self, forKey: .dolbyVisionFELConversion))
+            .flatMap { $0 } ?? defaults.dolbyVisionFELConversion
         self.chaptersInPlayer =
             (try? container.decodeIfPresent(Bool.self, forKey: .chaptersInPlayer))
             .flatMap { $0 } ?? defaults.chaptersInPlayer
@@ -660,6 +667,7 @@ public extension PlaybackSettings {
         try container.encode(rememberAudioTrackPerSeries, forKey: .rememberAudioTrackPerSeries)
         try container.encode(rememberSubtitleTrackPerSeries, forKey: .rememberSubtitleTrackPerSeries)
         try container.encode(identifySongs, forKey: .identifySongs)
+        try container.encode(dolbyVisionFELConversion, forKey: .dolbyVisionFELConversion)
         try container.encode(chaptersInPlayer, forKey: .chaptersInPlayer)
         try container.encode(castInPlayer, forKey: .castInPlayer)
         try container.encode(episodesInPlayer, forKey: .episodesInPlayer)

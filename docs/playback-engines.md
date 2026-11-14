@@ -850,8 +850,8 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/064b152d0242a722de171471b85389116775a8bf)
-at commit `064b152d0242a722de171471b85389116775a8bf`, integrating upstream
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/cc3cb49f4014a208f841bde8d1e0a5af0ff885e9)
+at commit `cc3cb49f4014a208f841bde8d1e0a5af0ff885e9`, integrating upstream
 **7.66.0** (`8e74bbb5cfde75287305c535c243c1ef9d96549c`).
 Playback diagnostics show `AetherEngine v7.66.0`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
@@ -865,9 +865,12 @@ It adds upstream AAC/PCE handling, PCM decoder coverage, subtitle-seek correctio
 and bounded packet-cache waits. Our authored intervals, custom-title MEL
 inspection and cancellation, and native selection-reader fixes remain intact.
 Plozz keeps Now Playing ownership; the new engine-owned publishers stay off.
-All optional package traits remain disabled, and both live and on-demand options
-explicitly disable FEL curve folding. MEL conversion and FEL/unknown HDR10
-fallback are unchanged. The native audio menu and disk-admission options retain
+Only the `DolbyVisionFelCurves` optional component is compiled. The fork explicitly
+defines it for Xcode, which does not forward the transitive SwiftPM trait define;
+integration tests assert the linked capability, not just manifest intent.
+Beta on-demand playback uses the profile's FEL conversion setting; previews,
+live playback, separate-audio sources, and interactive disc menus stay conservative.
+Unknown P7 retains HDR10 fallback. The native audio menu and disk-admission options retain
 their upstream opt-in defaults.
 It corrects the remote-HLS buffered frontier, uses measured producer throughput
 for short forward seeks, bounds bitmap subtitle retention after backward seeks,
@@ -1113,10 +1116,22 @@ search result are removed on tvOS and iOS/iPadOS. The adapter explicitly sets
 package trait is disabled. Legacy `dolbyVisionFELEnabled` values are ignored when
 loading or transferring profile settings and omitted on the next save.
 
-Plozz selects `DolbyVisionHandling.profile7MELOnly` for on-demand playback,
-previews and engine-demuxed live playback. Confirmed HEVC Profile 7 MEL uses the
-existing P7-to-8.1 RPU conversion and native playback path. FEL and unclassified
-P7 retain their authored HDR10 base, without enhancement-layer reconstruction.
+Debug and TestFlight builds offer **Dolby Vision FEL conversion**, on by default
+and persisted per profile in Playback settings. Supported on-demand playback uses
+`DolbyVisionHandling.profile7KnownLayers`: confirmed MEL converts as before;
+confirmed FEL converts with per-scene brightness curve folding, not full picture
+reconstruction. The approximation does not recover local detail, grain or full
+enhancement-layer precision, and can add startup/seek latency. Accuracy on a
+particular display is not implied by the setting.
+
+The TV Playback menu and mobile Video menu expose an override only for a
+confirmed FEL source. Turning it off reloads at the current position with the
+same play/pause intent and returns to HDR10, rather than merely disabling the
+fold. The override lasts for the current player session, not the next title or
+the profile default. Both platforms share the existing rendition-restart lifecycle.
+
+Production builds, previews, separate-audio sources, interactive disc menus and
+engine-demuxed live playback retain `profile7MELOnly`. Unclassified P7 always retains HDR10.
 The engine inspects a bounded number of actual source packets before output
 configuration and keeps those packets for playback; provider profile labels do
 not decide MEL versus FEL. Live P7 is not inspected and retains HDR10 fallback.
@@ -1133,7 +1148,7 @@ E-AC-3/JOC stream-copy remain unchanged. FEL reconstruction and all optional
 height-audio/still-image reshaping components remain excluded. Direct remote HLS
 handed to AVPlayer, server transcoding, and external players own their delivered
 format; this policy does not rewrite those streams or infer their format from
-original-file metadata. No new preference or playback prompt is introduced.
+original-file metadata.
 
 Keeping FEL reconstruction disabled does not establish licensing clearance
 for every remaining video or audio feature. The engine still includes Dolby-related

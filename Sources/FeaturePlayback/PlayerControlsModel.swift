@@ -374,6 +374,11 @@ public final class SkipSegmentsModel {
 @MainActor
 @Observable
 public final class PlayerControlsModel {
+    public struct FELConversionState {
+        public var isAvailable = false
+        public var isEnabled = PlaybackSettings.default.dolbyVisionFELConversion
+    }
+    public var felConversion = FELConversionState()
     public var artworkPolicy = ArtworkPresentationPolicy(area: .playback)
     // MARK: Live playback (written by the view model)
     public var duration: TimeInterval = 0

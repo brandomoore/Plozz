@@ -9,6 +9,36 @@ import XCTest
 
 @MainActor
 final class PlayerMoreMenuPresentationTests: XCTestCase {
+    func testFELOverrideAppearsOnlyWhenAvailableAndHonorsStaleMenuGuard() throws {
+        let model = controls()
+        let availability = PlayerMoreMenuAvailability(video: false)
+        XCTAssertFalse(PlayerMoreMenu.sections(model, availability: availability).contains(.video))
+        model.felConversion.isAvailable = true
+        var choices: [Bool] = []
+        var current = true
+        var actions = PlayerMoreMenuActions()
+        actions.isCurrent = { current }
+        actions.setDolbyVisionFELConversion = { choices.append($0) }
+        let menu = PlayerMoreMenu.make(
+            model: model, availability: availability, locale: .init(identifier: "en"),
+            section: .video, actions: actions
+        )
+        let toggle = try XCTUnwrap(menu.children.first as? UIAction)
+        XCTAssertEqual(toggle.title, "Dolby Vision FEL conversion")
+        XCTAssertEqual(toggle.state, .on)
+        perform(toggle)
+        XCTAssertEqual(choices, [false])
+        current = false
+        perform(toggle)
+        XCTAssertEqual(choices, [false])
+        model.felConversion.isEnabled = false
+        let disabled = PlayerMoreMenu.make(
+            model: model, availability: availability, locale: .init(identifier: "en"),
+            section: .video, actions: actions
+        )
+        XCTAssertEqual((disabled.children.first as? UIAction)?.state, .off)
+    }
+
     func testLayoutFollowsTheActualPlayerViewport() {
         XCTAssertEqual(PlayerMenuLayout(size: .zero), .consolidated)
         XCTAssertEqual(PlayerMenuLayout(size: CGSize(width: 390, height: 844)), .consolidated)

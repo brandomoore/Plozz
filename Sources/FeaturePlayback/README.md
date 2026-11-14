@@ -1296,6 +1296,12 @@ disabled in load options and excluded by engine package traits. Their controls,
 search results and request fields are removed; legacy saved profile values are
 ignored. Ordinary surround audio, standard Dolby Vision playback and native
 E-AC-3/JOC stream-copy remain unchanged. Software playback uses channel PCM.
+The separate beta-only **Dolby Vision FEL conversion** setting defaults on per
+profile. It uses native P8.1 curve folding, not full FEL reconstruction. Confirmed
+FEL playback exposes a session-only override in TV Playback/mobile Video options;
+off reloads at the current position and play/pause intent using HDR10. Unknown P7,
+previews and live playback remain conservative; MEL still converts automatically.
+See [FEL policy](../../docs/playback-engines.md#dolby-vision-fel) for limitations.
 Diagnostic parsing still recognizes historical rendered-PCM and APAC labels;
 those labels do not imply that Plozz enables the corresponding conversion.
 Both native and Plozzigen engines declare multichannel content to the audio session.

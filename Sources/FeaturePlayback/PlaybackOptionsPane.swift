@@ -71,6 +71,12 @@ struct PlaybackOptionsPane: View {
             ), isSelected: zoom.settings.mode == .custom)]
         }
         var rows: [PlayerOptionsRowSpec] = []
+        if model.felConversion.isAvailable {
+            rows.append(.init(slot: 3, title: "Dolby Vision FEL conversion", kind: .toggle(
+                isOn: model.felConversion.isEnabled,
+                flip: { actions.setDolbyVisionFELConversion(!model.felConversion.isEnabled) }
+            )))
+        }
         if model.engineCapabilities.contains(.videoZoom) {
             rows.append(.init(slot: Self.zoomSlot, title: "Zoom Mode", kind: .submenu(
                 summary: Text(zoom.settings.mode.title),

@@ -15,6 +15,7 @@ struct PlayerOptionsActions {
     /// the second line off. Loads its cues into the overlay's secondary stream.
     var selectSecondarySubtitle: (Int) -> Void = { _ in }
     var setPlaybackSpeed: (Double) -> Void = { _ in }
+    var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
     var setAudioDelay: (TimeInterval) -> Void = { _ in }
     var setSubtitleDelay: (TimeInterval) -> Void = { _ in }
     var setDialogEnhance: (Bool) -> Void = { _ in }

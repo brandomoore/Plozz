@@ -11,6 +11,60 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testFELOverrideEnablesOrdinaryPlaybackFromProfileOffAndDoesNotReviveAfterStop() async {
+        let engine = QualityEngine()
+        engine.canChangeDolbyVisionFELConversion = true
+        let model = PlayerViewModel(
+            provider: QualityPlaybackProvider(), itemID: "movie",
+            playbackSettings: .init(dolbyVisionFELConversion: false),
+            engineFactory: .init(makeNative: { _ in engine })
+        )
+        await model.load()
+        XCTAssertEqual(engine.loadedRequests.last?.dolbyVisionFELConversion, false)
+        engine.currentTime = 125
+        model.setDolbyVisionFELConversion(true)
+        await wait { engine.positions.count == 2 && model.phase == .ready }
+        XCTAssertEqual(engine.loadedRequests.last?.dolbyVisionFELConversion, true)
+        XCTAssertEqual(engine.positions.last, 125)
+        model.setDolbyVisionFELConversion(false)
+        await model.stop()
+        XCTAssertEqual(engine.positions.count, 2)
+    }
+
+    func testFELOverridePreservesPositionAndIntentWithoutChangingProfileDefault() async {
+        for paused in [false, true] {
+            let (model, engine, _) = make()
+            engine.canChangeDolbyVisionFELConversion = true
+            await model.load()
+            XCTAssertEqual(engine.loadedRequests.last?.dolbyVisionFELConversion, true)
+            engine.currentTime = 125
+            model.setPaused(paused)
+            model.setDolbyVisionFELConversion(false)
+            await wait { engine.positions.count == 2 && model.phase == .ready }
+            XCTAssertEqual(engine.positions.last, 125)
+            XCTAssertEqual(engine.loadedRequests.last?.dolbyVisionFELConversion, false)
+            XCTAssertEqual(engine.isPaused, paused)
+            XCTAssertEqual(model.controls.intendsPause, paused)
+            model.setDolbyVisionFELConversion(true)
+            await wait { engine.positions.count == 3 && model.phase == .ready }
+            XCTAssertEqual(engine.loadedRequests.last?.dolbyVisionFELConversion, true)
+            XCTAssertEqual(engine.isPaused, paused)
+            await model.stop()
+            let (next, nextEngine, _) = make()
+            await next.load()
+            XCTAssertEqual(nextEngine.loadedRequests.last?.dolbyVisionFELConversion, true)
+            await next.stop()
+        }
+    }
+
+    func testFELOverrideIsUnavailableForUnrelatedPlayback() async {
+        let (model, engine, _) = make()
+        await model.load()
+        model.setDolbyVisionFELConversion(false)
+        XCTAssertEqual(engine.positions.count, 1)
+        XCTAssertEqual(engine.loadedRequests.last?.dolbyVisionFELConversion, true)
+        await model.stop()
+    }
     func testForceTranscodingHintRequiresAFailedConvertedStream() async {
         for enabled in [false, true] {
             for converted in [false, true] {
@@ -1955,6 +2009,7 @@ private final class QualityScrubStillExtractor: ScrubStillExtracting {
 
 @MainActor
 private final class QualityEngine: VideoEngine {
+    var canChangeDolbyVisionFELConversion = false
     var nowPlayingPlayer: AVPlayer?
     var didLoad: (() -> Void)?
     var suppressActiveAudioID = false

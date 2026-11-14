@@ -2,6 +2,20 @@ import XCTest
 @testable import CoreModels
 
 final class DolbyVisionFELSettingsTests: XCTestCase {
+    @MainActor
+    func testConversionDefaultsOnAndExplicitOffIsProfileScoped() throws {
+        let suite = "fel-conversion-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let primary = PlaybackSettingsStore(defaults: defaults)
+        let guest = PlaybackSettingsStore(defaults: defaults, namespace: "guest")
+        XCTAssertTrue(primary.load().dolbyVisionFELConversion)
+        let model = PlaybackSettingsModel(store: primary)
+        model.settings.dolbyVisionFELConversion = false
+        XCTAssertFalse(primary.load().dolbyVisionFELConversion)
+        XCTAssertTrue(guest.load().dolbyVisionFELConversion)
+    }
+
     func testRetiredFELPreferenceIsIgnoredAndNotWrittenBack() throws {
         for payload in [
             #"{}"#,

@@ -350,6 +350,8 @@ public struct PlaybackServerDecision: Codable, Hashable, Sendable {
 /// direct-play or transcode and hands back either a legacy resolved URL or a
 /// credential-free typed source.
 public struct PlaybackRequest: Hashable, Sendable {
+    /// Host-selected policy for this playback, not provider metadata. Preview/live callers stay conservative.
+    public var dolbyVisionFELConversion: Bool = false
     public var discPlayback: DiscPlaybackBehavior = .playVideo
     public var discRegionOverride: UInt32? = nil
     public var discPlaylistOverride: Int? = nil

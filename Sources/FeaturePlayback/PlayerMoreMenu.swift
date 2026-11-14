@@ -133,6 +133,7 @@ public struct PlayerMoreMenuActions {
     public var selectSubtitle: (Int) -> Void = { _ in }
     public var setDialogueEnhancement: (Bool) -> Void = { _ in }
     public var setSpeed: (Double) -> Void = { _ in }
+    public var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
     public var request: (PlayerMenuDestination) -> Void = { _ in }
     public init() {}
 }
@@ -151,7 +152,8 @@ public enum PlayerMoreMenu {
         if !model.audioOptions.isEmpty || model.engineCapabilities.contains(.dialogEnhance)
             || model.engineCapabilities.contains(.audioDelay) { sections.append(.audio) }
         if availability.maximumSpeed != nil, model.engineCapabilities.contains(.playbackSpeed) { sections.append(.speed) }
-        if availability.quality || (availability.video && model.engineCapabilities.contains(.videoZoom)) {
+        if availability.quality || model.felConversion.isAvailable
+            || (availability.video && model.engineCapabilities.contains(.videoZoom)) {
             sections.append(.video)
         }
         if availability.versions { sections.append(.versions) }
@@ -221,6 +223,13 @@ public enum PlayerMoreMenu {
             ])
         }
         var video: [UIMenuElement] = []
+        if model.felConversion.isAvailable {
+            let enabled = model.felConversion.isEnabled
+            video.append(UIAction(title: localized("Dolby Vision FEL conversion"), state: enabled ? .on : .off) { _ in
+                guard actions.isCurrent() else { return }
+                actions.setDolbyVisionFELConversion(!enabled)
+            })
+        }
         if availability.video, model.engineCapabilities.contains(.videoZoom) {
             let zoom = PlayerZoomMenu.make(model: availability.videoModel ?? model.videoZoom, locale: locale, isCurrent: actions.isCurrent) {
                 actions.request(.zoom)
