@@ -541,15 +541,21 @@ and distinguishes it from
 Neither implementation establishes a speed estimate for Plozz or justifies
 replacing its bounded streaming XML/gzip validation with a materialized XML tree.
 
-XMLTV accepts minute- or second-precision programme timestamps, compact and
+XMLTV accepts year-, month-, day-, hour-, minute- and second-precision timestamps, compact and
 colon-separated numeric timezone offsets, and the unambiguous UTC/GMT/Z labels.
-Absent zones mean UTC. Calendar and offset validation remains strict; coarser
-dates and ambiguous regional timezone abbreviations do not invent airtimes.
+Missing date fields use the start of the specified period (January/first day,
+midnight, zero minutes/seconds); absent zones mean UTC, never device time.
+Calendar and offset validation remains strict, and ambiguous regional timezone
+abbreviations are rejected. A programme still needs an end after its start or
+the existing bounded same-station missing-stop inference.
 Programme-only feeds can supply exact channel IDs without invented display names
 or relaxed station matching. Repeated channel declarations with the same exact
 ID combine distinct display names in source order, rather than rejecting the
 whole guide. Different IDs remain separate and ambiguous names do not establish
-a match. Referenced IDs and declared channels share the channel/text budgets;
+a match. Manual station search includes every declared display name, including
+names merged from repeated declarations, while showing the first name and the
+safe station ID. Searching never changes an automatic match or saves a correction.
+Referenced IDs and declared channels share the channel/text budgets;
 repeated declarations still count toward the declaration limit. Declarations
 with missing, empty or whitespace-only IDs are skipped without inventing an
 identity; they still count toward declaration limits and their display names
@@ -571,6 +577,12 @@ text in comments, processing instructions and CDATA is not a declaration.
 numeric parser code, line/column and channel/programme counts. They never include
 XML fragments, station names, URLs or native error descriptions. Compatible
 duplicate and skipped declarations are reported once per metadata pass as counts.
+Successful parses requested for channels also report candidate station counts,
+retained listings and skipped-row reasons (channel ID, start, stop, missing title,
+outside the window, unmatched station or unresolved missing stop). Account index
+imports identify themselves as `stationIndex`, not final per-channel matches.
+Both account projections and standalone cache settings include the parser version,
+so an older empty index cannot mask newly supported timestamps.
 Playlist and imported-file accounts without an explicit or playlist-declared
 guide immediately report no guide capability. Both platforms show "No program
 guide available" and skip guide warmup and browsing requests instead of showing

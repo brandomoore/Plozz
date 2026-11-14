@@ -1,5 +1,6 @@
 import CoreModels
 import CoreNetworking
+import CryptoKit
 import Foundation
 import Synchronization
 import XCTest
@@ -174,6 +175,43 @@ final class LiveTVGuideIndexTests: XCTestCase {
             )
             XCTAssertTrue(rows.isEmpty)
         }
+        let count = await download.count
+        XCTAssertEqual(count, 1)
+    }
+
+    func testPreviousParserEmptyIndexIsRebuiltForShortenedDates() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let channels = [channel("a")]
+        let data = Data("""
+        <tv><programme channel="news" start="19700101" stop="1970010101"><title>Recovered listing</title></programme></tv>
+        """.utf8)
+        // Reproduce the pre-versioned projection and an empty, unexpired index
+        // left by the old parser after it skipped these valid timestamps.
+        var legacy = SHA256()
+        legacy.update(data: try JSONEncoder().encode(["account-xmltv-stations-v1", nil] as [String?]))
+        for channel in channels {
+            legacy.update(data: try JSONEncoder().encode(
+                [channel.id, channel.name, channel.guideID, channel.guideName, channel.country]
+            ))
+        }
+        func hex(_ digest: SHA256.Digest) -> String { digest.map { String(format: "%02x", $0) }.joined() }
+        let oldState = LiveTVGuideIndexState(
+            generation: UUID(), projection: hex(legacy.finalize()), digest: hex(SHA256.hash(data: data)),
+            lowerBound: .distantPast, upperBound: .distantFuture, expiresAt: .distantFuture
+        )
+        _ = try await fixture.cache.importGuide(
+            data: Data("<tv/>".utf8), sourceID: LiveTVGuideIndex.sourceID(url), channels: channels,
+            provider: nil, now: now, sourceURL: url, preferredLanguage: nil, indexState: oldState
+        )
+        let index = LiveTVGuideIndex(cache: fixture.reopen(), preferredLanguage: nil)
+        let download = DownloadCounter(response(data))
+        let programs = try await index.programs(
+            from: url, catalog: channels, channels: channels, range: range, download: { await download.get() }
+        )
+        XCTAssertEqual(programs.map(\.title), ["Recovered listing"])
+        XCTAssertEqual(programs.first?.start, Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(programs.first?.end, Date(timeIntervalSince1970: 3_600))
         let count = await download.count
         XCTAssertEqual(count, 1)
     }

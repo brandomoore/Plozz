@@ -1178,11 +1178,11 @@ public final class LiveTVPrototypeImportModel {
             guard request == revision, !Task.isCancelled, catalogIsAuthorized() else { throw CancellationError() }
             if !indexed.isEmpty { return indexed }
         }
-        return Array((cachedGuides[sourceID]?.guideChannels ?? [:]).map {
-            LiveTVGuideChannelOption(id: $0.key, name: $0.value.first ?? $0.key)
-        }.filter {
-            query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
-                || ($0.displayID?.localizedCaseInsensitiveContains(query) ?? false)
+        return Array((cachedGuides[sourceID]?.guideChannels ?? [:]).compactMap { id, names -> LiveTVGuideChannelOption? in
+            let option = LiveTVGuideChannelOption(id: id, name: names.first ?? id)
+            guard query.isEmpty || names.contains(where: { $0.localizedCaseInsensitiveContains(query) })
+                || (option.displayID?.localizedCaseInsensitiveContains(query) ?? false) else { return nil }
+            return option
         }
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }.prefix(100))
     }

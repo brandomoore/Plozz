@@ -282,7 +282,9 @@ public actor LiveTVGuideIndex {
 
     private static func projection(_ catalog: [LiveTVPrototypeChannel], language: String?) throws -> String {
         var hasher = SHA256()
-        hasher.update(data: try JSONEncoder().encode(["account-xmltv-stations-v1", language]))
+        hasher.update(data: try JSONEncoder().encode([
+            "account-xmltv-stations-v1", String(LiveTVXMLTVParser.cacheVersion), language
+        ]))
         for channel in catalog.sorted(by: { $0.id < $1.id }) {
             try Task.checkCancellation()
             hasher.update(data: try JSONEncoder().encode(

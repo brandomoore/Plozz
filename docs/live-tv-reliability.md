@@ -169,3 +169,31 @@ strict failure/privacy behavior, cancellation and resource budgets. These are
 bounded compatibility changes, not proof that Level Up's particular XML is
 accepted. Fresh diagnostics can distinguish syntax, structural, entity and
 resource failures without collecting feed content.
+
+### Further guide compatibility
+
+The November 14 comparison inspected Lume at
+[`b3648b8`](https://github.com/bilipp/Lume/tree/b3648b8a56d6b907cb5142fac4c56e71d05ee48c),
+specifically its
+[XMLTV parser](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Network/XMLTVParser.swift),
+[timestamp reader](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Network/XMLTVDate.swift)
+and background guide scheduling. Its streaming batches and explicit coordination
+with catalogue refresh are useful comparison points, not evidence that all of
+its parser fallbacks are appropriate here. Plozz does not adopt unchecked partial
+XML publication or a locale-dependent date fallback.
+
+The XMLTV DTD's shortened-date contract and
+[Jellyfin.XmlTv's date cases](https://github.com/jellyfin/Jellyfin.XmlTv/blob/6c8c302c8520e5f41cd51dd392ac631f97179d82/tests/Jellyfin.XmlTv.Tests/XmlTvReaderDateTimeTests.cs)
+identified a concrete gap: valid year/month/day/hour precision was dropped.
+Plozz now interprets omitted components as the start of the specified period,
+preserving strict calendar/offset validation and existing stop-time rules.
+Independently authored fixtures cover plain XML, gzip, indexed ingestion and
+replacement of an older empty account index.
+
+Inspection also found that manual station search considered only the first
+display name. It now searches all declared aliases without merging station
+identities, changing automatic matching or confirming a correction. Bounded
+parse summaries distinguish unmatched stations, out-of-window listings and
+unusable row fields without exposing feed content. These changes use Plozz's
+existing implementations; no reference source was transplanted. They do not
+establish compatibility with an unavailable failing provider feed.

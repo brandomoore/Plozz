@@ -684,7 +684,7 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
                 try db.execute(
                     "INSERT INTO guide_channels(source,id,name,display_id,payload) VALUES(?,?,?,?,?)",
                     [.text(sourceID), .text(LiveTVChannelIdentity(key: try key()).fingerprint(id)),
-                     .text(names.first ?? ""), .text(option.displayID ?? ""), .blob(try seal(option, binding: binding))]
+                     .text(names.joined(separator: "\n")), .text(option.displayID ?? ""), .blob(try seal(option, binding: binding))]
                 )
             }
             try db.execute(
@@ -984,7 +984,7 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
         let entries = overrides.keys.sorted().map { [$0, overrides[$0] ?? ""] }
         let data = try catalogEncoder.encode(entries)
         return GuideSettings(
-            version: 2, provider: provider?.rawValue, lookbackDays: lookbackDays, lookaheadDays: lookaheadDays,
+            version: LiveTVXMLTVParser.cacheVersion, provider: provider?.rawValue, lookbackDays: lookbackDays, lookaheadDays: lookaheadDays,
             mappingsDigest: LiveTVChannelIdentity(key: try identityKey()).fingerprint(
                 String(decoding: data, as: UTF8.self)
             ),
