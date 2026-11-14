@@ -639,6 +639,84 @@ final class VideoZoomPresentationTests: XCTestCase {
         }
     }
 
+    func testLocalSDRActivePictureSceneReproduction() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_CROP_MEDIA_REPRO"] else {
+            throw XCTSkip("Requires an explicitly supplied local crop reproduction configuration.")
+        }
+        struct Configuration: Decodable {
+            let url: URL
+            let start: Double
+        }
+        let configuration = try JSONDecoder().decode(
+            Configuration.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        guard configuration.url.isFileURL || configuration.url.host == "127.0.0.1",
+              configuration.start.isFinite, configuration.start >= 0 else {
+            XCTFail("Supply local SDR media and a finite nonnegative start time.")
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let view = VideoPresentationView(frame: host.view.bounds)
+        host.view.addSubview(view)
+        view.attach(engine)
+        defer {
+            view.removeFromSuperview()
+            engine.stopActivePictureAnalysis()
+            engine.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        await engine.load(request: PlaybackRequest(
+            item: MediaItem(id: "local-crop-scene", title: "Local crop reproduction", kind: .movie),
+            streamURL: configuration.url,
+            sourceMetadata: .init(video: .init(codec: "hevc", videoRange: "SDR"))
+        ), startPosition: configuration.start)
+        try await waitUntil(timeout: 30) { engine.hasPresentedVideoFrame && engine.isPlaybackPositionReady }
+        let originalItem = engine.nowPlayingPlayer?.currentItem
+        let originalSurface = engine.makeVideoOutputView()
+        let firstFrame = ProcessInfo.processInfo.systemUptime
+        let firstPosition = engine.currentTime
+        view.update(zoom: PlayerVideoZoom(mode: .picture))
+        var observations: [[String: Any]] = []
+        var firstMeasured: Double?
+        let deadline = ContinuousClock.now + .seconds(12)
+        while ContinuousClock.now < deadline {
+            var observation: [String: Any] = [
+                "elapsed": ProcessInfo.processInfo.systemUptime - firstFrame,
+                "position": engine.currentTime,
+                "usesNativePlayer": engine.nowPlayingPlayer != nil,
+            ]
+            switch await engine.sampleActivePicture() {
+            case let .measured(rect, size):
+                if firstMeasured == nil { firstMeasured = ProcessInfo.processInfo.systemUptime - firstFrame }
+                observation["rect"] = [rect.minX, rect.minY, rect.width, rect.height]
+                observation["displaySize"] = [size.width, size.height]
+            case let result:
+                observation["state"] = String(describing: result)
+            }
+            observations.append(observation)
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        let data = try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
+        XCTContext.runActivity(named: "Local scene active-picture observations") { activity in
+            let evidence = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            evidence.lifetime = .keepAlways
+            activity.add(evidence)
+        }
+        XCTAssertLessThanOrEqual(try XCTUnwrap(firstMeasured), 3, "Do not wait for a later bright scene.")
+        XCTAssertGreaterThan(engine.currentTime - firstPosition, 10)
+        XCTAssertTrue(engine.makeVideoOutputView() === originalSurface)
+        if let originalItem { XCTAssertTrue(engine.nowPlayingPlayer?.currentItem === originalItem) }
+    }
+
     func testNativeHDRPictureAnalysisLeavesDisplayedPixelsUnchanged() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

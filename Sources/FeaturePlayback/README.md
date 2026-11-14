@@ -1542,6 +1542,17 @@ ffmpeg -f lavfi -i "nullsrc=s=320x180:r=24:d=6,geq=lum='if(between(Y,28,151),28+
   active-picture-dark.mp4
 ```
 
+`testLocalSDRActivePictureSceneReproduction` accepts a private JSON configuration
+file through `PLOZZ_CROP_MEDIA_REPRO` (`TEST_RUNNER_PLOZZ_CROP_MEDIA_REPRO` from
+xcodebuild), containing a local-file or loopback `url` and a `start` time in
+seconds. It uses Plozzigen for SDR media, including HEVC files that the native
+player rejects, and retains twelve seconds of timestamped measurement/unknown
+states and the selected engine route. It checks initial recognition within three
+seconds and advancing playback, not uninterrupted confidence or HDR color
+fidelity. Inspect the entire trace for subsequent confidence loss. Credentials,
+source media, and captures stay outside source control; the operator owns and
+closes any authenticated loopback source.
+
 The optional `testLocalPictureRelativePGSStaysInsideMeasuredPicture` hosted
 test accepts an authorized local HDR clip through `PLOZZ_PICTURE_MEDIA_REPRO`
 (`TEST_RUNNER_PLOZZ_PICTURE_MEDIA_REPRO` when invoking xcodebuild). It verifies
