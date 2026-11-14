@@ -244,7 +244,7 @@ extension LiveTVPrototypeImportModel {
                     pendingGuideDiscovery.append((source, context, sourceRevision, availability))
                     continue
                 }
-                let warmup = context.kind == .plex
+                let warmup = context.kind == .plex || context.provider.usesPerChannelLiveTVGuide
                     ? Array(catalog.channels.prefix(Self.serverGuideWarmupChannelLimit)) : catalog.channels
                 let guideResult = await reloadServerGuidesResult(
                     channelIDs: warmup.map(\.id), from: model.now, to: model.now.addingTimeInterval(21_600),
@@ -295,7 +295,7 @@ extension LiveTVPrototypeImportModel {
                     )
                 }
                 guard supportsGuide else { continue }
-                let warmup = context.kind == .plex
+                let warmup = context.kind == .plex || context.provider.usesPerChannelLiveTVGuide
                     ? Array(catalog.channels.prefix(Self.serverGuideWarmupChannelLimit)) : catalog.channels
                 result = result.merging(await reloadServerGuidesResult(
                     channelIDs: warmup.map(\.id), from: model.now, to: model.now.addingTimeInterval(21_600),

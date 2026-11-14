@@ -256,6 +256,24 @@ final class IPTVGuideRefreshTests: XCTestCase {
             XCTAssertGreaterThan(retained, 0, source.name)
             XCTAssertEqual(indexed.programCount, retained, source.name)
             print("IPTV_LIVE_GUIDE name=\(source.name) bytes=\(document.data.count) stations=\(indexed.guideChannelCount) indexedPrograms=\(retained)")
+            let saved = try XCTUnwrap(document.cacheMetadata)
+            XCTAssertTrue(saved.hasValidator, source.name)
+            let revalidated = try await client.guideResponse(from: url, previous: saved)
+            switch revalidated {
+            case .notModified(let updated):
+                XCTAssertEqual(updated.responseURL, saved.responseURL)
+                XCTAssertGreaterThanOrEqual(updated.checkedAt, saved.checkedAt)
+                print("IPTV_LIVE_REVALIDATION name=\(source.name) status=304 bodyBytes=0")
+            case .document(let replacement):
+                // Publication can race this probe; a changed, valid feed is not
+                // a conditional-request failure.
+                var replaced = 0
+                _ = try parser.parseIndexed(data: replacement.data, channels: channels, now: now, indexGuideStations: true) {
+                    _ in replaced += 1
+                }
+                XCTAssertGreaterThan(replaced, 0, source.name)
+                print("IPTV_LIVE_REVALIDATION name=\(source.name) status=200 bodyBytes=\(replacement.data.count)")
+            }
         }
     }
 

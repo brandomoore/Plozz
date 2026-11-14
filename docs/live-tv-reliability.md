@@ -15,7 +15,7 @@ evidence gaps, not duplicate implementation instructions.
 | Priority | Evidence / uncertainty | Next action and acceptance criterion |
 | --- | --- | --- |
 | Remaining schedule size | The old "Live TV preferences" category included generated-channel definitions and full library-item snapshots. Downloaded IPTV guides/catalogues remain local. Existing published duplicates and overlapping-but-different item sets still occupy space. | Use the separated breakdown, including pending bytes, to attribute actual data. A more compact cross-device format needs explicit migration/older-client compatibility, not removal of required schedule inputs. |
-| Remaining guide work | Downloads now stream into temporary file-backed data and account guides use reusable station indexes. Expired documents are still downloaded before digest comparison. | Measure revalidation traffic before adding HTTP validators. Preserve exact matching, windows, cancellation and HTTP cache directives. |
+| Guide revalidation | Account guides reuse encrypted station indexes and persist ETag/Last-Modified for eligible conditional requests. | A 304 preserves the generation; changed projections/windows require a full response. Preserve exact matching, cancellation and HTTP cache directives. |
 | Playback fault breadth | Bounded synthetic sessions are not an evening of real-provider viewing. | Cover discontinuities and key/init changes independently of session renewal. Require advancing decoded images, bounded recovery, preserved pause intent and zero owned requests after stop. |
 | Plex shutdown | Shared and Plex lease owners serialize updates before closing; obsolete queued reports may delay cleanup behind a slow request. No user-visible failure is demonstrated. | Reproduce blocked transport plus queued updates before changing ordering. Preserve exactly-once owned-session cleanup and never release another viewer's tuner. |
 | Real-provider confirmation | Simulator fixtures do not establish Dispatcharr interoperability or resolution of the Level Up report. | Exercise representative authorized server/feed inputs, including audio on hardware. Keep this distinct from local installation success. |
@@ -243,19 +243,18 @@ This proves the scheduling decision under that declared constraint, not that a
 particular public or commercial provider applies it. No concurrency stress is
 sent to the public endpoints and no stream is opened.
 
-Do not copy Lume's daily guide default without checking coverage: the sampled
-Pluto stations had only 15.38-19.41 hours of future listings at capture, while the
-EPGShare sample had 53.16-60.49 hours. A fixed 24-hour-only refresh could outlive
-the first sample's guide horizon. This change therefore leaves Plozz's existing
-freshness/window behavior and settings unchanged. Proactive cadence and per-feed
-account controls remain separate product work, not claims of this change.
+The sampled Pluto stations had 15.38-19.41 hours of future listings at capture;
+EPGShare had 53.16-60.49 hours. These snapshots do not establish publication
+cadence, typical paid-provider behavior, or justify an adaptive polling policy.
 
-### Recommended automatic refresh policy
+### Conventional guide freshness and conditional revalidation
 
 The reference players do not establish a universal paid-provider interval:
 
 | Primary source | Verified behavior |
 | --- | --- |
+| [IPTVnator guide fetching](https://github.com/4gray/iptvnator/blob/9f125b93895ffc07453235f1ed5d03db3604412b/apps/electron-backend/src/app/events/epg-fetch.service.ts) | Whole XMLTV source freshness is 12 hours. Fresh sources are skipped; this is not evidence of a repeating background timer. |
+| [Open TV Xtream guide fetching](https://github.com/Fredolx/open-tv/blob/1bfa78a181166025a6b977d783f895e819ff720f/src-tauri/src/xtream.rs) | Channel schedules are requested on demand through the Xtream API, not by periodically downloading every channel's guide. |
 | [Lume frequency settings](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Sync/SyncFrequency.swift#L77-L105) | Guide default is daily, independently of the three-day playlist default. Six-hour, daily, three-day and weekly choices exist. |
 | [Jellyfin guide task](https://github.com/jellyfin/jellyfin/blob/2953ed632c9277351483eff04f87a8276390691c/src/Jellyfin.LiveTv/Guide/RefreshGuideScheduledTask.cs#L62-L73) and [XMLTV cache](https://github.com/jellyfin/jellyfin/blob/2953ed632c9277351483eff04f87a8276390691c/src/Jellyfin.LiveTv/Listings/XmlTvListingsProvider.cs#L30-L159) | The task defaults to 24 hours. Its separate one-hour document cache/failure cooldown preserves the last downloaded file on ordinary refresh failure. Cache lifetime is not the scheduled refresh interval. |
 | [Kodi IPTV Simple settings](https://github.com/kodi-pvr/pvr.iptvsimple/blob/0159d1149b33df2fcb4123087790af1fa4f516f2/pvr.iptvsimple/resources/instance-settings.xml#L63-L105) | Combined M3U/XMLTV auto-refresh defaults to disabled. Optional repeated refresh defaults to 60 minutes; optional daily refresh defaults to 04:00. The 60-minute value is not an enabled default. |
@@ -265,43 +264,47 @@ but did not establish current refresh defaults. Reseller claims and user-count
 assumptions are not evidence of provider publication cadence or connection limits.
 No authorized paid IPTV account was available for this comparison.
 
-Recommend an automatic daily baseline with an earlier coverage-aware check, not
-an interval the user must understand or a promise to refresh while the OS has
-suspended the app. On authorized foreground/resume and guide use, show stored
-listings immediately and coalesce due work through the existing preparation
-owner. A catalogue change should invalidate affected mappings and request needed
-guide preparation, not unconditionally download an unchanged feed again.
+Plozz adopts a 12-hour default/maximum for account XMLTV indexes, following
+IPTVnator's comparable whole-feed use case. It is a conventional starting point,
+not a measured optimum or a claim that all players agree. Shorter HTTP freshness
+and no-cache still apply. The existing guide-use/resume path rechecks due IPTV
+windows; it does not add a background timer, a coverage-triggered early refresh,
+or a promise of OS background execution.
 
-As initial policy values, check earlier when previously populated, relevant
-stations approach six hours of remaining listings; allow at most one automatic
-early attempt per hour per feed. These are proposed safety margins, not measured
-optima. Use actual populated programme intervals, not the index's requested
-window bounds or one distant outlier. Missing/unsupported stations must not keep
-the whole feed permanently due. First use or a missing requested window still
-needs on-demand preparation.
+Xtream channel schedules remain demand-driven. A provider capability limits
+startup and explicit preparation to the first viewport rather than issuing a
+request for every channel; browsing loads further channels as needed. XMLTV
+still indexes the complete catalog. Valid empty coverage is cached, not treated
+as a reason to repeatedly fetch a feed. Ordinary failed refreshes keep visible
+listings and report the failure; they do not mark stale data fresh.
 
-An unchanged response is a successful freshness check, not new coverage.
-Back off repeated unchanged or failed early checks, respect provider Retry-After,
-retain last-good authorized rows and expose partial feed failures. Do not
-invent listings or refetch continuously when the provider itself has a gap.
-Keep a manual refresh action, without bypassing provider refusal/cooldown rules.
-Account, profile, source and authorization fences apply to every trigger.
+Account XMLTV validators live inside the existing encrypted, authorization-scoped
+index document. A 304 only succeeds when the exact source, projection and retained
+window can answer the request; otherwise a full document is required. Revalidation
+does not invent more coverage. Redirected validators are attached only to the
+exact final resource that issued them, not other paths or hosts. A malformed 200
+replacement preserves committed rows and metadata. No-store revokes persistence,
+including a 304 no-store, which requires an unconditional replacement.
 
-Public response headers also support measuring conditional revalidation before
-adding more automatic traffic: Pluto's final response advertised an ETag and
+Public response headers supported this design: Pluto advertised an ETag and
 300-second max-age; EPGShare advertised ETag, Last-Modified and 14,400-second
 max-age. Neither value proves how often new programme data is published.
 One conditional GET against each unchanged feed returned HTTP 304 with zero
 response-body bytes, compared with 7,832,370 combined bytes for the full bodies.
-This measures avoided body transfer, not total network traffic or Plozz behavior;
-the conditional requests were a separate HTTP probe.
-Validators must remain scoped to the exact source and authorization context and
-honor no-store/no-cache semantics. This patch does not implement validators or
-the proposed cadence.
+That initial measurement was a separate HTTP probe, not total network traffic.
+The opt-in `IPTVGuideRefreshTests` live test now also exercises Plozz's production
+conditional download path after indexing each public feed, reporting the actual
+304/200 outcome and body size; publication may legitimately race revalidation.
+In the implementation verification, both feeds returned 304 with zero body bytes.
+The preceding full responses indexed 9,224 Pluto and 69,624 EPGShare programmes
+in the requested retention windows; those counts describe this run, not guaranteed
+provider coverage. The captured replay separately retained all 1,741 independently
+derived sampled intervals across the two feeds.
 
-Before enabling that policy, replay advancing time, an unchanged short-horizon
-feed, a permanently unmapped station, partial source failure and a long provider
-cooldown. Measure completed request/byte counts and actual available guide
-coverage across publication cycles. Include an authorized paid-provider lineup
-when one is available; the public corpus does not establish subscriber matching
-or the distribution of real users' provider behaviors.
+Deterministic guide-index, transport, preparation and window tests cover restored
+validators, the 12-hour boundary, changed 200 responses, 304 generation reuse,
+source/window eligibility, HTTP directives, redirect isolation, failures and
+bounded per-channel preparation. Existing cancellation, partial-result and
+account-isolation cases remain part of focused regression coverage.
+The public corpus does not establish subscriber-playlist matching or the
+distribution of paid-provider behaviors; no authorized paid account is available.

@@ -169,9 +169,11 @@ public final class LiveTVGuidePreparationModel {
             if refresh { await context.provider.invalidateLiveTVGuideCache() }
             try Task.checkCancellation()
             guard isCurrent(context, request: request) else { return }
-            let channels = try await context.provider.liveTVChannels()
+            let catalog = try await context.provider.liveTVChannels()
             guard isCurrent(context, request: request) else { return }
             try Task.checkCancellation()
+            let channels = context.provider.usesPerChannelLiveTVGuide
+                ? Array(catalog.prefix(LiveTVPrototypeImportModel.serverGuideWarmupChannelLimit)) : catalog
             statuses[id]?.channelCount = channels.count
             let from = clock()
             let to = from.addingTimeInterval(6 * 3_600)

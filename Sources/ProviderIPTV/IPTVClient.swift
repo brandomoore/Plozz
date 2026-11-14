@@ -751,7 +751,17 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     func guideDocument(from url: URL, retainsRawResponse: Bool = false) async throws -> XMLTVDownloadedDocument {
+        let response = try await guideResponse(from: url, retainsRawResponse: retainsRawResponse)
+        guard case .document(let document) = response else { throw IPTVError.malformed }
+        return document
+    }
+
+    func guideResponse(
+        from url: URL, previous: XMLTVGuideCacheMetadata? = nil, retainsRawResponse: Bool = false
+    ) async throws -> XMLTVGuideResponse {
         try Task.checkCancellation()
+        try storageLifecycle.checkAccess()
+        guard !isClosed else { throw CancellationError() }
         let refresh = currentGuideRefresh()
         if refresh?.missingURLs.contains(url) == true {
             IPTVGuideDiagnostics.request?.reuseGuideFailure()
@@ -766,7 +776,9 @@ actor IPTVClient: ApplicationStorageParticipant {
             while true {
                 let retryAfter = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
                 do {
-                    return try await downloadGuideData(from: url, retainsRawResponse: retainsRawResponse) { response in
+                    return try await downloadGuideData(
+                        from: url, previous: previous, retainsRawResponse: retainsRawResponse
+                    ) { response in
                         let delay = HTTPDate.retryAfter(response.value(forHTTPHeaderField: "Retry-After"))
                         retryAfter.withLock { $0 = delay }
                     }
@@ -820,25 +832,34 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     private func downloadGuideData(
-        from url: URL, retainsRawResponse: Bool,
+        from url: URL, previous: XMLTVGuideCacheMetadata?, retainsRawResponse: Bool,
         receivedResponse: @escaping @Sendable (HTTPURLResponse) -> Void
-    ) async throws -> XMLTVDownloadedDocument {
+    ) async throws -> XMLTVGuideResponse {
         if retainsRawResponse, let cachedGuide, cachedGuide.url == url, cachedGuide.expires > Date() {
             IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
-            return XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true)
+            return .document(XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true))
         }
         let admission = try await acquireRefreshWork(.guide)
         defer { releaseRefreshWork(admission) }
         // Another admitted reader may have populated the cache while this one waited.
         if retainsRawResponse, let cachedGuide, cachedGuide.url == url, cachedGuide.expires > Date() {
             IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
-            return XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true)
+            return .document(XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true))
         }
         let (bytes, response) = try await http.bytes(
             url: url, headers: credential.guideHeaders(for: url), guideRequest: true,
+            guideCache: previous,
             receivedResponse: receivedResponse
         )
         defer { bytes.task.cancel() }
+        let metadata = try XMLTVGuideCacheMetadata(response: response, previous: previous)
+        if response.statusCode == 304 {
+            if cachedGuide?.url == url { clearGuideCache() }
+            try Task.checkCancellation()
+            try storageLifecycle.checkAccess()
+            guard !isClosed else { throw CancellationError() }
+            return .notModified(metadata)
+        }
         let progress = ServerLiveTVGuideProgress.report
         // URLSession may decode Content-Encoding before yielding bytes.
         let encoding = response.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()
@@ -882,13 +903,9 @@ actor IPTVClient: ApplicationStorageParticipant {
         try writer.append(buffer)
         let data = try writer.finish()
         progress?(.init(stage: .downloading, completed: received, total: total))
-        let directives = (response.value(forHTTPHeaderField: "Cache-Control") ?? "").lowercased()
-            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        let maxAge = directives.first { $0.hasPrefix("max-age=") }
-            .flatMap { Double($0.dropFirst(8).trimmingCharacters(in: CharacterSet(charactersIn: "\""))) }
-        let duration = min(60, maxAge.flatMap { $0.isFinite ? max(0, $0) : nil } ?? 60)
+        let duration = min(60, max(0, metadata.expiresAt.timeIntervalSinceNow))
         clearGuideCache()
-        if retainsRawResponse, duration > 0, !directives.contains("no-store"), !directives.contains("no-cache") {
+        if retainsRawResponse, duration > 0, metadata.permitsPersistence {
             cachedGuide = (url, data, Date().addingTimeInterval(duration))
             let generation = guideCacheGeneration
             guideCacheExpiry = Task { [weak self] in
@@ -901,10 +918,10 @@ actor IPTVClient: ApplicationStorageParticipant {
             }
         }
         try Task.checkCancellation()
-        return XMLTVDownloadedDocument(
-            data: data, expiresAt: Date().addingTimeInterval(directives.contains("no-cache") ? 0 : duration),
-            permitsPersistence: !directives.contains("no-store")
-        )
+        return .document(XMLTVDownloadedDocument(
+            data: data, expiresAt: metadata.expiresAt,
+            permitsPersistence: metadata.permitsPersistence, cacheMetadata: metadata
+        ))
     }
 
     private func expireGuideCache(generation: UUID) {

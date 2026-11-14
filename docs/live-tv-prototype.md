@@ -41,8 +41,9 @@ Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
 failed refresh. Completion distinguishes missing guide configuration, no current
 listings, successful matching and failure; displayed matching counts cover the
-next six hours. Ordinary cache-driven refreshes retain their existing policy and
-do not create a setup-progress task. Profile/account authorization changes cancel
+next six hours (the first viewport for per-channel Xtream guides). Ordinary
+cache-driven refreshes use the freshness policy below and do not create a
+setup-progress task. Profile/account authorization changes cancel
 explicit work and discard its presentation state.
 
 Source setup explains that viewers must have authorization for their channels
@@ -514,15 +515,34 @@ utility-priority import has separate waiter cancellation, and teardown or explic
 refresh cancels and drains superseded work. Existing visible listings remain
 available in the presentation model while it refreshes.
 
-This does not introduce a new polling schedule. Parsed reuse retains the existing
-60-second maximum freshness, honoring shorter max-age and no-cache. An identical
-download can revalidate an eligible index without parsing again. No-store removes
-persisted source data before bounded transient parsing, including malformed
-replacements. Explicit refresh bypasses parsed freshness and the raw-response
-cache. Account HTTP validators are not introduced here: unlike existing standalone
-conditional fetching, this path still downloads expired bodies before comparing
-their digest. A changed catalog projection, language, or requested interval outside
-the retained horizon requires a new import.
+Account XMLTV indexes use a conventional 12-hour maximum/default freshness,
+honoring shorter HTTP max-age, Expires, Age and no-cache directives. ETag and
+Last-Modified are encrypted alongside the parsed index, within its existing
+account/credential-revision/profile scope. A conditional 304 advances freshness
+without transferring XML or replacing the parsed generation. Validators belong
+to the exact final response URL: redirects do not send them to another resource.
+A changed catalog projection, language, or requested interval outside the retained
+window requires a full response because a 304 cannot supply unindexed rows.
+
+An identical 200 response can still reuse the generation by digest comparison.
+No-store removes persisted source data before bounded transient parsing, including
+malformed replacements. A 304 no-store revokes the old index and requires an
+unconditional replacement. Explicit refresh bypasses freshness, but may validate
+an unchanged index conditionally. The legacy raw-response cache remains bounded
+to one document and at most 60 seconds; it is not a second persistent XML store.
+
+The existing guide-use/resume request path checks loaded IPTV windows again after
+12 hours, without adding a timer or a coverage-triggered polling heuristic.
+Existing listings stay visible during refresh and ordinary failures remain
+observable without advancing freshness. Missing windows load on demand. This
+policy does not promise background execution while the OS suspends the app.
+Standalone prototype-source fetching retains its separate existing HTTP cache.
+
+Xtream without an explicit XMLTV URL advertises per-channel guide loading.
+Startup discovery and guide preparation warm only the first 12 channels, then
+browsing requests its bounded neighborhood. Preparation counts describe that
+sample, not the complete lineup. Explicit XMLTV sources still prepare the complete
+catalog through one shared index; neither mode opens streams during preparation.
 
 Catalogue imports, XMLTV downloads and Xtream per-channel guide requests share
 cancellable admission within each IPTV provider instance. They do not compete

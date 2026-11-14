@@ -192,6 +192,7 @@ public final class LiveTVPrototypeImportModel {
     }
 
     @ObservationIgnored private let loader: any LiveTVSourceLoading
+    @ObservationIgnored let guideClock: @MainActor () -> Date
     @ObservationIgnored private let cache: LiveTVIndexedCache?
     @ObservationIgnored private let catalogIsAuthorized: @MainActor () -> Bool
     @ObservationIgnored public var beforeCatalogPublication:
@@ -254,7 +255,8 @@ public final class LiveTVPrototypeImportModel {
         serverProviderResolver: @escaping LiveTVServerProviderResolver = { _ in nil },
         cache: LiveTVIndexedCache? = nil,
         catalogIsAuthorized: @escaping @MainActor () -> Bool = { true },
-        generatedProgramLoader: LiveTVGeneratedProgramLoader? = nil
+        generatedProgramLoader: LiveTVGeneratedProgramLoader? = nil,
+        guideClock: @escaping @MainActor () -> Date = Date.init
     ) {
         self.configuration = configuration
         playlistSources = configuration.playlists.map { LiveTVPlaylistSourceStatus(source: $0) }
@@ -272,6 +274,7 @@ public final class LiveTVPrototypeImportModel {
         self.cache = cache
         self.catalogIsAuthorized = catalogIsAuthorized
         self.generatedProgramLoader = generatedProgramLoader
+        self.guideClock = guideClock
     }
 
     #if DEBUG
@@ -298,6 +301,7 @@ public final class LiveTVPrototypeImportModel {
         self.loader = loader
         self.cache = nil
         self.catalogIsAuthorized = { true }
+        self.guideClock = Date.init
     }
     #endif
 

@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 
 extension LiveTVPrototypeImportModel {
@@ -70,6 +71,10 @@ extension LiveTVPrototypeImportModel {
                 start = end
                 let missingIDs = globalIDs.filter {
                     if force { return true }
+                    if context.kind == .iptv,
+                       serverGuideCoveragePhases(
+                        channelID: $0, from: chunkStart, to: end, validatedAt: guideClock()
+                       ).contains(nil) { return true }
                     switch serverGuideState(channelID: $0, from: chunkStart, to: end) {
                     case .noListings: return false
                     case .loading:
@@ -199,7 +204,7 @@ extension LiveTVPrototypeImportModel {
     }
 
     private func serverGuideCoveragePhases(
-        channelID: String, from: Date, to: Date
+        channelID: String, from: Date, to: Date, validatedAt: Date? = nil
     ) -> [LiveTVImportPhase?] {
         guard let reference = serverChannelReferences[channelID] else { return [nil] }
         let windows = serverGuideWindows.filter {
@@ -207,7 +212,13 @@ extension LiveTVPrototypeImportModel {
         }
         let boundaries = Set([from, to] + windows.flatMap { [max(from, $0.from), min(to, $0.to)] }).sorted()
         return zip(boundaries, boundaries.dropFirst()).map { start, end in
-            windows.last { $0.from <= start && $0.to >= end }?.phase
+            guard let window = windows.last(where: { $0.from <= start && $0.to >= end }) else { return nil }
+            if let validatedAt, window.phase == .loaded,
+               let refreshed = window.lastRefresh,
+               (validatedAt < refreshed || validatedAt.timeIntervalSince(refreshed) >= XMLTVGuideCacheMetadata.maximumAge) {
+                return nil
+            }
+            return window.phase
         }
     }
 
@@ -285,7 +296,7 @@ extension LiveTVPrototypeImportModel {
         serverGuideWindows[index].phase = phase == .idle && serverGuideWindows[index].lastRefresh != nil
             ? .loaded : phase
         serverGuideWindows[index].failure = failure
-        if phase == .loaded { serverGuideWindows[index].lastRefresh = Date() }
+        if phase == .loaded { serverGuideWindows[index].lastRefresh = guideClock() }
         updateServerGuidePhase(serverGuideWindows[index].sourceID)
     }
 
