@@ -1023,10 +1023,46 @@ struct PlozziOSNavigationBackground: ViewModifier {
     }
 }
 
+private struct UpcomingNavigationBarBackdrop: UIViewRepresentable {
+    let enabled: Bool
+
+    func makeUIView(context: Context) -> Backdrop { Backdrop() }
+
+    func updateUIView(_ view: Backdrop, context: Context) {
+        if enabled != (view.effect != nil) {
+            view.effect = enabled ? UIBlurEffect(style: .systemUltraThinMaterial) : nil
+        }
+    }
+
+    final class Backdrop: UIVisualEffectView {
+        private let fade = CAGradientLayer()
+
+        init() {
+            super.init(effect: nil)
+            isUserInteractionEnabled = false
+            accessibilityIdentifier = "upcoming.navigationBackdrop"
+            fade.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
+            layer.mask = fade
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            fade.frame = bounds
+            fade.locations = [0, NSNumber(value: Double(max(0, bounds.height - 32) / max(1, bounds.height))), 1]
+            CATransaction.commit()
+        }
+    }
+}
+
 struct PlozziOSTabShell: View {
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
@@ -1047,6 +1083,8 @@ struct PlozziOSTabShell: View {
     @State private var downloadNavigationID: UUID?
     @State private var hasChosenNavigationDestination = false
     let homeViewModelBox: LazyViewState<HomeViewModel>
+    var upcomingFeedLoader:
+        (@Sendable (@escaping @MainActor @Sendable ([UpcomingRelease]) -> Void) async throws -> UpcomingFeedSnapshot)?
     var sharedHomeViewModel: HomeViewModel {
         homeViewModelBox.value(forKey: homeContentIdentity, onDiscard: { $0.invalidate() }) {
             Self.makeHomeViewModel(appModel: appModel)
@@ -1077,7 +1115,10 @@ struct PlozziOSTabShell: View {
         await sharedHomeViewModel.upcoming.refresh(
             scope: scope, namespace: appModel.profiles.activeNamespace, isCurrent: isCurrent
         ) { progress in
-            try await UpcomingFeedLoader.load(
+            if let upcomingFeedLoader {
+                return try await upcomingFeedLoader(progress)
+            }
+            return try await UpcomingFeedLoader.load(
                 accounts: accounts, watchlist: saved, regionCode: region,
                 interval: UpcomingFeedLoader.window(),
                 requestedMovies: {
@@ -1285,6 +1326,8 @@ struct PlozziOSTabShell: View {
         } else {
             NavigationStack {
                 destinationContent(for: destination, keepsNavigationBar: isOverflow)
+                    // Keep the stack itself directly hosted by Tab so iPad can merge its toolbar.
+                    .plozzOpaqueNavigationChrome()
                     .toolbar {
                         if isOverflow, destination != .downloads {
                             PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
@@ -1293,7 +1336,6 @@ struct PlozziOSTabShell: View {
                     .environment(\.plozziOSIsOverflowDestination, isOverflow)
                     .environment(\.plozziOSOverflowNavigation, overflowNavigation)
             }
-            .plozzOpaqueNavigationChrome()
             .id(destination == .downloads ? downloadNavigationID : nil)
         }
     }
@@ -1345,7 +1387,21 @@ struct PlozziOSTabShell: View {
         case .upcoming:
             UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
                 .plozziOSItemNavigation(appModel: appModel)
-                .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarBackground(.automatic, for: .navigationBar)
+                .overlay {
+                    GeometryReader { geometry in
+                        VStack(spacing: 0) {
+                            UpcomingNavigationBarBackdrop(
+                                enabled: !isRunningOnMac && !reduceTransparency && !systemReduceTransparency
+                            )
+                                .frame(height: geometry.safeAreaInsets.top + 32)
+                                .offset(y: -geometry.safeAreaInsets.top)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
                 .background { AppBackground(palette: palette) }
         case .discover:
             PlozziOSDiscoverView(appModel: appModel, onShowSettings: showSettings)

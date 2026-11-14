@@ -1,3 +1,4 @@
+import AppRuntime
 import CoreModels
 import CoreUI
 import FeatureHomeCore
@@ -14,7 +15,7 @@ import FeatureHome
 
 struct UpcomingCaptureFixture: View {
     @State private var fixture = UpcomingCaptureState()
-    @State private var selection = ProcessInfo.processInfo.arguments.contains("--capture-home") ? 0 : 1
+    @State private var isLoaded = false
     #if os(tvOS)
     @State private var tvSelection: NavigationRailDestination =
         ProcessInfo.processInfo.arguments.contains("--capture-home") ? .home : .upcoming
@@ -41,24 +42,30 @@ struct UpcomingCaptureFixture: View {
                 profile: Profile(name: "Viewer"), onOpenProfileSwitcher: {}
             )
             #else
-            TabView(selection: $selection) {
-                Tab("Home", systemImage: "house", value: 0) { page(home: true) }
-                Tab("Upcoming", systemImage: "calendar", value: 1) { page(home: false) }
-                Tab("Watchlist", systemImage: "bookmark", value: 2) { Color.clear }
-                Tab("Search", systemImage: "magnifyingglass", value: 3) { Color.clear }
-                Tab("Settings", systemImage: "gearshape", value: 4) { Color.clear }
+            if isLoaded {
+                fixture.shell
+                    .environment(fixture.app)
+                    .environment(fixture.trailer)
+                    .environment(fixture.sidebar)
+                    .environment(\.plozzMetrics, .touch(density: .standard))
+            } else {
+                Color.clear
             }
-            .tabViewStyle(.sidebarAdaptable)
             #endif
         }
         .environment(\.themePalette, palette)
         .environment(\.plozzCardStyle, .borderless)
         .preferredColorScheme(.dark)
         .tint(palette.primaryText)
+        .environment(\.plozzReduceTransparency, ProcessInfo.processInfo.arguments.contains("--capture-opaque"))
         .task {
             await fixture.load()
+            isLoaded = true
             #if os(iOS)
             do {
+                try await Task.sleep(for: .milliseconds(500))
+                fixture.app.screenshotDirector.tab =
+                    ProcessInfo.processInfo.arguments.contains("--capture-home") ? "home" : "upcoming"
                 try await prepareCapture()
             } catch is CancellationError {
                 return
@@ -80,11 +87,23 @@ struct UpcomingCaptureFixture: View {
             .flatMap(\.windows).first(where: \.isKeyWindow) else {
             preconditionFailure("Upcoming capture has no window")
         }
+        precondition(fixture.home.upcoming.failedSourceCount == 0, "Preview data was replaced by a live refresh")
+        if arguments.contains("--capture-landscape") {
+            window.frame = CGRect(x: 0, y: 0, width: 1194, height: 834)
+            try await Task.sleep(for: .milliseconds(500))
+            precondition(window.bounds.size == CGSize(width: 1194, height: 834), "Landscape test window was not resized")
+        }
         func descendants(_ view: UIView) -> [UIView] {
             [view] + view.subviews.flatMap(descendants)
         }
         func controllers(_ controller: UIViewController) -> [UIViewController] {
             [controller] + controller.children.flatMap(controllers)
+        }
+        if arguments.contains("--capture-landscape") {
+            for controller in window.rootViewController.map(controllers) ?? [] {
+                (controller as? UITabBarController)?.sidebar.isHidden = true
+            }
+            try await Task.sleep(for: .milliseconds(500))
         }
         var barItems: [UIBarButtonItem] = []
         for controller in window.rootViewController.map(controllers) ?? [] {
@@ -97,13 +116,11 @@ struct UpcomingCaptureFixture: View {
         for title in ["Today", "Calendar", "Filters"] {
             precondition(barItems.contains { $0.title == title }, "Missing Upcoming action: \(title)")
         }
-        let controls = descendants(window).compactMap { $0 as? UIControl }.filter {
-            let frame = $0.convert($0.bounds, to: window)
-            return frame.width > 0 && frame.height > 0 && frame.minY >= 0
-                && frame.maxY < window.safeAreaInsets.top + 80
+        guard let today = barItems.first(where: { $0.title == "Today" })?.customView, today.window === window else {
+            preconditionFailure("Upcoming Today action must be visible in the production toolbar")
         }
-        precondition(!controls.isEmpty, "Upcoming capture has no top-bar controls")
-        let before = controls.map { $0.convert($0.bounds, to: window) }
+        let before = today.convert(today.bounds, to: window)
+        precondition(before.minY < window.safeAreaInsets.top + 20, "Upcoming toolbar occupies a second row")
         if arguments.contains("--capture-scrolled") {
             guard let scroll = descendants(window).compactMap({ $0 as? UIScrollView }).first(where: {
                 $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height + 250
@@ -112,9 +129,37 @@ struct UpcomingCaptureFixture: View {
             }
             scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 250), animated: false)
             try await Task.sleep(for: .milliseconds(500))
-            for (view, frame) in zip(controls, before) {
-                precondition(abs(view.convert(view.bounds, to: window).minY - frame.minY) < 2,
-                             "Upcoming actions moved while scrolling")
+            precondition(abs(today.convert(today.bounds, to: window).minY - before.minY) < 2,
+                         "Upcoming actions moved while scrolling")
+            guard let backdrop = descendants(window).first(where: {
+                $0.accessibilityIdentifier == "upcoming.navigationBackdrop"
+            }) as? UIVisualEffectView else {
+                preconditionFailure("Upcoming requires a real native navigation backdrop")
+            }
+            let backdropFrame = backdrop.convert(backdrop.bounds, to: window)
+            precondition(abs(backdropFrame.minX) < 1 && abs(backdropFrame.width - window.bounds.width) < 1)
+            precondition(abs(backdropFrame.minY) < 1 && backdropFrame.maxY > before.maxY)
+            precondition(!backdrop.isUserInteractionEnabled, "The backdrop must not intercept toolbar actions")
+            precondition((backdrop.effect is UIBlurEffect) != arguments.contains("--capture-opaque"))
+            if #available(iOS 26.0, *) {
+                precondition(
+                    scroll.topEdgeEffect.isHidden == arguments.contains("--capture-opaque"),
+                    "Upcoming must respect the shell's scroll-edge transparency policy"
+                )
+                precondition(scroll.topEdgeEffect.style == .soft, "Upcoming must use a soft native scroll edge")
+            }
+            if arguments.contains("--capture-backdrop-comparison") {
+                for enabled in [true, false] {
+                    backdrop.effect = enabled ? UIBlurEffect(style: .systemUltraThinMaterial) : nil
+                    try await Task.sleep(for: .milliseconds(500))
+                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                    }
+                    let path = URL(fileURLWithPath: NSTemporaryDirectory())
+                        .appendingPathComponent(enabled ? "upcoming-backdrop-enabled.png" : "upcoming-backdrop-disabled.png")
+                    try image.pngData()!.write(to: path)
+                }
+                backdrop.effect = UIBlurEffect(style: .systemUltraThinMaterial)
             }
         }
         if showsCalendar {
@@ -139,10 +184,18 @@ struct UpcomingCaptureFixture: View {
                 precondition(picker.window == nil, "Choosing a date must dismiss the calendar")
             }
         }
+        if arguments.contains("--capture-landscape") {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true), "Could not render landscape window")
+            }
+            let path = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("upcoming-landscape.png")
+            try image.pngData()!.write(to: path)
+        }
         FileHandle.standardOutput.write(Data("Upcoming capture ready\n".utf8))
     }
     #endif
 
+    #if os(tvOS)
     private func page(home: Bool) -> some View {
         NavigationStack {
             Group {
@@ -158,16 +211,12 @@ struct UpcomingCaptureFixture: View {
                     )
                 }
             }
-            #if os(iOS)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            #endif
             .background { AppBackground(palette: palette) }
         }
     }
 
     @ViewBuilder
     private var homeContent: some View {
-        #if os(tvOS)
         HomeView(
             viewModel: fixture.home, visibility: fixture.visibility,
             heroSettings: fixture.hero,
@@ -180,22 +229,14 @@ struct UpcomingCaptureFixture: View {
                 if case .upcoming = destination { tvSelection = .upcoming }
             }
         )
-        #else
-        PlozziOSHomeView(
-            appModel: fixture.app, viewModel: fixture.home,
-            onAddServer: {}, onShowSettings: {}
-        )
-        .environment(fixture.app)
-        .environment(fixture.trailer)
-        .environment(fixture.sidebar)
-        .environment(\.plozzMetrics, .touch(density: .standard))
-        #endif
     }
+    #endif
 }
 
 @MainActor
-private final class UpcomingCaptureState {
+final class UpcomingCaptureState {
     let home: HomeViewModel
+    let releases: [UpcomingRelease]
     let visibility: HomeLibraryVisibilityModel
     let hero = HeroSettingsModel(store: InMemoryHeroSettingsStore())
     let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
@@ -204,10 +245,13 @@ private final class UpcomingCaptureState {
     let heroRuntime = HomeHeroRuntimeState()
     #else
     let app: PlozziOSAppModel
+    let shell: PlozziOSTabShell
     let sidebar = PlozziOSSidebarGeometryModel()
     #endif
 
-    init() {
+    init(releases: [UpcomingRelease]? = nil) {
+        let releases = releases ?? UpcomingCaptureProvider.releases
+        self.releases = releases
         let provider = UpcomingCaptureProvider()
         let account = Account(id: "upcoming-capture", from: provider.session)
         let defaults = UserDefaults(suiteName: "UpcomingCapture.\(UUID().uuidString)")!
@@ -234,6 +278,16 @@ private final class UpcomingCaptureState {
         app.settings.cardStyle.captions = .default
         app.settings.theme.theme = .dark
         app.settings.heroBackground.settings.detailMode = .off
+        let destinations = [
+            NavigationLibraryLayout.homeKey, NavigationLibraryLayout.musicKey,
+            NavigationLibraryLayout.upcomingKey, NavigationLibraryLayout.downloadsKey,
+            NavigationLibraryLayout.searchKey, NavigationLibraryLayout.watchlistKey,
+            NavigationLibraryLayout.settingsKey
+        ]
+        app.settings.navigation.applyLibrarySections(
+            .init(enabled: destinations, disabled: NavigationDestinationDefaults.iOS.filter { !destinations.contains($0) }),
+            available: NavigationDestinationDefaults.iOS
+        )
         app.metadataProviderSettingsModel.settings = MetadataProviderSettings(
             orderMode: .custom, preferOnlineArtwork: false,
             disabledOrder: MetadataSourceAttribution.all.map(\.id)
@@ -249,6 +303,7 @@ private final class UpcomingCaptureState {
             .init(enabled: rows, disabled: HomeRowChoice.shared.map(\.id).filter { !rows.contains($0) }),
             choices: HomeRowChoice.shared
         )
+        #if os(tvOS)
         let visibility = visibility
         home = HomeViewModel(
             accounts: [.init(account: account, provider: provider)],
@@ -256,13 +311,36 @@ private final class UpcomingCaptureState {
             layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
             currentVisibility: { visibility.visibility }
         )
+        #else
+        var shell = PlozziOSTabShell(
+            appModel: app, homeViewModelBox: LazyViewState<HomeViewModel>(), onAddServer: {},
+            showingSettings: .constant(false), showingProfileSwitcher: .constant(false),
+            deferredPairingURL: .constant(nil), systemColorScheme: .dark
+        )
+        shell.upcomingFeedLoader = { _ in UpcomingFeedSnapshot(releases: releases) }
+        self.shell = shell
+        home = shell.sharedHomeViewModel
+        #endif
     }
 
     func load() async {
-        await home.upcoming.refresh(scope: "upcoming-capture", namespace: "upcoming-capture", isCurrent: { true }) {
-            UpcomingFeedSnapshot(releases: UpcomingCaptureProvider.releases)
-        }
         await home.load()
+        #if os(tvOS)
+        let scope = "upcoming-capture"
+        let namespace: String? = "upcoming-capture"
+        #else
+        let scope = UpcomingFeedLoader.scopeKey(
+            profileID: app.profiles.activeProfileID, accounts: app.upcomingAccounts,
+            requestIdentity: app.profiles.activeProfile.seerrRequestIdentity,
+            connectionRevision: app.seerService.connectionRevision,
+            language: Locale.current.identifier, regionCode: Locale.current.region?.identifier
+        )
+        let namespace = app.profiles.activeNamespace
+        #endif
+        let releases = releases
+        await home.upcoming.refresh(scope: scope, namespace: namespace, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
     }
 }
 

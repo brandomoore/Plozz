@@ -71,27 +71,33 @@ extension HomeRowArrangementHostedTests {
                 interests: [.watchlist], regionCode: "US"
             )
         }
+        #if os(iOS)
+        let cases = [
+            (CGSize(width: 390, height: 844), false),
+            (CGSize(width: 834, height: 1194), false),
+            (CGSize(width: 1194, height: 834), false),
+            (CGSize(width: 834, height: 1194), true)
+        ]
+        #else
+        let cases = [(CGSize(width: 1920, height: 1080), false)]
         let model = UpcomingFeedModel()
         await model.refresh(scope: "toolbar-test", namespace: nil, isCurrent: { true }) {
             UpcomingFeedSnapshot(releases: releases)
         }
-        #if os(iOS)
-        let sizes = [CGSize(width: 390, height: 844), CGSize(width: 1024, height: 1366)]
-        #else
-        let sizes = [CGSize(width: 1920, height: 1080)]
         #endif
-        for size in sizes {
+        for (size, reducedTransparency) in cases {
+            #if os(iOS)
+            let fixture = UpcomingCaptureState(releases: releases)
+            await fixture.load()
+            #endif
             try await withWindow(size: size) {
                 #if os(iOS)
-                TabView {
-                    Tab("Home", systemImage: "house") {
-                        NavigationStack {
-                            UpcomingView(model: model, interval: interval)
-                        }
-                    }
-                    Tab("Search", systemImage: "magnifyingglass") { Color.clear }
-                }
-                .tabViewStyle(.sidebarAdaptable)
+                fixture.shell
+                    .environment(fixture.app)
+                    .environment(fixture.trailer)
+                    .environment(fixture.sidebar)
+                    .environment(\.plozzMetrics, .touch(density: .standard))
+                    .environment(\.plozzReduceTransparency, reducedTransparency)
                 #else
                 NavigationStack {
                     UpcomingView(model: model, interval: interval)
@@ -101,12 +107,19 @@ extension HomeRowArrangementHostedTests {
                 func descendants(_ view: UIView) -> [UIView] {
                     [view] + view.subviews.flatMap(descendants)
                 }
-                let initial = try await self.capture(window, name: "Upcoming toolbar \(size.width)")
-                XCTAssertFalse(initial.contains { ["All", "Shows", "Movies"].contains($0.0) })
                 #if os(iOS)
                 func controllers(_ controller: UIViewController) -> [UIViewController] {
                     [controller] + controller.children.flatMap(controllers)
                 }
+                try await Task.sleep(for: .milliseconds(500))
+                fixture.app.screenshotDirector.tab = "upcoming"
+                for controller in controllers(try XCTUnwrap(window.rootViewController)) {
+                    (controller as? UITabBarController)?.sidebar.isHidden = true
+                }
+                #endif
+                let initial = try await self.capture(window, name: "Upcoming toolbar \(size.width)")
+                XCTAssertFalse(initial.contains { ["All", "Shows", "Movies"].contains($0.0) })
+                #if os(iOS)
                 var barItems: [UIBarButtonItem] = []
                 for controller in controllers(try XCTUnwrap(window.rootViewController)) {
                     let item = controller.navigationItem
@@ -119,13 +132,10 @@ extension HomeRowArrangementHostedTests {
                 for title in ["Today", "Calendar", "Filters"] {
                     XCTAssertTrue(barItems.contains { $0.title == title }, title)
                 }
-                let controls = descendants(window).compactMap { $0 as? UIControl }.filter {
-                    let frame = $0.convert($0.bounds, to: window)
-                    return frame.width > 0 && frame.height > 0 && frame.minY >= 0
-                        && frame.maxY < window.safeAreaInsets.top + 80
-                }
-                XCTAssertFalse(controls.isEmpty)
-                XCTAssertFalse(initial.contains { $0.0 == "Upcoming" })
+                let today = try XCTUnwrap(barItems.first { $0.title == "Today" }?.customView)
+                XCTAssertTrue(today.window === window)
+                XCTAssertLessThan(today.convert(today.bounds, to: window).minY, window.safeAreaInsets.top + 20)
+                let controls = [today]
                 #else
                 let controls = try ["upcoming.today", "upcoming.calendar", "upcoming.filters"].map { id in
                     try XCTUnwrap(descendants(window).first { $0.accessibilityIdentifier == id }, id)
@@ -148,6 +158,20 @@ extension HomeRowArrangementHostedTests {
                     XCTAssertEqual(control.convert(control.bounds, to: window).minY, before.minY, accuracy: 2)
                 }
                 #if os(iOS)
+                let backdrop = try XCTUnwrap(descendants(window).first {
+                    $0.accessibilityIdentifier == "upcoming.navigationBackdrop"
+                } as? UIVisualEffectView)
+                let backdropFrame = backdrop.convert(backdrop.bounds, to: window)
+                XCTAssertEqual(backdropFrame.minX, 0, accuracy: 1)
+                XCTAssertEqual(backdropFrame.width, window.bounds.width, accuracy: 1)
+                XCTAssertEqual(backdropFrame.minY, 0, accuracy: 1)
+                XCTAssertGreaterThan(backdropFrame.maxY, frames[0].maxY)
+                XCTAssertEqual(backdrop.effect is UIBlurEffect, !reducedTransparency)
+                XCTAssertFalse(backdrop.isUserInteractionEnabled)
+                if #available(iOS 26.0, *) {
+                    XCTAssertEqual(scroll.topEdgeEffect.isHidden, reducedTransparency)
+                    XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
+                }
                 let calendar = try XCTUnwrap(barItems.first { $0.title == "Calendar" })
                 XCTAssertTrue(UIApplication.shared.sendAction(
                     try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil

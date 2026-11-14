@@ -48,7 +48,7 @@
                         #endif
                     }
                     #if os(iOS)
-                    .clipped()
+                    .modifier(UpcomingScrollEdge())
                     #endif
                     .onChange(of: selectedDay) { _, day in
                         proxy.scrollTo(day, anchor: .top)
@@ -73,7 +73,8 @@
                 .padding(.leading, navigationInset)
                 .padding(.top, topNavigationInsets.top)
                 #else
-                .modifier(UpcomingNavigationChrome())
+                .navigationTitle("")
+                .toolbarTitleDisplayMode(.inlineLarge)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         todayButton
@@ -118,21 +119,13 @@
         }
 
         #if os(iOS)
-            private struct UpcomingNavigationChrome: ViewModifier {
+            private struct UpcomingScrollEdge: ViewModifier {
                 func body(content: Content) -> some View {
                     if #available(iOS 26.0, *) {
-                        chrome(content)
-                            .scrollEdgeEffectHidden(true, for: .top)
+                        content.scrollEdgeEffectStyle(.soft, for: .top)
                     } else {
-                        chrome(content)
+                        content
                     }
-                }
-
-                private func chrome(_ content: Content) -> some View {
-                    content
-                        .navigationTitle("")
-                        .toolbarTitleDisplayMode(.inlineLarge)
-                        .toolbarBackground(.hidden, for: .navigationBar)
                 }
             }
         #endif

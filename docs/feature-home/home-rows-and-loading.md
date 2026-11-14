@@ -34,11 +34,17 @@ Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.
 Calendar, Filters and Today remain at the top while the agenda scrolls: mobile
-uses the native navigation toolbar without a duplicate page title or scroll-edge
-backdrop. Inline-large toolbar layout lets it share the iPad tab-bar line when
-space permits without reserving an empty large-title row. Content insets
-belong to the agenda, not the scroll viewport; the viewport clips scrolling
-content below the controls instead of covering it with a background. The mobile
+uses the native navigation toolbar without a duplicate page title. The tab shell
+keeps its appearance bridge inside `NavigationStack`, so UIKit can recognize the
+stack and merge its inline-large toolbar into the iPad tab-bar line. Wrapping the
+stack in that bridge's background breaks the merge even when the bridge is inactive.
+Content insets belong to the agenda, not the scroll viewport. Content scrolls
+behind a full-width UIKit material blur beneath the native toolbar. Its height
+tracks the top safe area, and a feathered lower edge avoids a solid background
+strip. The backdrop cannot intercept touches and turns off for reduced transparency.
+The soft native scroll edge remains enabled when transparency is allowed, but
+does not substitute for the material: in the merged iPad toolbar it can merely
+dim content. The mobile
 calendar is a native graphical date picker in a content-sized popover anchored to
 Calendar; selecting a date closes it. TV uses native secondary glass controls
 below the selected navigation chrome.
@@ -51,9 +57,16 @@ The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and
 `--upcoming-capture-fixture --capture-home` (the production Home screen with
 Continue Watching, Coming Soon and Recently Added). These previews use sample
 dates/history and public artwork, not a signed-in account; Home's hero is disabled.
-Mobile previews also support `--capture-scrolled`, `--capture-calendar` and
+Mobile previews mount the production `PlozziOSTabShell`, including its navigation
+and appearance bridges, with a seeded feed loader rather than live release lookup.
+They also support
+`--capture-scrolled`, `--capture-calendar` and
 `--capture-selection` to exercise pinned controls, the real calendar presentation
-and dismissal after choosing a date.
+and dismissal after choosing a date. Add `--capture-opaque` to the scrolled capture
+to check the app's reduced-transparency fallback. Add `--capture-landscape` to an
+action capture to render a 1194-by-834 native test window with the sidebar collapsed;
+this checks wide layout, not device rotation. That render is saved to
+`tmp/upcoming-landscape.png` in the presentation host's data container.
 
 `HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
 request-connection changes invalidate in-flight results. Viewing/watchlist
