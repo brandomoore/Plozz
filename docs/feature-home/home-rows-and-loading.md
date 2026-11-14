@@ -41,6 +41,17 @@ their loading and reserved footprints. Poster-layout Continue Watching, other
 poster and landscape rails, iPhone sizing, and Mac's existing fitting policy are
 unchanged.
 
+Mobile landscape playback chips give up the play glyph before compressing their
+progress gauge. Narrow cards retain a readable shorter gauge alongside episode
+and time text; text remains the final fallback when neither fits. Portrait cards
+and TV keep their existing fitting policies, and hidden progress stays hidden.
+
+Hero previews are retained under their own resolution keys as soon as they paint,
+before full-quality decoding completes. This lets a newly mounted idle backdrop
+reuse the incoming slide's image without a loading-background frame. Sliding,
+idle, and reflected hero layers use the same artwork preference and resolution
+identity; the full-quality image can still replace its preview when ready.
+
 The first progressive Home publication includes configured server and collection
 rows before provider responses arrive. Planning and fetching share the same
 active-account, server-user, enabled-library, and row-visibility filters.

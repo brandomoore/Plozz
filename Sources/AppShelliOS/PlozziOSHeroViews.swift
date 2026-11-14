@@ -1624,6 +1624,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
     private var artwork: some View {
         FallbackAsyncImage(
             references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
+            prefersLandscape: style != .compactPortrait,
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
@@ -1646,6 +1647,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
     private func mirroredEdge(alignment: Alignment) -> some View {
         FallbackAsyncImage(
             references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
+            prefersLandscape: style != .compactPortrait,
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
@@ -1687,6 +1689,7 @@ private struct PlozziOSHeroReflection: View {
         ZStack {
             FallbackAsyncImage(
                 references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
+                prefersLandscape: style != .compactPortrait,
                 maxAspectRatio: 3,
                 variant: .heroBackdrop,
                 previewVariant: .heroPreview,

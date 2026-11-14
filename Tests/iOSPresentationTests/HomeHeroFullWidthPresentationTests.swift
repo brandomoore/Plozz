@@ -10,6 +10,115 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testColdHeroPreviewSurvivesRebuildingBeforeFullResolution() async throws {
+        for landscape in [false, true] {
+            let url = try XCTUnwrap(URL(string: "https://hero-preview.invalid/\(UUID()).png"))
+            let artwork = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 600)).image { context in
+                UIColor.blue.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
+            }
+            let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: url, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
+            ))
+            cache.storeCachedResponse(
+                CachedURLResponse(response: response, data: try XCTUnwrap(artwork.pngData())),
+                for: URLRequest(url: url)
+            )
+            defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
+            let preview = await ArtworkImageCache.shared.image(for: url, variant: .heroPreview)
+            XCTAssertNotNil(preview)
+            XCTAssertNil(ArtworkImageCache.shared.cachedImage(for: url, variant: .heroBackdrop))
+            let identity = UUID().uuidString
+            let policy = ArtworkPresentationPolicy(area: .home, settings: ArtworkSettings(preference: .online))
+            var rebuilt: UIImage?
+            func picture(onResolve: ((ArtworkReference?) -> Void)? = nil) -> some View {
+                FallbackAsyncImage(
+                    references: [], prefersLandscape: landscape, maxAspectRatio: 3,
+                    variant: .heroBackdrop, previewVariant: .heroPreview,
+                    artworkPolicy: policy, asyncFallbackURL: { url },
+                    onResolveReference: onResolve, pinIdentity: identity
+                ) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { Color.red }
+                .showingPlaceholderWhileLoading(true)
+                .frame(width: 200, height: 150)
+                .clipped()
+            }
+            let item = MediaItem(id: identity, title: "Preview", kind: .movie, allowsTitleBasedMetadataMatching: false)
+            try await withWindow(
+                item: item, size: CGSize(width: 390, height: 844), sizeClass: .compact,
+                insets: .zero, pull: PlozziOSHomeHeroPullModel()
+            ) { window, host in
+                host.rootView = AnyView(picture { _ in
+                    guard rebuilt == nil else { return }
+                    // Capture the replacement synchronously, before the full-quality
+                    // await can finish. This is the carousel's landing-frame boundary.
+                    rebuilt = ImageRenderer(content: picture()).uiImage
+                })
+                let deadline = ContinuousClock.now + .seconds(3)
+                while rebuilt == nil, ContinuousClock.now < deadline {
+                    try await waitForHostedLayout(window)
+                }
+                let image = try XCTUnwrap(rebuilt)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "cold-preview-rebuild-\(landscape)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let center = try pixel(image, at: CGPoint(x: 100, y: 75))
+                XCTAssertGreaterThan(center[2], 230, "A rebuilt hero must keep its already displayed blue preview.")
+                XCTAssertLessThan(center[0], 20, "The red loading background must never replace the preview.")
+            }
+        }
+    }
+
+    func testSlidingAndIdleHeroReuseTheSameResolvedArtworkIdentity() async throws {
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 600)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
+        }
+        for style in [HeroArtworkStyle.compactPortrait, .landscape] {
+            let item = MediaItem(
+                id: UUID().uuidString, title: "Hero", kind: .movie, allowsTitleBasedMetadataMatching: false
+            )
+            let policy = ArtworkPresentationPolicy(
+                area: .home, settings: ArtworkSettings(preference: .online), placement: .homeHero
+            )
+            let key = ArtworkResolveKey.make(
+                references: [], variant: .heroBackdrop, maxAspectRatio: 3,
+                pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(item.id)", style: style),
+                providerPolicyIdentity: policy.identity, prefersLandscape: style != .compactPortrait
+            )
+            let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://prepared.invalid/\(UUID()).png")))
+            ArtworkSeedMemo.store(artwork, reference: reference, for: key)
+            try await withWindow(
+                item: item, size: CGSize(width: 600, height: 844), sizeClass: .regular,
+                insets: .zero, pull: PlozziOSHomeHeroPullModel()
+            ) { window, host in
+                for sliding in [true, false, true] {
+                    host.rootView = AnyView(
+                        PlozziOSHomeStaticBackdrop(
+                            item: item, style: style, height: 400,
+                            showsTrailer: false, usesSlidingArtwork: sliding
+                        )
+                        .environment(PlozziOSSidebarGeometryModel())
+                        .environment(HeroTrailerController())
+                        .environment(\.plozzArtworkArea, .home)
+                        .environment(\.plozzArtworkSettings, policy.settings)
+                        .environment(\.themePalette, .dark)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    )
+                    try await waitForHostedLayout(window)
+                    let image = snapshot(window, name: "hero-identity-\(style)-\(sliding)")
+                    let center = try pixel(image, at: CGPoint(x: 300, y: 100))
+                    XCTAssertGreaterThan(Int(center[2]) - Int(center[0]), 200,
+                                         "Sliding and idle must reuse the same already-selected image.")
+                }
+            }
+        }
+    }
+
     func testPendingParentShowPaintsArtworkAndTitleInsteadOfABlackSpinner() async throws {
         var item = try await artworkItem()
         item.kind = .episode

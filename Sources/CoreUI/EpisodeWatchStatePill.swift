@@ -27,6 +27,7 @@ public struct EpisodeWatchStatePill: View {
     private let spacing: CGFloat
     private var fittingFontSize: CGFloat?
     private var keepsFittingTextOnOneLine = false
+    private var minimumFittingBarWidth: CGFloat?
 
     @Environment(\.plozzChromeIsFocused) private var isFocused
     @Environment(\.plozzShowsProgressBars) private var showsProgressBars
@@ -62,10 +63,13 @@ public struct EpisodeWatchStatePill: View {
         self.spacing = spacing
     }
 
-    fileprivate func fittingText(size: CGFloat?, singleLine: Bool = false) -> Self {
+    fileprivate func fittingText(
+        size: CGFloat?, singleLine: Bool = false, minimumBarWidth: CGFloat? = nil
+    ) -> Self {
         var result = self
         result.fittingFontSize = size
         result.keepsFittingTextOnOneLine = singleLine
+        result.minimumFittingBarWidth = minimumBarWidth
         return result
     }
 
@@ -154,6 +158,13 @@ public struct EpisodeWatchStatePill: View {
                     playbackRow(fraction: fraction, text: text, showsPlay: false)
                         .fixedSize(horizontal: true, vertical: true)
                 }
+                if showsProgressBars, fraction != nil, let minimumFittingBarWidth {
+                    playbackRow(
+                        fraction: fraction, text: text, showsPlay: false,
+                        progressWidth: minimumFittingBarWidth
+                    )
+                    .fixedSize(horizontal: true, vertical: true)
+                }
                 Text(verbatim: text)
                     .fixedSize(horizontal: true, vertical: true)
                 if keepsFittingTextOnOneLine {
@@ -175,13 +186,15 @@ public struct EpisodeWatchStatePill: View {
         }
     }
 
-    private func playbackRow(fraction: Double?, text: String?, showsPlay: Bool) -> some View {
+    private func playbackRow(
+        fraction: Double?, text: String?, showsPlay: Bool, progressWidth: CGFloat? = nil
+    ) -> some View {
         HStack(spacing: spacing) {
             if showsPlay { playGlyph }
             if showsProgressBars, let fraction {
                 ResumeProgressCapsule(
                     progress: fraction, onLight: false,
-                    width: barWidth, height: barHeight, flexesToFitRow: fittingFontSize == nil
+                    width: progressWidth ?? barWidth, height: barHeight, flexesToFitRow: fittingFontSize == nil
                 )
                 .layoutPriority(0)
             }
@@ -356,8 +369,9 @@ public struct ResumeChipOverlay: View {
                                 spacing: compactHorizontalLayout ? spacingInset * 0.5 : 8
                             )
                             .fittingText(
-                                size: prioritizesText ? textSize : nil,
-                                singleLine: playbackTextSize != nil
+                                size: prioritizesText || prioritizesProgress ? textSize : nil,
+                                singleLine: playbackTextSize != nil || prioritizesProgress,
+                                minimumBarWidth: prioritizesProgress ? min(barWidth, max(24, 4 * metrics.resumeChipBarHeight)) : nil
                             )
                             .font(.system(size: textSize, weight: .semibold))
                             // The card grows with Dynamic Type to keep this label
@@ -414,6 +428,14 @@ public struct ResumeChipOverlay: View {
         if playbackTextSize != nil { return true }
         #if os(iOS)
         return compactHorizontalLayout
+        #else
+        return false
+        #endif
+    }
+
+    private var prioritizesProgress: Bool {
+        #if os(iOS)
+        return !compactHorizontalLayout && playbackTextSize == nil
         #else
         return false
         #endif

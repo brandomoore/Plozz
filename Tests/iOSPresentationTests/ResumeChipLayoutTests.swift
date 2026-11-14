@@ -52,6 +52,7 @@ final class ResumeChipLayoutTests: XCTestCase {
                 if contents == .smallerText { return true }
                 return try render(row(contents, label: label, metrics: metrics, spacing: spacing)).size.width <= available
             }
+
             let contents = try XCTUnwrap(choice)
             selected.insert(contents)
             let actual = try render(
@@ -79,6 +80,46 @@ final class ResumeChipLayoutTests: XCTestCase {
             }
         }
         XCTAssertEqual(selected, Set(Contents.allCases), "Exercise every fallback, not just text-only.")
+    }
+
+    func testLandscapeChipDropsPlayBeforeCompressingProgressToADot() throws {
+        let metrics = PlozzMetrics.touch(density: .standard)
+        let item = MediaItem(
+            id: "landscape-progress", title: "Episode", kind: .episode,
+            seasonNumber: 1, episodeNumber: 22, runtime: 3600, resumePosition: 900
+        )
+        let detail = try XCTUnwrap(item.seasonEpisodeLabel)
+        let label = detail + " · " + (try XCTUnwrap(item.resumeRemainingText))
+        let textWidth = try render(Text(verbatim: label).font(
+            .system(size: metrics.resumeChipFontSize, weight: .semibold)
+        )).size.width
+        let width = textWidth + 24 + 8 + 3 * metrics.resumeChipInset + 1
+        let actual = try render(
+            ResumeChipOverlay(item: item, detailText: detail, showsPlayGlyphWhenIdle: true)
+                .withoutScrim
+                .environment(\.plozzMetrics, metrics)
+                .frame(width: width, height: 160)
+                .background(.black)
+        )
+        let expected = try render(
+            HStack(spacing: metrics.resumeChipInset * 0.5) {
+                HStack(spacing: 8) {
+                    ResumeProgressCapsule(
+                        progress: 0.25, onLight: false, width: 24, height: metrics.resumeChipBarHeight
+                    )
+                    Text(verbatim: label)
+                }
+                .fixedSize()
+                Spacer(minLength: metrics.resumeChipInset * 0.5)
+            }
+            .font(.system(size: metrics.resumeChipFontSize, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(metrics.resumeChipInset)
+            .frame(width: width, height: 160, alignment: .bottom)
+            .background(.black)
+        )
+        attach(actual, name: "Narrow landscape progress")
+        try assertPixelsEqual(actual, expected, context: "Keep a readable 24-point gauge instead of a play icon and dot.")
     }
 
     func testNarrowAndAccessibilityChipsKeepCompleteEpisodeAndTime() throws {
