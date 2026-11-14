@@ -36,6 +36,7 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertEqual(heading.frame.midY, settings.frame.midY, accuracy: 3)
         XCTAssertEqual(heading.frame.midY, app.buttons["Download Settings"].frame.midY, accuracy: 3)
         XCTAssertEqual(app.buttons["Download Settings"].frame.width, app.buttons["Download Settings"].frame.height, accuracy: 2)
+        XCTAssertLessThanOrEqual(app.buttons["Download Settings"].frame.height, 44)
         app.buttons["Download Settings"].tap()
         XCTAssertTrue(app.switches["Use Cellular"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.firstMatch.tap()

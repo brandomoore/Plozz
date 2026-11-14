@@ -126,6 +126,9 @@ struct PlozziOSDownloadsView: View {
     private var pageHeading: some View {
         PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads"))) {
             Button("Download Settings", systemImage: "gearshape") { showsDownloadSettings = true }
+                .controlSize(.regular)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Circle())
             PlozziOSSettingsAvatarButton(action: onShowSettings)
                 .accessibilityIdentifier("downloads-settings-avatar")
         }
