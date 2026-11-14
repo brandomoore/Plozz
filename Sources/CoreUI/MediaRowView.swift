@@ -768,10 +768,11 @@ public struct MediaRowView: View {
                     // it sits (last far-right, first far-left, or middle), with no
                     // repositioning. This mirrors the season bar's own ScrollView-level
                     // `.focusSection()` (which makes UP work the same way) and the hero
-                    // action row (commit eddd937e). Ordinary rows (Home, detail children —
-                    // `gatesFocus == false`) stay UNsectioned so vertical navigation
+                    // action row (commit eddd937e). Ordinary rows leave this inner
+                    // viewport unsectioned so vertical navigation
                     // keeps tvOS's column-aligned X-projection (the "focus jumps to the
-                    // opposite side" bug, commit f812fe64).
+                    // opposite side" bug, commit f812fe64). Showcase bridges short-row
+                    // gutters at its outer row boundary instead.
                     .focusSectionIf(gatesFocus || episodeEntry != nil)
                     .navigationEntryFocus(reservesLoadingFocus && !items.isEmpty ? .content : nil)
                     .onAppear { applyInitialFocus(using: proxy) }

@@ -751,6 +751,9 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             motion: model.motion, kind: .row(row.id)
         )
         .padding(.leading, -FocusHeroLayout.maskHorizontalOverhang)
+        // Include a short row's empty gutter in native vertical focus search.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
         .accessibilityElement(children: .contain)
     }
 

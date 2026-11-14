@@ -1262,6 +1262,7 @@ private final class ProductionHomeState {
             )
         }
         let libraryRows = ProcessInfo.processInfo.arguments.contains("--progressive-library-rows")
+            || ProcessInfo.processInfo.arguments.contains("--short-showcase-rows")
         if libraryRows { visibility.useRowDefaults(.legacy) }
         visibility.setMergeLibrariesOnHome(!libraryRows)
         for row in HomeGlobalRow.allCases {
@@ -1625,8 +1626,9 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
     }
 
     func libraries() async throws -> [MediaLibrary] {
-        guard ProcessInfo.processInfo.arguments.contains("--progressive-library-rows") else { return [] }
-        let count = ProcessInfo.processInfo.arguments.contains("--populated-home-return") ? 8 : 20
+        let shortRows = ProcessInfo.processInfo.arguments.contains("--short-showcase-rows")
+        guard shortRows || ProcessInfo.processInfo.arguments.contains("--progressive-library-rows") else { return [] }
+        let count = shortRows ? 7 : ProcessInfo.processInfo.arguments.contains("--populated-home-return") ? 8 : 20
         return (0..<count).map {
             MediaLibrary(id: "fixture-library-\($0)", title: "Fixture library \($0)", kind: .movie)
         }
@@ -1680,6 +1682,7 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         if id == series.id { return series }
         if id == season.id { return season }
         let count = ProcessInfo.processInfo.arguments.contains("--progressive-library-rows")
+            || ProcessInfo.processInfo.arguments.contains("--short-showcase-rows")
             ? rowCount + 400 : rowCount * 2
         guard let index = Int(id.split(separator: "-").last ?? ""), (0..<count).contains(index) else {
             throw AppError.notFound
@@ -1725,9 +1728,11 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
             await recentGate.wait()
         }
         let start = rowCount + index * 20
+        let count = ProcessInfo.processInfo.arguments.contains("--short-showcase-rows") && !index.isMultiple(of: 2)
+            ? index / 2 + 1 : 20
         return MediaPage(
-            items: Array((start..<(start + 20)).prefix(page.limit).map(movie)),
-            startIndex: page.startIndex, totalCount: 20
+            items: Array((start..<(start + count)).prefix(page.limit).map(movie)),
+            startIndex: page.startIndex, totalCount: count
         )
     }
 

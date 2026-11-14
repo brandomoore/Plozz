@@ -135,6 +135,10 @@ uses symmetric horizontal viewport insets so its screen-wide backdrop stays
 centered on the display, including under pinned navigation's asymmetric row
 viewport. The Showcase host extends to the physical right edge while preserving
 its leading details inset. The row host retains its original bounds.
+Each Showcase row has a full-width native focus section at its outer boundary.
+Up and Down therefore enter the adjacent row even from beyond the last card of
+a short row, rather than skipping it for a longer row farther away. The inner
+media viewport retains native column-aligned entry and horizontal scrolling.
 Focus ownership includes SwiftUI virtual items and nested native controls,
 not only UIView-backed controls.
 While featured content loads, its full-size skeleton remains a native focus
