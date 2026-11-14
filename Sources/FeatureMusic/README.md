@@ -11,6 +11,9 @@ The mobile Music landing page puts its large title and the shell's shared circul
 profile button in one scrolling header. The header remains available during
 loading, empty, and failed states. Pushed music pages retain their own native
 navigation and actions.
+The mobile landing page and browse grids use the shared `AppBackground` inside
+their navigation stack, following the app theme and Gradient Backgrounds setting.
+Artwork-led detail pages and the player keep their separate backgrounds.
 Mobile browsing rails reuse Home's section headings, adaptive page insets,
 section spacing and scroll clearance. Album, playlist and recent-track captions
 use the shared poster typography; artist labels use the same title metrics while

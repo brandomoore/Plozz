@@ -3,6 +3,9 @@
 Mobile Downloads, Discover, and Music use a large leading title beside their
 circular page actions. This single header row scrolls with the content. More
 navigation and the regular-width sidebar toggle retain their native bar.
+Profile buttons keep an explicit square frame for their circular glass in both
+native toolbars and scrolling headers. The Downloads gear matches that standard
+toolbar diameter rather than the smaller regular inline-control size.
 
 The composition root. Wires every other module into a single running app
 and owns the top-level navigation, profile selection, and provider

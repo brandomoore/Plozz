@@ -147,7 +147,11 @@ final class ProfileToolbarPresentationTests: XCTestCase {
         try await assertPhotoGeometry(hasNeighbor: true)
     }
 
-    private func assertPhotoGeometry(hasNeighbor: Bool) async throws {
+    func testCompactHomeToolbarProfileKeepsCircularGlass() async throws {
+        try await assertPhotoGeometry(hasNeighbor: true, width: 430)
+    }
+
+    private func assertPhotoGeometry(hasNeighbor: Bool, width: CGFloat = 1024) async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfile
         defer { app.profiles.update(original) }
@@ -156,7 +160,7 @@ final class ProfileToolbarPresentationTests: XCTestCase {
         profile.avatarImageURL = try await photoURL().absoluteString
         app.profiles.update(profile)
 
-        try await withToolbar(app: app, hasNeighbor: hasNeighbor) { window, button in
+        try await withToolbar(app: app, hasNeighbor: hasNeighbor, width: width) { window, button in
             XCTAssertGreaterThanOrEqual(button.bounds.width, 28)
             XCTAssertLessThanOrEqual(button.bounds.width, 64, "A profile photo must not widen the toolbar.")
             XCTAssertLessThanOrEqual(button.bounds.height, 64)
@@ -175,9 +179,18 @@ final class ProfileToolbarPresentationTests: XCTestCase {
                            "Compare the rendered glass, not just the smaller SwiftUI host frame.")
             XCTAssertEqual(profileGlass.height, referenceGlass.height, accuracy: 1)
             XCTAssertEqual(profileGlass.width, profileGlass.height, accuracy: 1)
+            let circularCrop = CGRect(
+                x: photo.midX - profileGlass.width / 2, y: photo.midY - profileGlass.height / 2,
+                width: profileGlass.width, height: profileGlass.height
+            )
+            let circularImage = UIImage(cgImage: try XCTUnwrap(toolbar.cgImage?.cropping(to: circularCrop)))
+            let filledArea = try self.pixelCount(circularImage) { r, g, b in max(r, g, b) > 12 }
+            XCTAssertLessThan(Double(filledArea) / (profileGlass.width * profileGlass.height), 0.85,
+                              "A square bounding box is insufficient: the glass must have circular corners.")
             XCTAssertEqual(photo.width, photo.height, accuracy: 1)
             XCTAssertGreaterThanOrEqual((profileGlass.width - photo.width) / 2, 2)
-            XCTAssertLessThanOrEqual((profileGlass.width - photo.width) / 2, 4.5)
+            XCTAssertLessThanOrEqual((profileGlass.width - photo.width) / 2, 5,
+                                    "Allow one pixel of antialiasing around the four-point image inset.")
             if hasNeighbor {
                 let more = try self.pixelBounds(toolbar) { r, g, b in r > 180 && g > 50 && g < 180 && b < 60 }
                 let neighbor = [reference, more].min {
@@ -236,13 +249,13 @@ final class ProfileToolbarPresentationTests: XCTestCase {
     }
 
     private func withToolbar(
-        app: PlozziOSAppModel, hasNeighbor: Bool = false,
+        app: PlozziOSAppModel, hasNeighbor: Bool = false, width: CGFloat = 1024,
         inspect: (UIWindow, UIView) async throws -> Void
     ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 1024, height: 768)
+        window.frame = CGRect(x: 0, y: 0, width: width, height: 768)
         window.rootViewController = UIHostingController(rootView:
             NavigationStack {
                 Color.black

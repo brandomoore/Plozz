@@ -10,6 +10,71 @@ import XCTest
 
 @MainActor
 final class MusicLandingPresentationTests: XCTestCase {
+    func testMusicRootAndBrowseBackgroundsMatchTheAppAcrossThemes() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(Color.clear))
+        let controller = AudioPlaybackController()
+        let settings = MusicPlayerSettingsModel()
+        let navigation = MusicNavigation()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            controller.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width in [430.0, 834.0] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 1_194)
+            for palette in [ThemePalette.dark, .light, .pureBlack] {
+                for gradient in [false, true] {
+                    func themed<Content: View>(_ content: Content) -> AnyView {
+                        AnyView(content
+                            .environment(\.themePalette, palette)
+                            .environment(\.gradientBackgroundsEnabled, gradient)
+                            .transaction { $0.disablesAnimations = true }
+                            .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                            .preferredColorScheme(palette == .light ? .light : .dark))
+                    }
+                    host.rootView = themed(NavigationStack {
+                        Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background { AppBackground(palette: palette) }
+                            .toolbar(.hidden, for: .navigationBar)
+                    })
+                    try await Task.sleep(for: .milliseconds(300))
+                    window.layoutIfNeeded()
+                    let reference = capture(window)
+                    navigation.reset()
+                    host.rootView = themed(MusicTabView(
+                        accounts: [], controller: controller,
+                        authenticatedHTTPResolver: MusicBackgroundHTTPResolver(),
+                        musicPlayer: settings, showNowPlaying: .constant(false),
+                        navigation: navigation, namespace: "music-background-fixture"
+                    ))
+                    for path in [[], [.grid(.album)]] as [[MusicRoute]] {
+                        navigation.path = path
+                        try await Task.sleep(for: .milliseconds(500))
+                        window.layoutIfNeeded()
+                        let actual = capture(window)
+                        for x in [8.0, width - 8] {
+                            for y in [200.0, 500, 950] {
+                                let point = CGPoint(x: x, y: y)
+                                let expected = try pixel(reference, at: point)
+                                let observed = try pixel(actual, at: point)
+                                for channel in 0..<3 {
+                                    XCTAssertEqual(observed[channel], expected[channel], accuracy: 0.02,
+                                                   "\(palette), gradient \(gradient), width \(width), route \(path), \(point)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testBrowsePillsAndRailsHaveMobileMarginsAndNeutralInk() async throws {
         for width in [430.0, 834.0] {
             for palette in [ThemePalette.dark, .light, .pureBlack] {
@@ -173,6 +238,12 @@ final class MusicLandingPresentationTests: XCTestCase {
             context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
         return bytes.prefix(3).map { Double($0) / 255 }
+    }
+}
+
+private struct MusicBackgroundHTTPResolver: AuthenticatedHTTPResourceResolving {
+    func resolve(_ locator: AuthenticatedHTTPPlaybackLocator) async throws -> URL {
+        throw AppError.notFound
     }
 }
 #endif

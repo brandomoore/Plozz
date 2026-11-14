@@ -36,10 +36,19 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertEqual(heading.frame.midY, settings.frame.midY, accuracy: 3)
         XCTAssertEqual(heading.frame.midY, app.buttons["Download Settings"].frame.midY, accuracy: 3)
         XCTAssertEqual(app.buttons["Download Settings"].frame.width, app.buttons["Download Settings"].frame.height, accuracy: 2)
-        XCTAssertLessThanOrEqual(app.buttons["Download Settings"].frame.height, 44)
+        let standardDiameter: CGFloat = if #available(iOS 27.1, *) { 48 } else { 44 }
+        XCTAssertEqual(app.buttons["Download Settings"].frame.height, standardDiameter, accuracy: 2,
+                       "The gear should use the native toolbar diameter, not the small inline-control size.")
+        let header = XCTAttachment(screenshot: app.screenshot())
+        header.name = "downloads-standard-header"
+        header.lifetime = .keepAlways
+        add(header)
         app.buttons["Download Settings"].tap()
         XCTAssertTrue(app.switches["Use Cellular"].waitForExistence(timeout: 5))
-        app.navigationBars.buttons.firstMatch.tap()
+        let back = app.buttons["BackButton"].exists
+            ? app.buttons["BackButton"] : app.navigationBars.buttons.firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "downloads-page-heading"

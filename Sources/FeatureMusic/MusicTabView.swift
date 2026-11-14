@@ -48,6 +48,7 @@ public struct MusicTabView<LandingActions: View>: View {
     private let keepsNavigationBar: Bool
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.themePalette) private var palette
     #endif
 
     @State private var navigation: MusicNavigation
@@ -102,6 +103,7 @@ public struct MusicTabView<LandingActions: View>: View {
                 destination(for: route)
             }
             #if os(iOS)
+            .background { AppBackground(palette: palette) }
             .navigationTitle(Text(verbatim: ""))
             .toolbarTitleDisplayMode(.inline)
             .toolbar(sizeClass == .compact && onNavigateBack == nil && !keepsNavigationBar ? .hidden : .visible,
@@ -174,6 +176,9 @@ public struct MusicTabView<LandingActions: View>: View {
                     controller: controller,
                     onSelectRoute: { navigation.path.append($0) }
                 )
+                #if os(iOS)
+                .background { AppBackground(palette: palette) }
+                #endif
             case let .artist(artist):
                 ArtistDetailView(
                     viewModel: ArtistDetailViewModel(artist: artist, context: context),

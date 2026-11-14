@@ -66,18 +66,21 @@ struct PlozziOSSettingsToolbarItem: ToolbarContent {
 /// Settings and shows "who's watching." Reads the active profile from the
 /// environment app model so any toolbar can drop it in with just an action.
 struct PlozziOSSettingsAvatarButton: View {
+    static var standardDiameter: CGFloat {
+        if #available(iOS 27.1, *) { 48 } else { 44 }
+    }
+
     @Environment(PlozziOSAppModel.self) private var appModel
-    var size: CGFloat = 36
+    var size: CGFloat = Self.standardDiameter - 8
     let action: () -> Void
 
     var body: some View {
         let profile = appModel.profiles.activeProfile
-        let nativeSizing: Bool = if #available(iOS 27.1, *) { true } else { false }
         let button = Button(action: action) {
             // Native toolbars can extract the Image without its view modifiers,
             // especially on Mac. Bake the crop, size and original colors into
             // the image while leaving the native button and hit target intact.
-            ProfileAvatarView(profile: profile, size: nativeSizing ? size + 4 : size, rendersAsImage: true)
+            ProfileAvatarView(profile: profile, size: size, rendersAsImage: true)
         }
         .buttonBorderShape(.circle)
         .accessibilityLabel(Text("Settings for \(profile.name)"))
@@ -88,6 +91,8 @@ struct PlozziOSSettingsAvatarButton: View {
                 .buttonStyle(.plain)
                 .padding(4)
                 .fixedSize()
+                .frame(width: size + 8, height: size + 8)
+                .contentShape(Circle())
                 .glassEffect(.regular.interactive(), in: .circle)
         } else {
             button

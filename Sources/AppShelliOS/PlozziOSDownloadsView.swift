@@ -125,13 +125,20 @@ struct PlozziOSDownloadsView: View {
 
     private var pageHeading: some View {
         PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads"))) {
-            Button("Download Settings", systemImage: "gearshape") { showsDownloadSettings = true }
-                .controlSize(.regular)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Circle())
+            downloadSettingsButton
             PlozziOSSettingsAvatarButton(action: onShowSettings)
                 .accessibilityIdentifier("downloads-settings-avatar")
         }
+    }
+
+    private var downloadSettingsButton: some View {
+        Button { showsDownloadSettings = true } label: {
+            Label("Download Settings", systemImage: "gearshape")
+                // Size the label so the native control padding reaches the toolbar diameter.
+                .frame(width: PlozziOSSettingsAvatarButton.standardDiameter - 16,
+                       height: PlozziOSSettingsAvatarButton.standardDiameter - 16)
+        }
+        .controlSize(.regular)
     }
 
     private func unavailableContent<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
