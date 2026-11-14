@@ -5,6 +5,7 @@ import FeatureHome
 import FeatureHomeCore
 import Foundation
 import ProviderJellyfin
+import ProviderPlex
 import SwiftUI
 import UIKit
 import notify
@@ -68,9 +69,11 @@ struct LiveJellyfinHomeFixture: View {
               config.baseURL.user == nil, config.baseURL.password == nil,
               config.baseURL.query == nil, config.baseURL.fragment == nil,
               !config.token.isEmpty else { throw AppError.invalidResponse }
+        let kind = ProviderKind(rawValue: ProcessInfo.processInfo.environment["PLOZZ_LIVE_HOME_PROVIDER"] ?? "jellyfin")
+        guard let kind, [.jellyfin, .plex].contains(kind) else { throw AppError.invalidResponse }
         return UserSession(
             server: .init(id: config.serverID, name: "Internal measurement",
-                          baseURL: config.baseURL, provider: .jellyfin),
+                          baseURL: config.baseURL, provider: kind),
             userID: config.userID, userName: config.username,
             deviceID: config.deviceID, accessToken: config.token
         )
@@ -113,7 +116,9 @@ private final class LiveJellyfinHomeState: NSObject {
         self.http = http
         let visibility = HomeLibraryVisibilityModel(store: LiveHomeVisibility())
         self.visibility = visibility
-        let provider = JellyfinProvider(session: session, http: http)
+        let provider: any MediaProvider = session.server.provider == .plex
+            ? PlexProvider(session: session, http: http)
+            : JellyfinProvider(session: session, http: http)
         let accounts = [ResolvedAccount(account: Account(id: "measurement", from: session), provider: provider)]
         self.accounts = accounts
         model = HomeViewModel(
@@ -128,7 +133,7 @@ private final class LiveJellyfinHomeState: NSObject {
         var hero = heroSettings.settings
         hero.isEnabled = true
         hero.sources = [.continueWatching, .recentlyAdded]
-        hero.style = .carousel
+        hero.style = ProcessInfo.processInfo.arguments.contains("--live-showcase-home") ? .heroShowcase : .carousel
         hero.autoAdvance = false
         hero.trailersEnabled = false
         hero.showsDiscoverRow = false
@@ -270,6 +275,12 @@ private actor LiveHomeHTTP: HTTPClient {
     private var bytes = 0
     private var maximumRequestMicroseconds = 0
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        let path = endpoint.path.lowercased()
+        guard endpoint.method == .get, endpoint.body == nil,
+              !path.contains("/:/"), !path.contains("playbackinfo"),
+              !path.contains("transcode"), !path.contains("/sessions") else {
+            throw AppError.invalidResponse
+        }
         requests += 1
         let started = CACurrentMediaTime()
         let response = try await client.send(endpoint, baseURL: baseURL)

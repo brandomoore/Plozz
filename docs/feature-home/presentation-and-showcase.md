@@ -143,6 +143,12 @@ Guides are disabled while focus is inside their row or outside Showcase rows,
 preserving horizontal scrolling, sidebar entry, hero handoff, and detail return.
 Focus ownership includes SwiftUI virtual items and nested native controls,
 not only UIView-backed controls.
+`ShowcaseNavigationTests` covers exact entry into controlled one-, two-, and
+three-card rows. The opt-in Showcase cases in `LiveJellyfinHomeRemoteTests`
+also traverse unmodified Jellyfin and Plex Home rows through the read-only
+loopback credential broker, including any short rows in those live libraries.
+They compare card positions rather than titles, since real episodes can share
+the same displayed series title.
 While featured content loads, its full-size skeleton remains a native focus
 target so Down can still enter already-loaded rows and Up can return.
 The peeking rows are not eligible for focus while the featured hero is active,
