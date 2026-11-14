@@ -139,6 +139,14 @@ final class ProfileToolbarPresentationTests: XCTestCase {
     }
 
     func testNativeToolbarKeepsPhotoCompactAndInOriginalColors() async throws {
+        try await assertPhotoGeometry(hasNeighbor: false)
+    }
+
+    func testProfileKeepsItsOwnCircularGlassBesideOtherHeaderActions() async throws {
+        try await assertPhotoGeometry(hasNeighbor: true)
+    }
+
+    private func assertPhotoGeometry(hasNeighbor: Bool) async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfile
         defer { app.profiles.update(original) }
@@ -147,7 +155,7 @@ final class ProfileToolbarPresentationTests: XCTestCase {
         profile.avatarImageURL = try await photoURL().absoluteString
         app.profiles.update(profile)
 
-        try await withToolbar(app: app) { window, button in
+        try await withToolbar(app: app, hasNeighbor: hasNeighbor) { window, button in
             XCTAssertGreaterThanOrEqual(button.bounds.width, 28)
             XCTAssertLessThanOrEqual(button.bounds.width, 64, "A profile photo must not widen the toolbar.")
             XCTAssertLessThanOrEqual(button.bounds.height, 64)
@@ -169,6 +177,27 @@ final class ProfileToolbarPresentationTests: XCTestCase {
             XCTAssertEqual(photo.width, photo.height, accuracy: 1)
             XCTAssertGreaterThanOrEqual((profileGlass.width - photo.width) / 2, 2)
             XCTAssertLessThanOrEqual((profileGlass.width - photo.width) / 2, 4.5)
+            if hasNeighbor {
+                let more = try self.pixelBounds(toolbar) { r, g, b in r > 180 && g > 50 && g < 180 && b < 60 }
+                let neighbor = [reference, more].min {
+                    hypot($0.midX - photo.midX, $0.midY - photo.midY)
+                        < hypot($1.midX - photo.midX, $1.midY - photo.midY)
+                }!
+                let neighborGlass = try glassBounds(around: neighbor)
+                let horizontal = abs(photo.midX - neighbor.midX) > abs(photo.midY - neighbor.midY)
+                let centers = horizontal ? [photo.midX, neighbor.midX] : [photo.midY, neighbor.midY]
+                let length = abs(centers[0] - centers[1]) - profileGlass.width / 2 - neighborGlass.width / 2 - 2
+                let start = min(centers[0], centers[1]) + profileGlass.width / 2 + 1
+                let gap = horizontal
+                    ? CGRect(x: start, y: photo.midY - 1, width: length, height: 3)
+                    : CGRect(x: photo.midX - 1, y: start, width: 3, height: length)
+                XCTAssertGreaterThanOrEqual(length, 2, "Profile needs a visible gap from the neighboring action.")
+                if length >= 2 {
+                    let gapImage = UIImage(cgImage: try XCTUnwrap(toolbar.cgImage?.cropping(to: gap)))
+                    XCTAssertEqual(try self.pixelCount(gapImage) { r, g, b in max(r, g, b) > 12 }, 0,
+                                   "The profile must not join the neighboring action's shared glass.")
+                }
+            }
             XCTAssertGreaterThan(try self.greenPixelCount(image), 100,
                                  "The photo must keep its pixels instead of becoming a template-colored square.")
             XCTAssertTrue(button.isUserInteractionEnabled)
@@ -206,7 +235,8 @@ final class ProfileToolbarPresentationTests: XCTestCase {
     }
 
     private func withToolbar(
-        app: PlozziOSAppModel, inspect: (UIWindow, UIView) async throws -> Void
+        app: PlozziOSAppModel, hasNeighbor: Bool = false,
+        inspect: (UIWindow, UIView) async throws -> Void
     ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -223,6 +253,13 @@ final class ProfileToolbarPresentationTests: XCTestCase {
                             Button("Filter", systemImage: "line.3.horizontal.decrease", action: {})
                                 .labelStyle(.iconOnly)
                                 .buttonBorderShape(.circle)
+                        }
+                        if hasNeighbor {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("More", systemImage: "ellipsis", action: {})
+                                    .labelStyle(.iconOnly)
+                                    .tint(.orange)
+                            }
                         }
                         PlozziOSSettingsToolbarItem {}
                     }

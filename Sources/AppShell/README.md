@@ -211,11 +211,12 @@ registry.
   an outer background host prevents UIKit from integrating the navigation bar
   with the top tabs. Sidebar transitions retain native placement. On iOS 26 and
   later, profile actions match the rendered size of neighboring circular toolbar
-  controls. iOS 27.1 uses the toolbar's own glass with a 40-point avatar; iOS 26
-  uses one native glass effect around a 36-point avatar with four-point padding,
-  avoiding the older toolbar's image-label compression. Neither adds a second
-  glass button style. Photos, emoji, and symbols keep their original colors;
-  pre-iOS 26 systems retain native toolbar styling.
+  controls, but keep their own circular glass surface separate from neighboring
+  header actions. A fixed-size native glass effect adds four-point padding
+  around the avatar (40 points on iOS 27.1+, 36 on iOS 26); the shared toolbar
+  background is hidden for this item so it cannot merge or stretch the circle.
+  No second glass button style is added. Photos, emoji, and symbols keep their
+  original colors; pre-iOS 26 systems retain native toolbar styling.
   Home suppresses the full-width top-edge backdrop and the regular-width tab-bar
   background so the hero stays visible behind that row. The individual native
   glass controls remain; other destinations and compact bottom-tab backgrounds

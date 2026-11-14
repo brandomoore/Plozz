@@ -36,9 +36,7 @@ struct PlozziOSSettingsToolbarItem: ToolbarContent {
 
     @ToolbarContentBuilder
     private var item: some ToolbarContent {
-        if #available(iOS 27.1, *) {
-            profileItem
-        } else if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *) {
             profileItem.sharedBackgroundVisibility(.hidden)
         } else {
             profileItem
@@ -83,14 +81,13 @@ struct PlozziOSSettingsAvatarButton: View {
         }
         .buttonBorderShape(.circle)
         .accessibilityLabel(Text("Settings for \(profile.name)"))
-        if #available(iOS 27.1, *) {
-            button
-        } else if #available(iOS 26.0, *) {
-            // Older toolbars squeeze image labels vertically. Keep one native
-            // glass surface without the glass button style's extra padding.
+        if #available(iOS 26.0, *) {
+            // Own one circular surface instead of joining the toolbar's shared
+            // glass. Fix both axes so native toolbar sizing cannot ovalize it.
             button
                 .buttonStyle(.plain)
                 .padding(4)
+                .fixedSize()
                 .glassEffect(.regular.interactive(), in: .circle)
         } else {
             button
