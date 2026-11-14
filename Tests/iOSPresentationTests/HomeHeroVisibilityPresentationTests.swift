@@ -5,6 +5,7 @@ import FeatureHomeCore
 @testable import MetadataKit
 import Observation
 import SwiftUI
+import Synchronization
 import UIKit
 import Vision
 import XCTest
@@ -538,16 +539,41 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
     }
 
     func testColdLoadingScreenOmitsHeroOnFirstPaintAndRespondsToSettings() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Cold Hero fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        app.settings.homeVisibility.applyRows(
+            .init(enabled: [.global(.recentlyAdded)],
+                  disabled: [.global(.continueWatching), .global(.watchlist), .libraries]),
+            choices: HomeRowChoice.shared
+        )
+        let provider = EmptyHeroHomeProvider()
         for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
-            let model = HeroFixtureModel()
-            model.settings.isEnabled = false
-            try await withWindow(LoadingFixture(model: model), sizeClass: sizeClass) { window in
+            let model = HomeViewModel(
+                accounts: [ResolvedAccount(account: provider.account, provider: provider)],
+                layoutStore: InMemoryHomeLayoutStore(), contentStore: NoOpHomeContentStore(),
+                currentVisibility: { app.settings.homeVisibility.visibility },
+                isLoadingAllowed: { false }
+            )
+            defer { model.invalidate() }
+            app.settings.hero.settings.sources = [.recentlyAdded]
+            app.settings.hero.settings.isEnabled = false
+            let home = PlozziOSHomeView(appModel: app, viewModel: model, onAddServer: {}, onShowSettings: {})
+                .environment(app)
+                .environment(HeroTrailerController())
+                .environment(PlozziOSSidebarGeometryModel())
+            try await withWindow(home, sizeClass: sizeClass) { window in
                 let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
                 let rowsHeight = scroll.contentSize.height
                 let rowsTop = scroll.convert(.zero, to: window).y - scroll.contentOffset.y
                 XCTAssertGreaterThanOrEqual(rowsTop, window.safeAreaInsets.top + 44 - 1)
 
-                model.settings.isEnabled = true
+                app.settings.hero.settings.isEnabled = true
                 try await self.settle(window)
                 let heroHeight = PlozziOSHeroMetrics.height(
                     style: sizeClass == .compact ? .compactPortrait : .landscape,
@@ -555,15 +581,103 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                 )
                 XCTAssertEqual(scroll.contentSize.height - rowsHeight, heroHeight + 32, accuracy: 1)
 
-                model.settings.sources = []
+                app.settings.hero.settings.sources = []
                 try await self.settle(window)
                 XCTAssertEqual(scroll.contentSize.height, rowsHeight, accuracy: 1)
 
-                model.settings.sources = [.collection]
-                model.settings.collections = []
+                app.settings.hero.settings.sources = [.collection]
+                app.settings.hero.settings.collections = []
                 try await self.settle(window)
                 XCTAssertEqual(scroll.contentSize.height, rowsHeight, accuracy: 1,
                                "Known-empty Collections must not reserve a Hero even on the first Home load.")
+            }
+        }
+    }
+
+    func testActualHomeKeepsHeroAndScrollThroughPreparationAndPartialProviderResponses() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Progressive Hero fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        app.settings.hero.settings.sources = [.recentlyAdded]
+        app.settings.hero.settings.isEnabled = true
+        app.settings.hero.settings.autoAdvance = false
+        app.settings.homeVisibility.applyRows(
+            .init(enabled: [.global(.recentlyAdded)],
+                  disabled: [.global(.continueWatching), .global(.watchlist), .libraries]),
+            choices: HomeRowChoice.shared
+        )
+        for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+            for cached in [false, true] {
+                let preparation = HomeHeroLoadingGate()
+                let response = HomeHeroLoadingGate()
+                let provider = EmptyHeroHomeProvider(latestGate: response)
+                let store = InMemoryHomeContentStore()
+                if cached {
+                    store.saveHero((0..<2).map {
+                        MediaItem(
+                            id: "cached-\($0)", title: $0 == 0 ? "Cached sunrise" : "Cached sunset", kind: .movie,
+                            allowsTitleBasedMetadataMatching: false
+                        )
+                    }, for: HeroConfigurationKey(settings: app.settings.hero.effectiveSettings))
+                }
+                let model = HomeViewModel(
+                    accounts: [ResolvedAccount(account: provider.account, provider: provider)],
+                    layoutStore: InMemoryHomeLayoutStore(), contentStore: store,
+                    currentVisibility: { app.settings.homeVisibility.visibility },
+                    prepareVisibility: { await preparation.wait() }
+                )
+                defer {
+                    preparation.opened.withLock { $0 = true }
+                    response.opened.withLock { $0 = true }
+                    model.invalidate()
+                }
+                let home = PlozziOSHomeView(appModel: app, viewModel: model, onAddServer: {}, onShowSettings: {})
+                    .environment(app)
+                    .environment(HeroTrailerController())
+                    .environment(PlozziOSSidebarGeometryModel())
+                try await withWindow(home, sizeClass: sizeClass) { window in
+                    let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                    let initialHeight = scroll.contentSize.height
+                    let initialInset = scroll.adjustedContentInset.top
+                    XCTAssertNil(model.state.value)
+                    let initialText = try self.renderedText(in: window)
+                    XCTAssertEqual(initialText.localizedCaseInsensitiveContains("Cached sunrise"), cached,
+                                   "The durable carousel must paint before row preparation: \(initialText)")
+                    let loading = Task { await model.load() }
+                    defer { loading.cancel() }
+                    preparation.opened.withLock { $0 = true }
+                    let deadline = ContinuousClock.now + .seconds(3)
+                    while model.state.value == nil, ContinuousClock.now < deadline {
+                        try await Task.sleep(for: .milliseconds(5))
+                    }
+                    XCTAssertNotNil(model.state.value)
+                    XCTAssertTrue(model.loadingRows.contains(.recentlyAdded))
+                    try await Task.sleep(for: .milliseconds(500))
+                    try await self.settle(window)
+                    XCTAssertTrue(self.scrollViews(in: window).first === scroll,
+                                  "The first publication must not replace the native scroll view.")
+                    XCTAssertEqual(scroll.contentSize.height, initialHeight, accuracy: 1,
+                                   "An incomplete empty curation must not collapse the hero.")
+                    XCTAssertEqual(scroll.adjustedContentInset.top, initialInset, accuracy: 1)
+                    let pendingText = try self.renderedText(in: window)
+                    XCTAssertEqual(pendingText.localizedCaseInsensitiveContains("Cached sunrise"), cached, pendingText)
+                    let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    })
+                    attachment.name = "home-progressive-\(sizeClass)-cached-\(cached)"
+                    attachment.lifetime = .keepAlways
+                    self.add(attachment)
+                    response.opened.withLock { $0 = true }
+                    await loading.value
+                    try await self.settle(window)
+                    XCTAssertFalse(model.isRefreshing)
+                    XCTAssertTrue(self.scrollViews(in: window).first === scroll)
+                }
             }
         }
     }
@@ -574,6 +688,16 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
         let frame = row.convert(row.bounds, to: window)
         XCTAssertEqual(frame.minY, window.safeAreaInsets.top + 44, accuracy: 1,
                        "The first row must start below navigation, without a hero-sized gap.")
+    }
+
+    private func renderedText(in window: UIWindow) throws -> String {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
     }
 
     private func assertHeroVisible(in window: UIWindow) throws {
@@ -684,16 +808,6 @@ private struct HeroFixture: View {
     }
 }
 
-private struct LoadingFixture: View {
-    let model: HeroFixtureModel
-
-    var body: some View {
-        PlozziOSHomeSkeletonScreen(heroActive: HomeHeroSlotState.resolve(
-            settings: model.settings, hasItems: false, recomputeComplete: false
-        ) != .hidden)
-    }
-}
-
 private struct FrameProbe: UIViewRepresentable {
     let identifier: String
 
@@ -777,6 +891,7 @@ struct SeriesHeaderMobileProvider: MediaProvider {
 }
 
 private struct EmptyHeroHomeProvider: MediaProvider {
+    var latestGate: HomeHeroLoadingGate? = nil
     let kind: ProviderKind = .jellyfin
     let account = Account(
         id: "empty-hero-account",
@@ -793,8 +908,11 @@ private struct EmptyHeroHomeProvider: MediaProvider {
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] {
-        [MediaItem(id: "movie", title: "Available movie", kind: .movie)]
+        await latestGate?.wait()
+        return [MediaItem(id: "movie", title: "Available movie", kind: .movie,
+                          allowsTitleBasedMetadataMatching: false)]
     }
+
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         MediaPage(items: [], startIndex: 0, totalCount: 0)
     }
@@ -804,5 +922,16 @@ private struct EmptyHeroHomeProvider: MediaProvider {
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private final class HomeHeroLoadingGate: Sendable {
+    let opened = Mutex(false)
+
+    func wait() async {
+        while !opened.withLock({ $0 }) {
+            do { try await Task.sleep(for: .milliseconds(5)) }
+            catch { return }
+        }
+    }
 }
 #endif

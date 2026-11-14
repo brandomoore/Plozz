@@ -10,6 +10,18 @@ an empty provider feed from local curation without recording media or account ID
 
 ## Mobile Home loading geometry
 
+Idle, preparing, and progressively loaded Home share one scroll/presentation tree.
+The initial frame uses the same configured row plan as the first publication,
+including custom ordering, hidden rows, and permitted server/collection sections;
+there is no separate fixed three-rail loading screen. Unknown library inventory
+is not invented. An eligible durable hero paints immediately even without a row
+snapshot; otherwise the configured hero reserves its normal placeholder.
+Curation waits for preparation and its selected Home sources, not unrelated
+rows. A pending empty source is not a completed empty hero. Source readiness is
+part of the curation task identity so a genuinely empty response still finishes
+curation and removes its placeholder. Existing profile, visibility, and
+resume-snapshot restrictions continue to govern cached heroes.
+
 Home shares its measured viewport width with loaded and skeleton rails.
 `PlozziOSHomeRowSlot` reserves each row's footprint using the real card sizing
 primitives, heading, captions, and current layout settings. Loading, populated,

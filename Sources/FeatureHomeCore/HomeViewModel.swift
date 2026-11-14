@@ -906,27 +906,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             rowFailures = [:]
             continueWatchingDiagnostic = nil
             loadingRows = Set(HomeRowKind.allCases).subtracting(receivedLiveRows)
-            var initial = previousContent ?? Content()
-            initial.sectionIssues = []
-            initial.mergeLibraries = !visibility.usesIndividualHomeRows
-            initial.librarySections = !visibility.usesIndividualHomeRows ? [] : retainingLibraryRowContent(
-                Self.plannedLibrarySections(libraries: initial.libraries, visibility: visibility),
-                previous: initial.librarySections
-            )
-            initial.serverRows = retainingServerRowContent(
-                HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
-                    .map { HomeServerRow(definition: $0, isLoading: true) },
-                previous: initial.serverRows
-            )
-            initial.collectionRows = HomeCollectionRow.plannedDefinitions(accounts: accounts, visibility: visibility)
-                .map { definition in
-                    var row = initial.collectionRows.first { $0.definition == definition }
-                        ?? HomeCollectionRow(definition: definition)
-                    row.isLoading = true
-                    row.failure = nil
-                    return row
-                }
-            state = .loaded(initial)
+            state = .loaded(loadingPresentationContent)
         } else if showLoadingState {
             state = .loading
         }
@@ -1231,6 +1211,34 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         topShelfPublishTask = Task.detached(priority: .utility) {
             await contentPublisher(continueWatching, latest)
         }
+    }
+
+    /// The same configured row plan used by the first progressive publication,
+    /// available before asynchronous preparation starts. Unknown inventory is not
+    /// replaced with guessed library or server rows.
+    public var loadingPresentationContent: Content {
+        let visibility = currentVisibility()
+        var initial = state.value ?? Content()
+        initial.sectionIssues = []
+        initial.mergeLibraries = !visibility.usesIndividualHomeRows
+        initial.librarySections = !visibility.usesIndividualHomeRows ? [] : retainingLibraryRowContent(
+            Self.plannedLibrarySections(libraries: initial.libraries, visibility: visibility),
+            previous: initial.librarySections
+        )
+        initial.serverRows = retainingServerRowContent(
+            HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
+                .map { HomeServerRow(definition: $0, isLoading: true) },
+            previous: initial.serverRows
+        )
+        initial.collectionRows = HomeCollectionRow.plannedDefinitions(accounts: accounts, visibility: visibility)
+            .map { definition in
+                var row = initial.collectionRows.first { $0.definition == definition }
+                    ?? HomeCollectionRow(definition: definition)
+                row.isLoading = true
+                row.failure = nil
+                return row
+            }
+        return initial
     }
 
     private static func plannedLibrarySections(

@@ -277,30 +277,14 @@ struct PlozziOSHomeView: View {
     }
 
     var body: some View {
+        let displayState = HomePresentationRow.displayState(
+            viewModel.state, liveTV: liveTV,
+            visibility: appModel.settings.homeVisibility.visibility
+        )
         Group {
-            switch HomePresentationRow.displayState(
-                viewModel.state, liveTV: liveTV,
-                visibility: appModel.settings.homeVisibility.visibility
-            ) {
-            case .idle, .loading:
-                // Skeleton rails rather than a bare spinner, matching tvOS: the
-                // placeholders occupy the same geometry the real rows will, so
-                // content swaps in without the page reflowing.
-                PlozziOSHomeSkeletonScreen(
-                    heroActive: HomeHeroSlotState.resolve(
-                        settings: appModel.settings.hero.effectiveSettings,
-                        hasItems: false, recomputeComplete: false
-                    ) != .hidden,
-                    logoSize: appModel.settings.hero.settings.logoSize,
-                    showsPosterCaptions: appModel.settings.cardStyle.captions.showsLabels(in: .home),
-                    showsLibraryCaptions: appModel.settings.cardStyle.captions.showsLabels(in: .homeLibraries),
-                    continueWatchingLayout: appModel.settings.homeVisibility.continueWatchingLayout,
-                    continueWatchingShowsSeriesArtwork: appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
-                    continueWatchingShowsCaption: appModel.settings.cardStyle.captions.showsLabels(
-                        in: .home, hasArtworkTitle: appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
-                        isContinueWatching: true
-                    )
-                )
+            switch displayState {
+            case .idle, .loading, .loaded:
+                homeContent(displayState.value ?? viewModel.loadingPresentationContent)
             case .empty:
                 PlozziOSHomeEmptyState(
                     hasAccounts: true, onAddSource: onAddServer, isOfflineMode: appModel.isOfflineMode
@@ -318,8 +302,6 @@ struct PlozziOSHomeView: View {
                         Task { await viewModel.load() }
                     }
                 }
-            case let .loaded(content):
-                loadedContent(content)
             }
         }
         // The portrait hero is sized to the phone, not to a constant — see
@@ -571,12 +553,20 @@ struct PlozziOSHomeView: View {
         trailerController.toggleMuted()
     }
 
-    private func loadedContent(_ content: HomeViewModel.Content) -> some View {
+    private var isPreparingHome: Bool {
+        switch viewModel.state {
+        case .idle, .loading: true
+        default: false
+        }
+    }
+
+    private func homeContent(_ content: HomeViewModel.Content) -> some View {
         let visibility = appModel.settings.homeVisibility
         let settings = appModel.settings.hero.effectiveSettings
+        let loadingRows = isPreparingHome ? Set(HomeRowKind.allCases) : viewModel.loadingRows
         let heroContent = HomeHeroLaunchPolicy.content(
             content, awaitingLiveContinueWatching: !viewModel.hasLiveContinueWatching,
-            loadingRows: viewModel.loadingRows
+            loadingRows: loadingRows
         )
         let randomLibraries = HeroRandomLibrarySelection.resolve(
             heroContent.libraries, settings: settings,
@@ -598,14 +588,16 @@ struct PlozziOSHomeView: View {
             identityIndexRevision: discoveryIdentityRevision,
             watchlistMembershipRevision: watchlistIntentRevision,
             scopeID: ObjectIdentifier(viewModel),
-            seerRevision: appModel.seerService.connectionRevision
+            seerRevision: appModel.seerService.connectionRevision,
+            isPreparingHome: isPreparingHome,
+            loadingRows: loadingRows
         )
         let heroConfigurationMatches = heroCuratedConfiguration == HeroConfigurationKey(settings: settings)
             && heroCuratedDisabledLibraryKeys == visibility.visibility.disabledKeys
         let heroSlotState = HomeHeroSlotState.resolve(
             settings: settings,
             hasItems: heroConfigurationMatches && !displayHeroItems.isEmpty,
-            recomputeComplete: heroCompletedLoadKey == heroLoadKey
+            recomputeComplete: !heroLoadKey.isAwaitingSources && heroCompletedLoadKey == heroLoadKey
         )
         let rows = HomeRow.rows(
             for: content,
@@ -615,7 +607,7 @@ struct PlozziOSHomeView: View {
             isGlobalRowEnabled: visibility.isGlobalRowEnabled,
             includesEmptyWatchlist:
                 viewModel.watchlistLoadingPlaceholderCount > 0,
-            loadingRows: viewModel.loadingRows,
+            loadingRows: loadingRows,
             failures: viewModel.rowFailures,
             skeletonLayout: viewModel.skeletonLayout
         )
@@ -783,6 +775,7 @@ struct PlozziOSHomeView: View {
                 }
             }
             .task(id: heroLoadKey) {
+                guard !heroLoadKey.isAwaitingSources else { return }
                 await loadHero(from: heroContent)
                 guard !Task.isCancelled else { return }
                 heroCompletedLoadKey = heroLoadKey
