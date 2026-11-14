@@ -129,6 +129,7 @@ extension LiveTVPrototypeImportModel {
                         catalog.programs = merged.values.sorted {
                             $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start
                         }
+                        catalog.pendingGuideChannelIDs.subtract(replaced)
                         cachedServerCatalogs[source.id] = catalog
                         do {
                             try validateCacheBudget()
@@ -164,6 +165,7 @@ extension LiveTVPrototypeImportModel {
                         result = .failed
                         if failure == .permissionDenied {
                             cachedServerCatalogs[source.id]?.programs = []
+                            cachedServerCatalogs[source.id]?.pendingGuideChannelIDs = []
                             try? publishPlaylists(into: model)
                             removeServerGuideWindows(source.id)
                             serverGuideWindows.append(window)

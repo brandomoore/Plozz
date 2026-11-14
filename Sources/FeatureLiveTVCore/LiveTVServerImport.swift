@@ -149,6 +149,9 @@ extension LiveTVPrototypeImportModel {
                 discardUnauthorizedSource(source.id, into: model)
                 continue
             }
+            if forceRefresh && context.provider.usesPerChannelLiveTVGuide {
+                removeServerGuideWindows(source.id)
+            }
             if let cached = cachedServerCatalogs[source.id],
                cached.authorizationID != context.authorizationID || cached.kind != context.kind {
                 cachedServerCatalogs[source.id] = nil
@@ -217,6 +220,11 @@ extension LiveTVPrototypeImportModel {
                     }.map { ($0.id, $0) })
                     for program in catalog.programs { programs[program.id] = program }
                     catalog.programs = programs.values.sorted { $0.id < $1.id }
+                    if !forceRefresh {
+                        catalog.pendingGuideChannelIDs.subtract(previous.references.keys.filter {
+                            !previous.pendingGuideChannelIDs.contains($0)
+                        })
+                    }
                 }
                 cachedServerCatalogs[source.id] = catalog
                 do {

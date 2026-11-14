@@ -283,6 +283,14 @@ An empty viewport alone does not cause early whole-feed downloads.
 Ordinary failed refreshes keep visible
 listings and report the failure; they do not mark stale data fresh.
 
+For per-channel sources, guide-only filtering retains unrequested channels so
+it cannot prevent their schedules from being discovered. Successful requests
+resolve pending channels; partial failures resolve only channels with listings.
+Explicit source refresh makes previously browsed windows due without discarding
+visible rows or eagerly fetching the unsampled lineup. Regression cases cover
+a guide-bearing channel beyond the first 12, confirmed empty filtering, partial
+failure/denial, and refreshing an unsampled channel on demand.
+
 Account XMLTV validators live inside the existing encrypted, authorization-scoped
 index document. A 304 only succeeds when the exact source, projection and retained
 window can answer the request; otherwise a full document is required. Revalidation

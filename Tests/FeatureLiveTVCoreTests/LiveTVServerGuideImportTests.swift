@@ -7,6 +7,89 @@ import XCTest
 final class LiveTVServerGuideImportTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    func testGuideOnlyKeepsUnrequestedPerChannelGuidesDiscoverableUntilChecked() async throws {
+        let lineup = (0..<14).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
+        let provider = WindowGuideProvider(
+            channels: lineup, programs: [program("discovered", channelID: "channel-12")],
+            usesPerChannelLiveTVGuide: true
+        )
+        let time = now
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        model.guideOnly = true
+        await imports.reload(into: model)
+        let populated = try globalID("channel-12", in: imports)
+        let empty = try globalID("channel-13", in: imports)
+        XCTAssertEqual(Set(model.guideRowIDs.map(\.channelID)), [populated, empty])
+        await imports.reloadServerGuides(
+            channelIDs: model.guideRowIDs.map(\.channelID), from: now, to: now.addingTimeInterval(21_600), into: model
+        )
+        XCTAssertEqual(model.currentProgram(for: populated)?.title, "discovered")
+        XCTAssertEqual(model.guideRowIDs.map(\.channelID), [populated])
+        let calls = await provider.guideCalls
+        XCTAssertEqual(calls.map { $0.channelIDs.count }, [12, 2])
+        XCTAssertEqual(Set(calls.last?.channelIDs ?? []), ["channel-12", "channel-13"])
+        await imports.reloadServers(into: model, forceRefresh: false)
+        XCTAssertEqual(model.guideRowIDs.map(\.channelID), [populated], "Ordinary catalog reload must preserve confirmed empty results.")
+    }
+
+    func testExplicitSourceRefreshMakesPreviouslyBrowsedUnsampledWindowsDue() async throws {
+        let lineup = (0..<13).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
+        let provider = WindowGuideProvider(
+            channels: lineup, programs: [program("old", channelID: "channel-12")],
+            usesPerChannelLiveTVGuide: true
+        )
+        let time = now
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        await imports.reload(into: model)
+        let id = try globalID("channel-12", in: imports)
+        let end = now.addingTimeInterval(21_600)
+        await imports.reloadServerGuides(channelIDs: [id], from: now, to: end, into: model)
+        await provider.replacePrograms([program("new", channelID: "channel-12")])
+        try await imports.reloadSource(serverSource.id, into: model)
+        XCTAssertEqual(model.currentProgram(for: id)?.title, "old", "Refresh must retain visible listings until replacement.")
+        await imports.reloadServerGuides(channelIDs: [id], from: now, to: end, into: model)
+        XCTAssertEqual(model.currentProgram(for: id)?.title, "new")
+        await imports.reloadServerGuides(channelIDs: [id], from: now, to: end, into: model)
+        let calls = await provider.guideCalls
+        XCTAssertEqual(calls.map { $0.channelIDs.count }, [12, 1, 12, 1])
+        XCTAssertEqual(calls.last?.channelIDs, ["channel-12"])
+    }
+
+    func testGuideOnlyRetainsPendingChannelsAfterPartialFailureButNotGuideDenial() async throws {
+        let lineup = (0..<14).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
+        let provider = WindowGuideProvider(
+            channels: lineup, programs: [program("partial", channelID: "channel-12")],
+            usesPerChannelLiveTVGuide: true
+        )
+        let time = now
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        model.guideOnly = true
+        await imports.reload(into: model)
+        let populated = try globalID("channel-12", in: imports)
+        let pending = try globalID("channel-13", in: imports)
+        let end = now.addingTimeInterval(21_600)
+        await provider.setPartialFailure(ServerLiveTVError.invalidGuideWindow)
+        await imports.reloadServerGuides(channelIDs: model.guideRowIDs.map(\.channelID), from: now, to: end, into: model)
+        XCTAssertEqual(model.currentProgram(for: populated)?.title, "partial")
+        XCTAssertEqual(Set(model.guideRowIDs.map(\.channelID)), [populated, pending])
+        XCTAssertEqual(imports.serverGuideState(channelID: pending, from: now, to: end), .failed)
+        await provider.setPartialFailure(AppError.unauthorized)
+        await imports.reloadServerGuides(channelIDs: [pending], from: now, to: end, into: model)
+        XCTAssertTrue(model.guideRowIDs.isEmpty)
+        XCTAssertEqual(imports.serverSources[0].guideFailure, .permissionDenied)
+    }
+
+    func testGuideOnlyDoesNotExposePendingChannelsWithoutGuideCapability() async throws {
+        let provider = WindowGuideProvider(channels: channels, supportsGuide: false, usesPerChannelLiveTVGuide: true)
+        let (imports, model) = makeImport(provider, kind: .iptv)
+        model.guideOnly = true
+        await imports.reload(into: model)
+        XCTAssertEqual(model.channels.count, 2)
+        XCTAssertTrue(model.guideRowIDs.isEmpty)
+        let calls = await provider.guideCalls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
     func testEmptyIPTVWindowRetriesOnUseWithoutWaitingTwelveHours() async throws {
         var time = now
         let provider = WindowGuideProvider(channels: channels)

@@ -147,6 +147,7 @@ struct LiveTVServerCatalog: Sendable {
     let references: [String: LiveTVServerChannelReference]
     var programs: [LiveTVPrototypeProgram]
     var inlineGuideFailure: LiveTVServerImportError?
+    var pendingGuideChannelIDs: Set<String> = []
 
     init(
         source: LiveTVServerSource, context: LiveTVAuthorizedServerProvider, channels: [ServerLiveTVChannel]
@@ -182,6 +183,8 @@ struct LiveTVServerCatalog: Sendable {
         }
         do { programs = try mapPrograms(current, source: source) }
         catch { inlineGuideFailure = .invalidGuide }
+        pendingGuideChannelIDs = context.provider.usesPerChannelLiveTVGuide
+            ? Set(self.channels.map(\.id)).subtracting(programs.map(\.channelID)) : []
     }
 
     func mapPrograms(

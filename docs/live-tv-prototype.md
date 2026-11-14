@@ -561,6 +561,15 @@ browsing requests its bounded neighborhood. Preparation counts describe that
 sample, not the complete lineup. Explicit XMLTV sources still prepare the complete
 catalog through one shared index; neither mode opens streams during preparation.
 
+The guide-only filter keeps per-channel sources' unrequested channels eligible
+for demand discovery. A successful guide response resolves that pending state
+for the requested channels; partial failures resolve only channels with returned
+listings. Confirmed empty channels are filtered out, while failures remain
+discoverable for retry. Pending channels do not count as known guide matches.
+Explicit per-channel source refresh clears window freshness and restarts
+discovery, retaining visible programmes and fetching unsampled windows when used.
+An ordinary catalogue reload preserves already-resolved discovery state.
+
 Catalogue imports, XMLTV downloads and Xtream per-channel guide requests share
 cancellable admission within each IPTV provider instance. They do not compete
 for a provider connection. A started transfer finishes without being discarded;

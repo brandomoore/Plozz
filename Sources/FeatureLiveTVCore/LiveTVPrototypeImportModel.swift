@@ -822,8 +822,12 @@ public final class LiveTVPrototypeImportModel {
         beforeCatalogPublication?(configuration, sourceChannels)
         guard ensureCatalogAuthorization(into: model) else { throw CancellationError() }
         try model.replaceCatalog(channels: sourceChannels, programs: programs)
+        let pendingNativeChannels = serverSources.filter {
+            $0.source.isEnabled && $0.availability?.supportsGuide == true && $0.guideFailure != .permissionDenied
+        }.compactMap { cachedServerCatalogs[$0.id] }.flatMap(\.pendingGuideChannelIDs)
         model.setKnownGuideChannels(
-            Set(chosen.keys).union(nativePrograms.map(\.channelID)).union(generatedChannels.map(\.id))
+            Set(chosen.keys).union(nativePrograms.map(\.channelID)).union(generatedChannels.map(\.id)),
+            pending: Set(pendingNativeChannels)
         )
         selectedSourceByChannel = chosen.mapValues(\.sourceID)
         guideChannelCount = channelCount

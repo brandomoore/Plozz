@@ -231,6 +231,7 @@ private final class LiveTVPrototypePreferencesState {
 private final class LiveTVPrototypeGuideState {
     var programs: [String: [LiveTVPrototypeProgram]] = [:]
     var knownChannelIDs: Set<String> = []
+    var pendingChannelIDs: Set<String> = []
 }
 
 private struct LiveTVCatalogIndex<Entry: Identifiable> {
@@ -628,9 +629,10 @@ public final class LiveTVPrototypeModel {
         if guideOnly { refreshVisibleChannels() }
     }
 
-    public func setKnownGuideChannels(_ ids: Set<String>) {
-        guard knownGuideChannelIDs != ids else { return }
+    public func setKnownGuideChannels(_ ids: Set<String>, pending: Set<String> = []) {
+        guard knownGuideChannelIDs != ids || guideState.pendingChannelIDs != pending else { return }
         knownGuideChannelIDs = ids
+        guideState.pendingChannelIDs = pending
         catalogRevision &+= 1
         if guideOnly { refreshVisibleChannels() }
     }
@@ -1377,7 +1379,9 @@ public final class LiveTVPrototypeModel {
     private func hasGuide(for channel: LiveTVPrototypeChannel) -> Bool {
         // Imported channels use only provider listings, never synthetic schedules.
         if usesPublicStreams {
-            return knownGuideChannelIDs.contains(channel.id) || importedPrograms[channel.id]?.isEmpty == false
+            // Filtering must not hide channels before demand loading can discover their guide.
+            return knownGuideChannelIDs.contains(channel.id) || guideState.pendingChannelIDs.contains(channel.id)
+                || importedPrograms[channel.id]?.isEmpty == false
         }
         #if DEBUG
         switch scenario {
