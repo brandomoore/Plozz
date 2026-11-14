@@ -1507,6 +1507,11 @@ average: the detector also accepts a broadly supported center distinguishable
 from black, with a candidate spanning at least half the frame. Near-black noise
 and isolated dim objects remain unknown. This does not shorten the existing
 three-sample, one-second confirmation or hold playback for detection.
+When a dark foreground hides the center but distinguishable content reaches
+all four sampled edges and covers at least a quarter of the frame, the detector
+can confirm full frame instead of losing confidence. This additional path can
+only preserve or expand to full frame; it never authorizes an inward crop.
+Unknown evidence still expires normally, and seeks/source changes still reset it.
 
 The hosted active-picture regression uses original `testsrc2` fixtures at
 320x180/24 fps for 18 seconds: 28-pixel top/bottom bars before 8 seconds and
