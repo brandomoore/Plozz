@@ -2,6 +2,61 @@ import XCTest
 
 @MainActor
 final class NativeSidebarHandoffTests: XCTestCase {
+    func testBackReturnsShowcaseToTopBeforeOpeningTheNativeSidebar() throws {
+        try exerciseBackToTop(showsHero: true)
+    }
+
+    func testBackReturnsShowcaseToFirstRowWithoutHeroBeforeOpeningTheNativeSidebar() throws {
+        try exerciseBackToTop(showsHero: false)
+    }
+
+    private func exerciseBackToTop(showsHero: Bool) throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--production-home-fixture", "--native-sidebar-home"]
+            + [showsHero ? "--hero-showcase-home" : "--immersive-home"]
+        app.launch()
+        defer { app.terminate() }
+        let first = app.buttons[showsHero ? "home-hero-action-row" : "Fixture movie 0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 30))
+        assertFocused(first, app: app)
+        let initialFrame = first.frame
+        for _ in 0..<3 { XCUIRemote.shared.press(.down) }
+        let card = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND hasFocus == true", "Fixture movie "
+        )).firstMatch
+        XCTAssertTrue(card.exists, app.debugDescription)
+        XCTAssertNotEqual(card.label, "Fixture movie 0")
+        let cardLabel = card.label
+
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["Detail fixture \(cardLabel)"].waitForExistence(timeout: 10))
+        XCUIRemote.shared.press(.menu)
+        assertFocused(app.buttons[cardLabel], app: app)
+
+        XCUIRemote.shared.press(.menu)
+        assertFocused(first, app: app)
+        XCTAssertFalse(hasFocus(app.buttons["Home"], app: app),
+                       "The first Back returns to content, not navigation.")
+        let screenshot = XCTAttachment(screenshot: try topContentScreenshot(app, showsHero: showsHero))
+        screenshot.name = "Back restored Home top, hero \(showsHero)"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        // After a detail pop, the transformed hero's accessibility frame can
+        // differ from its painted position, which the screenshot checks above.
+        if !showsHero {
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in abs(first.frame.minY - initialFrame.minY) < 1 },
+                object: nil
+            )], timeout: 5), .completed, "Back must reveal the full first row.")
+        }
+
+        XCUIRemote.shared.press(.menu)
+        assertFocused(app.buttons["Home"], app: app)
+        XCUIRemote.shared.press(.right)
+        assertFocused(first, app: app)
+    }
+
     func testSelectingActiveHomeReturnsFromDeepShowcaseRowsToFeaturedHero() throws {
         try exerciseHomeReselection(layout: ["--hero-showcase-home"], showsHero: true)
     }

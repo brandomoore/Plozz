@@ -494,10 +494,18 @@ struct FocusHeroHomeView<RowContent: View>: View {
     }
 
     private func scrollingRows(topInset: CGFloat = 0) -> some View {
-        FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent, topInset: topInset, onReturnToTop: {
-            if featuredHero != nil { featuredState.returnToHero?() }
-            onReturnToTop()
-        })
+        FocusHeroScrollingRows(
+            rows: rows, model: model, rowContent: rowContent, topInset: topInset,
+            onReturnToTop: {
+                if featuredHero != nil { featuredState.returnToHero?(false) }
+                onReturnToTop()
+            },
+            onBackToTop: navigationStyle == .sidebar && isFrontmost ? {
+                if featuredHero != nil { featuredState.returnToHero?(true) }
+                onReturnToTop()
+            } : nil,
+            backReturnsToHero: featuredHero != nil
+        )
         .ignoresSafeArea(.container, edges: .trailing)
         .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
         .environment(\.plozzCardCaptionIsShowcase, true)
@@ -695,8 +703,11 @@ private struct FocusHeroRowStack<RowContent: View>: View {
     let rows: [FocusHeroRow]
     let model: FocusHeroModel
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
+    var onBackToTop: (() -> Void)?
+    var backReturnsToHero = false
     @Namespace private var focusScope
     @State private var hasEnteredContent = false
+    @Environment(\.resetFocus) private var resetFocus
 
     var body: some View {
         // Default-focus preference cannot stop an already-ready lower row
@@ -715,6 +726,16 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             }
         }
         .focusScope(focusScope)
+        // The native scroll-to-top cannot override Showcase's owned offset.
+        // Once at the top, leave Back to the native sidebar.
+        .onExitCommand(perform: onBackToTop != nil && (backReturnsToHero || model.activeIndex(in: rows) > 0)
+            ? returnToTop : nil)
+    }
+
+    private func returnToTop() {
+        model.returnToTop(in: rows)
+        onBackToTop?()
+        if !backReturnsToHero { resetFocus(in: focusScope) }
     }
 
     @ViewBuilder
@@ -777,6 +798,8 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     var topInset: CGFloat = 0
     var onReturnToTop: () -> Void = {}
+    var onBackToTop: (() -> Void)?
+    var backReturnsToHero = false
     var body: some View {
         FocusHeroMotionSurface(
             content: scroll.safeAreaPadding(.leading, FocusHeroLayout.maskHorizontalOverhang),
@@ -789,7 +812,10 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
     private var scroll: some View {
         let bottom = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing)
         return ScrollView(.vertical) {
-            FocusHeroRowStack(rows: rows, model: model, rowContent: rowContent)
+            FocusHeroRowStack(
+                rows: rows, model: model, rowContent: rowContent,
+                onBackToTop: onBackToTop, backReturnsToHero: backReturnsToHero
+            )
                 .padding(.top, bottom - model.scrollOrigin(in: rows) + topInset)
                 .padding(.bottom, FocusHeroLayout.screenHeight - bottom)
                 .background(FocusHeroScrollPosition(model: model, rows: rows, topInset: topInset, onReturnToTop: onReturnToTop))

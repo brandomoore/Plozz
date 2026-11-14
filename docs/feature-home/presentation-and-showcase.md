@@ -168,6 +168,12 @@ resets both the Showcase rows and the featured stage before content focus return
 resetting the row offset alone leaves the hero hidden. Right from the sidebar and
 returning from another destination do not issue this explicit reset. With Hero
 disabled, reselection returns to the first row instead.
+Back from native-Sidebar Showcase rows smoothly returns to the featured hero,
+or the first row when Hero is disabled, without opening navigation. Showcase
+handles this through its own row/stage motion because its native offset guard
+rejects UIKit's independent scroll-to-top. Once at the top, Back is left to the
+native sidebar. Left, sidebar reselection, and detail-page Back retain their
+existing behavior; reduced motion uses the same nonanimated fallback as row navigation.
 This padding is a coordinate origin, separate from
 the row destination and height stops. Changing it rebases the native scroll
 target without adding a spring or restarting the in-flight viewport-height
@@ -189,7 +195,7 @@ Top Bar has no display-link-to-SwiftUI follower or independent SwiftUI animation
 Using the full stage distance would hide it early and reveal it late.
 Detach and reduced-motion updates clear owned animations. The return chevron sits 48 points from the top in all navigation styles,
 without reserving space for the now-hidden Top Bar.
-Back still reveals navigation immediately, cancelling its remaining translations.
+Top Bar Back still reveals navigation immediately, cancelling its remaining translations.
 The row scroll bridge retains its requested stage motion across temporary detach
 and reattachment, rebinding only while mounted; it does not depend on a later
 SwiftUI update to restore navigation. Featured and Showcase artwork reporters

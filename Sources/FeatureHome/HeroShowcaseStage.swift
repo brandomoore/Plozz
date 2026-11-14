@@ -10,7 +10,7 @@ import UIKit
 final class HeroShowcaseState {
     private(set) var isExpanded = true
     private(set) var nativeRowsExpanded = true
-    @ObservationIgnored var returnToHero: (() -> Void)?
+    @ObservationIgnored var returnToHero: ((_ focus: Bool) -> Void)?
     @ObservationIgnored let motion = HeroShowcaseScrollMotion()
 
     func setExpanded(_ expanded: Bool, deferNativeRows: Bool = false) {
@@ -396,7 +396,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         controller.canReturn = { model.activeIndex(in: rows) == 0 }
         controller.canEnterRows = { rows.first.map { !$0.isPlaceholder } ?? false }
         controller.updatePeek(firstRowHeight: model.scrollOrigin(in: rows))
-        state.returnToHero = { [weak controller] in controller?.resetToFeatured() }
+        state.returnToHero = { [weak controller] focus in controller?.resetToFeatured(focus: focus) }
     }
 
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
@@ -725,10 +725,10 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             }
         }
 
-        func resetToFeatured() {
+        func resetToFeatured(focus: Bool = false) {
             boundaryInput.invalidate()
             rowTarget = nil
-            present(expanded: true, focus: false)
+            present(expanded: true, focus: focus)
         }
 
         @objc private func synchronizeNativeRowsAfterFrame() {
