@@ -599,7 +599,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    func testMacNavigationBackgroundKeepsArtworkClearAndNativeControlsVisible() async throws {
+    func testHomeAndMacNavigationBackgroundKeepArtworkClearAndNativeControlsVisible() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let item = try await artworkItem()
@@ -607,9 +607,9 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil,
             insets: .zero, pull: PlozziOSHomeHeroPullModel()
         ) { window, host in
-            for isRunningOnMac in [false, true, false] {
+            for (isRunningOnMac, hidesTopBackdrop) in [(false, false), (false, true), (true, false), (false, false)] {
                 host.rootView = AnyView(
-                    MacNavigationBackgroundFixture()
+                    MacNavigationBackgroundFixture(hidesTopBackdrop: hidesTopBackdrop)
                         .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
                         .environment(\.colorScheme, .dark)
                 )
@@ -621,11 +621,12 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     let navigation = try XCTUnwrap(findController(UINavigationController.self, in: tabs))
                     let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
                         .first { $0.contentSize.height > $0.bounds.height })
-                    XCTAssertEqual(scroll.topEdgeEffect.isHidden, isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled)
+                    XCTAssertEqual(scroll.topEdgeEffect.isHidden,
+                                   hidesTopBackdrop || isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled)
                     XCTAssertEqual(scroll.bottomEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
                     XCTAssertFalse(navigation.isNavigationBarHidden)
                     XCTAssertEqual(tabs.sidebar.isHidden, sidebarHidden)
-                    let image = snapshot(window, name: "navigation-background-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)")
+                    let image = snapshot(window, name: "navigation-background-home-\(hidesTopBackdrop)-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)")
                     let trailing = CGRect(x: image.size.width - 240, y: 0, width: 240, height: 150)
                     let controlImage = UIImage(
                         cgImage: try XCTUnwrap(image.cgImage?.cropping(to: trailing.applying(
@@ -635,7 +636,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     let controls = try HeroTextInk.frames(in: controlImage, terms: ["PROFILE"])
                     let profile = try XCTUnwrap(controls["PROFILE"])
                     XCTAssertTrue(window.bounds.contains(profile.offsetBy(dx: trailing.minX, dy: 0)))
-                    if isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled {
+                    if hidesTopBackdrop || isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled {
                         let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
                         let x = bar.minX + 4
                         let top = try pixel(image, at: CGPoint(x: x, y: bar.midY))
@@ -1571,6 +1572,8 @@ private struct PushedDetailTransparencyFixture: View {
 
 @available(iOS 26.0, *)
 private struct MacNavigationBackgroundFixture: View {
+    var hidesTopBackdrop = false
+
     var body: some View {
         TabView {
             Tab("Home", systemImage: "house") {
@@ -1595,7 +1598,7 @@ private struct MacNavigationBackgroundFixture: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .scrollEdgeEffectStyle(.hard, for: .top)
-        .modifier(PlozziOSNavigationBackground())
+        .modifier(PlozziOSNavigationBackground(hidesTopBackdrop: hidesTopBackdrop))
     }
 }
 

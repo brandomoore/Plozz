@@ -36,7 +36,9 @@ struct PlozziOSSettingsToolbarItem: ToolbarContent {
 
     @ToolbarContentBuilder
     private var item: some ToolbarContent {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 27.1, *) {
+            profileItem
+        } else if #available(iOS 26.0, *) {
             profileItem.sharedBackgroundVisibility(.hidden)
         } else {
             profileItem
@@ -72,20 +74,24 @@ struct PlozziOSSettingsAvatarButton: View {
 
     var body: some View {
         let profile = appModel.profiles.activeProfile
+        let nativeSizing: Bool = if #available(iOS 27.1, *) { true } else { false }
         let button = Button(action: action) {
             // Native toolbars can extract the Image without its view modifiers,
             // especially on Mac. Bake the crop, size and original colors into
             // the image while leaving the native button and hit target intact.
-            ProfileAvatarView(profile: profile, size: size, rendersAsImage: true)
+            ProfileAvatarView(profile: profile, size: nativeSizing ? size + 4 : size, rendersAsImage: true)
         }
         .buttonBorderShape(.circle)
         .accessibilityLabel(Text("Settings for \(profile.name)"))
-
-        if #available(iOS 26.0, *) {
+        if #available(iOS 27.1, *) {
             button
-                .buttonStyle(.glass)
-                .buttonSizing(.flexible)
-                .frame(width: size + 8, height: size + 8)
+        } else if #available(iOS 26.0, *) {
+            // Older toolbars squeeze image labels vertically. Keep one native
+            // glass surface without the glass button style's extra padding.
+            button
+                .buttonStyle(.plain)
+                .padding(4)
+                .glassEffect(.regular.interactive(), in: .circle)
         } else {
             button
         }

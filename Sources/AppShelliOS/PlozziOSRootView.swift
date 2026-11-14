@@ -998,22 +998,25 @@ private struct PlozziOSScreenshotTabRouter: View {
 }
 
 struct PlozziOSNavigationBackground: ViewModifier {
+    var hidesTopBackdrop = false
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
     @ViewBuilder
     func body(content: Content) -> some View {
+        let hidesTabBackdrop = isRunningOnMac || (hidesTopBackdrop && horizontalSizeClass == .regular)
         if #available(iOS 26.0, *) {
             let opaqueChrome = systemReduceTransparency || reduceTransparency
             content
-                .toolbarBackground(isRunningOnMac || opaqueChrome ? .hidden : .automatic, for: .tabBar)
+                .toolbarBackground(hidesTabBackdrop || opaqueChrome ? .hidden : .automatic, for: .tabBar)
                 // Hide only the full-width edge backdrop; native controls keep their opaque treatment.
-                .scrollEdgeEffectHidden(isRunningOnMac || opaqueChrome, for: .top)
+                .scrollEdgeEffectHidden(hidesTopBackdrop || isRunningOnMac || opaqueChrome, for: .top)
                 .scrollEdgeEffectHidden(opaqueChrome, for: .bottom)
         } else {
             content
-                .toolbarBackground(isRunningOnMac ? .hidden : .automatic, for: .tabBar)
+                .toolbarBackground(hidesTabBackdrop ? .hidden : .automatic, for: .tabBar)
         }
     }
 }
@@ -1490,7 +1493,9 @@ struct PlozziOSTabShell: View {
         }
 
         .tabViewStyle(.sidebarAdaptable)
-        .modifier(PlozziOSNavigationBackground())
+        .modifier(PlozziOSNavigationBackground(
+            hidesTopBackdrop: effectiveSelectedDestination == .home && !isShowingMorePage
+        ))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if usesOpaqueBottomBar {
                 PlozzOpaqueTabBar(items: tabDestinations, selection: destinationSelection) {

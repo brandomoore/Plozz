@@ -79,6 +79,7 @@ final class ProfileToolbarPresentationTests: XCTestCase {
                         Tab("Discover", systemImage: "sparkles") { Color.black }
                     }
                     .tabViewStyle(.sidebarAdaptable)
+                    .modifier(PlozziOSNavigationBackground(hidesTopBackdrop: true))
                 }
             }
             .environment(app)
@@ -151,14 +152,23 @@ final class ProfileToolbarPresentationTests: XCTestCase {
             XCTAssertLessThanOrEqual(button.bounds.width, 64, "A profile photo must not widen the toolbar.")
             XCTAssertLessThanOrEqual(button.bounds.height, 64)
             let image = self.capture(button, name: "native-toolbar-photo")
-            XCTAssertEqual(button.bounds.width, button.bounds.height, accuracy: 0.5,
-                           "The native profile control must remain circular.")
-            let bounds = try self.greenPixelBounds(image)
-            XCTAssertEqual(bounds.width, bounds.height, accuracy: 1)
-            for inset in [bounds.minX, bounds.minY, image.size.width - bounds.maxX, image.size.height - bounds.maxY] {
-                XCTAssertGreaterThanOrEqual(inset, 2)
-                XCTAssertLessThanOrEqual(inset, 4.5)
+            let toolbar = self.capture(window, name: "profile-beside-standard-toolbar-control")
+            let photo = try self.greenPixelBounds(toolbar)
+            let reference = try self.pixelBounds(toolbar) { r, g, b in b > 120 && Int(b) > Int(r) + 40 && g > 50 }
+            @MainActor func glassBounds(around content: CGRect) throws -> CGRect {
+                let crop = CGRect(x: content.midX - 28, y: content.midY - 28, width: 56, height: 56)
+                let image = UIImage(cgImage: try XCTUnwrap(toolbar.cgImage?.cropping(to: crop)))
+                return try self.pixelBounds(image) { r, g, b in max(r, g, b) > 12 }
             }
+            let profileGlass = try glassBounds(around: photo)
+            let referenceGlass = try glassBounds(around: reference)
+            XCTAssertEqual(profileGlass.width, referenceGlass.width, accuracy: 1,
+                           "Compare the rendered glass, not just the smaller SwiftUI host frame.")
+            XCTAssertEqual(profileGlass.height, referenceGlass.height, accuracy: 1)
+            XCTAssertEqual(profileGlass.width, profileGlass.height, accuracy: 1)
+            XCTAssertEqual(photo.width, photo.height, accuracy: 1)
+            XCTAssertGreaterThanOrEqual((profileGlass.width - photo.width) / 2, 2)
+            XCTAssertLessThanOrEqual((profileGlass.width - photo.width) / 2, 4.5)
             XCTAssertGreaterThan(try self.greenPixelCount(image), 100,
                                  "The photo must keep its pixels instead of becoming a template-colored square.")
             XCTAssertTrue(button.isUserInteractionEnabled)
@@ -209,6 +219,11 @@ final class ProfileToolbarPresentationTests: XCTestCase {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar(.visible, for: .navigationBar)
                     .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Filter", systemImage: "line.3.horizontal.decrease", action: {})
+                                .labelStyle(.iconOnly)
+                                .buttonBorderShape(.circle)
+                        }
                         PlozziOSSettingsToolbarItem {}
                     }
             }
@@ -296,6 +311,10 @@ final class ProfileToolbarPresentationTests: XCTestCase {
     }
 
     private func greenPixelBounds(_ image: UIImage) throws -> CGRect {
+        try pixelBounds(image) { r, g, b in g > 180 && r < 80 && b < 80 }
+    }
+
+    private func pixelBounds(_ image: UIImage, matches: (UInt8, UInt8, UInt8) -> Bool) throws -> CGRect {
         let cg = try XCTUnwrap(image.cgImage)
         var bytes = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
         try bytes.withUnsafeMutableBytes { buffer in
@@ -307,7 +326,7 @@ final class ProfileToolbarPresentationTests: XCTestCase {
             context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
         }
         let pixels = stride(from: 0, to: bytes.count, by: 4).filter {
-            bytes[$0 + 1] > 180 && bytes[$0] < 80 && bytes[$0 + 2] < 80
+            matches(bytes[$0], bytes[$0 + 1], bytes[$0 + 2])
         }.map { CGPoint(x: ($0 / 4) % cg.width, y: ($0 / 4) / cg.width) }
         let left = try XCTUnwrap(pixels.map(\.x).min())
         let top = try XCTUnwrap(pixels.map(\.y).min())

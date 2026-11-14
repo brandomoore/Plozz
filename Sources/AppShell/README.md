@@ -204,15 +204,22 @@ registry.
 - **Mac navigation leaves the artwork uncovered.** The iOS-on-Mac tab shell
   hides the tab-bar background and, on iOS 26 and later, the top scroll-edge
   effect. Native sidebar, tab, and profile controls remain available with their
-  system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
+  system appearance. Other scroll edges are unchanged.
 
 - **iPad tabs and profile actions share the native top row.** Apply opaque
   navigation chrome inside each tab's `NavigationStack`, not around the stack:
   an outer background host prevents UIKit from integrating the navigation bar
   with the top tabs. Sidebar transitions retain native placement. On iOS 26 and
-  later, profile actions use a circular native glass button with a 36-point avatar
-  and four-point inset, without a second shared toolbar background. Photos, emoji,
-  and symbols keep their original colors; older systems retain native toolbar styling.
+  later, profile actions match the rendered size of neighboring circular toolbar
+  controls. iOS 27.1 uses the toolbar's own glass with a 40-point avatar; iOS 26
+  uses one native glass effect around a 36-point avatar with four-point padding,
+  avoiding the older toolbar's image-label compression. Neither adds a second
+  glass button style. Photos, emoji, and symbols keep their original colors;
+  pre-iOS 26 systems retain native toolbar styling.
+  Home suppresses the full-width top-edge backdrop and the regular-width tab-bar
+  background so the hero stays visible behind that row. The individual native
+  glass controls remain; other destinations and compact bottom-tab backgrounds
+  retain their existing treatment.
 
 - **Mac rails fit complete cards plus a next-card preview.** Home, library
   recommendations, related titles, extras, episodes, and cast derive widths from
