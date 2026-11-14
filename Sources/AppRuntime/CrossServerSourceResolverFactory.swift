@@ -6,10 +6,13 @@ private func searchWithDeadline(
     _ provider: any MediaProvider,
     query: String,
     limit: Int,
-    seconds: Double
+    seconds: Double,
+    excludingLibraries: [String] = []
 ) async -> [MediaItem] {
     let searchTask = Task {
-        let items = (try? await provider.search(query: query, limit: limit)) ?? []
+        let items = (try? await provider.search(
+            query: query, limit: limit, excludingLibraries: excludingLibraries
+        )) ?? []
         guard provider.catalogIdentityRequiresEnrichment else { return items }
         let prepared = await IdentityEnrichment.prepare(items, enrichIdentifiedItems: true) { item in
             try await provider.item(id: item.id)
@@ -84,9 +87,8 @@ public func heroLibraryTargetResolver(
     visibility: @escaping @Sendable () async -> HomeLibraryVisibility = { .default },
     allowsDiscovery: @escaping @Sendable () async -> Bool = { true }
 ) -> (@Sendable (MediaItem) async -> MediaItem?)? {
-    guard let resolveSources = crossServerSourceResolver(
-        in: accounts, identitySources: identitySources
-    ) else { return nil }
+    guard !accounts.isEmpty else { return nil }
+    let serverInfo = accounts.sourceServerInfo()
     return { item in
         guard !Task.isCancelled, !item.locallyValidatedPlayableSource,
               item.kind == .movie || item.kind == .series,
@@ -94,37 +96,70 @@ public func heroLibraryTargetResolver(
               identitySources(item).isEmpty,
               await allowsDiscovery() else { return nil }
         let initialVisibility = await visibility()
-        let lookup = Task<MediaItem?, Never> {
-            let resolution = await resolveSources(item)
-            guard !Task.isCancelled, !resolution.sources.isEmpty else { return nil }
-            let verification = HeroDiscoveryRuntime(
-                accounts: accounts,
-                identitySources: { _ in resolution.sources },
-                allowsDiscovery: allowsDiscovery
-            )
-            let verified = await verification.resolveLibrarySources(
-                in: [item], visibility: initialVisibility
-            )
-            return verified.first(where: \.locallyValidatedPlayableSource)
-        }
-        // One budget covers all title variants and live verification for this
-        // slide; an unreachable account must not spend four seconds per variant.
-        let deadline = DispatchWorkItem { lookup.cancel() }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 4, execute: deadline)
-        let result = await withTaskCancellationHandler {
-            await lookup.value
-        } onCancel: {
-            lookup.cancel()
-        }
-        deadline.cancel()
-        guard !Task.isCancelled else { return nil }
-        guard !lookup.isCancelled else {
-            PlozzLog.app.error("Hero library recovery timed out; the title remains unverified.")
-            return nil
+        let recovered = await withTaskGroup(of: (Int, MediaItem?).self) { group in
+            for (index, account) in accounts.enumerated() {
+                group.addTask {
+                    let prefix = "\(account.account.id):"
+                    let disabled = initialVisibility.disabledKeys.compactMap {
+                        $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : nil
+                    }.sorted()
+                    let lookup = Task<MediaItem?, Never> {
+                        let resolution = await CrossServerSourceResolver.resolveWithEvidence(
+                            primary: item, otherAccountIDs: [account.account.id],
+                            search: { _, query in
+                                await searchWithDeadline(
+                                    account.provider, query: query, limit: 25, seconds: 4,
+                                    excludingLibraries: disabled
+                                )
+                            },
+                            serverInfo: { serverInfo[$0] }
+                        )
+                        guard !Task.isCancelled, !resolution.sources.isEmpty else { return nil }
+                        let verification = HeroDiscoveryRuntime(
+                            accounts: [account], identitySources: { _ in resolution.sources },
+                            allowsDiscovery: allowsDiscovery
+                        )
+                        let verified = await verification.resolveLibrarySources(
+                            in: [item], visibility: initialVisibility
+                        )
+                        return verified.first(where: \.locallyValidatedPlayableSource)
+                    }
+                    // Each account shares one budget across title variants and
+                    // verification. A slow account cannot erase a verified peer.
+                    let deadline = DispatchWorkItem { lookup.cancel() }
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 4, execute: deadline)
+                    let result = await withTaskCancellationHandler {
+                        await lookup.value
+                    } onCancel: {
+                        lookup.cancel()
+                    }
+                    deadline.cancel()
+                    guard !Task.isCancelled else { return (index, nil) }
+                    guard !lookup.isCancelled else {
+                        PlozzLog.app.error("Hero library recovery timed out for an account; its copy remains unverified.")
+                        return (index, nil)
+                    }
+                    return (index, result)
+                }
+            }
+            var byIndex: [Int: MediaItem] = [:]
+            for await (index, result) in group { byIndex[index] = result }
+            return accounts.indices.compactMap { byIndex[$0] }
         }
         guard await allowsDiscovery(), await visibility() == initialVisibility,
               !Task.isCancelled else { return nil }
-        return result
+        var verified: [MediaItem] = []
+        for copy in recovered {
+            guard !verified.contains(where: {
+                HeroDiscoveryIdentityVerification.hasConflictingStrongIdentity($0, copy)
+            }) else {
+                PlozzLog.app.error("Hero library recovery ignored conflicting cross-account identity.")
+                continue
+            }
+            verified.append(copy)
+        }
+        guard !verified.isEmpty else { return nil }
+        return MediaItemMerger.mergeGroup(verified)
     }
 }
 

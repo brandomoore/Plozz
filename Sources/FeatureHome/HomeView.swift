@@ -1265,7 +1265,11 @@ public struct HomeView: View {
             await enrichMetadata(enrichmentItems)
         }
         guard !Task.isCancelled else { return }
-        let stableItems = heroCurator.deduplicating(enriched)
+        let stableItems = heroCurator.reconcile(
+            heroCurator.deduplicating(enriched), settings: settings,
+            watchMutations: durableWatchMutations + heroRuntime.watchMutations,
+            preservesLineup: settings.style == .followsFocus
+        )
         // Fold the fresh curation into whatever is already on screen instead of
         // replacing it, so a background refresh the viewer never asked for cannot
         // reshuffle the carousel, wipe the backdrop or move what they were looking
@@ -1286,7 +1290,7 @@ public struct HomeView: View {
         let onScreen = foldsIntoLoadedSet && !heroRuntime.items.isEmpty
             ? heroRuntime.items
             : (seedMatchesConfiguration ? heroRuntime.cachedItems : [])
-        let updatedPool = result.candidatePool.updatingItems(stableItems)
+        let updatedPool = result.candidatePool.updatingItems(enriched)
         let sourceEligibility = heroSourceEligibility(
             content: content,
             randomLibraries: randomLibraries,
@@ -1309,7 +1313,8 @@ public struct HomeView: View {
             current,
             settings: settings,
             watchMutations: durableWatchMutations + heroRuntime.watchMutations,
-            preservesLineup: settings.style == .followsFocus
+            preservesLineup: settings.style == .followsFocus,
+            verifiedWatchItems: enriched
         )
         let merge = HeroLiveMerge.merge(
             showing: showing,

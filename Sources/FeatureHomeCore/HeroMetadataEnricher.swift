@@ -67,6 +67,9 @@ public struct HeroMetadataEnricher: Sendable {
                 guard item.discoverySources.isEmpty || item.locallyValidatedPlayableSource else {
                     return nil
                 }
+                // Keep recovered root watch evidence for the live set and launch
+                // cache; resolving an unwatched episode here would erase it.
+                guard !hideWatched || !item.hasBeenPlayed else { return nil }
                 let target = targetSelector(item)
                 guard let accountID = target.sourceAccountID,
                       let provider = providersByAccount[accountID] else {
@@ -307,7 +310,6 @@ public struct HeroMetadataEnricher: Sendable {
                 next += 1
             }
             var enriched = items
-            var excluded = Set<Int>()
             while let (index, target) = await group.next() {
                 guard !Task.isCancelled else {
                     group.cancelAll()
@@ -318,14 +320,13 @@ public struct HeroMetadataEnricher: Sendable {
                    providersByAccount[accountID] != nil,
                    HeroDiscoveryIdentityVerification.matches(items[index], target) {
                     enriched[index] = target
-                    if hideWatched && target.hasBeenPlayed { excluded.insert(index) }
                 }
                 if next < candidates.count {
                     enqueue(candidates[next])
                     next += 1
                 }
             }
-            return enriched.indices.filter { !excluded.contains($0) }.map { enriched[$0] }
+            return enriched
         }
     }
 

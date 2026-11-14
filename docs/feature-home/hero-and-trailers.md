@@ -174,12 +174,17 @@ for a covered page, another item's theme, or a settings preview.
   shared TV/mobile metadata enrichment uses the existing cross-server search to
   recover its library copy. Only the final carousel candidates are probed, with
   four titles in flight and a cooperative four-second search/verification budget
-  per title; the full Discovery feed is never searched this way. Search hits
+  per account and title; the full Discovery feed is never searched this way.
+  Accounts search and verify independently, so a timed-out account cannot erase
+  another account's verified match. Searches honor disabled libraries and retain
+  enabled-library provenance even when detail records omit it. Search hits
   still require a live, identity-matching record in an enabled library. An
   existing index-verification rejection is not retried as a missing entry.
   Policy or library-visibility changes and cancellation discard late results.
   Recovered shows resolve a real episode and use the library's metadata/ratings;
-  Hide Watched is reapplied to the recovered title before selecting an episode.
+  Watched roots retain their evidence instead of being replaced by an unwatched
+  episode. Both shells update the visible set and launch candidate pool with that
+  evidence before applying Hide Watched, including to an already pinned slide.
   Showcase retains its existing stable-lineup policy. Optional external and
   server-plugin ratings remain cache-only on Home.
 

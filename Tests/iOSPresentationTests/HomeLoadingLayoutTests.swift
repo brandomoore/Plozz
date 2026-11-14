@@ -2,19 +2,100 @@
 import CoreModels
 import CoreNetworking
 import CoreUI
+import AppRuntime
 import FeatureAuth
 @testable import FeatureHomeCore
 import HeroUI
+import MetadataKit
 import Observation
 import ProviderJellyfin
 import ProviderPlex
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import AppShelliOS
 
 @MainActor
 final class HomeLoadingLayoutTests: XCTestCase {
+    func testLiveDiscoveryHeroRestoresVisiblePlayAndRatings() async throws {
+        let broker = try LiveHomeReadOnlyAccount.broker()
+        struct MetadataConfiguration: Decodable { let tmdbToken: String }
+        let (data, response) = try await URLSession.shared.data(for: URLRequest(url: broker, timeoutInterval: 15))
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw AppError.invalidResponse }
+        let config = try JSONDecoder().decode(MetadataConfiguration.self, from: data)
+        let http = LiveHomeReadOnlyHTTP()
+        let account = try await LiveHomeReadOnlyAccount.connect(.jellyfin, http: http)
+        let discovery = try await TMDbDiscoveryProvider(access: .directToken(config.tmdbToken))
+            .discover(.init(limit: 16))
+        XCTAssertFalse(discovery.isEmpty)
+        let enricher = HeroMetadataEnricher(
+            accounts: [account], targetSelector: {
+                PlaybackSourceSelection.bestPlayItem($0, accounts: [account], identitySources: { _ in [] })
+            },
+            libraryTargetResolver: heroLibraryTargetResolver(in: [account], identitySources: { _ in [] })
+        )
+        let recovered = await enricher.enrich(discovery, preservingPinnedSeries: { discovery })
+        let pair = try XCTUnwrap(zip(discovery, recovered).first {
+            $0.1.kind == .series && $0.1.locallyValidatedPlayableSource
+                && $0.1.ratings.contains { $0.source == .community }
+        })
+        let seed = pair.0
+        let visible = try XCTUnwrap(HeroLiveMerge.merge(
+            showing: [seed], fresh: [pair.1], limit: 1, pinnedItemIDs: [seed.id],
+            preservesPinnedItems: true
+        ).items.first)
+        let root = PlaybackSourceSelection.bestPlayItem(visible, accounts: [account], identitySources: { _ in [] })
+        let resolvedPlay = await HeroPlayTargetResolver.playbackTarget(for: root, provider: account.provider)
+        let play = try XCTUnwrap(resolvedPlay)
+        XCTAssertEqual(play.kind, .episode)
+        let year = String(try XCTUnwrap(visible.productionYear))
+        let rating = try XCTUnwrap(visible.ratings.first { $0.source == .community })
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        fixture.app.settings.hero.settings.showsRatings = true
+        fixture.app.settings.spoilers.settings.hideRatingsUntilWatched = false
+        let previousMetadata = fixture.app.metadataProviderSettingsModel.settings
+        fixture.app.metadataProviderSettingsModel.settings = .init(
+            orderMode: .custom, disabledOrder: MetadataSourceAttribution.all.map(\.id)
+        )
+        defer { fixture.app.metadataProviderSettingsModel.settings = previousMetadata }
+        for upgraded in [false, true] {
+            let item = upgraded ? play : seed
+            let subject = upgraded ? visible : seed
+            fixture.mount(
+                PlozziOSHomeHeroForeground(
+                    item: item, detailItem: subject, watchlistItem: subject,
+                    presentation: HeroPresentation(item: subject, artworkStyle: .compactPortrait, surface: .home),
+                    style: .compactPortrait, onPlay: { _ in }
+                )
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
+            )
+            try await fixture.settle()
+            let image = renderedImage(fixture.window)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = upgraded ? "Live Discovery Home recovered" : "Live Discovery Home cold index"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            let hasPlay = lines.contains { $0 == "Play" || $0.hasPrefix("Play ") }
+            XCTAssertEqual(hasPlay, upgraded, "The production Home foreground must visibly regain its Play action.")
+            if upgraded {
+                XCTAssertTrue(lines.contains { $0.contains(year) }, "The library year must render.")
+                XCTAssertTrue(lines.contains { $0.contains(rating.displayValue) }, "A native library rating must render.")
+            }
+        }
+        let counts = await http.counts()
+        XCTAssertEqual(counts.blocked, 0)
+        print("LIVE_IOS_HERO realDiscovery=true realJellyfin=true coldIndex=true visiblePlay=true visibleRatings=true realEpisode=true reads=\(counts.reads)")
+    }
+
     func testLiveJellyfinCompletedEpisodeRemainsOnHome() async throws {
         guard let address = ProcessInfo.processInfo.environment["PLOZZ_LIVE_REFRESH_BROKER"] else {
             throw XCTSkip("Requires the authorized internal history-mutation broker.")
