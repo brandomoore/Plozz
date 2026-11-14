@@ -264,13 +264,7 @@ private struct PlozziOSSearchHeader: View {
 
     @ViewBuilder
     private var fieldBackground: some View {
-        let flat = Capsule()
-            .fill(palette.raised.fill)
-            .overlay {
-                if let border = palette.raised.border {
-                    Capsule().strokeBorder(border, lineWidth: palette.raised.borderWidth)
-                }
-            }
+        let flat = Color.clear.settingsGroupSurface(in: Capsule())
         if #available(iOS 26.0, *), !reduceTransparency {
             // Keep both surfaces mounted; replacing the field on focus loses
             // its first responder and can interrupt typing.

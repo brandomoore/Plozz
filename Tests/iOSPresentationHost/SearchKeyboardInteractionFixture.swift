@@ -10,6 +10,17 @@ struct SearchKeyboardInteractionFixture: View {
     @State private var trailer = HeroTrailerController()
     @State private var sidebar = PlozziOSSidebarGeometryModel()
     @State private var showsSettings = false
+    @State private var showsSearch = true
+
+    private var surfaceCheck: Bool { ProcessInfo.processInfo.arguments.contains("--search-surface-check") }
+    private var gradientEnabled: Bool { ProcessInfo.processInfo.arguments.contains("--search-gradient") }
+    private var palette: ThemePalette {
+        let arguments = ProcessInfo.processInfo.arguments
+        let theme: AppTheme = arguments.contains("--search-light") ? .light
+            : arguments.contains("--search-oled") ? .pureBlack
+            : arguments.contains("--search-system-light") || arguments.contains("--search-system-dark") ? .system : .dark
+        return .palette(for: theme, systemColorScheme: arguments.contains("--search-system-light") ? .light : .dark)
+    }
 
     init() {
         SyncSetupFeatureFlag().isEnabled = false
@@ -42,6 +53,16 @@ struct SearchKeyboardInteractionFixture: View {
     var body: some View {
         NavigationStack {
             PlozziOSSearchView(appModel: appModel, onShowSettings: { showsSettings = true })
+                .opacity(showsSearch ? 1 : 0)
+                .accessibilityHidden(!showsSearch)
+                .background {
+                    if surfaceCheck { AppBackground(palette: palette) }
+                }
+        }
+        .overlay(alignment: .bottom) {
+            if surfaceCheck {
+                Button(showsSearch ? "Hide search fixture" : "Search fixture hidden") { showsSearch = false }
+            }
         }
         .sheet(isPresented: $showsSettings) {
             Text("Settings opened").accessibilityIdentifier("search-fixture-settings")
@@ -49,12 +70,13 @@ struct SearchKeyboardInteractionFixture: View {
         .environment(appModel)
         .environment(trailer)
         .environment(sidebar)
-        .environment(\.themePalette, .dark)
+        .environment(\.themePalette, palette)
+        .environment(\.gradientBackgroundsEnabled, gradientEnabled)
         .environment(\.plozzReduceTransparency, ProcessInfo.processInfo.arguments.contains("--search-opaque"))
         .environment(\.plozzMetrics, .touch(density: .standard))
         .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--search-framed") ? .framed : .borderless)
         .environment(\.locale, Locale(identifier: "en_US"))
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(palette.isLight ? .light : .dark)
     }
 }
 

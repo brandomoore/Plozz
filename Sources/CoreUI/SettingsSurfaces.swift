@@ -275,6 +275,10 @@ public extension View {
         modifier(SettingsGroupSurface(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)))
     }
 
+    func settingsGroupSurface<SurfaceShape: InsettableShape>(in shape: SurfaceShape) -> some View {
+        modifier(SettingsGroupSurface(shape: shape))
+    }
+
     func settingsGroupSurface(cornerRadii: RectangleCornerRadii) -> some View {
         modifier(SettingsGroupSurface(shape: UnevenRoundedRectangle(cornerRadii: cornerRadii, style: .continuous)))
     }

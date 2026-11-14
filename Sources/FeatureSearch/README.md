@@ -61,6 +61,8 @@ and older systems retain the flat surface; Reduce Motion skips the crossfade.
 Results start below the transparent header but draw beyond their scroll viewport
 behind its individual glass controls, without a full-width background. The
 header stays above the results for drawing and hit testing.
+The resting input reuses `settingsGroupSurface` with a capsule shape, including
+its gradient-aware wash, theme borders/shadows, and Reduce Transparency fallback.
 Section headings, visible poster edges, and captions share the input's 16-point
 leading margin. Grid padding accounts for each card style's internal artwork
 inset rather than aligning the invisible card slot.

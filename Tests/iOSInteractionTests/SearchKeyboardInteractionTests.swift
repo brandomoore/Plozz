@@ -260,6 +260,49 @@ final class SearchKeyboardInteractionTests: XCTestCase {
         XCTAssertEqual(field.value as? String, "empty")
     }
 
+    func testRestingSearchSeparatesFromEveryThemeAndGradientBackground() throws {
+        var failures: [String] = []
+        for theme in ["light", "dark", "oled", "system-light", "system-dark"] {
+            for gradient in [false, true] {
+                for opaque in [false, true] {
+                    let name = "\(theme)-gradient-\(gradient)-opaque-\(opaque)"
+                    let field = launch(arguments: ["--search-surface-check", "--search-\(theme)"]
+                        + (gradient ? ["--search-gradient"] : []) + (opaque ? ["--search-opaque"] : []))
+                    let frame = field.frame
+                    let fillArea = CGRect(x: frame.midX, y: frame.minY - 7, width: 8, height: 3)
+                    let edgeArea = CGRect(x: frame.midX, y: frame.midY - 22, width: 8, height: 1)
+                    let shadowArea = CGRect(x: frame.midX, y: frame.midY + 24, width: 8, height: 2)
+                    let surface = app.screenshot()
+                    let attachment = XCTAttachment(screenshot: surface)
+                    attachment.name = "search-rest-\(name)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                    let fill = try sampleColor(surface, in: fillArea)
+                    let edge = try sampleColor(surface, in: edgeArea)
+                    let shadow = try sampleColor(surface, in: shadowArea)
+                    app.buttons["Hide search fixture"].tap()
+                    XCTAssertTrue(app.buttons["Search fixture hidden"].waitForExistence(timeout: 5))
+                    let background = app.screenshot()
+                    let pageFill = try sampleColor(background, in: fillArea)
+                    let pageEdge = try sampleColor(background, in: edgeArea)
+                    let pageShadow = try sampleColor(background, in: shadowArea)
+                    // Light uses elevation shadow; Black uses its rim; gradient surfaces use a wash.
+                    let separation = max(
+                        colorDistance(fill, pageFill), colorDistance(edge, pageEdge), colorDistance(shadow, pageShadow)
+                    )
+                    if separation < 12 { failures.append("\(name): surface separation \(separation)") }
+                    if gradient && !opaque {
+                        let direction = theme.contains("light") ? -1 : 1
+                        let lift = zip(fill, pageFill).map { (Int($0) - Int($1)) * direction }.reduce(0, +)
+                        if lift < 12 { failures.append("\(name): gradient-relative lift \(lift)") }
+                    }
+                    app.terminate()
+                }
+            }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
     private func surfaceColor(_ field: XCUIElement, name: String) throws -> [UInt8] {
         Thread.sleep(forTimeInterval: 0.6)
         let screenshot = app.screenshot()
@@ -267,10 +310,14 @@ final class SearchKeyboardInteractionTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
-        let image = try XCTUnwrap(screenshot.image.cgImage)
-        let scale = CGFloat(image.width) / app.frame.width
         // Sample the surface above the text, away from its caret and glyphs.
         let area = CGRect(x: field.frame.midX, y: field.frame.minY - 7, width: 8, height: 3)
+        return try sampleColor(screenshot, in: area)
+    }
+
+    private func sampleColor(_ screenshot: XCUIScreenshot, in area: CGRect) throws -> [UInt8] {
+        let image = try XCTUnwrap(screenshot.image.cgImage)
+        let scale = CGFloat(image.width) / app.frame.width
         let crop = try XCTUnwrap(image.cropping(to: CGRect(
             x: area.minX * scale, y: area.minY * scale,
             width: area.width * scale, height: area.height * scale
