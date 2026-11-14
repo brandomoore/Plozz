@@ -5,7 +5,6 @@
 
     public struct UpcomingView: View {
         @Bindable private var model: UpcomingFeedModel
-        @Environment(\.horizontalSizeClass) private var sizeClass
         @Environment(\.themePalette) private var palette
         #if os(tvOS)
             @Environment(\.plozzNavigationContentInset) private var navigationInset
@@ -38,7 +37,7 @@
                             UpcomingFeedStatus(model: model)
                             UpcomingAgenda(
                                 releases: model.visibleReleases, selectedDay: selectedDay,
-                                wide: sizeClass == .regular, hide: model.hide
+                                hide: model.hide
                             )
                             .padding(.vertical)
                         }
@@ -191,9 +190,9 @@
     private struct UpcomingAgenda: View {
         let releases: [UpcomingRelease]
         let selectedDay: Date
-        let wide: Bool
         let hide: (UpcomingRelease) -> Void
         @Environment(\.plozzMetrics) private var metrics
+        @Environment(\.plozzCardStyle) private var cardStyle
 
         var body: some View {
             let calendar = Calendar.current
@@ -201,11 +200,13 @@
             let days = Set(groups.keys).union([selectedDay]).sorted()
             #if os(tvOS)
                 let visibleDays = days.filter { $0 >= selectedDay }
-                let columns = Array(repeating: GridItem(.flexible(), spacing: 28), count: 3)
+                let spacing = metrics.cardSpacing
             #else
                 let visibleDays = days
-                let columns = Array(repeating: GridItem(.flexible(), spacing: 20), count: wide ? 2 : 1)
+                let spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
             #endif
+            let width = metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle)
+            let columns = [GridItem(.adaptive(minimum: width, maximum: width), spacing: spacing, alignment: .topLeading)]
             LazyVStack(alignment: .leading, spacing: 28) {
                 ForEach(visibleDays, id: \.self) { day in
                     VStack(alignment: .leading, spacing: 12) {
@@ -222,9 +223,10 @@
                         .font(PlozziOSMediaRailLayout.headingFont)
                         #endif
                         .accessibilityAddTraits(.isHeader)
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.gridSpacing) {
                             ForEach(groups[day] ?? []) { release in
                                 UpcomingReleaseCard(release: release)
+                                    .frame(width: width)
                                     .contextMenu { Button("Hide title") { hide(release) } }
                             }
                         }
@@ -315,50 +317,11 @@
     private struct UpcomingReleaseCard: View {
         let release: UpcomingRelease
         @Environment(\.mediaItemNavigator) private var navigate
-        @Environment(\.plozzArtworkPolicy) private var artworkPolicy
-        @Environment(\.plozzMetrics) private var metrics
 
         var body: some View {
-            #if os(tvOS)
-                PosterCardView(
-                    item: release.item, style: .landscape, statusCue: release.subtitle
-                ) { navigate?(release.item) }
-            #else
-                Button {
-                    navigate?(release.item)
-                } label: {
-                    HStack(spacing: 12) {
-                        let artwork = MediaArtworkSource(
-                            item: release.item, placement: .poster, policy: artworkPolicy
-                        )
-                        FallbackAsyncImage(
-                            references: artwork.references, variant: .posterCard,
-                            artworkPolicy: artwork.policy, asyncFallbackURL: artwork.fallbackURL
-                        ) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            Rectangle().fill(.quaternary)
-                        }
-                        .frame(width: 64, height: 96)
-                        .clipShape(.rect(cornerRadius: 8))
-                        .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(verbatim: release.item.title)
-                                .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
-                                .lineLimit(2)
-                            if let subtitle = release.subtitle {
-                                Text(subtitle)
-                                    .font(.system(size: metrics.cardSubtitleFontSize))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-            #endif
+            PosterCardView(
+                item: release.item, style: .poster, captionSubtitle: release.posterSubtitle
+            ) { navigate?(release.item) }
         }
     }
 

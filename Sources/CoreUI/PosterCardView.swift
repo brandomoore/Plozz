@@ -24,6 +24,8 @@ public struct PosterCardView: View {
     private let textlessBackdropStore: TextlessBackdropStore
     private let enablesAsyncArtworkFallback: Bool
     private let reservesSubtitleSpace: Bool
+    /// Caller-owned caption context without changing the navigable media item's metadata.
+    private let captionSubtitle: LocalizedStringResource?
     /// Optional caller-owned context cue. It occupies the artwork's top-leading
     /// slot, leaving watch state (top-trailing) and progress (bottom) untouched.
     ///
@@ -120,6 +122,7 @@ public struct PosterCardView: View {
         showsSeriesArtwork: Bool = false,
         enablesAsyncArtworkFallback: Bool = true,
         reservesSubtitleSpace: Bool = true,
+        captionSubtitle: LocalizedStringResource? = nil,
         statusCue: LocalizedStringResource? = nil,
         playsOnSelect: Bool = false,
         showsResumeChip: Bool = false,
@@ -139,6 +142,7 @@ public struct PosterCardView: View {
         self.textlessBackdropStore = textlessBackdropStore ?? .shared
         self.enablesAsyncArtworkFallback = enablesAsyncArtworkFallback && artworkPolicy.allowsOnlineFallback
         self.reservesSubtitleSpace = reservesSubtitleSpace
+        self.captionSubtitle = captionSubtitle
         self.statusCueText = statusCue
         self.playsOnSelect = playsOnSelect
         self.showsResumeChipOverride = showsResumeChip
@@ -834,8 +838,12 @@ public struct PosterCardView: View {
     /// Secondary line — subtitle facts plus card runtime/remaining when available.
     /// The runtime/"… left" is dropped when the resume chip is shown, since the
     /// chip already carries the time on the artwork (no need to repeat it here).
-    private var subtitleText: String? {  // l10n:content — provider subtitle and preformatted runtime
-        item.posterCaptionSubtitle(showsRuntime: !showsResumeChip)
+    private var subtitleText: String? {  // l10n:content — localized caller context or provider metadata/runtime
+        if var captionSubtitle {
+            captionSubtitle.locale = locale
+            return String(localized: captionSubtitle)
+        }
+        return item.posterCaptionSubtitle(showsRuntime: !showsResumeChip)
     }
 
     // MARK: Resume chip

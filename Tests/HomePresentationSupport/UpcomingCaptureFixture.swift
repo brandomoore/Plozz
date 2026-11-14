@@ -6,6 +6,7 @@ import FeatureAuth
 import MetadataKit
 import SwiftUI
 import UIKit
+import Vision
 #if os(tvOS)
 @testable import AppShell
 import FeatureHome
@@ -81,7 +82,8 @@ struct UpcomingCaptureFixture: View {
     private func prepareCapture() async throws {
         let arguments = ProcessInfo.processInfo.arguments
         let showsCalendar = arguments.contains("--capture-calendar") || arguments.contains("--capture-selection")
-        guard arguments.contains("--capture-scrolled") || showsCalendar else { return }
+        guard arguments.contains("--capture-scrolled") || arguments.contains("--capture-landscape")
+            || arguments.contains("--capture-dense") || showsCalendar else { return }
         try await Task.sleep(for: .seconds(1))
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows).first(where: \.isKeyWindow) else {
@@ -128,6 +130,38 @@ struct UpcomingCaptureFixture: View {
         }
         let before = navigationBar.convert(navigationBar.bounds, to: window)
         precondition(before.maxY <= window.safeAreaInsets.top + 64, "Upcoming toolbar occupies a second row")
+        if arguments.contains("--capture-dense") {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: image.cgImage!).perform([request])
+            let text = (request.results ?? []).compactMap { observation -> (String, CGRect)? in
+                observation.topCandidates(1).first.map { ($0.string, observation.boundingBox) }
+            }
+            let frames = ["The Simpsons", "Severance", "Silo"].map { title in
+                guard let frame = text.filter({ $0.0 == title }).map(\.1).min(by: { $0.minY < $1.minY }) else {
+                    preconditionFailure("Missing Upcoming poster caption: \(title)")
+                }
+                return frame
+            }
+            let metrics = PlozzMetrics.touch(density: .standard)
+            let pitch = metrics.cardSlotWidth(for: .poster, cardStyle: .borderless)
+                + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: .borderless)
+            let actualPitch = (frames[1].minX - frames[0].minX) * window.bounds.width
+            precondition(abs(frames[1].midY - frames[0].midY) < 0.006, "Adjacent posters must share a row")
+            precondition(abs(actualPitch - pitch) < 3, "Poster spacing \(actualPitch) differs from shared spacing \(pitch)")
+            if window.bounds.width < 600 {
+                precondition(frames[2].midY < frames[0].midY, "Busy dates must wrap on a phone")
+                precondition(abs(frames[2].minX - frames[0].minX) < 0.006, "Wrapped posters must align")
+            } else if window.bounds.width > 1000 {
+                precondition(abs(frames[2].midY - frames[0].midY) < 0.006, "Wide date groups must use adjacent slots")
+            }
+            precondition(text.contains { $0.0.contains("S38") && $0.0.contains("E6") }, "Missing episode caption")
+            precondition(text.contains { $0.0.contains("3 episodes") }, "Missing grouped episode count")
+        }
         if arguments.contains("--capture-scrolled") {
             guard let scroll = descendants(window).compactMap({ $0 as? UIScrollView }).first(where: {
                 $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height + 250
@@ -413,8 +447,9 @@ private struct UpcomingCaptureProvider: MediaProvider {
 
     static var releases: [UpcomingRelease] {
         let today = Calendar.current.startOfDay(for: Date())
-        var result = Self.series.prefix(3).enumerated().flatMap { index, item -> [UpcomingRelease] in
-            let day = Calendar.current.date(byAdding: .day, value: index == 0 ? 0 : 1, to: today)!
+        let dense = ProcessInfo.processInfo.arguments.contains("--capture-dense")
+        var result = Self.series.prefix(dense ? Self.series.count : 3).enumerated().flatMap { index, item -> [UpcomingRelease] in
+            let day = Calendar.current.date(byAdding: .day, value: dense || index == 0 ? 0 : 1, to: today)!
             let episodes = (0..<(index == 1 ? 3 : 1)).map { offset in
                 UpcomingEpisode(
                     seriesIdentity: .external(source: "capture", value: "\(index)"),

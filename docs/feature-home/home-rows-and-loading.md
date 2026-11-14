@@ -47,8 +47,12 @@ the shell's existing fallback. The mobile
 calendar is a native graphical date picker in a content-sized popover anchored to
 Calendar; selecting a date closes it. TV uses native secondary glass controls
 below the selected navigation chrome.
-Upcoming date headings use the shared rail typography, and mobile agenda labels
-use the shared card title and metadata sizes. Coming Soon uses full-size landscape
+Upcoming date headings use the shared rail typography. Each date uses standard
+poster cards with shared sizing, captions, artwork, and focus behavior. Fixed-width
+adaptive columns keep sparse dates left-aligned with normal card gaps and wrap
+busy dates rather than stretching compact entries across the page. Episode numbers
+or grouped episode counts appear in the poster's subtitle, without extra containers
+or changes to the underlying detail-navigation item. Coming Soon uses full-size landscape
 media cards on both platforms, with the shared Home headings, spacing, captions
 and mobile row footprint. Dates and episode information use the shared artwork
 status cue rather than a separate compact-row design.
@@ -58,6 +62,8 @@ Continue Watching, Coming Soon and Recently Added). These previews use sample
 dates/history and public artwork, not a signed-in account; Home's hero is disabled.
 Mobile previews mount the production `PlozziOSTabShell`, including its navigation
 and appearance bridges, with a seeded feed loader rather than live release lookup.
+`--capture-dense` puts five shows on one date and checks rendered poster spacing,
+phone wrapping, and single/grouped episode captions.
 They also support
 `--capture-scrolled`, `--capture-calendar` and
 `--capture-selection` to exercise pinned controls, the real calendar presentation

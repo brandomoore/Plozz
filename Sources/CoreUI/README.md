@@ -1,5 +1,9 @@
 # CoreUI
 
+`PosterCardView.captionSubtitle` supplies localized, caller-owned context in the
+normal caption and accessibility value without mutating media metadata. Omitting
+it preserves the standard provider subtitle and runtime.
+
 `HomeRowPreviewView` renders the actual Home rail presentation, not a separately
 scaled card sample. TV uses `MediaRowView`; mobile Home and the preview share
 `PlozziOSHomeRailLayout`, `PlozziOSMediaSection` and `PlozziOSMediaRailScroll`.

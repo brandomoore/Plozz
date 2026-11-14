@@ -278,12 +278,15 @@ extension HomeRowArrangementHostedTests {
         try await withWindow(size: CGSize(width: 390, height: 844)) {
             VStack {
                 PlozziOSMediaSection(title: Text("Today")) {
-                    Text("Matching title")
-                        .font(.system(size: PlozzMetrics.touch(density: .standard).cardTitleFontSize, weight: .semibold))
+                    PosterCardView(item: release.item, enablesAsyncArtworkFallback: false) {}
+                        .frame(width: PlozzMetrics.touch(density: .standard).cardSlotWidth(
+                            for: .poster, cardStyle: .borderless
+                        ))
                 }
                 UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
             }
             .environment(\.plozzMetrics, .touch(density: .standard))
+            .environment(\.plozzCardStyle, .borderless)
         } inspect: { window in
             let text = try await self.capture(window, name: "Shared Upcoming typography")
             for label in ["Today", "Matching title"] {
@@ -292,6 +295,51 @@ extension HomeRowArrangementHostedTests {
                 if let first = labels.first, let last = labels.last {
                     XCTAssertEqual(first.1.height, last.1.height, accuracy: 0.004, label)
                 }
+            }
+        }
+    }
+
+    func testUpcomingPostersStayAdjacentAndWrapBusyDates() async throws {
+        let now = Calendar.current.startOfDay(for: Date())
+        let titles = ["First show", "Second show", "Third show", "Fourth show", "Fifth show"]
+        let releases = titles.enumerated().flatMap { index, title in
+            UpcomingReleaseBuilder.episodes(
+                [.init(
+                    seriesIdentity: .external(source: "fixture", value: "\(index)"),
+                    seasonNumber: 1, episodeNumber: index + 1, title: nil,
+                    airDate: now, datePrecision: .dateOnly, source: .tvmaze,
+                    sourceURL: nil, refreshedAt: now
+                )],
+                for: MediaItem(id: "\(index)", title: title, kind: .series, allowsTitleBasedMetadataMatching: false)
+            )
+        }
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "poster-layout", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        let metrics = PlozzMetrics.touch(density: .standard)
+        let pitch = metrics.cardSlotWidth(for: .poster, cardStyle: .borderless)
+            + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: .borderless)
+        for width: CGFloat in [390, 1194] {
+            try await withWindow(size: CGSize(width: width, height: 1000)) {
+                UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
+                    .environment(\.plozzMetrics, metrics)
+                    .environment(\.plozzCardStyle, .borderless)
+                    .environment(\.horizontalSizeClass, width > 600 ? .regular : .compact)
+            } inspect: { window in
+                let text = try await self.capture(window, name: "Upcoming poster groups \(width)")
+                let frames = try titles.map { title in
+                    try XCTUnwrap(text.first { $0.0 == title }, title).1
+                }
+                XCTAssertEqual(frames[0].midY, frames[1].midY, accuracy: 0.005)
+                XCTAssertEqual((frames[1].minX - frames[0].minX) * width, pitch, accuracy: 3)
+                if width < 600 {
+                    XCTAssertLessThan(frames[2].midY, frames[0].midY)
+                    XCTAssertEqual(frames[2].minX, frames[0].minX, accuracy: 0.005)
+                } else {
+                    XCTAssertEqual(frames[4].midY, frames[0].midY, accuracy: 0.005)
+                }
+                XCTAssertTrue(text.contains { $0.0.contains("S1") && $0.0.contains("E1") })
             }
         }
     }

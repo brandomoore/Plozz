@@ -60,6 +60,13 @@ public struct UpcomingRelease: Identifiable, Equatable, Sendable {
         return "New episode"
     }
 
+    public var posterSubtitle: LocalizedStringResource? {
+        guard kind == .episode, let season = episodes.first?.seasonNumber else { return subtitle }
+        if episodes.count > 1 { return "S\(season) · \(episodes.count) episodes" }
+        if let number = episodes.first?.episodeNumber { return "S\(season) · E\(number)" }
+        return subtitle
+    }
+
     public static func titleKey(for item: MediaItem) -> String {
         for case .external(let source, let value) in MediaItemIdentity.identities(for: item) {
             return "\(item.kind.rawValue)|\(source)|\(value)"
