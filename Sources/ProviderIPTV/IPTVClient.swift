@@ -35,6 +35,16 @@ actor IPTVClient: ApplicationStorageParticipant {
     private let progress: @Sendable (IPTVImportProgress) -> Void
     var pendingCatalogRequestCount: Int { refreshWaiters.count }
     private var didReclaimJournal = false
+    private enum RefreshWork: String { case catalog, guide }
+    private struct RefreshAdmission {
+        let id: UUID
+        let kind: RefreshWork
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+    private var activeRefreshWork: UUID?
+    private var refreshAdmissions: [RefreshAdmission] = []
+    private var isClosed = false
+    var pendingRefreshAdmissionCount: Int { refreshAdmissions.count }
 
     private func reclaimJournalOnce() throws {
         try storageLifecycle.checkAccess()
@@ -73,6 +83,7 @@ actor IPTVClient: ApplicationStorageParticipant {
     func prepareForSuspension() {
         guard !storageLifecycle.isActive else { return }
         refresh?.cancel()
+        cancelRefreshAdmissions()
         didReclaimJournal = false
         do { try catalog.closeForSuspension() }
         catch { PlozzLog.networking.error("IPTV catalogue suspension close failed") }
@@ -249,6 +260,8 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     private func importCatalog(_ library: String) async throws {
+        let admission = try await acquireRefreshWork(.catalog)
+        defer { releaseRefreshWork(admission) }
         let diagnostic = IPTVSetupDiagnostics.current
         if credential.mode == .xtream,
            authenticatedAt.map({ Date().timeIntervalSince($0) > 300 }) != false {
@@ -709,9 +722,12 @@ actor IPTVClient: ApplicationStorageParticipant {
         guard credential.mode == .xtream else { return [] }
         let channel = try await record(channelID)
         guard let nativeID = channel.streamID else { throw AppError.notFound }
+        let admission = try await acquireRefreshWork(.guide)
+        defer { releaseRefreshWork(admission) }
         let data = try await object(url: endpoint(action: "get_simple_data_table", extra: [
             URLQueryItem(name: "stream_id", value: nativeID)
         ]))
+        guard !isClosed else { throw CancellationError() }
         if data.object("user_info").integer("auth") == 0 || data.integer("auth") == 0 {
             throw IPTVError.authentication
         }
@@ -735,7 +751,17 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     func guideDocument(from url: URL, retainsRawResponse: Bool = false) async throws -> XMLTVDownloadedDocument {
+        let response = try await guideResponse(from: url, retainsRawResponse: retainsRawResponse)
+        guard case .document(let document) = response else { throw IPTVError.malformed }
+        return document
+    }
+
+    func guideResponse(
+        from url: URL, previous: XMLTVGuideCacheMetadata? = nil, retainsRawResponse: Bool = false
+    ) async throws -> XMLTVGuideResponse {
         try Task.checkCancellation()
+        try storageLifecycle.checkAccess()
+        guard !isClosed else { throw CancellationError() }
         let refresh = currentGuideRefresh()
         if refresh?.missingURLs.contains(url) == true {
             IPTVGuideDiagnostics.request?.reuseGuideFailure()
@@ -747,17 +773,38 @@ actor IPTVClient: ApplicationStorageParticipant {
         }
         do {
             var attempt = 0
+            var validators = previous
+            var usedOrdinaryFallback = false
             while true {
-                let retryAfter = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
+                let attemptValidators = validators
+                let responsePolicy = OSAllocatedUnfairLock<(retryAfter: TimeInterval?, fallbackStatus: Int?)>(
+                    initialState: (nil, nil)
+                )
                 do {
-                    return try await downloadGuideData(from: url, retainsRawResponse: retainsRawResponse) { response in
-                        let delay = HTTPDate.retryAfter(response.value(forHTTPHeaderField: "Retry-After"))
-                        retryAfter.withLock { $0 = delay }
+                    return try await downloadGuideData(
+                        from: url, previous: attemptValidators, retainsRawResponse: retainsRawResponse
+                    ) { response in
+                        let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
+                        let canFallBack = attemptValidators?.hasValidator == true
+                            && attemptValidators?.permitsPersistence == true
+                            && attemptValidators?.responseURL == response.url
+                            && retryAfter == nil && [400, 405, 412, 431, 501].contains(response.statusCode)
+                        responsePolicy.withLock {
+                            $0 = (HTTPDate.retryAfter(retryAfter), canFallBack ? response.statusCode : nil)
+                        }
                     }
                 } catch {
                     try Task.checkCancellation()
+                    let policy = responsePolicy.withLock { $0 }
+                    if !usedOrdinaryFallback, let status = policy.fallbackStatus {
+                        validators = nil
+                        usedOrdinaryFallback = true
+                        PlozzLog.networking.info("IPTV_GUIDE event=conditionalFallback status=\(status)")
+                        continue
+                    }
+                    guard !usedOrdinaryFallback else { throw error }
                     guard let delay = Self.guideRetryDelay(
-                        after: error, attempt: attempt, retryAfter: retryAfter.withLock({ $0 })
+                        after: error, attempt: attempt, retryAfter: policy.retryAfter
                     ) else { throw error }
                     attempt += 1
                     PlozzLog.networking.info("IPTV_GUIDE event=retry attempt=\(attempt) delaySeconds=\(delay)")
@@ -804,18 +851,34 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     private func downloadGuideData(
-        from url: URL, retainsRawResponse: Bool,
+        from url: URL, previous: XMLTVGuideCacheMetadata?, retainsRawResponse: Bool,
         receivedResponse: @escaping @Sendable (HTTPURLResponse) -> Void
-    ) async throws -> XMLTVDownloadedDocument {
+    ) async throws -> XMLTVGuideResponse {
         if retainsRawResponse, let cachedGuide, cachedGuide.url == url, cachedGuide.expires > Date() {
             IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
-            return XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true)
+            return .document(XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true))
+        }
+        let admission = try await acquireRefreshWork(.guide)
+        defer { releaseRefreshWork(admission) }
+        // Another admitted reader may have populated the cache while this one waited.
+        if retainsRawResponse, let cachedGuide, cachedGuide.url == url, cachedGuide.expires > Date() {
+            IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
+            return .document(XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true))
         }
         let (bytes, response) = try await http.bytes(
             url: url, headers: credential.guideHeaders(for: url), guideRequest: true,
+            guideCache: previous,
             receivedResponse: receivedResponse
         )
         defer { bytes.task.cancel() }
+        let metadata = try XMLTVGuideCacheMetadata(response: response, previous: previous)
+        if response.statusCode == 304 {
+            if cachedGuide?.url == url { clearGuideCache() }
+            try Task.checkCancellation()
+            try storageLifecycle.checkAccess()
+            guard !isClosed else { throw CancellationError() }
+            return .notModified(metadata)
+        }
         let progress = ServerLiveTVGuideProgress.report
         // URLSession may decode Content-Encoding before yielding bytes.
         let encoding = response.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()
@@ -854,16 +917,14 @@ actor IPTVClient: ApplicationStorageParticipant {
             }
         }
         try Task.checkCancellation()
+        guard !isClosed else { throw CancellationError() }
+        try storageLifecycle.checkAccess()
         try writer.append(buffer)
         let data = try writer.finish()
         progress?(.init(stage: .downloading, completed: received, total: total))
-        let directives = (response.value(forHTTPHeaderField: "Cache-Control") ?? "").lowercased()
-            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        let maxAge = directives.first { $0.hasPrefix("max-age=") }
-            .flatMap { Double($0.dropFirst(8).trimmingCharacters(in: CharacterSet(charactersIn: "\""))) }
-        let duration = min(60, maxAge.flatMap { $0.isFinite ? max(0, $0) : nil } ?? 60)
+        let duration = min(60, max(0, metadata.expiresAt.timeIntervalSinceNow))
         clearGuideCache()
-        if retainsRawResponse, duration > 0, !directives.contains("no-store"), !directives.contains("no-cache") {
+        if retainsRawResponse, duration > 0, metadata.permitsPersistence {
             cachedGuide = (url, data, Date().addingTimeInterval(duration))
             let generation = guideCacheGeneration
             guideCacheExpiry = Task { [weak self] in
@@ -876,10 +937,10 @@ actor IPTVClient: ApplicationStorageParticipant {
             }
         }
         try Task.checkCancellation()
-        return XMLTVDownloadedDocument(
-            data: data, expiresAt: Date().addingTimeInterval(directives.contains("no-cache") ? 0 : duration),
-            permitsPersistence: !directives.contains("no-store")
-        )
+        return .document(XMLTVDownloadedDocument(
+            data: data, expiresAt: metadata.expiresAt,
+            permitsPersistence: metadata.permitsPersistence, cacheMetadata: metadata
+        ))
     }
 
     private func expireGuideCache(generation: UUID) {
@@ -900,10 +961,66 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     func cancel() {
+        isClosed = true
         refresh?.cancel()
+        cancelRefreshAdmissions()
         clearGuideCache()
         guideRefreshes.removeAll()
         http.cancel()
+    }
+
+    /// Catalogue and guide transfers share one provider account. Keep a started
+    /// transfer intact; admit queued catalogues before the next guide transfer.
+    private func acquireRefreshWork(_ kind: RefreshWork) async throws -> UUID {
+        try Task.checkCancellation()
+        try storageLifecycle.checkAccess()
+        guard !isClosed else { throw CancellationError() }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if activeRefreshWork == nil {
+                    activeRefreshWork = id
+                    continuation.resume()
+                } else {
+                    refreshAdmissions.append(.init(id: id, kind: kind, continuation: continuation))
+                    PlozzLog.networking.info("IPTV_REFRESH event=queued kind=\(kind.rawValue)")
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelRefreshAdmission(id) }
+        }
+        do {
+            try Task.checkCancellation()
+            try storageLifecycle.checkAccess()
+            guard !isClosed else { throw CancellationError() }
+            return id
+        } catch {
+            releaseRefreshWork(id)
+            throw error
+        }
+    }
+
+    private func releaseRefreshWork(_ id: UUID) {
+        precondition(activeRefreshWork == id)
+        activeRefreshWork = nil
+        guard !refreshAdmissions.isEmpty else { return }
+        let index = refreshAdmissions.firstIndex { $0.kind == .catalog } ?? 0
+        let next = refreshAdmissions.remove(at: index)
+        activeRefreshWork = next.id
+        next.continuation.resume()
+    }
+
+    private func cancelRefreshAdmission(_ id: UUID) {
+        guard let index = refreshAdmissions.firstIndex(where: { $0.id == id }) else { return }
+        refreshAdmissions.remove(at: index).continuation.resume(throwing: CancellationError())
+    }
+
+    private func cancelRefreshAdmissions() {
+        let waiting = refreshAdmissions
+        refreshAdmissions.removeAll()
+        for entry in waiting { entry.continuation.resume(throwing: CancellationError()) }
     }
 
     private func store(_ record: IPTVRecord, overwrite: Bool = true, into table: IPTVCatalog.Table = .entries) throws {

@@ -676,7 +676,7 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
             let summary = LiveTVGuideImport(
                 programs: [], matchedChannelCount: parsed.matchedChannelCount, guideChannelCount: parsed.guideChannelCount,
                 programCount: insertedProgramCount, coverageStart: parsed.coverageStart, coverageEnd: parsed.coverageEnd,
-                matches: parsed.matches, guideChannels: parsed.guideChannels
+                matches: parsed.matches, guideChannels: parsed.guideChannels, sourceProgramCount: parsed.sourceProgramCount
             )
             result = summary
             for (id, names) in summary.guideChannels where indexState == nil {
@@ -684,7 +684,7 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
                 try db.execute(
                     "INSERT INTO guide_channels(source,id,name,display_id,payload) VALUES(?,?,?,?,?)",
                     [.text(sourceID), .text(LiveTVChannelIdentity(key: try key()).fingerprint(id)),
-                     .text(names.first ?? ""), .text(option.displayID ?? ""), .blob(try seal(option, binding: binding))]
+                     .text(names.joined(separator: "\n")), .text(option.displayID ?? ""), .blob(try seal(option, binding: binding))]
                 )
             }
             try db.execute(
@@ -705,7 +705,15 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
 
     func guideIndexState(sourceID: String, sourceURL: URL) throws -> LiveTVGuideIndexState? {
         let db = try database()
-        return try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db)?.index
+        guard let document = try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db),
+              var state = document.index else { return nil }
+        // Rebuild old zero-row indexes once to establish the source count; a
+        // digest-only revalidation would leave that distinction unknown.
+        if let guide = document.guide, guide.sourceProgramCount == nil, guide.programCount == 0 { return nil }
+        if document.guide?.sourceProgramCount == 0, let checkedAt = state.cacheMetadata?.checkedAt {
+            state.expiresAt = min(state.expiresAt, checkedAt.addingTimeInterval(XMLTVGuideCacheMetadata.emptyResultMaximumAge))
+        }
+        return state
     }
 
     private func guideIndexDocument(
@@ -984,7 +992,7 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
         let entries = overrides.keys.sorted().map { [$0, overrides[$0] ?? ""] }
         let data = try catalogEncoder.encode(entries)
         return GuideSettings(
-            version: 2, provider: provider?.rawValue, lookbackDays: lookbackDays, lookaheadDays: lookaheadDays,
+            version: LiveTVXMLTVParser.cacheVersion, provider: provider?.rawValue, lookbackDays: lookbackDays, lookaheadDays: lookaheadDays,
             mappingsDigest: LiveTVChannelIdentity(key: try identityKey()).fingerprint(
                 String(decoding: data, as: UTF8.self)
             ),

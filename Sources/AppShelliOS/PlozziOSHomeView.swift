@@ -255,7 +255,17 @@ struct PlozziOSHomeView: View {
             requestIdentityResolver: { [seer = appModel.seerService] item in
                 guard await seer.isConfigured else { return nil }
                 return await ExternalTitleMetadataResolver.shared.tmdbID(for: item)
-            }
+            },
+            libraryTargetResolver: heroLibraryTargetResolver(
+                in: heroAccounts, identitySources: identitySources,
+                visibility: { [visibility = appModel.settings.homeVisibility] in
+                    await visibility.visibility
+                },
+                allowsDiscovery: { [hero = appModel.settings.hero] in
+                    await hero.allowsDiscovery
+                }
+            ),
+            hideWatched: appModel.settings.hero.effectiveSettings.hideWatched
         )
         self.viewModel = viewModel
         _discoveryIdentityRevision = State(initialValue: appModel.identityIndex.identityRevisionProvider())
@@ -1385,7 +1395,9 @@ struct PlozziOSHomeView: View {
             heroItems.filter { $0.kind == .series && heroPinnedItemIDs.contains($0.id) }
         })
         guard !Task.isCancelled else { return }
-        let curated = curator.deduplicating(enriched)
+        let curated = curator.reconcile(
+            curator.deduplicating(enriched), settings: settings, watchMutations: pendingMutations
+        )
         // Fold the fresh curation into what is already on screen rather than
         // replacing it, so a background refresh cannot reshuffle the carousel or
         // move the slide the viewer is looking at. Identical policy to tvOS,
@@ -1404,7 +1416,7 @@ struct PlozziOSHomeView: View {
         )
         let foldsIntoLoadedSet = heroCuratedConfiguration == configuration
             && heroCuratedDisabledLibraryKeys == disabledLibraryKeys
-        let updatedPool = result.candidatePool.updatingItems(curated)
+        let updatedPool = result.candidatePool.updatingItems(enriched)
         let sourceEligibility = heroSourceEligibility(
             content: content, randomLibraries: randomLibraries,
             candidates: heroItems + curated + updatedPool.buckets
@@ -1416,7 +1428,8 @@ struct PlozziOSHomeView: View {
                 heroItems,
                 settings: settings,
                 watchMutations: pendingMutations,
-                sourceEligibility: sourceEligibility
+                sourceEligibility: sourceEligibility,
+                verifiedWatchItems: enriched
             )
             : []
         let merge = HeroLiveMerge.merge(
