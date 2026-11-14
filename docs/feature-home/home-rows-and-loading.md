@@ -36,8 +36,11 @@ Media type lives inside Filters, rather than in a separate segmented control.
 Calendar, Filters and Today remain at the top while the agenda scrolls: mobile
 uses the native navigation toolbar, and TV uses native secondary glass controls
 below the selected navigation chrome.
-On mobile, Coming Soon uses the shared Home section heading and horizontal
-insets, with an intrinsic compact-card height instead of a poster-row footprint.
+Upcoming date headings use the shared rail typography, and mobile agenda labels
+use the shared card title and metadata sizes. Coming Soon uses full-size landscape
+media cards on both platforms, with the shared Home headings, spacing, captions
+and mobile row footprint. Dates and episode information use the shared artwork
+status cue rather than a separate compact-row design.
 The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and
 `--upcoming-capture-fixture --capture-home` (the production Home screen with
 Continue Watching, Coming Soon and Recently Added). These previews use sample

@@ -181,6 +181,7 @@
         let selectedDay: Date
         let wide: Bool
         let hide: (UpcomingRelease) -> Void
+        @Environment(\.plozzMetrics) private var metrics
 
         var body: some View {
             let calendar = Calendar.current
@@ -196,15 +197,22 @@
             LazyVStack(alignment: .leading, spacing: 28) {
                 ForEach(visibleDays, id: \.self) { day in
                     VStack(alignment: .leading, spacing: 12) {
-                        if calendar.isDateInToday(day) {
-                            Text("Today").font(.title2.bold())
-                        } else {
-                            Text(day, format: .dateTime.weekday(.wide).month(.abbreviated).day())
-                                .font(.title2.bold())
+                        Group {
+                            if calendar.isDateInToday(day) {
+                                Text("Today")
+                            } else {
+                                Text(day, format: .dateTime.weekday(.wide).month(.abbreviated).day())
+                            }
                         }
+                        #if os(tvOS)
+                        .font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
+                        #else
+                        .font(PlozziOSMediaRailLayout.headingFont)
+                        #endif
+                        .accessibilityAddTraits(.isHeader)
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                             ForEach(groups[day] ?? []) { release in
-                                UpcomingReleaseCard(release: release, showsDate: false)
+                                UpcomingReleaseCard(release: release)
                                     .contextMenu { Button("Hide title") { hide(release) } }
                             }
                         }
@@ -224,8 +232,7 @@
         private let onCardFocused: ((MediaItem) -> Void)?
         @Environment(\.mediaItemNavigator) private var navigate
         #if os(iOS)
-            @Environment(\.horizontalSizeClass) private var sizeClass
-            @Environment(\.plozzMetrics) private var metrics
+            @Environment(\.plozzCardStyle) private var cardStyle
         #endif
 
         public init(
@@ -256,54 +263,54 @@
                                 $0.item.stablePresentationID == item.stablePresentationID
                             })
                         else { return nil }
-                        let date = release.date.formatted(.dateTime.month(.abbreviated).day())
-                        if let subtitle = release.subtitle {
-                            return "\(date) · \(String(localized: subtitle))"
-                        }
-                        return LocalizedStringResource("\(date)")
+                        return statusCue(for: release)
                     },
                     onSelect: { navigate?($0) }
                 )
                 .browsingRow(onSeeAll)
             #elseif os(iOS)
-                PlozziOSMediaSection(title: title, onBrowse: onSeeAll) {
-                    ScrollView(.horizontal) {
-                        LazyHStack(alignment: .top, spacing: 20) {
+                PlozziOSHomeRailLayout { metrics in
+                    PlozziOSMediaSection(
+                        title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0,
+                        reservesBrowseSpace: true, onBrowse: onSeeAll
+                    ) {
+                        PlozziOSMediaRailScroll {
                             ForEach(releases) { release in
-                                UpcomingReleaseCard(release: release, showsDate: true)
-                                    .frame(width: 280)
+                                PosterCardView(
+                                    item: release.item, style: .landscape,
+                                    reservesSubtitleSpace: false, statusCue: statusCue(for: release)
+                                ) {
+                                    navigate?(release.item)
+                                }
+                                .frame(width: metrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle))
                             }
                         }
                     }
-                    .contentMargins(
-                        .horizontal,
-                        PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
-                        for: .scrollContent
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
-                    .scrollIndicators(.hidden)
-                    .scrollClipDisabled()
                 }
+                .environment(\.plozzCardCaptionView, .home)
             #endif
+        }
+
+        private func statusCue(for release: UpcomingRelease) -> LocalizedStringResource {
+            let date = release.date.formatted(.dateTime.month(.abbreviated).day())
+            if let subtitle = release.subtitle {
+                return "\(date) · \(String(localized: subtitle))"
+            }
+            return "\(date)"
         }
     }
 
     private struct UpcomingReleaseCard: View {
         let release: UpcomingRelease
-        let showsDate: Bool
         @Environment(\.mediaItemNavigator) private var navigate
         @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+        @Environment(\.plozzMetrics) private var metrics
 
         var body: some View {
             #if os(tvOS)
-                VStack(alignment: .leading, spacing: 8) {
-                    PosterCardView(
-                        item: release.item, style: .landscape, statusCue: release.subtitle
-                    ) { navigate?(release.item) }
-                    if showsDate {
-                        Text(release.date, format: .dateTime.month(.abbreviated).day()).font(.caption)
-                    }
-                }
+                PosterCardView(
+                    item: release.item, style: .landscape, statusCue: release.subtitle
+                ) { navigate?(release.item) }
             #else
                 Button {
                     navigate?(release.item)
@@ -324,13 +331,13 @@
                         .clipShape(.rect(cornerRadius: 8))
                         .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(verbatim: release.item.title).font(.headline).lineLimit(2)
+                            Text(verbatim: release.item.title)
+                                .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
+                                .lineLimit(2)
                             if let subtitle = release.subtitle {
-                                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            if showsDate {
-                                Text(release.date, format: .dateTime.month(.abbreviated).day())
-                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(subtitle)
+                                    .font(.system(size: metrics.cardSubtitleFontSize))
+                                    .foregroundStyle(.secondary)
                             }
                         }
                         Spacer(minLength: 0)

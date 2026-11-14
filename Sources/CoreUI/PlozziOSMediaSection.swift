@@ -3,6 +3,7 @@ import CoreModels
 import SwiftUI
 
 public enum PlozziOSMediaRailLayout {
+    public static let headingFont: Font = .title3.weight(.semibold)
     public static let sectionSpacing: CGFloat = 32
     public static let headingSpacing: CGFloat = 12
     public static let visibleSpacing: CGFloat = 12
@@ -78,7 +79,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
                     }
                     else { title }
                 }
-                    .font(.title3.weight(.semibold))
+                    .font(PlozziOSMediaRailLayout.headingFont)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)

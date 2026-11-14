@@ -123,7 +123,7 @@ extension HomeRowArrangementHostedTests {
     }
 
     #if os(iOS)
-    func testUpcomingHomeRowUsesNeighborInsetsAndCompactHeight() async throws {
+    func testUpcomingHomeRowUsesStandardRailGeometry() async throws {
         let release = try XCTUnwrap(UpcomingReleaseBuilder.movies(
             [.init(kind: .digital, date: Date(), regionCode: "US")],
             for: MediaItem(id: "saved-movie", title: "Saved movie", kind: .movie),
@@ -134,7 +134,8 @@ extension HomeRowArrangementHostedTests {
             section: LibrarySection(id: "coming-soon", title: "Coming Soon", style: .landscape, items: [release.item]),
             isLoading: false, failure: nil
         )
-        var height: CGFloat = 0
+        var upcomingHeight: CGFloat = 0
+        var standardHeight: CGFloat = 0
         try await withWindow(size: CGSize(width: 390, height: 844)) {
             ScrollView {
                 VStack(spacing: PlozziOSMediaRailLayout.sectionSpacing) {
@@ -146,8 +147,25 @@ extension HomeRowArrangementHostedTests {
                     ) {
                         UpcomingHomeRow(releases: [release], onSeeAll: {})
                     }
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
-                    PlozziOSMediaSection(title: Text("After")) { Color.clear.frame(height: 50) }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { upcomingHeight = $0 }
+                    PlozziOSHomeRowSlot(
+                        presentation: HomePresentationRow(
+                            choice: HomeRowChoice(
+                                id: .global(.recentlyAdded), title: "After", isProviderDefault: false
+                            ),
+                            source: .library(.init(
+                                section: LibrarySection(
+                                    id: "after", title: "After", style: .landscape, items: [release.item]
+                                ),
+                                isLoading: false, failure: nil
+                            ))
+                        ),
+                        captions: .default, continueWatchingLayout: .landscape,
+                        continueWatchingUsesSeriesArtwork: true
+                    ) {
+                        HomeRowPreviewView(title: Text("After"), items: [release.item], style: .landscape)
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { standardHeight = $0 }
                 }
             }
             .environment(\.horizontalSizeClass, .compact)
@@ -159,8 +177,40 @@ extension HomeRowArrangementHostedTests {
             let after = try XCTUnwrap(text.first { $0.0 == "After" }).1
             XCTAssertEqual(upcoming.minX, before.minX, accuracy: 0.01)
             XCTAssertEqual(upcoming.minX, after.minX, accuracy: 0.01)
-            XCTAssertGreaterThan(height, 96)
-            XCTAssertLessThan(height, 200, "Do not reserve a poster-sized slot for a compact release card.")
+            XCTAssertGreaterThan(standardHeight, 0)
+            XCTAssertEqual(upcomingHeight, standardHeight, accuracy: 1)
+        }
+    }
+
+    func testUpcomingAgendaUsesSharedRowTypography() async throws {
+        let now = Date()
+        let release = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: now, regionCode: "US")],
+            for: MediaItem(id: "saved-movie", title: "Matching title", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "typography-test", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: [release])
+        }
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            VStack {
+                PlozziOSMediaSection(title: Text("Today")) {
+                    Text("Matching title")
+                        .font(.system(size: PlozzMetrics.touch(density: .standard).cardTitleFontSize, weight: .semibold))
+                }
+                UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
+            }
+            .environment(\.plozzMetrics, .touch(density: .standard))
+        } inspect: { window in
+            let text = try await self.capture(window, name: "Shared Upcoming typography")
+            for label in ["Today", "Matching title"] {
+                let labels = text.filter { $0.0 == label }.sorted { $0.1.midY > $1.1.midY }
+                XCTAssertEqual(labels.count, 2)
+                if let first = labels.first, let last = labels.last {
+                    XCTAssertEqual(first.1.height, last.1.height, accuracy: 0.004, label)
+                }
+            }
         }
     }
     #endif
