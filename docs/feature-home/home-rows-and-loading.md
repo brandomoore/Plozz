@@ -33,7 +33,7 @@ available to reach the toolbar. Phone and tablet retain scrollable history.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.
-Calendar, Filters and Today remain at the top while the agenda scrolls: mobile
+Calendar and Filters remain at the top while the agenda scrolls: mobile
 uses the native navigation toolbar without a duplicate page title. The tab shell
 keeps its appearance bridge inside `NavigationStack`, so UIKit can recognize the
 stack and merge its inline-large toolbar into the iPad tab-bar line. Wrapping the

@@ -129,15 +129,25 @@ extension HomeRowArrangementHostedTests {
                     barItems += groups.flatMap(\.barButtonItems)
                     XCTAssertNotEqual(item.title, "Upcoming")
                 }
-                for title in ["Today", "Calendar", "Filters"] {
+                for title in ["Calendar", "Filters"] {
                     XCTAssertTrue(barItems.contains { $0.title == title }, title)
                 }
-                let today = try XCTUnwrap(barItems.first { $0.title == "Today" }?.customView)
-                XCTAssertTrue(today.window === window)
-                XCTAssertLessThan(today.convert(today.bounds, to: window).minY, window.safeAreaInsets.top + 20)
-                let controls = [today]
+                XCTAssertFalse(barItems.contains { $0.title == "Today" })
+                let navigationBar = try XCTUnwrap(descendants(window).compactMap { $0 as? UINavigationBar }.first {
+                    guard !$0.isHidden, $0.alpha > 0, $0.bounds.width > 0, let item = $0.topItem else {
+                        return false
+                    }
+                    let actions = (item.rightBarButtonItems ?? []) + item.trailingItemGroups.flatMap(\.barButtonItems)
+                    return ["Calendar", "Filters"].allSatisfy { title in actions.contains { $0.title == title } }
+                })
+                XCTAssertLessThanOrEqual(
+                    navigationBar.convert(navigationBar.bounds, to: window).maxY,
+                    window.safeAreaInsets.top + 64
+                )
+                let controls = [navigationBar]
                 #else
-                let controls = try ["upcoming.today", "upcoming.calendar", "upcoming.filters"].map { id in
+                XCTAssertNil(descendants(window).first { $0.accessibilityIdentifier == "upcoming.today" })
+                let controls = try ["upcoming.calendar", "upcoming.filters"].map { id in
                     try XCTUnwrap(descendants(window).first { $0.accessibilityIdentifier == id }, id)
                 }
                 #endif
@@ -170,7 +180,7 @@ extension HomeRowArrangementHostedTests {
                     try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
                 ))
                 #else
-                let calendar = try XCTUnwrap(controls[1] as? UIControl)
+                let calendar = try XCTUnwrap(controls[0] as? UIControl)
                 calendar.sendActions(for: .primaryActionTriggered)
                 #endif
                 let opened = try await self.capture(window, name: "Upcoming calendar from pinned toolbar")

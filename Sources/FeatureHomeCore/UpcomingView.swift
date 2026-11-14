@@ -14,7 +14,6 @@
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
         @State private var didScrollInitially = false
-        @State private var scrollRevision = 0
         private let interval: DateInterval
 
         public init(model: UpcomingFeedModel, interval: DateInterval) {
@@ -53,9 +52,6 @@
                     .onChange(of: selectedDay) { _, day in
                         proxy.scrollTo(day, anchor: .top)
                     }
-                    .onChange(of: scrollRevision) { _, _ in
-                        proxy.scrollTo(selectedDay, anchor: .top)
-                    }
                     .task(id: model.releases.isEmpty) {
                         if !model.releases.isEmpty, !didScrollInitially {
                             await Task.yield()
@@ -76,9 +72,6 @@
                 .navigationTitle("")
                 .toolbarTitleDisplayMode(.inlineLarge)
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        todayButton
-                    }
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         calendarButton
                         UpcomingFilterMenu(model: model)
@@ -92,14 +85,6 @@
                 }
                 #endif
             }
-        }
-
-        private var todayButton: some View {
-            Button("Today") {
-                selectedDay = Calendar.current.startOfDay(for: Date())
-                scrollRevision += 1
-            }
-            .accessibilityIdentifier("upcoming.today")
         }
 
         private var calendarButton: some View {
@@ -133,7 +118,6 @@
         #if os(tvOS)
             private var toolbarControls: some View {
                 HStack(spacing: 20) {
-                    todayButton
                     calendarButton
                     UpcomingFilterMenu(model: model)
                 }

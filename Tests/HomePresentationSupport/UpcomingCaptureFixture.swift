@@ -113,14 +113,21 @@ struct UpcomingCaptureFixture: View {
             let groups = item.leadingItemGroups + item.centerItemGroups + item.trailingItemGroups
             barItems += groups.flatMap(\.barButtonItems)
         }
-        for title in ["Today", "Calendar", "Filters"] {
+        for title in ["Calendar", "Filters"] {
             precondition(barItems.contains { $0.title == title }, "Missing Upcoming action: \(title)")
         }
-        guard let today = barItems.first(where: { $0.title == "Today" })?.customView, today.window === window else {
-            preconditionFailure("Upcoming Today action must be visible in the production toolbar")
+        precondition(!barItems.contains { $0.title == "Today" }, "Upcoming must not show a Today toolbar action")
+        guard let navigationBar = descendants(window).compactMap({ $0 as? UINavigationBar }).first(where: {
+            guard !$0.isHidden, $0.alpha > 0, $0.bounds.width > 0, let item = $0.topItem else {
+                return false
+            }
+            let actions = (item.rightBarButtonItems ?? []) + item.trailingItemGroups.flatMap(\.barButtonItems)
+            return ["Calendar", "Filters"].allSatisfy { title in actions.contains { $0.title == title } }
+        }) else {
+            preconditionFailure("Upcoming actions must have a visible native navigation bar")
         }
-        let before = today.convert(today.bounds, to: window)
-        precondition(before.minY < window.safeAreaInsets.top + 20, "Upcoming toolbar occupies a second row")
+        let before = navigationBar.convert(navigationBar.bounds, to: window)
+        precondition(before.maxY <= window.safeAreaInsets.top + 64, "Upcoming toolbar occupies a second row")
         if arguments.contains("--capture-scrolled") {
             guard let scroll = descendants(window).compactMap({ $0 as? UIScrollView }).first(where: {
                 $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height + 250
@@ -129,7 +136,7 @@ struct UpcomingCaptureFixture: View {
             }
             scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 250), animated: false)
             try await Task.sleep(for: .milliseconds(500))
-            precondition(abs(today.convert(today.bounds, to: window).minY - before.minY) < 2,
+            precondition(abs(navigationBar.convert(navigationBar.bounds, to: window).minY - before.minY) < 2,
                          "Upcoming actions moved while scrolling")
             precondition(!descendants(window).contains(where: {
                 $0.accessibilityIdentifier == "upcoming.navigationBackdrop"
