@@ -28,7 +28,7 @@ struct PlozziOSDiscoverView: View {
                         && appModel.navigationLibrariesScopeKey == scope
                         && appModel.settings.homeVisibility.visibility == visibility
                 }
-            )) { feed, items, loading, loadMore in
+            ), showsPageTitle: !isOverflowDestination) { feed, items, loading, loadMore in
                 PlozziOSHomeMediaRail(
                     title: Text(feed.title), items: items, style: .poster, appModel: appModel,
                     loadingPlaceholderCount: loading ? 6 : 0,
@@ -36,7 +36,7 @@ struct PlozziOSDiscoverView: View {
                 )
             }
             .id("\(scope)|\(appModel.seerService.connectionRevision)|\(locale.identifier)|\(visibility.disabledKeys.sorted())")
-            .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 PlozziOSSettingsToolbarItem(horizontalPlacement: .primaryAction, action: onShowSettings)
             }

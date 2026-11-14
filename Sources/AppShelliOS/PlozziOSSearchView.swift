@@ -51,6 +51,7 @@ struct PlozziOSSearchView: View {
                 isFocused: $isSearchFocused,
                 onShowSettings: onShowSettings
             )
+            .zIndex(1)
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
@@ -143,6 +144,7 @@ struct PlozziOSSearchView: View {
             .padding(.vertical)
         }
         .scrollDismissesKeyboard(.interactively)
+        .scrollClipDisabled()
     }
 
     private func provider(for item: MediaItem) -> (any MediaProvider)? {
@@ -169,11 +171,7 @@ private struct PlozziOSSearchHeader: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search"))
-                    .font(.largeTitle.bold())
-                    .foregroundStyle(palette.primaryText)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
+                PlozziOSPageHeading(navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search")))
                 if !hasVisibleSettingsNavigationEntry && !usesVerticalToolbar && !isOverflowDestination {
                     PlozziOSSettingsAvatarButton(action: onShowSettings)
                         .accessibilityIdentifier("search-settings-avatar")
@@ -290,7 +288,7 @@ private struct PlozziOSSearchResultCard: View {
     var body: some View {
         Group {
             if let provider {
-                MediaArtworkZoomLink(id: item.stablePresentationID) {
+                NavigationLink {
                     PlozziOSItemDetailView(
                         appModel: appModel,
                         provider: provider,

@@ -1,5 +1,9 @@
 # AppShell
 
+Mobile Downloads and Discover use the same large, leading page-heading style
+as Search. Their headings scroll with the page while native toolbar actions
+remain available; More destinations retain their inline navigation title.
+
 The composition root. Wires every other module into a single running app
 and owns the top-level navigation, profile selection, and provider
 registry.

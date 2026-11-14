@@ -58,6 +58,11 @@ uses a flat theme-aware capsule at rest, crossfading to native Liquid Glass
 while focused or holding a nonempty query on iOS 26 and later. Both background
 layers stay mounted so editing never replaces the text field. Reduce Transparency
 and older systems retain the flat surface; Reduce Motion skips the crossfade.
+Results start below the transparent header but draw beyond their scroll viewport
+behind its individual glass controls, without a full-width background. The
+header stays above the results for drawing and hit testing.
+Search results use a standard navigation push rather than an artwork zoom, so
+interactive Back does not scale the Search page into an inset background.
 The title/profile row collapses as search activates, moving that same field up
 and revealing a separate native Cancel button. Cancel clears the query and
 dismisses the keyboard; ending an empty search restores the title and profile.

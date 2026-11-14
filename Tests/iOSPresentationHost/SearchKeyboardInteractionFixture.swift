@@ -84,7 +84,7 @@ private actor SearchKeyboardProvider: MediaProvider {
             hasFailedRetry = true
             throw AppError.notFound
         }
-        return (1...(query == "many" ? 30 : 1)).map {
+        return (1...(query == "many" ? 60 : 1)).map {
             Self.result(id: String(format: "%02d", $0))
         }
     }

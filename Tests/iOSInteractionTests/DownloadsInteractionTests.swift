@@ -23,6 +23,57 @@ final class DownloadsInteractionTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testDownloadsHeadingScrollsAndSettingsRemainsAvailable() {
+        app.terminate()
+        app.launchArguments = ["--downloads-interaction-fixture", "--download-scroll"]
+        app.launch()
+        let heading = app.staticTexts["downloads-page-title"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(heading.frame.height, 30)
+        XCTAssertEqual(heading.label, "Downloads")
+        XCTAssertTrue(app.buttons["Download Settings"].isHittable)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "downloads-page-heading"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let initialY = heading.frame.minY
+        app.collectionViews.firstMatch.swipeUp()
+        XCTAssertTrue(!heading.isHittable || heading.frame.minY < initialY - 30)
+        XCTAssertTrue(app.buttons["Download Settings"].isHittable)
+    }
+
+    func testDiscoverHeadingScrollsWithItsRows() {
+        app.terminate()
+        app.launchArguments = ["--discover-fixture"]
+        app.launch()
+        let heading = app.staticTexts["discover-page-title"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(heading.frame.height, 30)
+        XCTAssertEqual(heading.frame.minX, 16, accuracy: 2)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "discover-page-heading"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let initialY = heading.frame.minY
+        app.swipeUp()
+        XCTAssertTrue(!heading.isHittable || heading.frame.minY < initialY - 30)
+    }
+
+    func testDownloadsHeadingRemainsVisibleWithoutLibraryContent() {
+        for (argument, message) in [
+            ("--download-empty", "No Downloads"), ("--download-unavailable", "Downloads Unavailable")
+        ] {
+            app.terminate()
+            app.launchArguments = ["--downloads-interaction-fixture", argument]
+            app.launch()
+            let heading = app.staticTexts["downloads-page-title"]
+            XCTAssertTrue(heading.waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts[message].exists)
+            XCTAssertLessThan(heading.frame.maxY, app.staticTexts[message].frame.minY)
+            XCTAssertTrue(app.buttons["Download Settings"].isHittable)
+        }
+    }
+
     func testDownloadingShowLongPressOpensShowDetails() {
         app.terminate()
         app.launchArguments = ["--downloads-interaction-fixture", "--download-details"]

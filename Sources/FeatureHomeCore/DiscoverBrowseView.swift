@@ -9,15 +9,19 @@ public struct DiscoverBrowseView<RowContent: View>: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationInset
     private let isActive: Bool
+    private let showsPageTitle: Bool
+    private var navigationTitles = NavigationTitles()
     private let rowContent: (DiscoverFeed, [MediaItem], Bool, (@MainActor () async -> Void)?) -> RowContent
 
     public init(
         model: DiscoverBrowseModel,
         isActive: Bool = true,
+        showsPageTitle: Bool = true,
         @ViewBuilder rowContent: @escaping (DiscoverFeed, [MediaItem], Bool, (@MainActor () async -> Void)?) -> RowContent
     ) {
         _model = State(initialValue: model)
         self.isActive = isActive
+        self.showsPageTitle = showsPageTitle
         self.rowContent = rowContent
     }
 
@@ -34,6 +38,12 @@ public struct DiscoverBrowseView<RowContent: View>: View {
                 .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationInset)
                 .padding(.trailing, PlozzTheme.Metrics.screenPadding)
                 .focusSection()
+                #elseif os(iOS)
+                if showsPageTitle {
+                    PlozziOSPageHeading(navigationTitles(NavigationLibraryLayout.discoverKey, default: Text("Discover")))
+                        .padding(.horizontal, 16)
+                        .accessibilityIdentifier("discover-page-title")
+                }
                 #endif
                 ForEach(model.visibleRows) { row in
                     let items = row.items.filter(model.filters.includes)
@@ -62,12 +72,15 @@ public struct DiscoverBrowseView<RowContent: View>: View {
                     .accessibilityIdentifier("discover-row-\(row.feed.rawValue)")
                 }
             }
-            .padding(.vertical, 24)
+            .padding(.top, topPadding)
+            .padding(.bottom, 24)
         }
         .scrollClipDisabled()
         .scrollsTopNavigation()
         #if os(iOS)
-        .navigationTitle("Discover")
+        .navigationTitle(showsPageTitle ? Text(verbatim: "")
+            : navigationTitles(NavigationLibraryLayout.discoverKey, default: Text("Discover")))
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 DiscoverFilterMenu(filters: $browse.filters).labelStyle(.iconOnly)
@@ -109,6 +122,14 @@ public struct DiscoverBrowseView<RowContent: View>: View {
         PlozzTheme.Metrics.screenPadding
         #else
         20
+        #endif
+    }
+
+    private var topPadding: CGFloat {
+        #if os(iOS)
+        showsPageTitle ? 8 : 24
+        #else
+        24
         #endif
     }
 }

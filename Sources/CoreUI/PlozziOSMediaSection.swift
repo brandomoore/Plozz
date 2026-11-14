@@ -2,6 +2,21 @@
 import CoreModels
 import SwiftUI
 
+public struct PlozziOSPageHeading: View {
+    private let title: Text
+    @Environment(\.themePalette) private var palette
+
+    public init(_ title: Text) { self.title = title }
+
+    public var body: some View {
+        title
+            .font(.largeTitle.bold())
+            .foregroundStyle(palette.primaryText)
+            .accessibilityAddTraits(.isHeader)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 public enum PlozziOSMediaRailLayout {
     public static let sectionSpacing: CGFloat = 32
     public static let headingSpacing: CGFloat = 12

@@ -109,6 +109,49 @@ final class SearchKeyboardInteractionTests: XCTestCase {
         XCTAssertEqual(field.value as? String, "many")
     }
 
+    func testSwipeBackRestoresSearchQueryAndResults() {
+        let field = launch()
+        focus(field)
+        field.typeText("result")
+        let result = app.staticTexts["Keyboard result 01"].firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 8))
+        result.tap()
+        XCTAssertTrue(app.buttons["Play"].firstMatch.waitForExistence(timeout: 8))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)
+            ))
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertEqual(field.value as? String, "result")
+        XCTAssertTrue(result.isHittable)
+        assertKeyboardDismissed()
+    }
+
+    func testResultsScrollUnderTheTransparentHeader() {
+        let field = launch()
+        focus(field)
+        field.typeText("many")
+        let first = app.staticTexts["Keyboard result 01"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 8))
+        results.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.15)).tap()
+        assertKeyboardDismissed()
+        let headerFrame = field.frame
+        results.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)
+            ))
+        XCTAssertEqual(field.frame.minY, headerFrame.minY, accuracy: 1)
+        XCTAssertTrue(app.buttons["Cancel search"].isHittable)
+        let cards = results.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Keyboard result"))
+        XCTAssertTrue(cards.allElementsBoundByIndex.contains {
+            $0.frame.minY < headerFrame.maxY && $0.frame.maxY > headerFrame.minY
+        }, app.debugDescription)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "search-results-behind-header"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testCancelRestoresTheHeaderAndSettingsOpensOnTheFirstTap() {
         let field = launch()
         focus(field)

@@ -24,24 +24,29 @@ struct PlozziOSDownloadsView: View {
         let library = appModel.isOfflineMode ? model.offlineLibrary : model.library
         Group {
             if let error = model.initializationError {
-                ContentUnavailableView(
-                    "Downloads Unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(error)
-                )
-            } else if library.isEmpty {
-                ContentUnavailableView(
-                    "No Downloads",
-                    systemImage: "arrow.down.circle",
-                    description: Text(
-                        "Download a movie or episode from its detail page to watch offline."
+                unavailableContent {
+                    ContentUnavailableView(
+                        "Downloads Unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(error)
                     )
-                )
+                }
+            } else if library.isEmpty {
+                unavailableContent {
+                    ContentUnavailableView(
+                        "No Downloads",
+                        systemImage: "arrow.down.circle",
+                        description: Text(
+                            "Download a movie or episode from its detail page to watch offline."
+                        )
+                    )
+                }
             } else {
                 libraryList(library)
             }
         }
-        .navigationTitle(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads")))
+        .navigationTitle(isOverflowDestination
+            ? navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads")) : Text(verbatim: ""))
         .task { await model.refreshArtwork() }
         .task(id: notificationPresentationID) {
             let navigation = PlozziOSDownloadNotificationNavigation.shared
@@ -73,7 +78,7 @@ struct PlozziOSDownloadsView: View {
                 )
             }
         }
-        .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
             // Compose with the page's actions; a separate ancestor toolbar can be displaced.
             if isOverflowDestination, let overflowNavigation {
@@ -114,6 +119,25 @@ struct PlozziOSDownloadsView: View {
         } message: {
             if let deletion = pendingBulkDeletion {
                 Text(deletion.message)
+            }
+        }
+    }
+
+    private var pageHeading: some View {
+        PlozziOSPageHeading(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads")))
+            .accessibilityIdentifier("downloads-page-title")
+    }
+
+    private func unavailableContent<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 0) {
+                    if !isOverflowDestination {
+                        pageHeading.padding(.horizontal, 16).padding(.top, 8)
+                    }
+                    content().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(minHeight: geometry.size.height)
             }
         }
     }
@@ -165,6 +189,12 @@ struct PlozziOSDownloadsView: View {
     private func libraryList(_ library: PlozziOSDownloadLibrary) -> some View {
         GeometryReader { proxy in
             List {
+                if !isOverflowDestination {
+                    pageHeading
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
+                }
                 if model.hasActiveTransfers && !appModel.isOfflineMode {
                     activeTransfersHeader
                         .labelStyle(.titleAndIcon)

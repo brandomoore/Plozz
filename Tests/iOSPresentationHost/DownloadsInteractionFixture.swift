@@ -36,7 +36,8 @@ struct DownloadsInteractionFixture: View {
                 disabledOrder: MetadataSourceAttribution.all.map(\.id)
             )
         }
-        var records = (1...12).map { index in
+        let count = ProcessInfo.processInfo.arguments.contains("--download-scroll") ? 24 : 12
+        var records = (1...count).map { index in
             DownloadedMediaRecord(
                 identity: .external(source: "plozz-account:fixture", value: "episode-\(index)"),
                 sourceKind: .managedHTTP, status: index == 1 ? .downloading : .completed,
@@ -71,6 +72,9 @@ struct DownloadsInteractionFixture: View {
                 )
             ]
         }
+        if ProcessInfo.processInfo.arguments.contains("--download-empty") {
+            records = []
+        }
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
             records: Dictionary(uniqueKeysWithValues: records.map { ($0.identityKey, $0) })
         )))
@@ -84,6 +88,9 @@ struct DownloadsInteractionFixture: View {
             startsActive: false, activityScheduler: nil,
             managedURLResolver: { _, _, _, _ in throw CancellationError() }
         ))
+        if ProcessInfo.processInfo.arguments.contains("--download-unavailable") {
+            _downloads = State(initialValue: PlozziOSDownloadsModel(initializationError: "Fixture storage unavailable."))
+        }
     }
 
     var body: some View {
