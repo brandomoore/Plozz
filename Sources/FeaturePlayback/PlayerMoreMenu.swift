@@ -225,7 +225,7 @@ public enum PlayerMoreMenu {
         var video: [UIMenuElement] = []
         if model.felConversion.isAvailable {
             let enabled = model.felConversion.isEnabled
-            video.append(UIAction(title: localized("Dolby Vision FEL conversion"), state: enabled ? .on : .off) { _ in
+            video.append(UIAction(title: localized("P7 FEL → P8.1 conversion"), state: enabled ? .on : .off) { _ in
                 guard actions.isCurrent() else { return }
                 actions.setDolbyVisionFELConversion(!enabled)
             })

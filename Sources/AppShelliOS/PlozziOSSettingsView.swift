@@ -2720,8 +2720,8 @@ struct PlozziOSPlaybackSettingsView: View {
             .settingsSearchGroup(["lossless-audio", "identify-songs"])
             if AppReleaseChannel.current.isBeta {
                 SettingsSectionGroup("Video") {
-                    Toggle("Dolby Vision FEL conversion", isOn: $model.settings.dolbyVisionFELConversion)
-                    Text("Estimates enhancement-layer brightness for supported videos. Turn off to use HDR10. Fine detail is not recovered.")
+                    Toggle("P7 FEL → P8.1 conversion", isOn: $model.settings.dolbyVisionFELConversion)
+                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
                         .settingsHelperText()
                         .fixedSize(horizontal: false, vertical: true)
                 }

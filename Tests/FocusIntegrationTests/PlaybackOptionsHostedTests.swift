@@ -19,7 +19,7 @@ final class PlaybackOptionsHostedTests: XCTestCase {
             probe.request(.row(3))
             try await self.waitUntil { probe.focus == .row(3) }
             try await Task.sleep(for: .milliseconds(350))
-            try self.assertFocusedText("Dolby Vision FEL conversion", in: window)
+            try self.assertFocusedText("P7 FEL → P8.1 conversion", in: window)
             XCTAssertTrue(try self.text(in: DetailTransitionSnapshot.image(of: window))
                 .contains { $0.text.contains("Playback Speed") })
             let rows = PlaybackOptionsPane.rows(

@@ -72,7 +72,7 @@ struct PlaybackOptionsPane: View {
         }
         var rows: [PlayerOptionsRowSpec] = []
         if model.felConversion.isAvailable {
-            rows.append(.init(slot: 3, title: "Dolby Vision FEL conversion", kind: .toggle(
+            rows.append(.init(slot: 3, title: "P7 FEL → P8.1 conversion", kind: .toggle(
                 isOn: model.felConversion.isEnabled,
                 flip: { actions.setDolbyVisionFELConversion(!model.felConversion.isEnabled) }
             )))

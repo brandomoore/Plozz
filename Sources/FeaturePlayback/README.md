@@ -1296,7 +1296,7 @@ disabled in load options and excluded by engine package traits. Their controls,
 search results and request fields are removed; legacy saved profile values are
 ignored. Ordinary surround audio, standard Dolby Vision playback and native
 E-AC-3/JOC stream-copy remain unchanged. Software playback uses channel PCM.
-The separate beta-only **Dolby Vision FEL conversion** setting defaults on per
+The separate beta-only **P7 FEL → P8.1 conversion** setting defaults on per
 profile. It uses native P8.1 curve folding, not full FEL reconstruction. Confirmed
 FEL playback exposes a session-only override in TV Playback/mobile Video options;
 off reloads at the current position and play/pause intent using HDR10. Unknown P7,

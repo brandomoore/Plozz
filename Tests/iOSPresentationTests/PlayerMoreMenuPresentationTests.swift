@@ -24,7 +24,7 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
             section: .video, actions: actions
         )
         let toggle = try XCTUnwrap(menu.children.first as? UIAction)
-        XCTAssertEqual(toggle.title, "Dolby Vision FEL conversion")
+        XCTAssertEqual(toggle.title, "P7 FEL → P8.1 conversion")
         XCTAssertEqual(toggle.state, .on)
         perform(toggle)
         XCTAssertEqual(choices, [false])

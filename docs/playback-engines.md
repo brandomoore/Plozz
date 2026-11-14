@@ -1116,7 +1116,7 @@ search result are removed on tvOS and iOS/iPadOS. The adapter explicitly sets
 package trait is disabled. Legacy `dolbyVisionFELEnabled` values are ignored when
 loading or transferring profile settings and omitted on the next save.
 
-Debug and TestFlight builds offer **Dolby Vision FEL conversion**, on by default
+Debug and TestFlight builds offer **P7 FEL → P8.1 conversion**, on by default
 and persisted per profile in Playback settings. Supported on-demand playback uses
 `DolbyVisionHandling.profile7KnownLayers`: confirmed MEL converts as before;
 confirmed FEL converts with per-scene brightness curve folding, not full picture
