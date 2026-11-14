@@ -168,6 +168,7 @@ extension HomeRowArrangementHostedTests {
                 XCTAssertGreaterThan(backdropFrame.maxY, frames[0].maxY)
                 XCTAssertEqual(backdrop.effect is UIBlurEffect, !reducedTransparency)
                 XCTAssertFalse(backdrop.isUserInteractionEnabled)
+                XCTAssertEqual(backdrop.mask?.bounds, backdrop.bounds)
                 if #available(iOS 26.0, *) {
                     XCTAssertEqual(scroll.topEdgeEffect.isHidden, reducedTransparency)
                     XCTAssertEqual(scroll.topEdgeEffect.style, .soft)

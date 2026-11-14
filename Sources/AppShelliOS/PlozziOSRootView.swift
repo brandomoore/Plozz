@@ -1036,23 +1036,29 @@ private struct UpcomingNavigationBarBackdrop: UIViewRepresentable {
 
     final class Backdrop: UIVisualEffectView {
         private let fade = CAGradientLayer()
+        private let fadeMask = UIView()
 
         init() {
             super.init(effect: nil)
             isUserInteractionEnabled = false
             accessibilityIdentifier = "upcoming.navigationBackdrop"
             fade.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
-            layer.mask = fade
+            fadeMask.layer.addSublayer(fade)
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            guard fadeMask.frame != bounds else { return }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            fade.frame = bounds
+            fadeMask.frame = bounds
+            fade.frame = fadeMask.bounds
             fade.locations = [0, NSNumber(value: Double(max(0, bounds.height - 32) / max(1, bounds.height))), 1]
+            // UIKit must copy the mask into its backdrop views; masking the outer layer loses the blur.
+            mask = nil
+            mask = fadeMask
             CATransaction.commit()
         }
     }

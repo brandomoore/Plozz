@@ -141,6 +141,7 @@ struct UpcomingCaptureFixture: View {
             precondition(abs(backdropFrame.minY) < 1 && backdropFrame.maxY > before.maxY)
             precondition(!backdrop.isUserInteractionEnabled, "The backdrop must not intercept toolbar actions")
             precondition((backdrop.effect is UIBlurEffect) != arguments.contains("--capture-opaque"))
+            precondition(backdrop.mask?.bounds == backdrop.bounds, "UIKit must own the correctly sized blur mask")
             if #available(iOS 26.0, *) {
                 precondition(
                     scroll.topEdgeEffect.isHidden == arguments.contains("--capture-opaque"),
