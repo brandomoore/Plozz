@@ -56,8 +56,6 @@ private struct SettingsFormHeader: View {
         guard showsBack else { return inheritedBackButton }
         return AnyView(
             SettingsBackButton { dismiss() }
-                .settingsWorkspaceEntry(route: route)
-                .settingsPageEntryFocus()
                 .accessibilityIdentifier("settings-workspace-back")
         )
     }
@@ -269,6 +267,7 @@ private struct SettingsFormRowContent: View {
                     }
                 }
                     .environment(\.settingsPageBackButton, nil)
+                    .settingsPageEntryFocus()
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let description = row.description {
                     SettingsRowDescription(text: description, accessory: row.descriptionAccessory)

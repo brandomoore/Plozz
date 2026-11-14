@@ -147,10 +147,10 @@ struct LiveTVSettingsPage<Content: View>: View {
                 }
                 .environment(\.settingsPageBackButton, inWorkspace ? AnyView(
                     SettingsBackButton { dismiss() }
-                        .settingsPageEntryFocus()
                         .accessibilityIdentifier("live-tv-settings-back")
                 ) : nil)
                 content()
+                    .settingsPageEntryFocus()
             }
             .frame(maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)

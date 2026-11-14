@@ -336,38 +336,14 @@ public final class SettingsNavigationModel {
 
 extension View {
     @ViewBuilder
-    func settingsWorkspaceEntry(_ isEntry: Bool = true, route: SettingsRoute? = nil) -> some View {
+    func settingsWorkspaceEntry(_ isEntry: Bool = true) -> some View {
         #if os(tvOS)
-        modifier(SettingsWorkspaceEntryFocus(isEntry: isEntry, route: route))
+        settingsPageEntryFocus(enabled: isEntry)
         #else
         self
         #endif
     }
 }
-
-#if os(tvOS)
-private struct SettingsWorkspaceEntryFocus: ViewModifier {
-    let isEntry: Bool
-    let route: SettingsRoute?
-    @Environment(SettingsNavigationModel.self) private var navigation: SettingsNavigationModel?
-    @FocusState private var focused: Bool
-    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
-
-    func body(content: Content) -> some View {
-        content
-            .focused($focused)
-            .task(id: navigation?.detailFocusRequest) {
-                guard searchRequest == nil, isEntry, let navigation, navigation.enteringDetail,
-                      navigation.path.last == route else { return }
-                focused = false
-                await Task.yield()
-                guard !Task.isCancelled, navigation.enteringDetail,
-                      navigation.path.last == route else { return }
-                focused = true
-            }
-    }
-}
-#endif
 
 extension EdgeInsets {
     /// The default uniform `SettingsPanel` inset — fine for text / non-row content.

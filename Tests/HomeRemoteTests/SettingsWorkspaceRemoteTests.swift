@@ -3,6 +3,52 @@ import Vision
 
 @MainActor
 final class SettingsWorkspaceRemoteTests: XCTestCase {
+    func testSettingsFirstEntryPrefersContentAndBackRestoresSource() throws {
+        #if targetEnvironment(simulator)
+        for style in ["tabBar", "rail", "sidebar"] {
+            let app = try launchSettings(style: style, syncEnabled: false)
+            defer { app.terminate() }
+            let appearance = section("appearance", in: app)
+            try focus(appearance, in: app)
+            XCUIRemote.shared.press(.select)
+            let theme = app.buttons["settings-page-theme"]
+            let firstEntry = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in self.hasFocus(theme) }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [firstEntry], timeout: 5), .completed,
+                           "A new category must start at its first row. \(app.debugDescription)")
+            XCTAssertFalse(hasFocus(pageBack("settings-category-back", in: app)))
+            capture("first-category-entry-\(style)", in: app)
+
+            let circadian = app.buttons["settings-page-night-shift"]
+            try focus(circadian, in: app)
+            XCUIRemote.shared.press(.select)
+            let off = app.buttons["Off"].firstMatch
+            let nestedEntry = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in self.hasFocus(off) }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [nestedEntry], timeout: 5), .completed,
+                           "A new nested page must start at its top control. \(app.debugDescription)")
+            capture("first-nested-entry-\(style)", in: app)
+            try focus(app.buttons["Always On"], in: app)
+            XCUIRemote.shared.press(.up)
+            let back = pageBack(in: app)
+            let backFocused = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in self.hasFocus(back) }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [backFocused], timeout: 5), .completed)
+            XCUIRemote.shared.press(.select)
+            let returned = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in self.hasFocus(circadian) }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed,
+                           "Back must restore the source row, not reset the retained parent to its first row.")
+        }
+        #else
+        throw XCTSkip("Simulator-only Settings entry review.")
+        #endif
+    }
+
     func testNewRowExitOnlyPromptsForChangesAndCanDiscard() throws {
         let app = try launchCollectionExitFixture()
         defer { app.terminate() }

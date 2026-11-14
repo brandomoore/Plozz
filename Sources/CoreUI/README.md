@@ -32,6 +32,14 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+New tvOS Settings pages enter their first content control, not the header Back
+button. `settingsPageEntryFocus` requests that control only on first entry and
+leaves search targeting and retained-parent restoration alone. Until native
+focus enters the page, `SettingsBackButton` renders the same enabled native
+control in a non-interactive hosting view; it does not dim the button. The
+original SwiftUI button returns as soon as entry succeeds. Keep the header's
+full-width focus section so Up from right-aligned controls still reaches Back.
+
 TV Settings editors can use `settingsPageBackConfirmation` to request confirmation
 for both the header Back button and remote Back on the current page. Pass `nil`
 when no unsaved changes need protection. Explicit `SettingsPageDismiss`

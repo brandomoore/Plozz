@@ -193,10 +193,10 @@ private struct LiveTVPreferencesPage<Content: View>: View {
                 SettingsPageHeader(title)
                     .environment(\.settingsPageBackButton, inWorkspace ? AnyView(
                         SettingsBackButton { dismiss() }
-                            .settingsPageEntryFocus()
                             .accessibilityIdentifier("live-tv-settings-back")
                     ) : nil)
                 content()
+                    .settingsPageEntryFocus()
             }
             .padding(.horizontal, SettingsFormMetrics.pageInset)
             .padding(.top, SettingsFormMetrics.pageTopInset)

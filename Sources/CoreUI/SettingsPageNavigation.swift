@@ -293,6 +293,12 @@ public struct SettingsPageStack<Route: Hashable, Root: View, Destination: View>:
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .frame(width: viewport.width, height: viewport.height, alignment: .top)
             .environment(\.settingsPageContext, context)
+            .background {
+                NativeFocusRegionObserver(isEnabled: context.requestsEntryFocus) {
+                    guard navigation.pages.last?.id == id, navigation.entryPageID == id else { return }
+                    navigation.entryPageID = nil
+                }
+            }
             .environment(\.isEnabled, isEnabled && interactive)
             .allowsHitTesting(interactive)
             .accessibilityElement(children: interactive ? .contain : .ignore)
@@ -315,7 +321,7 @@ private struct SettingsPageEntryFocus: ViewModifier {
         content
             .focused($focused)
             .task(id: context?.requestsEntryFocus) {
-                guard enabled, searchRequest?.revealed != false, context?.requestsEntryFocus == true else { return }
+                guard enabled, searchRequest == nil, context?.requestsEntryFocus == true else { return }
                 await Task.yield()
                 guard !Task.isCancelled else { return }
                 focused = true
@@ -365,7 +371,7 @@ private struct SettingsPageBackHandler: ViewModifier {
         content
             .environment(\.settingsPageBackButton, showsBack
                 ? AnyView(SettingsBackButton(action: requestBack)
-                    .settingsPageEntryFocus().accessibilityIdentifier("settings-workspace-back"))
+                    .accessibilityIdentifier("settings-workspace-back"))
                 : nil)
             .onPreferenceChange(SettingsPageBackConfirmationKey.self) { confirmation = $0 }
             .onExitCommand(perform: isCurrent && canGoBack ? requestBack : nil)
