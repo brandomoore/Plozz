@@ -49,6 +49,7 @@ final class DownloadsInteractionTests: XCTestCase {
         for (name, arguments, identifier) in [
             ("Music", ["--music-landing-fixture"], "music-settings-avatar"),
             ("Discover", ["--discover-fixture"], "discover-settings-avatar"),
+            ("Search", ["--search-keyboard-fixture"], "search-settings-avatar"),
             ("Downloads", ["--downloads-interaction-fixture"], "downloads-settings-avatar"),
             ("Downloads-empty", ["--downloads-interaction-fixture", "--download-empty"], "downloads-settings-avatar")
         ] {

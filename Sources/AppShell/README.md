@@ -7,6 +7,11 @@ Profiles, the Downloads gear and Discover filter share
 [CoreUI's page-action geometry](../CoreUI/README.md). Header owners do not add
 separate page-specific top or horizontal padding.
 
+Search uses the same header and action geometry, including its editing Cancel
+button. Its field, section headings, and artwork share the header's horizontal
+inset. The title still collapses while searching, and results scroll behind the
+transparent field header without replacing the text field.
+
 The composition root. Wires every other module into a single running app
 and owns the top-level navigation, profile selection, and provider
 registry.

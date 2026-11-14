@@ -57,10 +57,10 @@ final class SearchKeyboardInteractionTests: XCTestCase {
                 let observation = try XCTUnwrap(request.results?.first {
                     $0.topCandidates(1).first?.string == title
                 }, "Missing rendered \(title)")
-                XCTAssertEqual(try renderedLeadingEdge(of: observation, in: image), 16, accuracy: 3, title)
+                XCTAssertEqual(try renderedLeadingEdge(of: observation, in: image), 20, accuracy: 3, title)
             }
             let artwork = app.images["play.rectangle"].firstMatch
-            XCTAssertEqual(artwork.frame.minX, 16, accuracy: 1)
+            XCTAssertEqual(artwork.frame.minX, 20, accuracy: 1)
             let attachment = XCTAttachment(screenshot: screenshot)
             attachment.name = "search-leading-alignment-\(arguments.isEmpty ? "borderless" : "framed")"
             attachment.lifetime = .keepAlways
@@ -209,12 +209,19 @@ final class SearchKeyboardInteractionTests: XCTestCase {
 
     func testCancelRestoresTheHeaderAndSettingsOpensOnTheFirstTap() {
         let field = launch()
+        let profileFrame = app.buttons["search-settings-avatar"].frame
         focus(field)
         field.typeText("empty")
         XCTAssertFalse(app.buttons["search-settings-avatar"].isHittable)
-        app.buttons["Cancel search"].tap()
+        let cancel = app.buttons["Cancel search"]
+        XCTAssertEqual(cancel.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(cancel.frame.height, 44, accuracy: 1)
+        XCTAssertEqual(cancel.frame.midX, profileFrame.midX, accuracy: 1)
+        XCTAssertEqual(cancel.frame.midY, profileFrame.midY, accuracy: 1)
+        cancel.tap()
         assertKeyboardDismissed()
         XCTAssertFalse(app.buttons["Clear search"].exists)
+        XCTAssertEqual(app.buttons["search-settings-avatar"].frame, profileFrame)
         app.buttons["search-settings-avatar"].tap()
         XCTAssertTrue(app.staticTexts["search-fixture-settings"].waitForExistence(timeout: 5))
     }

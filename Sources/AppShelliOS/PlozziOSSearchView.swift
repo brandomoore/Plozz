@@ -125,7 +125,7 @@ struct PlozziOSSearchView: View {
             LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 ForEach(sections) { section in
                     PlozziOSMediaSection(
-                        title: Text(section.title), horizontalInset: 16,
+                        title: Text(section.title), horizontalInset: PlozziOSPageHeaderLayout.horizontalInset,
                         onHeadingTap: { isSearchFocused = false }
                     ) {
                         LazyVGrid(
@@ -142,7 +142,7 @@ struct PlozziOSSearchView: View {
                             }
                         }
                         .padding(.horizontal, PlozziOSMediaRailLayout.artworkAlignedInset(
-                            16, metrics: metrics, cardStyle: cardStyle
+                            PlozziOSPageHeaderLayout.horizontalInset, metrics: metrics, cardStyle: cardStyle
                         ))
                     }
                 }
@@ -176,8 +176,7 @@ private struct PlozziOSSearchHeader: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                PlozziOSPageHeading(navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search")))
+            PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search"))) {
                 if !hasVisibleSettingsNavigationEntry && !usesVerticalToolbar && !isOverflowDestination {
                     PlozziOSSettingsAvatarButton(action: onShowSettings)
                         .accessibilityIdentifier("search-settings-avatar")
@@ -190,16 +189,15 @@ private struct PlozziOSSearchHeader: View {
             .allowsHitTesting(!hidesTitle)
             .accessibilityHidden(hidesTitle)
 
-            HStack(spacing: 12) {
+            HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) {
                 searchField
                 if isActive {
                     cancelButton
                         .transition(.opacity)
                 }
             }
+            .padding(.horizontal, PlozziOSPageHeaderLayout.horizontalInset)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
         .padding(.bottom, 10)
         .animation(reduceMotion ? nil : .smooth(duration: 0.4), value: isActive)
     }
@@ -246,20 +244,12 @@ private struct PlozziOSSearchHeader: View {
         isFocused || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    @ViewBuilder
     private var cancelButton: some View {
-        let button = Button("Cancel search", systemImage: "xmark") {
+        Button("Cancel search", systemImage: "xmark") {
             query = ""
             isFocused = false
         }
-        .labelStyle(.iconOnly)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-        if #available(iOS 26.0, *), !reduceTransparency {
-            button.buttonStyle(.glass)
-        } else {
-            button.buttonStyle(.bordered)
-        }
+        .plozziOSPageAction()
     }
 
     @ViewBuilder
