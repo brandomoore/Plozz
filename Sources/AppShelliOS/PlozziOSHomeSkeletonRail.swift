@@ -29,9 +29,12 @@ struct PlozziOSHomeSkeletonRail: View {
     /// Matches Continue Watching's narrower, deeper series-artwork card shape.
     var showsSeriesArtwork: Bool = false
     var isLibraryRow = false
+    var isContinueWatching = false
 
     var body: some View {
-        PlozziOSHomeRailLayout { rail(metrics: $0) }
+        PlozziOSHomeRailLayout(
+            isContinueWatching: style == .landscape && (isContinueWatching || showsSeriesArtwork)
+        ) { rail(metrics: $0) }
             .environment(\.plozzShimmerEnabled, isVisible)
             .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
     }

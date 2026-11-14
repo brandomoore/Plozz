@@ -32,6 +32,15 @@ the page. Browse headings reserve chevron space before their action is available
 only actionable headings are buttons, with the native 44-point touch target.
 Library, featured, Continue Watching, and Live TV rows use their own geometry.
 
+On iPad, landscape Continue Watching fits complete cards and matches the next
+poster card's visible peek at the same viewport width. Standard density uses
+four cards in wide windows, three at intermediate widths, and two in narrow
+windows. Density and larger text can change that count to retain readable cards.
+Series-artwork and episode-thumbnail modes share this width policy, including
+their loading and reserved footprints. Poster-layout Continue Watching, other
+poster and landscape rails, iPhone sizing, and Mac's existing fitting policy are
+unchanged.
+
 The first progressive Home publication includes configured server and collection
 rows before provider responses arrive. Planning and fetching share the same
 active-account, server-user, enabled-library, and row-visibility filters.

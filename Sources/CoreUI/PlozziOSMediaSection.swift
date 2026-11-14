@@ -125,9 +125,11 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
     @State private var width: CGFloat = 0
+    private let isContinueWatching: Bool
     private let content: (PlozzMetrics) -> Content
 
-    public init(@ViewBuilder content: @escaping (PlozzMetrics) -> Content) {
+    public init(isContinueWatching: Bool = false, @ViewBuilder content: @escaping (PlozzMetrics) -> Content) {
+        self.isContinueWatching = isContinueWatching
         self.content = content
     }
 
@@ -135,7 +137,8 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
         let resolved = Self.posterMetrics(
             in: viewportWidth > 0 ? viewportWidth : width,
             inset: PlozziOSMediaRailLayout.pageInset(for: sizeClass),
-            metrics: metrics, cardStyle: cardStyle
+            metrics: metrics, cardStyle: cardStyle,
+            isContinueWatching: isContinueWatching && UIDevice.current.userInterfaceIdiom == .pad
         )
         content(resolved)
             .environment(\.plozzMetrics, resolved)
@@ -143,7 +146,8 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
     }
 
     public static func posterMetrics(
-        in width: CGFloat, inset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle
+        in width: CGFloat, inset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle,
+        isContinueWatching: Bool = false
     ) -> PlozzMetrics {
         if metrics.usesDesktopSizing {
             return metrics.fittingDesktopRail(in: width, cardStyle: cardStyle)
@@ -154,7 +158,18 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
         let count = max(width < 375 ? 2 : 3, floor((width - inset + gap) / 164))
         let standardWidth = (width - inset - count * gap) / (count + 0.28)
         let artworkWidth = max(44, standardWidth * CGFloat(metrics.density.scale))
-        return metrics.scalingPosters(by: artworkWidth / metrics.posterWidth)
+        let resolved = metrics.scalingPosters(by: artworkWidth / metrics.posterWidth)
+        guard isContinueWatching else { return resolved }
+        let frameInset = cardStyle == .framed ? metrics.cardInset : 0
+        let leadingInset = inset - frameInset
+        let posterStride = resolved.posterWidth + gap
+        // Align the next card's visible edge with the unchanged poster rails,
+        // rather than exposing a fraction of the much wider landscape card.
+        let peek = (width - leadingInset).truncatingRemainder(dividingBy: posterStride)
+        return resolved.fittingContinueWatchingRail(
+            in: width, leadingInset: leadingInset, peek: peek,
+            spacing: PlozziOSMediaRailLayout.visibleSpacing, cardStyle: cardStyle
+        )
     }
 }
 

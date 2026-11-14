@@ -2894,7 +2894,8 @@ struct PlozziOSHomeRowView: View {
                         ),
                     showsSeriesArtwork: row.kind == .continueWatching
                         && appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork,
-                    isLibraryRow: row.kind == .libraries
+                    isLibraryRow: row.kind == .libraries,
+                    isContinueWatching: row.kind == .continueWatching
                 )
             } else {
                 PlozziOSHomeMediaRail(
@@ -3063,7 +3064,7 @@ struct PlozziOSHomeMediaRail: View {
     @State private var seriesArtworkPrefetch = ArtworkPrefetchWindow()
 
     var body: some View {
-        PlozziOSHomeRailLayout { rail(metrics: $0) }
+        PlozziOSHomeRailLayout(isContinueWatching: showsResumeChip && style == .landscape) { rail(metrics: $0) }
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
