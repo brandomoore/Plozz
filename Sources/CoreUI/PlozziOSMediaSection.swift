@@ -2,6 +2,13 @@
 import CoreModels
 import SwiftUI
 
+public enum PlozziOSPageHeaderLayout {
+    public static let actionDiameter: CGFloat = 44
+    public static let profileInset: CGFloat = 2
+    public static let horizontalInset: CGFloat = 20
+    public static let actionSpacing: CGFloat = 12
+}
+
 public struct PlozziOSPageHeading: View {
     private let title: Text
     @Environment(\.themePalette) private var palette
@@ -27,27 +34,51 @@ public struct PlozziOSPageHeader<Actions: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) {
             PlozziOSPageHeading(title)
-            HStack(spacing: 12) { actions }
-                .labelStyle(.iconOnly)
-                .buttonBorderShape(.circle)
-                .controlSize(.large)
-                .modifier(PlozziOSPageActionStyle())
-                .fixedSize()
+            HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) { actions }.fixedSize()
         }
+        .frame(minHeight: PlozziOSPageHeaderLayout.actionDiameter)
+        .padding(.horizontal, PlozziOSPageHeaderLayout.horizontalInset)
+    }
+}
+
+public extension View {
+    func plozziOSPageAction(diameter: CGFloat = PlozziOSPageHeaderLayout.actionDiameter) -> some View {
+        modifier(PlozziOSPageActionStyle(diameter: diameter))
     }
 }
 
 private struct PlozziOSPageActionStyle: ViewModifier {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    let diameter: CGFloat
 
     func body(content: Content) -> some View {
+        let action = content
+            .labelStyle(PlozziOSPageActionLabelStyle(diameter: diameter))
+            .buttonStyle(.plain)
+            .fixedSize()
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
         if #available(iOS 26.0, *), !reduceTransparency {
-            content.buttonStyle(.glass)
+            action.glassEffect(.regular.interactive(), in: .circle)
         } else {
-            content.buttonStyle(.bordered)
+            action
+                .plozzFrostedBackground(Circle())
+                .plozzFrostedBorder(Circle())
         }
+    }
+}
+
+private struct PlozziOSPageActionLabelStyle: LabelStyle {
+    let diameter: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        Label(configuration)
+            .labelStyle(.iconOnly)
+            .font(.system(size: 20))
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
     }
 }
 

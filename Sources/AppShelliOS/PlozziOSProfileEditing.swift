@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import CoreUI
 import FeatureProfiles
 import SwiftUI
 
@@ -17,10 +18,21 @@ extension EnvironmentValues {
     }
 }
 
-struct PlozziOSSettingsToolbarItem: ToolbarContent {
+struct PlozziOSSettingsToolbarItem<LeadingActions: View>: ToolbarContent {
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
-    var horizontalPlacement: ToolbarItemPlacement = .topBarTrailing
+    let horizontalPlacement: ToolbarItemPlacement
+    let leadingActions: LeadingActions
     let action: () -> Void
+
+    init(
+        horizontalPlacement: ToolbarItemPlacement = .topBarTrailing,
+        @ViewBuilder leadingActions: () -> LeadingActions = { EmptyView() },
+        action: @escaping () -> Void
+    ) {
+        self.horizontalPlacement = horizontalPlacement
+        self.leadingActions = leadingActions()
+        self.action = action
+    }
 
     var body: some ToolbarContent {
         #if canImport(SwiftUI, _version: 8.0.85)
@@ -45,7 +57,14 @@ struct PlozziOSSettingsToolbarItem: ToolbarContent {
 
     private var profileItem: some ToolbarContent {
         ToolbarItem(placement: placement) {
-            PlozziOSSettingsAvatarButton(action: action)
+            HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) {
+                leadingActions
+                PlozziOSSettingsAvatarButton(
+                    diameter: usesVerticalToolbar ? 48 : PlozziOSPageHeaderLayout.actionDiameter,
+                    action: action
+                )
+            }
+            .fixedSize()
         }
     }
 
@@ -66,37 +85,26 @@ struct PlozziOSSettingsToolbarItem: ToolbarContent {
 /// Settings and shows "who's watching." Reads the active profile from the
 /// environment app model so any toolbar can drop it in with just an action.
 struct PlozziOSSettingsAvatarButton: View {
-    static var standardDiameter: CGFloat {
-        if #available(iOS 27.1, *) { 48 } else { 44 }
-    }
-
     @Environment(PlozziOSAppModel.self) private var appModel
-    var size: CGFloat = Self.standardDiameter - 8
+    var diameter: CGFloat = PlozziOSPageHeaderLayout.actionDiameter
     let action: () -> Void
 
     var body: some View {
         let profile = appModel.profiles.activeProfile
-        let button = Button(action: action) {
-            // Native toolbars can extract the Image without its view modifiers,
-            // especially on Mac. Bake the crop, size and original colors into
-            // the image while leaving the native button and hit target intact.
-            ProfileAvatarView(profile: profile, size: size, rendersAsImage: true)
+        Button(action: action) {
+            Label {
+                Text("Settings for \(profile.name)")
+            } icon: {
+                // Native toolbars can extract the Image without its modifiers.
+                // Bake the crop, size and original colors into the image.
+                ProfileAvatarView(
+                    profile: profile, size: diameter - 2 * PlozziOSPageHeaderLayout.profileInset,
+                    rendersAsImage: true
+                )
+            }
         }
-        .buttonBorderShape(.circle)
+        .plozziOSPageAction(diameter: diameter)
         .accessibilityLabel(Text("Settings for \(profile.name)"))
-        if #available(iOS 26.0, *) {
-            // Own one circular surface instead of joining the toolbar's shared
-            // glass. Fix both axes so native toolbar sizing cannot ovalize it.
-            button
-                .buttonStyle(.plain)
-                .padding(4)
-                .fixedSize()
-                .frame(width: size + 8, height: size + 8)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: .circle)
-        } else {
-            button
-        }
     }
 }
 

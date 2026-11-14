@@ -11,6 +11,8 @@ The mobile Music landing page puts its large title and the shell's shared circul
 profile button in one scrolling header. The header remains available during
 loading, empty, and failed states. Pushed music pages retain their own native
 navigation and actions.
+Header insets, action sizing and spacing come from
+[the shared mobile header](../CoreUI/README.md), with no Music-specific top offset.
 The mobile landing page and browse grids use the shared `AppBackground` inside
 their navigation stack, following the app theme and Gradient Backgrounds setting.
 Artwork-led detail pages and the player keep their separate backgrounds.

@@ -134,18 +134,15 @@ struct PlozziOSDownloadsView: View {
     private var downloadSettingsButton: some View {
         Button { showsDownloadSettings = true } label: {
             Label("Download Settings", systemImage: "gearshape")
-                // Size the label so the native control padding reaches the toolbar diameter.
-                .frame(width: PlozziOSSettingsAvatarButton.standardDiameter - 16,
-                       height: PlozziOSSettingsAvatarButton.standardDiameter - 16)
         }
-        .controlSize(.regular)
+        .plozziOSPageAction()
     }
 
     private func unavailableContent<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 0) {
-                    pageHeading.padding(.horizontal, 16).padding(.top, 8)
+                    pageHeading
                     content().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(minHeight: geometry.size.height)
@@ -203,7 +200,7 @@ struct PlozziOSDownloadsView: View {
                 pageHeading
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
                 if model.hasActiveTransfers && !appModel.isOfflineMode {
                     activeTransfersHeader
                         .labelStyle(.titleAndIcon)

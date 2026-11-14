@@ -23,6 +23,51 @@ final class DownloadsInteractionTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testHorizontalPageHeadersMatchHomeGeometry() throws {
+        app.terminate()
+        app.launchArguments = ["--home-hero-fixture", "--hero-native-chrome", "--hero-header-audio"]
+        app.launch()
+        let homeProfile = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings for ")).firstMatch
+        XCTAssertTrue(homeProfile.waitForExistence(timeout: 10))
+        let reference = homeProfile.frame
+        // Vertical toolbars have a different native layout, not a larger horizontal standard.
+        guard reference.midX > app.frame.width / 2 else {
+            throw XCTSkip("This comparison requires a horizontal iPhone toolbar.")
+        }
+        XCTAssertEqual(reference.width, 44, accuracy: 1)
+        XCTAssertEqual(app.frame.maxX - reference.maxX, 20, accuracy: 2)
+        let mute = app.buttons["trailer-mute"]
+        XCTAssertTrue(mute.exists)
+        XCTAssertEqual(mute.frame.width, reference.width, accuracy: 1)
+        XCTAssertEqual(mute.frame.height, reference.height, accuracy: 1)
+        XCTAssertEqual(mute.frame.midY, reference.midY, accuracy: 1)
+        XCTAssertEqual(reference.minX - mute.frame.maxX, 12, accuracy: 1)
+        let homeImage = XCTAttachment(screenshot: app.screenshot())
+        homeImage.name = "page-header-Home"
+        homeImage.lifetime = .keepAlways
+        add(homeImage)
+        for (name, arguments, identifier) in [
+            ("Music", ["--music-landing-fixture"], "music-settings-avatar"),
+            ("Discover", ["--discover-fixture"], "discover-settings-avatar"),
+            ("Downloads", ["--downloads-interaction-fixture"], "downloads-settings-avatar"),
+            ("Downloads-empty", ["--downloads-interaction-fixture", "--download-empty"], "downloads-settings-avatar")
+        ] {
+            app.terminate()
+            app.launchArguments = arguments
+            app.launch()
+            let profile = app.buttons[identifier]
+            XCTAssertTrue(profile.waitForExistence(timeout: 10), name)
+            XCTAssertEqual(profile.frame.width, reference.width, accuracy: 1, name)
+            XCTAssertEqual(profile.frame.height, reference.height, accuracy: 1, name)
+            XCTAssertEqual(profile.frame.midX, reference.midX, accuracy: 1, name)
+            XCTAssertEqual(profile.frame.midY, reference.midY, accuracy: 1, name)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "page-header-\(name)"
+            image.lifetime = .keepAlways
+            add(image)
+        }
+    }
+
     func testDownloadsHeadingAndActionsScrollTogether() {
         app.terminate()
         app.launchArguments = ["--downloads-interaction-fixture", "--download-scroll"]
@@ -36,9 +81,9 @@ final class DownloadsInteractionTests: XCTestCase {
         XCTAssertEqual(heading.frame.midY, settings.frame.midY, accuracy: 3)
         XCTAssertEqual(heading.frame.midY, app.buttons["Download Settings"].frame.midY, accuracy: 3)
         XCTAssertEqual(app.buttons["Download Settings"].frame.width, app.buttons["Download Settings"].frame.height, accuracy: 2)
-        let standardDiameter: CGFloat = if #available(iOS 27.1, *) { 48 } else { 44 }
-        XCTAssertEqual(app.buttons["Download Settings"].frame.height, standardDiameter, accuracy: 2,
-                       "The gear should use the native toolbar diameter, not the small inline-control size.")
+        XCTAssertEqual(app.buttons["Download Settings"].frame.height, 44, accuracy: 1)
+        XCTAssertEqual(settings.frame.height, 44, accuracy: 1)
+        XCTAssertEqual(settings.frame.minX - app.buttons["Download Settings"].frame.maxX, 12, accuracy: 1)
         let header = XCTAttachment(screenshot: app.screenshot())
         header.name = "downloads-standard-header"
         header.lifetime = .keepAlways
@@ -68,10 +113,12 @@ final class DownloadsInteractionTests: XCTestCase {
         let heading = app.staticTexts["Discover"].firstMatch
         XCTAssertTrue(heading.waitForExistence(timeout: 10))
         XCTAssertGreaterThan(heading.frame.height, 30)
-        XCTAssertEqual(heading.frame.minX, 16, accuracy: 2)
+        XCTAssertEqual(heading.frame.minX, 20, accuracy: 2)
         let settings = app.buttons["discover-settings-avatar"]
         XCTAssertEqual(heading.frame.midY, settings.frame.midY, accuracy: 3)
         XCTAssertEqual(heading.frame.midY, app.buttons["discover-filter-menu"].frame.midY, accuracy: 3)
+        XCTAssertEqual(app.buttons["discover-filter-menu"].frame.height, 44, accuracy: 1)
+        XCTAssertEqual(settings.frame.minX - app.buttons["discover-filter-menu"].frame.maxX, 12, accuracy: 1)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "discover-page-heading"
         attachment.lifetime = .keepAlways
@@ -105,7 +152,7 @@ final class DownloadsInteractionTests: XCTestCase {
         let profile = app.buttons["music-settings-avatar"]
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
         XCTAssertEqual(title.frame.midY, profile.frame.midY, accuracy: 3)
-        XCTAssertEqual(title.frame.minX, 16, accuracy: 2)
+        XCTAssertEqual(title.frame.minX, 20, accuracy: 2)
         profile.tap()
         XCTAssertTrue(app.staticTexts["Music settings opened"].waitForExistence(timeout: 3))
         app.buttons["Close fixture settings"].tap()

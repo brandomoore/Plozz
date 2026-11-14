@@ -3139,7 +3139,11 @@ struct PlozziOSHeroAudioMuteToolbarButton: View {
 
     var body: some View {
         Button(action: onToggle) {
-            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            Label {
+                Text(source.label(isMuted: isMuted))
+            } icon: {
+                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            }
         }
         .accessibilityLabel(Text(source.label(isMuted: isMuted)))
         .accessibilityIdentifier(source == .themeMusic ? "theme-music-mute" : "trailer-mute")

@@ -53,8 +53,6 @@ struct MusicLandingView<LandingActions: View>: View {
                     PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.musicKey, default: Text("Music"))) {
                         landingActions
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
                     .padding(.bottom, 20)
                     ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
                         MusicLandingContent(

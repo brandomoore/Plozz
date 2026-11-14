@@ -44,8 +44,6 @@ struct MusicLandingFixture: View {
                             PlozziOSSettingsAvatarButton { showsSettings = true }
                                 .accessibilityIdentifier("music-settings-avatar")
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
                         MusicLandingContent(
                             content: Self.content, controller: controller,
                             onSelectRoute: { path.append($0) }, onPlayTrack: { _ in }

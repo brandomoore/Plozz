@@ -151,6 +151,70 @@ final class ProfileToolbarPresentationTests: XCTestCase {
         try await assertPhotoGeometry(hasNeighbor: true, width: 430)
     }
 
+    func testPageActionsKeepRenderedGeometryWithReducedTransparency() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfile
+        defer { app.profiles.update(original) }
+        var profile = original
+        profile.avatarImageURL = try await photoURL().absoluteString
+        app.profiles.update(profile)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 440, height: 956)
+        let host = UIHostingController(rootView: AnyView(Color.clear))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for reduced in [false, true] {
+            host.rootView = AnyView(
+                NavigationStack {
+                    ScrollView {
+                        PlozziOSPageHeader(Text("Downloads")) {
+                            Button("Download Settings", systemImage: "gearshape", action: {})
+                                .foregroundStyle(.blue)
+                                .plozziOSPageAction()
+                            PlozziOSSettingsAvatarButton(action: {})
+                        }
+                        Color.clear.frame(height: 1_200)
+                    }
+                    .background(Color.black)
+                    .toolbar(.hidden, for: .navigationBar)
+                }
+                .environment(app)
+                .environment(\.themePalette, .dark)
+                .environment(\.plozzReduceTransparency, reduced)
+                .preferredColorScheme(.dark)
+                .tint(.blue)
+            )
+            try await Task.sleep(for: .milliseconds(400))
+            window.layoutIfNeeded()
+            let image = capture(window, name: "page-action-rendered-reduced-\(reduced)")
+            let photo = try greenPixelBounds(image)
+            let glyph = try pixelBounds(image) { r, g, b in b > 120 && Int(b) > Int(r) + 40 && g > 50 }
+            func surface(around ink: CGRect) throws -> CGRect {
+                let crop = CGRect(x: ink.midX - 28, y: ink.midY - 28, width: 56, height: 56).integral
+                let clipped = UIImage(cgImage: try XCTUnwrap(image.cgImage?.cropping(to: crop)))
+                return try pixelBounds(clipped) { r, g, b in max(r, g, b) > 12 }
+                    .offsetBy(dx: crop.minX, dy: crop.minY)
+            }
+            let profileSurface = try surface(around: photo)
+            let gearSurface = try surface(around: glyph)
+            for bounds in [profileSurface, gearSurface] {
+                XCTAssertEqual(bounds.width, 44, accuracy: 1)
+                XCTAssertEqual(bounds.height, 44, accuracy: 1)
+            }
+            XCTAssertEqual(photo.width, 40, accuracy: 1)
+            XCTAssertEqual(photo.midX, 398, accuracy: 1)
+            XCTAssertEqual(photo.midY, glyph.midY, accuracy: 1)
+            XCTAssertEqual(profileSurface.minX - gearSurface.maxX, 12, accuracy: 1)
+        }
+    }
+
     private func assertPhotoGeometry(hasNeighbor: Bool, width: CGFloat = 1024) async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfile
@@ -188,9 +252,9 @@ final class ProfileToolbarPresentationTests: XCTestCase {
             XCTAssertLessThan(Double(filledArea) / (profileGlass.width * profileGlass.height), 0.85,
                               "A square bounding box is insufficient: the glass must have circular corners.")
             XCTAssertEqual(photo.width, photo.height, accuracy: 1)
-            XCTAssertGreaterThanOrEqual((profileGlass.width - photo.width) / 2, 2)
-            XCTAssertLessThanOrEqual((profileGlass.width - photo.width) / 2, 5,
-                                    "Allow one pixel of antialiasing around the four-point image inset.")
+            XCTAssertGreaterThanOrEqual((profileGlass.width - photo.width) / 2, 1)
+            XCTAssertLessThanOrEqual((profileGlass.width - photo.width) / 2, 3,
+                                    "Keep the photo's two-point surround, allowing for rasterized edges.")
             if hasNeighbor {
                 let more = try self.pixelBounds(toolbar) { r, g, b in r > 180 && g > 50 && g < 180 && b < 60 }
                 let neighbor = [reference, more].min {

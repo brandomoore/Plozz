@@ -3,9 +3,9 @@
 Mobile Downloads, Discover, and Music use a large leading title beside their
 circular page actions. This single header row scrolls with the content. More
 navigation and the regular-width sidebar toggle retain their native bar.
-Profile buttons keep an explicit square frame for their circular glass in both
-native toolbars and scrolling headers. The Downloads gear matches that standard
-toolbar diameter rather than the smaller regular inline-control size.
+Profiles, the Downloads gear and Discover filter share
+[CoreUI's page-action geometry](../CoreUI/README.md). Header owners do not add
+separate page-specific top or horizontal padding.
 
 The composition root. Wires every other module into a single running app
 and owns the top-level navigation, profile selection, and provider
@@ -219,11 +219,11 @@ registry.
   with the top tabs. Sidebar transitions retain native placement. On iOS 26 and
   later, profile actions match the rendered size of neighboring circular toolbar
   controls, but keep their own circular glass surface separate from neighboring
-  header actions. A fixed-size native glass effect adds four-point padding
-  around the avatar (40 points on iOS 27.1+, 36 on iOS 26); the shared toolbar
+  header actions. The shared page-action surface retains a two-point surround
+  around the avatar; the shared toolbar
   background is hidden for this item so it cannot merge or stretch the circle.
   No second glass button style is added. Photos, emoji, and symbols keep their
-  original colors; pre-iOS 26 systems retain native toolbar styling.
+  original colors; reduced-transparency and pre-iOS 26 systems use the shared frosted surface.
   Home suppresses the full-width top-edge backdrop and the regular-width tab-bar
   background so the hero stays visible behind that row. The individual native
   glass controls remain; other destinations and compact bottom-tab backgrounds

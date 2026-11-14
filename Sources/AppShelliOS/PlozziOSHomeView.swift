@@ -386,7 +386,7 @@ struct PlozziOSHomeView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
         .toolbar {
-            if trailerController.isPlaying {
+            if trailerController.isPlaying && usesVerticalToolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     PlozziOSHeroAudioMuteToolbarButton(
                         isMuted: trailerController.isMuted,
@@ -394,7 +394,14 @@ struct PlozziOSHomeView: View {
                     )
                 }
             }
-            PlozziOSSettingsToolbarItem(action: onShowSettings)
+            PlozziOSSettingsToolbarItem(leadingActions: {
+                if trailerController.isPlaying && !usesVerticalToolbar {
+                    PlozziOSHeroAudioMuteToolbarButton(
+                        isMuted: trailerController.isMuted, onToggle: toggleTrailerMute
+                    )
+                    .plozziOSPageAction()
+                }
+            }, action: onShowSettings)
         }
         .task(
             id: PlozziOSHomeLoadID(

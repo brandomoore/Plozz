@@ -41,9 +41,9 @@ public struct DiscoverBrowseView<RowContent: View, PageActions: View>: View {
                 #elseif os(iOS)
                 PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.discoverKey, default: Text("Discover"))) {
                     DiscoverFilterMenu(filters: $browse.filters)
+                        .plozziOSPageAction()
                     pageActions
                 }
-                .padding(.horizontal, 16)
                 #endif
                 ForEach(model.visibleRows) { row in
                     let items = row.items.filter(model.filters.includes)
@@ -121,7 +121,7 @@ public struct DiscoverBrowseView<RowContent: View, PageActions: View>: View {
 
     private var topPadding: CGFloat {
         #if os(iOS)
-        8
+        0
         #else
         24
         #endif

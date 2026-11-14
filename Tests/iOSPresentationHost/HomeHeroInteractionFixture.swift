@@ -213,7 +213,17 @@ struct HomeHeroInteractionFixture: View {
             .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
             .toolbar {
                 if usesNativeChrome {
-                    PlozziOSSettingsToolbarItem {}
+                    if ProcessInfo.processInfo.arguments.contains("--hero-header-audio") && usesVerticalToolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            PlozziOSHeroAudioMuteToolbarButton(isMuted: true, onToggle: {})
+                        }
+                    }
+                    PlozziOSSettingsToolbarItem(leadingActions: {
+                        if ProcessInfo.processInfo.arguments.contains("--hero-header-audio") && !usesVerticalToolbar {
+                            PlozziOSHeroAudioMuteToolbarButton(isMuted: true, onToggle: {})
+                                .plozziOSPageAction()
+                        }
+                    }, action: {})
                 }
             }
         }
