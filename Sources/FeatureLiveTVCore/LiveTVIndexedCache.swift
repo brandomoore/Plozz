@@ -676,7 +676,7 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
             let summary = LiveTVGuideImport(
                 programs: [], matchedChannelCount: parsed.matchedChannelCount, guideChannelCount: parsed.guideChannelCount,
                 programCount: insertedProgramCount, coverageStart: parsed.coverageStart, coverageEnd: parsed.coverageEnd,
-                matches: parsed.matches, guideChannels: parsed.guideChannels
+                matches: parsed.matches, guideChannels: parsed.guideChannels, sourceProgramCount: parsed.sourceProgramCount
             )
             result = summary
             for (id, names) in summary.guideChannels where indexState == nil {
@@ -705,7 +705,15 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
 
     func guideIndexState(sourceID: String, sourceURL: URL) throws -> LiveTVGuideIndexState? {
         let db = try database()
-        return try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db)?.index
+        guard let document = try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db),
+              var state = document.index else { return nil }
+        // Rebuild old zero-row indexes once to establish the source count; a
+        // digest-only revalidation would leave that distinction unknown.
+        if let guide = document.guide, guide.sourceProgramCount == nil, guide.programCount == 0 { return nil }
+        if document.guide?.sourceProgramCount == 0, let checkedAt = state.cacheMetadata?.checkedAt {
+            state.expiresAt = min(state.expiresAt, checkedAt.addingTimeInterval(XMLTVGuideCacheMetadata.emptyResultMaximumAge))
+        }
+        return state
     }
 
     private func guideIndexDocument(

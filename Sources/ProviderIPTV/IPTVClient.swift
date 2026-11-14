@@ -773,19 +773,38 @@ actor IPTVClient: ApplicationStorageParticipant {
         }
         do {
             var attempt = 0
+            var validators = previous
+            var usedOrdinaryFallback = false
             while true {
-                let retryAfter = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
+                let attemptValidators = validators
+                let responsePolicy = OSAllocatedUnfairLock<(retryAfter: TimeInterval?, fallbackStatus: Int?)>(
+                    initialState: (nil, nil)
+                )
                 do {
                     return try await downloadGuideData(
-                        from: url, previous: previous, retainsRawResponse: retainsRawResponse
+                        from: url, previous: attemptValidators, retainsRawResponse: retainsRawResponse
                     ) { response in
-                        let delay = HTTPDate.retryAfter(response.value(forHTTPHeaderField: "Retry-After"))
-                        retryAfter.withLock { $0 = delay }
+                        let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
+                        let canFallBack = attemptValidators?.hasValidator == true
+                            && attemptValidators?.permitsPersistence == true
+                            && attemptValidators?.responseURL == response.url
+                            && retryAfter == nil && [400, 405, 412, 431, 501].contains(response.statusCode)
+                        responsePolicy.withLock {
+                            $0 = (HTTPDate.retryAfter(retryAfter), canFallBack ? response.statusCode : nil)
+                        }
                     }
                 } catch {
                     try Task.checkCancellation()
+                    let policy = responsePolicy.withLock { $0 }
+                    if !usedOrdinaryFallback, let status = policy.fallbackStatus {
+                        validators = nil
+                        usedOrdinaryFallback = true
+                        PlozzLog.networking.info("IPTV_GUIDE event=conditionalFallback status=\(status)")
+                        continue
+                    }
+                    guard !usedOrdinaryFallback else { throw error }
                     guard let delay = Self.guideRetryDelay(
-                        after: error, attempt: attempt, retryAfter: retryAfter.withLock({ $0 })
+                        after: error, attempt: attempt, retryAfter: policy.retryAfter
                     ) else { throw error }
                     attempt += 1
                     PlozzLog.networking.info("IPTV_GUIDE event=retry attempt=\(attempt) delaySeconds=\(delay)")

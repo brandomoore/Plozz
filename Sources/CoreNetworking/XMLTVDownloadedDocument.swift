@@ -26,6 +26,7 @@ public enum XMLTVGuideResponse: Sendable {
 /// Stored with the authorized parsed index, never in an unscoped URL cache.
 public struct XMLTVGuideCacheMetadata: Codable, Equatable, Sendable {
     public static let maximumAge: TimeInterval = 12 * 3_600
+    public static let emptyResultMaximumAge: TimeInterval = 60
     public let responseURL: URL
     public let etag: String?
     public let lastModified: String?
@@ -50,19 +51,27 @@ public struct XMLTVGuideCacheMetadata: Codable, Equatable, Sendable {
             throw URLError(.badServerResponse)
         }
         let previous = response.statusCode == 304 && previous?.responseURL == url ? previous : nil
-        func header(_ name: String) throws -> String? {
-            guard let value = response.value(forHTTPHeaderField: name) else { return nil }
+        var invalidCachePolicy = false
+        func header(_ name: String, fallback: String? = nil) -> String? {
+            guard let value = response.value(forHTTPHeaderField: name) else { return fallback }
             guard value.utf8.count <= 8_192, !value.contains("\r"), !value.contains("\n") else {
-                throw URLError(.badServerResponse)
+                PlozzLog.networking.info("XMLTV_CACHE event=ignoredHeader field=\(name)")
+                if name != "ETag", name != "Last-Modified" { invalidCachePolicy = true }
+                return nil
             }
             return value.isEmpty ? nil : value
         }
         responseURL = url
-        etag = try header("ETag") ?? previous?.etag
-        lastModified = try header("Last-Modified") ?? previous?.lastModified
-        cacheControl = try header("Cache-Control") ?? previous?.cacheControl ?? ""
-        expiresHeader = try header("Expires") ?? previous?.expiresHeader
+        etag = header("ETag", fallback: previous?.etag)
+        lastModified = header("Last-Modified", fallback: previous?.lastModified)
+        let returnedCacheControl = header("Cache-Control", fallback: previous?.cacheControl) ?? ""
+        expiresHeader = header("Expires", fallback: previous?.expiresHeader)
         checkedAt = now
+        let serverDate = header("Date").flatMap(HTTPDate.parse) ?? now
+        let age = header("Age").map { TimeInterval($0) ?? .infinity } ?? 0
+        // An unusable cache policy must not hide no-store/no-cache instructions.
+        // Continue with the XML, but neither persist nor reuse that response.
+        cacheControl = invalidCachePolicy ? "no-store, no-cache" : returnedCacheControl
         let directives = cacheControl.lowercased().split(separator: ",").map {
             $0.trimmingCharacters(in: .whitespaces)
         }
@@ -74,9 +83,7 @@ public struct XMLTVGuideCacheMetadata: Codable, Equatable, Sendable {
                   value.isFinite else { return 0 }
             return max(0, value)
         }
-        let serverDate = try header("Date").flatMap(HTTPDate.parse) ?? now
         let expires = expiresHeader.map { HTTPDate.parse($0)?.timeIntervalSince(serverDate) ?? 0 }
-        let age = try header("Age").map { TimeInterval($0) ?? .infinity } ?? 0
         let lifetime = min(Self.maximumAge, maxAges.min() ?? expires ?? Self.maximumAge)
         let currentAge = max(max(0, age), now.timeIntervalSince(serverDate))
         let noCache = directives.contains {

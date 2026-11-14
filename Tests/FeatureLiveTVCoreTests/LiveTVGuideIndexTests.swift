@@ -85,6 +85,81 @@ final class LiveTVGuideIndexTests: XCTestCase {
               permitsPersistence: metadata.permitsPersistence, cacheMetadata: metadata)
     }
 
+    func testTemporarilyEmptyFeedRetriesOnDemandAcrossRestorationAndRevalidation() async throws {
+        for status in [200, 304] {
+            for lifetime: TimeInterval in [30, 60] {
+                try await verifyEmptyFeedRecovery(status: status, lifetime: lifetime)
+            }
+        }
+    }
+
+    private func verifyEmptyFeedRecovery(status: Int, lifetime: TimeInterval) async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let clock = Mutex(now)
+        let channels = [channel("a")]
+        let headers = lifetime == 30 ? ["ETag": "\"v1\"", "Cache-Control": "max-age=30"] : ["ETag": "\"v1\""]
+        let original = try httpMetadata(headers: headers)
+        let empty = XMLTVDownloadedDocument(
+            data: Data("<tv/>".utf8), expiresAt: original.expiresAt, permitsPersistence: true, cacheMetadata: original
+        )
+        let index = LiveTVGuideIndex(cache: fixture.cache, clock: { clock.withLock { $0 } })
+        _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { empty }
+        let restored = LiveTVGuideIndex(cache: fixture.reopen(), clock: { clock.withLock { $0 } })
+        clock.withLock { $0 = original.checkedAt.addingTimeInterval(lifetime - 1) }
+        _ = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { _ in
+            XCTFail("Empty recovery is bounded, not a download on every navigation")
+            throw URLError(.badServerResponse)
+        }
+        let checked = original.checkedAt.addingTimeInterval(lifetime)
+        clock.withLock { $0 = checked }
+        let unchanged = try httpMetadata(headers: headers, status: status, previous: original, at: checked)
+        let before = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        let attempts = Mutex(0)
+        _ = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+            XCTAssertEqual(previous, original)
+            attempts.withLock { $0 += 1 }
+            return status == 304 ? .notModified(unchanged) : .document(.init(
+                data: empty.data, expiresAt: unchanged.expiresAt, permitsPersistence: true, cacheMetadata: unchanged
+            ))
+        }
+        XCTAssertEqual(attempts.withLock { $0 }, 1)
+        let after = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        XCTAssertEqual(before?.generation, after?.generation)
+        clock.withLock { $0 = checked.addingTimeInterval(lifetime) }
+        let updated = httpDocument(try httpMetadata(at: checked.addingTimeInterval(lifetime)))
+        let rows = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+            XCTAssertEqual(previous, unchanged)
+            return .document(updated)
+        }
+        XCTAssertEqual(rows.map(\.title), ["Bulletin"])
+    }
+
+    func testPopulatedFeedDoesNotRefetchEarlyForUnmatchedChannelsOrUnpopulatedWindows() async throws {
+        let cases = [
+            ([channel("missing", guideID: "missing", name: "Unmatched")], range),
+            ([channel("a")], DateInterval(start: now.addingTimeInterval(2 * 86_400), duration: 400))
+        ]
+        for (channels, requestedRange) in cases {
+            let fixture = try CacheFixture()
+            defer { fixture.removeOwnedFiles() }
+            let clock = Mutex(now)
+            let index = LiveTVGuideIndex(cache: fixture.cache, clock: { clock.withLock { $0 } })
+            let metadata = try httpMetadata()
+            let populated = httpDocument(metadata)
+            let first = try await index.programs(from: url, catalog: channels, channels: channels, range: requestedRange) {
+                populated
+            }
+            XCTAssertTrue(first.isEmpty)
+            clock.withLock { $0 = metadata.checkedAt.addingTimeInterval(60) }
+            let second = try await index.programs(from: url, catalog: channels, channels: channels, range: requestedRange) { _ in
+                XCTFail("A populated feed is not due simply because this query has no matches")
+                throw URLError(.badServerResponse)
+            }
+            XCTAssertTrue(second.isEmpty)
+        }
+    }
+
     func testRestoredIndexRevalidatesAtTwelveHoursWithoutRebuildingOrDownloadingWhileFresh() async throws {
         let fixture = try CacheFixture()
         defer { fixture.removeOwnedFiles() }

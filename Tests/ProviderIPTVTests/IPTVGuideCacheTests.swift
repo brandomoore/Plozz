@@ -69,6 +69,131 @@ final class IPTVGuideCacheTests: XCTestCase {
         return client
     }
 
+    func testRejectedConditionalRequestsFallBackToOneOrdinaryDownload() async throws {
+        for status in [400, 405, 412, 431, 501] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.value(forHTTPHeaderField: "If-None-Match") != nil {
+                    return (status, [:], Data())
+                }
+                XCTAssertNil(request.value(forHTTPHeaderField: "If-Modified-Since"))
+                return (200, ["ETag": "\"v1\"", "Last-Modified": "Wed, 21 Oct 2015 07:28:00 GMT"], Data("<tv/>".utf8))
+            }
+            let client = try client()
+            let first = try await client.guideDocument(from: guide)
+            let metadata = try XCTUnwrap(first.cacheMetadata)
+            let response = try await client.guideResponse(from: guide, previous: metadata)
+            guard case .document(let document) = response else { return XCTFail("Expected full fallback for \(status)") }
+            XCTAssertEqual(document.data, first.data)
+            XCTAssertEqual(IPTVFixture.state.requests.count, 3, "Seed, conditional request, ordinary fallback")
+            await client.cancel()
+        }
+    }
+
+    func testConditionalFallbackDoesNotBypassAuthorizationMissingFeedsOrRetryAfter() async throws {
+        for (status, headers) in [
+            (401, [String: String]()), (403, [:]), (404, [:]),
+            (429, ["Retry-After": "120"]), (503, ["Retry-After": "120"]), (400, ["Retry-After": "120"])
+        ] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { _ in (200, ["ETag": "\"v1\""], Data("<tv/>".utf8)) }
+            let client = try client()
+            let first = try await client.guideDocument(from: guide)
+            let metadata = try XCTUnwrap(first.cacheMetadata)
+            IPTVFixture.state.handler = { request in
+                XCTAssertEqual(request.value(forHTTPHeaderField: "If-None-Match"), "\"v1\"")
+                return (status, headers, Data())
+            }
+            do {
+                _ = try await client.guideResponse(from: guide, previous: metadata)
+                XCTFail("Refusal must remain an error: \(status)")
+            } catch {
+                switch status {
+                case 401, 403: XCTAssertEqual(error as? IPTVError, .authentication)
+                case 404: XCTAssertEqual(error as? AppError, .notFound)
+                case 429: XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: 120))
+                default: XCTAssertEqual(error as? IPTVError, .httpStatus(status))
+                }
+            }
+            XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+            await client.cancel()
+        }
+    }
+
+    func testFailedOrdinaryFallbackIsNotRetriedOrReportedAsSuccess() async throws {
+        IPTVFixture.state.handler = { _ in (200, ["ETag": "\"v1\""], Data("<tv/>".utf8)) }
+        let client = try client()
+        let first = try await client.guideDocument(from: guide)
+        let metadata = try XCTUnwrap(first.cacheMetadata)
+        IPTVFixture.state.handler = { request in
+            (request.value(forHTTPHeaderField: "If-None-Match") == nil ? 500 : 412, [:], Data())
+        }
+        do {
+            _ = try await client.guideResponse(from: guide, previous: metadata)
+            XCTFail("Failed fallback must stay visible")
+        } catch { XCTAssertEqual(error as? IPTVError, .httpStatus(500)) }
+        XCTAssertEqual(IPTVFixture.state.requests.count, 3)
+    }
+
+    func testOrdinaryRequestsCannotTriggerConditionalFallback() async throws {
+        for (owner, headers) in [
+            (guide, [String: String]()),
+            (guide.appendingPathComponent("different"), ["ETag": "\"v1\""])
+        ] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                XCTAssertNil(request.value(forHTTPHeaderField: "If-None-Match"))
+                XCTAssertNil(request.value(forHTTPHeaderField: "If-Modified-Since"))
+                return (412, [:], Data())
+            }
+            let metadata = try XMLTVGuideCacheMetadata(response: XCTUnwrap(HTTPURLResponse(
+                url: owner, statusCode: 200, httpVersion: nil, headerFields: headers
+            )))
+            let client = try client()
+            do {
+                _ = try await client.guideResponse(from: guide, previous: metadata)
+                XCTFail("No conditional headers were sent; an ordinary retry cannot help")
+            } catch { XCTAssertEqual(error as? IPTVError, .httpStatus(412)) }
+            XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+            await client.cancel()
+        }
+    }
+
+    func testOversizedCacheHeadersCannotRejectValidXMLTVOrPermitUnsafePersistence() async throws {
+        let oversized = String(repeating: "x", count: 8_193)
+        for header in ["ETag", "Last-Modified", "Cache-Control", "Expires", "Date", "Age"] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { _ in
+                (200, [header: header == "Cache-Control" ? oversized + ", no-store" : oversized], Data("<tv/>".utf8))
+            }
+            let client = try client()
+            let document = try await client.guideDocument(from: guide)
+            XCTAssertEqual(document.data, Data("<tv/>".utf8))
+            let metadata = try XCTUnwrap(document.cacheMetadata)
+            XCTAssertNil(metadata.etag)
+            XCTAssertNil(metadata.lastModified)
+            if header != "ETag", header != "Last-Modified" {
+                XCTAssertFalse(document.permitsPersistence, header)
+                XCTAssertFalse(metadata.isFresh(at: metadata.checkedAt), header)
+            } else {
+                XCTAssertTrue(document.permitsPersistence)
+            }
+            await client.cancel()
+        }
+    }
+
+    func testInvalid304ValidatorDoesNotResurrectTheOldValidator() throws {
+        let first = try XMLTVGuideCacheMetadata(response: XCTUnwrap(HTTPURLResponse(
+            url: guide, statusCode: 200, httpVersion: nil, headerFields: ["ETag": "\"v1\""]
+        )))
+        let updated = try XMLTVGuideCacheMetadata(response: XCTUnwrap(HTTPURLResponse(
+            url: guide, statusCode: 304, httpVersion: nil,
+            headerFields: ["ETag": String(repeating: "x", count: 8_193)]
+        )), previous: first)
+        XCTAssertNil(updated.etag)
+        XCTAssertNil(updated.applying(to: URLRequest(url: guide)).value(forHTTPHeaderField: "If-None-Match"))
+    }
+
     func testConditionalGuideResponsePreservesValidatorsAndHonorsUpdatedPolicy() async throws {
         let modified = "Wed, 21 Oct 2015 07:28:00 GMT"
         IPTVFixture.state.handler = { request in

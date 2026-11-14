@@ -7,6 +7,25 @@ import XCTest
 final class LiveTVServerGuideImportTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    func testEmptyIPTVWindowRetriesOnUseWithoutWaitingTwelveHours() async throws {
+        var time = now
+        let provider = WindowGuideProvider(channels: channels)
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        await imports.reload(into: model)
+        let one = try globalID("one", in: imports)
+        let end = now.addingTimeInterval(21_600)
+        time = now.addingTimeInterval(59)
+        await imports.reloadServerGuides(channelIDs: [one], from: now, to: end, into: model)
+        let fresh = await provider.guideCalls
+        XCTAssertEqual(fresh.count, 1)
+        time = now.addingTimeInterval(60)
+        await provider.replacePrograms([program("recovered")])
+        await imports.reloadServerGuides(channelIDs: [one], from: now, to: end, into: model)
+        XCTAssertEqual(model.currentProgram(for: one)?.title, "recovered")
+        let calls = await provider.guideCalls
+        XCTAssertEqual(calls.map(\.channelIDs), [["one", "two"], ["one"]])
+    }
+
     func testPerChannelIPTVWarmupOnlyRequestsInitialViewportThenDemandedChannel() async throws {
         let lineup = (0..<2_001).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
         let provider = WindowGuideProvider(channels: lineup, usesPerChannelLiveTVGuide: true)

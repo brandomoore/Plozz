@@ -524,6 +524,14 @@ to the exact final response URL: redirects do not send them to another resource.
 A changed catalog projection, language, or requested interval outside the retained
 window requires a full response because a 304 cannot supply unindexed rows.
 
+If the validator-owning resource rejects a conditional request with 400, 405,
+412, 431 or 501 and no Retry-After header, the client attempts one ordinary
+download without validators. A failed fallback remains an error, with no further
+retry. Authentication, missing-feed, throttling and redirect restrictions are
+not bypassed. Oversized or newline-bearing optional cache headers are discarded
+without rejecting valid XMLTV. Unusable cache-policy headers disable persistence
+and reuse for that response; invalid validators are never forwarded.
+
 An identical 200 response can still reuse the generation by digest comparison.
 No-store removes persisted source data before bounded transient parsing, including
 malformed replacements. A 304 no-store revokes the old index and requires an
@@ -537,6 +545,15 @@ Existing listings stay visible during refresh and ordinary failures remain
 observable without advancing freshness. Missing windows load on demand. This
 policy does not promise background execution while the OS suspends the app.
 Standalone prototype-source fetching retains its separate existing HTTP cache.
+
+Successful empty IPTV windows become retryable on use after 60 seconds. Truly
+empty XMLTV sources (no programme elements) use the same maximum negative-cache
+lifetime, honoring shorter HTTP freshness, including after restoration and
+304 or identical-200 revalidation. A populated feed with no matches or no rows
+in the requested window retains normal source freshness: an empty viewport is
+not a reason to repeatedly download the whole feed. Legacy zero-row indexes
+without a source programme count require one full rebuild to distinguish these
+cases. There is no new polling timer.
 
 Xtream without an explicit XMLTV URL advertises per-channel guide loading.
 Startup discovery and guide preparation warm only the first 12 channels, then

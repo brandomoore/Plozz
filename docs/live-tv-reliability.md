@@ -274,8 +274,13 @@ or a promise of OS background execution.
 Xtream channel schedules remain demand-driven. A provider capability limits
 startup and explicit preparation to the first viewport rather than issuing a
 request for every channel; browsing loads further channels as needed. XMLTV
-still indexes the complete catalog. Valid empty coverage is cached, not treated
-as a reason to repeatedly fetch a feed. Ordinary failed refreshes keep visible
+still indexes the complete catalog. Populated feeds with no matches or no rows
+in the requested window retain normal source freshness. A truly empty XMLTV
+source and a successful empty viewport instead use a 60-second on-demand
+negative cache, not 12 hours; shorter source HTTP freshness still applies.
+Restoration, 304 and identical-200 revalidation preserve that distinction.
+An empty viewport alone does not cause early whole-feed downloads.
+Ordinary failed refreshes keep visible
 listings and report the failure; they do not mark stale data fresh.
 
 Account XMLTV validators live inside the existing encrypted, authorization-scoped
@@ -285,6 +290,14 @@ does not invent more coverage. Redirected validators are attached only to the
 exact final resource that issued them, not other paths or hosts. A malformed 200
 replacement preserves committed rows and metadata. No-store revokes persistence,
 including a 304 no-store, which requires an unconditional replacement.
+
+Servers rejecting conditional headers with 400, 405, 412, 431 or 501 receive
+one ordinary fallback only when the response belongs to the validator-owning
+resource and has no Retry-After header. Its failure is surfaced without another
+retry. Authorization failures, missing feeds, throttling and redirect policies
+remain unchanged. Oversized or newline-bearing optional cache headers no longer
+reject otherwise usable XMLTV: validators are discarded, while unusable
+cache-policy headers disable persistence and freshness conservatively.
 
 Public response headers supported this design: Pluto advertised an ETag and
 300-second max-age; EPGShare advertised ETag, Last-Modified and 14,400-second
@@ -306,5 +319,10 @@ validators, the 12-hour boundary, changed 200 responses, 304 generation reuse,
 source/window eligibility, HTTP directives, redirect isolation, failures and
 bounded per-channel preparation. Existing cancellation, partial-result and
 account-isolation cases remain part of focused regression coverage.
+Compatibility regressions also exercise conditional rejection and refusal
+boundaries, unusable optional headers, empty-source recovery, and populated
+unmatched/out-of-window sources that must not refetch early. Captured public
+feed replay continues to match the 1,741 independently derived sample intervals;
+the imperfect-server cases are controlled fixtures, not paid-provider evidence.
 The public corpus does not establish subscriber-playlist matching or the
 distribution of paid-provider behaviors; no authorized paid account is available.

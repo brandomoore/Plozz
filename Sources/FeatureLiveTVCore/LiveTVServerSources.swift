@@ -128,6 +128,7 @@ public struct LiveTVServerGuideWindowStatus: Identifiable, Equatable, Sendable {
     public internal(set) var phase: LiveTVImportPhase = .idle
     public internal(set) var failure: LiveTVServerImportError?
     public internal(set) var lastRefresh: Date?
+    var isEmpty = false
 
     init(sourceID: String, channelIDs: [String], from: Date, to: Date, lastRefresh: Date? = nil) {
         id = UUID()

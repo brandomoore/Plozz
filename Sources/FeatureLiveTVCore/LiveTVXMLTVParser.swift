@@ -12,6 +12,7 @@ public struct LiveTVGuideImport: Codable, Sendable {
     public let matchedChannelCount: Int
     public let guideChannelCount: Int
     public let programCount: Int
+    public let sourceProgramCount: Int?
     public let coverageStart: Date?
     public let coverageEnd: Date?
     public let matches: [String: LiveTVGuideMatch]
@@ -25,7 +26,8 @@ public struct LiveTVGuideImport: Codable, Sendable {
         coverageStart: Date?,
         coverageEnd: Date?,
         matches: [String: LiveTVGuideMatch] = [:],
-        guideChannels: [String: [String]] = [:]
+        guideChannels: [String: [String]] = [:],
+        sourceProgramCount: Int? = nil
     ) {
         self.programs = programs
         self.matchedChannelCount = matchedChannelCount
@@ -35,6 +37,7 @@ public struct LiveTVGuideImport: Codable, Sendable {
         self.coverageEnd = coverageEnd
         self.matches = matches
         self.guideChannels = guideChannels
+        self.sourceProgramCount = sourceProgramCount
     }
 }
 
@@ -409,7 +412,8 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
             coverageStart: coverageStart,
             coverageEnd: coverageEnd,
             matches: assignments,
-            guideChannels: guideChannels
+            guideChannels: guideChannels,
+            sourceProgramCount: sourceProgramCount
         )
     }
 
