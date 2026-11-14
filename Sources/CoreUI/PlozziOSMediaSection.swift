@@ -17,6 +17,40 @@ public struct PlozziOSPageHeading: View {
     }
 }
 
+public struct PlozziOSPageHeader<Actions: View>: View {
+    private let title: Text
+    private let actions: Actions
+
+    public init(_ title: Text, @ViewBuilder actions: () -> Actions) {
+        self.title = title
+        self.actions = actions()
+    }
+
+    public var body: some View {
+        HStack(spacing: 12) {
+            PlozziOSPageHeading(title)
+            HStack(spacing: 12) { actions }
+                .labelStyle(.iconOnly)
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+                .modifier(PlozziOSPageActionStyle())
+                .fixedSize()
+        }
+    }
+}
+
+private struct PlozziOSPageActionStyle: ViewModifier {
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *), !reduceTransparency {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+
 public enum PlozziOSMediaRailLayout {
     public static let sectionSpacing: CGFloat = 32
     public static let headingSpacing: CGFloat = 12
@@ -68,12 +102,14 @@ public struct PlozziOSMediaSection<Content: View>: View {
     var reservesBrowseSpace = false
     var onSeeAll: (() -> Void)? = nil
     var onBrowse: (() -> Void)? = nil
+    var onHeadingTap: (() -> Void)? = nil
     @ViewBuilder var content: Content
 
     public init(
         title: Text, horizontalInset: CGFloat? = nil, artworkInset: CGFloat = 0,
         reservesBrowseSpace: Bool = false, onSeeAll: (() -> Void)? = nil,
-        onBrowse: (() -> Void)? = nil, @ViewBuilder content: () -> Content
+        onBrowse: (() -> Void)? = nil, onHeadingTap: (() -> Void)? = nil,
+        @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.horizontalInset = horizontalInset
@@ -81,6 +117,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
         self.reservesBrowseSpace = reservesBrowseSpace
         self.onSeeAll = onSeeAll
         self.onBrowse = onBrowse
+        self.onHeadingTap = onHeadingTap
         self.content = content()
     }
 
@@ -91,6 +128,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
                     if onBrowse != nil || reservesBrowseSpace || editAction != nil {
                         BrowseRowHeading(title: title, action: onBrowse)
                     }
+                    else if let onHeadingTap { title.onTapGesture(perform: onHeadingTap) }
                     else { title }
                 }
                     .font(.title3.weight(.semibold))

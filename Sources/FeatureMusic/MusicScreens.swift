@@ -21,20 +21,62 @@ private enum MusicLayout {
 
 // MARK: - Landing
 
-struct MusicLandingView: View {
+struct MusicLandingView<LandingActions: View>: View {
     @State var viewModel: MusicLandingViewModel
     @State private var retryRevision = 0
     let controller: AudioPlaybackController
     let onSelectRoute: (MusicRoute) -> Void
     let onPlayTrack: (MusicTrack) -> Void
     var layout: MusicLandingLayout = .default
+    let landingActions: LandingActions
+    private var navigationTitles = NavigationTitles()
+
+    init(
+        viewModel: MusicLandingViewModel, controller: AudioPlaybackController,
+        onSelectRoute: @escaping (MusicRoute) -> Void, onPlayTrack: @escaping (MusicTrack) -> Void,
+        layout: MusicLandingLayout = .default,
+        @ViewBuilder landingActions: () -> LandingActions = { EmptyView() }
+    ) {
+        _viewModel = State(initialValue: viewModel)
+        self.controller = controller
+        self.onSelectRoute = onSelectRoute
+        self.onPlayTrack = onPlayTrack
+        self.layout = layout
+        self.landingActions = landingActions()
+    }
 
     var body: some View {
-        ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
-            MusicLandingContent(
-                content: content, controller: controller, onSelectRoute: onSelectRoute,
-                onPlayTrack: onPlayTrack, layout: layout
-            )
+        Group {
+            #if os(iOS)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.musicKey, default: Text("Music"))) {
+                        landingActions
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 20)
+                    ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
+                        MusicLandingContent(
+                            content: content, controller: controller, onSelectRoute: onSelectRoute,
+                            onPlayTrack: onPlayTrack, layout: layout
+                        )
+                    }
+                }
+            }
+            .scrollsTopNavigation()
+            #else
+            ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
+                ScrollView {
+                    MusicLandingContent(
+                        content: content, controller: controller, onSelectRoute: onSelectRoute,
+                        onPlayTrack: onPlayTrack, layout: layout
+                    )
+                }
+                .scrollClipDisabled()
+                .scrollsTopNavigation()
+            }
+            #endif
         }
         .navigationEntryFocus(viewModel.state == .idle || viewModel.state.isLoading ? .pending : nil)
         .task(id: retryRevision) { await viewModel.load() }
@@ -75,19 +117,13 @@ struct MusicLandingContent: View {
 
     var body: some View {
         let firstSection = firstRenderedSection(content)
-        ScrollView {
-            VStack(alignment: .leading, spacing: sectionSpacing) {
-                ForEach(layout.visibleSections, id: \.self) { section in
-                    sectionView(section, content: content, isFirst: section == firstSection)
-                }
+        VStack(alignment: .leading, spacing: sectionSpacing) {
+            ForEach(layout.visibleSections, id: \.self) { section in
+                sectionView(section, content: content, isFirst: section == firstSection)
             }
-            .padding(.top, MusicLayout.isMobile ? 12 : metrics.rowSpacing)
-            .padding(.bottom, metrics.rowSpacing)
         }
-        #if os(tvOS)
-        .scrollClipDisabled()
-        #endif
-        .scrollsTopNavigation()
+        .padding(.top, MusicLayout.isMobile ? 0 : metrics.rowSpacing)
+        .padding(.bottom, metrics.rowSpacing)
     }
 
     /// The first section that will actually render given the loaded content, so

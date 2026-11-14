@@ -230,6 +230,8 @@ struct PresentationHostApp: App {
                 DetailSelectionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--content-refresh-return-fixture") {
                 ContentRefreshReturnFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--music-profile-fixture") {
+                MusicProfileFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--music-landing-fixture") {
                 MusicLandingFixture(
                     palette: ProcessInfo.processInfo.arguments.contains("--music-light") ? .light :

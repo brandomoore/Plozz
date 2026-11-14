@@ -55,6 +55,7 @@ struct PlozziOSMusicDestination: View {
     let onShowSettings: () -> Void
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflow
     @Environment(\.plozziOSOverflowNavigation) private var overflowNavigation
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
 
     var body: some View {
         MusicTabView(
@@ -69,12 +70,13 @@ struct PlozziOSMusicDestination: View {
             ),
             navigation: music.player.navigation,
             namespace: appModel.profiles.activeNamespace,
-            onNavigateBack: isOverflow ? { overflowNavigation?.returnToMore() } : nil
+            onNavigateBack: isOverflow ? { overflowNavigation?.returnToMore() } : nil,
+            keepsNavigationBar: usesVerticalToolbar
         ) {
-            PlozziOSSettingsToolbarItem(action: onShowSettings)
+            PlozziOSSettingsAvatarButton(action: onShowSettings)
+                .accessibilityIdentifier("music-settings-avatar")
         }
         .id(music.authorizationID)
-        .navigationTitle("Music")
     }
 }
 

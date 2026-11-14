@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import Vision
 
 @MainActor
 final class SearchKeyboardInteractionTests: XCTestCase {
@@ -37,6 +38,61 @@ final class SearchKeyboardInteractionTests: XCTestCase {
         XCTAssertEqual(field.value as? String, "empty")
     }
 
+    func testSearchArtworkCaptionsAndHeadingsAlignWithInput() throws {
+        for arguments in [[], ["--search-framed"]] {
+            let field = launch(arguments: arguments)
+            focus(field)
+            field.typeText("alignment")
+            XCTAssertTrue(app.staticTexts["Alpha"].firstMatch.waitForExistence(timeout: 8))
+            app.staticTexts["Movies"].tap()
+            assertKeyboardDismissed()
+            XCTAssertTrue(field.exists)
+            XCTAssertFalse(app.buttons["Play"].exists)
+            let screenshot = app.screenshot()
+            let image = try XCTUnwrap(screenshot.image.cgImage)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            for title in ["Movies", "Alpha"] {
+                let observation = try XCTUnwrap(request.results?.first {
+                    $0.topCandidates(1).first?.string == title
+                }, "Missing rendered \(title)")
+                XCTAssertEqual(try renderedLeadingEdge(of: observation, in: image), 16, accuracy: 3, title)
+            }
+            let artwork = app.images["play.rectangle"].firstMatch
+            XCTAssertEqual(artwork.frame.minX, 16, accuracy: 1)
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.name = "search-leading-alignment-\(arguments.isEmpty ? "borderless" : "framed")"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            app.terminate()
+        }
+    }
+
+    private func renderedLeadingEdge(of observation: VNRecognizedTextObservation, in image: CGImage) throws -> CGFloat {
+        // Vision's line boxes include variable whitespace; measure the visible glyphs inside them.
+        let bounds = observation.boundingBox
+        let rect = CGRect(
+            x: bounds.minX * CGFloat(image.width), y: (1 - bounds.maxY) * CGFloat(image.height),
+            width: bounds.width * CGFloat(image.width), height: bounds.height * CGFloat(image.height)
+        ).integral
+        let crop = try XCTUnwrap(image.cropping(to: rect))
+        var pixels = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: crop.width, height: crop.height, bitsPerComponent: 8,
+            bytesPerRow: crop.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        let leading = try XCTUnwrap((0..<crop.width).first { x in
+            (0..<crop.height).contains { y in
+                let offset = (y * crop.width + x) * 4
+                return pixels[offset] > 192 && pixels[offset + 1] > 192 && pixels[offset + 2] > 192
+            }
+        })
+        return (rect.minX + CGFloat(leading)) * app.frame.width / CGFloat(image.width)
+    }
+
     func testContentTapPreservesQueryAcrossSearchStates() {
         for (query, marker) in [
             ("empty", "No Results"), ("slow", "Searching"),
@@ -49,8 +105,7 @@ final class SearchKeyboardInteractionTests: XCTestCase {
                 NSPredicate(format: "label BEGINSWITH %@", marker)
             ).firstMatch.waitForExistence(timeout: 8), app.debugDescription)
             if query == "result" {
-                // The native scroll view's horizontal gutter is outside the result card.
-                results.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.15)).tap()
+                app.staticTexts["Movies"].tap()
             } else {
                 tapBelowHeader(field)
             }
@@ -133,7 +188,7 @@ final class SearchKeyboardInteractionTests: XCTestCase {
         field.typeText("many")
         let first = app.staticTexts["Keyboard result 01"].firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 8))
-        results.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.15)).tap()
+        app.staticTexts["Movies"].tap()
         assertKeyboardDismissed()
         let headerFrame = field.frame
         results.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))

@@ -7,6 +7,7 @@ import CoreUI
 struct PlozziOSSearchView: View {
     private var navigationTitles = NavigationTitles()
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
@@ -123,7 +124,10 @@ struct PlozziOSSearchView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 ForEach(sections) { section in
-                    PlozziOSMediaSection(title: Text(section.title)) {
+                    PlozziOSMediaSection(
+                        title: Text(section.title), horizontalInset: 16,
+                        onHeadingTap: { isSearchFocused = false }
+                    ) {
                         LazyVGrid(
                             columns: appModel.settings.density.density.iOSPosterGridColumns(
                                 horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
@@ -137,7 +141,9 @@ struct PlozziOSSearchView: View {
                                 )
                             }
                         }
-                        .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass))
+                        .padding(.horizontal, PlozziOSMediaRailLayout.artworkAlignedInset(
+                            16, metrics: metrics, cardStyle: cardStyle
+                        ))
                     }
                 }
             }
@@ -308,7 +314,7 @@ private struct PlozziOSSearchResultCard: View {
     private var card: some View {
         VStack(alignment: .leading, spacing: 6) {
             PlozziOSPosterCard(
-                item: item
+                item: item, captionHorizontalInset: 0
             )
             if let cue = SearchSection.availabilityCue(for: item) {
                 Label(cue, systemImage: "rectangle.stack.badge.plus")

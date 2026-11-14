@@ -3,27 +3,57 @@ import CoreUI
 @testable import FeatureMusic
 import SwiftUI
 import UIKit
+import FeatureAuth
+@testable import AppShelliOS
+
+struct MusicProfileFixture: View {
+    @State private var appModel = PlozziOSAppModel(accountStore: AccountStore(secureStore: InMemorySecureStore()))
+    @State private var music = PlozziOSMusicRuntime()
+    @State private var showsSettings = false
+
+    var body: some View {
+        PlozziOSMusicDestination(appModel: appModel, music: music, onShowSettings: { showsSettings = true })
+            .safeAreaInset(edge: .bottom) {
+                Button("Open fixture artist") {
+                    music.player.navigation.path.append(.artist(MusicArtist(id: "artist", name: "Fixture Artist")))
+                }
+            }
+            .environment(\.themePalette, .dark)
+            .sheet(isPresented: $showsSettings) { Text("Music settings opened") }
+            .environment(appModel)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            .preferredColorScheme(.dark)
+            .onDisappear { music.player.stop() }
+    }
+}
 
 struct MusicLandingFixture: View {
     @State private var controller = AudioPlaybackController()
     @State private var path: [MusicRoute] = []
+    @State private var showsSettings = false
+    @State private var appModel = PlozziOSAppModel(accountStore: AccountStore(secureStore: InMemorySecureStore()))
     let palette: ThemePalette
     let textSize: DynamicTypeSize
 
     var body: some View {
         TabView {
             NavigationStack(path: $path) {
-                MusicLandingContent(
-                    content: Self.content, controller: controller,
-                    onSelectRoute: { path.append($0) }, onPlayTrack: { _ in }
-                )
-                .background(palette.backgroundBase)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Back", systemImage: "chevron.backward") {}
-                            .labelStyle(.iconOnly)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        PlozziOSPageHeader(Text("Music")) {
+                            PlozziOSSettingsAvatarButton { showsSettings = true }
+                                .accessibilityIdentifier("music-settings-avatar")
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        MusicLandingContent(
+                            content: Self.content, controller: controller,
+                            onSelectRoute: { path.append($0) }, onPlayTrack: { _ in }
+                        )
                     }
                 }
+                .background(palette.backgroundBase)
+                .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: MusicRoute.self) { route in
                     switch route {
                     case let .grid(kind):
@@ -43,6 +73,13 @@ struct MusicLandingFixture: View {
             .tabItem { Label("Music", systemImage: "music.note") }
             Text("Library").tabItem { Label("Library", systemImage: "square.stack") }
         }
+        .sheet(isPresented: $showsSettings) {
+            VStack {
+                Text("Music settings opened")
+                Button("Close fixture settings") { showsSettings = false }
+            }
+        }
+        .environment(appModel)
         .environment(\.themePalette, palette)
         .environment(\.dynamicTypeSize, textSize)
         .environment(\.plozzMetrics, .touch(density: .standard, dynamicTypeSize: textSize))

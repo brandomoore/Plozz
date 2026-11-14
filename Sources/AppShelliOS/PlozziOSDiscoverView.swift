@@ -10,6 +10,8 @@ struct PlozziOSDiscoverView: View {
     let onShowSettings: () -> Void
     @Environment(\.locale) private var locale
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
 
     var body: some View {
         if appModel.isActiveProfileAuthorized, !appModel.profiles.activeProfile.isKids {
@@ -28,7 +30,10 @@ struct PlozziOSDiscoverView: View {
                         && appModel.navigationLibrariesScopeKey == scope
                         && appModel.settings.homeVisibility.visibility == visibility
                 }
-            ), showsPageTitle: !isOverflowDestination) { feed, items, loading, loadMore in
+            ), pageActions: {
+                PlozziOSSettingsAvatarButton(action: onShowSettings)
+                    .accessibilityIdentifier("discover-settings-avatar")
+            }) { feed, items, loading, loadMore in
                 PlozziOSHomeMediaRail(
                     title: Text(feed.title), items: items, style: .poster, appModel: appModel,
                     loadingPlaceholderCount: loading ? 6 : 0,
@@ -37,9 +42,8 @@ struct PlozziOSDiscoverView: View {
             }
             .id("\(scope)|\(appModel.seerService.connectionRevision)|\(locale.identifier)|\(visibility.disabledKeys.sorted())")
             .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                PlozziOSSettingsToolbarItem(horizontalPlacement: .primaryAction, action: onShowSettings)
-            }
+            .toolbar(sizeClass == .compact && !isOverflowDestination && !usesVerticalToolbar ? .hidden : .visible,
+                     for: .navigationBar)
         }
     }
 }

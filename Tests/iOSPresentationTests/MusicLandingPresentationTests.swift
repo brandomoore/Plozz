@@ -94,10 +94,10 @@ final class MusicLandingPresentationTests: XCTestCase {
         let artworkURL = try XCTUnwrap(content.albums.first?.artworkURL)
         let artwork = await ArtworkImageCache.shared.image(for: artworkURL, variant: .original)
         XCTAssertNotNil(artwork, "Resolve fixture artwork before measuring its edge")
-        let view = MusicLandingContent(
+        let view = ScrollView { MusicLandingContent(
             content: content, controller: controller,
             onSelectRoute: { _ in }, onPlayTrack: { _ in }
-        )
+        ) }
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette == .light ? .light : .dark)
         .environment(\.dynamicTypeSize, textSize)

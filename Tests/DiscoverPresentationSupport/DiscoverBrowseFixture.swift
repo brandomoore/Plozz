@@ -50,7 +50,12 @@ struct DiscoverBrowseFixture: View {
 
     var body: some View {
         NavigationStack {
-            DiscoverBrowseView(model: model) { feed, items, loading, loadMore in
+            DiscoverBrowseView(model: model, pageActions: {
+                #if os(iOS)
+                PlozziOSSettingsAvatarButton(action: {})
+                    .accessibilityIdentifier("discover-settings-avatar")
+                #endif
+            }) { feed, items, loading, loadMore in
                 #if os(iOS)
                 PlozziOSHomeMediaRail(
                     title: Text(feed.title), items: items, style: .poster, appModel: appModel,
@@ -67,9 +72,7 @@ struct DiscoverBrowseFixture: View {
                 #endif
             }
             #if os(iOS)
-            .toolbar {
-                PlozziOSSettingsToolbarItem(horizontalPlacement: .primaryAction, action: {})
-            }
+            .toolbar(.hidden, for: .navigationBar)
             #endif
             .background { AppBackground(palette: .dark) }
             .navigationDestination(item: $selection) { item in

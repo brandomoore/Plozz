@@ -40,6 +40,7 @@ struct PlozziOSPosterCard: View {
     /// Related entry that continues the story you're looking at).
     var statusCue: LocalizedStringResource?
     var isPendingRemoval: Bool = false
+    var captionHorizontalInset: CGFloat?
 
     var body: some View {
         PosterCardView(
@@ -54,6 +55,7 @@ struct PlozziOSPosterCard: View {
             downloadState: downloadState,
             showsActionsMenu: showsActionsMenu,
             isPendingRemoval: isPendingRemoval,
+            captionHorizontalInset: captionHorizontalInset,
             action: {}
         )
         .redacted(reason: item == nil ? .placeholder : [])

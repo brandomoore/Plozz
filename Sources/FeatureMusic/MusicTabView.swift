@@ -36,7 +36,7 @@ public final class MusicNavigation {
 ///
 /// Injected with the app-scoped `AudioPlaybackController` so the mini-player and
 /// Now Playing observe the same engine that keeps playing in the background.
-public struct MusicTabView<LandingToolbar: ToolbarContent>: View {
+public struct MusicTabView<LandingActions: View>: View {
     private let context: MusicContext
     private let controller: AudioPlaybackController
     private let authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving
@@ -44,7 +44,11 @@ public struct MusicTabView<LandingToolbar: ToolbarContent>: View {
     private let musicPlayer: MusicPlayerSettingsModel
     private let onNavigateBack: (() -> Void)?
     private let namespace: String?
-    private let landingToolbar: LandingToolbar
+    private let landingActions: LandingActions
+    private let keepsNavigationBar: Bool
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     @State private var navigation: MusicNavigation
     /// The shell's chrome model, present only under the custom navigation rail.
@@ -57,7 +61,7 @@ public struct MusicTabView<LandingToolbar: ToolbarContent>: View {
     @Binding var showNowPlaying: Bool
     @State private var layoutModel: MusicLandingLayoutModel
 
-    public init(accounts: [ResolvedAccount], visibleLibraryIDs: [String: [String]] = [:], controller: AudioPlaybackController, authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving, appTheme: AppTheme = .system, musicPlayer: MusicPlayerSettingsModel, showNowPlaying: Binding<Bool>, navigation: MusicNavigation? = nil, namespace: String? = nil, onNavigateBack: (() -> Void)? = nil, @ToolbarContentBuilder landingToolbar: () -> LandingToolbar = { ToolbarItemGroup { EmptyView() } }) {
+    public init(accounts: [ResolvedAccount], visibleLibraryIDs: [String: [String]] = [:], controller: AudioPlaybackController, authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving, appTheme: AppTheme = .system, musicPlayer: MusicPlayerSettingsModel, showNowPlaying: Binding<Bool>, navigation: MusicNavigation? = nil, namespace: String? = nil, onNavigateBack: (() -> Void)? = nil, keepsNavigationBar: Bool = false, @ViewBuilder landingActions: () -> LandingActions = { EmptyView() }) {
         self.context = MusicContext(
             accounts: accounts,
             visibleLibraryIDs: visibleLibraryIDs.isEmpty ? nil : visibleLibraryIDs
@@ -68,7 +72,8 @@ public struct MusicTabView<LandingToolbar: ToolbarContent>: View {
         self.musicPlayer = musicPlayer
         self.onNavigateBack = onNavigateBack
         self.namespace = namespace
-        self.landingToolbar = landingToolbar()
+        self.landingActions = landingActions()
+        self.keepsNavigationBar = keepsNavigationBar
         self._showNowPlaying = showNowPlaying
         self._navigation = State(initialValue: navigation ?? MusicNavigation())
         self._layoutModel = State(initialValue: MusicLandingLayoutModel(store: MusicLandingLayoutStore(namespace: namespace)))
@@ -89,17 +94,19 @@ public struct MusicTabView<LandingToolbar: ToolbarContent>: View {
                 controller: controller,
                 onSelectRoute: { navigation.path.append($0) },
                 onPlayTrack: { playTrack($0) },
-                layout: layoutModel.layout
+                layout: layoutModel.layout,
+                landingActions: { landingActions }
             )
             .id(landingID)
             .navigationDestination(for: MusicRoute.self) { route in
                 destination(for: route)
             }
             #if os(iOS)
+            .navigationTitle(Text(verbatim: ""))
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar(sizeClass == .compact && onNavigateBack == nil && !keepsNavigationBar ? .hidden : .visible,
+                     for: .navigationBar)
             .toolbar {
-                if navigation.path.isEmpty {
-                    landingToolbar
-                }
                 if let onNavigateBack, navigation.path.isEmpty {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Back", systemImage: "chevron.backward", action: onNavigateBack)

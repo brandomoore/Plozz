@@ -9,6 +9,8 @@ struct PlozziOSDownloadsView: View {
     private var navigationTitles = NavigationTitles()
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     @Environment(\.plozziOSOverflowNavigation) private var overflowNavigation
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Bindable var model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
     let onShowSettings: () -> Void
@@ -19,6 +21,7 @@ struct PlozziOSDownloadsView: View {
     @State private var notificationDestination: PlozziOSDownloadNotificationDestination?
     @State private var selectedShowID: String?
     @State private var detailNav: PlozziOSDownloadDetailNav?
+    @State private var showsDownloadSettings = false
 
     var body: some View {
         let library = appModel.isOfflineMode ? model.offlineLibrary : model.library
@@ -45,8 +48,7 @@ struct PlozziOSDownloadsView: View {
                 libraryList(library)
             }
         }
-        .navigationTitle(isOverflowDestination
-            ? navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads")) : Text(verbatim: ""))
+        .navigationTitle(Text(verbatim: ""))
         .task { await model.refreshArtwork() }
         .task(id: notificationPresentationID) {
             let navigation = PlozziOSDownloadNotificationNavigation.shared
@@ -64,6 +66,10 @@ struct PlozziOSDownloadsView: View {
         .navigationDestination(item: $selectedShowID) { showID in
             PlozziOSDownloadedShowView(showID: showID, model: model, appModel: appModel)
         }
+        .navigationDestination(isPresented: $showsDownloadSettings) {
+            PlozziOSDownloadSettingsView(model: model, appModel: appModel)
+                .toolbar(.visible, for: .navigationBar)
+        }
         .navigationDestination(item: $detailNav) { nav in
             if let provider = appModel.provider(for: nav.item) {
                 PlozziOSItemDetailView(
@@ -79,19 +85,13 @@ struct PlozziOSDownloadsView: View {
             }
         }
         .toolbarTitleDisplayMode(.inline)
+        .toolbar(sizeClass == .compact && !isOverflowDestination && !usesVerticalToolbar ? .hidden : .visible,
+                 for: .navigationBar)
         .toolbar {
             // Compose with the page's actions; a separate ancestor toolbar can be displaced.
             if isOverflowDestination, let overflowNavigation {
                 PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
             }
-            ToolbarItem(id: "download-settings", placement: .topBarTrailing) {
-                NavigationLink {
-                    PlozziOSDownloadSettingsView(model: model, appModel: appModel)
-                } label: {
-                    Label("Download Settings", systemImage: "gearshape")
-                }
-            }
-            PlozziOSSettingsToolbarItem(action: onShowSettings)
         }
         .confirmationDialog(
             pendingBulkDeletion.map { Text($0.title) } ?? Text(verbatim: ""),
@@ -124,17 +124,18 @@ struct PlozziOSDownloadsView: View {
     }
 
     private var pageHeading: some View {
-        PlozziOSPageHeading(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads")))
-            .accessibilityIdentifier("downloads-page-title")
+        PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads"))) {
+            Button("Download Settings", systemImage: "gearshape") { showsDownloadSettings = true }
+            PlozziOSSettingsAvatarButton(action: onShowSettings)
+                .accessibilityIdentifier("downloads-settings-avatar")
+        }
     }
 
     private func unavailableContent<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 0) {
-                    if !isOverflowDestination {
-                        pageHeading.padding(.horizontal, 16).padding(.top, 8)
-                    }
+                    pageHeading.padding(.horizontal, 16).padding(.top, 8)
                     content().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(minHeight: geometry.size.height)
@@ -189,12 +190,10 @@ struct PlozziOSDownloadsView: View {
     private func libraryList(_ library: PlozziOSDownloadLibrary) -> some View {
         GeometryReader { proxy in
             List {
-                if !isOverflowDestination {
-                    pageHeading
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
-                }
+                pageHeading
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
                 if model.hasActiveTransfers && !appModel.isOfflineMode {
                     activeTransfersHeader
                         .labelStyle(.titleAndIcon)

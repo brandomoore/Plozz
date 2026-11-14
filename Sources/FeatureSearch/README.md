@@ -61,6 +61,10 @@ and older systems retain the flat surface; Reduce Motion skips the crossfade.
 Results start below the transparent header but draw beyond their scroll viewport
 behind its individual glass controls, without a full-width background. The
 header stays above the results for drawing and hit testing.
+Section headings, visible poster edges, and captions share the input's 16-point
+leading margin. Grid padding accounts for each card style's internal artwork
+inset rather than aligning the invisible card slot.
+Section-heading taps dismiss the keyboard without activating a nearby result.
 Search results use a standard navigation push rather than an artwork zoom, so
 interactive Back does not scale the Search page into an inset background.
 The title/profile row collapses as search activates, moving that same field up

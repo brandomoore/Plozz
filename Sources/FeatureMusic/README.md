@@ -7,9 +7,10 @@ The Music tab is integrated into the tvOS shell and, in development/TestFlight
 builds only, the iOS/iPadOS shell. App Store builds do not create the mobile
 music runtime or probe music libraries.
 
-The mobile Music landing page uses the shell's shared circular profile toolbar
-button to open Settings. It is hidden on pushed music pages, leaving their
-native navigation and actions unchanged.
+The mobile Music landing page puts its large title and the shell's shared circular
+profile button in one scrolling header. The header remains available during
+loading, empty, and failed states. Pushed music pages retain their own native
+navigation and actions.
 Mobile browsing rails reuse Home's section headings, adaptive page insets,
 section spacing and scroll clearance. Album, playlist and recent-track captions
 use the shared poster typography; artist labels use the same title metrics while

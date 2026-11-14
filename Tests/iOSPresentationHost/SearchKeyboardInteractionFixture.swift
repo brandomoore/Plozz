@@ -52,6 +52,7 @@ struct SearchKeyboardInteractionFixture: View {
         .environment(\.themePalette, .dark)
         .environment(\.plozzReduceTransparency, ProcessInfo.processInfo.arguments.contains("--search-opaque"))
         .environment(\.plozzMetrics, .touch(density: .standard))
+        .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--search-framed") ? .framed : .borderless)
         .environment(\.locale, Locale(identifier: "en_US"))
         .preferredColorScheme(.dark)
     }
@@ -77,6 +78,11 @@ private actor SearchKeyboardProvider: MediaProvider {
     func item(id: String) async throws -> MediaItem { Self.result(id: id) }
     func children(of itemID: String) async throws -> [MediaItem] { [] }
     func search(query: String, limit: Int) async throws -> [MediaItem] {
+        if query == "alignment" {
+            return ["Alpha", "Bravo", "Charlie"].map {
+                MediaItem(id: $0, title: $0, kind: .movie, sourceAccountID: "search-keyboard")
+            }
+        }
         if query == "empty" { return [] }
         if query == "slow" { try await Task.sleep(for: .seconds(30)) }
         if query == "failed" { throw AppError.notFound }
