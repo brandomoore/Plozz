@@ -7,6 +7,14 @@ The Music tab is integrated into the tvOS shell and, in development/TestFlight
 builds only, the iOS/iPadOS shell. App Store builds do not create the mobile
 music runtime or probe music libraries.
 
+The mobile Music landing page uses the shell's shared circular profile toolbar
+button to open Settings. It is hidden on pushed music pages, leaving their
+native navigation and actions unchanged.
+Mobile browsing rails reuse Home's section headings, adaptive page insets,
+section spacing and scroll clearance. Album, playlist and recent-track captions
+use the shared poster typography; artist labels use the same title metrics while
+retaining their circular artwork.
+
 Development/TestFlight source selection also offers **Navidrome (Subsonic)**.
 It joins the same music browser and player without adding video destinations.
 Plex/Jellyfin/Emby music remains available through their normal account sign-in;

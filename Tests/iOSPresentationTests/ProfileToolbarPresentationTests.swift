@@ -4,6 +4,7 @@ import CoreNetworking
 import CoreUI
 import FeatureAuth
 import FeatureHomeCore
+import FeatureMusic
 import SwiftUI
 import UIKit
 import XCTest
@@ -11,6 +12,46 @@ import XCTest
 
 @MainActor
 final class ProfileToolbarPresentationTests: XCTestCase {
+    func testMusicHasAProfileButtonOnlyOnItsLandingPage() async throws {
+        let suite = "MusicToolbar-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let music = PlozziOSMusicRuntime()
+        defer { music.player.stop() }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIHostingController(rootView:
+            TabView {
+                Tab("Music", systemImage: "music.note") {
+                    PlozziOSMusicDestination(appModel: app, music: music, onShowSettings: {})
+                }
+            }
+            .environment(app)
+            .environment(\.themePalette, .dark)
+            .preferredColorScheme(.dark)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitForHostedLayout(window)
+        XCTAssertNotNil(avatarButton(in: window), hierarchy(window))
+        _ = capture(window, name: "music-profile-landing")
+        music.player.navigation.path.append(.artist(MusicArtist(id: "artist", name: "Artist")))
+        try await waitForHostedLayout(window)
+        XCTAssertNil(avatarButton(in: window), "Pushed music pages retain their own native actions.")
+        music.player.navigation.reset()
+        try await waitForHostedLayout(window)
+        XCTAssertNotNil(avatarButton(in: window))
+    }
+
     func testHomeProfileSharesTheTopTabRowAcrossSidebarChanges() async throws {
         try await assertHomeProfileAlignment(reduceTransparency: false)
     }

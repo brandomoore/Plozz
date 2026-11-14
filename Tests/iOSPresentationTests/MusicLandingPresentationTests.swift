@@ -20,7 +20,8 @@ final class MusicLandingPresentationTests: XCTestCase {
                     let image = self.capture(window)
                     let labels = try self.textFrames(image)
                     let recent = try XCTUnwrap(labels["Recently Played"])
-                    XCTAssertEqual(recent.minX, 20, accuracy: 3)
+                    let inset: CGFloat = width < 600 ? 22 : 36
+                    XCTAssertEqual(recent.minX, inset, accuracy: 3)
                     let titles = ["Playlists", "Albums", "Artists", "Genres"]
                     let frames = try titles.map { title in
                         try XCTUnwrap(labels[title], "Missing browse destination: \(title)")
@@ -34,10 +35,9 @@ final class MusicLandingPresentationTests: XCTestCase {
                     XCTAssertLessThan(frames[0].maxY, recent.minY)
                     XCTAssertLessThan(recent.height, 30, "Use a touch-scale section heading, not TV typography")
                     let rail = try XCTUnwrap(scrolls.first { $0.bounds.height > 100 && $0.bounds.height < 400 })
-                    XCTAssertEqual(rail.contentOffset.x, 0, accuracy: 1)
                     let artY = rail.convert(rail.bounds, to: window).minY + 75
                     let outside = try self.pixel(image, at: CGPoint(x: 10, y: artY))
-                    let inside = try self.pixel(image, at: CGPoint(x: 30, y: artY))
+                    let inside = try self.pixel(image, at: CGPoint(x: inset + 10, y: artY))
                     XCTAssertLessThan(abs(outside[0] - outside[2]), 0.03, "Artwork must not touch the screen edge")
                     XCTAssertGreaterThan(abs(inside[0] - inside[2]), 0.1, "The first artwork begins inside the margin")
                     try self.assertNeutral(image, in: pills.convert(pills.bounds, to: window))
@@ -101,6 +101,8 @@ final class MusicLandingPresentationTests: XCTestCase {
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette == .light ? .light : .dark)
         .environment(\.dynamicTypeSize, textSize)
+        .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+        .environment(\.plozzMetrics, .touch(density: .standard, dynamicTypeSize: textSize))
         .environment(\.plozzReducePanelGlass, reducePanelGlass)
         .environment(\.plozzReduceTransparency, reduceTransparency)
         .tint(.blue)

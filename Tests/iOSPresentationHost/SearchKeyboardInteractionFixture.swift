@@ -50,6 +50,7 @@ struct SearchKeyboardInteractionFixture: View {
         .environment(trailer)
         .environment(sidebar)
         .environment(\.themePalette, .dark)
+        .environment(\.plozzReduceTransparency, ProcessInfo.processInfo.arguments.contains("--search-opaque"))
         .environment(\.plozzMetrics, .touch(density: .standard))
         .environment(\.locale, Locale(identifier: "en_US"))
         .preferredColorScheme(.dark)

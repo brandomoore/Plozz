@@ -52,6 +52,7 @@ final class PlozziOSMusicRuntime {
 struct PlozziOSMusicDestination: View {
     let appModel: PlozziOSAppModel
     let music: PlozziOSMusicRuntime
+    let onShowSettings: () -> Void
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflow
     @Environment(\.plozziOSOverflowNavigation) private var overflowNavigation
 
@@ -69,7 +70,9 @@ struct PlozziOSMusicDestination: View {
             navigation: music.player.navigation,
             namespace: appModel.profiles.activeNamespace,
             onNavigateBack: isOverflow ? { overflowNavigation?.returnToMore() } : nil
-        )
+        ) {
+            PlozziOSSettingsToolbarItem(action: onShowSettings)
+        }
         .id(music.authorizationID)
         .navigationTitle("Music")
     }

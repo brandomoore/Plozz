@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 @MainActor
 final class SearchKeyboardInteractionTests: XCTestCase {
@@ -108,16 +109,93 @@ final class SearchKeyboardInteractionTests: XCTestCase {
         XCTAssertEqual(field.value as? String, "many")
     }
 
-    func testSettingsButtonStillOpensOnTheFirstTap() {
+    func testCancelRestoresTheHeaderAndSettingsOpensOnTheFirstTap() {
         let field = launch()
         focus(field)
+        field.typeText("empty")
+        XCTAssertFalse(app.buttons["search-settings-avatar"].isHittable)
+        app.buttons["Cancel search"].tap()
+        assertKeyboardDismissed()
+        XCTAssertFalse(app.buttons["Clear search"].exists)
         app.buttons["search-settings-avatar"].tap()
         XCTAssertTrue(app.staticTexts["search-fixture-settings"].waitForExistence(timeout: 5))
     }
 
+    func testSearchSurfaceChangesToGlassAndReturnsToFlatWithoutReplacingTheField() throws {
+        let field = launch()
+        let resting = try surfaceColor(field, name: "search-flat")
+        let restingFrame = field.frame
+        focus(field)
+        let active = try surfaceColor(field, name: "search-glass")
+        XCTAssertLessThan(field.frame.minY, restingFrame.minY - 30, "Active search moves up into the title's space.")
+        XCTAssertTrue(app.buttons["Cancel search"].isHittable)
+        XCTAssertGreaterThanOrEqual(app.buttons["Cancel search"].frame.height, 44)
+        XCTAssertGreaterThan(colorDistance(resting, active), 8, "Focus must visibly replace the flat fill with glass.")
+        field.typeText("empty")
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "No Results")
+        ).firstMatch.waitForExistence(timeout: 8))
+        tapBelowHeader(field)
+        assertKeyboardDismissed()
+        let queried = try surfaceColor(field, name: "search-glass-with-query")
+        XCTAssertLessThan(colorDistance(active, queried), 5, "A retained query keeps the active search surface.")
+        focus(field)
+        app.buttons["Clear search"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        tapBelowHeader(field)
+        assertKeyboardDismissed()
+        let restored = try surfaceColor(field, name: "search-flat-restored")
+        XCTAssertLessThan(colorDistance(resting, restored), 3)
+        XCTAssertEqual(field.frame.minY, restingFrame.minY, accuracy: 1)
+        focus(field)
+        field.typeText("result")
+        XCTAssertEqual(field.value as? String, "result", "Changing surfaces must not tear down editing.")
+    }
+
+    func testReducedTransparencyKeepsSearchFlatWhileEditing() throws {
+        let field = launch(arguments: ["--search-opaque"])
+        let resting = try surfaceColor(field, name: "search-opaque-rest")
+        focus(field)
+        let active = try surfaceColor(field, name: "search-opaque-editing")
+        XCTAssertLessThan(colorDistance(resting, active), 3)
+        field.typeText("empty")
+        XCTAssertEqual(field.value as? String, "empty")
+    }
+
+    private func surfaceColor(_ field: XCUIElement, name: String) throws -> [UInt8] {
+        Thread.sleep(forTimeInterval: 0.6)
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let image = try XCTUnwrap(screenshot.image.cgImage)
+        let scale = CGFloat(image.width) / app.frame.width
+        // Sample the surface above the text, away from its caret and glyphs.
+        let area = CGRect(x: field.frame.midX, y: field.frame.minY - 7, width: 8, height: 3)
+        let crop = try XCTUnwrap(image.cropping(to: CGRect(
+            x: area.minX * scale, y: area.minY * scale,
+            width: area.width * scale, height: area.height * scale
+        )))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        try pixel.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return Array(pixel.prefix(3))
+    }
+
+    private func colorDistance(_ first: [UInt8], _ second: [UInt8]) -> Int {
+        zip(first, second).map { abs(Int($0) - Int($1)) }.reduce(0, +)
+    }
+
     @discardableResult
-    private func launch() -> XCUIElement {
-        app.launchArguments = ["--search-keyboard-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+    private func launch(arguments: [String] = []) -> XCUIElement {
+        app.launchArguments = ["--search-keyboard-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + arguments
         app.launch()
         let field = app.textFields["Search your libraries"]
         XCTAssertTrue(field.wait(for: \.isHittable, toEqual: true, timeout: 10), app.debugDescription)

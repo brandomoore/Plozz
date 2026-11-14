@@ -61,11 +61,22 @@ struct MusicLandingContent: View {
 
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
+
+    private var sectionSpacing: CGFloat {
+        #if os(iOS)
+        PlozziOSMediaRailLayout.sectionGap(metrics: metrics)
+        #else
+        metrics.rowSpacing
+        #endif
+    }
 
     var body: some View {
         let firstSection = firstRenderedSection(content)
         ScrollView {
-            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+            VStack(alignment: .leading, spacing: sectionSpacing) {
                 ForEach(layout.visibleSections, id: \.self) { section in
                     sectionView(section, content: content, isFirst: section == firstSection)
                 }
@@ -164,7 +175,11 @@ struct MusicLandingContent: View {
                 browseButtons
             }
         }
-        .contentMargins(.horizontal, MusicLayout.screenPadding, for: .scrollContent)
+        .contentMargins(
+            .horizontal,
+            PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
+            for: .scrollContent
+        )
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         #else
         HStack(alignment: .center, spacing: metrics.cardSpacing) {
@@ -309,12 +324,30 @@ private struct MusicRow<Content: View>: View {
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MusicLayout.isMobile ? 12 : metrics.sectionTitleSpacing) {
+        #if os(iOS)
+        PlozziOSMediaSection(title: Text(title)) {
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)) {
+                    content()
+                }
+            }
+            .contentMargins(
+                .horizontal,
+                PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
+                for: .scrollContent
+            )
+            .plozziOSMediaRailClearance()
+        }
+        #else
+        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
             HStack(spacing: 24) {
                 Text(title)
-                    .font(MusicLayout.isMobile ? .title2.bold() : .system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                    .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if let trailing { trailing }
@@ -352,6 +385,7 @@ private struct MusicRow<Content: View>: View {
                 .padding(.bottom, MusicLayout.isMobile ? 0 : metrics.railBottomClearanceOffset)
             }
         }
+        #endif
     }
 }
 

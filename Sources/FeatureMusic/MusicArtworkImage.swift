@@ -169,10 +169,10 @@ struct MusicCard: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
                 artwork.frame(width: 150, height: 150)
-                Text(title).font(.headline).lineLimit(2)
-                if let subtitle {
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                }
+                BorderlessCardCaption(
+                    title: Text(verbatim: title), subtitle: subtitle,
+                    horizontalInset: 0, usesPosterTypography: true
+                )
             }
             .frame(width: 150, alignment: .leading)
             .contentShape(Rectangle())
@@ -362,7 +362,9 @@ struct ArtistCard: View {
                 )
                 .frame(width: 150, height: 150)
                 .clipShape(Circle())
-                Text(artist.name).font(.headline).lineLimit(2)
+                Text(artist.name)
+                    .font(.system(size: metrics.posterTitleFontSize, weight: .semibold))
+                    .lineLimit(2)
             }
             .frame(width: 150)
         }

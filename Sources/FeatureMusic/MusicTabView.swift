@@ -36,7 +36,7 @@ public final class MusicNavigation {
 ///
 /// Injected with the app-scoped `AudioPlaybackController` so the mini-player and
 /// Now Playing observe the same engine that keeps playing in the background.
-public struct MusicTabView: View {
+public struct MusicTabView<LandingToolbar: ToolbarContent>: View {
     private let context: MusicContext
     private let controller: AudioPlaybackController
     private let authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving
@@ -44,6 +44,7 @@ public struct MusicTabView: View {
     private let musicPlayer: MusicPlayerSettingsModel
     private let onNavigateBack: (() -> Void)?
     private let namespace: String?
+    private let landingToolbar: LandingToolbar
 
     @State private var navigation: MusicNavigation
     /// The shell's chrome model, present only under the custom navigation rail.
@@ -56,7 +57,7 @@ public struct MusicTabView: View {
     @Binding var showNowPlaying: Bool
     @State private var layoutModel: MusicLandingLayoutModel
 
-    public init(accounts: [ResolvedAccount], visibleLibraryIDs: [String: [String]] = [:], controller: AudioPlaybackController, authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving, appTheme: AppTheme = .system, musicPlayer: MusicPlayerSettingsModel, showNowPlaying: Binding<Bool>, navigation: MusicNavigation? = nil, namespace: String? = nil, onNavigateBack: (() -> Void)? = nil) {
+    public init(accounts: [ResolvedAccount], visibleLibraryIDs: [String: [String]] = [:], controller: AudioPlaybackController, authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving, appTheme: AppTheme = .system, musicPlayer: MusicPlayerSettingsModel, showNowPlaying: Binding<Bool>, navigation: MusicNavigation? = nil, namespace: String? = nil, onNavigateBack: (() -> Void)? = nil, @ToolbarContentBuilder landingToolbar: () -> LandingToolbar = { ToolbarItemGroup { EmptyView() } }) {
         self.context = MusicContext(
             accounts: accounts,
             visibleLibraryIDs: visibleLibraryIDs.isEmpty ? nil : visibleLibraryIDs
@@ -67,6 +68,7 @@ public struct MusicTabView: View {
         self.musicPlayer = musicPlayer
         self.onNavigateBack = onNavigateBack
         self.namespace = namespace
+        self.landingToolbar = landingToolbar()
         self._showNowPlaying = showNowPlaying
         self._navigation = State(initialValue: navigation ?? MusicNavigation())
         self._layoutModel = State(initialValue: MusicLandingLayoutModel(store: MusicLandingLayoutStore(namespace: namespace)))
@@ -95,6 +97,9 @@ public struct MusicTabView: View {
             }
             #if os(iOS)
             .toolbar {
+                if navigation.path.isEmpty {
+                    landingToolbar
+                }
                 if let onNavigateBack, navigation.path.isEmpty {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Back", systemImage: "chevron.backward", action: onNavigateBack)

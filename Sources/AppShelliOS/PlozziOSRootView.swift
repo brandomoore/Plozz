@@ -1268,7 +1268,7 @@ struct PlozziOSTabShell: View {
         switch destination {
         case .music:
             if let music = appModel.music {
-                PlozziOSMusicDestination(appModel: appModel, music: music)
+                PlozziOSMusicDestination(appModel: appModel, music: music, onShowSettings: showSettings)
             }
         case .home:
             PlozziOSDestinationView(

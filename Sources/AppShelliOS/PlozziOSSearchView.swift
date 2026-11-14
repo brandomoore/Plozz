@@ -68,9 +68,9 @@ struct PlozziOSSearchView: View {
                 PlozziOSSettingsToolbarItem(action: onShowSettings)
             }
         }
-        .navigationTitle(horizontalSizeClass == .compact && !isOverflowDestination
-            ? Text(verbatim: "") : navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search")))
-        .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
+        .navigationTitle(isOverflowDestination
+            ? navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search")) : Text(verbatim: ""))
+        .toolbarTitleDisplayMode(.inline)
         .environment(\.plozzCardCaptionView, .search)
         .task(id: viewModel.query) {
             await viewModel.search()
@@ -155,7 +155,10 @@ struct PlozziOSSearchView: View {
 
 /// Keep a local Settings entry only when native navigation does not expose it.
 private struct PlozziOSSearchHeader: View {
+    private var navigationTitles = NavigationTitles()
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.hasVisibleSettingsNavigationEntry) private var hasVisibleSettingsNavigationEntry
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
@@ -164,47 +167,118 @@ private struct PlozziOSSearchHeader: View {
     let onShowSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .plozzForeground(.secondary)
-                TextField(
-                    "Movies, shows, and episodes",
-                    text: $query,
-                    prompt: Text("Movies, shows, and episodes").foregroundColor(palette.secondaryText)
-                )
-                .focused($isFocused)
-                .textFieldStyle(.plain)
-                .foregroundStyle(palette.primaryText)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .accessibilityLabel("Search your libraries")
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .plozzForeground(.secondary)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
+        VStack(spacing: 0) {
+            HStack {
+                navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search"))
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(palette.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                if !hasVisibleSettingsNavigationEntry && !usesVerticalToolbar && !isOverflowDestination {
+                    PlozziOSSettingsAvatarButton(action: onShowSettings)
+                        .accessibilityIdentifier("search-settings-avatar")
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 44)
-            .plozzSurface(.raised, cornerRadius: PlozzTheme.Metrics.Radius.card)
-            .frame(maxWidth: .infinity)
+            .padding(.bottom, hidesTitle ? 0 : 12)
+            .frame(height: hidesTitle ? 0 : nil, alignment: .top)
+            .opacity(hidesTitle ? 0 : 1)
+            .clipped()
+            .allowsHitTesting(!hidesTitle)
+            .accessibilityHidden(hidesTitle)
 
-            if !hasVisibleSettingsNavigationEntry && !usesVerticalToolbar && !isOverflowDestination {
-                PlozziOSSettingsAvatarButton(action: onShowSettings)
-                    .accessibilityIdentifier("search-settings-avatar")
+            HStack(spacing: 12) {
+                searchField
+                if isActive {
+                    cancelButton
+                        .transition(.opacity)
+                }
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 10)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.4), value: isActive)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .plozzForeground(.secondary)
+            TextField(
+                "Movies, shows, and episodes",
+                text: $query,
+                prompt: Text("Movies, shows, and episodes").foregroundColor(palette.secondaryText)
+            )
+            .focused($isFocused)
+            .textFieldStyle(.plain)
+            .foregroundStyle(palette.primaryText)
+            .autocorrectionDisabled()
+            .submitLabel(.search)
+            .accessibilityLabel("Search your libraries")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .plozzForeground(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background { fieldBackground }
+        .contentShape(Capsule())
+        .onTapGesture { isFocused = true }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var hidesTitle: Bool { isActive || isOverflowDestination }
+
+    private var isActive: Bool {
+        isFocused || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    @ViewBuilder
+    private var cancelButton: some View {
+        let button = Button("Cancel search", systemImage: "xmark") {
+            query = ""
+            isFocused = false
+        }
+        .labelStyle(.iconOnly)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        if #available(iOS 26.0, *), !reduceTransparency {
+            button.buttonStyle(.glass)
+        } else {
+            button.buttonStyle(.bordered)
+        }
+    }
+
+    @ViewBuilder
+    private var fieldBackground: some View {
+        let flat = Capsule()
+            .fill(palette.raised.fill)
+            .overlay {
+                if let border = palette.raised.border {
+                    Capsule().strokeBorder(border, lineWidth: palette.raised.borderWidth)
+                }
+            }
+        if #available(iOS 26.0, *), !reduceTransparency {
+            // Keep both surfaces mounted; replacing the field on focus loses
+            // its first responder and can interrupt typing.
+            ZStack {
+                flat.opacity(isActive ? 0 : 1)
+                Color.clear
+                    .glassEffect(.regular, in: Capsule())
+                    .opacity(isActive ? 1 : 0)
+            }
+        } else {
+            flat
+        }
     }
 }
 

@@ -45,6 +45,7 @@ struct MusicLandingFixture: View {
         }
         .environment(\.themePalette, palette)
         .environment(\.dynamicTypeSize, textSize)
+        .environment(\.plozzMetrics, .touch(density: .standard, dynamicTypeSize: textSize))
         .preferredColorScheme(palette == .light ? .light : .dark)
         .tint(palette.primaryText)
     }
