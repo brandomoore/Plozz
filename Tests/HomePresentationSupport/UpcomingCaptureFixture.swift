@@ -82,18 +82,23 @@ struct UpcomingCaptureFixture: View {
     private func prepareCapture() async throws {
         let arguments = ProcessInfo.processInfo.arguments
         let showsCalendar = arguments.contains("--capture-calendar") || arguments.contains("--capture-selection")
+        let collapsesCalendar = arguments.contains("--capture-calendar-collapsed")
+        let resizesCalendar = arguments.contains("--capture-calendar-resize")
+        let narrow = arguments.contains("--capture-narrow")
         guard arguments.contains("--capture-scrolled") || arguments.contains("--capture-landscape")
-            || arguments.contains("--capture-dense") || showsCalendar else { return }
+            || arguments.contains("--capture-dense") || showsCalendar || collapsesCalendar
+            || resizesCalendar || narrow else { return }
         try await Task.sleep(for: .seconds(1))
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows).first(where: \.isKeyWindow) else {
             preconditionFailure("Upcoming capture has no window")
         }
         precondition(fixture.home.upcoming.failedSourceCount == 0, "Preview data was replaced by a live refresh")
-        if arguments.contains("--capture-landscape") {
-            window.frame = CGRect(x: 0, y: 0, width: 1194, height: 834)
+        if arguments.contains("--capture-landscape") || narrow {
+            let size = narrow ? CGSize(width: 700, height: 900) : CGSize(width: 1194, height: 834)
+            window.frame = CGRect(origin: .zero, size: size)
             try await Task.sleep(for: .milliseconds(500))
-            precondition(window.bounds.size == CGSize(width: 1194, height: 834), "Landscape test window was not resized")
+            precondition(window.bounds.size == size, "Test window was not resized")
         }
         func descendants(_ view: UIView) -> [UIView] {
             [view] + view.subviews.flatMap(descendants)
@@ -101,7 +106,7 @@ struct UpcomingCaptureFixture: View {
         func controllers(_ controller: UIViewController) -> [UIViewController] {
             [controller] + controller.children.flatMap(controllers)
         }
-        if arguments.contains("--capture-landscape") {
+        if arguments.contains("--capture-landscape") || narrow {
             for controller in window.rootViewController.map(controllers) ?? [] {
                 (controller as? UITabBarController)?.sidebar.isHidden = true
             }
@@ -115,6 +120,27 @@ struct UpcomingCaptureFixture: View {
             let groups = item.leadingItemGroups + item.centerItemGroups + item.trailingItemGroups
             barItems += groups.flatMap(\.barButtonItems)
         }
+        func activateCalendar() {
+            let items = (window.rootViewController.map(controllers) ?? []).flatMap { controller in
+                let item = controller.navigationItem
+                return (item.rightBarButtonItems ?? []) + item.trailingItemGroups.flatMap(\.barButtonItems)
+            }
+            guard let button = items.first(where: { $0.title == "Calendar" }), let action = button.action else {
+                preconditionFailure("Upcoming calendar must expose its native action")
+            }
+            precondition(UIApplication.shared.sendAction(action, to: button.target, from: button, for: nil),
+                         "Upcoming calendar action was not handled")
+        }
+        func datePicker() -> UIDatePicker? {
+            descendants(window).compactMap { $0 as? UIDatePicker }.first
+        }
+        let inlinePicker = datePicker()
+        if arguments.contains("--capture-landscape") && !narrow {
+            precondition(inlinePicker != nil, "Wide Upcoming must show the side calendar")
+        } else if narrow || window.bounds.width < 600 {
+            precondition(inlinePicker == nil, "Compact Upcoming must keep the calendar in the toolbar")
+        }
+        let inlineFrame = inlinePicker.map { $0.convert($0.bounds, to: window) }
         for title in ["Calendar", "Filters"] {
             precondition(barItems.contains { $0.title == title }, "Missing Upcoming action: \(title)")
         }
@@ -170,6 +196,10 @@ struct UpcomingCaptureFixture: View {
             }
             scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 250), animated: false)
             try await Task.sleep(for: .milliseconds(500))
+            if let inlinePicker, let inlineFrame {
+                precondition(abs(inlinePicker.convert(inlinePicker.bounds, to: window).minY - inlineFrame.minY) < 2,
+                             "Side calendar must stay fixed while the agenda scrolls")
+            }
             precondition(abs(navigationBar.convert(navigationBar.bounds, to: window).minY - before.minY) < 2,
                          "Upcoming actions moved while scrolling")
             precondition(!descendants(window).contains(where: {
@@ -198,13 +228,11 @@ struct UpcomingCaptureFixture: View {
             }
         }
         if showsCalendar {
-            guard let button = barItems.first(where: { $0.title == "Calendar" }), let action = button.action else {
-                preconditionFailure("Upcoming calendar must expose its native action")
+            if inlinePicker == nil {
+                activateCalendar()
+                try await Task.sleep(for: .seconds(1))
             }
-            precondition(UIApplication.shared.sendAction(action, to: button.target, from: button, for: nil),
-                         "Upcoming calendar action was not handled")
-            try await Task.sleep(for: .seconds(1))
-            guard let picker = descendants(window).compactMap({ $0 as? UIDatePicker }).first else {
+            guard let picker = datePicker() else {
                 preconditionFailure("Upcoming calendar did not present a native date picker")
             }
             precondition(picker.bounds.width >= 280 && picker.bounds.width <= 400, "Unexpected calendar width")
@@ -212,18 +240,70 @@ struct UpcomingCaptureFixture: View {
             let frame = picker.convert(picker.bounds, to: window)
             precondition(window.bounds.contains(frame), "Calendar extends outside the window")
             if arguments.contains("--capture-selection") {
+                guard let agenda = descendants(window).compactMap({ $0 as? UIScrollView }).first(where: {
+                    $0.bounds.height > 450 && $0.contentSize.height > $0.bounds.height + 250
+                }) else {
+                    preconditionFailure("Calendar selection capture requires a scrollable agenda")
+                }
+                let previousOffset = agenda.contentOffset.y
                 let day = Calendar.current.date(byAdding: .day, value: 1, to: picker.date)!
                 picker.setDate(day, animated: false)
                 picker.sendActions(for: .valueChanged)
                 try await Task.sleep(for: .seconds(1))
-                precondition(picker.window == nil, "Choosing a date must dismiss the calendar")
+                precondition((picker.window != nil) == (inlinePicker != nil),
+                             "Selection must keep an inline calendar open and dismiss a popover")
+                precondition(agenda.contentOffset.y > previousOffset + 100, "Choosing tomorrow must scroll the agenda")
             }
         }
-        if arguments.contains("--capture-landscape") {
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true), "Could not render landscape window")
+        if collapsesCalendar || resizesCalendar {
+            guard let inlinePicker, let agenda = descendants(window).compactMap({ $0 as? UIScrollView })
+                .first(where: { $0.bounds.height > 450 && $0.contentSize.height > $0.bounds.height + 250 }) else {
+                preconditionFailure("Calendar toggle capture requires an inline picker and scrollable agenda")
             }
-            let path = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("upcoming-landscape.png")
+            let expandedWidth = agenda.bounds.width
+            let selected = Calendar.current.date(byAdding: .day, value: 1, to: inlinePicker.date)!
+            inlinePicker.setDate(selected, animated: false)
+            inlinePicker.sendActions(for: .valueChanged)
+            try await Task.sleep(for: .milliseconds(500))
+            for expanded in [false, true, false] {
+                activateCalendar()
+                try await Task.sleep(for: .milliseconds(500))
+                precondition((datePicker() != nil) == expanded, "Toolbar must hide and reopen the side calendar")
+                if let picker = datePicker() {
+                    precondition(Calendar.current.isDate(picker.date, inSameDayAs: selected), "Reopening lost the selected date")
+                    precondition(abs(agenda.bounds.width - expandedWidth) < 2, "Reopening must restore the agenda width")
+                } else {
+                    precondition(agenda.bounds.width > expandedWidth + 300, "Minimizing must return space to the agenda")
+                }
+            }
+            if resizesCalendar {
+                let originalFrame = window.frame
+                window.frame = CGRect(x: 0, y: 0, width: 700, height: 900)
+                try await Task.sleep(for: .milliseconds(500))
+                precondition(datePicker() == nil, "Narrowing must not automatically present a calendar")
+                activateCalendar()
+                try await Task.sleep(for: .milliseconds(500))
+                guard let popoverPicker = datePicker() else {
+                    preconditionFailure("Narrow iPad must present a native calendar popover")
+                }
+                precondition(Calendar.current.isDate(popoverPicker.date, inSameDayAs: selected), "Resizing lost the selected date")
+                window.frame = originalFrame
+                try await Task.sleep(for: .seconds(1))
+                precondition(datePicker() == nil, "Widening must dismiss the popover without undoing manual minimization")
+                activateCalendar()
+                try await Task.sleep(for: .milliseconds(500))
+                guard let restored = datePicker() else {
+                    preconditionFailure("Wide calendar must reopen after resizing")
+                }
+                precondition(Calendar.current.isDate(restored.date, inSameDayAs: selected), "Restoring lost the selected date")
+            }
+        }
+        if arguments.contains("--capture-landscape") || narrow {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true), "Could not render test window")
+            }
+            let path = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent(narrow ? "upcoming-narrow.png" : "upcoming-landscape.png")
             try image.pngData()!.write(to: path)
         }
         FileHandle.standardOutput.write(Data("Upcoming capture ready\n".utf8))
@@ -465,7 +545,8 @@ private struct UpcomingCaptureProvider: MediaProvider {
             [.init(kind: .digital, date: Calendar.current.date(byAdding: .day, value: 2, to: today)!, regionCode: "US")],
             for: movie, interests: [.watchlist], regionCode: "US"
         )
-        if ProcessInfo.processInfo.arguments.contains("--capture-scrolled") {
+        if ["--capture-scrolled", "--capture-selection", "--capture-calendar-collapsed", "--capture-calendar-resize"]
+            .contains(where: ProcessInfo.processInfo.arguments.contains) {
             for index in 3..<20 {
                 let item = series[index % series.count]
                 result += UpcomingReleaseBuilder.episodes(

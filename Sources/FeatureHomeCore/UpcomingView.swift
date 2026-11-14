@@ -9,6 +9,11 @@
         #if os(tvOS)
             @Environment(\.plozzNavigationContentInset) private var navigationInset
             @Environment(\.plozzTopNavigationContentInsets) private var topNavigationInsets
+        #elseif os(iOS)
+            @Environment(\.horizontalSizeClass) private var sizeClass
+            @Environment(\.accessibilityReduceMotion) private var reduceMotion
+            @State private var availableSize = CGSize.zero
+            @State private var calendarIsMinimized = false
         #endif
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
@@ -32,32 +37,42 @@
                         .plozzActionButton(role: .secondary)
                         .focusSection()
                     #endif
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            UpcomingFeedStatus(model: model)
-                            UpcomingAgenda(
-                                releases: model.visibleReleases, selectedDay: selectedDay,
-                                hide: model.hide
-                            )
-                            .padding(.vertical)
+                    HStack(alignment: .top, spacing: 0) {
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                UpcomingFeedStatus(model: model)
+                                UpcomingAgenda(
+                                    releases: model.visibleReleases, selectedDay: selectedDay,
+                                    hide: model.hide
+                                )
+                                .padding(.vertical)
+                            }
+                            #if os(iOS)
+                            .padding(.horizontal)
+                            #endif
                         }
                         #if os(iOS)
-                        .padding(.horizontal)
+                        .modifier(UpcomingScrollEdge())
                         #endif
-                    }
-                    #if os(iOS)
-                    .modifier(UpcomingScrollEdge())
-                    #endif
-                    .onChange(of: selectedDay) { _, day in
-                        proxy.scrollTo(day, anchor: .top)
-                    }
-                    .task(id: model.releases.isEmpty) {
-                        if !model.releases.isEmpty, !didScrollInitially {
-                            await Task.yield()
-                            guard !Task.isCancelled else { return }
-                            didScrollInitially = true
-                            proxy.scrollTo(selectedDay, anchor: .top)
+                        .onChange(of: selectedDay) { _, day in
+                            proxy.scrollTo(day, anchor: .top)
                         }
+                        .task(id: model.releases.isEmpty) {
+                            if !model.releases.isEmpty, !didScrollInitially {
+                                await Task.yield()
+                                guard !Task.isCancelled else { return }
+                                didScrollInitially = true
+                                proxy.scrollTo(selectedDay, anchor: .top)
+                            }
+                        }
+                        #if os(iOS)
+                        if showsInlineCalendar {
+                            UpcomingCalendar(
+                                selectedDay: $selectedDay, interval: interval, dismissesOnSelection: false
+                            )
+                            .transition(.opacity)
+                        }
+                        #endif
                     }
                     if model.lastHiddenTitle != nil {
                         Button("Undo hide", action: model.undoHide)
@@ -76,6 +91,10 @@
                         UpcomingFilterMenu(model: model)
                     }
                 }
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { availableSize = $0 }
+                .onChange(of: supportsInlineCalendar) { _, supported in
+                    if supported { showingCalendar = false }
+                }
                 #endif
                 .tint(palette.primaryText)
                 #if os(tvOS)
@@ -88,13 +107,25 @@
 
         private var calendarButton: some View {
             Button("Calendar", systemImage: "calendar") {
+                #if os(iOS)
+                if supportsInlineCalendar {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        calendarIsMinimized.toggle()
+                    }
+                } else {
+                    showingCalendar = true
+                }
+                #else
                 showingCalendar = true
+                #endif
             }
             .labelStyle(.iconOnly)
+            .accessibilityLabel(calendarActionTitle)
             .accessibilityValue(Text(selectedDay, format: .dateTime.month().day()))
             .accessibilityIdentifier("upcoming.calendar")
-            .help("Calendar")
+            .help(calendarActionTitle)
             #if os(iOS)
+            .accessibilityAddTraits(showsInlineCalendar ? .isSelected : [])
             .popover(isPresented: $showingCalendar) {
                 UpcomingCalendar(selectedDay: $selectedDay, interval: interval)
                     .presentationCompactAdaptation(.popover)
@@ -102,7 +133,24 @@
             #endif
         }
 
+        private var calendarActionTitle: Text {
+            #if os(iOS)
+            if supportsInlineCalendar {
+                return showsInlineCalendar ? Text("Hide calendar") : Text("Show calendar")
+            }
+            #endif
+            return Text("Calendar")
+        }
+
         #if os(iOS)
+            private var supportsInlineCalendar: Bool {
+                sizeClass == .regular && availableSize.width >= 800 && availableSize.height >= 500
+            }
+
+            private var showsInlineCalendar: Bool {
+                supportsInlineCalendar && !calendarIsMinimized
+            }
+
             private struct UpcomingScrollEdge: ViewModifier {
                 func body(content: Content) -> some View {
                     if #available(iOS 26.0, *) {
@@ -328,6 +376,7 @@
     private struct UpcomingCalendar: View {
         @Binding var selectedDay: Date
         let interval: DateInterval
+        var dismissesOnSelection = true
         @Environment(\.dismiss) private var dismiss
         @State private var month: Date = Date()
 
@@ -396,7 +445,9 @@
                 .fixedSize(horizontal: false, vertical: true)
                 .padding()
                 .accessibilityIdentifier("upcoming.calendar.picker")
-                .onChange(of: selectedDay) { _, _ in dismiss() }
+                .onChange(of: selectedDay) { _, _ in
+                    if dismissesOnSelection { dismiss() }
+                }
             #endif
         }
     }

@@ -74,6 +74,7 @@ extension HomeRowArrangementHostedTests {
         #if os(iOS)
         let cases = [
             (CGSize(width: 390, height: 844), false),
+            (CGSize(width: 700, height: 900), false),
             (CGSize(width: 834, height: 1194), false),
             (CGSize(width: 1194, height: 834), false),
             (CGSize(width: 834, height: 1194), true)
@@ -98,6 +99,7 @@ extension HomeRowArrangementHostedTests {
                     .environment(fixture.sidebar)
                     .environment(\.plozzMetrics, .touch(density: .standard))
                     .environment(\.plozzReduceTransparency, reducedTransparency)
+                    .environment(\.horizontalSizeClass, size.width >= 800 ? .regular : .compact)
                 #else
                 NavigationStack {
                     UpcomingView(model: model, interval: interval)
@@ -120,6 +122,9 @@ extension HomeRowArrangementHostedTests {
                 let initial = try await self.capture(window, name: "Upcoming toolbar \(size.width)")
                 XCTAssertFalse(initial.contains { ["All", "Shows", "Movies"].contains($0.0) })
                 #if os(iOS)
+                let inlinePicker = descendants(window).compactMap { $0 as? UIDatePicker }.first
+                XCTAssertEqual(inlinePicker != nil, size.width >= 800)
+                let inlineFrame = inlinePicker.map { $0.convert($0.bounds, to: window) }
                 var barItems: [UIBarButtonItem] = []
                 for controller in controllers(try XCTUnwrap(window.rootViewController)) {
                     let item = controller.navigationItem
@@ -168,6 +173,9 @@ extension HomeRowArrangementHostedTests {
                     XCTAssertEqual(control.convert(control.bounds, to: window).minY, before.minY, accuracy: 2)
                 }
                 #if os(iOS)
+                if let inlinePicker, let inlineFrame {
+                    XCTAssertEqual(inlinePicker.convert(inlinePicker.bounds, to: window).minY, inlineFrame.minY, accuracy: 2)
+                }
                 XCTAssertNil(descendants(window).first {
                     $0.accessibilityIdentifier == "upcoming.navigationBackdrop"
                 }, "Upcoming must not stack a material overlay over the system scroll edge")
@@ -176,14 +184,16 @@ extension HomeRowArrangementHostedTests {
                     XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
                 }
                 let calendar = try XCTUnwrap(barItems.first { $0.title == "Calendar" })
-                XCTAssertTrue(UIApplication.shared.sendAction(
-                    try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
-                ))
+                if inlinePicker == nil {
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                }
                 #else
                 let calendar = try XCTUnwrap(controls[0] as? UIControl)
                 calendar.sendActions(for: .primaryActionTriggered)
                 #endif
-                let opened = try await self.capture(window, name: "Upcoming calendar from pinned toolbar")
+                let opened = try await self.capture(window, name: "Upcoming native calendar")
                 #if os(iOS)
                 XCTAssertFalse(opened.contains { ["Calendar", "Done"].contains($0.0) })
                 let picker = try XCTUnwrap(descendants(window).compactMap { $0 as? UIDatePicker }.first)
@@ -196,7 +206,23 @@ extension HomeRowArrangementHostedTests {
                 picker.setDate(selected, animated: false)
                 picker.sendActions(for: .valueChanged)
                 _ = try await self.snapshot(window, name: "Upcoming selected date")
-                XCTAssertNil(picker.window)
+                XCTAssertEqual(picker.window != nil, inlinePicker != nil)
+                if inlinePicker != nil {
+                    let expandedWidth = scroll.bounds.width
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                    _ = try await self.snapshot(window, name: "Upcoming minimized calendar")
+                    XCTAssertNil(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                    XCTAssertGreaterThan(scroll.bounds.width, expandedWidth + 300)
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                    _ = try await self.snapshot(window, name: "Upcoming restored calendar")
+                    let restored = try XCTUnwrap(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                    XCTAssertTrue(Calendar.current.isDate(restored.date, inSameDayAs: selected))
+                    XCTAssertEqual(scroll.bounds.width, expandedWidth, accuracy: 2)
+                }
                 #else
                 XCTAssertTrue(opened.contains { $0.0 == "Cancel" })
                 #endif

@@ -43,9 +43,15 @@ behind the native toolbar using the system's soft scroll-edge effect on iOS 26+.
 There is no additional material, gradient mask, or full-width background overlay:
 stacking one over the native edge obscures rows and tints the page background.
 The system owns the transition's blur and opacity; reduced transparency retains
-the shell's existing fallback. The mobile
-calendar is a native graphical date picker in a content-sized popover anchored to
-Calendar; selecting a date closes it. TV uses native secondary glass controls
+the shell's existing fallback. On wide, regular-size mobile layouts with enough
+height, a native month calendar sits beside the agenda and stays fixed while it
+scrolls. Calendar in the toolbar minimizes or reopens it, returning the space to
+the poster grid; this is page-local presentation state, not a saved preference.
+Selecting a date scrolls the agenda without dismissing the side calendar.
+Phone and narrow iPad layouts use the same native picker in a content-sized
+popover anchored to Calendar; selecting a date closes that popover. Resizing
+preserves the selected date and manual minimization, and widening dismisses any
+open popover. TV uses native secondary glass controls
 below the selected navigation chrome.
 Upcoming date headings use the shared rail typography. Each date uses standard
 poster cards with shared sizing, captions, artwork, and focus behavior. Fixed-width
@@ -67,7 +73,11 @@ phone wrapping, and single/grouped episode captions.
 They also support
 `--capture-scrolled`, `--capture-calendar` and
 `--capture-selection` to exercise pinned controls, the real calendar presentation
-and dismissal after choosing a date. Add `--capture-opaque` to the scrolled capture
+and the appropriate inline/popover behavior after choosing a date.
+`--capture-calendar-collapsed` checks hide/reopen, recovered poster width and date
+retention, ending minimized. `--capture-calendar-resize` additionally checks the
+narrow popover and its dismissal when returning to a wide layout.
+Add `--capture-opaque` to the scrolled capture
 to check the app's reduced-transparency fallback. Add `--capture-edge-comparison`
 to save same-position native-window renders with only the system's top edge effect
 enabled and disabled (`tmp/upcoming-edge-enabled.png` and `tmp/upcoming-edge-disabled.png`).
@@ -75,6 +85,8 @@ Add `--capture-landscape` to an
 action capture to render a 1194-by-834 native test window with the sidebar collapsed;
 this checks wide layout, not device rotation. That render is saved to
 `tmp/upcoming-landscape.png` in the presentation host's data container.
+`--capture-narrow` instead renders a 700-by-900 iPad window to
+`tmp/upcoming-narrow.png`, exercising the compact-calendar fallback.
 
 `HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
 request-connection changes invalidate in-flight results. Viewing/watchlist
