@@ -316,11 +316,14 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         showsEmptySectionMessages: Bool = true
     ) -> [HomePresentationRow] {
         HomePresentationRow.resolve(
-            rows: rows, content: content, visibility: visibility, liveTV: liveTV, presentation: presentation,
+            rows: rows, content: content, visibility: visibility, liveTV: liveTV,
+            upcoming: upcoming.homeReleases, presentation: presentation,
             showsEmptySectionMessages: showsEmptySectionMessages,
             serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
         )
     }
+
+    public let upcoming = UpcomingFeedModel()
 
     public private(set) var state: LoadState<Content> = .idle {
         didSet { stateRevision &+= 1 }
@@ -663,6 +666,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         ) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                self.upcoming.refreshRevision += 1
                 if let mutation = MediaItemMutation.from(note) {
                     self.applyWatchedState(mutation)
                 } else {
@@ -732,6 +736,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     /// A replaced account/profile scope must retire its model-owned work now,
     /// not wait for deinit while an outstanding load still retains the model.
     public func invalidate() {
+        upcoming.invalidate()
         isInvalidated = true
         recommendationContext.invalidate()
         cancelPendingLoad()
@@ -2102,6 +2107,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
               let content = state.value else { throw AppError.notFound }
         switch kind {
         case .continueWatching: return content.continueWatching
+        case .comingSoon: return upcoming.homeReleases.map(\.item)
         case .watchlist: return content.watchlist
         case .recentlyAdded:
             return HomeRecentlyAddedPolicy.items(

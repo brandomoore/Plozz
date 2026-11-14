@@ -164,6 +164,38 @@ struct SeerClient: Sendable {
 
     // MARK: - Requests
 
+    func authenticatedUser() async throws -> SeerUserDTO {
+        try await http.decode(
+            SeerUserDTO.self,
+            from: Endpoint(method: .get, path: "/api/v1/auth/me", headers: headers()),
+            baseURL: baseURL
+        )
+    }
+
+    func personalRequests(userID: Int, skip: Int) async throws -> SeerPersonalRequestPage {
+        let endpoint = Endpoint(
+            method: .get, path: "/api/v1/user/\(userID)/requests",
+            queryItems: [
+                URLQueryItem(name: "take", value: "100"),
+                URLQueryItem(name: "skip", value: String(skip))
+            ],
+            headers: headers(actingUserID: userID)
+        )
+        return try await http.decode(SeerPersonalRequestPage.self, from: endpoint, baseURL: baseURL)
+    }
+
+    func requestedMovie(tmdbID: Int, language: String) async throws -> SeerDiscoverResult {
+        try await http.decode(
+            SeerDiscoverResult.self,
+            from: Endpoint(
+                method: .get, path: "/api/v1/movie/\(tmdbID)",
+                queryItems: [URLQueryItem(name: "language", value: language)],
+                headers: headers()
+            ),
+            baseURL: baseURL
+        )
+    }
+
     /// The low-level result of `POST /api/v1/request`: either created (2xx, with
     /// the decoded response when present) or a server-rejected status + message.
     /// Transport failures throw instead (the caller maps those to `.unreachable`).

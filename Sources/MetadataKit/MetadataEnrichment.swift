@@ -33,6 +33,9 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
     /// Every known future episode, oldest first, when the provider lists more than
     /// the next one (TheTVDB). Empty for single-next providers (AniList, TVmaze).
     public var upcomingEpisodes: [UpcomingEpisode]
+    /// Calendar-only completeness: true includes successful empty listings;
+    /// false means the attempted listing was unavailable and must remain retryable.
+    public var calendarScheduleAvailable: Bool?
     /// Billed cast, best-first, independent of the crew groups.
     public var cast: SourcedValue<[MediaPerson]>?
     public var directors: SourcedValue<[MediaPerson]>?
@@ -109,7 +112,7 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
             && tagline == nil && posterURL == nil && logoURL == nil
             && episodeStillURL == nil && bannerURL == nil && score == nil
             && backdropCandidates.isEmpty && upcomingEpisode == nil
-            && upcomingEpisodes.isEmpty && cast == nil && cadence == nil
+            && upcomingEpisodes.isEmpty && calendarScheduleAvailable != true && cast == nil && cadence == nil
             && directors == nil && writers == nil && producers == nil && composers == nil && studios == nil
             && creditReferences == nil
             && originalLanguage == nil && seriesStatus == nil
@@ -202,6 +205,7 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         // Schedule: first provider (in configured order) to report a next episode
         // wins, mirroring the priority-respecting merge used for fields above.
         if !present.contains(.nextAiringEpisode) {
+            if other.calendarScheduleAvailable == true { calendarScheduleAvailable = true }
             if !other.upcomingEpisodes.isEmpty, upcomingEpisodes.isEmpty {
                 // A provider that lists the whole run supersedes one that reported
                 // only the next episode. Its singular is taken too: the list and the

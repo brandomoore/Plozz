@@ -215,10 +215,11 @@ public struct TVmazeClient: TVmazeEnriching {
             url: URL(string: "https://api.tvmaze.com/shows/\(showID)")!
         )
         let (listing, show) = await (listingTask, showTask)
+        if query.scheduleStartDate != nil, listing == nil { return nil }
 
         // Compared against the start of today so an episode airing *today* still
         // counts as upcoming — a date-only schedule can't say whether it has aired.
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = query.scheduleStartDate ?? Calendar.current.startOfDay(for: Date())
         let sourceURL = URL(string: "https://api.tvmaze.com/shows/\(showID)")
         let upcoming = (listing ?? []).compactMap { ep -> ProviderNextEpisode? in
             guard let resolved = Self.scheduleDate(
@@ -245,7 +246,7 @@ public struct TVmazeClient: TVmazeEnriching {
             weekdays: Self.weekdayIndices(from: show?.schedule?.days),
             airsTime: show?.schedule?.time?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyOrNil
         )
-        guard !upcoming.isEmpty || !cadence.isEmpty else { return nil }
+        guard query.scheduleStartDate != nil || !upcoming.isEmpty || !cadence.isEmpty else { return nil }
         return TVmazeUpcoming(
             showID: showID,
             episodes: Array(upcoming),
@@ -435,7 +436,11 @@ public struct TVmazeEnrichmentProvider: MetadataEnrichmentProvider {
             // The full listing first — it fills the whole upcoming run and the
             // cadence in one pass. `nextEpisode` stays the fallback for a show whose
             // listing is unavailable but whose next episode is known.
-            if let listed = await client.upcomingEpisodes(query, limit: 24), !listed.episodes.isEmpty {
+            let listed = await client.upcomingEpisodes(
+                query, limit: query.scheduleStartDate == nil ? 24 : .max
+            )
+            if query.scheduleStartDate != nil { out.calendarScheduleAvailable = listed != nil }
+            if let listed, query.scheduleStartDate != nil || !listed.episodes.isEmpty {
                 let identity = MediaIdentity.external(source: "tvmaze", value: String(listed.showID))
                 let mapped = listed.episodes.map {
                     $0.upcomingEpisode(seriesIdentity: identity, source: .tvmaze, refreshedAt: now)
@@ -443,7 +448,7 @@ public struct TVmazeEnrichmentProvider: MetadataEnrichmentProvider {
                 out.upcomingEpisodes = mapped
                 out.upcomingEpisode = mapped.first
                 out.cadence = listed.cadence
-            } else if let schedule = await client.nextEpisode(query) {
+            } else if query.scheduleStartDate == nil, let schedule = await client.nextEpisode(query) {
                 out.upcomingEpisode = schedule.next.upcomingEpisode(
                     seriesIdentity: .external(source: "tvmaze", value: String(schedule.showID)),
                     source: .tvmaze,

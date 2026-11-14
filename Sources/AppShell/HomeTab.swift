@@ -34,6 +34,7 @@ import TopShelfKit
 enum HomeTabRoot {
     case home
     case watchlist
+    case upcoming
     case discover
     /// One library's grid.
     case library(MediaLibrary)
@@ -57,6 +58,7 @@ struct HomeTab: View {
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
     @Environment(\.locale) private var locale
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.detailPlaybackPreparationAllowed) private var playbackPreparationAllowed
     @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation
@@ -69,6 +71,8 @@ struct HomeTab: View {
     /// for one of the rail's library slots.
     var root: HomeTabRoot = .home
     let accounts: [ResolvedAccount]
+    var upcomingAccounts: @MainActor () -> [ResolvedAccount] = { [] }
+    var upcomingWatchlist: @MainActor () -> [MediaItem] = { [] }
     var isProfileAuthorized: @MainActor () -> Bool = { false }
     /// Every server added to the device, regardless of what this profile has
     /// switched on. Home needs it to tell "no servers yet" from "all off".
@@ -228,6 +232,8 @@ struct HomeTab: View {
             homeRoot
         case .watchlist:
             watchlistRoot
+        case .upcoming:
+            UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
         case .discover:
             discoverRoot
         case let .library(library):
@@ -266,6 +272,42 @@ struct HomeTab: View {
                 .loadingMore(loadMore)
             }
             .id("\(seer.connectionRevision)|\(locale.identifier)|\(visibility.disabledKeys.sorted())")
+        }
+    }
+
+    private var upcomingScopeKey: String {
+        UpcomingFeedLoader.scopeKey(
+            profileID: profilesModel?.activeProfileID ?? runtime.scopeKey,
+            accounts: upcomingAccounts(), requestIdentity: activeSeerrIdentity,
+            connectionRevision: seer.connectionRevision, language: locale.identifier,
+            regionCode: Locale.current.region?.identifier
+        )
+    }
+
+    private func refreshUpcoming() async {
+        let scope = upcomingScopeKey
+        let profileID = profilesModel?.activeProfileID
+        let accounts = upcomingAccounts()
+        let saved = upcomingWatchlist()
+        let region = Locale.current.region?.identifier
+        let language = locale.identifier
+        let identity = activeSeerrIdentity
+        let isCurrent: @MainActor @Sendable () -> Bool = {
+            isProfileAuthorized() && profilesModel?.activeProfileID == profileID
+                && upcomingScopeKey == scope
+                && profilesModel?.activeProfile.seerrRequestIdentity == identity
+        }
+        await sharedHomeViewModel.upcoming.refresh(
+            scope: scope, namespace: libraryPreferencesNamespace, isCurrent: isCurrent
+        ) {
+            try await UpcomingFeedLoader.load(
+                accounts: accounts, watchlist: saved, regionCode: region,
+                interval: UpcomingFeedLoader.window(),
+                requestedMovies: {
+                    try await seer.personallyRequestedMovies(identity: identity, language: language)
+                },
+                isCurrent: isCurrent
+            )
         }
     }
 
@@ -571,6 +613,8 @@ struct HomeTab: View {
                         }
                     case .watchlist:
                         watchlistRoot
+                    case .upcoming:
+                        UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
                     }
                 }
                 .toolbar(.hidden, for: .tabBar)
@@ -585,6 +629,22 @@ struct HomeTab: View {
                 itemDetail(for: item, libraryOrigin: nil)
             }
             .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
+            .task(id: "\(upcomingScopeKey)|\(sharedHomeViewModel.upcoming.refreshRevision)|\(isActiveTab)") {
+                guard isActiveTab else { return }
+                await refreshUpcoming()
+            }
+            .onChange(of: seer.personalRequestsRevision) { _, _ in
+                if isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistDidChange)) { _ in
+                if isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistCacheDidLoad)) { _ in
+                if isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
+            }
             .youTubeTrailerOpeningFailures(trailerOpening)
             .externalMediaOpeningFailures(externalOpening)
             .onChange(of: accounts.map(\.account.id)) { _, _ in externalOpening.cancel() }

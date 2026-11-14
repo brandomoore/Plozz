@@ -502,12 +502,15 @@ public enum ContinueWatchingAction: String, CaseIterable, Codable, Sendable {
 /// separately via `HeroSettings`.
 public enum HomeGlobalRow: String, CaseIterable, Codable, Sendable {
     case continueWatching
+    case comingSoon
     case watchlist
     case recentlyAdded
 
     /// The row's display heading (matches ``HomeRowKind`` titles).
     public var title: LocalizedStringResource {
         switch self {
+        case .comingSoon:
+            return "Coming Soon"
         case .continueWatching:
             return LocalizedStringResource(
                 "homeRow.continueWatching",

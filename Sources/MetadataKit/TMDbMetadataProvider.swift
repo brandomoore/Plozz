@@ -143,7 +143,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         guard access.isEnabled,
               query.contentType != .music,
               let id = await resolveID(for: query) else {
-            return ExternalTitleAvailability(regionCode: region)
+            return ExternalTitleAvailability(regionCode: region, releaseDatesAvailable: false)
         }
 
         async let offers = watchOffers(
@@ -164,9 +164,10 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let (events, resolvedOffers) = await (releaseDates, offers)
         return ExternalTitleAvailability(
             regionCode: region,
-            releaseEvents: events,
+            releaseEvents: events ?? [],
             watchOffers: resolvedOffers.offers,
-            watchProvidersURL: resolvedOffers.link
+            watchProvidersURL: resolvedOffers.link,
+            releaseDatesAvailable: events != nil
         )
     }
 
@@ -658,14 +659,14 @@ public struct TMDbMetadataProvider: ArtworkProvider {
     private func movieReleaseDates(
         id: String,
         regionCode: String
-    ) async -> [TitleReleaseEvent] {
+    ) async -> [TitleReleaseEvent]? {
         guard let url = url("/3/movie/\(id)/release_dates"),
               let response = await MetadataHTTP.get(
                   ReleaseDatesResponse.self,
                   url: url,
                   headers: authHeaders
-              ),
-              let region = response.results.first(where: {
+              ) else { return nil }
+        guard let region = response.results.first(where: {
                   $0.iso_3166_1?.uppercased() == regionCode
               }) else { return [] }
 

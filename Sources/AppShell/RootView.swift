@@ -799,6 +799,8 @@ public struct RootView: View {
                             pendingPlay: appState.pendingPlay,
                             screenshotDirector: appState.screenshotDirector
                         ),
+                        upcomingAccounts: { appState.upcomingAccounts },
+                        upcomingWatchlist: { appState.resolvedUniversalWatchlistItems(candidates: []) },
                         isAccountIncludedInActiveProfile: { appState.profileFlow.isAccountIncludedInActiveProfile($0) },
                         onSetAccountIncluded: { appState.profileFlow.setAccount($0, includedInActiveProfile: $1) },
                         onSaveProfile: { appState.profileFlow.saveProfile($0) },

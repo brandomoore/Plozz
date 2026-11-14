@@ -19,6 +19,14 @@ to the page layout.
 A named group of titles supplied by a media source. A Home section can use a
 collection without changing the collection itself.
 
+**Upcoming**:
+The personal release calendar for shows with viewing history and movies saved
+to a watchlist or personally requested. A release date does not mean the title
+is available to play.
+
+**Coming Soon**:
+The Home row previewing the next announced releases from Upcoming.
+
 **Section layout**:
 The visual presentation of a section's content, such as posters, landscape cards,
 or Featured cards.

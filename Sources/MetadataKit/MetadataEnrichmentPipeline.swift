@@ -19,6 +19,9 @@ public extension MetadataQuery {
             ids.append("\(namespace.rawValue):\(value.utf8.count):\(value)")
         }
         var parts = [contentType.rawValue, kind.rawValue, "text-language-v1:\(metadataLanguage)"]
+        if let scheduleStartDate {
+            parts.append("schedule-from:\(scheduleStartDate.timeIntervalSince1970)")
+        }
         if ids.isEmpty {
             parts.append("t:\(title.lowercased())|y:\(year.map(String.init) ?? "")")
         } else {
@@ -63,7 +66,8 @@ public extension MetadataQuery {
             episodeHints: episodeHints,
             titleAlternates: titleAlternates,
             artworkLanguage: artworkLanguage,
-            metadataLanguage: metadataLanguage
+            metadataLanguage: metadataLanguage,
+            scheduleStartDate: scheduleStartDate
         )
     }
 

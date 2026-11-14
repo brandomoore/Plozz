@@ -217,14 +217,31 @@ public actor TVDBClient {
     /// episode airing *today* still counts as upcoming until the day rolls over —
     /// matching `dateOnly` precision, which cannot say whether it has aired yet.
     public func upcomingEpisodes(byTVDBID id: String, limit: Int = 24) async -> TVDBUpcomingSchedule? {
+        await schedule(
+            byTVDBID: id, from: Calendar.current.startOfDay(for: Date()), limit: limit, calendar: false
+        )
+    }
+
+    public func scheduledEpisodes(
+        byTVDBID id: String, from start: Date, limit: Int
+    ) async -> TVDBUpcomingSchedule? {
+        await schedule(byTVDBID: id, from: start, limit: limit, calendar: true)
+    }
+
+    private func schedule(
+        byTVDBID id: String, from start: Date, limit: Int, calendar: Bool
+    ) async -> TVDBUpcomingSchedule? {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard config.isConfigured, !trimmed.isEmpty, let token = await ensureToken() else { return nil }
 
         async let seriesTask = seriesRecord(id: trimmed, token: token)
-        async let episodesTask = trailingEpisodes(seriesID: trimmed, token: token)
+        async let episodesTask = calendar
+            ? calendarEpisodes(seriesID: trimmed, token: token)
+            : trailingEpisodes(seriesID: trimmed, token: token)
         let (series, episodes) = await (seriesTask, episodesTask)
+        if calendar, episodes == nil { return nil }
 
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = start
         let sourceURL = URL(string: "\(config.apiBaseURL.absoluteString)/series/\(trimmed)/extended")
         let upcoming = (episodes ?? [])
             .compactMap { ep -> ProviderNextEpisode? in
@@ -247,7 +264,7 @@ public actor TVDBClient {
             weekdays: series?.airsDays?.weekdayIndices ?? [],
             airsTime: series?.airsTime?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         )
-        guard !upcoming.isEmpty || !cadence.isEmpty else { return nil }
+        guard calendar || !upcoming.isEmpty || !cadence.isEmpty else { return nil }
         return TVDBUpcomingSchedule(
             episodes: Array(upcoming),
             cadence: cadence.isEmpty ? nil : cadence,
@@ -285,7 +302,23 @@ public actor TVDBClient {
             ? episodePage(seriesID: seriesID, page: last - 1, token: token)
             : nil
         let (lastPage, penultimate) = await (lastPageTask, penultimateTask)
-        return (penultimate?.data?.episodes ?? []) + (lastPage?.data?.episodes ?? [])
+        return (last == 1 ? first.data?.episodes ?? [] : penultimate?.data?.episodes ?? [])
+            + (lastPage?.data?.episodes ?? [])
+    }
+
+    private func calendarEpisodes(seriesID: String, token: String) async -> [EpisodesResponse.Episode]? {
+        guard let first = await episodePage(seriesID: seriesID, page: 0, token: token),
+              var episodes = first.data?.episodes else { return nil }
+        let last = first.links?.lastPageIndex ?? 0
+        if last > 0 {
+            for page in 1...last {
+                guard !Task.isCancelled,
+                      let response = await episodePage(seriesID: seriesID, page: page, token: token),
+                      let entries = response.data?.episodes else { return nil }
+                episodes.append(contentsOf: entries)
+            }
+        }
+        return episodes
     }
 
     private func episodePage(seriesID: String, page: Int, token: String) async -> EpisodesResponse? {

@@ -44,6 +44,25 @@ public actor SeriesScheduleResolver {
         await store.record(for: key)
     }
 
+    /// Uses the same configured providers and result cache as detail enrichment,
+    /// without writing historical entries into the next-episode store.
+    public func calendarEpisodes(
+        for query: MetadataQuery, in interval: DateInterval
+    ) async throws -> [UpcomingEpisode] {
+        let enrichment = await pipeline.enrich(
+            query.seriesScoped.forScheduleStarting(at: interval.start),
+            requesting: [.nextAiringEpisode], tier: .visiblePrefetch
+        )
+        let episodes = enrichment.upcomingEpisodes.isEmpty
+            ? enrichment.upcomingEpisode.map { [$0] } ?? []
+            : enrichment.upcomingEpisodes
+        try Task.checkCancellation()
+        guard enrichment.calendarScheduleAvailable == true || !episodes.isEmpty else {
+            throw AppError.notFound
+        }
+        return episodes.filter { $0.airDate >= interval.start && $0.airDate < interval.end }
+    }
+
     /// Ensures a fresh schedule record for `query`, resolving from providers only when
     /// no fresh record exists (or `force` is set). Returns the current record either
     /// way. Safe to call on every open of a series (foreground fast-track) — a fresh

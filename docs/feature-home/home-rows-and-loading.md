@@ -2,6 +2,53 @@
 
 [Home task map](../../Sources/FeatureHome/README.md#where-to-look-first)
 
+## Upcoming and Coming Soon
+
+`UpcomingFeedLoader` builds the personal release agenda from the active profile's
+authorized accounts, resolved universal watchlist and own Seerr requests. It reads
+watched series across paged provider libraries, including caught-up shows, and
+uses Continue Watching to include a first unfinished episode. Merely owning,
+watchlisting or requesting an unwatched show does not enroll it. Movies come from
+the watchlist and personal requests; the household request list is never used.
+Seerr is optional.
+
+Dates come through the existing metadata providers: TVmaze/TheTVDB episode
+listings, AniList's next episode, and regional TMDB movie release events. A
+calendar query has a separate cache identity and cannot replace the detail
+page's next-episode record with yesterday's episode. No announcement is treated
+as proof of library ownership or playability; cards open existing title details.
+Movie dates are omitted when no device region is available.
+
+The current window is 30 days back through 90 days ahead. TV starts at Today;
+earlier days are selected through the calendar, keeping Up from the first card
+available to reach the toolbar. Phone and tablet retain scrollable history.
+Same-day, same-season episodes form one card without episode-title spoilers.
+Filters are page-local; hidden titles persist per profile and also affect Home.
+
+`HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
+request-connection changes invalidate in-flight results. Viewing/watchlist
+mutations, request attempts, foreground entry and opening Upcoming refresh the
+feed. Concurrent requests coalesce; successful unchanged feeds remain fresh for
+six hours. A failed source is reported and its previous same-scope entries remain
+available rather than turning an outage into a successful empty agenda.
+Successful empty calendar listings retain their completeness in the provider
+cache. Unavailable listings are not cached as authoritative negatives, so Retry
+can recover subject to the provider's existing outage cooldown.
+
+Coming Soon is an ordinary Home row, enabled by default while respecting explicit
+hiding, renaming and saved ordering. It previews the next announced event per
+title, at most 20 cards, independently of agenda filters. Its See All action
+opens Upcoming even when that destination is hidden from primary navigation.
+The destination participates in all TV navigation styles and mobile's existing
+tab/More/sidebar arrangement. The TV Home row uses the shared native media rail,
+including Showcase card-focus reporting and the standard browse action.
+
+`UpcomingScheduleTests` includes an opt-in public TVmaze listing comparison
+(`PLOZZ_UPCOMING_LIVE=1`). It checks the production calendar path against the full
+episode listing, including the history window, without media-server credentials.
+The deterministic runtime tests separately cover provider paging, first-episode
+history, personal interests, scope cancellation and partial-source retention.
+
 ## History diagnostics
 
 Home history completion records returned, curated and visible item counts plus

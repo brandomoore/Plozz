@@ -36,6 +36,7 @@ public final class SeerService {
     /// Changes whenever the adopted connection is replaced. Views can use this
     /// as a reload key without observing the secret-bearing config itself.
     public private(set) var connectionRevision = UUID()
+    public private(set) var personalRequestsRevision = 0
 
     @ObservationIgnored private var config: SeerConfig
     /// The shared **household** connection store (URL + admin key), backed in
@@ -136,6 +137,54 @@ public final class SeerService {
     }
 
     private var client: SeerClient { SeerClient(config: config, http: http) }
+
+    /// Only this acting user's active requests, never the household request feed.
+    public func personallyRequestedMovies(
+        identity: SeerRequestIdentity, language: String
+    ) async throws -> [MediaItem] {
+        guard isConfigured else { return [] }
+        guard !identity.requiresRelink(to: serverIdentity) else { throw AppError.unauthorized }
+        guard identity != .admin || !refusesAdminRequests() else { throw AppError.unauthorized }
+        let revision = connectionRevision
+        let client = client
+        let userID: Int
+        if let mappedID = identity.userID {
+            userID = mappedID
+        } else {
+            userID = try await client.authenticatedUser().id
+        }
+        guard revision == connectionRevision else { throw CancellationError() }
+        guard userID > 0 else { throw AppError.invalidResponse }
+        var offset = 0
+        var seen = Set<Int>()
+        var movies = Set<Int>()
+        while true {
+            try Task.checkCancellation()
+            let page = try await client.personalRequests(userID: userID, skip: offset)
+            guard revision == connectionRevision else { throw CancellationError() }
+            guard let total = page.pageInfo.results, total >= offset + page.results.count,
+                  !page.results.isEmpty || offset == total else { throw AppError.invalidResponse }
+            for request in page.results {
+                guard request.requestedBy.id == userID,
+                      seen.insert(request.id).inserted else { throw AppError.invalidResponse }
+                if request.media.mediaType == "movie", request.status == 1 || request.status == 2,
+                   request.media.tmdbId > 0 {
+                    movies.insert(request.media.tmdbId)
+                }
+            }
+            offset += page.results.count
+            if offset >= total { break }
+        }
+        var items: [MediaItem] = []
+        for id in movies.sorted() {
+            try Task.checkCancellation()
+            let result = try await client.requestedMovie(tmdbID: id, language: language)
+            guard revision == connectionRevision else { throw CancellationError() }
+            guard result.id == id, result.mediaType == "movie" else { throw AppError.invalidResponse }
+            if let item = SeerMapper.mediaItem(from: result) { items.append(item) }
+        }
+        return items
+    }
 
     private static func loadConfig(from store: SeerConnectionStoring) -> SeerConfig {
         guard let connection = store.load() else { return SeerConfig() }
@@ -657,6 +706,9 @@ public final class SeerService {
             languageProfileId: isTV ? server?.activeLanguageProfileId : nil
         )
 
+        defer {
+            if activeRevision == connectionRevision { personalRequestsRevision &+= 1 }
+        }
         do {
             let result = try await activeClient.createRequest(body, actingUserID: actingUserID)
             switch result {
