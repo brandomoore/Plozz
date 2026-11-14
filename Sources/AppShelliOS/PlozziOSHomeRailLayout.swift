@@ -45,29 +45,34 @@ struct PlozziOSHomeRowSlot<Content: View>: View {
 
     var body: some View {
         PlozziOSHomeRailLayout { metrics in
-            PlozziOSHomeRowFootprint(
-                metrics: metrics, title: title, style: style, captions: captions,
-                isLibraryRow: isLibraryRow, isLiveTV: isLiveTV, isFeatured: isFeatured,
-                isContinueWatching: isContinueWatching, showsSeriesArtwork: showsSeriesArtwork
-            )
-            .environment(\.plozzShimmerEnabled, false)
-            .hidden()
-            .accessibilityHidden(true)
-            .overlay(alignment: .topLeading) {
-                // Measure every footprint, but mount rail content only near
-                // the viewport. The lazy content never determines row height.
-                GeometryReader { geometry in
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        Group {
-                            if showsStatus {
-                                // Keep long diagnostics reachable within the reserved row.
-                                ScrollView { content }
-                                    .scrollBounceBehavior(.basedOnSize)
-                            } else {
-                                content
+            if presentation.id == .global(.comingSoon) {
+                // Compact release cards do not share the poster/landscape sizing template.
+                content
+            } else {
+                PlozziOSHomeRowFootprint(
+                    metrics: metrics, title: title, style: style, captions: captions,
+                    isLibraryRow: isLibraryRow, isLiveTV: isLiveTV, isFeatured: isFeatured,
+                    isContinueWatching: isContinueWatching, showsSeriesArtwork: showsSeriesArtwork
+                )
+                .environment(\.plozzShimmerEnabled, false)
+                .hidden()
+                .accessibilityHidden(true)
+                .overlay(alignment: .topLeading) {
+                    // Measure every footprint, but mount rail content only near
+                    // the viewport. The lazy content never determines row height.
+                    GeometryReader { geometry in
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            Group {
+                                if showsStatus {
+                                    // Keep long diagnostics reachable within the reserved row.
+                                    ScrollView { content }
+                                        .scrollBounceBehavior(.basedOnSize)
+                                } else {
+                                    content
+                                }
                             }
+                            .frame(height: geometry.size.height, alignment: .top)
                         }
-                        .frame(height: geometry.size.height, alignment: .top)
                     }
                 }
             }

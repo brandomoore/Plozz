@@ -61,6 +61,110 @@ private final class ContentPickerSelectionFixture {
 
 @MainActor
 extension HomeRowArrangementHostedTests {
+    func testUpcomingToolbarStaysAtTopWhileTheAgendaScrolls() async throws {
+        let today = Calendar.current.startOfDay(for: Date())
+        let interval = DateInterval(start: today, duration: 60 * 86_400)
+        let releases = (0..<30).flatMap { index in
+            UpcomingReleaseBuilder.movies(
+                [.init(kind: .digital, date: today.addingTimeInterval(Double(index) * 86_400), regionCode: "US")],
+                for: MediaItem(id: "release-\(index)", title: "Release \(index)", kind: .movie),
+                interests: [.watchlist], regionCode: "US"
+            )
+        }
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "toolbar-test", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        #if os(iOS)
+        let sizes = [CGSize(width: 390, height: 844), CGSize(width: 1024, height: 1366)]
+        #else
+        let sizes = [CGSize(width: 1920, height: 1080)]
+        #endif
+        for size in sizes {
+            try await withWindow(size: size) {
+                NavigationStack {
+                    UpcomingView(model: model, interval: interval)
+                }
+            } inspect: { window in
+                func descendants(_ view: UIView) -> [UIView] {
+                    [view] + view.subviews.flatMap(descendants)
+                }
+                let initial = try await self.capture(window, name: "Upcoming toolbar \(size.width)")
+                XCTAssertFalse(initial.contains { ["All", "Shows", "Movies"].contains($0.0) })
+                let controls = try ["upcoming.today", "upcoming.calendar", "upcoming.filters"].map { id in
+                    try XCTUnwrap(descendants(window).first { $0.accessibilityIdentifier == id }, id)
+                }
+                let frames = controls.map { $0.convert($0.bounds, to: window) }
+                for frame in frames {
+                    XCTAssertGreaterThan(frame.width, 0)
+                    XCTAssertLessThan(frame.maxY, size.height * 0.25)
+                }
+                let scroll = try XCTUnwrap(descendants(window).compactMap { $0 as? UIScrollView }.first {
+                    $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height + 100
+                })
+                scroll.setContentOffset(
+                    CGPoint(x: 0, y: scroll.contentSize.height - scroll.bounds.height),
+                    animated: false
+                )
+                _ = try await self.snapshot(window, name: "Upcoming scrolled \(size.width)")
+                for (control, before) in zip(controls, frames) {
+                    XCTAssertEqual(control.convert(control.bounds, to: window).minY, before.minY, accuracy: 2)
+                }
+                let calendar = try XCTUnwrap(controls[1] as? UIControl)
+                calendar.sendActions(for: .primaryActionTriggered)
+                let opened = try await self.capture(window, name: "Upcoming calendar from pinned toolbar")
+                #if os(iOS)
+                XCTAssertTrue(opened.contains { $0.0 == "Calendar" })
+                #else
+                XCTAssertTrue(opened.contains { $0.0 == "Cancel" })
+                #endif
+            }
+        }
+    }
+
+    #if os(iOS)
+    func testUpcomingHomeRowUsesNeighborInsetsAndCompactHeight() async throws {
+        let release = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: Date(), regionCode: "US")],
+            for: MediaItem(id: "saved-movie", title: "Saved movie", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        let choice = HomeRowChoice(id: .global(.comingSoon), title: "Coming Soon", isProviderDefault: false)
+        let row = HomeLibrarySectionGroup.Row(
+            section: LibrarySection(id: "coming-soon", title: "Coming Soon", style: .landscape, items: [release.item]),
+            isLoading: false, failure: nil
+        )
+        var height: CGFloat = 0
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            ScrollView {
+                VStack(spacing: PlozziOSMediaRailLayout.sectionSpacing) {
+                    PlozziOSMediaSection(title: Text("Before")) { Color.clear.frame(height: 50) }
+                    PlozziOSHomeRowSlot(
+                        presentation: HomePresentationRow(choice: choice, source: .library(row)),
+                        captions: .default, continueWatchingLayout: .landscape,
+                        continueWatchingUsesSeriesArtwork: true
+                    ) {
+                        UpcomingHomeRow(releases: [release], onSeeAll: {})
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+                    PlozziOSMediaSection(title: Text("After")) { Color.clear.frame(height: 50) }
+                }
+            }
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+        } inspect: { window in
+            let text = try await self.capture(window, name: "Coming Soon between ordinary Home rows")
+            let before = try XCTUnwrap(text.first { $0.0 == "Before" }).1
+            let upcoming = try XCTUnwrap(text.first { $0.0.hasPrefix("Coming Soon") }).1
+            let after = try XCTUnwrap(text.first { $0.0 == "After" }).1
+            XCTAssertEqual(upcoming.minX, before.minX, accuracy: 0.01)
+            XCTAssertEqual(upcoming.minX, after.minX, accuracy: 0.01)
+            XCTAssertGreaterThan(height, 96)
+            XCTAssertLessThan(height, 200, "Do not reserve a poster-sized slot for a compact release card.")
+        }
+    }
+    #endif
+
     func testMultiSourcePickerRetainsSelectionsAndNativeFocus() async throws {
         let suite = "ContentPicker.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

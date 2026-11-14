@@ -7,6 +7,10 @@
         @Bindable private var model: UpcomingFeedModel
         @Environment(\.horizontalSizeClass) private var sizeClass
         @Environment(\.themePalette) private var palette
+        #if os(tvOS)
+            @Environment(\.plozzNavigationContentInset) private var navigationInset
+            @Environment(\.plozzTopNavigationContentInsets) private var topNavigationInsets
+        #endif
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
         @State private var didScrollInitially = false
@@ -21,15 +25,13 @@
         public var body: some View {
             ScrollViewReader { proxy in
                 VStack(alignment: .leading, spacing: 20) {
-                    UpcomingToolbar(
-                        model: model, selectedDay: $selectedDay,
-                        showingCalendar: $showingCalendar,
-                        onToday: {
-                            selectedDay = Calendar.current.startOfDay(for: Date())
-                            scrollRevision += 1
-                        }
-                    )
                     #if os(tvOS)
+                        HStack {
+                            Text("Upcoming").font(.title.bold())
+                            Spacer()
+                            toolbarControls
+                        }
+                        .plozzActionButton(role: .secondary)
                         .focusSection()
                     #endif
                     ScrollView {
@@ -59,13 +61,56 @@
                     }
                 }
                 .padding(.horizontal)
+                #if os(tvOS)
+                .padding(.leading, navigationInset)
+                .padding(.top, topNavigationInsets.top)
+                #else
                 .navigationTitle("Upcoming")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        todayButton
+                    }
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        calendarButton
+                        UpcomingFilterMenu(model: model)
+                    }
+                }
+                #endif
                 .tint(palette.primaryText)
                 .sheet(isPresented: $showingCalendar) {
                     UpcomingCalendar(selectedDay: $selectedDay, interval: interval)
                 }
             }
         }
+
+        private var todayButton: some View {
+            Button("Today") {
+                selectedDay = Calendar.current.startOfDay(for: Date())
+                scrollRevision += 1
+            }
+            .accessibilityIdentifier("upcoming.today")
+        }
+
+        private var calendarButton: some View {
+            Button("Calendar", systemImage: "calendar") {
+                showingCalendar = true
+            }
+            .labelStyle(.iconOnly)
+            .accessibilityValue(Text(selectedDay, format: .dateTime.month().day()))
+            .accessibilityIdentifier("upcoming.calendar")
+            .help("Calendar")
+        }
+
+        #if os(tvOS)
+            private var toolbarControls: some View {
+                HStack(spacing: 20) {
+                    todayButton
+                    calendarButton
+                    UpcomingFilterMenu(model: model)
+                }
+            }
+        #endif
     }
 
     private struct UpcomingFeedStatus: View {
@@ -89,50 +134,16 @@
         }
     }
 
-    private struct UpcomingToolbar: View {
-        @Bindable var model: UpcomingFeedModel
-        @Binding var selectedDay: Date
-        @Binding var showingCalendar: Bool
-        let onToday: () -> Void
-        @Environment(\.horizontalSizeClass) private var sizeClass
-        @Environment(\.dynamicTypeSize) private var dynamicType
-
-        var body: some View {
-            let layout =
-                sizeClass == .compact || dynamicType.isAccessibilitySize
-                ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 20))
-            layout {
-                HStack {
-                    Button("Today", action: onToday)
-                        .accessibilityIdentifier("upcoming.today")
-                    Button {
-                        showingCalendar = true
-                    } label: {
-                        Label {
-                            Text(selectedDay, format: .dateTime.month(.abbreviated).day())
-                        } icon: {
-                            Image(systemName: "calendar")
-                        }
-                    }
-                    .accessibilityIdentifier("upcoming.calendar")
-                    Spacer(minLength: 0)
-                    UpcomingFilterMenu(model: model)
-                }
-                Picker("Type", selection: $model.filters.mediaType) {
-                    ForEach(UpcomingFilters.MediaType.allCases, id: \.self) {
-                        Text($0.title).tag($0)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-        }
-    }
-
     private struct UpcomingFilterMenu: View {
         @Bindable var model: UpcomingFeedModel
 
         var body: some View {
             Menu {
+                Picker("Type", selection: $model.filters.mediaType) {
+                    ForEach(UpcomingFilters.MediaType.allCases, id: \.self) {
+                        Text($0.title).tag($0)
+                    }
+                }
                 Section("Interests") {
                     ForEach(UpcomingInterest.allCases, id: \.self) { interest in
                         Toggle(
@@ -160,6 +171,8 @@
                 Label("Filters", systemImage: "line.3.horizontal.decrease")
                     .labelStyle(.iconOnly)
             }
+            .accessibilityIdentifier("upcoming.filters")
+            .help("Filters")
         }
     }
 
@@ -210,6 +223,10 @@
         private let onFocusChange: ((MediaItem?) -> Void)?
         private let onCardFocused: ((MediaItem) -> Void)?
         @Environment(\.mediaItemNavigator) private var navigate
+        #if os(iOS)
+            @Environment(\.horizontalSizeClass) private var sizeClass
+            @Environment(\.plozzMetrics) private var metrics
+        #endif
 
         public init(
             title: Text = Text("Coming Soon"),
@@ -248,26 +265,23 @@
                     onSelect: { navigate?($0) }
                 )
                 .browsingRow(onSeeAll)
-            #else
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        title.font(.title2.bold())
-                        Spacer()
-                        Button("See All", action: onSeeAll)
-                    }
+            #elseif os(iOS)
+                PlozziOSMediaSection(title: title, onBrowse: onSeeAll) {
                     ScrollView(.horizontal) {
-                        LazyHStack(spacing: 20) {
+                        LazyHStack(alignment: .top, spacing: 20) {
                             ForEach(releases) { release in
                                 UpcomingReleaseCard(release: release, showsDate: true)
-                                    #if os(tvOS)
-                                        .frame(width: 360)
-                                    #else
-                                        .frame(width: 280)
-                                    #endif
+                                    .frame(width: 280)
                             }
                         }
-                        .padding(.vertical, 12)
                     }
+                    .contentMargins(
+                        .horizontal,
+                        PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
+                        for: .scrollContent
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                    .scrollIndicators(.hidden)
                     .scrollClipDisabled()
                 }
             #endif

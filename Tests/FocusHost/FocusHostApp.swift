@@ -37,7 +37,9 @@ struct FocusHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-onboarding") {
+            if ProcessInfo.processInfo.arguments.contains("--upcoming-capture-fixture") {
+                UpcomingCaptureFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-onboarding") {
                 LiveJellyfinOnboardingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--live-webdav-watchlist-fixture") {
                 LiveWebDAVWatchlistFixture()

@@ -492,6 +492,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/FocusHost
+      - path: Tests/HomePresentationSupport/UpcomingCaptureFixture.swift
       - path: Tests/HomePresentationSupport/DetailSelectionFixture.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnFixture.swift
       - path: Tests/iOSPresentationHost/DetailInformationFixture.swift
@@ -532,6 +533,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/iOSPresentationHost
+      - path: Tests/HomePresentationSupport/UpcomingCaptureFixture.swift
       - path: Tests/HomePresentationSupport/DetailSelectionFixture.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnFixture.swift
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift

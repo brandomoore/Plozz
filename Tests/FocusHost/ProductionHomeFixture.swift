@@ -1097,6 +1097,14 @@ private struct ProductionHomeContent: View {
                     .navigationDestination(for: HomeBrowseDestination.self) { destination in
                         Group {
                             switch destination {
+                            case .upcoming:
+                                UpcomingView(
+                                    model: fixture.model.upcoming,
+                                    interval: DateInterval(
+                                        start: Date().addingTimeInterval(-30 * 86_400),
+                                        end: Date().addingTimeInterval(90 * 86_400)
+                                    )
+                                )
                             case let .row(browser):
                                 HomeRowBrowseView(model: browser, columns: PlozzMetrics.standard.posterColumns) { item in
                                     PosterCardView(item: item, style: .poster) {

@@ -32,6 +32,16 @@ earlier days are selected through the calendar, keeping Up from the first card
 available to reach the toolbar. Phone and tablet retain scrollable history.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
+Media type lives inside Filters, rather than in a separate segmented control.
+Calendar, Filters and Today remain at the top while the agenda scrolls: mobile
+uses the native navigation toolbar, and TV uses native secondary glass controls
+below the selected navigation chrome.
+On mobile, Coming Soon uses the shared Home section heading and horizontal
+insets, with an intrinsic compact-card height instead of a poster-row footprint.
+The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and
+`--upcoming-capture-fixture --capture-home` (the production Home screen with
+Continue Watching, Coming Soon and Recently Added). These previews use sample
+dates/history and public artwork, not a signed-in account; Home's hero is disabled.
 
 `HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
 request-connection changes invalidate in-flight results. Viewing/watchlist
