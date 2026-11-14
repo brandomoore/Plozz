@@ -637,6 +637,8 @@ public enum SettingsSearchCatalog {
               keywords: "hero random library sources choose include exclude"),
         .init("hero-choose-collections", page: .heroContent, title: "Choose collections",
               keywords: "hero collections playlists selected titles"),
+        .init("home-row-reset-on-exit", page: .homeRowStyle, title: "Reset rows when leaving",
+              keywords: "home row scroll back start beginning first reset return position focus", platform: .television),
         .init("showcase-logo-size", page: .homeRowStyle, title: "Logo size",
               keywords: "showcase spotlight title logo bigger smaller", platform: .television),
         .init("showcase-text-size", page: .homeRowStyle, title: "Text size",
