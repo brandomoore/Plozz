@@ -362,7 +362,11 @@ struct HomeTab: View {
                     accounts: accounts,
                     identitySources: identitySources,
                     ratingsProvider: ratingsProvider,
-                    seer: seer
+                    seer: seer,
+                    hideWatched: !heroSettings.effectiveSettings.followsFocus
+                        && heroSettings.effectiveSettings.hideWatched,
+                    visibility: { [homeVisibility] in await homeVisibility.visibility },
+                    allowsDiscovery: { [heroSettings] in await heroSettings.allowsDiscovery }
                 ),
                 heroTrailerResolver: makeHeroTrailerResolver(),
                 homePerfOverlayEnabled: homePerfOverlayEnabled,

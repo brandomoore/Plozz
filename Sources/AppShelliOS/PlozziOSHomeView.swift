@@ -255,7 +255,17 @@ struct PlozziOSHomeView: View {
             requestIdentityResolver: { [seer = appModel.seerService] item in
                 guard await seer.isConfigured else { return nil }
                 return await ExternalTitleMetadataResolver.shared.tmdbID(for: item)
-            }
+            },
+            libraryTargetResolver: heroLibraryTargetResolver(
+                in: heroAccounts, identitySources: identitySources,
+                visibility: { [visibility = appModel.settings.homeVisibility] in
+                    await visibility.visibility
+                },
+                allowsDiscovery: { [hero = appModel.settings.hero] in
+                    await hero.allowsDiscovery
+                }
+            ),
+            hideWatched: appModel.settings.hero.effectiveSettings.hideWatched
         )
         self.viewModel = viewModel
         _discoveryIdentityRevision = State(initialValue: appModel.identityIndex.identityRevisionProvider())

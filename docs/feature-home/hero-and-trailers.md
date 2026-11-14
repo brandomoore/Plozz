@@ -170,6 +170,18 @@ for a covered page, another item's theme, or a settings preview.
   Status survives library-visibility resets only within the same request context.
   Changing the profile/Seerr connection clears old status and optimistic request
   overrides; a different server cannot inherit Available or download progress.
+  If a curated movie or show has strong catalog identity but no index entry,
+  shared TV/mobile metadata enrichment uses the existing cross-server search to
+  recover its library copy. Only the final carousel candidates are probed, with
+  four titles in flight and a cooperative four-second search/verification budget
+  per title; the full Discovery feed is never searched this way. Search hits
+  still require a live, identity-matching record in an enabled library. An
+  existing index-verification rejection is not retried as a missing entry.
+  Policy or library-visibility changes and cancellation discard late results.
+  Recovered shows resolve a real episode and use the library's metadata/ratings;
+  Hide Watched is reapplied to the recovered title before selecting an episode.
+  Showcase retains its existing stable-lineup policy. Optional external and
+  server-plugin ratings remain cache-only on Home.
 
 ## Collections hero source
 

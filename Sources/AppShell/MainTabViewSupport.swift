@@ -259,7 +259,10 @@ func makeHeroMetadataEnricher(
     accounts: [ResolvedAccount],
     identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
     ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
-    seer: SeerService? = nil
+    seer: SeerService? = nil,
+    hideWatched: Bool = false,
+    visibility: @escaping @Sendable () async -> HomeLibraryVisibility = { .default },
+    allowsDiscovery: @escaping @Sendable () async -> Bool = { true }
 ) -> @Sendable ([MediaItem]) async -> [MediaItem] {
     let enricher = HeroMetadataEnricher(
         accounts: accounts,
@@ -274,7 +277,12 @@ func makeHeroMetadataEnricher(
         requestIdentityResolver: { item in
             guard await seer?.isConfigured == true else { return nil }
             return await ExternalTitleMetadataResolver.shared.tmdbID(for: item)
-        }
+        },
+        libraryTargetResolver: heroLibraryTargetResolver(
+            in: accounts, identitySources: identitySources,
+            visibility: visibility, allowsDiscovery: allowsDiscovery
+        ),
+        hideWatched: hideWatched
     )
     return { await enricher.enrich($0) }
 }

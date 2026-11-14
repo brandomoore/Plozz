@@ -22,12 +22,16 @@ public struct HeroMetadataEnricher: Sendable {
     private let targetSelector: @Sendable (MediaItem) -> MediaItem
     private let ratingsProvider: any ExternalRatingsProviding
     private let requestIdentityResolver: (@Sendable (MediaItem) async -> String?)?
+    private let libraryTargetResolver: (@Sendable (MediaItem) async -> MediaItem?)?
+    private let hideWatched: Bool
 
     public init(
         accounts: [ResolvedAccount],
         targetSelector: @escaping @Sendable (MediaItem) -> MediaItem,
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
-        requestIdentityResolver: (@Sendable (MediaItem) async -> String?)? = nil
+        requestIdentityResolver: (@Sendable (MediaItem) async -> String?)? = nil,
+        libraryTargetResolver: (@Sendable (MediaItem) async -> MediaItem?)? = nil,
+        hideWatched: Bool = false
     ) {
         providersByAccount = Dictionary(
             accounts.map { ($0.account.id, $0.provider) },
@@ -36,6 +40,8 @@ public struct HeroMetadataEnricher: Sendable {
         self.targetSelector = targetSelector
         self.ratingsProvider = ratingsProvider
         self.requestIdentityResolver = requestIdentityResolver
+        self.libraryTargetResolver = libraryTargetResolver
+        self.hideWatched = hideWatched
     }
 
     /// Scoped adapter for callers whose injected enrichment closure predates the
@@ -52,7 +58,8 @@ public struct HeroMetadataEnricher: Sendable {
         _ originalItems: [MediaItem],
         preservingPinnedSeries: PinnedSeriesProvider? = nil
     ) async -> [MediaItem] {
-        let items = await resolvingRequestIdentities(in: originalItems)
+        let identified = await resolvingRequestIdentities(in: originalItems)
+        let items = await resolvingLibraryTargets(in: identified)
         guard !Task.isCancelled else { return originalItems }
         let targets = Dictionary(
             uniqueKeysWithValues: items.indices.compactMap { index -> (Int, MediaItem)? in
@@ -280,6 +287,45 @@ public struct HeroMetadataEnricher: Sendable {
                 }
             }
             return enriched
+        }
+    }
+
+    private func resolvingLibraryTargets(in items: [MediaItem]) async -> [MediaItem] {
+        guard let resolver = libraryTargetResolver, !Task.isCancelled else { return items }
+        let candidates = items.indices.filter {
+            !items[$0].locallyValidatedPlayableSource
+                && (items[$0].kind == .movie || items[$0].kind == .series)
+                && MediaItemIdentity.hasStrongRetargetIdentity(items[$0])
+        }
+        return await withTaskGroup(of: (Int, MediaItem?).self) { group in
+            var next = 0
+            func enqueue(_ index: Int) {
+                group.addTask { (index, await resolver(items[index])) }
+            }
+            while next < min(4, candidates.count) {
+                enqueue(candidates[next])
+                next += 1
+            }
+            var enriched = items
+            var excluded = Set<Int>()
+            while let (index, target) = await group.next() {
+                guard !Task.isCancelled else {
+                    group.cancelAll()
+                    return items
+                }
+                if let target, target.locallyValidatedPlayableSource,
+                   let accountID = target.sourceAccountID,
+                   providersByAccount[accountID] != nil,
+                   HeroDiscoveryIdentityVerification.matches(items[index], target) {
+                    enriched[index] = target
+                    if hideWatched && target.hasBeenPlayed { excluded.insert(index) }
+                }
+                if next < candidates.count {
+                    enqueue(candidates[next])
+                    next += 1
+                }
+            }
+            return enriched.indices.filter { !excluded.contains($0) }.map { enriched[$0] }
         }
     }
 

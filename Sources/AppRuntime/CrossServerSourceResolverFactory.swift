@@ -76,6 +76,58 @@ public func crossServerSourceResolver(
     }
 }
 
+/// Recovers only curated hero titles missing from the index, never the full
+/// Discovery candidate feed. Search suggestions still require live verification.
+public func heroLibraryTargetResolver(
+    in accounts: [ResolvedAccount],
+    identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
+    visibility: @escaping @Sendable () async -> HomeLibraryVisibility = { .default },
+    allowsDiscovery: @escaping @Sendable () async -> Bool = { true }
+) -> (@Sendable (MediaItem) async -> MediaItem?)? {
+    guard let resolveSources = crossServerSourceResolver(
+        in: accounts, identitySources: identitySources
+    ) else { return nil }
+    return { item in
+        guard !Task.isCancelled, !item.locallyValidatedPlayableSource,
+              item.kind == .movie || item.kind == .series,
+              MediaItemIdentity.hasStrongRetargetIdentity(item),
+              identitySources(item).isEmpty,
+              await allowsDiscovery() else { return nil }
+        let initialVisibility = await visibility()
+        let lookup = Task<MediaItem?, Never> {
+            let resolution = await resolveSources(item)
+            guard !Task.isCancelled, !resolution.sources.isEmpty else { return nil }
+            let verification = HeroDiscoveryRuntime(
+                accounts: accounts,
+                identitySources: { _ in resolution.sources },
+                allowsDiscovery: allowsDiscovery
+            )
+            let verified = await verification.resolveLibrarySources(
+                in: [item], visibility: initialVisibility
+            )
+            return verified.first(where: \.locallyValidatedPlayableSource)
+        }
+        // One budget covers all title variants and live verification for this
+        // slide; an unreachable account must not spend four seconds per variant.
+        let deadline = DispatchWorkItem { lookup.cancel() }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 4, execute: deadline)
+        let result = await withTaskCancellationHandler {
+            await lookup.value
+        } onCancel: {
+            lookup.cancel()
+        }
+        deadline.cancel()
+        guard !Task.isCancelled else { return nil }
+        guard !lookup.isCancelled else {
+            PlozzLog.app.error("Hero library recovery timed out; the title remains unverified.")
+            return nil
+        }
+        guard await allowsDiscovery(), await visibility() == initialVisibility,
+              !Task.isCancelled else { return nil }
+        return result
+    }
+}
+
 /// A cross-account library search for the Related row: one query fanned out to
 /// every signed-in server, results pooled.
 ///

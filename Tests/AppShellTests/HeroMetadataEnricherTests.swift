@@ -64,7 +64,279 @@ private final class PinnedSeriesTestState: @unchecked Sendable {
     func set(_ items: [MediaItem]) { lock.withLock { stored = items } }
 }
 
+private actor HeroRecoveryPolicy {
+    var visibility = HomeLibraryVisibility.default
+    var allowsDiscovery = true
+
+    func restrict(library: Bool) {
+        if library {
+            visibility.disabledKeys = ["account:movies"]
+        } else {
+            allowsDiscovery = false
+        }
+    }
+}
+
 final class HeroMetadataEnricherTests: XCTestCase {
+    @MainActor
+    func testColdHeroRecoversLibraryShowAndRatingsWithoutAnIndexMatch() async throws {
+        for kind in [ProviderKind.jellyfin, .plex, .emby] {
+            let seed = MediaItem(
+                id: "tmdb:series:42", title: "Hospital", kind: .series,
+                overview: "A hospital drama.", providerIDs: ["Tmdb": "42"],
+                discoverySources: [.tmdb],
+                availability: .unknown, locallyValidatedPlayableSource: false
+            )
+            let series = MediaItem(
+                id: "library-series", title: seed.title, kind: .series,
+                overview: seed.overview, productionYear: 2025, genres: ["Drama"],
+                ratings: [
+                    .init(source: .community, value: 8.9, scale: .outOfTen),
+                    .init(source: .rottenTomatoes, value: 96, scale: .percent)
+                ],
+                providerIDs: seed.providerIDs
+            )
+            let episode = MediaItem(
+                id: "library-episode", title: "The next shift", kind: .episode,
+                seasonNumber: 2, episodeNumber: 6, seriesID: series.id
+            )
+            let account = resolved(
+                "account", details: [series.id: series, episode.id: episode],
+                childrenByID: [series.id: [episode]], provider: kind,
+                searchResults: [series]
+            )
+            let enrich = makeHeroMetadataEnricher(
+                accounts: [account], identitySources: { _ in [] }
+            )
+
+            let results = await enrich([seed])
+            let result = try XCTUnwrap(results.first)
+
+            XCTAssertEqual(result.id, episode.id)
+            XCTAssertEqual(result.kind, .episode)
+            XCTAssertEqual(result.sourceAccountID, account.account.id)
+            XCTAssertEqual(result.seriesID, series.id)
+            XCTAssertEqual(result.ratings, series.ratings)
+            XCTAssertEqual(result.genres, series.genres)
+            XCTAssertEqual(result.heroCTA(seerConnected: false), .play)
+            XCTAssertFalse(DetailOpenEnvironment.isDiscovery(result, identitySources: { _ in [] }))
+
+            let pinned = await HeroMetadataEnricher.withPinnedSeries({ [seed] }) {
+                await enrich([seed])
+            }
+            let merged = HeroLiveMerge.merge(
+                showing: [seed], fresh: pinned, limit: 1,
+                pinnedItemIDs: [seed.id], preservesPinnedItems: true
+            )
+            let visible = try XCTUnwrap(merged.items.first)
+            XCTAssertEqual(visible.id, seed.id)
+            XCTAssertEqual(visible.kind, .series)
+            XCTAssertEqual(visible.productionYear, series.productionYear)
+            XCTAssertEqual(Set(visible.ratings), Set(series.ratings))
+            XCTAssertEqual(visible.heroCTA(seerConnected: false), .play)
+            let selected = PlaybackSourceSelection.bestPlayItem(
+                visible, accounts: [account], identitySources: { _ in [] }
+            )
+            XCTAssertEqual(selected.id, series.id)
+            let nextEpisode = await HeroPlayTargetResolver.playbackTarget(
+                for: selected, provider: account.provider
+            )
+            XCTAssertEqual(nextEpisode?.id, episode.id)
+            XCTAssertEqual(nextEpisode?.sourceAccountID, account.account.id)
+        }
+    }
+
+    func testColdHeroRecoveryVerifiesLiveRecordsAndLibraryVisibility() async throws {
+        let seed = MediaItem(
+            id: "tmdb:42", title: "Film", kind: .movie, providerIDs: ["Tmdb": "42"],
+            discoverySources: [.tmdb], availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let owned = MediaItem(
+            id: "physical", title: seed.title, kind: .movie, productionYear: 2025,
+            ratings: [.init(source: .community, value: 8, scale: .outOfTen)],
+            providerIDs: seed.providerIDs, libraryID: "movies"
+        )
+        for scenario in ["owned", "missing", "conflicting-id", "wrong-kind", "unvalidated", "hidden"] {
+            var record = owned
+            var visibility = HomeLibraryVisibility.default
+            switch scenario {
+            case "conflicting-id": record.providerIDs = ["Tmdb": "99"]
+            case "wrong-kind": record.kind = .series
+            case "unvalidated": record.locallyValidatedPlayableSource = false
+            case "hidden": visibility.disabledKeys = ["account:movies"]
+            default: break
+            }
+            let currentVisibility = visibility
+            let account = resolved(
+                "account", details: scenario == "missing" ? [:] : [record.id: record],
+                searchResults: [owned]
+            )
+            let enrich = makeHeroMetadataEnricher(
+                accounts: [account], identitySources: { _ in [] },
+                visibility: { currentVisibility }
+            )
+            let results = await enrich([seed])
+            let result = try XCTUnwrap(results.first)
+            if scenario == "owned" {
+                XCTAssertEqual(result.id, owned.id)
+                XCTAssertEqual(result.sourceAccountID, account.account.id)
+                XCTAssertEqual(result.productionYear, owned.productionYear)
+                XCTAssertEqual(result.ratings, owned.ratings)
+                XCTAssertEqual(result.heroCTA(seerConnected: false), .play)
+                XCTAssertEqual(result.discoverySources, seed.discoverySources)
+            } else {
+                XCTAssertEqual(result, seed, scenario)
+                XCTAssertFalse(result.hasPlayableLibraryTarget(), scenario)
+            }
+        }
+    }
+
+    func testRecoveredWatchedSeriesIsFilteredBeforeResolvingAnUnwatchedEpisode() async {
+        let seed = MediaItem(
+            id: "tmdb:42", title: "Show", kind: .series, providerIDs: ["Tmdb": "42"],
+            discoverySources: [.tmdb], availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let series = MediaItem(
+            id: "physical", title: seed.title, kind: .series, hasBeenPlayed: true,
+            providerIDs: seed.providerIDs
+        )
+        let episode = MediaItem(id: "next-episode", title: "Next", kind: .episode, seriesID: series.id)
+        let account = resolved(
+            "account", details: [series.id: series, episode.id: episode],
+            childrenByID: [series.id: [episode]], searchResults: [series]
+        )
+        let hidden = makeHeroMetadataEnricher(
+            accounts: [account], identitySources: { _ in [] }, hideWatched: true
+        )
+        let hiddenResults = await hidden([seed])
+        XCTAssertTrue(hiddenResults.isEmpty)
+        let visible = makeHeroMetadataEnricher(
+            accounts: [account], identitySources: { _ in [] }, hideWatched: false
+        )
+        let visibleResults = await visible([seed])
+        XCTAssertEqual(visibleResults.first?.id, episode.id)
+    }
+
+    func testHeroRecoveryDeadlineCancelsSearchAndRejectsItsLateMatch() async throws {
+        let record = MediaItem(id: "physical", title: "Film", kind: .movie, providerIDs: ["Tmdb": "42"])
+        let base = resolved("account", detail: record)
+        let cancelled = expectation(description: "Search cancellation observed")
+        let provider = HeroMetadataProvider(
+            session: base.provider.session, details: [record.id: record], searchResults: [record],
+            onSearch: {
+                do {
+                    try await Task.sleep(for: .seconds(30))
+                    XCTFail("The recovery deadline must cancel the search.")
+                } catch is CancellationError {
+                    cancelled.fulfill()
+                } catch {
+                    XCTFail("Unexpected search failure: \(error)")
+                }
+            }
+        )
+        let account = ResolvedAccount(account: base.account, provider: provider)
+        let resolve = try XCTUnwrap(heroLibraryTargetResolver(
+            in: [account], identitySources: { _ in [] }
+        ))
+        let started = ContinuousClock.now
+        let result = await resolve(record.removingDiscoveryOwnership())
+        XCTAssertNil(result)
+        XCTAssertLessThan(started.duration(to: .now), .seconds(6))
+        await fulfillment(of: [cancelled], timeout: 1)
+    }
+
+    func testHeroRecoveryDoesNotSearchOwnedTitleOnlyIndexedOrRestrictedCandidates() async throws {
+        let owned = MediaItem(
+            id: "physical", title: "Film", kind: .movie, providerIDs: ["Tmdb": "42"],
+            sourceAccountID: "account"
+        )
+        let base = resolved("account", detail: owned)
+        let provider = HeroMetadataProvider(
+            session: base.provider.session, details: [owned.id: owned],
+            onSearch: { XCTFail("This candidate must not start a fallback search.") }
+        )
+        let account = ResolvedAccount(account: base.account, provider: provider)
+        var external = owned.removingDiscoveryOwnership()
+        external.discoverySources = [.tmdb]
+        var titleOnly = external
+        titleOnly.providerIDs = [:]
+        let resolve = try XCTUnwrap(heroLibraryTargetResolver(
+            in: [account], identitySources: { _ in [] }
+        ))
+        let ownedResult = await resolve(owned)
+        let titleOnlyResult = await resolve(titleOnly)
+        XCTAssertNil(ownedResult)
+        XCTAssertNil(titleOnlyResult)
+        let indexed = try XCTUnwrap(heroLibraryTargetResolver(
+            in: [account], identitySources: { _ in [
+                .init(accountID: "account", itemID: "physical", kind: .movie)
+            ] }
+        ))
+        let indexedResult = await indexed(external)
+        XCTAssertNil(indexedResult, "An index verification rejection is not a cold-index miss.")
+        let restricted = try XCTUnwrap(heroLibraryTargetResolver(
+            in: [account], identitySources: { _ in [] }, allowsDiscovery: { false }
+        ))
+        let restrictedResult = await restricted(external)
+        XCTAssertNil(restrictedResult)
+        XCTAssertNil(heroLibraryTargetResolver(in: [], identitySources: { _ in [] }))
+    }
+
+    func testHeroRecoveryDropsResultsWhenVisibilityOrDiscoveryPolicyChangesDuringSearch() async throws {
+        for changesLibrary in [false, true] {
+            let record = MediaItem(
+                id: "physical", title: "Film", kind: .movie, providerIDs: ["Tmdb": "42"],
+                libraryID: "movies"
+            )
+            let base = resolved("account", detail: record)
+            let policy = HeroRecoveryPolicy()
+            let provider = HeroMetadataProvider(
+                session: base.provider.session, details: [record.id: record], searchResults: [record],
+                onSearch: { await policy.restrict(library: changesLibrary) }
+            )
+            let account = ResolvedAccount(account: base.account, provider: provider)
+            let resolve = try XCTUnwrap(heroLibraryTargetResolver(
+                in: [account], identitySources: { _ in [] },
+                visibility: { await policy.visibility },
+                allowsDiscovery: { await policy.allowsDiscovery }
+            ))
+            let result = await resolve(record.removingDiscoveryOwnership())
+            XCTAssertNil(result)
+        }
+    }
+
+    func testHeroRecoveryIsBoundedAndCancellationDoesNotPublishOrAdmitMoreTitles() async {
+        for cancels in [false, true] {
+            let firstWave = expectation(description: "Four library lookups admitted")
+            let probe = HeroRequestIdentityBatchProbe(firstWave: firstWave)
+            let items = (100..<112).map { id in
+                MediaItem(
+                    id: "\(id)", title: "Title \(id)", kind: .movie, providerIDs: ["Tmdb": "\(id)"],
+                    discoverySources: [.tmdb], availability: .unknown, locallyValidatedPlayableSource: false
+                )
+            }
+            let enricher = HeroMetadataEnricher(
+                accounts: [], targetSelector: { $0 },
+                libraryTargetResolver: {
+                    _ = await probe.resolve($0)
+                    return nil
+                }
+            )
+            let task = Task { await enricher.enrich(items) }
+            await fulfillment(of: [firstWave], timeout: 2)
+            let initiallyAdmitted = await probe.calls
+            if cancels { task.cancel() }
+            await probe.release()
+            let result = await task.value
+            let calls = await probe.calls
+            let maximumActive = await probe.maximumActive
+            XCTAssertEqual(initiallyAdmitted, 4)
+            XCTAssertEqual(calls, cancels ? 4 : items.count)
+            XCTAssertLessThanOrEqual(maximumActive, 4)
+            XCTAssertEqual(result, items)
+        }
+    }
+
     func testHydratedSquareArtworkKeepsItsSourceAccount() async throws {
         let square = try XCTUnwrap(URL(string: "https://selected.test/square.jpg"))
         let seed = MediaItem(id: "movie", title: "Movie", kind: .movie, sourceAccountID: "original")
@@ -674,7 +946,8 @@ final class HeroMetadataEnricherTests: XCTestCase {
         _ accountID: String,
         details: [String: MediaItem],
         childrenByID: [String: [MediaItem]] = [:],
-        provider: ProviderKind = .jellyfin
+        provider: ProviderKind = .jellyfin,
+        searchResults: [MediaItem] = []
     ) -> ResolvedAccount {
         let session = UserSession(
             server: MediaServer(
@@ -697,7 +970,10 @@ final class HeroMetadataEnricherTests: XCTestCase {
         )
         return ResolvedAccount(
             account: account,
-            provider: HeroMetadataProvider(session: session, details: details, childrenByID: childrenByID)
+            provider: HeroMetadataProvider(
+                session: session, details: details, childrenByID: childrenByID,
+                searchResults: searchResults
+            )
         )
     }
 }
@@ -744,11 +1020,19 @@ private class HeroMetadataProvider: MediaProvider, @unchecked Sendable {
     let session: UserSession
     private let details: [String: MediaItem]
     private let childrenByID: [String: [MediaItem]]
+    private let searchResults: [MediaItem]
+    private let onSearch: @Sendable () async -> Void
 
-    init(session: UserSession, details: [String: MediaItem], childrenByID: [String: [MediaItem]] = [:]) {
+    init(
+        session: UserSession, details: [String: MediaItem],
+        childrenByID: [String: [MediaItem]] = [:], searchResults: [MediaItem] = [],
+        onSearch: @escaping @Sendable () async -> Void = {}
+    ) {
         self.session = session
         self.details = details
         self.childrenByID = childrenByID
+        self.searchResults = searchResults
+        self.onSearch = onSearch
     }
 
     func libraries() async throws -> [MediaLibrary] { [] }
@@ -762,7 +1046,10 @@ private class HeroMetadataProvider: MediaProvider, @unchecked Sendable {
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func children(of itemID: String) async throws -> [MediaItem] { childrenByID[itemID] ?? [] }
-    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func search(query: String, limit: Int) async throws -> [MediaItem] {
+        await onSearch()
+        return Array(searchResults.prefix(limit))
+    }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
