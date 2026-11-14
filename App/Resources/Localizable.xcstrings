@@ -159042,6 +159042,226 @@
         }
       }
     },
+    "Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يحاكي سطوع طبقة التعزيز تقريبًا دون إعادة بناء FEL بالكامل. عطّله لاستخدام HDR10."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Приблизително възпроизвежда яркостта на слоя за подобрение без пълна реконструкция на FEL. Изключете, за да използвате HDR10."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aproxima la brillantor de la capa de millora sense una reconstrucció completa de FEL. Desactiva-ho per fer servir HDR10."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Přibližně reprodukuje jas vylepšující vrstvy bez úplné rekonstrukce FEL. Vypněte pro použití HDR10."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gengiver forbedringslagets lysstyrke tilnærmelsesvis uden fuld rekonstruktion af FEL. Slå fra for at bruge HDR10."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bildet die Helligkeit der Erweiterungsschicht näherungsweise nach, ohne FEL vollständig zu rekonstruieren. Für HDR10 ausschalten."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Προσεγγίζει τη φωτεινότητα του επιπέδου ενίσχυσης χωρίς πλήρη ανακατασκευή FEL. Απενεργοποιήστε για χρήση HDR10."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aproxima el brillo de la capa de mejora sin una reconstrucción completa de FEL. Desactiva esta opción para usar HDR10."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "روشنایی لایهٔ تقویت را بدون بازسازی کامل FEL به‌طور تقریبی بازتولید می‌کند. برای استفاده از HDR10 خاموش کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jäljittelee parannuskerroksen kirkkautta likimääräisesti ilman FEL:n täyttä rekonstruktiota. Poista käytöstä käyttääksesi HDR10:tä."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reproduit approximativement la luminosité de la couche d’amélioration sans reconstruction complète du FEL. Désactivez pour utiliser HDR10."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מספק קירוב לבהירות שכבת השיפור ללא שחזור מלא של FEL. כבו כדי להשתמש ב-HDR10."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "FEL का पूरा पुनर्निर्माण किए बिना एन्हांसमेंट लेयर की चमक को लगभग दोहराता है। HDR10 इस्तेमाल करने के लिए बंद करें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Približno reproducira svjetlinu sloja poboljšanja bez potpune rekonstrukcije FEL-a. Isključite za HDR10."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Megközelíti a kiegészítő réteg fényerejét a FEL teljes rekonstruálása nélkül. A HDR10 használatához kapcsolja ki."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mendekati kecerahan lapisan peningkatan tanpa rekonstruksi FEL penuh. Nonaktifkan untuk menggunakan HDR10."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Approssima la luminosità del livello di miglioramento senza ricostruire completamente il FEL. Disattiva per usare HDR10."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "FELを完全に再構成せず、拡張レイヤーの明るさを近似します。HDR10を使うにはオフにしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "FEL을 완전히 재구성하지 않고 향상 레이어의 밝기를 비슷하게 재현합니다. HDR10을 사용하려면 끄세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menganggarkan kecerahan lapisan peningkatan tanpa pembinaan semula FEL sepenuhnya. Matikan untuk menggunakan HDR10."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gjengir omtrentlig lysstyrke fra forbedringslaget uten full FEL-rekonstruksjon. Slå av for å bruke HDR10."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Benadert de helderheid van de verbeteringslaag zonder volledige FEL-reconstructie. Schakel uit om HDR10 te gebruiken."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odtwarza przybliżoną jasność warstwy rozszerzającej bez pełnej rekonstrukcji FEL. Wyłącz, aby używać HDR10."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reproduz aproximadamente o brilho da camada de aprimoramento sem reconstrução completa do FEL. Desative para usar HDR10."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aproximează luminozitatea stratului de îmbunătățire fără reconstrucția completă a stratului FEL. Dezactivați pentru a folosi HDR10."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Приближённо воспроизводит яркость слоя улучшения без полной реконструкции FEL. Отключите, чтобы использовать HDR10."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Približne reprodukuje jas vylepšujúcej vrstvy bez úplnej rekonštrukcie FEL. Vypnite, ak chcete použiť HDR10."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Približno poustvari svetlost izboljševalne plasti brez popolne rekonstrukcije FEL. Izklopite za uporabo HDR10."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Približno reprodukuje svetlinu sloja za poboljšanje bez potpune rekonstrukcije FEL sloja. Isključite da biste koristili HDR10."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Återger förbättringslagrets ljusstyrka ungefärligt utan fullständig FEL-rekonstruktion. Stäng av för att använda HDR10."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "จำลองความสว่างของชั้นเสริมโดยประมาณ โดยไม่สร้าง FEL ขึ้นใหม่ทั้งหมด ปิดเพื่อใช้ HDR10"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "FEL’i tamamen yeniden oluşturmadan geliştirme katmanının parlaklığını yaklaşık olarak yansıtır. HDR10 kullanmak için kapatın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Приблизно відтворює яскравість шару покращення без повної реконструкції FEL. Вимкніть, щоб використовувати HDR10."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tái hiện gần đúng độ sáng của lớp tăng cường mà không tái dựng FEL đầy đủ. Tắt để dùng HDR10."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "近似呈现增强层亮度，不进行完整的 FEL 重建。关闭后使用 HDR10。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "近似呈現增強層亮度，不進行完整的 FEL 重建。關閉後使用 HDR10。"
+          }
+        }
+      }
+    },
     "Arrange rows from any library together. Move a row below Hidden to turn it off." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -592939,6 +593159,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "擁有者"
+          }
+        }
+      }
+    },
+    "P7 FEL → P8.1 conversion" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تحويل من P7 FEL إلى P8.1"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Преобразуване P7 FEL → P8.1"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conversió de P7 FEL a P8.1"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Převod P7 FEL → P8.1"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konvertering fra P7 FEL til P8.1"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Umwandlung P7 FEL → P8.1"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Μετατροπή P7 FEL → P8.1"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conversión P7 FEL → P8.1"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تبدیل از P7 FEL به P8.1"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "P7 FEL → P8.1 -muunnos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conversion P7 FEL → P8.1"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "המרה מ-P7 FEL ל-P8.1"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "P7 FEL → P8.1 रूपांतरण"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pretvorba P7 FEL → P8.1"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "P7 FEL → P8.1 átalakítás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konversi P7 FEL → P8.1"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conversione P7 FEL → P8.1"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "P7 FEL → P8.1 変換"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "P7 FEL → P8.1 변환"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Penukaran P7 FEL → P8.1"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konvertering P7 FEL → P8.1"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conversie P7 FEL → P8.1"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konwersja P7 FEL → P8.1"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conversão P7 FEL → P8.1"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Conversie P7 FEL → P8.1"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Преобразование P7 FEL → P8.1"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konverzia P7 FEL → P8.1"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pretvorba P7 FEL → P8.1"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konverzija P7 FEL → P8.1"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konvertering P7 FEL → P8.1"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การแปลง P7 FEL → P8.1"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "P7 FEL → P8.1 dönüşümü"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Перетворення P7 FEL → P8.1"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chuyển đổi P7 FEL → P8.1"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "P7 FEL → P8.1 转换"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "P7 FEL → P8.1 轉換"
           }
         }
       }
