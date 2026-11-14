@@ -114,7 +114,16 @@ private struct PlozziOSIsRunningOnMacKey: EnvironmentKey {
     static let defaultValue = ProcessInfo.processInfo.isiOSAppOnMac
 }
 
+private struct PlozziOSHeroFitsLandscapeArtworkKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
+    fileprivate var plozziOSHeroFitsLandscapeArtwork: Bool {
+        get { self[PlozziOSHeroFitsLandscapeArtworkKey.self] }
+        set { self[PlozziOSHeroFitsLandscapeArtworkKey.self] = newValue }
+    }
+
     var plozziOSIsRunningOnMac: Bool {
         get { self[PlozziOSIsRunningOnMacKey.self] }
         set { self[PlozziOSIsRunningOnMacKey.self] = newValue }
@@ -284,7 +293,7 @@ final class PlozziOSSidebarGeometryModel {
     private(set) var isVisible = false
 
     func recordCoveredWidth(_ width: CGFloat) {
-        guard width > 1, coveredWidth != width else { return }
+        guard width >= 0, width.isFinite, coveredWidth != width else { return }
         coveredWidth = width
     }
 
@@ -1024,6 +1033,7 @@ struct PlozziOSHeroPictureLayout {
 
 struct PlozziOSHeroArtworkImage: View {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    @Environment(\.plozziOSHeroFitsLandscapeArtwork) private var fitsLandscapeArtwork
     let image: Image
     let style: HeroArtworkStyle
     var surfaceRole: HeroTrailerSurfaceRole = .home
@@ -1037,6 +1047,8 @@ struct PlozziOSHeroArtworkImage: View {
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
                     .clipped()
             }
+        } else if fitsLandscapeArtwork, style == .landscape, surfaceRole == .home {
+            ExtendedArtworkFill(image: image, sideCrop: 0)
         } else {
             ArtworkFillImage(image)
         }
@@ -1510,7 +1522,8 @@ struct PlozziOSHomeStaticBackdrop: View {
         }
         PlozziOSReflectedHeroStage(
             height: height,
-            ancestorScale: ancestorScale
+            ancestorScale: ancestorScale,
+            usesNativeBackgroundExtension: false
         ) { usableWidth in
             if usesSlidingArtwork {
                 slidingArtwork(
@@ -1547,7 +1560,8 @@ struct PlozziOSHomeStaticBackdrop: View {
                 width: reflectionWidth,
                 contentWidth: contentWidth,
                 height: height,
-                trailerController: trailerController
+                trailerController: trailerController,
+                showsTrailer: showsTrailer
             )
         }
     }
@@ -1684,6 +1698,7 @@ private struct PlozziOSHeroReflection: View {
     let height: CGFloat
     let trailerController: HeroTrailerController
     var surfaceRole: HeroTrailerSurfaceRole = .home
+    var showsTrailer = true
 
     var body: some View {
         ZStack {
@@ -1706,7 +1721,7 @@ private struct PlozziOSHeroReflection: View {
             }
             .frame(width: contentWidth, height: height)
 
-            if trailerController.isShowing(itemID),
+            if showsTrailer, trailerController.isShowing(itemID),
                trailerController.isPlaying {
                 PlozziOSMirrorVideoLayer(
                     player: trailerController.player
@@ -3217,6 +3232,7 @@ private struct PlozziOSReflectedHeroStage<
 
     let height: CGFloat
     var ancestorScale: CGFloat = 1
+    var usesNativeBackgroundExtension = true
     @ViewBuilder let content: (CGFloat) -> Content
     @ViewBuilder let reflection: (CGFloat, CGFloat) -> Reflection
 
@@ -3240,7 +3256,8 @@ private struct PlozziOSReflectedHeroStage<
             let usableWidth = max(width - coveredWidth, 1)
             let mainOffset = coveredWidth - globalMinX
             ZStack(alignment: .topLeading) {
-                if #available(iOS 26.0, *), coveredWidth > 0 {
+                if #available(iOS 26.0, *),
+                   usesNativeBackgroundExtension || !sidebarGeometry.isVisible, coveredWidth > 0 {
                     content(usableWidth)
                         .frame(width: usableWidth, height: height)
                         .backgroundExtensionEffect()
@@ -3257,9 +3274,12 @@ private struct PlozziOSReflectedHeroStage<
                 }
 
             }
+            .environment(\.plozziOSHeroFitsLandscapeArtwork, sidebarGeometry.isVisible && coveredWidth > 0)
             .onChange(of: locallyCoveredWidth, initial: true) {
                 _, locallyCoveredWidth in
-                sidebarGeometry.recordCoveredWidth(locallyCoveredWidth)
+                if #unavailable(iOS 26.0), locallyCoveredWidth > 1 {
+                    sidebarGeometry.recordCoveredWidth(locallyCoveredWidth)
+                }
             }
             .overlay {
                 PlozziOSWindowWidthReader { measuredWidth in
@@ -3471,6 +3491,7 @@ struct PlozziOSHomeSidebarOverlapProbe: UIViewControllerRepresentable {
         private var previousStandardAppearance: UITabBarAppearance?
         private var previousScrollEdgeAppearance: UITabBarAppearance?
         private var didApplyTransparency = false
+        private var geometryView: GeometryView?
 
         override func didMove(toParent parent: UIViewController?) {
             super.didMove(toParent: parent)
@@ -3486,6 +3507,11 @@ struct PlozziOSHomeSidebarOverlapProbe: UIViewControllerRepresentable {
             }
         }
 
+        override func viewSafeAreaInsetsDidChange() {
+            super.viewSafeAreaInsetsDidChange()
+            if enabled { apply() }
+        }
+
         func apply() {
             guard enabled, let tabs = tabBarController else {
                 restore()
@@ -3499,6 +3525,22 @@ struct PlozziOSHomeSidebarOverlapProbe: UIViewControllerRepresentable {
                 previousScrollEdgeAppearance =
                     tabs.tabBar.scrollEdgeAppearance
                 didApplyTransparency = false
+                if #available(iOS 26.0, *) {
+                    let geometryView = GeometryView()
+                    geometryView.probe = self
+                    geometryView.isUserInteractionEnabled = false
+                    geometryView.accessibilityElementsHidden = true
+                    geometryView.translatesAutoresizingMaskIntoConstraints = false
+                    tabs.view.addSubview(geometryView)
+                    let guide = tabs.contentLayoutGuide
+                    NSLayoutConstraint.activate([
+                        geometryView.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
+                        geometryView.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
+                        geometryView.topAnchor.constraint(equalTo: guide.topAnchor),
+                        geometryView.bottomAnchor.constraint(equalTo: guide.bottomAnchor)
+                    ])
+                    self.geometryView = geometryView
+                }
             }
             if !didApplyTransparency {
                 didApplyTransparency = true
@@ -3512,12 +3554,24 @@ struct PlozziOSHomeSidebarOverlapProbe: UIViewControllerRepresentable {
                 tabs.tabBar.scrollEdgeAppearance = transparentAppearance
                 tabs.tabBar.isTranslucent = true
             }
-            geometryModel?.setVisible(!tabs.sidebar.isHidden)
+            if #available(iOS 26.0, *), let window = tabs.view.window {
+                let contentFrame = tabs.view.convert(tabs.contentLayoutGuide.layoutFrame, to: window)
+                geometryModel?.recordCoveredWidth(max(0, contentFrame.minX))
+            }
+            let available: Bool
+            if #available(iOS 27.0, *) {
+                available = tabs.sidebar.isAvailable
+            } else {
+                available = true
+            }
+            geometryModel?.setVisible(available && !tabs.sidebar.isHidden)
         }
 
         func restore() {
             geometryModel?.setVisible(false)
             didApplyTransparency = false
+            geometryView?.removeFromSuperview()
+            geometryView = nil
             guard let owner else { return }
             owner.sidebar.preferredLayout = previousLayout ?? .automatic
             if let previousStandardAppearance {
@@ -3528,6 +3582,37 @@ struct PlozziOSHomeSidebarOverlapProbe: UIViewControllerRepresentable {
             previousLayout = nil
             previousStandardAppearance = nil
             previousScrollEdgeAppearance = nil
+        }
+
+        /// Observe the public guide without replacing SwiftUI's sidebar delegate.
+        final class GeometryView: UIView {
+            weak var probe: ProbeController?
+            private var reportPending = false
+
+            override var frame: CGRect {
+                didSet { if frame != oldValue { report() } }
+            }
+
+            override func layoutSubviews() {
+                super.layoutSubviews()
+                report()
+            }
+
+            override func didMoveToWindow() {
+                super.didMoveToWindow()
+                report()
+            }
+
+            private func report() {
+                guard window != nil, !reportPending else { return }
+                reportPending = true
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    reportPending = false
+                    guard window != nil else { return }
+                    probe?.apply()
+                }
+            }
         }
     }
 }

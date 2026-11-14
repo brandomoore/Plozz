@@ -370,7 +370,7 @@ public struct ResumeChipOverlay: View {
                             )
                             .fittingText(
                                 size: prioritizesText || prioritizesProgress ? textSize : nil,
-                                singleLine: playbackTextSize != nil || prioritizesProgress,
+                                singleLine: playbackTextSize != nil,
                                 minimumBarWidth: prioritizesProgress ? min(barWidth, max(24, 4 * metrics.resumeChipBarHeight)) : nil
                             )
                             .font(.system(size: textSize, weight: .semibold))

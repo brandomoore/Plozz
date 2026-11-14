@@ -1288,6 +1288,13 @@ struct PlozziOSTabShell: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarBackground(.hidden, for: .tabBar)
             .background { AppBackground(palette: palette) }
+            .background {
+                PlozziOSHomeSidebarOverlapProbe(
+                    enabled: effectiveSelectedDestination == .home && !isShowingMorePage,
+                    geometryModel: sidebarGeometry
+                )
+                .frame(width: 0, height: 0)
+            }
         case .watchlist:
             PlozziOSDestinationView(
                 destination: .watchlist,
@@ -1664,13 +1671,6 @@ struct PlozziOSTabShell: View {
             if destination != .downloads { retainsExplicitDownloadEntry = false }
         }
         .background { AppBackground(palette: palette) }
-        .background(alignment: .topLeading) {
-            PlozziOSHomeSidebarOverlapProbe(
-                enabled: effectiveSelectedDestination == .home && !isShowingMorePage,
-                geometryModel: sidebarGeometry
-            )
-            .frame(width: 0, height: 0)
-        }
         .background {
             // Switching tabs is the shell's job, so the capture rig's tab requests
             // are consumed here rather than in the Home stack. A zero-size leaf, so

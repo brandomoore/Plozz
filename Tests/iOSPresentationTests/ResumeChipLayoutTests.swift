@@ -155,6 +155,31 @@ final class ResumeChipLayoutTests: XCTestCase {
         }
     }
 
+    func testLandscapeTextFallbackKeepsEpisodeAndTimeAtLargerTextSizes() throws {
+        let item = MediaItem(
+            id: "landscape-text", title: "Episode", kind: .episode,
+            seasonNumber: 12, episodeNumber: 123, runtime: 7200, resumePosition: 300
+        )
+        for size in [DynamicTypeSize.large, .xxxLarge, .accessibility3] {
+            for showsProgress in [true, false] {
+                let image = try render(
+                    ResumeChipOverlay(item: item, detailText: item.seasonEpisodeLabel)
+                        .withoutScrim
+                        .environment(\.plozzMetrics, PlozzMetrics.touch(density: .standard, dynamicTypeSize: size))
+                        .environment(\.dynamicTypeSize, size)
+                        .environment(\.plozzShowsProgressBars, showsProgress)
+                        .frame(width: 180, height: 240)
+                        .background(.black)
+                )
+                let text = try recognizedText(image).joined().replacingOccurrences(of: " ", with: "")
+                XCTAssertTrue(text.contains("12") && text.contains("123"), text)
+                XCTAssertTrue(text.contains("1h") && text.contains("55m"), text)
+                XCTAssertFalse(text.contains("…") || text.contains("..."), text)
+                attach(image, name: "Landscape text \(size) progress \(showsProgress)")
+            }
+        }
+    }
+
     func testUnknownRuntimeRetainsProgressAndIdleEpisodesKeepIdentity() throws {
         for resumePosition: Double? in [nil, 900] {
             let item = MediaItem(
