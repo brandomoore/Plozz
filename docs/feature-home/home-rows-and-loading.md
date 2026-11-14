@@ -34,7 +34,13 @@ Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.
 Calendar, Filters and Today remain at the top while the agenda scrolls: mobile
-uses the native navigation toolbar, and TV uses native secondary glass controls
+uses the native navigation toolbar without a duplicate page title or scroll-edge
+backdrop. Inline-large toolbar layout lets it share the iPad tab-bar line when
+space permits without reserving an empty large-title row. Content insets
+belong to the agenda, not the scroll viewport; the viewport clips scrolling
+content below the controls instead of covering it with a background. The mobile
+calendar is a native graphical date picker in a content-sized popover anchored to
+Calendar; selecting a date closes it. TV uses native secondary glass controls
 below the selected navigation chrome.
 Upcoming date headings use the shared rail typography, and mobile agenda labels
 use the shared card title and metadata sizes. Coming Soon uses full-size landscape
@@ -45,6 +51,9 @@ The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and
 `--upcoming-capture-fixture --capture-home` (the production Home screen with
 Continue Watching, Coming Soon and Recently Added). These previews use sample
 dates/history and public artwork, not a signed-in account; Home's hero is disabled.
+Mobile previews also support `--capture-scrolled`, `--capture-calendar` and
+`--capture-selection` to exercise pinned controls, the real calendar presentation
+and dismissal after choosing a date.
 
 `HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
 request-connection changes invalidate in-flight results. Viewing/watchlist

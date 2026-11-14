@@ -82,18 +82,55 @@ extension HomeRowArrangementHostedTests {
         #endif
         for size in sizes {
             try await withWindow(size: size) {
+                #if os(iOS)
+                TabView {
+                    Tab("Home", systemImage: "house") {
+                        NavigationStack {
+                            UpcomingView(model: model, interval: interval)
+                        }
+                    }
+                    Tab("Search", systemImage: "magnifyingglass") { Color.clear }
+                }
+                .tabViewStyle(.sidebarAdaptable)
+                #else
                 NavigationStack {
                     UpcomingView(model: model, interval: interval)
                 }
+                #endif
             } inspect: { window in
                 func descendants(_ view: UIView) -> [UIView] {
                     [view] + view.subviews.flatMap(descendants)
                 }
                 let initial = try await self.capture(window, name: "Upcoming toolbar \(size.width)")
                 XCTAssertFalse(initial.contains { ["All", "Shows", "Movies"].contains($0.0) })
+                #if os(iOS)
+                func controllers(_ controller: UIViewController) -> [UIViewController] {
+                    [controller] + controller.children.flatMap(controllers)
+                }
+                var barItems: [UIBarButtonItem] = []
+                for controller in controllers(try XCTUnwrap(window.rootViewController)) {
+                    let item = controller.navigationItem
+                    barItems += item.leftBarButtonItems ?? []
+                    barItems += item.rightBarButtonItems ?? []
+                    let groups = item.leadingItemGroups + item.centerItemGroups + item.trailingItemGroups
+                    barItems += groups.flatMap(\.barButtonItems)
+                    XCTAssertNotEqual(item.title, "Upcoming")
+                }
+                for title in ["Today", "Calendar", "Filters"] {
+                    XCTAssertTrue(barItems.contains { $0.title == title }, title)
+                }
+                let controls = descendants(window).compactMap { $0 as? UIControl }.filter {
+                    let frame = $0.convert($0.bounds, to: window)
+                    return frame.width > 0 && frame.height > 0 && frame.minY >= 0
+                        && frame.maxY < window.safeAreaInsets.top + 80
+                }
+                XCTAssertFalse(controls.isEmpty)
+                XCTAssertFalse(initial.contains { $0.0 == "Upcoming" })
+                #else
                 let controls = try ["upcoming.today", "upcoming.calendar", "upcoming.filters"].map { id in
                     try XCTUnwrap(descendants(window).first { $0.accessibilityIdentifier == id }, id)
                 }
+                #endif
                 let frames = controls.map { $0.convert($0.bounds, to: window) }
                 for frame in frames {
                     XCTAssertGreaterThan(frame.width, 0)
@@ -110,11 +147,29 @@ extension HomeRowArrangementHostedTests {
                 for (control, before) in zip(controls, frames) {
                     XCTAssertEqual(control.convert(control.bounds, to: window).minY, before.minY, accuracy: 2)
                 }
+                #if os(iOS)
+                let calendar = try XCTUnwrap(barItems.first { $0.title == "Calendar" })
+                XCTAssertTrue(UIApplication.shared.sendAction(
+                    try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                ))
+                #else
                 let calendar = try XCTUnwrap(controls[1] as? UIControl)
                 calendar.sendActions(for: .primaryActionTriggered)
+                #endif
                 let opened = try await self.capture(window, name: "Upcoming calendar from pinned toolbar")
                 #if os(iOS)
-                XCTAssertTrue(opened.contains { $0.0 == "Calendar" })
+                XCTAssertFalse(opened.contains { ["Calendar", "Done"].contains($0.0) })
+                let picker = try XCTUnwrap(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                XCTAssertGreaterThanOrEqual(picker.bounds.width, 280)
+                XCTAssertLessThanOrEqual(picker.bounds.width, 400)
+                XCTAssertGreaterThan(picker.bounds.height, 250)
+                XCTAssertLessThan(picker.bounds.height, 450)
+                XCTAssertTrue(window.bounds.contains(picker.convert(picker.bounds, to: window)))
+                let selected = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: picker.date))
+                picker.setDate(selected, animated: false)
+                picker.sendActions(for: .valueChanged)
+                _ = try await self.snapshot(window, name: "Upcoming selected date")
+                XCTAssertNil(picker.window)
                 #else
                 XCTAssertTrue(opened.contains { $0.0 == "Cancel" })
                 #endif

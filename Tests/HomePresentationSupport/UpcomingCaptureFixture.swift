@@ -57,8 +57,91 @@ struct UpcomingCaptureFixture: View {
         .tint(palette.primaryText)
         .task {
             await fixture.load()
+            #if os(iOS)
+            do {
+                try await prepareCapture()
+            } catch is CancellationError {
+                return
+            } catch {
+                preconditionFailure("Upcoming capture failed: \(error)")
+            }
+            #endif
         }
     }
+
+    #if os(iOS)
+    @MainActor
+    private func prepareCapture() async throws {
+        let arguments = ProcessInfo.processInfo.arguments
+        let showsCalendar = arguments.contains("--capture-calendar") || arguments.contains("--capture-selection")
+        guard arguments.contains("--capture-scrolled") || showsCalendar else { return }
+        try await Task.sleep(for: .seconds(1))
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow) else {
+            preconditionFailure("Upcoming capture has no window")
+        }
+        func descendants(_ view: UIView) -> [UIView] {
+            [view] + view.subviews.flatMap(descendants)
+        }
+        func controllers(_ controller: UIViewController) -> [UIViewController] {
+            [controller] + controller.children.flatMap(controllers)
+        }
+        var barItems: [UIBarButtonItem] = []
+        for controller in window.rootViewController.map(controllers) ?? [] {
+            let item = controller.navigationItem
+            barItems += item.leftBarButtonItems ?? []
+            barItems += item.rightBarButtonItems ?? []
+            let groups = item.leadingItemGroups + item.centerItemGroups + item.trailingItemGroups
+            barItems += groups.flatMap(\.barButtonItems)
+        }
+        for title in ["Today", "Calendar", "Filters"] {
+            precondition(barItems.contains { $0.title == title }, "Missing Upcoming action: \(title)")
+        }
+        let controls = descendants(window).compactMap { $0 as? UIControl }.filter {
+            let frame = $0.convert($0.bounds, to: window)
+            return frame.width > 0 && frame.height > 0 && frame.minY >= 0
+                && frame.maxY < window.safeAreaInsets.top + 80
+        }
+        precondition(!controls.isEmpty, "Upcoming capture has no top-bar controls")
+        let before = controls.map { $0.convert($0.bounds, to: window) }
+        if arguments.contains("--capture-scrolled") {
+            guard let scroll = descendants(window).compactMap({ $0 as? UIScrollView }).first(where: {
+                $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height + 250
+            }) else {
+                preconditionFailure("Upcoming capture requires a scrollable agenda")
+            }
+            scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 250), animated: false)
+            try await Task.sleep(for: .milliseconds(500))
+            for (view, frame) in zip(controls, before) {
+                precondition(abs(view.convert(view.bounds, to: window).minY - frame.minY) < 2,
+                             "Upcoming actions moved while scrolling")
+            }
+        }
+        if showsCalendar {
+            guard let button = barItems.first(where: { $0.title == "Calendar" }), let action = button.action else {
+                preconditionFailure("Upcoming calendar must expose its native action")
+            }
+            precondition(UIApplication.shared.sendAction(action, to: button.target, from: button, for: nil),
+                         "Upcoming calendar action was not handled")
+            try await Task.sleep(for: .seconds(1))
+            guard let picker = descendants(window).compactMap({ $0 as? UIDatePicker }).first else {
+                preconditionFailure("Upcoming calendar did not present a native date picker")
+            }
+            precondition(picker.bounds.width >= 280 && picker.bounds.width <= 400, "Unexpected calendar width")
+            precondition(picker.bounds.height > 250 && picker.bounds.height < 450, "Unexpected calendar height")
+            let frame = picker.convert(picker.bounds, to: window)
+            precondition(window.bounds.contains(frame), "Calendar extends outside the window")
+            if arguments.contains("--capture-selection") {
+                let day = Calendar.current.date(byAdding: .day, value: 1, to: picker.date)!
+                picker.setDate(day, animated: false)
+                picker.sendActions(for: .valueChanged)
+                try await Task.sleep(for: .seconds(1))
+                precondition(picker.window == nil, "Choosing a date must dismiss the calendar")
+            }
+        }
+        FileHandle.standardOutput.write(Data("Upcoming capture ready\n".utf8))
+    }
+    #endif
 
     private func page(home: Bool) -> some View {
         NavigationStack {
@@ -268,6 +351,21 @@ private struct UpcomingCaptureProvider: MediaProvider {
             [.init(kind: .digital, date: Calendar.current.date(byAdding: .day, value: 2, to: today)!, regionCode: "US")],
             for: movie, interests: [.watchlist], regionCode: "US"
         )
+        if ProcessInfo.processInfo.arguments.contains("--capture-scrolled") {
+            for index in 3..<20 {
+                let item = series[index % series.count]
+                result += UpcomingReleaseBuilder.episodes(
+                    [.init(
+                        seriesIdentity: .external(source: "capture", value: item.id),
+                        seasonNumber: 1, episodeNumber: index,
+                        title: nil, airDate: Calendar.current.date(byAdding: .day, value: index, to: today)!,
+                        datePrecision: .dateOnly,
+                        source: .tvmaze, sourceURL: nil, refreshedAt: today
+                    )],
+                    for: item
+                )
+            }
+        }
         return UpcomingReleaseBuilder.merging(result)
     }
 }

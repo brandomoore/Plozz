@@ -35,13 +35,21 @@
                         .focusSection()
                     #endif
                     ScrollView {
-                        UpcomingFeedStatus(model: model)
-                        UpcomingAgenda(
-                            releases: model.visibleReleases, selectedDay: selectedDay,
-                            wide: sizeClass == .regular, hide: model.hide
-                        )
-                        .padding(.vertical)
+                        VStack(spacing: 0) {
+                            UpcomingFeedStatus(model: model)
+                            UpcomingAgenda(
+                                releases: model.visibleReleases, selectedDay: selectedDay,
+                                wide: sizeClass == .regular, hide: model.hide
+                            )
+                            .padding(.vertical)
+                        }
+                        #if os(iOS)
+                        .padding(.horizontal)
+                        #endif
                     }
+                    #if os(iOS)
+                    .clipped()
+                    #endif
                     .onChange(of: selectedDay) { _, day in
                         proxy.scrollTo(day, anchor: .top)
                     }
@@ -60,13 +68,12 @@
                         Button("Undo hide", action: model.undoHide)
                     }
                 }
-                .padding(.horizontal)
                 #if os(tvOS)
+                .padding(.horizontal)
                 .padding(.leading, navigationInset)
                 .padding(.top, topNavigationInsets.top)
                 #else
-                .navigationTitle("Upcoming")
-                .navigationBarTitleDisplayMode(.inline)
+                .modifier(UpcomingNavigationChrome())
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         todayButton
@@ -78,9 +85,11 @@
                 }
                 #endif
                 .tint(palette.primaryText)
+                #if os(tvOS)
                 .sheet(isPresented: $showingCalendar) {
                     UpcomingCalendar(selectedDay: $selectedDay, interval: interval)
                 }
+                #endif
             }
         }
 
@@ -100,7 +109,33 @@
             .accessibilityValue(Text(selectedDay, format: .dateTime.month().day()))
             .accessibilityIdentifier("upcoming.calendar")
             .help("Calendar")
+            #if os(iOS)
+            .popover(isPresented: $showingCalendar) {
+                UpcomingCalendar(selectedDay: $selectedDay, interval: interval)
+                    .presentationCompactAdaptation(.popover)
+            }
+            #endif
         }
+
+        #if os(iOS)
+            private struct UpcomingNavigationChrome: ViewModifier {
+                func body(content: Content) -> some View {
+                    if #available(iOS 26.0, *) {
+                        chrome(content)
+                            .scrollEdgeEffectHidden(true, for: .top)
+                    } else {
+                        chrome(content)
+                    }
+                }
+
+                private func chrome(_ content: Content) -> some View {
+                    content
+                        .navigationTitle("")
+                        .toolbarTitleDisplayMode(.inlineLarge)
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                }
+            }
+        #endif
 
         #if os(tvOS)
             private var toolbarControls: some View {
@@ -409,18 +444,19 @@
                 .frame(maxWidth: 850)
                 .onAppear { month = selectedDay }
             #else
-                NavigationStack {
-                    DatePicker(
-                        "Date", selection: $selectedDay,
-                        in: interval.start...interval.end.addingTimeInterval(-1),
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-                    .padding()
-                    .navigationTitle("Calendar")
-                    .toolbar { Button("Done") { dismiss() } }
-                }
-                .presentationDetents([.medium, .large])
+                DatePicker(
+                    "Date", selection: $selectedDay,
+                    in: interval.start...interval.end.addingTimeInterval(-1),
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                // A toolbar popover otherwise proposes the button's narrow width.
+                .frame(width: 320)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding()
+                .accessibilityIdentifier("upcoming.calendar.picker")
+                .onChange(of: selectedDay) { _, _ in dismiss() }
             #endif
         }
     }
