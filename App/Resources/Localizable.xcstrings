@@ -63965,45 +63965,9 @@
     "%lld episodes" : {
       "comment" : "Count of episodes released together on one day in Upcoming.",
       "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld episode"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld episodes"
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "variations" : {
             "plural" : {
-              "zero" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "لا حلقات (⁦%lld⁩)"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "⁦%lld⁩ حلقة"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "حلقتان (⁦%lld⁩)"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -64016,10 +63980,28 @@
                   "value" : "⁦%lld⁩ حلقة"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "⁦%lld⁩ حلقة"
+                }
+              },
               "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "⁦%lld⁩ حلقة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "حلقتان (⁦%lld⁩)"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "لا حلقات (⁦%lld⁩)"
                 }
               }
             }
@@ -64046,16 +64028,16 @@
         "ca" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld episodi"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld episodis"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld episodi"
                 }
               },
               "other" : {
@@ -64070,12 +64052,6 @@
         "cs" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld díl"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -64086,6 +64062,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld dílu"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld díl"
                 }
               },
               "other" : {
@@ -64151,19 +64133,37 @@
             }
           }
         },
-        "es" : {
+        "en" : {
           "variations" : {
             "plural" : {
               "one" : {
                 "stringUnit" : {
                   "state" : "needs_review",
-                  "value" : "%lld episodio"
+                  "value" : "%lld episode"
                 }
               },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld episodes"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld episodios"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld episodio"
                 }
               },
               "other" : {
@@ -64214,16 +64214,16 @@
         "fr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld épisode"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld épisodes"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld épisode"
                 }
               },
               "other" : {
@@ -64244,13 +64244,13 @@
                   "value" : "%lld פרק"
                 }
               },
-              "two" : {
+              "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld פרקים"
                 }
               },
-              "other" : {
+              "two" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld פרקים"
@@ -64280,16 +64280,16 @@
         "hr" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld epizoda"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld epizode"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld epizoda"
                 }
               },
               "other" : {
@@ -64334,16 +64334,16 @@
         "it" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld episodio"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld episodi"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld episodio"
                 }
               },
               "other" : {
@@ -64430,12 +64430,6 @@
         "pl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld odcinek"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -64446,6 +64440,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld odcinków"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld odcinek"
                 }
               },
               "other" : {
@@ -64460,16 +64460,16 @@
         "pt-BR" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld episódio"
-                }
-              },
               "many" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld episódios"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld episódio"
                 }
               },
               "other" : {
@@ -64484,16 +64484,16 @@
         "ro" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld episod"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld episoade"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld episod"
                 }
               },
               "other" : {
@@ -64508,12 +64508,6 @@
         "ru" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld эпизод"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -64524,6 +64518,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld эпизодов"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld эпизод"
                 }
               },
               "other" : {
@@ -64538,12 +64538,6 @@
         "sk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld diel"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -64554,6 +64548,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld dielu"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld diel"
                 }
               },
               "other" : {
@@ -64568,28 +64568,28 @@
         "sl" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld epizoda"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld epizodi"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld epizode"
                 }
               },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld epizoda"
+                }
+              },
               "other" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld epizod"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld epizodi"
                 }
               }
             }
@@ -64598,16 +64598,16 @@
         "sr-Latn" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld epizoda"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld epizode"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld epizoda"
                 }
               },
               "other" : {
@@ -64670,12 +64670,6 @@
         "uk" : {
           "variations" : {
             "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%lld епізод"
-                }
-              },
               "few" : {
                 "stringUnit" : {
                   "state" : "needs_review",
@@ -64686,6 +64680,12 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld епізодів"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld епізод"
                 }
               },
               "other" : {
@@ -398708,6 +398708,226 @@
         }
       }
     },
+    "GitHub repo" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مستودع GitHub"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Хранилище в GitHub"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repositori de GitHub"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repozitář na GitHubu"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub-kodelager"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub-Repository"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αποθετήριο GitHub"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repositorio de GitHub"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مخزن GitHub"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub-repositorio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dépôt GitHub"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מאגר GitHub"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub रिपॉज़िटरी"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub repozitorij"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub-tároló"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repositori GitHub"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repository GitHub"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHubリポジトリ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub 저장소"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repositori GitHub"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub-kodelager"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub-repository"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repozytorium GitHub"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repositório GitHub"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Depozit GitHub"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Репозиторий GitHub"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repozitár GitHub"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Repozitorij GitHub"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub repozitorijum"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub-repo"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "คลังโค้ด GitHub"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub deposu"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Репозиторій GitHub"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kho mã GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub 仓库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub 儲存庫"
+          }
+        }
+      }
+    },
     "Giving iCloud a gentle nudge…" : {
       "localizations" : {
         "ar" : {
@@ -582684,6 +582904,7 @@
       }
     },
     "Open GitHub repo" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -741306,34 +741527,6 @@
     "S%lld · %lld episodes" : {
       "comment" : "Compact Upcoming poster subtitle. S abbreviates Season; first number is its index. Second number counts episodes released together and needs plural forms.",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "S%1$lld · %#@arg2@"
-          },
-          "substitutions" : {
-            "arg2" : {
-              "argNum" : 2,
-              "formatSpecifier" : "lld",
-              "variations" : {
-                "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episode"
-                    }
-                  },
-                  "other" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episodes"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -741345,24 +741538,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "zero" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "لا حلقات (⁦%lld⁩)"
-                    }
-                  },
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "⁦%lld⁩ حلقة"
-                    }
-                  },
-                  "two" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "حلقتان (⁦%lld⁩)"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -741375,10 +741550,28 @@
                       "value" : "⁦%lld⁩ حلقة"
                     }
                   },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "⁦%lld⁩ حلقة"
+                    }
+                  },
                   "other" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "⁦%lld⁩ حلقة"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "حلقتان (⁦%lld⁩)"
+                    }
+                  },
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "لا حلقات (⁦%lld⁩)"
                     }
                   }
                 }
@@ -741425,16 +741618,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episodi"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episodis"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episodi"
                     }
                   },
                   "other" : {
@@ -741459,12 +741652,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld díl"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -741475,6 +741662,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld dílu"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld díl"
                     }
                   },
                   "other" : {
@@ -741572,6 +741765,34 @@
             }
           }
         },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "S%1$lld · %#@arg2@"
+          },
+          "substitutions" : {
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episode"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episodes"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -741583,16 +741804,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episodio"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episodios"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episodio"
                     }
                   },
                   "other" : {
@@ -741673,16 +741894,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld épisode"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld épisodes"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld épisode"
                     }
                   },
                   "other" : {
@@ -741713,13 +741934,13 @@
                       "value" : "%lld פרק"
                     }
                   },
-                  "two" : {
+                  "other" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld פרקים"
                     }
                   },
-                  "other" : {
+                  "two" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld פרקים"
@@ -741769,16 +741990,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld epizoda"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld epizode"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld epizoda"
                     }
                   },
                   "other" : {
@@ -741853,16 +742074,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episodio"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episodi"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episodio"
                     }
                   },
                   "other" : {
@@ -742009,12 +742230,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld odcinek"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -742025,6 +742240,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld odcinków"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld odcinek"
                     }
                   },
                   "other" : {
@@ -742049,16 +742270,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episódio"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episódios"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episódio"
                     }
                   },
                   "other" : {
@@ -742083,16 +742304,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episod"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episoade"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episod"
                     }
                   },
                   "other" : {
@@ -742117,12 +742338,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld эпизод"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -742133,6 +742348,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld эпизодов"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld эпизод"
                     }
                   },
                   "other" : {
@@ -742157,12 +742378,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld diel"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -742173,6 +742388,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld dielu"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld diel"
                     }
                   },
                   "other" : {
@@ -742197,28 +742418,28 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld epizoda"
-                    }
-                  },
-                  "two" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld epizodi"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld epizode"
                     }
                   },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld epizoda"
+                    }
+                  },
                   "other" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld epizod"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld epizodi"
                     }
                   }
                 }
@@ -742237,16 +742458,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld epizoda"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld epizode"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld epizoda"
                     }
                   },
                   "other" : {
@@ -742349,12 +742570,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld епізод"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -742365,6 +742580,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld епізодів"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld епізод"
                     }
                   },
                   "other" : {
@@ -742449,12 +742670,6 @@
     "S%lld · E%lld" : {
       "comment" : "Compact Upcoming poster subtitle identifying one episode. S abbreviates Season and E abbreviates Episode; both numbers are indices, not counts.",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "S%1$lld · E%2$lld"
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -742495,6 +742710,12 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Σ%1$lld · Ε%2$lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "S%1$lld · E%2$lld"
           }
         },
         "es" : {
@@ -771339,34 +771560,6 @@
     "Season %lld · %lld episodes" : {
       "comment" : "Upcoming release subtitle. First number is the season index; second is the count of episodes released together. Pluralize the episode count, not the season index.",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Season %1$lld · %#@arg2@"
-          },
-          "substitutions" : {
-            "arg2" : {
-              "argNum" : 2,
-              "formatSpecifier" : "lld",
-              "variations" : {
-                "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episode"
-                    }
-                  },
-                  "other" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episodes"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -771378,24 +771571,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "zero" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "لا حلقات (⁦%lld⁩)"
-                    }
-                  },
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "⁦%lld⁩ حلقة"
-                    }
-                  },
-                  "two" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "حلقتان (⁦%lld⁩)"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -771408,10 +771583,28 @@
                       "value" : "⁦%lld⁩ حلقة"
                     }
                   },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "⁦%lld⁩ حلقة"
+                    }
+                  },
                   "other" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "⁦%lld⁩ حلقة"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "حلقتان (⁦%lld⁩)"
+                    }
+                  },
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "لا حلقات (⁦%lld⁩)"
                     }
                   }
                 }
@@ -771458,16 +771651,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episodi"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episodis"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episodi"
                     }
                   },
                   "other" : {
@@ -771492,12 +771685,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld díl"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -771508,6 +771695,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld dílu"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld díl"
                     }
                   },
                   "other" : {
@@ -771605,6 +771798,34 @@
             }
           }
         },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Season %1$lld · %#@arg2@"
+          },
+          "substitutions" : {
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episode"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episodes"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -771616,16 +771837,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episodio"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episodios"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episodio"
                     }
                   },
                   "other" : {
@@ -771706,16 +771927,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld épisode"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld épisodes"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld épisode"
                     }
                   },
                   "other" : {
@@ -771746,13 +771967,13 @@
                       "value" : "%lld פרק"
                     }
                   },
-                  "two" : {
+                  "other" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld פרקים"
                     }
                   },
-                  "other" : {
+                  "two" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld פרקים"
@@ -771802,16 +772023,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld epizoda"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld epizode"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld epizoda"
                     }
                   },
                   "other" : {
@@ -771886,16 +772107,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episodio"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episodi"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episodio"
                     }
                   },
                   "other" : {
@@ -772042,12 +772263,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld odcinek"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -772058,6 +772273,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld odcinków"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld odcinek"
                     }
                   },
                   "other" : {
@@ -772082,16 +772303,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episódio"
-                    }
-                  },
                   "many" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episódios"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episódio"
                     }
                   },
                   "other" : {
@@ -772116,16 +772337,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld episod"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld episoade"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld episod"
                     }
                   },
                   "other" : {
@@ -772150,12 +772371,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld эпизод"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -772166,6 +772381,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld эпизодов"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld эпизод"
                     }
                   },
                   "other" : {
@@ -772190,12 +772411,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld diel"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -772206,6 +772421,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld dielu"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld diel"
                     }
                   },
                   "other" : {
@@ -772230,28 +772451,28 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld epizoda"
-                    }
-                  },
-                  "two" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld epizodi"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld epizode"
                     }
                   },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld epizoda"
+                    }
+                  },
                   "other" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld epizod"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld epizodi"
                     }
                   }
                 }
@@ -772270,16 +772491,16 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld epizoda"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld epizode"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld epizoda"
                     }
                   },
                   "other" : {
@@ -772382,12 +772603,6 @@
               "formatSpecifier" : "lld",
               "variations" : {
                 "plural" : {
-                  "one" : {
-                    "stringUnit" : {
-                      "state" : "needs_review",
-                      "value" : "%lld епізод"
-                    }
-                  },
                   "few" : {
                     "stringUnit" : {
                       "state" : "needs_review",
@@ -772398,6 +772613,12 @@
                     "stringUnit" : {
                       "state" : "needs_review",
                       "value" : "%lld епізодів"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld епізод"
                     }
                   },
                   "other" : {
@@ -772482,12 +772703,6 @@
     "Season %lld · Episode %lld" : {
       "comment" : "Upcoming release subtitle identifying one episode. Both numbers are indices, not counts.",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Season %1$lld · Episode %2$lld"
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -772528,6 +772743,12 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Σεζόν %1$lld · Επεισόδιο %2$lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Season %1$lld · Episode %2$lld"
           }
         },
         "es" : {
@@ -1206832,12 +1207053,6 @@
       "comment" : "Coming Soon card cue. First placeholder is a locale-formatted release date; second is an already localized season/episode subtitle. Preserve both; their order and separator may be adapted.",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$@"
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -1206877,6 +1207092,12 @@
         "el" : {
           "stringUnit" : {
             "state" : "needs_review",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
             "value" : "%1$@ · %2$@"
           }
         },
