@@ -223,12 +223,14 @@ registry.
   effect. Native sidebar, tab, and profile controls remain available with their
   system appearance. Other scroll edges are unchanged.
 
-- **Compact hero top reflections soften into the status area.** The still-artwork
+- **Compact Home hero top reflections soften into the status area.** The still-artwork
   blur begins eight points below the 24-point top reflection seam, eases upward
   through the seam, and becomes stronger toward the top. It filters only artwork,
   not profile/mute controls, and does not add a material or tint. Bottom reflections,
   stage geometry, landscape artwork and trailers remain unchanged. Reduced
-  transparency retains the sharp reflection.
+  transparency retains the sharp reflection. Detail heroes keep their sharp top
+  reflection and native navigation treatment; Home's added artwork blur must not
+  be applied there.
 
 - **iPad tabs and profile actions share the native top row.** Apply opaque
   navigation chrome inside each tab's `NavigationStack`, not around the stack:
