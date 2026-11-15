@@ -262,7 +262,7 @@ let package = Package(
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "cc3cb49f4014a208f841bde8d1e0a5af0ff885e9",
+            revision: "055860a0accaaafa1852d1a65c4f7f505cb7e6ab",
             traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision

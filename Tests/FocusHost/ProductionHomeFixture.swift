@@ -1561,7 +1561,8 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
             : discoverGate
         await gate.wait()
         guard !Task.isCancelled else { return [] }
-        return Array((rowCount..<(rowCount * 2)).prefix(limit).map(movie))
+        let start = ProcessInfo.processInfo.arguments.contains("--discovery-short-row") ? rowCount * 20 : rowCount
+        return Array((start..<(start + rowCount)).prefix(limit).map(movie))
     }
 
     static func artworkURL(_ base: URL, index: Int) -> URL {
@@ -1736,8 +1737,10 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
             await recentGate.wait()
         }
         let start = rowCount + index * 20
-        let count = ProcessInfo.processInfo.arguments.contains("--short-showcase-rows") && !index.isMultiple(of: 2)
-            ? index / 2 + 1 : 20
+        let count = ProcessInfo.processInfo.arguments.contains("--discovery-short-row")
+            ? (index == 0 ? 1 : 20)
+            : ProcessInfo.processInfo.arguments.contains("--short-showcase-rows") && !index.isMultiple(of: 2)
+                ? index / 2 + 1 : 20
         return MediaPage(
             items: Array((start..<(start + count)).prefix(page.limit).map(movie)),
             startIndex: page.startIndex, totalCount: count

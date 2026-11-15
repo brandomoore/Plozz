@@ -141,7 +141,9 @@ private struct SourceSmokeSourcesPane: View {
         self.presentation = presentation
         self.automatic = automatic
         self.settingsPreferences = settingsPreferences
-        _catalog = State(initialValue: ProcessInfo.processInfo.arguments.contains("--catalog-sources")
+        let needsCatalog = ProcessInfo.processInfo.arguments.contains("--catalog-sources")
+            || ProcessInfo.processInfo.arguments.contains("--channel-name-samples")
+        _catalog = State(initialValue: needsCatalog
             ? SourceSmokeCatalog(configuration: try! sources.load()) : nil)
     }
 
@@ -165,6 +167,11 @@ private struct SourceSmokeSourcesPane: View {
                     prepareLibraries: {}, automaticChannels: automatic.presentation)
             }
         }
+        .task {
+            if ProcessInfo.processInfo.arguments.contains("--channel-name-samples"), let catalog {
+                await catalog.imports.reload(into: catalog.model)
+            }
+        }
     }
 
     private var sourceContent: some View {
@@ -185,16 +192,40 @@ private struct SourceSmokeSourcesPane: View {
 @MainActor
 private final class SourceSmokeCatalog {
     let imports: LiveTVPrototypeImportModel
+    let model = LiveTVPrototypeModel(channels: [])
     let scans = LiveTVChannelScanCoordinator(store: SourceSmokeHealthStore())
 
     init(configuration: LiveTVSourcesConfiguration) {
         let cache = LiveTVIndexedCache(
             url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).sqlite"),
             namespace: "source-smoke", authorizationScope: "fixture", secureStore: InMemorySecureStore())
-        imports = LiveTVPrototypeImportModel(configuration: configuration, cache: cache)
+        let loader: any LiveTVSourceLoading = ProcessInfo.processInfo.arguments.contains("--channel-name-samples")
+            ? SourceSmokeNameLoader() : LiveTVSourceLoader()
+        imports = LiveTVPrototypeImportModel(configuration: configuration, loader: loader, cache: cache)
         try! scans.bind(profileID: "source-smoke", sources: configuration.playlists.map {
             try LiveTVChannelScanSource(id: $0.id, generation: "fixture", targets: [])
         })
+    }
+}
+
+private struct SourceSmokeNameLoader: LiveTVSourceLoading {
+    enum Failure: Error { case unexpectedGuideRequest }
+
+    func loadPlaylist(from url: URL) async throws -> LiveTVPlaylistImport {
+        let names = ["## UK|NOW TV SPORT U H D 3840P ##", "** BBC One H D **", "|FR| Canal+ F H D"]
+        let channels = names.enumerated().map { index, name in
+            LiveTVPrototypeChannel(
+                id: "name-\(index)", number: index + 1, name: name, category: "Test",
+                symbol: "tv", accent: 0, source: .iptv, tagline: ""
+            )
+        }
+        return LiveTVPlaylistImport(channels: channels, entryCount: channels.count, skippedEntryCount: 0)
+    }
+
+    func loadGuide(
+        from url: URL, channels: [LiveTVPrototypeChannel], now: Date
+    ) async throws -> LiveTVGuideImport {
+        throw Failure.unexpectedGuideRequest
     }
 }
 

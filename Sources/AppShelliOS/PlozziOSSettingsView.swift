@@ -504,7 +504,7 @@ private struct PlozziOSSettingsSplitView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: MobileSettingsMetrics.sectionSpacing) {
                     // Live media-share scan/enrich progress. Renders nothing when
                     // idle, so Settings is unchanged unless a share is working.
                     ShareScanStatusHeader(
@@ -1074,7 +1074,7 @@ private struct PlozziOSSettingsCompactMenu: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: MobileSettingsMetrics.sectionSpacing) {
                 navigationTitles(NavigationLibraryLayout.settingsKey, default: Text("Settings"))
                     .font(.largeTitle.bold())
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -2213,7 +2213,9 @@ struct PlozziOSMusicPlayerSettingsView: View {
         List {
             SettingsSectionGroup("Appearance") {
                 CompactMusicStylePicker(selection: $model.appearance) { appearance in
-                    MusicPlayerStylePreview(appearance: appearance)
+                    MusicPlayerStylePreview(
+                        appearance: appearance, cornerRadius: MobileSettingsMetrics.previewContentCornerRadius
+                    )
                 }
                 .settingsSearchAnchor("music-style")
                 .accessibilityIdentifier("music-player-appearance")

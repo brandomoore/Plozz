@@ -102,13 +102,20 @@ public extension Dictionary where Key == String, Value == String {
     /// Returns a normalized id value for `namespace`, resolving known key aliases
     /// case-insensitively and punctuation-insensitively.
     func providerID(_ namespace: ProviderIDNamespace) -> String? {
-        let normalized = normalizedProviderIDs
-        for alias in namespace.aliases {
-            if let value = normalized[normalizeProviderIDKey(alias)] {
-                return value
-            }
+        let aliases = namespace.aliases
+        var bestIndex = aliases.endIndex
+        var result: String?
+        for (key, value) in self {
+            guard let index = aliases.firstIndex(of: normalizeProviderIDKey(key)),
+                  index < bestIndex,
+                  let cleaned = sanitizeProviderIDValue(value) else { continue }
+            // Alias priority and the first nonempty spelling must match the
+            // full normalized map without rebuilding it for every single lookup.
+            if index == aliases.startIndex { return cleaned }
+            bestIndex = index
+            result = cleaned
         }
-        return nil
+        return result
     }
 
     /// Removes every spelling of the supplied provider-id namespaces.
@@ -201,10 +208,23 @@ public extension MediaItem {
 }
 
 private func normalizeProviderIDKey(_ raw: String) -> String {
-    raw.unicodeScalars
-        .filter { CharacterSet.alphanumerics.contains($0) }
-        .map { Character($0).lowercased() }
-        .joined()
+    // Provider keys are normally ASCII. Avoid per-scalar strings on the layout
+    // path, retaining the original Unicode normalization for other spellings.
+    var normalized: [UInt8] = []
+    normalized.reserveCapacity(raw.utf8.count)
+    for byte in raw.utf8 {
+        switch byte {
+        case 65...90: normalized.append(byte + 32)
+        case 48...57, 97...122: normalized.append(byte)
+        case 0...127: continue
+        default:
+            return raw.unicodeScalars
+                .filter { CharacterSet.alphanumerics.contains($0) }
+                .map { Character($0).lowercased() }
+                .joined()
+        }
+    }
+    return String(decoding: normalized, as: UTF8.self)
 }
 
 private func sanitizeProviderIDValue(_ raw: String) -> String? {

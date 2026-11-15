@@ -341,6 +341,14 @@ registry.
   grant export permission, including on a TV system user's first launch.
   Credential snapshots are per-system-user, and identity/authority fences reject
   stale captures, restoration and permission responses after account changes.
+  Channel capture and verified-account permission discovery perform their
+  Keychain reads and record encoding on a serial utility queue, not the UI
+  executor. These are fresh reads, not a credential/ownership cache. Before
+  publication they recheck ownership, credential material, current accounts,
+  household removals, cloud identity, authority, cancellation and intervening
+  consent/state mutations. Permission presentation remains main-actor owned.
+  Explicit sign-in, consent, restoration and account-reset writes retain their
+  existing synchronous commit boundaries.
   Only fresh account verification can admit publication; cached snapshots cannot
   reopen withdrawn admission. Account switches reverify identity after resetting
   admission, rather than authorizing new fences with a pre-reset lookup.

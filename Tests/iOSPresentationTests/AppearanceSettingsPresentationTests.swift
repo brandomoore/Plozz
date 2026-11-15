@@ -55,13 +55,17 @@ final class AppearanceSettingsPresentationTests: XCTestCase {
 
     func testMountedThemePreviewsUpdateWhenGradientPreferenceChanges() async throws {
         try await mount(width: 390, palette: .dark) { window, theme in
-            func capturePreviews() throws -> Data {
+            @MainActor func capturePreviews() throws -> Data {
+                let title = try XCTUnwrap(self.textFrames(window)["Black"])
                 let format = UIGraphicsImageRendererFormat()
                 format.scale = 1
                 let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
                     XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
                 }
-                let crop = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(x: 40, y: 180, width: 310, height: 270)))
+                // Sample the swatch, not the surrounding native material and selection animations.
+                let crop = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
+                    x: 48, y: title.minY - 70, width: 120, height: 40
+                )))
                 return try XCTUnwrap(UIImage(cgImage: crop).pngData())
             }
             theme.gradientEnabled = false
@@ -109,6 +113,12 @@ final class AppearanceSettingsPresentationTests: XCTestCase {
                     }
                     let music = try XCTUnwrap(frames["Music player"])
                     XCTAssertGreaterThan(music.minY, try XCTUnwrap(frames["Liquid Glass"]).maxY)
+                    let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    })
+                    attachment.name = "Appearance preview geometry \(Int(width)) \(palette == .light ? "light" : "dark")"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
                     let scroll = try self.scrollView(window)
                     XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
                     scroll.setContentOffset(CGPoint(

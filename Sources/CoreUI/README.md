@@ -50,6 +50,18 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+Mobile Settings roots and detail pages share `MobileSettingsMetrics`: 16-point
+page/row insets, 28-point section gaps, 52-point minimum rows and 26-point
+continuous group corners. Rows grow with their content and Dynamic Type.
+`SettingsIconLabelStyle` supplies title anchors for one-pixel group separators:
+they start at the actual text column, mirror in RTL, and run to the trailing
+edge. Text-only rows use the standard inset. Groups consume their own anchors
+so nested groups cannot move a parent's separators. Native controls, theme
+surfaces and tvOS focus geometry remain unchanged.
+Mobile leading icons use medium-weight monochrome symbols in the same primary
+text color as their titles. Supporting text and chevrons retain secondary
+emphasis; tvOS keeps its existing icon and focus treatment.
+
 New tvOS Settings pages enter their first content control, not the header Back
 button. `settingsPageEntryFocus` requests that control only on first entry and
 leaves search targeting and retained-parent restoration alone. Until native
@@ -831,8 +843,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   24 artwork-identity-keyed palettes. Replaced/cancelled sources cannot publish
   stale colours or clear another source. Only the background leaf observes the
   colour array; no full-screen clock, blur, or per-frame page invalidation runs.
-  Reduce Motion disables the palette crossfade. Dark uses a softer wash and Black
-  retains more visible colour while staying darker; Light's palette is unchanged.
+  Reduce Motion disables the palette crossfade. Black retains 75% of the original decorative
+  gradient contribution through `ThemePalette.backgroundGradientIntensity`,
+  including stock and artwork-tinted page backgrounds, native sampled fills,
+  and theme previews. Dark, Light, flat fills, artwork and foregrounds are unchanged.
   Fullscreen Hero Home uses half the artwork tint's saturation on both platforms,
   retaining its hue and brightness without desaturating the hero image. Showcase,
   detail pages, and untinted stock gradients retain their existing treatment.
