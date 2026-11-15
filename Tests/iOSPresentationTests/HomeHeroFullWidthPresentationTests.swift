@@ -658,15 +658,17 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    func testHomeTopBlurFadesIntoArtworkAtRestAndAfterScrolling() async throws {
+    func testHomeStatusBarBlurLeavesNavigationRowClearAtRestAndAfterScrolling() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previousWindow = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView:
+        let host = UIHostingController(rootView: AnyView(
             MacNavigationBackgroundFixture(hidesRegularTabBackdrop: true, usesHomeScrollView: true)
                 .environment(\.colorScheme, .dark)
-        )
+                .environment(\.plozzReduceTransparency, false)
+                .environment(\.plozziOSIsRunningOnMac, false)
+        ))
         host.overrideUserInterfaceStyle = .dark
         window.rootViewController = host
         window.makeKeyAndVisible()
@@ -683,11 +685,10 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         for offset: CGFloat in [0, 400, 0] {
             scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
             try await waitForHostedLayout(window)
-            XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
-            XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
+            XCTAssertTrue(scroll.topEdgeEffect.isHidden)
             let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
             XCTAssertEqual(bar, initialBar, "The blur style must not change header geometry.")
-            let image = snapshot(window, name: "home-soft-top-edge-scroll-\(offset)")
+            let image = snapshot(window, name: "home-status-bar-blur-scroll-\(offset)")
             var previous = try pixel(image, at: CGPoint(x: 4, y: 0))
             var largestStep = 0
             for y in stride(from: CGFloat(2), through: 220, by: 2) {
@@ -698,11 +699,32 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 previous = current
             }
             XCTAssertLessThan(largestStep, 20,
-                              "The native blur must fade into artwork, not end at a hard toolbar boundary.")
+                              "The status-bar material must fade into artwork without a hard boundary.")
             if !UIAccessibility.isReduceTransparencyEnabled {
                 let top = try pixel(image, at: CGPoint(x: 4, y: 20))
                 XCTAssertGreaterThan(Int(previous[1]) - Int(top[1]), 20,
-                                     "Keep the native blur rather than hiding the top-edge treatment.")
+                                     "The status bar must retain its system-material backdrop.")
+                let navigationRow = try pixel(image, at: CGPoint(x: 4, y: bar.midY))
+                for channel in 0..<3 {
+                    XCTAssertLessThan(abs(Int(navigationRow[channel]) - Int(previous[channel])), 10,
+                                      "The blur must end above the middle of the navigation row.")
+                }
+            }
+        }
+        for (appReduced, onMac) in [(true, false), (false, true)] {
+            host.rootView = AnyView(
+                MacNavigationBackgroundFixture(hidesRegularTabBackdrop: true, usesHomeScrollView: true)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.plozzReduceTransparency, appReduced)
+                    .environment(\.plozziOSIsRunningOnMac, onMac)
+            )
+            try await waitForHostedLayout(window)
+            let image = snapshot(window, name: "home-status-bar-fallback-\(appReduced)-\(onMac)")
+            let top = try pixel(image, at: CGPoint(x: 4, y: 20))
+            let artwork = try pixel(image, at: CGPoint(x: 4, y: 220))
+            for channel in 0..<3 {
+                XCTAssertLessThan(abs(Int(top[channel]) - Int(artwork[channel])), 10,
+                                  "Reduced transparency and Mac must not add a material over the resting hero.")
             }
         }
     }
