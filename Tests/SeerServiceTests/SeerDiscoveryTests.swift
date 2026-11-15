@@ -136,6 +136,38 @@ final class SeerDiscoveryTests: XCTestCase {
         XCTAssertEqual(results.map { $0.baseURL.host }, ["192.168.1.10"])
     }
 
+    func testPlexAliasesAndSubnetAddressProduceOneProbeAndResultPerHost() async {
+        let http = HostRoutedHTTPClient()
+        http.stub(host: "192.168.1.9", .json(#"{"version":"3.5.2"}"#))
+        http.stub(host: "192.168.1.10", .json(#"{"version":"3.5.2"}"#))
+        let discovery = SeerDiscovery(
+            http: http, port: 5055, concurrency: 4,
+            subnetHosts: { ["192.168.1.9", "192.168.1.10"] }
+        )
+        let aliases = ["192-168-1-9.first.plex.direct", "192-168-1-9.second.PLEX.DIRECT"]
+
+        let results = await collect(discovery.discover(
+            hostHints: aliases + ["192.168.1.9", "192-168-1-10.other.plex.direct"], timeout: 2
+        ))
+
+        XCTAssertEqual(Set(results.map(\.baseURL.absoluteString)),
+                       ["http://192.168.1.9:5055", "http://192.168.1.10:5055"])
+        XCTAssertEqual(results.count, 2)
+        XCTAssertEqual(http.probeCount(forHost: "192.168.1.9"), 1)
+        XCTAssertEqual(http.probeCount(forHost: "192.168.1.10"), 1)
+        for alias in aliases { XCTAssertEqual(http.probeCount(forHost: alias.lowercased()), 0) }
+    }
+
+    func testDiscoveryDoesNotRewriteOtherHostnamesOrMalformedPlexAddresses() async {
+        let http = HostRoutedHTTPClient(default: .json(#"{"version":"3.5.2"}"#))
+        let hosts = ["192-168-1-9.example.com", "999-168-1-9.test.plex.direct", "requests.local"]
+
+        let results = await collect(makeDiscovery(http).discover(hostHints: hosts, timeout: 2))
+
+        XCTAssertEqual(Set(results.compactMap(\.baseURL.host)), Set(hosts))
+        for host in hosts { XCTAssertEqual(http.probeCount(forHost: host), 1) }
+    }
+
     func testSubnetSweepCandidatesAreAlsoProbed() async {
         // hostHints is empty here — the only candidate comes from the
         // injected `subnetHosts` closure, confirming the sweep path (not just

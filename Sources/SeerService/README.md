@@ -25,6 +25,11 @@ same `SeerConnectionsView` and authentication implementation.
   runs bounded local discovery if none is supplied. Its administrator key is never
   imported. A single result fills the address; multiple results remain explicit
   choices. Late discovery never replaces user input or crosses profiles.
+  Generated local probes normalize Plex's IPv4 certificate hostname to its
+  embedded address before deduplicating against the subnet sweep, so that one
+  host appears once. Other hostnames and configured server URLs are unchanged.
+  Discovery uses the shared named server row, with its address as secondary
+  text and scan status in the section header. Manual address entry is separate.
 - Sign-in has one primary action, favoring the profile's authorized media account.
   **Sign in as [name]** reuses that identity; **Use another Jellyfin/Plex account**
   starts a separate sign-in rather than competing with the saved-account action.

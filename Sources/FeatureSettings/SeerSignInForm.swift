@@ -24,6 +24,7 @@ struct SeerSignInForm: View {
     @State private var authenticationRevision: UUID?
     private enum Mode { case options, local, media, apiKey }
     @State private var discovering = false
+    @State private var discoveryRevision = UUID()
     @State private var addressEdited = false
     @FocusState private var primaryFocused: Bool
     private enum Action { case check, existing(SeerLoginOption), password, apiKey, plex }
@@ -67,6 +68,17 @@ struct SeerSignInForm: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
+                if methods == nil, !addressEdited, mode == .options {
+                    SeerServerDiscoverySection(
+                        suggestions: suggestions, discovering: discovering,
+                        onScan: { suggestions = []; discoveryRevision = UUID() },
+                        onSelect: { url in
+                            address = url.absoluteString
+                            suggestions = []
+                            start(.check)
+                        }
+                    )
+                }
                 addressSection
                 if mode == .media || mode == .local {
                     SettingsSectionGroup(passwordTitle) {
@@ -115,7 +127,7 @@ struct SeerSignInForm: View {
         #if os(tvOS)
         .defaultFocus($primaryFocused, true)
         #endif
-        .task(id: addressEdited) { if !addressEdited { await findAddress() } }
+        .task(id: addressEdited ? nil : discoveryRevision) { if !addressEdited { await findAddress() } }
         .task(id: operation?.id) { [operation] in
             guard let operation else { return }
             await perform(operation)
@@ -132,7 +144,7 @@ struct SeerSignInForm: View {
     }
 
     private var addressSection: some View {
-        SettingsSectionGroup("Server") {
+        SettingsSectionGroup(methods == nil ? "Server address" : "Server") {
             if methods != nil, mode != .apiKey {
                 HStack {
                     Text(address).font(.subheadline).fixedSize(horizontal: false, vertical: true)
@@ -153,17 +165,6 @@ struct SeerSignInForm: View {
                     .settingsWorkspaceEntry()
                     .disabled(operation != nil)
                     .onSubmit { if canSubmit { continueSignIn() } }
-            }
-            if methods == nil, !addressEdited, mode == .options {
-                if discovering { ProgressView("Looking for Seerr…") }
-                ForEach(suggestions, id: \.absoluteString) { url in
-                    Button(url.absoluteString) {
-                        addressEdited = true
-                        address = url.absoluteString
-                        suggestions = []
-                        start(.check)
-                    }.settingsActionRow()
-                }
             }
         }
     }
@@ -392,6 +393,42 @@ struct SeerSignInForm: View {
             authenticatedAccount = nil
             error = "The active profile changed. Open Seerr settings again."
         } catch { self.error = "Couldn’t save the Seerr connection." }
+    }
+}
+
+private struct SeerServerDiscoverySection: View {
+    let suggestions: [URL]
+    let discovering: Bool
+    let onScan: () -> Void
+    let onSelect: (URL) -> Void
+
+    var body: some View {
+        SettingsSectionGroup("Servers") {
+            if discovering {
+                ProgressView().controlSize(.small)
+                    .accessibilityLabel(Text("Looking for Seerr…"))
+            } else {
+                Button("Scan Again", action: onScan)
+            }
+        } content: {
+            if suggestions.isEmpty {
+                Text(discovering
+                     ? "Looking on your local network…"
+                     : "No nearby servers found. Enter an address below, or scan again.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(suggestions, id: \.absoluteString) { url in
+                Button { onSelect(url) } label: {
+                    ServerDiscoveryRow(name: Text("Seerr"), address: url) {
+                        Image(systemName: "server.rack")
+                            .font(.title2).frame(width: 32)
+                    }
+                }
+                .settingsActionRow()
+                .accessibilityIdentifier("seerr-discovered-server-\(url.absoluteString)")
+            }
+        }
     }
 }
 

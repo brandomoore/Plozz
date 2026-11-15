@@ -164,6 +164,30 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
+    func testDiscoveryChoicesUseNamedRowsSeparateFromManualEntry() async throws {
+        let urls = [URL(string: "http://192.168.1.9:5055")!, URL(string: "http://192.168.1.10:5055")!]
+        try await render(size: .init(width: 768, height: 1024), state: .unconfigured, configure: { service in
+            service.discoverServers = { _ in
+                AsyncStream {
+                    for url in urls { $0.yield(.init(baseURL: url, version: "3.5.2")) }
+                    $0.finish()
+                }
+            }
+        }) { window, scroll, service in
+            let text = try self.recognize(self.capture(window), size: window.bounds.size)
+            let addresses = text.filter { line in urls.contains { line.text.contains($0.host!) } }
+            XCTAssertEqual(addresses.count, 2)
+            XCTAssertGreaterThanOrEqual(text.filter { $0.text == "Seerr" }.count, 3)
+            let entry = try XCTUnwrap(self.textFields(in: window).first)
+            let entryFrame = entry.convert(entry.bounds, to: window)
+            XCTAssertTrue(addresses.allSatisfy { $0.frame.maxY < entryFrame.minY },
+                          "Discovered servers belong above the separate manual address field")
+            XCTAssertTrue(text.contains { $0.text == "Scan Again" })
+            XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+            XCTAssertFalse(service.isConfigured)
+        }
+    }
+
     func testImmediateSuggestedAddressChecksSignInWithoutAnotherContinue() async throws {
         try await render(size: .init(width: 390, height: 844), state: .unconfigured, configure: { service in
             service.suggestedAddresses = { [URL(string: "https://suggested.example")!] }

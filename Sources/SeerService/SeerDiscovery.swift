@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 import CoreNetworking
 
 /// A Seerr (Overseerr / Jellyseerr) instance found on the local network.
@@ -74,7 +75,7 @@ public final class SeerDiscovery: Sendable {
     public func discover(hostHints: [String] = [], timeout: TimeInterval? = nil) -> AsyncStream<DiscoveredSeerServer> {
         AsyncStream { continuation in
             var seen = Set<String>()
-            let hints = hostHints.filter { seen.insert($0).inserted }
+            let hints = hostHints.map(Self.discoveryHost).filter { seen.insert($0).inserted }
             let swept = subnetHosts().filter { seen.insert($0).inserted }
             let candidates = hints + swept
 
@@ -124,6 +125,15 @@ public final class SeerDiscovery: Sendable {
                 timeoutTask.cancel()
             }
         }
+    }
+
+    private static func discoveryHost(_ host: String) -> String {
+        let host = host.lowercased()
+        // Plex's certificate hostname and its LAN address are one discovery target.
+        // Only generated HTTP probes change; configured URLs keep their original origin.
+        guard host.hasSuffix(".plex.direct"),
+              let octets = SourceLocalityClassifier.leadingIPv4(host) else { return host }
+        return octets.map(String.init).joined(separator: ".")
     }
 
     /// Probes one host:port for an unauthenticated `/api/v1/status`. Rejects
