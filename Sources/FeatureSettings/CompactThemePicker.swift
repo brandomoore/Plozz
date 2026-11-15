@@ -44,9 +44,12 @@ public struct CompactThemePicker: View {
         PreviewCard(
             title: theme.displayName, isSelected: selection == theme,
             accent: palette.accent, compact: true, swatchAspectRatio: 1.6,
-            titleLineLimit: nil, action: { selection = theme }
+            titleLineLimit: nil,
+            cornerRadius: MobileSettingsMetrics.previewCardCornerRadius,
+            contentInset: MobileSettingsMetrics.previewCardInset,
+            action: { selection = theme }
         ) {
-            ThemeSwatch(theme: theme, cornerRadius: PlozzTheme.Metrics.Radius.content)
+            ThemeSwatch(theme: theme, cornerRadius: MobileSettingsMetrics.previewContentCornerRadius)
         }
         .accessibilityLabel(Text(theme.displayName))
         .accessibilityAddTraits(selection == theme ? .isSelected : [])
@@ -62,16 +65,21 @@ struct AppearancePreviewLayout<Option: Identifiable, Content: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        layout
+            .padding(.vertical, MobileSettingsMetrics.rowInset - MobileSettingsMetrics.controlVerticalInset)
+    }
+
+    @ViewBuilder private var layout: some View {
         if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: 12) {
+            VStack(spacing: MobileSettingsMetrics.rowInset) {
                 ForEach(options) { content($0, [$0]) }
             }
         } else {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
+                HStack(spacing: MobileSettingsMetrics.rowInset) {
                     ForEach(options) { content($0, options).frame(width: 144) }
                 }
-                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                Grid(horizontalSpacing: MobileSettingsMetrics.rowInset, verticalSpacing: MobileSettingsMetrics.rowInset) {
                     ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { index in
                         let row = Array(options[index..<min(index + 2, options.count)])
                         GridRow {

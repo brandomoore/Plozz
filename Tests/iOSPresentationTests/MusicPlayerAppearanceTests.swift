@@ -11,6 +11,72 @@ import XCTest
 
 @MainActor
 final class MusicPlayerAppearanceTests: XCTestCase {
+    func testGroupedPreviewInsetsAndColumnGapsUseTheSameGeometry() async throws {
+        final class Frames {
+            var group = CGRect.zero
+            var previews: [MusicPlayerAppearance: CGRect] = [:]
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width: CGFloat in [358, 802] {
+            for size in [DynamicTypeSize.large, .accessibility3] {
+                let frames = Frames()
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 1_000)
+                window.rootViewController = UIHostingController(rootView:
+                    ScrollView {
+                        SettingsSectionGroup {
+                            CompactMusicStylePicker(selection: .constant(.matchTheme)) { appearance in
+                                MusicPlayerStylePreview(
+                                    appearance: appearance,
+                                    cornerRadius: MobileSettingsMetrics.previewContentCornerRadius
+                                )
+                                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                    frames.previews[appearance] = $0
+                                }
+                            }
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.group = $0 }
+                    }
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.dynamicTypeSize, size)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .background(AppBackground(palette: .dark))
+                )
+                window.makeKeyAndVisible()
+                try await Task.sleep(for: .milliseconds(350))
+                window.layoutIfNeeded()
+                let first = try XCTUnwrap(frames.previews[.matchTheme])
+                XCTAssertEqual(first.minY - frames.group.minY, 24, accuracy: 1,
+                               "The 16-point group inset plus 8-point card inset must match on both axes.")
+                if width == 358 || size.isAccessibilitySize {
+                    XCTAssertEqual(first.minX - frames.group.minX, 24, accuracy: 1)
+                }
+                let next = try XCTUnwrap(frames.previews[.artwork])
+                if !size.isAccessibilitySize {
+                    XCTAssertEqual(next.minY, first.minY, accuracy: 1)
+                    XCTAssertEqual(next.minX - first.maxX, 32, accuracy: 1,
+                                   "Adjacent previews have two 8-point card insets and a 16-point gap.")
+                } else {
+                    XCTAssertEqual(next.minX, first.minX, accuracy: 1)
+                    XCTAssertEqual(first.maxX, frames.group.maxX - 24, accuracy: 1)
+                }
+                let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                })
+                attachment.name = "Concentric music settings \(width) \(size)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     func testSearchOffersAppearanceOnlyOnMobileBetaAndKeepsTrackDetailsOnTV() throws {
         let appearance = try XCTUnwrap(SettingsSearchCatalog.entry(id: "music-style"))
         let details = try XCTUnwrap(SettingsSearchCatalog.entry(id: "music-track-details"))

@@ -267,16 +267,18 @@ struct PlayerBackdrop: View {
 
 public struct MusicPlayerStylePreview: View {
     let appearance: MusicPlayerAppearance
+    private let cornerRadius: CGFloat
     @Environment(\.themePalette) private var palette
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
-    public init(appearance: MusicPlayerAppearance) {
+    public init(appearance: MusicPlayerAppearance, cornerRadius: CGFloat = PlozzTheme.Metrics.Radius.content) {
         self.appearance = appearance
+        self.cornerRadius = cornerRadius
     }
 
     public var body: some View {
         let resolved = appearance.resolved(palette: palette, gradientEnabled: gradientEnabled)
-        MusicPlayerPreview(isLight: resolved == .light) {
+        MusicPlayerPreview(isLight: resolved == .light, cornerRadius: cornerRadius) {
             PlayerBackdrop(
                 style: PlayerBackgroundStyle(appearance: resolved),
                 grid: Self.previewGrid, animated: false

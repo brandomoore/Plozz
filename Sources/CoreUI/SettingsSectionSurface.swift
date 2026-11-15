@@ -14,6 +14,9 @@ public enum MobileSettingsMetrics {
     public static let rowVerticalInset: CGFloat = 10
     public static let controlVerticalInset: CGFloat = 4
     public static let rowMinHeight: CGFloat = 52
+    public static let previewCardInset: CGFloat = 8
+    public static let previewCardCornerRadius = groupCornerRadius - rowInset
+    public static let previewContentCornerRadius = previewCardCornerRadius - previewCardInset
 }
 
 struct SettingsRowTitleAnchorKey: PreferenceKey {

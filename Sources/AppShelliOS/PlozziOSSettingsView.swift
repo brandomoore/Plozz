@@ -2213,7 +2213,9 @@ struct PlozziOSMusicPlayerSettingsView: View {
         List {
             SettingsSectionGroup("Appearance") {
                 CompactMusicStylePicker(selection: $model.appearance) { appearance in
-                    MusicPlayerStylePreview(appearance: appearance)
+                    MusicPlayerStylePreview(
+                        appearance: appearance, cornerRadius: MobileSettingsMetrics.previewContentCornerRadius
+                    )
                 }
                 .settingsSearchAnchor("music-style")
                 .accessibilityIdentifier("music-player-appearance")
