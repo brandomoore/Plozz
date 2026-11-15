@@ -184,7 +184,9 @@ iOS 26 top-edge scrim over the hero.
 
 The detail backdrop uses the same policy-resolved, cached bitmap as its hero,
 with a dark two-tone palette that keeps text legible when Gradient Backgrounds
-is enabled, including in Black mode. Disabling gradients uses the flat app theme
+is enabled. Black mode halves that background's color contribution using the
+shared theme intensity, without dimming the artwork or controls.
+Disabling gradients uses the flat app theme
 and its foreground contrast, with framed artwork still visible. The player
 override never changes these pages. Reduce Motion disables artist overscroll
 stretch and the active-track equalizer animation. Video and tvOS details are

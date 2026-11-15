@@ -839,8 +839,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   24 artwork-identity-keyed palettes. Replaced/cancelled sources cannot publish
   stale colours or clear another source. Only the background leaf observes the
   colour array; no full-screen clock, blur, or per-frame page invalidation runs.
-  Reduce Motion disables the palette crossfade. Dark uses a softer wash and Black
-  retains more visible colour while staying darker; Light's palette is unchanged.
+  Reduce Motion disables the palette crossfade. Black halves the decorative
+  gradient contribution through `ThemePalette.backgroundGradientIntensity`,
+  including stock and artwork-tinted page backgrounds, native sampled fills,
+  and theme previews. Dark, Light, flat fills, artwork and foregrounds are unchanged.
   Fullscreen Hero Home uses half the artwork tint's saturation on both platforms,
   retaining its hue and brightness without desaturating the hero image. Showcase,
   detail pages, and untinted stock gradients retain their existing treatment.

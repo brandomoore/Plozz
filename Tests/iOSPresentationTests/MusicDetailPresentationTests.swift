@@ -50,8 +50,8 @@ final class MusicDetailPresentationTests: XCTestCase {
                 let image = capture()
                 let top = try self.pixel(in: image, at: CGPoint(x: size.width - 12, y: 100))
                 for channel in 0..<3 {
-                    XCTAssertEqual(top[channel], expected[channel], accuracy: 0.025,
-                                   "The opening header must start with the artwork color, not the deep page base")
+                    XCTAssertEqual(top[channel], expected[channel] * 0.5, accuracy: 0.025,
+                                   "Black halves the artwork-derived background, not the artwork itself.")
                 }
                 var previous = top[1]
                 for y in stride(from: 140, through: Int(size.height) - 100, by: 40) {
