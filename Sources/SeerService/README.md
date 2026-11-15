@@ -30,6 +30,11 @@ same `SeerConnectionsView` and authentication implementation.
   host appears once. Other hostnames and configured server URLs are unchanged.
   Discovery uses the shared named server row, with its address as secondary
   text and scan status in the section header. Manual address entry is separate.
+  Authorized Plex account choices refresh when the profile's resolved identity
+  changes; pending authorization never substitutes the owner's credential.
+  Explicit Plex browser sign-in opens directly on iPhone/iPad, with a button to
+  reopen it if needed. Only Apple TV shows a QR code and asks the user to scan
+  with another device.
 - Sign-in has one primary action, favoring the profile's authorized media account.
   **Sign in as [name]** reuses that identity; **Use another Jellyfin/Plex account**
   starts a separate sign-in rather than competing with the saved-account action.

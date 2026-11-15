@@ -248,6 +248,45 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
+    func testMobilePlexSignInUsesBrowserInsteadOfScanningTheSameDevice() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 768, height: 1024)] {
+            let signInURL = URL(string: "https://app.plex.tv/auth#fixture")!
+            let opened = expectation(description: "Open Plex directly from the sign-in action")
+            opened.assertForOverFulfill = true
+            let previous = scene.windows.first(where: \.isKeyWindow)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(origin: .zero, size: size)
+            let host = UIHostingController(rootView:
+                SeerPlexSignInView(url: signInURL, onCancel: {})
+                    .padding(24)
+                    .environment(\.themePalette, ThemePalette.dark)
+                    .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.openURL, OpenURLAction { url in
+                        XCTAssertEqual(url, signInURL)
+                        opened.fulfill()
+                        return .handled
+                    })
+            )
+            host.overrideUserInterfaceStyle = .dark
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            try await Task.sleep(for: .milliseconds(150))
+            window.layoutIfNeeded()
+            let text = try recognize(capture(window), size: size).map(\.text)
+            XCTAssertTrue(text.contains("Open Plex sign-in"))
+            XCTAssertTrue(text.contains("Waiting for sign-in"))
+            XCTAssertTrue(text.contains("Cancel"))
+            XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("scan") })
+            await fulfillment(of: [opened], timeout: 1)
+        }
+    }
+
     private func render(
         size: CGSize, typeSize: DynamicTypeSize = .large,
         direction: LayoutDirection = .leftToRight, longNames: Bool = false,

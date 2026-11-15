@@ -4,6 +4,8 @@ import CoreUI
 import CoreNetworking
 import FeatureAuth
 import FeatureProfiles
+import Observation
+import SeerService
 @testable import AppRuntime
 @testable import AppShell
 
@@ -69,6 +71,39 @@ final class PlexHomeUsersModelTests: XCTestCase {
         model.plexHomeUsersFetch = { _, _ in throw URLError(.notConnectedToInternet) }
         model.plexHomeUserSwitch = { _, _, _, _ in throw AppError.unauthorized }
         return (model, hub, profiles)
+    }
+
+    func testSeerrOffersTheExistingAccountWhenPlexAuthorizationFinishes() async throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["a"])
+        profiles.update(profiles.activeProfile.settingHomeUserBinding(
+            .init(homeUserID: "viewer", name: "Viewer", requiresPIN: true, pinRequirementVerified: true),
+            forPlexAccount: "a"
+        ))
+        model.plexHomeUsersFetch = { _, _ in
+            [PlexHomeUser(id: "viewer", name: "Viewer", requiresPIN: true)]
+        }
+        model.plexHomeUserSwitch = { user, pin, _, _ in
+            XCTAssertEqual(user, "viewer")
+            XCTAssertEqual(pin, "2468")
+            return "viewer-cloud"
+        }
+        model.plexServerTokenResolve = { _, _, _ in "viewer-server" }
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore(connection: nil))
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        model.ensurePlexIdentityForActiveProfile()
+        await model.waitForPlexPINRequirementCheck()
+        let refreshed = expectation(description: "Refresh Seerr sign-in choices after authorization")
+        withObservationTracking {
+            XCTAssertTrue(service.loginOptions().isEmpty, "Never offer the owner's credential before viewer authorization")
+        } onChange: {
+            refreshed.fulfill()
+        }
+
+        model.submitPlexPIN("2468")
+        await model.waitForPlexPINRequirementCheck()
+
+        XCTAssertEqual(service.loginOptions().map(\.name), ["Viewer"])
+        await fulfillment(of: [refreshed], timeout: 1)
     }
 
     func testOnePINAuthenticatesTheSameHomeUserAcrossServersWithDistinctServerTokens() async throws {

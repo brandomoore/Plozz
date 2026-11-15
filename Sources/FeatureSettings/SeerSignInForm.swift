@@ -49,24 +49,7 @@ struct SeerSignInForm: View {
                 Button("Use another account") { authenticatedAccount = nil }
                     .plozzPageActionButton(role: .secondary)
             } else if let plexURL {
-                VStack(spacing: 24) {
-                    Text("Sign in with Plex").font(.title2.bold())
-                    SettingsQRCode(string: plexURL.absoluteString, centerMark: nil)
-                        .frame(width: 260, height: 260)
-                        .accessibilityLabel(Text("Scan to sign in with Plex"))
-                    Text("Scan with your phone to sign in.")
-                        .plozzForeground(.secondary)
-                    #if os(iOS)
-                    Link(destination: plexURL) {
-                        Text("Open Plex sign-in").plozzPageActionLabel()
-                    }
-                    .plozzPageActionButton()
-                    #endif
-                    ProgressView("Waiting for sign-in")
-                    Button("Cancel") { operation = nil; self.plexURL = nil }
-                        .plozzPageActionButton(role: .secondary)
-                }
-                .frame(maxWidth: .infinity)
+                SeerPlexSignInView(url: plexURL) { operation = nil; self.plexURL = nil }
             } else {
                 if methods == nil, !addressEdited, mode == .options {
                     SeerServerDiscoverySection(
@@ -393,6 +376,45 @@ struct SeerSignInForm: View {
             authenticatedAccount = nil
             error = "The active profile changed. Open Seerr settings again."
         } catch { self.error = "Couldn’t save the Seerr connection." }
+    }
+}
+
+struct SeerPlexSignInView: View {
+    let url: URL
+    let onCancel: () -> Void
+    @Environment(\.openURL) private var openURL
+    @State private var browserOpenFailed = false
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("Sign in with Plex").font(.title2.bold())
+            #if os(tvOS)
+            SettingsQRCode(string: url.absoluteString, centerMark: nil)
+                .frame(width: 260, height: 260)
+                .accessibilityLabel(Text("Scan to sign in with Plex"))
+            Text("Scan with your phone to sign in.")
+                .plozzForeground(.secondary)
+            #else
+            Button(action: openPlex) {
+                Text("Open Plex sign-in").frame(maxWidth: .infinity).plozzPageActionLabel()
+            }
+            .plozzPageActionButton()
+            if browserOpenFailed {
+                Text("Couldn’t open Plex. Try again.").foregroundStyle(.red)
+            }
+            #endif
+            ProgressView("Waiting for sign-in")
+            Button("Cancel", action: onCancel)
+                .plozzPageActionButton(role: .secondary)
+        }
+        .frame(maxWidth: .infinity)
+        #if os(iOS)
+        .task(id: url) { openPlex() }
+        #endif
+    }
+
+    private func openPlex() {
+        openURL(url) { accepted in browserOpenFailed = !accepted }
     }
 }
 

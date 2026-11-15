@@ -32,6 +32,8 @@ public enum SeerProfileAuthentication {
         }
         service.loginOptions = { [weak profiles, weak accounts, weak plex] in
             guard let profiles, let accounts, let plex else { return [] }
+            // Credentials are deliberately unobserved; refresh choices when their identity becomes ready.
+            _ = plex.plexIdentityGeneration
             let profile = profiles.activeProfile
             let allowed = Set(accounts.activeAccountIDs(forProfile: profile.id))
             return accounts.accounts.compactMap { account in
