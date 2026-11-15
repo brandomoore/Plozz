@@ -122,6 +122,7 @@ private struct LiveTVBrowsingSettingsSections: View {
 
 struct LiveTVChannelNameSettings: View {
     @Binding var settings: LiveTVViewSettings
+    @Environment(\.liveTVChannelNamePreviewSamples) private var samples
     private let example = "## UK|NOW TV SPORT U H D 3840P ##"
 
     var body: some View {
@@ -130,9 +131,14 @@ struct LiveTVChannelNameSettings: View {
                 .accessibilityIdentifier("live-tv-clean-channel-names")
                 .settingsSearchAnchor("live-clean-channel-names")
             VStack(alignment: .leading, spacing: 8) {
-                Text("Preview").font(.caption).settingsRowSecondary()
-                Text(verbatim: settings.cleanChannelNames ? IPTVChannelName.cleaned(example) : example)
-                    .accessibilityIdentifier("live-tv-channel-name-preview")
+                Text(samples.isEmpty ? LocalizedStringResource("Example") : "Preview")
+                    .font(.caption).settingsRowSecondary()
+                ForEach(Array((samples.isEmpty ? [example] : samples).enumerated()), id: \.offset) { index, name in
+                    Text(verbatim: settings.cleanChannelNames ? IPTVChannelName.cleaned(name) : name)
+                        .lineLimit(1)
+                        .accessibilityIdentifier(index == 0
+                            ? "live-tv-channel-name-preview" : "live-tv-channel-name-preview-\(index)")
+                }
             }
         } footer: {
             Text("Tidies IPTV names while keeping region and quality labels. Custom names stay unchanged.")

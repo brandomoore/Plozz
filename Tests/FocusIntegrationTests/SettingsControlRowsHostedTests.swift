@@ -18,6 +18,9 @@ private struct ChannelNamePreviewFixture: View {
 
     var body: some View {
         LiveTVChannelNameSettings(settings: $settings.value)
+            .environment(\.liveTVChannelNamePreviewSamples, [
+                "## UK|NOW TV SPORT U H D 3840P ##", "** BBC One H D **", "|FR| Canal+ F H D"
+            ])
     }
 }
 
@@ -67,6 +70,8 @@ final class SettingsControlRowsHostedTests: XCTestCase {
             let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
             XCTAssertTrue(text.contains("Clean channel names"), text)
             XCTAssertTrue(text.contains(enabled ? "SPORT UHD 3840P" : "SPORT U H D 3840P"), text)
+            XCTAssertTrue(text.contains(enabled ? "BBC One HD" : "BBC One H D"), text)
+            XCTAssertTrue(text.contains(enabled ? "Canal+ FHD" : "Canal+ F H D"), text)
             let attachment = XCTAttachment(image: image)
             attachment.name = "Channel names enabled=\(enabled)"
             attachment.lifetime = .keepAlways

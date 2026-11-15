@@ -2,6 +2,27 @@ import Foundation
 
 /// Display cleanup only. Never use the result as a channel identity or guide-matching key.
 public enum IPTVChannelName {
+    /// Prefer affected names, retaining at most three distinct preview rows.
+    public static func previewSamples(from names: some Sequence<String>) -> [String] {
+        let limit = 3
+        var changed: [(name: String, cleaned: String)] = []
+        var unchanged: [String] = []
+        for name in names {
+            let value = cleaned(name)
+            guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            if value != name {
+                guard !changed.contains(where: { $0.cleaned == value }) else { continue }
+                changed.append((name, value))
+                if changed.count == limit { return changed.map(\.name) }
+            } else if unchanged.count < limit, !unchanged.contains(name) {
+                unchanged.append(name)
+            }
+        }
+        return Array((changed.map(\.name) + unchanged.filter { name in
+            !changed.contains(where: { $0.cleaned == name })
+        }).prefix(limit))
+    }
+
     public static func cleaned(_ name: String) -> String {
         var value = name.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         if let marker = value.first, marker == "#" || marker == "*" {

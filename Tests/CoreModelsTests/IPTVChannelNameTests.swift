@@ -2,6 +2,27 @@ import XCTest
 @testable import CoreModels
 
 final class IPTVChannelNameTests: XCTestCase {
+    func testPreviewPrefersChangedDistinctNamesWithoutRewritingTheirOriginals() {
+        let names = [
+            "BBC One HD", "BBC: News", "## BBC One H D ##", "** BBC One H D **",
+            "|UK| Sky Sports 1", "Canal+ F H D", "## Fourth H D ##"
+        ]
+        XCTAssertEqual(IPTVChannelName.previewSamples(from: names), [
+            "## BBC One H D ##", "|UK| Sky Sports 1", "Canal+ F H D"
+        ])
+        XCTAssertEqual(IPTVChannelName.previewSamples(from: names.prefix(4)), [
+            "## BBC One H D ##", "BBC: News"
+        ])
+    }
+
+    func testPreviewUsesAvailableNamesWhenCleanupIsUnnecessaryAndNeverInventsChannels() {
+        XCTAssertEqual(IPTVChannelName.previewSamples(from: ["", " \t\n"]), [])
+        XCTAssertEqual(IPTVChannelName.previewSamples(from: [String]()), [])
+        XCTAssertEqual(IPTVChannelName.previewSamples(from: [
+            "BBC: News", "BBC: News", "Canal+", "Sky Sports 1", "Sky Sports 10"
+        ]), ["BBC: News", "Canal+", "Sky Sports 1"])
+    }
+
     func testDecorationsAndTrailingQualitySpacingAreCleanedWithoutDiscardingTags() {
         let examples = [
             ("## UK|NOW TV SPORT U H D 3840P ##", "UK | NOW TV SPORT UHD 3840P"),

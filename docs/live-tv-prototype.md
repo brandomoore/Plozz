@@ -56,7 +56,12 @@ not a specification.
 ## Channel-name presentation
 
 Settings > Live TV > **Clean channel names** is off by default and scoped to
-the active profile. Its live preview uses the same formatter as the guide.
+the active profile. Its live preview uses the same formatter as the guide and
+up to three distinct original names from the authorized loaded IPTV catalog,
+preferring names that cleanup changes. It excludes hidden and manually renamed
+channels, never fetches a playlist for the preview, and clears provider samples
+when access is revoked or sources are removed. Until eligible names are loaded,
+a fixed sample is explicitly labeled **Example**.
 It tidies IPTV display names only: whitespace, paired `##` / `**` wrappers,
 pipe separators, and recognized trailing spaced or superscript quality labels.
 Country/provider tags, regional names, channel numbers, `+1`, quality labels,
