@@ -156,6 +156,9 @@ private struct CrashReportingConsentFooter: View {
     private var repositoryLabel: some View {
         Label {
             Text("GitHub repo")
+                #if os(iOS)
+                .padding(.trailing, 8)
+                #endif
         } icon: {
             Image("GitHubMark")
                 .renderingMode(.template)
