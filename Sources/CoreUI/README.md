@@ -1078,6 +1078,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 - **Touch action feedback** — `TouchFeedback` gives mobile skip actions a light
   impact and committed scrubs / explicit reorder moves a selection tick. Native
   List drag reordering retains system feedback without a second app vibration.
+  Pull resistance can request intensity-scaled soft tension ticks and a distinct
+  rigid pop. The gesture owns milestone and one-shot gating; all output remains
+  silent while the app is inactive or the device does not support haptics.
   Watchlist actions acknowledge the press immediately with a light tap and stay
   silent on success; an error haptic accompanies a failed save and rollback.
   Their shared toast uses "Added to Watchlist" / "Removed from Watchlist" for

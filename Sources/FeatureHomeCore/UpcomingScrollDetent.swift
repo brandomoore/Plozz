@@ -43,28 +43,54 @@ struct UpcomingTodayAnchor: View {
 }
 
 struct UpcomingScrollDetentDrag: Sendable {
-    static let releaseDistance: CGFloat = 120
+    static let releaseDistance: CGFloat = 240
+    static let heldDistance: CGFloat = 24
     static let snapDistance: CGFloat = 48
     static let maximumSnapVelocity: CGFloat = 1_200
     let start: CGFloat
     let translation: CGFloat
     let today: CGFloat
+    private(set) var hasReleased = false
+    private var feedbackStep = 0
+
+    init(start: CGFloat, translation: CGFloat, today: CGFloat) {
+        self.start = start
+        self.translation = translation
+        self.today = today
+    }
+
+    mutating func advance(translation: CGFloat) -> TouchFeedback.Event? {
+        guard start >= today - 2, !hasReleased else { return nil }
+        let pull = today - (start - (translation - self.translation))
+        if pull <= 0 {
+            feedbackStep = 0
+            return nil
+        }
+        if pull >= Self.releaseDistance {
+            hasReleased = true
+            return .pop
+        }
+        let step = Int(pull / Self.releaseDistance * 8)
+        guard step > feedbackStep else { return nil }
+        feedbackStep = step
+        return .tension(intensity: 0.15 + 0.8 * Double(step) / 8)
+    }
 
     func offset(translation: CGFloat) -> CGFloat {
         let proposed = start - (translation - self.translation)
+        // Once the seal breaks, keep a fixed displacement for the rest of the
+        // gesture so reversing direction cannot jump or reattach the content.
+        if hasReleased { return proposed + Self.releaseDistance - Self.heldDistance }
         guard start >= today - 2, proposed < today else { return proposed }
         let pull = today - proposed
-        let distance = Self.releaseDistance
-        let t = min(pull / distance, 1)
-        // Integrate a smoothstep velocity: 1/4 speed at Today, then smoothly
-        // regain finger speed without a positional jump at the release point.
-        let resisted = distance * (0.25 * t + 0.75 * (t * t * t - 0.5 * t * t * t * t))
-        return today - resisted - max(0, pull - distance)
+        let t = min(pull / Self.releaseDistance, 1)
+        return today - Self.heldDistance * (2 * t - t * t)
     }
 
     func shouldSnap(offset: CGFloat, translation: CGFloat, velocity: CGFloat) -> Bool {
+        guard !hasReleased else { return false }
         let raw = start - (translation - self.translation)
-        if start >= today - 2, raw < today, raw > today - Self.releaseDistance {
+        if start >= today - 2, raw < today {
             return true
         }
         return abs(offset - today) <= Self.snapDistance && abs(velocity) < Self.maximumSnapVelocity
@@ -130,7 +156,8 @@ final class UpcomingScrollTargetState: Sendable {
 
     func target(projected: CGFloat, velocity: CGFloat) -> CGFloat? {
         state.withLock {
-            guard $0.enabled, $0.interacting, let today = $0.today else { return nil }
+            guard $0.enabled, $0.interacting, $0.drag?.hasReleased != true,
+                  let today = $0.today else { return nil }
             if $0.resolved { return $0.target }
             $0.resolved = true
             let nearbyRelease = $0.drag?.shouldSnap(
@@ -139,7 +166,9 @@ final class UpcomingScrollTargetState: Sendable {
                 && abs(velocity) < UpcomingScrollDetentDrag.maximumSnapVelocity)
             let nearbyDestination = abs(projected - today - $0.inset) <= UpcomingScrollDetentDrag.snapDistance
                 && abs(velocity) < UpcomingScrollDetentDrag.maximumSnapVelocity
-            guard nearbyRelease || nearbyDestination else { return nil }
+            let crossesUnreleasedToday = $0.drag.map { $0.start >= today - 2 } == true
+                && projected - $0.inset < today
+            guard crossesUnreleasedToday || nearbyRelease || nearbyDestination else { return nil }
             $0.target = today + $0.inset
             $0.feedbackPending = abs($0.offset - today) > 0.5
             return $0.target
@@ -148,7 +177,7 @@ final class UpcomingScrollTargetState: Sendable {
 
     func consumeArrival() -> Bool {
         state.withLock {
-            guard $0.enabled, $0.feedbackPending, let target = $0.target,
+            guard $0.enabled, $0.feedbackPending, $0.drag?.hasReleased != true, let target = $0.target,
                   abs($0.offset + $0.inset - target) <= 1 else { return false }
             $0.feedbackPending = false
             return true
@@ -168,7 +197,7 @@ final class UpcomingScrollDetent {
     private var adjustingOffset = false
     private var hasResisted = false
     var reduceMotion = false
-    var onCatch: () -> Void = { TouchFeedback.shared.emit(.selection) }
+    var onFeedback: (TouchFeedback.Event) -> Void = { TouchFeedback.shared.emit($0) }
 
     private var usesAssistiveScrolling: Bool {
         UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning
@@ -262,11 +291,13 @@ final class UpcomingScrollDetent {
     private func offsetChanged() {
         guard !adjustingOffset, let scrollView else { return }
         updateAnchor()
-        if phase == .interacting, !usesAssistiveScrolling, let drag, drag.start >= drag.today - 2 {
+        if phase == .interacting, !usesAssistiveScrolling, var drag, drag.start >= drag.today - 2 {
             let translation = scrollView.panGestureRecognizer.translation(in: scrollView.window).y
             let raw = drag.start - (translation - drag.translation)
             hasResisted = hasResisted || raw < drag.today
             if hasResisted {
+                let feedback = drag.advance(translation: translation)
+                self.drag = drag
                 let y = drag.offset(translation: translation)
                 let minimum = -scrollView.adjustedContentInset.top
                 let maximum = max(minimum, scrollView.contentSize.height - scrollView.bounds.height
@@ -276,10 +307,13 @@ final class UpcomingScrollDetent {
                 if y <= minimum || y >= maximum {
                     self.drag = nil
                     targetState.cancel()
-                } else if abs(y - scrollView.contentOffset.y) > 0.01 {
-                    adjustingOffset = true
-                    scrollView.contentOffset.y = y
-                    adjustingOffset = false
+                } else {
+                    if abs(y - scrollView.contentOffset.y) > 0.01 {
+                        adjustingOffset = true
+                        scrollView.contentOffset.y = y
+                        adjustingOffset = false
+                    }
+                    if let feedback { onFeedback(feedback) }
                 }
             }
         }
@@ -302,7 +336,7 @@ final class UpcomingScrollDetent {
         guard phase != .tracking, phase != .interacting, !usesAssistiveScrolling else { return }
         updateTargetState()
         guard targetState.consumeArrival() else { return }
-        onCatch()
+        onFeedback(.selection)
     }
 }
 

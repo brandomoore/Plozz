@@ -6,11 +6,13 @@ import UIKit
 
 @MainActor
 public final class TouchFeedback: NSObject {
-    public enum Event: Equatable {
+    public enum Event: Equatable, Sendable {
         case impact
         case selection
         case confirmation
         case error
+        case tension(intensity: Double)
+        case pop
     }
 
     public static let shared = TouchFeedback()
@@ -40,6 +42,8 @@ public final class TouchFeedback: NSObject {
         let impact = UIImpactFeedbackGenerator(style: .light)
         let selection = UISelectionFeedbackGenerator()
         let confirmation = UINotificationFeedbackGenerator()
+        let tension = UIImpactFeedbackGenerator(style: .soft)
+        let pop = UIImpactFeedbackGenerator(style: .rigid)
         #endif
         self.init(output: { event in
             #if os(iOS)
@@ -48,6 +52,11 @@ public final class TouchFeedback: NSObject {
             case .selection: selection.selectionChanged()
             case .confirmation: confirmation.notificationOccurred(.success)
             case .error: confirmation.notificationOccurred(.error)
+            case .tension(let intensity):
+                tension.impactOccurred(intensity: CGFloat(intensity))
+                tension.prepare()
+                pop.prepare()
+            case .pop: pop.impactOccurred(intensity: 1)
             }
             #endif
         }, isActive: {

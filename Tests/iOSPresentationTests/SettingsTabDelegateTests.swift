@@ -51,7 +51,7 @@ final class SettingsTabDelegateTests: XCTestCase {
         let detent = try XCTUnwrap(probe.detent)
         let scroll = try XCTUnwrap(detent.scrollView)
         var catches = 0
-        detent.onCatch = { catches += 1 }
+        detent.onFeedback = { if $0 == .selection { catches += 1 } }
         let initialToday = try XCTUnwrap(detent.todayOffset)
         let initialDeadline = Date().addingTimeInterval(3)
         while abs(scroll.contentOffset.y - initialToday) > 1, Date() < initialDeadline {
@@ -81,15 +81,16 @@ final class SettingsTabDelegateTests: XCTestCase {
             XCTAssertEqual(scroll.contentOffset.y, initialToday, accuracy: 1, "Each navigation tap returns to Today")
         }
         XCTAssertEqual(catches, 0, "Positioning and navigation must not emit catch feedback")
-        let approaches: [(CGFloat, CGFloat, CGFloat, Bool)] = [
-            (-30, -0.3, -300, true),
-            (30, 0.3, 300, true),
-            (30, 2, 900, false),
-            (-300, 0.3, -30, true)
+        let approaches: [(CGFloat, CGFloat, CGFloat, CGFloat, Bool)] = [
+            (-300, -30, -0.3, -300, true),
+            (-300, 30, 0.3, 300, true),
+            (-300, 30, 2, 900, false),
+            (-300, -300, 0.3, -30, true),
+            (300, 30, -2, -900, true)
         ]
         var expectedCatches = 0
-        for (displacement, velocity, projection, shouldCatch) in approaches {
-            scroll.contentOffset.y = initialToday - 300
+        for (start, displacement, velocity, projection, shouldCatch) in approaches {
+            scroll.contentOffset.y = initialToday + start
             try await Task.sleep(for: .milliseconds(100))
             scroll.delegate?.scrollViewWillBeginDragging?(scroll)
             let startDeadline = Date().addingTimeInterval(3)
