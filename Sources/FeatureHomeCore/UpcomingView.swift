@@ -17,7 +17,9 @@
             @State private var availableSize = CGSize.zero
             @State private var agendaSize = CGSize.zero
             @State private var calendarIsMinimized = false
-            @State private var scrollDay: Date? = Calendar.current.startOfDay(for: Date())
+            @State private var scrollPosition = ScrollPosition(
+                id: Calendar.current.startOfDay(for: Date()), anchor: .top
+            )
             @State private var hasScrolledAgenda = false
             @State private var todayDetent = UpcomingScrollDetent()
         #endif
@@ -58,7 +60,7 @@
                                     onScrollToToday: {
                                         let today = Calendar.current.startOfDay(for: Date())
                                         selectedDay = today
-                                        scrollDay = today
+                                        scrollPosition.scrollTo(id: today, anchor: .top)
                                         hasScrolledAgenda = false
                                     }
                                 )
@@ -81,24 +83,26 @@
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { agendaSize = $0 }
                         .contentMargins(.horizontal, agendaInset, for: .scrollContent)
                         .contentMargins(.vertical, 16, for: .scrollContent)
-                        .scrollPosition(id: $scrollDay, anchor: .top)
-                        .onScrollPhaseChange { oldPhase, newPhase, context in
-                            if newPhase == .interacting { hasScrolledAgenda = true }
-                            todayDetent.phaseChanged(from: oldPhase, to: newPhase, velocity: context.velocity?.dy ?? 0)
+                        .scrollPosition($scrollPosition, anchor: .top)
+                        .scrollTargetBehavior(UpcomingScrollTargetBehavior(state: todayDetent.targetState))
+                        .onScrollPhaseChange { _, newPhase in
+                            if newPhase == .interacting {
+                                hasScrolledAgenda = true
+                                scrollPosition.isPositionedByUser = true
+                            }
+                            todayDetent.phaseChanged(to: newPhase)
                         }
                         .modifier(UpcomingScrollEdge())
                         .task(id: agendaSize.width) {
-                            guard agendaSize.width > 0 else { return }
-                            let day = hasScrolledAgenda ? scrollDay ?? selectedDay : selectedDay
+                            guard agendaSize.width > 0, !hasScrolledAgenda else { return }
                             await Task.yield()
-                            guard !Task.isCancelled else { return }
-                            scrollDay = day
-                            proxy.scrollTo(day, anchor: .top)
+                            guard !Task.isCancelled, !hasScrolledAgenda else { return }
+                            scrollPosition.scrollTo(id: selectedDay, anchor: .top)
                         }
                         .onChange(of: selectedDay) { _, day in
                             todayDetent.cancelInteraction()
                             hasScrolledAgenda = false
-                            scrollDay = day
+                            scrollPosition.scrollTo(id: day, anchor: .top)
                         }
                         #else
                         .onChange(of: selectedDay) { _, day in

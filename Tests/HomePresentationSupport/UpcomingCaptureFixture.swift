@@ -451,9 +451,22 @@ struct UpcomingCaptureFixture: View {
                 }
                 if progressive {
                     agenda.contentOffset.y = todayOffset - 300
-                    detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
+                    nativeDelegate.scrollViewWillBeginDragging?(agenda)
+                    for _ in 0..<60 where detent.phase != .interacting {
+                        try await Task.sleep(for: .milliseconds(16))
+                    }
+                    precondition(detent.phase == .interacting, "The native drag must reach SwiftUI")
                     agenda.contentOffset.y = todayOffset - 30
-                    detent.phaseChanged(from: .interacting, to: .decelerating, velocity: 600)
+                    var target = CGPoint(x: horizontalOffset, y: todayOffset - 300)
+                    nativeDelegate.scrollViewWillEndDragging?(
+                        agenda, withVelocity: CGPoint(x: 0, y: 0.6), targetContentOffset: &target
+                    )
+                    precondition(abs(target.y - todayOffset) < 1, "Native release must select Today")
+                    nativeDelegate.scrollViewDidEndDragging?(agenda, willDecelerate: true)
+                    for _ in 0..<60 where detent.phase == .interacting {
+                        try await Task.sleep(for: .milliseconds(16))
+                    }
+                    agenda.setContentOffset(target, animated: true)
                     var settleOffsets = [agenda.contentOffset.y]
                     for _ in 0..<60 where abs(agenda.contentOffset.y - todayOffset) >= 1 || detent.phase != .idle {
                         try await Task.sleep(for: .milliseconds(16))
@@ -464,7 +477,7 @@ struct UpcomingCaptureFixture: View {
                     precondition(agenda.delegate === nativeDelegate, "Native settling must preserve SwiftUI's delegate")
                     precondition(abs(agenda.contentOffset.x - horizontalOffset) < 0.5,
                                  "Native settling must preserve the horizontal page inset")
-                    FileHandle.standardOutput.write(Data("Upcoming native settle verified with injected release phase\n".utf8))
+                    FileHandle.standardOutput.write(Data("Upcoming native target and animation verified with injected delegate events\n".utf8))
                 }
                 let top = (1 - today.maxY) * window.bounds.height
                 precondition(top >= before.maxY + 8 && top <= before.maxY + 36,

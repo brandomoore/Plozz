@@ -1,6 +1,8 @@
 #if os(iOS)
 import SwiftUI
 import UIKit
+import CoreUI
+import os
 
 extension UpcomingView {
     /// A navigation reselection resets only the visible Upcoming agenda.
@@ -40,7 +42,7 @@ struct UpcomingTodayAnchor: View {
     }
 }
 
-struct UpcomingScrollDetentDrag {
+struct UpcomingScrollDetentDrag: Sendable {
     static let releaseDistance: CGFloat = 120
     static let snapDistance: CGFloat = 48
     static let maximumSnapVelocity: CGFloat = 1_200
@@ -69,18 +71,104 @@ struct UpcomingScrollDetentDrag {
     }
 }
 
+struct UpcomingScrollTargetBehavior: ScrollTargetBehavior {
+    let state: UpcomingScrollTargetState
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        // Native release velocity is points/ms; the detent policy uses points/s.
+        guard context.axes.contains(.vertical),
+              let y = state.target(projected: target.rect.minY, velocity: context.velocity.dy * 1_000) else { return }
+        target.rect.origin.y = y
+    }
+}
+
+// ScrollTargetBehavior is nonisolated. Exchange value snapshots with the UIKit
+// adapter, without reading views or hopping asynchronously during target selection.
+final class UpcomingScrollTargetState: Sendable {
+    private struct State {
+        var today: CGFloat?
+        var inset: CGFloat = 0
+        var offset: CGFloat = 0
+        var translation: CGFloat = 0
+        var drag: UpcomingScrollDetentDrag?
+        var enabled = false
+        var interacting = false
+        var resolved = false
+        var target: CGFloat?
+        var feedbackPending = false
+    }
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    func update(today: CGFloat?, inset: CGFloat, offset: CGFloat, translation: CGFloat,
+                drag: UpcomingScrollDetentDrag?, enabled: Bool) {
+        state.withLock {
+            $0.today = today
+            $0.inset = inset
+            $0.offset = offset
+            $0.translation = translation
+            $0.drag = drag
+            $0.enabled = enabled
+        }
+    }
+
+    func begin() {
+        state.withLock {
+            $0.interacting = true
+            $0.resolved = false
+            $0.target = nil
+            $0.feedbackPending = false
+        }
+    }
+
+    func cancel() {
+        state.withLock {
+            $0.interacting = false
+            $0.target = nil
+            $0.feedbackPending = false
+        }
+    }
+
+    func target(projected: CGFloat, velocity: CGFloat) -> CGFloat? {
+        state.withLock {
+            guard $0.enabled, $0.interacting, let today = $0.today else { return nil }
+            if $0.resolved { return $0.target }
+            $0.resolved = true
+            let nearbyRelease = $0.drag?.shouldSnap(
+                offset: $0.offset, translation: $0.translation, velocity: velocity
+            ) ?? (abs($0.offset - today) <= UpcomingScrollDetentDrag.snapDistance
+                && abs(velocity) < UpcomingScrollDetentDrag.maximumSnapVelocity)
+            let nearbyDestination = abs(projected - today - $0.inset) <= UpcomingScrollDetentDrag.snapDistance
+                && abs(velocity) < UpcomingScrollDetentDrag.maximumSnapVelocity
+            guard nearbyRelease || nearbyDestination else { return nil }
+            $0.target = today + $0.inset
+            $0.feedbackPending = abs($0.offset - today) > 0.5
+            return $0.target
+        }
+    }
+
+    func consumeArrival() -> Bool {
+        state.withLock {
+            guard $0.enabled, $0.feedbackPending, let target = $0.target,
+                  abs($0.offset + $0.inset - target) <= 1 else { return false }
+            $0.feedbackPending = false
+            return true
+        }
+    }
+}
+
 @MainActor
 final class UpcomingScrollDetent {
+    let targetState = UpcomingScrollTargetState()
     private(set) weak var scrollView: UIScrollView?
     private weak var anchor: UIView?
     private(set) var todayOffset: CGFloat?
     private(set) var phase = ScrollPhase.idle
     private var offsetObservation: NSKeyValueObservation?
     private var drag: UpcomingScrollDetentDrag?
-    private var settleTask: Task<Void, Never>?
     private var adjustingOffset = false
     private var hasResisted = false
     var reduceMotion = false
+    var onCatch: () -> Void = { TouchFeedback.shared.emit(.selection) }
 
     private var usesAssistiveScrolling: Bool {
         UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning
@@ -107,8 +195,7 @@ final class UpcomingScrollDetent {
     }
 
     func cancelInteraction() {
-        settleTask?.cancel()
-        settleTask = nil
+        targetState.cancel()
         drag = nil
         hasResisted = false
     }
@@ -143,19 +230,19 @@ final class UpcomingScrollDetent {
             cancelInteraction()
         }
         todayOffset = offset
+        updateTargetState()
     }
 
-    func phaseChanged(from oldPhase: ScrollPhase, to newPhase: ScrollPhase, velocity: CGFloat) {
+    func phaseChanged(to newPhase: ScrollPhase) {
         phase = newPhase
         if newPhase == .tracking {
             cancelInteraction()
             beginInteraction()
         } else if newPhase == .interacting, drag == nil {
             beginInteraction()
-        } else if oldPhase == .interacting, newPhase == .decelerating || newPhase == .idle {
-            endInteraction(velocity: velocity)
-        } else if oldPhase == .decelerating, newPhase == .idle, settleTask == nil {
-            endInteraction(velocity: 0)
+        } else if newPhase == .idle {
+            completeCatch()
+            cancelInteraction()
         }
     }
 
@@ -168,6 +255,8 @@ final class UpcomingScrollDetent {
             translation: scrollView.panGestureRecognizer.translation(in: scrollView.window).y,
             today: todayOffset
         )
+        updateTargetState()
+        targetState.begin()
     }
 
     private func offsetChanged() {
@@ -184,43 +273,36 @@ final class UpcomingScrollDetent {
                     + scrollView.adjustedContentInset.bottom)
                 // Once the gesture reaches an outer edge, leave its rubber-band
                 // behavior to UIKit instead of clamping the scroll position.
-                guard y > minimum, y < maximum else {
+                if y <= minimum || y >= maximum {
                     self.drag = nil
-                    return
-                }
-                if abs(y - scrollView.contentOffset.y) > 0.01 {
+                    targetState.cancel()
+                } else if abs(y - scrollView.contentOffset.y) > 0.01 {
                     adjustingOffset = true
                     scrollView.contentOffset.y = y
                     adjustingOffset = false
                 }
             }
         }
+        updateTargetState()
+        completeCatch()
     }
 
-    private func endInteraction(velocity: CGFloat) {
-        let completedDrag = drag
-        drag = nil
-        guard !usesAssistiveScrolling, let scrollView, let todayOffset else { return }
-        let current = scrollView.contentOffset.y
-        let shouldSnap = completedDrag?.shouldSnap(
-            offset: current,
+    private func updateTargetState() {
+        guard let scrollView else { return }
+        targetState.update(
+            today: todayOffset,
+            inset: scrollView.adjustedContentInset.top,
+            offset: scrollView.contentOffset.y,
             translation: scrollView.panGestureRecognizer.translation(in: scrollView.window).y,
-            velocity: velocity
-        ) ?? (abs(current - todayOffset) <= UpcomingScrollDetentDrag.snapDistance
-            && abs(velocity) < UpcomingScrollDetentDrag.maximumSnapVelocity)
-        guard shouldSnap, abs(current - todayOffset) > 0.5 else { return }
-        // Stop momentum before starting the native settle, on the next turn.
-        // Otherwise UIKit can consume the animated request while decelerating.
-        scrollView.setContentOffset(scrollView.contentOffset, animated: false)
-        settleTask?.cancel()
-        settleTask = Task { @MainActor [weak self, weak scrollView] in
-            await Task.yield()
-            guard !Task.isCancelled, let self, let scrollView,
-                  self.scrollView === scrollView, !self.usesAssistiveScrolling,
-                  self.phase != .tracking, self.phase != .interacting,
-                  let target = self.todayOffset else { return }
-            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: target), animated: !self.reduceMotion)
-        }
+            drag: drag, enabled: !usesAssistiveScrolling
+        )
+    }
+
+    private func completeCatch() {
+        guard phase != .tracking, phase != .interacting, !usesAssistiveScrolling else { return }
+        updateTargetState()
+        guard targetState.consumeArrival() else { return }
+        onCatch()
     }
 }
 

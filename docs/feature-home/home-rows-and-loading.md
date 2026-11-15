@@ -37,19 +37,28 @@ being clamped to the bottom of its history.
 On mobile, Today is a soft scroll detent. Pulling into history gradually changes
 from quarter-speed resistance to normal finger tracking over 120 points; a shorter
 pull into history settles at Today. Releasing within 48 points of Today also
-settles there unless it is a fast pass-through fling. This uses the actual release
-position, not the distant projected end of deceleration. SwiftUI scroll-phase
-events trigger the settle; momentum stops before the native animated scroll begins.
-Deceleration that naturally stops within the same range also settles at Today.
+settles there unless it is a fast pass-through fling. `ScrollTargetBehavior`
+selects Today before native deceleration begins, using the actual release position
+even when its projected destination is farther away. A moderate approach whose
+projected destination is within the same range also catches Today. There is no
+second animation racing the scroll view's release. Native release velocity is
+converted from points/ms to the policy's points/s.
 Deliberate longer pulls, ordinary future scrolling, and calendar jumps remain
 available; a far fling is not captured merely for passing Today. Native outer-edge
 bounce is unchanged. Mobile date sections keep their headers mounted, including
 an empty Today, so lazy recycling cannot remove the detent while scrolling
 through history or future dates. Poster grids remain lazy. Initial alignment
 uses the selected date rather than an interim scroll-position report from layout.
+The typed `ScrollPosition` relinquishes programmatic positioning when interaction
+begins; an older date command must not move the viewport during the drag.
 The page-scoped adapter observes native content-offset changes without replacing
 SwiftUI's scroll delegate; VoiceOver and Switch Control scrolling bypass it.
-Reduce Motion uses a nonanimated settle.
+Target selection exchanges locked value snapshots with the native adapter rather
+than accessing UIKit from the nonisolated behavior. A single shared selection
+haptic fires when a selected snap actually arrives. Positioning, calendar jumps,
+cancelled catches, and repeated layout callbacks do not emit feedback.
+Deceleration remains system-owned; explicit Today resets are nonanimated under
+Reduce Motion.
 Reselecting Upcoming in native or opaque navigation returns its visible agenda
 to Today, including repeated taps after scrolling away. The shell resolves the
 visible scroll owner before invoking this page-local reset; detail pages and

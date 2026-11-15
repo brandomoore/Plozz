@@ -38,7 +38,9 @@ final class SettingsTabDelegateTests: XCTestCase {
                 .environment(\.plozzMetrics, .touch(density: .standard))
                 .environment(\.horizontalSizeClass, size.width < 800 ? .compact : .regular)
         )
-        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(origin: .zero, size: size)
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil }
@@ -48,6 +50,8 @@ final class SettingsTabDelegateTests: XCTestCase {
             .first(where: { $0.role == .container }))
         let detent = try XCTUnwrap(probe.detent)
         let scroll = try XCTUnwrap(detent.scrollView)
+        var catches = 0
+        detent.onCatch = { catches += 1 }
         let initialToday = try XCTUnwrap(detent.todayOffset)
         let initialDeadline = Date().addingTimeInterval(3)
         while abs(scroll.contentOffset.y - initialToday) > 1, Date() < initialDeadline {
@@ -76,14 +80,41 @@ final class SettingsTabDelegateTests: XCTestCase {
             }
             XCTAssertEqual(scroll.contentOffset.y, initialToday, accuracy: 1, "Each navigation tap returns to Today")
         }
-        for displacement in [-30.0, 30.0] {
-            detent.cancelInteraction()
-            scroll.contentOffset.y = initialToday + displacement
-            detent.reduceMotion = true
-            detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
-            detent.phaseChanged(from: .interacting, to: .idle, velocity: 0)
+        XCTAssertEqual(catches, 0, "Positioning and navigation must not emit catch feedback")
+        let approaches: [(CGFloat, CGFloat, CGFloat, Bool)] = [
+            (-30, -0.3, -300, true),
+            (30, 0.3, 300, true),
+            (30, 2, 900, false),
+            (-300, 0.3, -30, true)
+        ]
+        var expectedCatches = 0
+        for (displacement, velocity, projection, shouldCatch) in approaches {
+            scroll.contentOffset.y = initialToday - 300
             try await Task.sleep(for: .milliseconds(100))
-            XCTAssertEqual(scroll.contentOffset.y, initialToday, accuracy: 1, "The retained target supports both approaches")
+            scroll.delegate?.scrollViewWillBeginDragging?(scroll)
+            let startDeadline = Date().addingTimeInterval(3)
+            while detent.phase != .interacting, Date() < startDeadline {
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            XCTAssertEqual(detent.phase, .interacting)
+            scroll.contentOffset.y = initialToday + displacement
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(scroll.contentOffset.y, initialToday + displacement, accuracy: 1)
+            var target = CGPoint(x: scroll.contentOffset.x, y: initialToday + projection)
+            scroll.delegate?.scrollViewWillEndDragging?(
+                scroll, withVelocity: CGPoint(x: 0, y: velocity), targetContentOffset: &target
+            )
+            XCTAssertEqual(target.y, shouldCatch ? initialToday : initialToday + projection, accuracy: 1)
+            XCTAssertEqual(catches, expectedCatches, "Choosing a target is not arrival")
+            scroll.contentOffset = target
+            scroll.delegate?.scrollViewDidEndDragging?(scroll, willDecelerate: false)
+            let endDeadline = Date().addingTimeInterval(3)
+            while detent.phase != .idle, Date() < endDeadline {
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            XCTAssertEqual(detent.phase, .idle)
+            if shouldCatch { expectedCatches += 1 }
+            XCTAssertEqual(catches, expectedCatches, "Each completed catch emits feedback once")
         }
     }
 

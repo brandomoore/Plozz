@@ -60,8 +60,8 @@ final class UpcomingScrollDetentTests: XCTestCase {
         XCTAssertTrue(scroll.delegate === previous)
 
         scroll.contentOffset.y = 1_000
-        detent.phaseChanged(from: .idle, to: .tracking, velocity: 0)
-        detent.phaseChanged(from: .tracking, to: .interacting, velocity: 0)
+        detent.phaseChanged(to: .tracking)
+        detent.phaseChanged(to: .interacting)
         scroll.testPan.setTranslation(CGPoint(x: 0, y: 40), in: window)
         scroll.contentOffset.y = 960
         XCTAssertGreaterThan(scroll.contentOffset.y, 985)
@@ -97,14 +97,14 @@ final class UpcomingScrollDetentTests: XCTestCase {
         detent.attach(to: scroll)
         defer { detent.detach() }
         scroll.contentOffset.y = 1_000
-        detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
+        detent.phaseChanged(to: .interacting)
         scroll.testPan.setTranslation(CGPoint(x: 0, y: 1_200), in: window)
         scroll.contentOffset.y = -40
         XCTAssertEqual(scroll.contentOffset.y, -40, "Do not clamp UIKit's outer-edge bounce")
         detent.removeAnchor(anchor)
         XCTAssertNil(detent.todayOffset, "A recycled lazy date must not leave stale snap geometry")
         scroll.contentOffset.y = 980
-        detent.phaseChanged(from: .interacting, to: .idle, velocity: 0)
+        detent.phaseChanged(to: .idle)
         XCTAssertEqual(scroll.contentOffset.y, 980)
         anchor.frame.origin.y = 1_010
         detent.setAnchor(anchor)
@@ -112,102 +112,98 @@ final class UpcomingScrollDetentTests: XCTestCase {
     }
 
     @MainActor
-    func testReleaseNearTodaySettlesWithMomentumAndHonorsReducedMotion() async {
-        await verifySettle(reduceMotion: false)
-        await verifySettle(reduceMotion: true)
-    }
-
-    @MainActor
-    func testDecelerationEndingNearTodaySettlesEvenWhenReleaseWasFarAway() async {
-        await verifySettle(reduceMotion: false, deceleratesIntoRange: true)
-    }
-
-    @MainActor
-    private func verifySettle(reduceMotion: Bool, deceleratesIntoRange: Bool = false) async {
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let scroll = DetentTestScrollView(frame: window.bounds)
-        scroll.contentInsetAdjustmentBehavior = .never
-        scroll.contentSize = CGSize(width: 390, height: 3_000)
-        window.addSubview(scroll)
-        let anchor = UIView(frame: CGRect(x: 0, y: 1_000, width: 390, height: 300))
-        scroll.addSubview(anchor)
-        let detent = UpcomingScrollDetent()
-        detent.reduceMotion = reduceMotion
-        detent.setAnchor(anchor)
-        detent.attach(to: scroll)
-        defer { detent.detach() }
-        scroll.contentOffset.y = 700
-        detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
-        if deceleratesIntoRange {
-            scroll.contentOffset.y = 800
-            detent.phaseChanged(from: .interacting, to: .decelerating, velocity: 600)
-            XCTAssertNil(scroll.lastAnimated, "A distant release must retain natural momentum")
+    func testNativeTargetIncludesInsetsAndFeedbackWaitsForArrival() {
+        withDetent { detent, scroll, _ in
+            var catches = 0
+            detent.onCatch = { catches += 1 }
+            scroll.contentOffset.y = 700
+            detent.phaseChanged(to: .interacting)
+            scroll.contentOffset.y = 1_030
+            XCTAssertEqual(detent.targetState.target(projected: 1_500, velocity: 600), 1_080)
+            XCTAssertEqual(catches, 0, "Selecting a target must not pretend the scroll has arrived")
+            detent.phaseChanged(to: .decelerating)
+            scroll.contentOffset.y = 1_020
+            XCTAssertEqual(catches, 0)
+            scroll.contentOffset.y = 1_000
+            XCTAssertEqual(catches, 1)
+            XCTAssertEqual(detent.targetState.target(projected: 1_500, velocity: 600), 1_080)
+            scroll.contentOffset.y = 1_000.5
+            detent.phaseChanged(to: .idle)
+            XCTAssertEqual(catches, 1, "Repeated layout queries and offset updates cannot rearm feedback")
+            scroll.contentOffset.y = 300
+            detent.reduceMotion = true
+            detent.scrollToToday()
+            XCTAssertEqual(scroll.contentOffset.y, 1_000)
+            XCTAssertEqual(catches, 1, "Navigation to Today remains silent")
         }
-        scroll.testPan.setTranslation(CGPoint(x: 0, y: -330), in: window)
-        scroll.contentOffset.y = 1_030
-        let settled = expectation(description: "Native settle requested")
-        scroll.onSetOffset = { point, animated in
-            if point.y == 1_000 {
-                XCTAssertEqual(animated, !reduceMotion)
-                settled.fulfill()
+    }
+
+    func testProjectedApproachCatchesButFastFlicksAndAssistiveScrollingDoNot() {
+        let cases: [(CGFloat, CGFloat, CGFloat, Bool, CGFloat?)] = [
+            (800, 1_100, 600, true, 1_080),
+            (1_030, 1_100, 1_500, true, nil),
+            (1_030, 1_100, 600, false, nil),
+            (800, 900, 600, true, nil)
+        ]
+        for (offset, projected, velocity, enabled, expected) in cases {
+            let state = UpcomingScrollTargetState()
+            state.update(today: 1_000, inset: 80, offset: offset, translation: 0, drag: nil, enabled: enabled)
+            state.begin()
+            XCTAssertEqual(state.target(projected: projected, velocity: velocity), expected)
+            XCTAssertFalse(state.consumeArrival())
+        }
+    }
+
+    @MainActor
+    func testNavigationNewTouchDetachAndRelayoutCancelCatchFeedback() {
+        let cancellations: [(UpcomingScrollDetent, UIView) -> Void] = [
+            { detent, _ in detent.cancelInteraction() },
+            { detent, _ in detent.phaseChanged(to: .tracking) },
+            { detent, _ in detent.detach() },
+            { detent, anchor in
+                anchor.frame.origin.y += 10
+                detent.updateAnchor()
+            }
+        ]
+        for cancel in cancellations {
+            withDetent { detent, scroll, anchor in
+                var catches = 0
+                detent.onCatch = { catches += 1 }
+                scroll.contentOffset.y = 700
+                detent.phaseChanged(to: .interacting)
+                scroll.contentOffset.y = 1_030
+                XCTAssertEqual(detent.targetState.target(projected: 1_500, velocity: 600), 1_080)
+                detent.phaseChanged(to: .decelerating)
+                cancel(detent, anchor)
+                scroll.contentOffset.y = 1_000
+                detent.phaseChanged(to: .idle)
+                XCTAssertEqual(catches, 0)
             }
         }
-        if deceleratesIntoRange {
-            detent.phaseChanged(from: .decelerating, to: .idle, velocity: 0)
-        } else {
-            detent.phaseChanged(from: .interacting, to: .decelerating, velocity: 600)
-        }
-        XCTAssertEqual(scroll.lastAnimated, false, "Momentum must stop before the settle starts")
-        await fulfillment(of: [settled], timeout: 1)
-        if reduceMotion { XCTAssertEqual(scroll.contentOffset.y, 1_000) }
-        XCTAssertEqual(scroll.lastAnimated, !reduceMotion)
     }
 
     @MainActor
-    func testCalendarNavigationNewTouchAndDetachCancelPendingSettles() async {
-        await verifyCancelledSettle { $0.cancelInteraction() }
-        await verifyCancelledSettle { $0.phaseChanged(from: .decelerating, to: .tracking, velocity: 0) }
-        await verifyCancelledSettle { $0.detach() }
-    }
-
-    @MainActor
-    private func verifyCancelledSettle(_ cancel: (UpcomingScrollDetent) -> Void) async {
+    private func withDetent(_ body: (UpcomingScrollDetent, DetentTestScrollView, UIView) -> Void) {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let scroll = DetentTestScrollView(frame: window.bounds)
         scroll.contentInsetAdjustmentBehavior = .never
+        scroll.contentInset.top = 80
         scroll.contentSize = CGSize(width: 390, height: 3_000)
         window.addSubview(scroll)
-        let anchor = UIView(frame: CGRect(x: 0, y: 1_000, width: 390, height: 300))
+        let anchor = UIView(frame: CGRect(x: 0, y: 1_080, width: 390, height: 300))
         scroll.addSubview(anchor)
         let detent = UpcomingScrollDetent()
         detent.setAnchor(anchor)
         detent.attach(to: scroll)
         defer { detent.detach() }
-        scroll.contentOffset.y = 1_020
-        detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
-        detent.phaseChanged(from: .interacting, to: .idle, velocity: 0)
-        cancel(detent)
-        scroll.contentOffset.y = 300
-        let noSettle = expectation(description: "Cancelled navigation must not snap")
-        noSettle.isInverted = true
-        scroll.onSetOffset = { _, _ in noSettle.fulfill() }
-        await fulfillment(of: [noSettle], timeout: 0.1)
-        XCTAssertEqual(scroll.contentOffset.y, 300)
+        body(detent, scroll, anchor)
     }
 }
 
 @MainActor
 private final class DetentTestScrollView: UIScrollView {
     let testPan = DetentTestPan()
-    var lastAnimated: Bool?
-    var onSetOffset: ((CGPoint, Bool) -> Void)?
     override var panGestureRecognizer: UIPanGestureRecognizer { testPan }
-
-    override func setContentOffset(_ contentOffset: CGPoint, animated: Bool) {
-        lastAnimated = animated
-        super.setContentOffset(contentOffset, animated: animated)
-        onSetOffset?(contentOffset, animated)
-    }
 }
 
 @MainActor
