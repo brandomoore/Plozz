@@ -4,6 +4,20 @@
 normal caption and accessibility value without mutating media metadata. Omitting
 it preserves the standard provider subtitle and runtime.
 
+`PlozziOSPageHeader` owns the mobile scrolling header's 20-point horizontal
+insets, 44-point minimum height and 12-point action spacing. Callers must not
+add another top or horizontal inset. `plozziOSPageAction` gives each button or
+menu its own 44-point native circular glass surface and full-size label hit
+target, instead of relying on different intrinsic button/menu paddings. It
+uses the existing shared frosted surface when glass is unavailable or transparency
+is reduced, keeping the same control bounds rather than reintroducing native
+bordered button/menu padding differences. Profile photos have a two-point surround. Native vertical toolbar
+items may use their 48-point size based on the actual toolbar orientation,
+not the OS version; horizontal headers remain 44 points.
+Home places its horizontal mute/profile group inside one native toolbar item,
+so toolbar item padding cannot change the shared action gap. Native vertical
+toolbar placement and iPad tab/sidebar integration stay with the system.
+
 `HomeRowPreviewView` renders the actual Home rail presentation, not a separately
 scaled card sample. TV uses `MediaRowView`; mobile Home and the preview share
 `PlozziOSHomeRailLayout`, `PlozziOSMediaSection` and `PlozziOSMediaRailScroll`.

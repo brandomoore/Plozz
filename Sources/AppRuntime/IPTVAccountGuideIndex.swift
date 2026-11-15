@@ -28,12 +28,12 @@ struct IPTVAccountGuideIndex: IPTVGuideIndexLoading {
     func programmes(
         url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
         catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel],
-        download: @escaping @Sendable () async throws -> XMLTVDownloadedDocument
+        download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
     ) async throws -> [ServerLiveTVProgramme] {
         let allChannels = try await catalog()
         let programs = try await index.programs(
             from: url, catalog: allChannels.map(Self.channel), channels: channels.map(Self.channel),
-            range: DateInterval(start: from, end: to), download: download
+            range: DateInterval(start: from, end: to), revalidate: download
         )
         return programs.map {
             ServerLiveTVProgramme(

@@ -1,5 +1,22 @@
 # AppShell
 
+Mobile Downloads, Discover, and Music use a large leading title beside their
+circular page actions. This single header row scrolls with the content. More
+navigation and the regular-width sidebar toggle retain their native bar.
+Profiles, the Downloads gear and Discover filter share
+[CoreUI's page-action geometry](../CoreUI/README.md). Header owners do not add
+separate page-specific top or horizontal padding.
+
+Search uses the same header and action geometry, including its editing Cancel
+button. Its field, section headings, and artwork share the header's horizontal
+inset. The title still collapses while searching, and results scroll behind the
+transparent field header without replacing the text field.
+
+On iOS, tapping the selected navigation item returns the current page's vertical
+scroller to the top, including with the opaque tab bar. Switching destinations
+preserves their scroll positions. Horizontal media rows remain untouched, Settings
+remains an action, and native navigation/delegate handling is preserved.
+
 The composition root. Wires every other module into a single running app
 and owns the top-level navigation, profile selection, and provider
 registry.
@@ -204,7 +221,24 @@ registry.
 - **Mac navigation leaves the artwork uncovered.** The iOS-on-Mac tab shell
   hides the tab-bar background and, on iOS 26 and later, the top scroll-edge
   effect. Native sidebar, tab, and profile controls remain available with their
-  system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
+  system appearance. Other scroll edges are unchanged.
+
+- **iPad tabs and profile actions share the native top row.** Apply opaque
+  navigation chrome inside each tab's `NavigationStack`, not around the stack:
+  an outer background host prevents UIKit from integrating the navigation bar
+  with the top tabs. Sidebar transitions retain native placement. On iOS 26 and
+  later, profile actions match the rendered size of neighboring circular toolbar
+  controls, but keep their own circular glass surface separate from neighboring
+  header actions. The shared page-action surface retains a two-point surround
+  around the avatar; the shared toolbar
+  background is hidden for this item so it cannot merge or stretch the circle.
+  No second glass button style is added. Photos, emoji, and symbols keep their
+  original colors; reduced-transparency and pre-iOS 26 systems use the shared frosted surface.
+  Home keeps the native top scroll-edge blur behind the status bar while hiding
+  the regular-width tab-bar background so the hero stays visible behind that row.
+  The individual native glass controls remain; other destinations and compact
+  bottom-tab backgrounds retain their existing treatment. Search's collapsing
+  title row does not clip the profile control's native pressed expansion.
 
 - **Mac rails fit complete cards plus a next-card preview.** Home, library
   recommendations, related titles, extras, episodes, and cast derive widths from

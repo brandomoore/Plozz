@@ -3,6 +3,8 @@ import Foundation
 /// Optional capability of an authenticated media provider. Discovery never
 /// opens a tuner; playback is a separate, explicitly owned operation.
 public protocol ServerLiveTVProviding: Sendable {
+    /// Whole-lineup warmup would issue one network request per channel.
+    var usesPerChannelLiveTVGuide: Bool { get }
     /// Read an already committed lineup without authentication, refresh, guide requests, or tuning.
     func cachedLiveTVCatalog() async throws -> ServerLiveTVCatalogSnapshot?
     func liveTVAvailability() async throws -> ServerLiveTVAvailability
@@ -26,6 +28,7 @@ public protocol ServerLiveTVProviding: Sendable {
 }
 
 public extension ServerLiveTVProviding {
+    var usesPerChannelLiveTVGuide: Bool { false }
     func cachedLiveTVCatalog() async throws -> ServerLiveTVCatalogSnapshot? { nil }
     func completeLiveTVGuideDiscovery() async throws -> Bool? { nil }
     func invalidateLiveTVGuideCache() async {}

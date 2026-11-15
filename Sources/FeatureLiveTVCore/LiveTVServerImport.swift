@@ -149,6 +149,9 @@ extension LiveTVPrototypeImportModel {
                 discardUnauthorizedSource(source.id, into: model)
                 continue
             }
+            if forceRefresh && context.provider.usesPerChannelLiveTVGuide {
+                removeServerGuideWindows(source.id)
+            }
             if let cached = cachedServerCatalogs[source.id],
                cached.authorizationID != context.authorizationID || cached.kind != context.kind {
                 cachedServerCatalogs[source.id] = nil
@@ -217,6 +220,11 @@ extension LiveTVPrototypeImportModel {
                     }.map { ($0.id, $0) })
                     for program in catalog.programs { programs[program.id] = program }
                     catalog.programs = programs.values.sorted { $0.id < $1.id }
+                    if !forceRefresh {
+                        catalog.pendingGuideChannelIDs.subtract(previous.references.keys.filter {
+                            !previous.pendingGuideChannelIDs.contains($0)
+                        })
+                    }
                 }
                 cachedServerCatalogs[source.id] = catalog
                 do {
@@ -244,7 +252,7 @@ extension LiveTVPrototypeImportModel {
                     pendingGuideDiscovery.append((source, context, sourceRevision, availability))
                     continue
                 }
-                let warmup = context.kind == .plex
+                let warmup = context.kind == .plex || context.provider.usesPerChannelLiveTVGuide
                     ? Array(catalog.channels.prefix(Self.serverGuideWarmupChannelLimit)) : catalog.channels
                 let guideResult = await reloadServerGuidesResult(
                     channelIDs: warmup.map(\.id), from: model.now, to: model.now.addingTimeInterval(21_600),
@@ -295,7 +303,7 @@ extension LiveTVPrototypeImportModel {
                     )
                 }
                 guard supportsGuide else { continue }
-                let warmup = context.kind == .plex
+                let warmup = context.kind == .plex || context.provider.usesPerChannelLiveTVGuide
                     ? Array(catalog.channels.prefix(Self.serverGuideWarmupChannelLimit)) : catalog.channels
                 result = result.merging(await reloadServerGuidesResult(
                     channelIDs: warmup.map(\.id), from: model.now, to: model.now.addingTimeInterval(21_600),

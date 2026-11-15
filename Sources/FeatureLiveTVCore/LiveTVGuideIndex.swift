@@ -10,6 +10,7 @@ public struct LiveTVGuideIndexState: Codable, Sendable {
     let lowerBound: Date
     let upperBound: Date
     var expiresAt: Date
+    var cacheMetadata: XMLTVGuideCacheMetadata? = nil
 
     func contains(_ range: DateInterval) -> Bool {
         range.start >= lowerBound && range.end <= upperBound
@@ -22,8 +23,10 @@ enum LiveTVGuideIndexError: Error { case generationChanged }
 /// work; this actor stays available to cancel or invalidate an in-flight import.
 public actor LiveTVGuideIndex {
     public typealias Download = @Sendable () async throws -> XMLTVDownloadedDocument
+    public typealias Revalidate = @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
     private let cache: LiveTVIndexedCache
     private let language: String?
+    private let clock: @Sendable () -> Date
     private var epoch = UUID()
     private var closed = false
     private var invalidating = false
@@ -49,9 +52,13 @@ public actor LiveTVGuideIndex {
         var waiters: [UUID: CheckedContinuation<Resolution, any Error>] = [:]
     }
 
-    public init(cache: LiveTVIndexedCache, preferredLanguage: String? = LanguageMatch.deviceLanguageCode) {
+    public init(
+        cache: LiveTVIndexedCache, preferredLanguage: String? = LanguageMatch.deviceLanguageCode,
+        clock: @escaping @Sendable () -> Date = Date.init
+    ) {
         self.cache = cache
         language = preferredLanguage
+        self.clock = clock
     }
 
     #if DEBUG
@@ -71,6 +78,15 @@ public actor LiveTVGuideIndex {
         from url: URL, catalog: [LiveTVPrototypeChannel], channels: [LiveTVPrototypeChannel],
         range: DateInterval, download: @escaping Download
     ) async throws -> [LiveTVPrototypeProgram] {
+        try await programs(from: url, catalog: catalog, channels: channels, range: range) { _ in
+            .document(try await download())
+        }
+    }
+
+    public func programs(
+        from url: URL, catalog: [LiveTVPrototypeChannel], channels: [LiveTVPrototypeChannel],
+        range: DateInterval, revalidate: @escaping Revalidate
+    ) async throws -> [LiveTVPrototypeProgram] {
         guard range.duration > 0, range.duration <= 172_800,
               range.start.timeIntervalSince1970.isFinite, range.end.timeIntervalSince1970.isFinite,
               channels.count <= 2_000, catalog.count <= 100_000 else { throw LiveTVCacheError.invalidRange }
@@ -81,7 +97,7 @@ public actor LiveTVGuideIndex {
             guard !closed, !invalidating else { throw CancellationError() }
             let requestEpoch = epoch
             let resolution = try await resolution(
-                url: url, catalog: catalog, projection: projection, range: range, download: download
+                url: url, catalog: catalog, projection: projection, range: range, download: revalidate
             )
             try Task.checkCancellation()
             guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
@@ -146,7 +162,7 @@ public actor LiveTVGuideIndex {
 
     private func resolution(
         url: URL, catalog: [LiveTVPrototypeChannel], projection: String,
-        range: DateInterval, download: @escaping Download
+        range: DateInterval, download: @escaping Revalidate
     ) async throws -> Resolution {
         while let existing = flight,
               existing.url != url || existing.projection != projection || existing.cancelling {
@@ -172,7 +188,7 @@ public actor LiveTVGuideIndex {
                             result = .success(try await ServerLiveTVGuideProgress.$report.withValue(progress.send) {
                                 try await Self.resolve(
                                     url: url, catalog: catalog, projection: projection, range: range,
-                                    cache: cache, language: language, force: force, download: download
+                                    cache: cache, language: language, force: force, now: self.clock(), download: download
                                 )
                             })
                         } catch { result = .failure(error) }
@@ -229,16 +245,45 @@ public actor LiveTVGuideIndex {
 
     private static func resolve(
         url: URL, catalog: [LiveTVPrototypeChannel], projection: String, range: DateInterval,
-        cache: LiveTVIndexedCache, language: String?, force: Bool, download: Download
+        cache: LiveTVIndexedCache, language: String?, force: Bool, now: Date, download: Revalidate
     ) async throws -> Resolution {
         let sourceID = sourceID(url)
         let saved = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)
-        let eligible = saved.flatMap { $0.projection == projection && $0.contains(range) ? $0 : nil }
-        if !force, let eligible, eligible.expiresAt > Date() {
+        var eligible = saved.flatMap { $0.projection == projection && $0.contains(range) ? $0 : nil }
+        if !force, let eligible, eligible.expiresAt > now,
+           eligible.cacheMetadata?.isFresh(at: now) ?? true {
             PlozzLog.networking.info("IPTV_INDEX outcome=reused")
             return .indexed(eligible)
         }
-        let response = try await download()
+        // Only validate a representation that can answer this exact projection
+        // and window. A 304 cannot supply stations/intervals we never indexed.
+        let previous = eligible?.cacheMetadata.flatMap { $0.hasValidator ? $0 : nil }
+        var downloaded = try await download(previous)
+        if case .notModified(let metadata) = downloaded {
+            guard var validated = eligible, let previous, metadata.responseURL == previous.responseURL else {
+                throw LiveTVSourceImportError.invalidResponse
+            }
+            if metadata.permitsPersistence {
+                try Task.checkCancellation()
+                validated.expiresAt = metadata.expiresAt
+                validated.cacheMetadata = metadata
+                try await cache.revalidateGuideIndex(sourceID: sourceID, sourceURL: url, state: validated)
+                PlozzLog.networking.info("IPTV_INDEX outcome=notModified")
+                return .indexed(validated)
+            }
+            // A 304 no-store revokes the saved representation. Obtain a full
+            // response instead of publishing success from a deleted index.
+            let revoke = Task.detached(priority: .utility) {
+                try await cache.removeDownloadedGuide(sourceID: sourceID, sourceURL: url)
+            }
+            try await revoke.value
+            try Task.checkCancellation()
+            eligible = nil
+            downloaded = try await download(nil)
+        }
+        guard case .document(let response) = downloaded else {
+            throw LiveTVSourceImportError.invalidResponse
+        }
         ServerLiveTVGuideProgress.report?(.init(stage: .readingGuide))
         // A no-store replacement revokes persistence even when its XML is bad.
         if !response.permitsPersistence {
@@ -258,6 +303,7 @@ public actor LiveTVGuideIndex {
         let digest = LiveTVIdentityDigest.hex(hasher.finalize())
         if var eligible, eligible.digest == digest {
             eligible.expiresAt = response.expiresAt
+            eligible.cacheMetadata = response.cacheMetadata
             try await cache.revalidateGuideIndex(sourceID: sourceID, sourceURL: url, state: eligible)
             PlozzLog.networking.info("IPTV_INDEX outcome=unchanged")
             return .indexed(eligible)
@@ -265,7 +311,8 @@ public actor LiveTVGuideIndex {
         let state = LiveTVGuideIndexState(
             generation: UUID(), projection: projection, digest: digest,
             lowerBound: range.start.addingTimeInterval(-86_400),
-            upperBound: range.start.addingTimeInterval(7 * 86_400), expiresAt: response.expiresAt
+            upperBound: range.start.addingTimeInterval(7 * 86_400), expiresAt: response.expiresAt,
+            cacheMetadata: response.cacheMetadata
         )
         _ = try await cache.importGuide(
             data: response.data, sourceID: sourceID, channels: catalog,
@@ -282,7 +329,9 @@ public actor LiveTVGuideIndex {
 
     private static func projection(_ catalog: [LiveTVPrototypeChannel], language: String?) throws -> String {
         var hasher = SHA256()
-        hasher.update(data: try JSONEncoder().encode(["account-xmltv-stations-v1", language]))
+        hasher.update(data: try JSONEncoder().encode([
+            "account-xmltv-stations-v1", String(LiveTVXMLTVParser.cacheVersion), language
+        ]))
         for channel in catalog.sorted(by: { $0.id < $1.id }) {
             try Task.checkCancellation()
             hasher.update(data: try JSONEncoder().encode(

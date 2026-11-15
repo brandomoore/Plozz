@@ -169,6 +169,18 @@ an empty provider feed from local curation without recording media or account ID
 
 ## Mobile Home loading geometry
 
+Idle, preparing, and progressively loaded Home share one scroll/presentation tree.
+The initial frame uses the same configured row plan as the first publication,
+including custom ordering, hidden rows, and permitted server/collection sections;
+there is no separate fixed three-rail loading screen. Unknown library inventory
+is not invented. An eligible durable hero paints immediately even without a row
+snapshot; otherwise the configured hero reserves its normal placeholder.
+Curation waits for preparation and its selected Home sources, not unrelated
+rows. A pending empty source is not a completed empty hero. Source readiness is
+part of the curation task identity so a genuinely empty response still finishes
+curation and removes its placeholder. Existing profile, visibility, and
+resume-snapshot restrictions continue to govern cached heroes.
+
 Home shares its measured viewport width with loaded and skeleton rails.
 `PlozziOSHomeRowSlot` reserves each row's footprint using the real card sizing
 primitives, heading, captions, and current layout settings. Loading, populated,
@@ -178,6 +190,37 @@ Long status messages can scroll inside the reserved row instead of expanding
 the page. Browse headings reserve chevron space before their action is available;
 only actionable headings are buttons, with the native 44-point touch target.
 Library, featured, Continue Watching, and Live TV rows use their own geometry.
+
+On iPad, landscape Continue Watching fits complete cards and matches the next
+poster card's visible peek at the same viewport width. Standard density uses
+four cards in wide windows, three at intermediate widths, and two in narrow
+windows. Density and larger text can change that count to retain readable cards.
+Series-artwork and episode-thumbnail modes share this width policy, including
+their loading and reserved footprints. Poster-layout Continue Watching, other
+poster and landscape rails, iPhone sizing, and Mac's existing fitting policy are
+unchanged.
+
+Mobile landscape playback chips give up the play glyph before compressing their
+progress gauge. Narrow cards retain a readable shorter gauge alongside episode
+and time text; text remains the final fallback when neither fits. Portrait cards
+and TV keep their existing fitting policies, and hidden progress stays hidden.
+The card's text-only fallback retains both episode and time, wrapping when needed;
+duration-only fitting remains limited to the player's fixed-height artwork.
+
+Hero previews are retained under their own resolution keys as soon as they paint,
+before full-quality decoding completes. This lets a newly mounted idle backdrop
+reuse the incoming slide's image without a loading-background frame. Sliding,
+idle, and reflected hero layers use the same artwork preference and resolution
+identity; the full-quality image can still replace its preview when ready.
+
+On iPadOS 26 and later, Home observes the native tab controller's
+`contentLayoutGuide` from inside the Home destination. Its laid-out frame supplies
+the sidebar's actual covered width, including after visibility and window-size
+changes; no fixed sidebar width or replacement sidebar delegate is used. Home's
+landscape artwork fits its 16:9 picture beside the sidebar, with reflected artwork
+under the sidebar and below the picture where needed. Idle and sliding artwork
+share that framing. Top navigation restores the existing full-width treatment.
+Mac's artwork sizing and foreground placement remain unchanged.
 
 The first progressive Home publication includes configured server and collection
 rows before provider responses arrive. Planning and fetching share the same

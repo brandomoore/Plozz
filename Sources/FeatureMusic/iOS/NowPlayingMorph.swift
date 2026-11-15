@@ -759,10 +759,14 @@ struct NowPlayingMorphContainer: View {
     /// neither has to be predicted.
     @ViewBuilder
     private func playerColumn(_ m: Morph) -> some View {
+        let centersGroup = m.height > m.width
         VStack(spacing: 0) {
+            if centersGroup { Spacer(minLength: 0) }
             header(m, showsGrabber: false)
-            bottomChrome(m, showsButtons: false)
+            bottomChrome(m, showsButtons: false, compactSpacing: centersGroup)
+            if centersGroup { Spacer(minLength: 0) }
         }
+        .frame(maxHeight: .infinity)
     }
 
     /// The player laid sideways: the record on the left at the full height of the
@@ -928,7 +932,7 @@ struct NowPlayingMorphContainer: View {
     /// whole block can fade away as one unit during a drag-reorder.
     @ViewBuilder
     private func bottomChrome(_ m: Morph, showsButtons: Bool = true,
-                              sideInset: CGFloat = 32) -> some View {
+                              sideInset: CGFloat = 32, compactSpacing: Bool = false) -> some View {
         VStack(spacing: 0) {
             scrubber
                 .padding(.horizontal, sideInset)
@@ -943,7 +947,10 @@ struct NowPlayingMorphContainer: View {
             // split what is spare evenly, and the unequal minimums leave the
             // transport just above the middle of the band it occupies, so the
             // player reads as two balanced halves.
+            // Tall regular-width columns instead keep this gap bounded and
+            // put their spare height outside the artwork-and-controls group.
             Spacer(minLength: 54)
+                .frame(height: compactSpacing ? 54 : nil)
             transport(m)
                 // The same rail the scrub bar above keeps. Without it the row
                 // spread to the full column while the scrubber stayed inset, so
@@ -951,6 +958,7 @@ struct NowPlayingMorphContainer: View {
                 // 32pt out past everything else on the screen.
                 .padding(.horizontal, sideInset)
             Spacer(minLength: 20)
+                .frame(height: compactSpacing ? 20 : nil)
             // At a wide width this row is not part of the chrome: it spans both
             // columns beneath them (`wideButtonRow`), so the AirPlay control sits
             // under the record and the panel toggles sit over the column they act
@@ -968,7 +976,7 @@ struct NowPlayingMorphContainer: View {
                 .padding(.bottom, Morph.bottomOverhang + m.safeBottom + 12)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: compactSpacing ? nil : .infinity, alignment: .top)
     }
 
     /// Grabber + reserved artwork slot + titles. Owns the dismiss drag so the

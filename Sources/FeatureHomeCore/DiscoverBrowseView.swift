@@ -3,21 +3,25 @@ import CoreUI
 import SwiftUI
 
 /// Feed state and controls are shared; each shell supplies its existing media rail.
-public struct DiscoverBrowseView<RowContent: View>: View {
+public struct DiscoverBrowseView<RowContent: View, PageActions: View>: View {
     @State private var model: DiscoverBrowseModel
     @State private var libraryRevision = 0
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationInset
     private let isActive: Bool
+    private let pageActions: PageActions
+    private var navigationTitles = NavigationTitles()
     private let rowContent: (DiscoverFeed, [MediaItem], Bool, (@MainActor () async -> Void)?) -> RowContent
 
     public init(
         model: DiscoverBrowseModel,
         isActive: Bool = true,
+        @ViewBuilder pageActions: () -> PageActions = { EmptyView() },
         @ViewBuilder rowContent: @escaping (DiscoverFeed, [MediaItem], Bool, (@MainActor () async -> Void)?) -> RowContent
     ) {
         _model = State(initialValue: model)
         self.isActive = isActive
+        self.pageActions = pageActions()
         self.rowContent = rowContent
     }
 
@@ -34,6 +38,12 @@ public struct DiscoverBrowseView<RowContent: View>: View {
                 .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationInset)
                 .padding(.trailing, PlozzTheme.Metrics.screenPadding)
                 .focusSection()
+                #elseif os(iOS)
+                PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.discoverKey, default: Text("Discover"))) {
+                    DiscoverFilterMenu(filters: $browse.filters)
+                        .plozziOSPageAction()
+                    pageActions
+                }
                 #endif
                 ForEach(model.visibleRows) { row in
                     let items = row.items.filter(model.filters.includes)
@@ -62,17 +72,14 @@ public struct DiscoverBrowseView<RowContent: View>: View {
                     .accessibilityIdentifier("discover-row-\(row.feed.rawValue)")
                 }
             }
-            .padding(.vertical, 24)
+            .padding(.top, topPadding)
+            .padding(.bottom, 24)
         }
         .scrollClipDisabled()
         .scrollsTopNavigation()
         #if os(iOS)
-        .navigationTitle("Discover")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                DiscoverFilterMenu(filters: $browse.filters).labelStyle(.iconOnly)
-            }
-        }
+        .navigationTitle(Text(verbatim: ""))
+        .toolbarTitleDisplayMode(.inline)
         #endif
         .task(id: isActive) {
             if isActive {
@@ -109,6 +116,14 @@ public struct DiscoverBrowseView<RowContent: View>: View {
         PlozzTheme.Metrics.screenPadding
         #else
         20
+        #endif
+    }
+
+    private var topPadding: CGFloat {
+        #if os(iOS)
+        0
+        #else
+        24
         #endif
     }
 }

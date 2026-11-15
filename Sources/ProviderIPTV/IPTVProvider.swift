@@ -8,6 +8,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
     public let kind: ProviderKind = .iptv
     public var usesLocalWatchStateOnly: Bool { true }
     public let session: UserSession
+    public let usesPerChannelLiveTVGuide: Bool
     private let context: ProviderResolutionContext
     private let client: IPTVClient
     private let watch: LocalMediaWatchStore
@@ -23,6 +24,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         guard context.session.server.provider == .iptv, let local = context.localMediaContext,
               local.accountID == context.accountID else { throw ProviderResolutionError.localMediaContextRequired(.iptv) }
         let credential = try IPTVCredential.decode(context.session.accessToken)
+        usesPerChannelLiveTVGuide = credential.mode == .xtream && credential.explicitGuideURLs.isEmpty
         self.context = context
         self.guideLoader = guideLoader
         self.guideIndex = guideIndex
@@ -491,8 +493,8 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                     return try await guideIndex.programmes(
                         url: url, channels: channels, from: from, to: to,
                         catalog: { catalog },
-                        download: { [client] in
-                            let response = try await client.guideDocument(from: url)
+                        download: { [client] previous in
+                            let response = try await client.guideResponse(from: url, previous: previous)
                             request.parsing()
                             return response
                         }

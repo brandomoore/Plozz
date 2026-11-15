@@ -44,7 +44,7 @@ struct PlozziOSHomeRowSlot<Content: View>: View {
     }
 
     var body: some View {
-        PlozziOSHomeRailLayout { metrics in
+        PlozziOSHomeRailLayout(isContinueWatching: isContinueWatching && style == .landscape) { metrics in
             PlozziOSHomeRowFootprint(
                 metrics: metrics, title: title, style: style, captions: captions,
                 isLibraryRow: isLibraryRow, isLiveTV: isLiveTV, isFeatured: isFeatured,

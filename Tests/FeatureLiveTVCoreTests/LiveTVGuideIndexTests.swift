@@ -1,5 +1,6 @@
 import CoreModels
 import CoreNetworking
+import CryptoKit
 import Foundation
 import Synchronization
 import XCTest
@@ -67,6 +68,257 @@ final class LiveTVGuideIndexTests: XCTestCase {
 
     private func response(_ data: Data, expires: Date = .distantFuture, persists: Bool = true) -> XMLTVDownloadedDocument {
         .init(data: data, expiresAt: expires, permitsPersistence: persists)
+    }
+
+    private func httpMetadata(
+        headers: [String: String] = ["ETag": "\"v1\""], status: Int = 200,
+        previous: XMLTVGuideCacheMetadata? = nil, at time: Date? = nil
+    ) throws -> XMLTVGuideCacheMetadata {
+        try XMLTVGuideCacheMetadata(
+            response: XCTUnwrap(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers)),
+            previous: previous, now: time ?? now
+        )
+    }
+
+    private func httpDocument(_ metadata: XMLTVGuideCacheMetadata, title: String = "Bulletin") -> XMLTVDownloadedDocument {
+        .init(data: document(title: title), expiresAt: metadata.expiresAt,
+              permitsPersistence: metadata.permitsPersistence, cacheMetadata: metadata)
+    }
+
+    func testTemporarilyEmptyFeedRetriesOnDemandAcrossRestorationAndRevalidation() async throws {
+        for status in [200, 304] {
+            for lifetime: TimeInterval in [30, 60] {
+                try await verifyEmptyFeedRecovery(status: status, lifetime: lifetime)
+            }
+        }
+    }
+
+    private func verifyEmptyFeedRecovery(status: Int, lifetime: TimeInterval) async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let clock = Mutex(now)
+        let channels = [channel("a")]
+        let headers = lifetime == 30 ? ["ETag": "\"v1\"", "Cache-Control": "max-age=30"] : ["ETag": "\"v1\""]
+        let original = try httpMetadata(headers: headers)
+        let empty = XMLTVDownloadedDocument(
+            data: Data("<tv/>".utf8), expiresAt: original.expiresAt, permitsPersistence: true, cacheMetadata: original
+        )
+        let index = LiveTVGuideIndex(cache: fixture.cache, clock: { clock.withLock { $0 } })
+        _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { empty }
+        let restored = LiveTVGuideIndex(cache: fixture.reopen(), clock: { clock.withLock { $0 } })
+        clock.withLock { $0 = original.checkedAt.addingTimeInterval(lifetime - 1) }
+        _ = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { _ in
+            XCTFail("Empty recovery is bounded, not a download on every navigation")
+            throw URLError(.badServerResponse)
+        }
+        let checked = original.checkedAt.addingTimeInterval(lifetime)
+        clock.withLock { $0 = checked }
+        let unchanged = try httpMetadata(headers: headers, status: status, previous: original, at: checked)
+        let before = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        let attempts = Mutex(0)
+        _ = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+            XCTAssertEqual(previous, original)
+            attempts.withLock { $0 += 1 }
+            return status == 304 ? .notModified(unchanged) : .document(.init(
+                data: empty.data, expiresAt: unchanged.expiresAt, permitsPersistence: true, cacheMetadata: unchanged
+            ))
+        }
+        XCTAssertEqual(attempts.withLock { $0 }, 1)
+        let after = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        XCTAssertEqual(before?.generation, after?.generation)
+        clock.withLock { $0 = checked.addingTimeInterval(lifetime) }
+        let updated = httpDocument(try httpMetadata(at: checked.addingTimeInterval(lifetime)))
+        let rows = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+            XCTAssertEqual(previous, unchanged)
+            return .document(updated)
+        }
+        XCTAssertEqual(rows.map(\.title), ["Bulletin"])
+    }
+
+    func testPopulatedFeedDoesNotRefetchEarlyForUnmatchedChannelsOrUnpopulatedWindows() async throws {
+        let cases = [
+            ([channel("missing", guideID: "missing", name: "Unmatched")], range),
+            ([channel("a")], DateInterval(start: now.addingTimeInterval(2 * 86_400), duration: 400))
+        ]
+        for (channels, requestedRange) in cases {
+            let fixture = try CacheFixture()
+            defer { fixture.removeOwnedFiles() }
+            let clock = Mutex(now)
+            let index = LiveTVGuideIndex(cache: fixture.cache, clock: { clock.withLock { $0 } })
+            let metadata = try httpMetadata()
+            let populated = httpDocument(metadata)
+            let first = try await index.programs(from: url, catalog: channels, channels: channels, range: requestedRange) {
+                populated
+            }
+            XCTAssertTrue(first.isEmpty)
+            clock.withLock { $0 = metadata.checkedAt.addingTimeInterval(60) }
+            let second = try await index.programs(from: url, catalog: channels, channels: channels, range: requestedRange) { _ in
+                XCTFail("A populated feed is not due simply because this query has no matches")
+                throw URLError(.badServerResponse)
+            }
+            XCTAssertTrue(second.isEmpty)
+        }
+    }
+
+    func testRestoredIndexRevalidatesAtTwelveHoursWithoutRebuildingOrDownloadingWhileFresh() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let clock = Mutex(now)
+        let index = LiveTVGuideIndex(cache: fixture.cache, clock: { clock.withLock { $0 } })
+        let channels = [channel("a")]
+        let metadata = try httpMetadata()
+        let initial = httpDocument(metadata)
+        _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        let before = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        let restored = LiveTVGuideIndex(cache: fixture.reopen(), clock: { clock.withLock { $0 } })
+        clock.withLock { $0 = metadata.checkedAt.addingTimeInterval(43_199) }
+        let fresh = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { _ in
+            XCTFail("Navigation and restored instances must reuse fresh parsed rows")
+            throw URLError(.badServerResponse)
+        }
+        XCTAssertEqual(fresh.map(\.title), ["Bulletin"])
+        let checked = metadata.checkedAt.addingTimeInterval(43_200)
+        clock.withLock { $0 = checked }
+        let updated = try httpMetadata(headers: ["ETag": "\"v2\""], status: 304, previous: metadata, at: checked)
+        let rows = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { prior in
+            XCTAssertEqual(prior, metadata)
+            return .notModified(updated)
+        }
+        let after = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        XCTAssertEqual(rows, fresh)
+        XCTAssertEqual(before?.generation, after?.generation)
+        XCTAssertEqual(after?.cacheMetadata, updated)
+        XCTAssertEqual(after?.expiresAt, updated.expiresAt)
+    }
+
+    func testManualRefreshCanRevalidateFreshIndexAnd200ReplacesItsListingsAndValidators() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let time = now
+        let index = LiveTVGuideIndex(cache: fixture.cache, clock: { time })
+        let channels = [channel("a")]
+        let metadata = try httpMetadata()
+        let initial = httpDocument(metadata)
+        _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        await index.invalidate()
+        let updated = httpDocument(try httpMetadata(headers: ["ETag": "\"v2\""]), title: "New bulletin")
+        let rows = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+            XCTAssertEqual(previous, metadata)
+            return .document(updated)
+        }
+        XCTAssertEqual(rows.map(\.title), ["New bulletin"])
+        let state = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        XCTAssertEqual(state?.cacheMetadata?.etag, "\"v2\"")
+    }
+
+    func testIncompatibleProjectionOrWindowNeverSendsValidators() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let index = LiveTVGuideIndex(cache: fixture.cache)
+        let channels = [channel("a")]
+        let initial = httpDocument(try httpMetadata())
+        _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        let expanded = channels + [channel("b", guideID: "sport", name: "Sport")]
+        let rows = try await index.programs(from: url, catalog: expanded, channels: expanded, range: range) { previous in
+            XCTAssertNil(previous)
+            return .document(initial)
+        }
+        XCTAssertEqual(Set(rows.map(\.title)), ["Bulletin", "Match"])
+        let future = DateInterval(start: now.addingTimeInterval(8 * 86_400), duration: 400)
+        _ = try await index.programs(from: url, catalog: expanded, channels: expanded, range: future) { previous in
+            XCTAssertNil(previous)
+            return .document(initial)
+        }
+    }
+
+    func test304WithoutEligibleRepresentationFailsInsteadOfPublishingEmptySuccess() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let index = LiveTVGuideIndex(cache: fixture.cache)
+        let channels = [channel("a")]
+        let metadata = try httpMetadata(status: 304)
+        do {
+            _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { _ in
+                .notModified(metadata)
+            }
+            XCTFail("304 cannot stand in for missing rows")
+        } catch { XCTAssertEqual(error as? LiveTVSourceImportError, .invalidResponse) }
+        let saved = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        XCTAssertNil(saved)
+    }
+
+    func test304NoStoreRevokesIndexBeforeUnconditionalReplacement() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let index = LiveTVGuideIndex(cache: fixture.cache)
+        let channels = [channel("a")]
+        let metadata = try httpMetadata()
+        let initial = httpDocument(metadata)
+        _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        let noStore = try httpMetadata(headers: ["Cache-Control": "no-store"], status: 304, previous: metadata)
+        let calls = Mutex(0)
+        let cache = fixture.cache
+        let url = url
+        let rows = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+            let count = calls.withLock { $0 += 1; return $0 }
+            if count == 1 {
+                XCTAssertNotNil(previous)
+                return .notModified(noStore)
+            }
+            XCTAssertNil(previous)
+            let saved = try await cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+            XCTAssertNil(saved)
+            return .document(initial)
+        }
+        XCTAssertEqual(rows.map(\.title), ["Bulletin"])
+        XCTAssertEqual(calls.withLock { $0 }, 2)
+    }
+
+    func testFailedConditionalRequestPreservesSavedMetadataAndListingsButReportsFailure() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let index = LiveTVGuideIndex(cache: fixture.cache)
+        let channels = [channel("a")]
+        let metadata = try httpMetadata()
+        let initial = httpDocument(metadata)
+        let old = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        let sourceID = LiveTVGuideIndex.sourceID(url)
+        let saved = try await fixture.cache.guideIndexState(sourceID: sourceID, sourceURL: url)
+        let state = try XCTUnwrap(saved)
+        do {
+            _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+                XCTAssertEqual(previous, metadata)
+                throw URLError(.notConnectedToInternet)
+            }
+            XCTFail("Stale rows must not mask a failed refresh")
+        } catch { XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet) }
+        let after = try await fixture.cache.guideIndexState(sourceID: sourceID, sourceURL: url)
+        let retained = try await fixture.cache.indexedAccountPrograms(
+            sourceID: sourceID, sourceURL: url, generation: state.generation, channels: channels, range: range
+        )
+        XCTAssertEqual(after?.cacheMetadata, metadata)
+        XCTAssertEqual(after?.expiresAt, state.expiresAt)
+        XCTAssertEqual(retained, old)
+    }
+
+    func testCancelled304NoStoreStillRevokesPersistence() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let index = LiveTVGuideIndex(cache: fixture.cache)
+        let channels = [channel("a")]
+        let metadata = try httpMetadata()
+        let initial = httpDocument(metadata)
+        _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        let noStore = try httpMetadata(headers: ["Cache-Control": "no-store"], status: 304, previous: metadata)
+        do {
+            _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { _ in
+                withUnsafeCurrentTask { $0?.cancel() }
+                return .notModified(noStore)
+            }
+            XCTFail("Cancellation must not return stale success")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        let state = try await fixture.cache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        XCTAssertNil(state)
     }
 
     func testDifferentBatchesReuseOneIndexAndRestoreAcrossInstances() async throws {
@@ -174,6 +426,43 @@ final class LiveTVGuideIndexTests: XCTestCase {
             )
             XCTAssertTrue(rows.isEmpty)
         }
+        let count = await download.count
+        XCTAssertEqual(count, 1)
+    }
+
+    func testPreviousParserEmptyIndexIsRebuiltForShortenedDates() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let channels = [channel("a")]
+        let data = Data("""
+        <tv><programme channel="news" start="19700101" stop="1970010101"><title>Recovered listing</title></programme></tv>
+        """.utf8)
+        // Reproduce the pre-versioned projection and an empty, unexpired index
+        // left by the old parser after it skipped these valid timestamps.
+        var legacy = SHA256()
+        legacy.update(data: try JSONEncoder().encode(["account-xmltv-stations-v1", nil] as [String?]))
+        for channel in channels {
+            legacy.update(data: try JSONEncoder().encode(
+                [channel.id, channel.name, channel.guideID, channel.guideName, channel.country]
+            ))
+        }
+        func hex(_ digest: SHA256.Digest) -> String { digest.map { String(format: "%02x", $0) }.joined() }
+        let oldState = LiveTVGuideIndexState(
+            generation: UUID(), projection: hex(legacy.finalize()), digest: hex(SHA256.hash(data: data)),
+            lowerBound: .distantPast, upperBound: .distantFuture, expiresAt: .distantFuture
+        )
+        _ = try await fixture.cache.importGuide(
+            data: Data("<tv/>".utf8), sourceID: LiveTVGuideIndex.sourceID(url), channels: channels,
+            provider: nil, now: now, sourceURL: url, preferredLanguage: nil, indexState: oldState
+        )
+        let index = LiveTVGuideIndex(cache: fixture.reopen(), preferredLanguage: nil)
+        let download = DownloadCounter(response(data))
+        let programs = try await index.programs(
+            from: url, catalog: channels, channels: channels, range: range, download: { await download.get() }
+        )
+        XCTAssertEqual(programs.map(\.title), ["Recovered listing"])
+        XCTAssertEqual(programs.first?.start, Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(programs.first?.end, Date(timeIntervalSince1970: 3_600))
         let count = await download.count
         XCTAssertEqual(count, 1)
     }

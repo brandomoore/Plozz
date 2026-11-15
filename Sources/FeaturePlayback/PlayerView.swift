@@ -141,26 +141,39 @@ public struct PlayerView: View {
             }
         }
         .modifier(DisplaySettleObserver { hdrTransition.displayDidSettle() })
-        .onChange(of: scenePhase) { _, phase in
-            // System overlays make tvOS inactive without backgrounding playback.
-            // Home/sleep still needs an explicit pause and checkpoint because
-            // that transition does not necessarily fire onDisappear.
-            switch phase {
-            case .active:
-                Task { await viewModel.resumeAfterBackground() }
-            case .inactive:
-                viewModel.didBecomeInactive()
-            case .background:
-                viewModel.didEnterBackground()
-            @unknown default:
-                viewModel.suspendForBackground()
+        #if os(iOS)
+        .background {
+            let model = viewModel
+            PlayerSceneLifecycleReader { phase in
+                Self.handleScenePhase(phase, viewModel: model)
             }
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
         }
+        #else
+        .onChange(of: scenePhase) { _, phase in
+            Self.handleScenePhase(phase, viewModel: viewModel)
+        }
+        #endif
         .onDisappear {
             discStatus.dismiss()
             diagnosticsSampler.stop()
             releaseGlassSuspension()
             Task { await viewModel.stop() }
+        }
+    }
+
+    private static func handleScenePhase(_ phase: ScenePhase, viewModel: PlayerViewModel) {
+        HandoffDiagnostics.emit("session SCENE phase=\(phase)")
+        switch phase {
+        case .active:
+            Task { await viewModel.resumeAfterBackground() }
+        case .inactive:
+            viewModel.didBecomeInactive()
+        case .background:
+            viewModel.didEnterBackground()
+        @unknown default:
+            viewModel.suspendForBackground()
         }
     }
 

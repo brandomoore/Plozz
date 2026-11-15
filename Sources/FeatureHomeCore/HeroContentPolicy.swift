@@ -3,6 +3,23 @@ import Foundation
 
 /// Hero curation must not consume stale rows while their live replacements load.
 public enum HomeHeroLaunchPolicy {
+    public static func isAwaitingSources(
+        settings: HeroSettings,
+        loadingRows: Set<HomeRowKind>
+    ) -> Bool {
+        guard settings.isActive else { return false }
+        return settings.sources.contains { source in
+            switch source {
+            case .continueWatching: loadingRows.contains(.continueWatching)
+            case .recentlyAdded: loadingRows.contains(.recentlyAdded)
+            case .watchlist: loadingRows.contains(.watchlist)
+            case .randomFromLibrary: loadingRows.contains(.libraries)
+            case .featured: settings.usesDiscoveryWatchlistSeeds && loadingRows.contains(.watchlist)
+            case .collection: false
+            }
+        }
+    }
+
     public static func content(
         _ content: HomeViewModel.Content,
         awaitingLiveContinueWatching: Bool,

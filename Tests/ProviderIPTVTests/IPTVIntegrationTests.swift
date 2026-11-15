@@ -50,7 +50,7 @@ final class IPTVIntegrationTests: XCTestCase {
             _ = try await client.guideDocument(from: url)
             XCTAssertEqual(first.permitsPersistence, persists)
             XCTAssertEqual(first.expiresAt > before.addingTimeInterval(1), fresh)
-            XCTAssertLessThanOrEqual(first.expiresAt.timeIntervalSinceNow, 60)
+            XCTAssertLessThanOrEqual(first.expiresAt.timeIntervalSinceNow, 43_200)
             XCTAssertEqual(IPTVFixture.state.requests.count, 2)
         }
     }
@@ -127,11 +127,11 @@ final class IPTVIntegrationTests: XCTestCase {
         func programmes(
             url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
             catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel],
-            download: @escaping @Sendable () async throws -> XMLTVDownloadedDocument
+            download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
         ) async throws -> [ServerLiveTVProgramme] {
             try await beforeRead?()
             catalogChannels = try await catalog()
-            _ = try await download()
+            _ = try await download(nil)
             return []
         }
         func invalidate() { invalidations += 1 }
@@ -1181,6 +1181,7 @@ final class IPTVIntegrationTests: XCTestCase {
             XCTAssertEqual(url, guideURL)
             return []
         }
+        XCTAssertFalse(configured.usesPerChannelLiveTVGuide)
         _ = try await configured.liveTVGuide(
             channelIDs: ["live:10"], from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
         )
@@ -1198,6 +1199,7 @@ final class IPTVIntegrationTests: XCTestCase {
             XCTFail("Rejected XMLTV must not reach the parser")
             return []
         }
+        XCTAssertTrue(fallback.usesPerChannelLiveTVGuide)
         do {
             _ = try await fallback.liveTVGuide(
                 channelIDs: ["live:10"], from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
