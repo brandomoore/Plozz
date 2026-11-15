@@ -31,6 +31,8 @@ public final class UpcomingFeedModel {
     public private(set) var failedSourceCount = 0
     public private(set) var scopeKey: String?
     public var filters = UpcomingFilters()
+    /// Shows the profile has dropped; their episodes leave Upcoming too.
+    public var droppedShows: DroppedShowsModel?
     public private(set) var hiddenTitles = Set<String>()
     public private(set) var lastHiddenTitle: String?
     public var refreshRevision = 0 {
@@ -65,11 +67,17 @@ public final class UpcomingFeedModel {
     }
 
     public var visibleReleases: [UpcomingRelease] {
-        releases.filter { !hiddenTitles.contains($0.titleKey) && filters.includes($0) }
+        releases.filter {
+            !hiddenTitles.contains($0.titleKey) && filters.includes($0) && !isDropped($0)
+        }
+    }
+
+    private func isDropped(_ release: UpcomingRelease) -> Bool {
+        droppedShows?.isDropped(release.item) ?? false
     }
 
     public var homeReleases: [UpcomingRelease] {
-        UpcomingReleaseBuilder.home(releases, hiddenTitles: hiddenTitles)
+        UpcomingReleaseBuilder.home(releases.filter { !isDropped($0) }, hiddenTitles: hiddenTitles)
     }
 
     public func hide(_ release: UpcomingRelease) {

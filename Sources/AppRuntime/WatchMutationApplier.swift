@@ -208,8 +208,9 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         //
         // So: dismiss where possible and stop there. Only fall back to clearing
         // when there is no dismissal to be had, either because the provider cannot
-        // express one (Jellyfin, where losing the position IS the mechanism) or
-        // because the server refused it. The endpoint is undocumented on Plex, so a
+        // express one or because the server refused it. (Jellyfin conforms with a
+        // dismissal of its own making: it clears the position and has Plozz
+        // remember the rest, since its Next Up feed would offer the title back.) The endpoint is undocumented on Plex, so a
         // refusal must degrade to the approximation rather than fail the write and
         // leave it retrying forever.
         if dismiss, let dismisser = provider as? ContinueWatchingRemovable {

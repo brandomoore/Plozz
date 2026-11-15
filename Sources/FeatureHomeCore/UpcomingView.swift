@@ -437,6 +437,7 @@
                             UpcomingReleaseCard(release: release)
                                 .environment(\.plozzMetrics, metrics)
                                 .frame(width: width)
+                                .mediaItemActionContext(.upcoming)
                                 .contextMenu { Button("Hide title") { model.hide(release) } }
                         }
                     }
@@ -500,6 +501,7 @@
                     onSelect: { navigate?($0) }
                 )
                 .browsingRow(onSeeAll)
+                .mediaItemActionContext(.upcoming)
             #elseif os(iOS)
                 PlozziOSHomeRailLayout { metrics in
                     PlozziOSMediaSection(
@@ -524,6 +526,7 @@
                     }
                 }
                 .environment(\.plozzCardCaptionView, .home)
+                .mediaItemActionContext(.upcoming)
             #endif
         }
 

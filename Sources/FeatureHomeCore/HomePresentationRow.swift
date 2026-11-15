@@ -21,6 +21,18 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         supportsBrowsing()
     }
 
+    /// The context-menu context for a server's or library's own Continue
+    /// Watching and Next Up rows, so their cards offer the same row actions as
+    /// the global Continue Watching row (which supplies its own).
+    public var actionContext: MediaItemActionContext {
+        switch choice.serverRow?.section.kind {
+        case .continueWatching: return .continueWatching
+        case .nextUp: return .nextUp
+        default: break
+        }
+        return choice.id.libraryKind == .nextUp ? .nextUp : .none
+    }
+
     /// A loaded-count threshold changes the browse action, not the rail's items or paging.
     public func supportsBrowsing(loadedItemThreshold: Int? = nil) -> Bool {
         switch source {

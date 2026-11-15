@@ -1469,7 +1469,11 @@ public struct JellyfinClient: Sendable {
     /// fields, but Emby resets an omitted Played to false. Read and include Emby's
     /// current flag on every write, including zero-position clears after completion.
     /// An unreadable flag must fail the write, never guess unwatched.
-    func updatePlaybackPosition(_ seconds: TimeInterval, userID: String, itemID: String, lastPlayedAt: Date = Date()) async throws {
+    ///
+    /// A `nil` `lastPlayedAt` leaves the recency stamp out of the request, so
+    /// taking a title off Continue Watching does not also move its series to the
+    /// front of Next Up, which Jellyfin orders by last play.
+    func updatePlaybackPosition(_ seconds: TimeInterval, userID: String, itemID: String, lastPlayedAt: Date? = Date()) async throws {
         let isEmby = providerKind == .emby
         let context = playbackLifecycleContext(sessionID: nil, origin: "resume-convergence")
             + " item=\(HandoffDiagnostics.correlationID(itemID)) route=\(isEmby ? "emby-user-data" : "jellyfin-user-data")"
@@ -1496,7 +1500,7 @@ public struct JellyfinClient: Sendable {
             )
             endpoint = try endpoint.jsonBody(UpdateUserItemDataBody(
                 PlaybackPositionTicks: JellyfinTicks.ticks(fromSeconds: max(seconds, 0)),
-                LastPlayedDate: JellyfinDate.iso8601(from: lastPlayedAt),
+                LastPlayedDate: lastPlayedAt.map(JellyfinDate.iso8601(from:)),
                 Played: played
             ))
             _ = try await http.send(endpoint, baseURL: baseURL)
@@ -1554,6 +1558,21 @@ public struct JellyfinClient: Sendable {
     /// `POST`/`DELETE /Users/{userId}/FavoriteItems/{itemId}` — adds (POST) or
     /// removes (DELETE) the item from the user's Favorites, which backs the
     /// unified Watchlist.
+    /// `POST /Users/{userId}/Items/{itemId}/Rating?likes=false` dislikes an item;
+    /// `DELETE` on the same path clears the rating. On a series this is how a
+    /// dropped show is recorded: AIOMetadata reads a disliked series as dropped,
+    /// hides it from its own Continue Watching, Next Up and Upcoming, and passes
+    /// the drop on to the trackers it syncs with.
+    func setDisliked(_ disliked: Bool, userID: String, itemID: String) async throws {
+        let endpoint = Endpoint(
+            method: disliked ? .post : .delete,
+            path: "/Users/\(userID)/Items/\(itemID)/Rating",
+            queryItems: disliked ? [URLQueryItem(name: "likes", value: "false")] : [],
+            headers: authHeaders
+        )
+        _ = try await http.send(endpoint, baseURL: baseURL)
+    }
+
     func setFavorite(_ favorite: Bool, userID: String, itemID: String) async throws {
         let endpoint = Endpoint(
             method: favorite ? .post : .delete,
