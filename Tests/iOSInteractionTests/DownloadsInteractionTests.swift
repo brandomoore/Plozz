@@ -23,6 +23,164 @@ final class DownloadsInteractionTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testHorizontalPageHeadersMatchHomeGeometry() throws {
+        app.terminate()
+        app.launchArguments = ["--home-hero-fixture", "--hero-native-chrome", "--hero-header-audio"]
+        app.launch()
+        let homeProfile = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings for ")).firstMatch
+        XCTAssertTrue(homeProfile.waitForExistence(timeout: 10))
+        let reference = homeProfile.frame
+        // Vertical toolbars have a different native layout, not a larger horizontal standard.
+        guard reference.midX > app.frame.width / 2 else {
+            throw XCTSkip("This comparison requires a horizontal iPhone toolbar.")
+        }
+        XCTAssertEqual(reference.width, 44, accuracy: 1)
+        XCTAssertEqual(app.frame.maxX - reference.maxX, 20, accuracy: 2)
+        let mute = app.buttons["trailer-mute"]
+        XCTAssertTrue(mute.exists)
+        XCTAssertEqual(mute.frame.width, reference.width, accuracy: 1)
+        XCTAssertEqual(mute.frame.height, reference.height, accuracy: 1)
+        XCTAssertEqual(mute.frame.midY, reference.midY, accuracy: 1)
+        XCTAssertEqual(reference.minX - mute.frame.maxX, 12, accuracy: 1)
+        let homeImage = XCTAttachment(screenshot: app.screenshot())
+        homeImage.name = "page-header-Home"
+        homeImage.lifetime = .keepAlways
+        add(homeImage)
+        for (name, arguments, identifier) in [
+            ("Music", ["--music-landing-fixture"], "music-settings-avatar"),
+            ("Discover", ["--discover-fixture"], "discover-settings-avatar"),
+            ("Search", ["--search-keyboard-fixture"], "search-settings-avatar"),
+            ("Downloads", ["--downloads-interaction-fixture"], "downloads-settings-avatar"),
+            ("Downloads-empty", ["--downloads-interaction-fixture", "--download-empty"], "downloads-settings-avatar")
+        ] {
+            app.terminate()
+            app.launchArguments = arguments
+            app.launch()
+            let profile = app.buttons[identifier]
+            XCTAssertTrue(profile.waitForExistence(timeout: 10), name)
+            XCTAssertEqual(profile.frame.width, reference.width, accuracy: 1, name)
+            XCTAssertEqual(profile.frame.height, reference.height, accuracy: 1, name)
+            XCTAssertEqual(profile.frame.midX, reference.midX, accuracy: 1, name)
+            XCTAssertEqual(profile.frame.midY, reference.midY, accuracy: 1, name)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "page-header-\(name)"
+            image.lifetime = .keepAlways
+            add(image)
+        }
+    }
+
+    func testDownloadsHeadingAndActionsScrollTogether() {
+        app.terminate()
+        app.launchArguments = ["--downloads-interaction-fixture", "--download-scroll"]
+        app.launch()
+        let heading = app.staticTexts["Downloads"].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(heading.frame.height, 30)
+        XCTAssertEqual(heading.label, "Downloads")
+        XCTAssertTrue(app.buttons["Download Settings"].isHittable)
+        let settings = app.buttons["downloads-settings-avatar"]
+        XCTAssertEqual(heading.frame.midY, settings.frame.midY, accuracy: 3)
+        XCTAssertEqual(heading.frame.midY, app.buttons["Download Settings"].frame.midY, accuracy: 3)
+        XCTAssertEqual(app.buttons["Download Settings"].frame.width, app.buttons["Download Settings"].frame.height, accuracy: 2)
+        XCTAssertEqual(app.buttons["Download Settings"].frame.height, 44, accuracy: 1)
+        XCTAssertEqual(settings.frame.height, 44, accuracy: 1)
+        XCTAssertEqual(settings.frame.minX - app.buttons["Download Settings"].frame.maxX, 12, accuracy: 1)
+        let header = XCTAttachment(screenshot: app.screenshot())
+        header.name = "downloads-standard-header"
+        header.lifetime = .keepAlways
+        add(header)
+        app.buttons["Download Settings"].tap()
+        XCTAssertTrue(app.switches["Use Cellular"].waitForExistence(timeout: 5))
+        let back = app.buttons["BackButton"].exists
+            ? app.buttons["BackButton"] : app.navigationBars.buttons.firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "downloads-page-heading"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let initialY = heading.frame.minY
+        app.collectionViews.firstMatch.swipeUp()
+        XCTAssertTrue(!heading.isHittable || heading.frame.minY < initialY - 30)
+        XCTAssertFalse(app.buttons["Download Settings"].isHittable)
+        XCTAssertFalse(settings.isHittable)
+    }
+
+    func testDiscoverHeadingScrollsWithItsRows() {
+        app.terminate()
+        app.launchArguments = ["--discover-fixture"]
+        app.launch()
+        let heading = app.staticTexts["Discover"].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(heading.frame.height, 30)
+        XCTAssertEqual(heading.frame.minX, 20, accuracy: 2)
+        let settings = app.buttons["discover-settings-avatar"]
+        XCTAssertEqual(heading.frame.midY, settings.frame.midY, accuracy: 3)
+        XCTAssertEqual(heading.frame.midY, app.buttons["discover-filter-menu"].frame.midY, accuracy: 3)
+        XCTAssertEqual(app.buttons["discover-filter-menu"].frame.height, 44, accuracy: 1)
+        XCTAssertEqual(settings.frame.minX - app.buttons["discover-filter-menu"].frame.maxX, 12, accuracy: 1)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "discover-page-heading"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let initialY = heading.frame.minY
+        app.swipeUp()
+        XCTAssertTrue(!heading.isHittable || heading.frame.minY < initialY - 30)
+        XCTAssertFalse(settings.isHittable)
+    }
+
+    func testDownloadsHeadingRemainsVisibleWithoutLibraryContent() {
+        for (argument, message) in [
+            ("--download-empty", "No Downloads"), ("--download-unavailable", "Downloads Unavailable")
+        ] {
+            app.terminate()
+            app.launchArguments = ["--downloads-interaction-fixture", argument]
+            app.launch()
+            let heading = app.staticTexts["Downloads"].firstMatch
+            XCTAssertTrue(heading.waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts[message].exists)
+            XCTAssertLessThan(heading.frame.maxY, app.staticTexts[message].frame.minY)
+            XCTAssertTrue(app.buttons["Download Settings"].isHittable)
+        }
+    }
+
+    func testMusicTitleAndProfileScrollTogether() {
+        app.terminate()
+        app.launchArguments = ["--music-landing-fixture"]
+        app.launch()
+        let title = app.staticTexts["Music"].firstMatch
+        let profile = app.buttons["music-settings-avatar"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        XCTAssertEqual(title.frame.midY, profile.frame.midY, accuracy: 3)
+        XCTAssertEqual(title.frame.minX, 20, accuracy: 2)
+        profile.tap()
+        XCTAssertTrue(app.staticTexts["Music settings opened"].waitForExistence(timeout: 3))
+        app.buttons["Close fixture settings"].tap()
+        XCTAssertTrue(app.staticTexts["Music settings opened"].wait(for: \.exists, toEqual: false, timeout: 3))
+        XCTAssertTrue(profile.isHittable)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "music-scrolling-header"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.swipeUp()
+        XCTAssertFalse(profile.isHittable)
+        XCTAssertFalse(title.isHittable)
+    }
+
+    func testMusicProfileOnlyAppearsOnTheRealLandingPage() {
+        app.terminate()
+        app.launchArguments = ["--music-profile-fixture"]
+        app.launch()
+        let profile = app.buttons["music-settings-avatar"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Music"].exists)
+        app.buttons["Open fixture artist"].tap()
+        XCTAssertTrue(profile.wait(for: \.exists, toEqual: false, timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(profile.waitForExistence(timeout: 5))
+    }
+
     func testDownloadingShowLongPressOpensShowDetails() {
         app.terminate()
         app.launchArguments = ["--downloads-interaction-fixture", "--download-details"]

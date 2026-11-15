@@ -29,9 +29,12 @@ struct PlozziOSHomeSkeletonRail: View {
     /// Matches Continue Watching's narrower, deeper series-artwork card shape.
     var showsSeriesArtwork: Bool = false
     var isLibraryRow = false
+    var isContinueWatching = false
 
     var body: some View {
-        PlozziOSHomeRailLayout { rail(metrics: $0) }
+        PlozziOSHomeRailLayout(
+            isContinueWatching: style == .landscape && (isContinueWatching || showsSeriesArtwork)
+        ) { rail(metrics: $0) }
             .environment(\.plozzShimmerEnabled, isVisible)
             .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
     }
@@ -91,47 +94,6 @@ struct PlozziOSHomeSkeletonRail: View {
             .scrollDisabled(true)
             .accessibilityHidden(true)
         }
-    }
-}
-
-/// Whole-Home placeholder shown before the first rows resolve.
-///
-/// Deliberately mirrors the real Home's shape — a couple of poster rails with a
-/// landscape "Continue Watching"-style rail — so the page doesn't visibly
-/// restructure when content lands. A spinner was previously shown here, which
-/// gave no sense of the layout and left the screen blank-feeling on a cold load.
-struct PlozziOSHomeSkeletonScreen: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    let heroActive: Bool
-    var logoSize: HeroLogoSize = .default
-    var showsPosterCaptions: Bool = CardCaptionSettings.default.showsLabels
-    var showsLibraryCaptions: Bool = CardCaptionSettings.default.showsLabels
-    var continueWatchingLayout: ContinueWatchingCardLayout = .landscape
-    var continueWatchingShowsSeriesArtwork = true
-    var continueWatchingShowsCaption = false
-
-    var body: some View {
-        PlozziOSHomeScrollView(heroActive: heroActive) {
-            PlozziOSHomeHeroSkeleton(
-                style: horizontalSizeClass == .compact
-                    ? .compactPortrait
-                    : .landscape,
-                logoSize: logoSize
-            )
-        } rows: {
-            PlozziOSHomeSkeletonRail(
-                title: Text(verbatim: " "), style: continueWatchingLayout.cardStyle,
-                showsCaption: continueWatchingShowsCaption,
-                showsSeriesArtwork: continueWatchingShowsSeriesArtwork
-            )
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
-            PlozziOSHomeSkeletonRail(
-                title: Text(verbatim: " "), style: .landscape, showsCaption: showsLibraryCaptions, isLibraryRow: true
-            )
-        }
-        .scrollDisabled(true)
-        .accessibilityLabel("Loading Home")
     }
 }
 

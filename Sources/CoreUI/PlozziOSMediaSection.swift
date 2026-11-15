@@ -2,6 +2,86 @@
 import CoreModels
 import SwiftUI
 
+public enum PlozziOSPageHeaderLayout {
+    public static let actionDiameter: CGFloat = 44
+    public static let profileInset: CGFloat = 2
+    public static let horizontalInset: CGFloat = 20
+    public static let actionSpacing: CGFloat = 12
+}
+
+public struct PlozziOSPageHeading: View {
+    private let title: Text
+    @Environment(\.themePalette) private var palette
+
+    public init(_ title: Text) { self.title = title }
+
+    public var body: some View {
+        title
+            .font(.largeTitle.bold())
+            .foregroundStyle(palette.primaryText)
+            .accessibilityAddTraits(.isHeader)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+public struct PlozziOSPageHeader<Actions: View>: View {
+    private let title: Text
+    private let actions: Actions
+
+    public init(_ title: Text, @ViewBuilder actions: () -> Actions) {
+        self.title = title
+        self.actions = actions()
+    }
+
+    public var body: some View {
+        HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) {
+            PlozziOSPageHeading(title)
+            HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) { actions }.fixedSize()
+        }
+        .frame(minHeight: PlozziOSPageHeaderLayout.actionDiameter)
+        .padding(.horizontal, PlozziOSPageHeaderLayout.horizontalInset)
+    }
+}
+
+public extension View {
+    func plozziOSPageAction(diameter: CGFloat = PlozziOSPageHeaderLayout.actionDiameter) -> some View {
+        modifier(PlozziOSPageActionStyle(diameter: diameter))
+    }
+}
+
+private struct PlozziOSPageActionStyle: ViewModifier {
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    let diameter: CGFloat
+
+    func body(content: Content) -> some View {
+        let action = content
+            .labelStyle(PlozziOSPageActionLabelStyle(diameter: diameter))
+            .buttonStyle(.plain)
+            .fixedSize()
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
+        if #available(iOS 26.0, *), !reduceTransparency {
+            action.glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            action
+                .plozzFrostedBackground(Circle())
+                .plozzFrostedBorder(Circle())
+        }
+    }
+}
+
+private struct PlozziOSPageActionLabelStyle: LabelStyle {
+    let diameter: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        Label(configuration)
+            .labelStyle(.iconOnly)
+            .font(.system(size: 20))
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
+    }
+}
+
 public enum PlozziOSMediaRailLayout {
     public static let sectionSpacing: CGFloat = 32
     public static let headingSpacing: CGFloat = 12
@@ -53,12 +133,14 @@ public struct PlozziOSMediaSection<Content: View>: View {
     var reservesBrowseSpace = false
     var onSeeAll: (() -> Void)? = nil
     var onBrowse: (() -> Void)? = nil
+    var onHeadingTap: (() -> Void)? = nil
     @ViewBuilder var content: Content
 
     public init(
         title: Text, horizontalInset: CGFloat? = nil, artworkInset: CGFloat = 0,
         reservesBrowseSpace: Bool = false, onSeeAll: (() -> Void)? = nil,
-        onBrowse: (() -> Void)? = nil, @ViewBuilder content: () -> Content
+        onBrowse: (() -> Void)? = nil, onHeadingTap: (() -> Void)? = nil,
+        @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.horizontalInset = horizontalInset
@@ -66,6 +148,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
         self.reservesBrowseSpace = reservesBrowseSpace
         self.onSeeAll = onSeeAll
         self.onBrowse = onBrowse
+        self.onHeadingTap = onHeadingTap
         self.content = content()
     }
 
@@ -76,6 +159,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
                     if onBrowse != nil || reservesBrowseSpace || editAction != nil {
                         BrowseRowHeading(title: title, action: onBrowse)
                     }
+                    else if let onHeadingTap { title.onTapGesture(perform: onHeadingTap) }
                     else { title }
                 }
                     .font(.title3.weight(.semibold))
@@ -125,9 +209,11 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
     @State private var width: CGFloat = 0
+    private let isContinueWatching: Bool
     private let content: (PlozzMetrics) -> Content
 
-    public init(@ViewBuilder content: @escaping (PlozzMetrics) -> Content) {
+    public init(isContinueWatching: Bool = false, @ViewBuilder content: @escaping (PlozzMetrics) -> Content) {
+        self.isContinueWatching = isContinueWatching
         self.content = content
     }
 
@@ -135,7 +221,8 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
         let resolved = Self.posterMetrics(
             in: viewportWidth > 0 ? viewportWidth : width,
             inset: PlozziOSMediaRailLayout.pageInset(for: sizeClass),
-            metrics: metrics, cardStyle: cardStyle
+            metrics: metrics, cardStyle: cardStyle,
+            isContinueWatching: isContinueWatching && UIDevice.current.userInterfaceIdiom == .pad
         )
         content(resolved)
             .environment(\.plozzMetrics, resolved)
@@ -143,7 +230,8 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
     }
 
     public static func posterMetrics(
-        in width: CGFloat, inset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle
+        in width: CGFloat, inset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle,
+        isContinueWatching: Bool = false
     ) -> PlozzMetrics {
         if metrics.usesDesktopSizing {
             return metrics.fittingDesktopRail(in: width, cardStyle: cardStyle)
@@ -154,7 +242,18 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
         let count = max(width < 375 ? 2 : 3, floor((width - inset + gap) / 164))
         let standardWidth = (width - inset - count * gap) / (count + 0.28)
         let artworkWidth = max(44, standardWidth * CGFloat(metrics.density.scale))
-        return metrics.scalingPosters(by: artworkWidth / metrics.posterWidth)
+        let resolved = metrics.scalingPosters(by: artworkWidth / metrics.posterWidth)
+        guard isContinueWatching else { return resolved }
+        let frameInset = cardStyle == .framed ? metrics.cardInset : 0
+        let leadingInset = inset - frameInset
+        let posterStride = resolved.posterWidth + gap
+        // Align the next card's visible edge with the unchanged poster rails,
+        // rather than exposing a fraction of the much wider landscape card.
+        let peek = (width - leadingInset).truncatingRemainder(dividingBy: posterStride)
+        return resolved.fittingContinueWatchingRail(
+            in: width, leadingInset: leadingInset, peek: peek,
+            spacing: PlozziOSMediaRailLayout.visibleSpacing, cardStyle: cardStyle
+        )
     }
 }
 

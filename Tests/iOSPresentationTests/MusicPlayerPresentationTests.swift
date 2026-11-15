@@ -377,6 +377,106 @@ final class MusicPlayerPresentationTests: XCTestCase {
         }
     }
 
+    func testPortraitPlayerKeepsTransportNearArtworkAcrossWindowSizes() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let player = MusicPlayerSession()
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
+        defer {
+            player.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            try? FileManager.default.removeItem(at: file)
+        }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2_646_000))
+        buffer.frameLength = buffer.frameCapacity
+        try XCTUnwrap(buffer.floatChannelData)[0].initialize(repeating: 0, count: Int(buffer.frameLength))
+        do {
+            let audio = try AVAudioFile(forWriting: file, settings: format.settings)
+            try audio.write(from: buffer)
+        }
+        player.controller.play(
+            tracks: [CoreModels.MusicTrack(id: "spacing", title: "Portrait spacing", artistName: "Test Artist", duration: 60)],
+            startIndex: 0, resolveStreamURL: { _ in .init(url: file) }
+        )
+        let host = UIHostingController(rootView:
+            MusicPlayerOverlay(session: player, hasBottomBar: false, appearance: .dark)
+        )
+        host.traitOverrides.horizontalSizeClass = .regular
+        for size in [CGSize(width: 834, height: 1194), CGSize(width: 1024, height: 1366),
+                     CGSize(width: 1194, height: 834), CGSize(width: 834, height: 1194)] {
+            window.frame = CGRect(origin: .zero, size: size)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            if !player.isPresented {
+                try await Task.sleep(for: .milliseconds(500))
+                player.isPresented = true
+            }
+            try await Task.sleep(for: .seconds(2))
+            let image = attach(window, name: "Music player \(Int(size.width))x\(Int(size.height))")
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let title = try XCTUnwrap(request.results?.first {
+                $0.topCandidates(1).first?.string == "Portrait spacing"
+            })
+            let titleBottom = (1 - title.boundingBox.minY) * size.height
+            let artwork = try playerInkRange(
+                in: image, x: size.width / 4 - 80, width: 1, range: 20..<titleBottom - 20,
+                matches: { red, _, blue in red >= 39 && red < 60 && blue < 65 }
+            )
+            let transport = try playerInkRange(
+                in: image, x: size.width / 4 - 20, width: 40, range: titleBottom + 70..<size.height - 100,
+                matches: { red, green, blue in red > 220 && green > 220 && blue > 220 }
+            )
+            XCTAssertGreaterThan(artwork.upperBound - artwork.lowerBound, 200)
+            XCTAssertEqual(transport.upperBound - transport.lowerBound, 40, accuracy: 3)
+            if size.height > size.width {
+                XCTAssertLessThan(transport.lowerBound - titleBottom, 190,
+                                  "Portrait transport must stay near metadata, not split the remaining height")
+                XCTAssertEqual((artwork.lowerBound + transport.upperBound) / 2,
+                               size.height / 2, accuracy: 45,
+                               "The artwork and controls must form one centered portrait group")
+            } else {
+                XCTAssertLessThan(artwork.lowerBound, 110,
+                                  "Landscape must retain its existing top-aligned artwork")
+            }
+        }
+    }
+
+    private func playerInkRange(
+        in image: UIImage, x: CGFloat, width: CGFloat, range: Range<CGFloat>,
+        matches: (UInt8, UInt8, UInt8) -> Bool
+    ) throws -> ClosedRange<CGFloat> {
+        let source = try XCTUnwrap(image.cgImage)
+        let rect = CGRect(x: x * image.scale, y: range.lowerBound * image.scale,
+                          width: width * image.scale,
+                          height: (range.upperBound - range.lowerBound) * image.scale).integral
+        let crop = try XCTUnwrap(source.cropping(to: rect))
+        var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+        try bytes.withUnsafeMutableBytes { pixels in
+            let context = try XCTUnwrap(CGContext(
+                data: pixels.baseAddress, width: crop.width, height: crop.height,
+                bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        }
+        let rows = (0..<crop.height).filter { row in
+            (0..<crop.width).contains { column in
+                let offset = (row * crop.width + column) * 4
+                return matches(bytes[offset], bytes[offset + 1], bytes[offset + 2])
+            }
+        }
+        let first = try XCTUnwrap(rows.first, "Expected visible player content")
+        let last = try XCTUnwrap(rows.last)
+        return (rect.minY + CGFloat(first)) / image.scale...(rect.minY + CGFloat(last + 1)) / image.scale
+    }
+
     private func pixel(in image: UIImage, at point: CGPoint) throws -> [UInt8] {
         let source = try XCTUnwrap(image.cgImage)
         let crop = try XCTUnwrap(source.cropping(to: CGRect(

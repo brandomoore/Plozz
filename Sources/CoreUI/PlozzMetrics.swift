@@ -334,6 +334,29 @@ public struct PlozzMetrics: Equatable, Sendable {
         return metrics
     }
 
+    public func fittingContinueWatchingRail(
+        in viewportWidth: CGFloat, leadingInset: CGFloat, peek: CGFloat,
+        spacing: CGFloat, cardStyle: CardStyle
+    ) -> Self {
+        guard !usesDesktopSizing, viewportWidth.isFinite, viewportWidth > 0 else { return self }
+        let frameInset = cardStyle == .framed ? cardInset : 0
+        let available = viewportWidth - leadingInset - peek
+        let strideOverhead = spacing + 2 * frameInset
+        // Narrow windows retain two cards; wider windows approach a 220-point
+        // minimum before adding columns. Density and text growth can reduce the count.
+        let standardColumns = min(4, max(2, floor(available / (220 + strideOverhead))))
+        let standardLandscapeWidth = (PlozzTheme.Metrics.landscapeWidth * geometryScale).rounded()
+        let standardWidth = (standardLandscapeWidth * ContinueWatchingCardShape.widthScale).rounded()
+        let sizeScale = continueWatchingTargetWidth / standardWidth
+        let columns = max(1, floor(standardColumns / sizeScale))
+        let artworkWidth = max(44, available / columns - strideOverhead)
+        var result = self
+        result.continueWatchingWidth = artworkWidth
+        result.landscapeWidth = artworkWidth
+        result.landscapeHeight = artworkWidth * 9 / 16
+        return result
+    }
+
     // MARK: Concentric card corner radii (derived)
 
     /// Touch artwork keeps the same rounding across responsive card sizes.

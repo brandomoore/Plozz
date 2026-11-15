@@ -10,6 +10,17 @@ struct SearchKeyboardInteractionFixture: View {
     @State private var trailer = HeroTrailerController()
     @State private var sidebar = PlozziOSSidebarGeometryModel()
     @State private var showsSettings = false
+    @State private var showsSearch = true
+
+    private var surfaceCheck: Bool { ProcessInfo.processInfo.arguments.contains("--search-surface-check") }
+    private var gradientEnabled: Bool { ProcessInfo.processInfo.arguments.contains("--search-gradient") }
+    private var palette: ThemePalette {
+        let arguments = ProcessInfo.processInfo.arguments
+        let theme: AppTheme = arguments.contains("--search-light") ? .light
+            : arguments.contains("--search-oled") ? .pureBlack
+            : arguments.contains("--search-system-light") || arguments.contains("--search-system-dark") ? .system : .dark
+        return .palette(for: theme, systemColorScheme: arguments.contains("--search-system-light") ? .light : .dark)
+    }
 
     init() {
         SyncSetupFeatureFlag().isEnabled = false
@@ -42,6 +53,16 @@ struct SearchKeyboardInteractionFixture: View {
     var body: some View {
         NavigationStack {
             PlozziOSSearchView(appModel: appModel, onShowSettings: { showsSettings = true })
+                .opacity(showsSearch ? 1 : 0)
+                .accessibilityHidden(!showsSearch)
+                .background {
+                    if surfaceCheck { AppBackground(palette: palette) }
+                }
+        }
+        .overlay(alignment: .bottom) {
+            if surfaceCheck {
+                Button(showsSearch ? "Hide search fixture" : "Search fixture hidden") { showsSearch = false }
+            }
         }
         .sheet(isPresented: $showsSettings) {
             Text("Settings opened").accessibilityIdentifier("search-fixture-settings")
@@ -49,10 +70,13 @@ struct SearchKeyboardInteractionFixture: View {
         .environment(appModel)
         .environment(trailer)
         .environment(sidebar)
-        .environment(\.themePalette, .dark)
+        .environment(\.themePalette, palette)
+        .environment(\.gradientBackgroundsEnabled, gradientEnabled)
+        .environment(\.plozzReduceTransparency, ProcessInfo.processInfo.arguments.contains("--search-opaque"))
         .environment(\.plozzMetrics, .touch(density: .standard))
+        .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--search-framed") ? .framed : .borderless)
         .environment(\.locale, Locale(identifier: "en_US"))
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(palette.isLight ? .light : .dark)
     }
 }
 
@@ -76,6 +100,11 @@ private actor SearchKeyboardProvider: MediaProvider {
     func item(id: String) async throws -> MediaItem { Self.result(id: id) }
     func children(of itemID: String) async throws -> [MediaItem] { [] }
     func search(query: String, limit: Int) async throws -> [MediaItem] {
+        if query == "alignment" {
+            return ["Alpha", "Bravo", "Charlie"].map {
+                MediaItem(id: $0, title: $0, kind: .movie, sourceAccountID: "search-keyboard")
+            }
+        }
         if query == "empty" { return [] }
         if query == "slow" { try await Task.sleep(for: .seconds(30)) }
         if query == "failed" { throw AppError.notFound }
@@ -83,7 +112,7 @@ private actor SearchKeyboardProvider: MediaProvider {
             hasFailedRetry = true
             throw AppError.notFound
         }
-        return (1...(query == "many" ? 30 : 1)).map {
+        return (1...(query == "many" ? 60 : 1)).map {
             Self.result(id: String(format: "%02d", $0))
         }
     }

@@ -9,6 +9,8 @@ struct PlozziOSDownloadsView: View {
     private var navigationTitles = NavigationTitles()
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     @Environment(\.plozziOSOverflowNavigation) private var overflowNavigation
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Bindable var model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
     let onShowSettings: () -> Void
@@ -19,29 +21,34 @@ struct PlozziOSDownloadsView: View {
     @State private var notificationDestination: PlozziOSDownloadNotificationDestination?
     @State private var selectedShowID: String?
     @State private var detailNav: PlozziOSDownloadDetailNav?
+    @State private var showsDownloadSettings = false
 
     var body: some View {
         let library = appModel.isOfflineMode ? model.offlineLibrary : model.library
         Group {
             if let error = model.initializationError {
-                ContentUnavailableView(
-                    "Downloads Unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(error)
-                )
-            } else if library.isEmpty {
-                ContentUnavailableView(
-                    "No Downloads",
-                    systemImage: "arrow.down.circle",
-                    description: Text(
-                        "Download a movie or episode from its detail page to watch offline."
+                unavailableContent {
+                    ContentUnavailableView(
+                        "Downloads Unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(error)
                     )
-                )
+                }
+            } else if library.isEmpty {
+                unavailableContent {
+                    ContentUnavailableView(
+                        "No Downloads",
+                        systemImage: "arrow.down.circle",
+                        description: Text(
+                            "Download a movie or episode from its detail page to watch offline."
+                        )
+                    )
+                }
             } else {
                 libraryList(library)
             }
         }
-        .navigationTitle(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads")))
+        .navigationTitle(Text(verbatim: ""))
         .task { await model.refreshArtwork() }
         .task(id: notificationPresentationID) {
             let navigation = PlozziOSDownloadNotificationNavigation.shared
@@ -59,6 +66,10 @@ struct PlozziOSDownloadsView: View {
         .navigationDestination(item: $selectedShowID) { showID in
             PlozziOSDownloadedShowView(showID: showID, model: model, appModel: appModel)
         }
+        .navigationDestination(isPresented: $showsDownloadSettings) {
+            PlozziOSDownloadSettingsView(model: model, appModel: appModel)
+                .toolbar(.visible, for: .navigationBar)
+        }
         .navigationDestination(item: $detailNav) { nav in
             if let provider = appModel.provider(for: nav.item) {
                 PlozziOSItemDetailView(
@@ -73,20 +84,14 @@ struct PlozziOSDownloadsView: View {
                 )
             }
         }
-        .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar(sizeClass == .compact && !isOverflowDestination && !usesVerticalToolbar ? .hidden : .visible,
+                 for: .navigationBar)
         .toolbar {
             // Compose with the page's actions; a separate ancestor toolbar can be displaced.
             if isOverflowDestination, let overflowNavigation {
                 PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
             }
-            ToolbarItem(id: "download-settings", placement: .topBarTrailing) {
-                NavigationLink {
-                    PlozziOSDownloadSettingsView(model: model, appModel: appModel)
-                } label: {
-                    Label("Download Settings", systemImage: "gearshape")
-                }
-            }
-            PlozziOSSettingsToolbarItem(action: onShowSettings)
         }
         .confirmationDialog(
             pendingBulkDeletion.map { Text($0.title) } ?? Text(verbatim: ""),
@@ -114,6 +119,33 @@ struct PlozziOSDownloadsView: View {
         } message: {
             if let deletion = pendingBulkDeletion {
                 Text(deletion.message)
+            }
+        }
+    }
+
+    private var pageHeading: some View {
+        PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.downloadsKey, default: Text("Downloads"))) {
+            downloadSettingsButton
+            PlozziOSSettingsAvatarButton(action: onShowSettings)
+                .accessibilityIdentifier("downloads-settings-avatar")
+        }
+    }
+
+    private var downloadSettingsButton: some View {
+        Button { showsDownloadSettings = true } label: {
+            Label("Download Settings", systemImage: "gearshape")
+        }
+        .plozziOSPageAction()
+    }
+
+    private func unavailableContent<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 0) {
+                    pageHeading
+                    content().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(minHeight: geometry.size.height)
             }
         }
     }
@@ -165,6 +197,10 @@ struct PlozziOSDownloadsView: View {
     private func libraryList(_ library: PlozziOSDownloadLibrary) -> some View {
         GeometryReader { proxy in
             List {
+                pageHeading
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
                 if model.hasActiveTransfers && !appModel.isOfflineMode {
                     activeTransfersHeader
                         .labelStyle(.titleAndIcon)
