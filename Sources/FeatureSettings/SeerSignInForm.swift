@@ -235,19 +235,15 @@ struct SeerSignInForm: View {
     }
 
     private func mediaSignInLabel(_ title: LocalizedStringResource) -> some View {
-        VStack(spacing: 4) {
-            Text(title)
+        HStack(spacing: 8) {
             if let provider = mediaProvider {
-                Label {
-                    Text(verbatim: provider.displayName)
-                } icon: {
-                    ProviderBrandMark(provider: provider, size: 16, showsBackground: false)
-                        .accessibilityHidden(true)
-                }
-                .font(.caption)
+                ProviderBrandMark(provider: provider, size: 20, showsBackground: false)
+                    .accessibilityHidden(true)
             }
+            Text(title)
         }
         .accessibilityElement(children: .combine)
+        .accessibilityValue(Text(verbatim: mediaProvider?.displayName ?? ""))
     }
 
     private var availableAccounts: [SeerLoginOption] {

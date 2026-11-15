@@ -267,7 +267,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             window.layoutIfNeeded()
             self.attach(try self.capture(window), name: "Seerr resumed Plex account")
             let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
-            XCTAssertTrue(text.contains("Continue as Alex"), text.joined(separator: " | "))
+            XCTAssertTrue(text.contains { $0.hasSuffix("Continue as Alex") }, text.joined(separator: " | "))
             XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare("Server") == .orderedSame })
             XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("Detected") })
             XCTAssertFalse(text.contains { $0.contains("Jellyfin") })
@@ -346,7 +346,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             }) { window, _, service in
                 let lines = try self.recognize(self.capture(window), size: window.bounds.size)
                 let text = lines.map(\.text)
-                XCTAssertEqual(text.contains("Continue as Alex"), serverType != 3)
+                XCTAssertEqual(text.contains { $0.hasSuffix("Continue as Alex") }, serverType != 3)
                 XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare(expected) == .orderedSame })
                 XCTAssertTrue(text.contains("Seerr account"))
                 XCTAssertTrue(text.contains("Use API key"))
@@ -355,18 +355,17 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare("Seerr server address") == .orderedSame })
                 XCTAssertEqual(self.textFields(in: window).filter { $0.keyboardType == .URL }.count, 1)
                 if serverType == 2 {
-                    let providerLabels = lines.filter { $0.text == "Jellyfin" }
-                    XCTAssertEqual(providerLabels.count, 2)
-                    for title in ["Continue as Alex", "Enter username and password"] {
-                        let action = try XCTUnwrap(lines.first { $0.text == title })
-                        XCTAssertTrue(providerLabels.contains {
-                            $0.frame.minY >= action.frame.maxY && $0.frame.minY - action.frame.maxY < 12
-                        }, "Provider identity belongs inside each sign-in action, directly below its title")
-                    }
-                    let firstAction = try XCTUnwrap(lines.first { $0.text == "Continue as Alex" })
-                    XCTAssertFalse(providerLabels.contains { $0.frame.minY < firstAction.frame.minY },
-                                   "No floating provider heading may describe the Seerr server address")
                     self.attach(try self.capture(window), name: "Seerr Jellyfin account options")
+                    XCTAssertFalse(text.contains("Jellyfin"),
+                                   "Provider identity uses a leading logo, not a heading or second text line")
+                    let plainAction = try XCTUnwrap(lines.first { $0.text == "Seerr account" })
+                    for title in ["Continue as Alex", "Enter username and password"] {
+                        let action = try XCTUnwrap(lines.first { $0.text.hasSuffix(title) },
+                                                  text.joined(separator: " | "))
+                        // OCR can include the taller logo in the line's bounds.
+                        XCTAssertLessThan(action.frame.height, plainAction.frame.height * 2,
+                                          "Media-account actions should fit on one text line at the default phone size")
+                    }
                 }
                 XCTAssertFalse(service.isConfigured)
             }

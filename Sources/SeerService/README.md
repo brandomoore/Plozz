@@ -82,8 +82,9 @@ same `SeerConnectionsView` and authentication implementation.
   **Choose existing account** for several, never an arbitrary first account.
   The native chooser shows usernames with their media-server names and addresses
   and resolves the selected ID against the current profile's available accounts.
-  Media sign-in buttons contain the provider name and shared logo beneath their
-  action label, never as a standalone heading beside the Seerr address.
+  Media sign-in buttons use the shared provider logo before their action label,
+  without a second line or standalone heading beside the Seerr address.
+  The provider name remains available to VoiceOver.
   Local-account and API-key actions do not carry media-provider branding. Jellyfin's secondary
   action is **Enter username and password**; Plex retains its separate browser flow.
   Supported alternatives, including API-key entry, appear directly as full-width
