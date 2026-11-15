@@ -110,6 +110,10 @@ language every other module speaks.
   here (e.g. `Account`, `Profile`) carry only non-secret metadata.
 - **Provider-agnostic.** No type here may assume Jellyfin- or Plex-specific
   behavior; the only provider seam is `MediaProvider`.
+- Provider-ID lookup preserves alias priority and the first nonempty normalized
+  spelling without rebuilding the whole ID map for each lookup. ASCII keys use
+  a byte-based fast path; other spellings retain the same Unicode normalization.
+  No cross-item cache or metadata truncation is involved.
 - **Collections are server-defined groups, not alternate title sources.**
   Collection identity stays scoped to the owning account and item ID, even when
   two groups share a catalogue collection ID or physical server. Library

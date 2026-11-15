@@ -591,6 +591,13 @@ SCENARIOS = {
         "counters": ["realizedArtworkHosts", "rowContentSizeQueries", "rowContentPlacements",
                      "cardInputBuilds", "outerHostLayoutPasses"] + HOME_HOST_FITTING_COUNTERS,
     },
+    "home-series-artwork-identity": {
+        "suite": "ui",
+        "test": "HomeMetadataPerformanceTests/testPerformanceSeriesArtworkIdentity",
+        "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
+        "description": "Four complete identity passes over 408 metadata-bearing movie/episode artwork sources; no network or rendering.",
+        "counters": ["items", "identities", "identityBytes"],
+    },
     "home-metadata-publication": {
         "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceHomeMetadataPublication",
         "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",

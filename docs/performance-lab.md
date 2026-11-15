@@ -1940,6 +1940,49 @@ variant does not start Sentry or upload anything.
 Credits, sort metadata, membership/order, and provider parity
 remain correctness controls; unchanged identity must not hide changed metadata.
 
+For metadata work during row layout, `home-series-artwork-identity` runs the
+production `ContinueWatchingArtworkSource.identity` pipeline over 408 synthetic
+movie/episode sources, four complete passes per sample. It covers classification,
+series-ID promotion, metadata cache keys and provider aliases without networking
+or rendering. Every sample verifies all 1,632 identities and their complete
+174,592-byte output. It is not a frame-rate or whole-navigation benchmark.
+
+A symbolicated physical tvOS hang reached this pipeline from `MediaRowView`
+inside Showcase host fitting. Each namespace lookup rebuilt the entire normalized
+provider-ID dictionary, including per-character strings for ordinary ASCII keys.
+The lookup now selects the highest-priority valid alias directly; ASCII
+normalization uses bytes while other spellings keep the original Unicode path.
+Alias priority, whitespace handling and normalized-key collisions remain covered
+by `ProviderIDNamespaceTests`. There is no cache to invalidate, truncated metadata,
+new background task or change to native focus/layout ownership.
+
+On an Apple TV 4K simulator running tvOS 26.2, optimized Debug, one warmup and
+five samples, the final matched pair measured:
+
+| Workload | Original median CPU | Optimized median CPU |
+| --- | ---: | ---: |
+| 1,632 artwork identities | 294.179 ms | 60.621 ms |
+| Twelve settled artwork publications | 28.981 ms | 26.280 ms |
+| Cold Showcase graph, warm images | 382.900 ms | 375.129 ms |
+| Duplicate artwork reports | 5.140 ms | 4.832 ms |
+
+Baseline `4a3474bf702e449f9d5c45dbeca32b66` and candidate
+`230fc391efc047d6933f3112914339cc` have identical runner, fixtures, scenarios and
+environment; comparison `6c2ea2bbb07443bfb4552cbc932a9a0c` was within budget.
+Identity CPU fell about 79%, consistently reaching 60–63 ms across three
+candidate runs versus 289–294 ms for original-code runs. An exploratory
+lookup-only candidate measured 225 ms before the ASCII path was added.
+
+Do not infer an artwork speedup from the small control differences. Earlier
+comparisons flagged artwork CPU regressions, and an original-code A/A control
+also flagged artwork/duplicate regressions
+(`6bbd69ba038b458e84d1cdbc4a7caa0a`); shared-host load and outer layout counts
+varied. All complete runs retained the same publication, row-fitting, card-input
+and duplicate-suppression results. Synthetic native Home and horizontal navigation
+profiles completed, but neither reproduces the complete live-server session.
+The live endpoint rejected public API access before authentication, so this
+evidence does not establish physical-device responsiveness or network improvement.
+
 For card-activation and menu stalls, `mobile-home-card-routing` updates 24 real
 mobile Home cards against a four-source identity index and counts source
 resolutions without activating a card. Detail routing belongs in the presented
