@@ -32,6 +32,7 @@ public struct CrashReportingConsentView: View {
             .scrollClipDisabled()
         }
         .background { AppBackground(palette: palette) }
+        .tint(palette.accent)
         .accessibilityIdentifier("diagnostics-consent")
     }
 

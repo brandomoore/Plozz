@@ -54,6 +54,23 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "1")
     }
 
+    func testOnboardingInfoUsesNeutralThemeInk() throws {
+        for isLight in [false, true] {
+            launch(arguments: ["--diagnostics-onboarding"] + (isLight ? ["--light"] : []))
+            let info = app.buttons["About Diagnostic Sharing"]
+            XCTAssertTrue(info.waitForExistence(timeout: 10), app.debugDescription)
+            try assertNeutralInk(info)
+            capture("onboarding-neutral-\(isLight ? "light" : "dark")")
+            info.tap()
+            let done = app.buttons["Done"]
+            XCTAssertTrue(done.waitForExistence(timeout: 5))
+            capture("onboarding-information-neutral-\(isLight ? "light" : "dark")")
+            done.tap()
+            XCTAssertTrue(info.waitForExistence(timeout: 5))
+            app.terminate()
+        }
+    }
+
     func testOnboardingKeepsDisclosureInInformationWithoutChoosingConsent() {
         for shares in [false, true] {
             launch(arguments: ["--diagnostics-onboarding"])

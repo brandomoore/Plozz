@@ -10,6 +10,7 @@ struct DiagnosticsSharingFixture: View {
         ? "Search returned no matches" : ""
     @State private var submissions = 0
     private let isConfigured = !ProcessInfo.processInfo.arguments.contains("--diagnostics-unavailable")
+    private let isLight = ProcessInfo.processInfo.arguments.contains("--light")
 
     var body: some View {
         Group {
@@ -31,10 +32,10 @@ struct DiagnosticsSharingFixture: View {
                 .accessibilityIdentifier("diagnostics-submission-count")
                 .allowsHitTesting(false)
         }
-        .environment(\.themePalette, .dark)
-        .environment(\.colorScheme, .dark)
+        .environment(\.themePalette, isLight ? .light : .dark)
+        .environment(\.colorScheme, isLight ? .light : .dark)
         .environment(\.locale, Locale(identifier: "en_US"))
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(isLight ? .light : .dark)
     }
 }
 

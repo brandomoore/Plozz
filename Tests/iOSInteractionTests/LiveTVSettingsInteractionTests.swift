@@ -238,22 +238,23 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 5), .completed,
                        "A child-page change must persist before navigating back.")
     }
+}
 
-    private func assertNeutralInk(_ element: XCUIElement) throws {
-        let image = try XCTUnwrap(element.screenshot().image.cgImage)
-        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
-        try bytes.withUnsafeMutableBytes { buffer in
-            let context = try XCTUnwrap(CGContext(
-                data: buffer.baseAddress, width: image.width, height: image.height,
-                bitsPerComponent: 8, bytesPerRow: image.width * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-            ))
-            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        }
-        let bluePixels = stride(from: 0, to: bytes.count, by: 4).filter {
-            Int(bytes[$0 + 2]) - Int(bytes[$0]) > 40
-        }.count
-        XCTAssertLessThan(bluePixels, 10, "\(element.identifier) must not use system-blue control ink.")
+@MainActor
+func assertNeutralInk(_ element: XCUIElement) throws {
+    let image = try XCTUnwrap(element.screenshot().image.cgImage)
+    var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+    try bytes.withUnsafeMutableBytes { buffer in
+        let context = try XCTUnwrap(CGContext(
+            data: buffer.baseAddress, width: image.width, height: image.height,
+            bitsPerComponent: 8, bytesPerRow: image.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     }
+    let bluePixels = stride(from: 0, to: bytes.count, by: 4).filter {
+        Int(bytes[$0 + 2]) - Int(bytes[$0]) > 40
+    }.count
+    XCTAssertLessThan(bluePixels, 10, "\(element.identifier) must not use system-blue control ink.")
 }

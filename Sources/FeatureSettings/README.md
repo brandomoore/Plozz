@@ -313,6 +313,8 @@ Help & Diagnostics can change it later. Consent is not synced or transferred.
 The prompt and its primary Share Diagnostics and secondary Don't Share actions
 use the shared Settings card, with
 48-point content insets on tvOS and the standard card insets on mobile.
+Like other first-use prompts, it supplies the palette's neutral accent to native
+controls rather than inheriting the system-blue tint.
 Its info button opens the shared diagnostic-sharing sheet with the detailed
 disclosures, optional-sharing explanation and Privacy Policy link; opening or
 dismissing it does not choose consent. The footer contains only the GitHub repo
