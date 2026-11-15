@@ -74,6 +74,7 @@ struct HomeHeroInteractionFixture: View {
         ProcessInfo.processInfo.arguments.contains("--hero-light") ? .light : .dark
     }
     @State private var appModel: PlozziOSAppModel
+    @State private var seriesLookup: HeroInteractionLookupGate
     @State private var trailer = HeroTrailerController()
     @State private var sidebar = PlozziOSSidebarGeometryModel()
     @State private var pull = PlozziOSHomeHeroPullModel()
@@ -142,8 +143,10 @@ struct HomeHeroInteractionFixture: View {
         let defaults = UserDefaults(suiteName: "HomeHeroInteractionFixture")!
         defaults.removePersistentDomain(forName: "HomeHeroInteractionFixture")
         let model = PlozziOSAppModel(accountStore: accounts, profileStore: ProfileStore(defaults: defaults))
+        let seriesLookup = HeroInteractionLookupGate()
+        _seriesLookup = State(initialValue: seriesLookup)
         for kind in [ProviderKind.jellyfin, .emby] {
-            let provider = HeroInteractionProvider(kind: kind)
+            let provider = HeroInteractionProvider(kind: kind, seriesLookup: seriesLookup)
             model.accountsProviders.registry.register(kind) { _ in provider }
             do {
                 try accounts.add(provider.account, token: "fixture")
@@ -252,11 +255,24 @@ struct HomeHeroInteractionFixture: View {
         HeroInteractionNavigationChrome(enabled: usesNativeChrome, sidebar: sidebar) {
             home
         }
+        .overlay(alignment: .bottomLeading) {
+            if ProcessInfo.processInfo.arguments.contains("--hero-series-loading") {
+                Button("Complete lookup") {
+                    seriesLookup.complete()
+                }
+                .accessibilityIdentifier("hero-complete-series-lookup")
+                .padding(.bottom, 90)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             VStack {
                 Text(verbatim: "\(playCount)").accessibilityIdentifier("hero-play-count")
                 Text(verbatim: "\(actions.watchlistCount)").accessibilityIdentifier("hero-watchlist-count")
                 Text(verbatim: "\(settingsCount)").accessibilityIdentifier("hero-settings-count")
+                if ProcessInfo.processInfo.arguments.contains("--hero-series-loading") {
+                    Text(verbatim: "\(seriesLookup.requests)")
+                        .accessibilityIdentifier("hero-series-lookup-count")
+                }
             }
             .allowsHitTesting(false)
         }
@@ -316,8 +332,30 @@ private final class HeroInteractionActions: MediaItemActionHandling {
     }
 }
 
+@MainActor
+@Observable
+private final class HeroInteractionLookupGate {
+    private(set) var requests = 0
+    private var completions = 0
+
+    func complete() { completions += 1 }
+
+    func wait(remainsOpen: Bool) async throws {
+        requests += 1
+        if remainsOpen, completions > 0 { return }
+        let initial = completions
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while completions == initial {
+            guard ContinuousClock.now < deadline else { throw URLError(.timedOut) }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try Task.checkCancellation()
+    }
+}
+
 private struct HeroInteractionProvider: MediaProvider {
     let kind: ProviderKind
+    var seriesLookup: HeroInteractionLookupGate?
     static let logoURL = URL(string: "https://hero.invalid/logo.png")!
     static let artworkURL = URL(string: "https://hero.invalid/full-width.png")!
 
@@ -361,8 +399,12 @@ private struct HeroInteractionProvider: MediaProvider {
     func item(id: String) async throws -> MediaItem {
         if id == "series" {
             if ProcessInfo.processInfo.arguments.contains("--hero-series-loading") {
-                try await Task.sleep(for: .seconds(5))
-                if ProcessInfo.processInfo.arguments.contains("--hero-series-failure") {
+                let fails = ProcessInfo.processInfo.arguments.contains("--hero-series-failure")
+                guard let seriesLookup else {
+                    fatalError("Loading fixture requires a controlled series lookup")
+                }
+                try await seriesLookup.wait(remainsOpen: !fails)
+                if fails {
                     throw AppError.notFound
                 }
             }

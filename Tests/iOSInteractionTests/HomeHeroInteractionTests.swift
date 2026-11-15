@@ -48,33 +48,36 @@ final class HomeHeroInteractionTests: XCTestCase {
         assertDetail("Details for series from emby")
     }
 
-    func testOpeningEpisodeKeepsHeroVisibleWhileItsShowLoads() {
+    func testOpeningEpisodeShowsSeededDetailWhileItsShowLoads() {
         app.terminate()
         app.launchArguments += ["--hero-native-chrome", "--hero-series-loading"]
         app.launch()
         let artwork = app.buttons["home-hero-artwork-detail"]
         XCTAssertTrue(artwork.waitForExistence(timeout: 15))
         artwork.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
-        XCTAssertTrue(app.descendants(matching: .any)["series-loading-hero"].waitForExistence(timeout: 2))
-        XCTAssertFalse(app.activityIndicators.firstMatch.exists)
+        assertLoadingSeriesDetail()
         capture("series-artwork-during-resolution")
+        app.buttons["hero-complete-series-lookup"].tap()
         assertDetail("Details for series from emby")
-        XCTAssertFalse(app.descendants(matching: .any)["series-loading-hero"].exists)
     }
 
-    func testFailedShowLookupStillOffersRetryAfterTheArtworkPreview() {
+    func testFailedShowLookupStillOffersRetryFromSeededDetail() throws {
         app.terminate()
         app.launchArguments += ["--hero-native-chrome", "--hero-series-loading", "--hero-series-failure"]
         app.launch()
         let artwork = app.buttons["home-hero-artwork-detail"]
         XCTAssertTrue(artwork.waitForExistence(timeout: 15))
         artwork.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
-        XCTAssertTrue(app.descendants(matching: .any)["series-loading-hero"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Unable to load show"].waitForExistence(timeout: 8))
+        assertLoadingSeriesDetail()
+        app.buttons["hero-complete-series-lookup"].tap()
+        XCTAssertTrue(app.staticTexts["Unable to load details"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["Try Again"].isHittable)
+        let count = app.staticTexts["hero-series-lookup-count"]
+        let previous = try XCTUnwrap(Int(count.label))
         app.buttons["Try Again"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["series-loading-hero"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Unable to load show"].waitForExistence(timeout: 8))
+        XCTAssertTrue(count.wait(for: \.label, toEqual: String(previous + 1), timeout: 5))
+        app.buttons["hero-complete-series-lookup"].tap()
+        XCTAssertTrue(app.staticTexts["Unable to load details"].waitForExistence(timeout: 8))
     }
 
     func testForegroundActionsAndVerticalScrollingRemainIndependent() {
@@ -231,6 +234,15 @@ final class HomeHeroInteractionTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func assertLoadingSeriesDetail() {
+        XCTAssertTrue(app.staticTexts["Hero Series"].waitForExistence(timeout: 5))
+        let play = app.buttons["detail-hero-play"]
+        XCTAssertTrue(play.exists)
+        XCTAssertFalse(play.isEnabled, "Unresolved series playback must remain unavailable.")
+        XCTAssertFalse(app.staticTexts["Details for series from emby"].exists)
+        XCTAssertFalse(app.activityIndicators.firstMatch.exists)
     }
 
     private func assertDetail(_ text: String) {
