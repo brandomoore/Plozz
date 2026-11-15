@@ -172,6 +172,34 @@ final class SeerAccountConnectionsTests: XCTestCase {
         XCTAssertFalse(http.sent.contains { $0.headers["X-Emby-Token"] != nil })
     }
 
+    func testSetupChecksQuickConnectWithoutCreatingOrApprovingALogin() async throws {
+        for (status, supported) in [(400, true), (404, false)] {
+            let http = SeerRecordingHTTPClient()
+            http.stub(pathSuffix: "/settings/public", json: #"{"initialized":true,"mediaServerType":2,"mediaServerLogin":true}"#)
+            http.stub(pathSuffix: "/quickconnect/check", json: "{}", status: status)
+            let methods = try await SeerAuthentication(baseURL: url, http: http).setupMethods()
+            XCTAssertEqual(methods.jellyfinQuickConnect, supported)
+            let probe = try XCTUnwrap(http.lastSent(pathSuffix: "/quickconnect/check"))
+            XCTAssertEqual(probe.method, .get)
+            XCTAssertNil(probe.body)
+            XCTAssertTrue(probe.queryItems.isEmpty)
+            XCTAssertTrue(probe.headers.isEmpty)
+            XCTAssertEqual(probe.redirectPolicy, .sameOrigin)
+            XCTAssertFalse(probe.allowsAutomaticAddressRetry)
+            XCTAssertEqual(http.sentPaths, ["/api/v1/settings/public", "/api/v1/auth/jellyfin/quickconnect/check"])
+        }
+    }
+
+    func testFailedCapabilityCheckIsNotClassifiedAsAnOlderServer() async throws {
+        let http = SeerRecordingHTTPClient()
+        http.stub(pathSuffix: "/settings/public", json: #"{"initialized":true,"mediaServerType":2,"mediaServerLogin":true}"#)
+        http.stub(pathSuffix: "/quickconnect/check", json: "{}", status: 500)
+        do {
+            _ = try await SeerAuthentication(baseURL: url, http: http).setupMethods()
+            XCTFail("A failing server must remain an explicit error, not a password-only capability")
+        } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+    }
+
     func testNewLoginNeverUsesAnotherLoginCookie() async throws {
         let http = SeerRecordingHTTPClient()
         http.stub(pathSuffix: "/settings/public", json: #"{"initialized":true,"localLogin":true}"#)

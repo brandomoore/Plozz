@@ -199,6 +199,15 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                     }
                 }
             }) { window, scroll, service in
+                let deadline = ContinuousClock.now + .seconds(3)
+                while (service.setupDiscovery.isSearching || service.setupDiscovery.servers.count != count),
+                      ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertEqual(service.setupDiscovery.servers.count, count)
+                XCTAssertFalse(service.setupDiscovery.isSearching)
+                try await Task.sleep(for: .milliseconds(50))
+                window.layoutIfNeeded()
                 let text = try self.recognize(self.capture(window), size: window.bounds.size)
                 let addresses = text.filter { line in urls.contains { line.text.contains($0.host!) } }
                 XCTAssertEqual(addresses.count, count)
@@ -407,6 +416,33 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
+    func testOlderSeerrExplainsPasswordRequirementBeforeAccountSelection() async throws {
+        for manualForm in [false, true] {
+            try await render(size: .init(width: 390, height: 844), state: .unconfigured,
+                             manualForm: manualForm, quickConnectAvailable: false, configure: { service in
+                try service.rememberSetupServer(URL(string: "https://older.example")!, expectedProfileID: "fixture")
+                service.loginOptions = {
+                    [.init(id: "alex", name: "Alex", mediaServerType: 2, authenticate: { _ in
+                        XCTFail("An older Seerr must not attempt account reuse")
+                        throw AppError.unauthorized
+                    })]
+                }
+            }) { window, _, service in
+                let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+                XCTAssertFalse(text.contains { $0.contains("Continue as") || $0.contains("Choose existing account") })
+                XCTAssertTrue(text.joined(separator: " ").contains("Update Seerr for password-free sign-in."))
+                if manualForm {
+                    XCTAssertEqual(self.textFields(in: window).first { $0.textContentType == .username }?.text, "Alex")
+                    XCTAssertNotNil(self.textFields(in: window).first { $0.isSecureTextEntry })
+                } else {
+                    XCTAssertTrue(text.contains { $0.hasSuffix("Sign in with Jellyfin") })
+                }
+                XCTAssertFalse(service.isConfigured)
+                self.attach(try self.capture(window), name: "Older Seerr password requirement \(manualForm)")
+            }
+        }
+    }
+
     func testEditingCheckedAddressClearsCredentialsAndRequiresANewCheck() async throws {
         let oldURL = URL(string: "https://old.example")!
         let newURL = URL(string: "https://new.example")!
@@ -535,17 +571,19 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         serverType: Int = 2,
         manualForm: Bool = false,
         inputMetrics: SignInInputMetrics? = nil,
+        quickConnectAvailable: Bool = true,
         configure: (SeerService) async throws -> Void = { _ in },
         inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
-        let http = SeerrSetupHTTP(state: state, longNames: longNames, serverType: serverType)
+        let http = SeerrSetupHTTP(state: state, longNames: longNames, serverType: serverType,
+                                 quickConnectAvailable: quickConnectAvailable)
         let store = InMemorySeerConnectionStore(connection: state == .unconfigured ? nil : .init(
             baseURL: URL(string: "https://fixture.invalid")!, apiKey: "fixture"
         ))
         let service = SeerService(connectionStore: store, http: http)
         service.discoverServers = { _ in AsyncStream { $0.finish() } }
         service.authentication = { SeerAuthentication(baseURL: $0, http: http) }
-        service.discoveryMethods = { try await SeerAuthentication(baseURL: $0, http: http).methods() }
+        service.discoveryMethods = { try await SeerAuthentication(baseURL: $0, http: http).setupMethods() }
         var profile = Profile(id: "fixture", name: longNames ? "A household profile with a very long name" : "Home")
         profile.seerrUserID = 2
         profile.seerrUserName = longNames ? "Alex with an exceptionally long household display name" : "Alex"
@@ -724,17 +762,24 @@ private actor SeerrSetupHTTP: HTTPClient {
     let state: State
     let longNames: Bool
     let serverType: Int
+    let quickConnectAvailable: Bool
     private(set) var finished = false
 
-    init(state: State, longNames: Bool, serverType: Int) {
+    init(state: State, longNames: Bool, serverType: Int, quickConnectAvailable: Bool = true) {
         self.state = state
         self.longNames = longNames
         self.serverType = serverType
+        self.quickConnectAvailable = quickConnectAvailable
     }
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         let json: String
-        if endpoint.path.hasSuffix("/settings/public") {
+        if endpoint.path.hasSuffix("/quickconnect/check") {
+            return (Data("{}".utf8), HTTPURLResponse(
+                url: baseURL, statusCode: quickConnectAvailable ? 400 : 404,
+                httpVersion: nil, headerFields: nil
+            )!)
+        } else if endpoint.path.hasSuffix("/settings/public") {
             json = #"{"initialized":true,"mediaServerType":\#(serverType),"mediaServerLogin":true,"localLogin":true}"#
         } else if endpoint.path.hasSuffix("/status") {
             json = #"{"version":"1.0"}"#

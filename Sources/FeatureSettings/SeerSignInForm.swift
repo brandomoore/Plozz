@@ -62,6 +62,7 @@ struct SeerSignInForm: View {
                     accountName: suggestedAccountName,
                     provider: mediaProvider,
                     signInTitle: suggestedSignInTitle,
+                    signInHelp: passwordRequirement,
                     canContinue: methods != nil,
                     discovering: discovering,
                     signingIn: operation != nil,
@@ -83,6 +84,10 @@ struct SeerSignInForm: View {
                     )
                 }
                 addressSection
+                if mode == .options || mode == .media, let passwordRequirement {
+                    Text(passwordRequirement).font(.footnote).plozzForeground(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if mode == .media || mode == .local {
                     SettingsSectionGroup(passwordTitle) {
                         SettingsInputRow(mode == .local ? "Email" : "Username") {
@@ -248,8 +253,25 @@ struct SeerSignInForm: View {
     }
 
     private var availableAccounts: [SeerLoginOption] {
+        guard methods?.jellyfinQuickConnect != false else { return [] }
+        return matchingAccounts
+    }
+
+    private var matchingAccounts: [SeerLoginOption] {
         guard let methods, methods.mediaServerLogin == true else { return [] }
         return seer.loginOptions().filter { $0.mediaServerType == methods.mediaServerType }
+    }
+
+    private var passwordRequirement: LocalizedStringResource? {
+        guard methods?.mediaServerType == 2, methods?.jellyfinQuickConnect == false else { return nil }
+        return "This server needs your Jellyfin password. Update Seerr for password-free sign-in."
+    }
+
+    private var suggestedPasswordUsername: String? {
+        if methods?.jellyfinQuickConnect == false, matchingAccounts.count == 1 {
+            return matchingAccounts.first?.name
+        }
+        return suggestedEmbyUsername
     }
 
     private var showsSuggestedSetup: Bool { suggestsSetup && !manualSetup }
@@ -337,14 +359,14 @@ struct SeerSignInForm: View {
         seer.synchronizeProfile()
         guard profileID == nil || profileID == seer.activeProfileID else { return }
         profileID = seer.activeProfileID
-        let embyUsername = suggestedEmbyUsername
+        let passwordUsername = suggestedPasswordUsername
         seer.setupDiscovery.cancel()
         discovering = false
         addressEdited = true
         manualSetup = true
         error = nil
-        if let embyUsername {
-            username = embyUsername
+        if let passwordUsername {
+            username = passwordUsername
             mode = .media
         } else if methods?.mediaServerLogin == true,
                   [2, 3].contains(methods?.mediaServerType ?? 0), availableAccounts.isEmpty {
@@ -517,13 +539,14 @@ struct SeerSignInForm: View {
             let account: SeerAuthenticatedAccount
             switch operation.action {
             case .check:
-                let result = try await auth.methods()
+                let result = try await auth.setupMethods()
                 try Task.checkCancellation()
                 seer.synchronizeProfile()
                 guard self.operation?.id == operation.id, seer.activeProfileID == profileID,
                       seer.connectionRevision == revision else { return }
                 methods = result
                 if availableAccounts.isEmpty {
+                    if let suggestedPasswordUsername { username = suggestedPasswordUsername }
                     if result.mediaServerLogin == true, [2, 3].contains(result.mediaServerType ?? 0) { mode = .media }
                     else if result.mediaServerLogin != true, result.localLogin == true { mode = .local }
                     else if result.mediaServerLogin != true, result.localLogin != true { mode = .apiKey }
@@ -559,7 +582,7 @@ struct SeerSignInForm: View {
                 manualSetup = true
                 selectMode(.media)
                 username = option.name
-                self.error = "Enter your Jellyfin password to continue."
+                methods?.jellyfinQuickConnect = false
             } else if case .check = operation.action {
                 self.error = "Couldn’t reach Seerr. Check the address and try again."
             } else {
@@ -586,6 +609,7 @@ struct SeerSuggestedSetupView: View {
     let accountName: String?
     let provider: ProviderKind?
     let signInTitle: LocalizedStringResource
+    let signInHelp: LocalizedStringResource?
     let canContinue: Bool
     let discovering: Bool
     let signingIn: Bool
@@ -627,6 +651,10 @@ struct SeerSuggestedSetupView: View {
                     }
                 }
                 .accessibilityIdentifier("seerr-suggested-server")
+            }
+            if let signInHelp {
+                Text(signInHelp).font(.footnote).plozzForeground(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Button(action: onContinue) {
                 HStack {

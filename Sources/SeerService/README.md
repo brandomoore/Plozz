@@ -45,6 +45,12 @@ same `SeerConnectionsView` and authentication implementation.
   that account's credentials against its own authorized media-server origin.
   Status and capabilities are checked within each concurrent probe. Discovery
   requests have a three-second resource budget, separate from interactive login.
+  Jellyfin setup also checks the read-only Quick Connect status route without a
+  secret. Its validation response confirms support without creating a login
+  challenge or contacting Jellyfin; a missing route identifies password-only
+  setup. This is shared by discovered, remembered, plugin-provided and manually
+  entered addresses, including servers with backported support. Other HTTP or
+  transport failures remain errors, not an inferred older-server capability.
   The shared `ServerDiscoveryRow` and bundled Seerr logo present the detected
   server in both suggested and manual setup, without a navigation chevron.
   Discovery labels use **Detected server** for one displayed result and
@@ -78,7 +84,7 @@ same `SeerConnectionsView` and authentication implementation.
   Explicit Plex browser sign-in opens directly on iPhone/iPad, with a button to
   reopen it if needed. Only Apple TV shows a QR code and asks the user to scan
   with another device.
-- Sign-in offers **Continue as [name]** for one authorized media account or
+- When account reuse is supported, sign-in offers **Continue as [name]** for one authorized media account or
   **Choose existing account** for several, never an arbitrary first account.
   The native chooser shows usernames with their media-server names and addresses
   and resolves the selected ID against the current profile's available accounts.
@@ -87,6 +93,12 @@ same `SeerConnectionsView` and authentication implementation.
   The provider name remains available to VoiceOver.
   Local-account and API-key actions do not carry media-provider branding. Jellyfin's secondary
   action is **Enter username and password**; Plex retains its separate browser flow.
+  Older Seerr instances without Jellyfin Quick Connect instead offer **Sign in
+  with Jellyfin** and explain that a password is needed until Seerr is updated.
+  A single authorized Jellyfin username is still prefilled in the password form;
+  multiple accounts never select an arbitrary username. A missing Quick Connect
+  route during explicit account reuse also switches to this explained password
+  flow. Released Seerr versions before 3.4.0 do not support that exchange.
   Supported alternatives, including API-key entry, appear directly as full-width
   secondary buttons rather than in a menu. Password forms name the account type.
   On iPhone/iPad, credential rows use the shared sign-in field style: native

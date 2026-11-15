@@ -65,7 +65,7 @@ public final class SeerService {
         )
     }
     @ObservationIgnored public var discoveryMethods: (URL) async throws -> SeerLoginMethods = {
-        try await SeerAuthentication(baseURL: $0, http: SeerAuthentication.makeHTTPClient(timeout: 3)).methods()
+        try await SeerAuthentication(baseURL: $0, http: SeerAuthentication.makeHTTPClient(timeout: 3)).setupMethods()
     }
     @ObservationIgnored public var authentication: (URL) -> SeerAuthentication = { SeerAuthentication(baseURL: $0) }
     @ObservationIgnored public var plexSignIn: ((URL, @escaping @MainActor (URL) -> Void) async throws -> SeerAuthenticatedAccount)?

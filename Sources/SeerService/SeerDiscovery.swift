@@ -209,11 +209,13 @@ public final class SeerDiscovery: Sendable {
             guard let version = status.version, !version.isEmpty else { return nil }
             var methods: SeerLoginMethods?
             if inspectMethods {
-                methods = try await http.decode(SeerLoginMethods.self, from: Endpoint(
+                let value = try await http.decode(SeerLoginMethods.self, from: Endpoint(
                     path: "/api/v1/settings/public", redirectPolicy: .sameOrigin,
                     allowsAutomaticAddressRetry: false
                 ), baseURL: baseURL)
-                guard methods?.initialized == true else { return nil }
+                guard value.initialized == true else { return nil }
+                methods = try await SeerAuthentication(baseURL: baseURL, http: http)
+                    .checkingQuickConnectSupport(for: value)
             }
             return DiscoveredSeerServer(baseURL: baseURL, version: version, loginMethods: methods)
         } catch {

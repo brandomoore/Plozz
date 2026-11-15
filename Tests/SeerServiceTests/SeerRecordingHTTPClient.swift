@@ -11,11 +11,13 @@ import FoundationNetworking
 final class SeerRecordingHTTPClient: HTTPClient, @unchecked Sendable {
     struct Sent {
         let baseURL: URL
+        let method: HTTPMethod
         let path: String
         let queryItems: [URLQueryItem]
         let headers: [String: String]
         let body: Data?
         let redirectPolicy: Endpoint.RedirectPolicy
+        let allowsAutomaticAddressRetry: Bool
         var json: [String: Any]? {
             guard let body else { return nil }
             return (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
@@ -97,11 +99,13 @@ final class SeerRecordingHTTPClient: HTTPClient, @unchecked Sendable {
         sent.append(
             Sent(
                 baseURL: baseURL,
+                method: endpoint.method,
                 path: endpoint.path,
                 queryItems: endpoint.queryItems,
                 headers: endpoint.headers,
                 body: endpoint.body,
-                redirectPolicy: endpoint.redirectPolicy
+                redirectPolicy: endpoint.redirectPolicy,
+                allowsAutomaticAddressRetry: endpoint.allowsAutomaticAddressRetry
             )
         )
         if let error { lock.unlock(); throw error }

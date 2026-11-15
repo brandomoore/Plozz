@@ -65,6 +65,23 @@ private final class HostRoutedHTTPClient: HTTPClient, @unchecked Sendable {
 }
 
 final class SeerDiscoveryTests: XCTestCase {
+    func testOlderJellyfinSeerrRemainsDiscoverableWithoutOfferingAccountReuse() async {
+        let http = SeerRecordingHTTPClient()
+        http.stub(pathSuffix: "/status", json: #"{"version":"3.3.0"}"#)
+        http.stub(pathSuffix: "/settings/public", json: #"{"initialized":true,"mediaServerType":2,"mediaServerLogin":true}"#)
+        http.stub(pathSuffix: "/quickconnect/check", json: "{}", status: 404)
+        let discovery = SeerDiscovery(http: http, subnetHosts: { [] })
+        let url = URL(string: "https://requests.example.test/seerr")!
+        let results = await collect(discovery.discover(
+            urlHints: [url], includesSubnet: false, inspectMethods: true
+        ))
+        XCTAssertEqual(results.map(\.baseURL), [url])
+        XCTAssertEqual(results.first?.loginMethods?.jellyfinQuickConnect, false)
+        XCTAssertEqual(http.sentPaths, [
+            "/api/v1/status", "/api/v1/settings/public", "/api/v1/auth/jellyfin/quickconnect/check"
+        ])
+    }
+
     func testRemoteCandidatesPreserveHTTPSCustomPortAndProxyPathWithoutGuessingDomains() throws {
         let source = try XCTUnwrap(URL(string: "https://media.example.test:8443/media/jellyfin"))
         let candidates = SeerDiscovery.setupCandidates(mediaURLs: [source, source])

@@ -326,6 +326,12 @@ without geometry state or an extra hidden copy of the badge views.
 `ActionProgressIcon` overlays native progress inside the original symbol's
 layout footprint. `PlayResumeButtonLabel.isLoading` uses it without changing the
 button's dimensions or the existing resume/placeholder layout.
+The mobile Home/Detail request action uses the same icon slot and retains its
+Request text while choosing an account or submitting, so neither the button nor
+its neighboring actions move when native progress appears.
+Omitting `onLight` lets the owning button supply the indicator tint. The mobile
+hero style uses its disabled-surface foreground for disabled native glass,
+rather than retaining the inverted ink of an enabled prominent button.
 
 `TrailerActionButtonLabel` always renders icon-only on TV and mobile, preserving
 the destination description for accessibility regardless of available width.

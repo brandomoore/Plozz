@@ -7,6 +7,7 @@ public struct SeerLoginMethods: Decodable, Sendable, Hashable {
     public var mediaServerType: Int?
     public var mediaServerLogin: Bool?
     public var localLogin: Bool?
+    public var jellyfinQuickConnect: Bool?
 }
 
 public struct SeerAuthenticatedAccount: Sendable {
@@ -45,6 +46,29 @@ public actor SeerAuthentication {
     public func methods() async throws -> SeerLoginMethods {
         let value = try await decoded(SeerLoginMethods.self, endpoint: Endpoint(path: "/api/v1/settings/public"))
         guard value.initialized == true else { throw AppError.invalidResponse }
+        return value
+    }
+
+    public func setupMethods() async throws -> SeerLoginMethods {
+        try await checkingQuickConnectSupport(for: methods())
+    }
+
+    func checkingQuickConnectSupport(for methods: SeerLoginMethods) async throws -> SeerLoginMethods {
+        var value = methods
+        guard value.mediaServerLogin == true, value.mediaServerType == 2 else { return value }
+        let endpoint = Endpoint(
+            path: "/api/v1/auth/jellyfin/quickconnect/check",
+            redirectPolicy: .sameOrigin, allowsAutomaticAddressRetry: false
+        )
+        let (_, response) = try await http.sendRaw(endpoint, baseURL: baseURL)
+        try Task.checkCancellation()
+        switch response.statusCode {
+        // A missing secret is rejected before this read-only route contacts Jellyfin.
+        case 400: value.jellyfinQuickConnect = true
+        case 404: value.jellyfinQuickConnect = false
+        case 401, 403: throw AppError.unauthorized
+        default: throw AppError.invalidResponse
+        }
         return value
     }
 
