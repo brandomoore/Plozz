@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class HeroReflectionPresentationTests: XCTestCase {
-    func testTopBandReflectsTheImageBeforeTheOriginalStarts24PointsDown() throws {
+    func testReducedTransparencyKeepsTheSharpTopReflectionAndOriginalGeometry() throws {
         for height in [CGFloat(200), 340] {
             for scheme in [ColorScheme.light, .dark] {
                 let image = try render(
@@ -21,6 +21,7 @@ final class HeroReflectionPresentationTests: XCTestCase {
                         }
                         .frame(width: layout.width, height: layout.height)
                     }
+                    .environment(\.plozzReduceTransparency, true)
                     .environment(\.colorScheme, scheme)
                     .background(scheme == .dark ? Color.black : Color.white),
                     height: height
@@ -40,6 +41,69 @@ final class HeroReflectionPresentationTests: XCTestCase {
                 attachment.name = "hero-top-reflection-\(height)-\(scheme)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
+            }
+        }
+    }
+
+    func testTopReflectionGraduallyBlursStartingEightPointsBeforeTheSeam() throws {
+        func artwork(reduced: Bool) -> some View {
+            PlozziOSExtendedHeroArtwork(height: 340) { layout in
+                HStack(spacing: 0) {
+                    ForEach(0..<50) { index in
+                        (index.isMultiple(of: 2) ? Color.white : Color.black).frame(width: 4)
+                    }
+                }
+                .frame(width: layout.width, height: layout.height)
+            }
+            .environment(\.plozzReduceTransparency, reduced)
+            .background(Color.black)
+        }
+        let reference = try render(artwork(reduced: true), height: 340)
+        let blurred = try render(artwork(reduced: false), height: 340)
+        func contrast(_ image: UIImage, y: CGFloat) throws -> CGFloat {
+            abs(try rgb(image, x: 98, y: y)[0] - rgb(image, x: 102, y: y)[0])
+        }
+        for y: CGFloat in [32, 40, 80, 200, 310] {
+            XCTAssertEqual(try contrast(blurred, y: y), try contrast(reference, y: y), accuracy: 0.01,
+                           "The original below the eight-point lead-in and the bottom reflection must stay sharp.")
+        }
+        let onset = try contrast(blurred, y: 31)
+        let beforeSeam = try contrast(blurred, y: 28)
+        let reflected = try contrast(blurred, y: 18)
+        let top = try contrast(blurred, y: 4)
+        XCTAssertGreaterThan(onset, 0.9, "Blur must begin gently, not with a visible band.")
+        XCTAssertLessThan(beforeSeam, onset - 0.01)
+        XCTAssertLessThan(reflected, beforeSeam - 0.1)
+        XCTAssertLessThan(top, reflected)
+        XCTAssertLessThan(top, 0.2, "The top of the reflection should be strongly softened.")
+        for (name, image) in [("sharp-reflection", reference), ("progressive-reflection", blurred)] {
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testTopReflectionBlurPreservesColorAndAlphaInsteadOfAddingATint() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            func artwork(reduced: Bool) -> some View {
+                PlozziOSExtendedHeroArtwork(height: 340) { layout in
+                    Color(red: 0.2, green: 0.6, blue: 0.9)
+                        .frame(width: layout.width, height: layout.height)
+                }
+                .environment(\.plozzReduceTransparency, reduced)
+                .opacity(0.5)
+                .background(scheme == .dark ? Color.black : Color.white)
+            }
+            let reference = try render(artwork(reduced: true), height: 340)
+            let blurred = try render(artwork(reduced: false), height: 340)
+            for x: CGFloat in [1, 100, 199] {
+                for y: CGFloat in [1, 8, 18, 24, 28, 32, 60] {
+                    for (actual, expected) in zip(try rgb(blurred, x: x, y: y), try rgb(reference, x: x, y: y)) {
+                        XCTAssertEqual(actual, expected, accuracy: 0.02,
+                                       "Blur must preserve the existing reflection opacity and artwork colors.")
+                    }
+                }
             }
         }
     }
@@ -179,7 +243,7 @@ final class HeroReflectionPresentationTests: XCTestCase {
         }
     }
 
-    private func rgb(_ image: UIImage, y: CGFloat) throws -> [CGFloat] {
+    private func rgb(_ image: UIImage, x: CGFloat = 100, y: CGFloat) throws -> [CGFloat] {
         let cgImage = try XCTUnwrap(image.cgImage)
         var pixels = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
         try pixels.withUnsafeMutableBytes { bytes in
@@ -192,7 +256,7 @@ final class HeroReflectionPresentationTests: XCTestCase {
             ))
             context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
         }
-        let offset = (Int(y * image.scale) * cgImage.width + cgImage.width / 2) * 4
+        let offset = (Int(y * image.scale) * cgImage.width + Int(x * image.scale)) * 4
         return pixels[offset..<(offset + 3)].map { CGFloat($0) / 255 }
     }
 }
