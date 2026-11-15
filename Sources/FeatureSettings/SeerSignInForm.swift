@@ -83,7 +83,6 @@ struct SeerSignInForm: View {
                     )
                 }
                 addressSection
-                if mode == .options { mediaProviderHeading }
                 if mode == .media || mode == .local {
                     SettingsSectionGroup(passwordTitle) {
                         SettingsInputRow(mode == .local ? "Email" : "Username") {
@@ -114,7 +113,11 @@ struct SeerSignInForm: View {
                 Button(action: continueSignIn) {
                     HStack {
                         if operation != nil { ProgressView() }
-                        Text(primaryTitle)
+                        if mode == .options || mode == .media {
+                            mediaSignInLabel(primaryTitle)
+                        } else {
+                            Text(primaryTitle)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .plozzPageActionLabel()
@@ -187,8 +190,8 @@ struct SeerSignInForm: View {
     }
 
     private var addressSection: some View {
-        SettingsSectionGroup("Server address") {
-            TextField("Server address", text: Binding(get: { address }, set: editAddress),
+        SettingsSectionGroup("Seerr server address") {
+            TextField("Seerr server address", text: Binding(get: { address }, set: editAddress),
                       prompt: Text(verbatim: "https://requests.example.com"))
                 .textContentType(.URL)
                 .keyboardType(.URL)
@@ -231,18 +234,20 @@ struct SeerSignInForm: View {
         }
     }
 
-    @ViewBuilder private var mediaProviderHeading: some View {
-        if let provider = mediaProvider {
-            Label {
-                Text(verbatim: provider.displayName).plozzForeground(.primary)
-            } icon: {
-                ProviderBrandMark(provider: provider, size: 24, showsBackground: false)
-                    .accessibilityHidden(true)
+    private func mediaSignInLabel(_ title: LocalizedStringResource) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+            if let provider = mediaProvider {
+                Label {
+                    Text(verbatim: provider.displayName)
+                } icon: {
+                    ProviderBrandMark(provider: provider, size: 16, showsBackground: false)
+                        .accessibilityHidden(true)
+                }
+                .font(.caption)
             }
-            .font(.headline)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var availableAccounts: [SeerLoginOption] {
@@ -394,10 +399,9 @@ struct SeerSignInForm: View {
         let accounts = availableAccounts
         return VStack(spacing: 12) {
             if let methods, methods.mediaServerLogin == true || methods.localLogin == true {
-                if mode != .options, mode != .media { mediaProviderHeading }
                 if !accounts.isEmpty, mode != .options {
                     Button(action: continueExistingAccount) {
-                        Text(existingAccountTitle)
+                        mediaSignInLabel(existingAccountTitle)
                             .frame(maxWidth: .infinity).plozzPageActionLabel()
                     }
                 }
@@ -412,7 +416,8 @@ struct SeerSignInForm: View {
                         }
                     } else if [2, 3].contains(methods.mediaServerType ?? 0), mode != .media {
                         Button { selectMode(.media) } label: {
-                            Text("Enter username and password").frame(maxWidth: .infinity).plozzPageActionLabel()
+                            mediaSignInLabel("Enter username and password")
+                                .frame(maxWidth: .infinity).plozzPageActionLabel()
                         }
                     }
                 }

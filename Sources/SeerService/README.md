@@ -49,7 +49,7 @@ same `SeerConnectionsView` and authentication implementation.
   server in both suggested and manual setup, without a navigation chevron.
   Discovery labels use **Detected server** for one displayed result and
   **Detected servers** for several. Restored address summaries remain **Server**;
-  an empty search remains **Servers**. Editable fields use **Server address**.
+  an empty search remains **Servers**. Editable fields use **Seerr server address**.
   Scan progress uses the standard section-header indicator, not a second
   account panel or button spinner. The stable setup offers
   **Continue as [name]** for one matching profile account, and otherwise names
@@ -82,7 +82,9 @@ same `SeerConnectionsView` and authentication implementation.
   **Choose existing account** for several, never an arbitrary first account.
   The native chooser shows usernames with their media-server names and addresses
   and resolves the selected ID against the current profile's available accounts.
-  Manual options name the provider with its shared logo. Jellyfin's secondary
+  Media sign-in buttons contain the provider name and shared logo beneath their
+  action label, never as a standalone heading beside the Seerr address.
+  Local-account and API-key actions do not carry media-provider branding. Jellyfin's secondary
   action is **Enter username and password**; Plex retains its separate browser flow.
   Supported alternatives, including API-key entry, appear directly as full-width
   secondary buttons rather than in a menu. Password forms name the account type.

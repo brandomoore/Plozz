@@ -258,8 +258,16 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 [.init(id: "alex", name: "Alex", mediaServerType: 1, authenticate: { _ in throw AppError.unauthorized })]
             }
         }) { window, _, service in
+            let deadline = ContinuousClock.now + .seconds(3)
+            while service.setupDiscovery.isSearching, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(service.setupDiscovery.selected?.baseURL, selected)
+            try await Task.sleep(for: .milliseconds(50))
+            window.layoutIfNeeded()
+            self.attach(try self.capture(window), name: "Seerr resumed Plex account")
             let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
-            XCTAssertTrue(text.contains("Continue as Alex"))
+            XCTAssertTrue(text.contains("Continue as Alex"), text.joined(separator: " | "))
             XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare("Server") == .orderedSame })
             XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("Detected") })
             XCTAssertFalse(text.contains { $0.contains("Jellyfin") })
@@ -336,16 +344,28 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                     return [.init(id: "alex", name: "Alex", mediaServerType: serverType, authenticate: { _ in throw AppError.unauthorized })]
                 }
             }) { window, _, service in
-                let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+                let lines = try self.recognize(self.capture(window), size: window.bounds.size)
+                let text = lines.map(\.text)
                 XCTAssertEqual(text.contains("Continue as Alex"), serverType != 3)
                 XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare(expected) == .orderedSame })
                 XCTAssertTrue(text.contains("Seerr account"))
                 XCTAssertTrue(text.contains("Use API key"))
                 XCTAssertFalse(text.contains("Other sign-in options"))
                 XCTAssertFalse(text.contains("Change"))
+                XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare("Seerr server address") == .orderedSame })
                 XCTAssertEqual(self.textFields(in: window).filter { $0.keyboardType == .URL }.count, 1)
                 if serverType == 2 {
-                    XCTAssertTrue(text.contains("Jellyfin"))
+                    let providerLabels = lines.filter { $0.text == "Jellyfin" }
+                    XCTAssertEqual(providerLabels.count, 2)
+                    for title in ["Continue as Alex", "Enter username and password"] {
+                        let action = try XCTUnwrap(lines.first { $0.text == title })
+                        XCTAssertTrue(providerLabels.contains {
+                            $0.frame.minY >= action.frame.maxY && $0.frame.minY - action.frame.maxY < 12
+                        }, "Provider identity belongs inside each sign-in action, directly below its title")
+                    }
+                    let firstAction = try XCTUnwrap(lines.first { $0.text == "Continue as Alex" })
+                    XCTAssertFalse(providerLabels.contains { $0.frame.minY < firstAction.frame.minY },
+                                   "No floating provider heading may describe the Seerr server address")
                     self.attach(try self.capture(window), name: "Seerr Jellyfin account options")
                 }
                 XCTAssertFalse(service.isConfigured)
