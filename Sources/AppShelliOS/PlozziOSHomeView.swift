@@ -802,7 +802,7 @@ struct PlozziOSHomeView: View {
                 isScrolling: homeIsScrolling, isLoading: viewModel.isRefreshing
             )
             .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y > trailerPauseThreshold
+                geometry.contentOffset.y + geometry.contentInsets.top > trailerPauseThreshold
             } action: { _, isPastHalfHero in
                 trailerController.setPaused(isPastHalfHero, surfaceRole: .home)
                 heroPullModel.isVisible = !isPastHalfHero

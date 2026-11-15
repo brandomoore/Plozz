@@ -667,7 +667,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         let previousWindow = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         let host = UIHostingController(rootView: AnyView(
-            MacNavigationBackgroundFixture(edgeStyle: .soft, hidesNavigationBar: true)
+            MacNavigationBackgroundFixture(edgeStyle: .automatic, hidesNavigationBar: true)
                 .environment(\.colorScheme, .dark)
         ))
         host.overrideUserInterfaceStyle = .dark
@@ -680,10 +680,16 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
         try await waitForHostedLayout(window)
         let reference = snapshot(window, name: "native-status-edge-without-navigation-row")
+        let referenceNavigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
+        let referenceScroll = try XCTUnwrap(descendants(referenceNavigation.view).compactMap { $0 as? UIScrollView }
+            .first { $0.contentSize.height > $0.bounds.height })
+        let referenceTop = referenceScroll.convert(referenceScroll.bounds, to: window).minY
+            + referenceScroll.adjustedContentInset.top
+        let referenceEdgeStyle = referenceScroll.topEdgeEffect.style
         var actionsFrame = CGRect.zero
         host.rootView = AnyView(
             MacNavigationBackgroundFixture(
-                usesHomeScrollView: true, hidesNavigationBar: true, showsPageActions: true,
+                usesHomeScrollView: true, edgeStyle: .automatic, hidesNavigationBar: true, showsPageActions: true,
                 onActionsFrame: { actionsFrame = $0 }
             )
             .environment(\.colorScheme, .dark)
@@ -696,12 +702,16 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         let initialFrame = actionsFrame
         XCTAssertEqual(initialFrame.minY, window.safeAreaInsets.top, accuracy: 1)
         XCTAssertEqual(initialFrame.height, 44, accuracy: 1)
+        let visibleTop = scroll.convert(scroll.bounds, to: window).minY + scroll.adjustedContentInset.top
+        XCTAssertEqual(visibleTop, referenceTop, accuracy: 1,
+                       "Home must use the same safe-area boundary as a normal toolbar-free page.")
+        let restingOffset = scroll.contentOffset.y
         for offset: CGFloat in [0, 200, 0] {
-            scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+            scroll.setContentOffset(CGPoint(x: 0, y: restingOffset + offset), animated: false)
             try await waitForHostedLayout(window)
             XCTAssertEqual(actionsFrame.minY, initialFrame.minY - offset, accuracy: 1,
                            "Home actions must scroll with the hero rather than remain in the toolbar.")
-            XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
+            XCTAssertEqual(scroll.topEdgeEffect.style, referenceEdgeStyle)
             XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
             let image = snapshot(window, name: "scrolling-home-status-edge-\(offset)")
             for y in stride(from: CGFloat(2), through: initialFrame.maxY + 60, by: 2) {
@@ -1747,7 +1757,9 @@ private struct MacNavigationBackgroundFixture: View {
             Tab("Home", systemImage: "house") {
                 NavigationStack {
                     content
-                    .ignoresSafeArea()
+                    .ignoresSafeArea(.container, edges: hidesNavigationBar ? .bottom : .all)
+                    .scrollClipDisabled()
+                    .background(Color(uiColor: .cyan).ignoresSafeArea())
                     .navigationTitle("")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(.hidden, for: .navigationBar)

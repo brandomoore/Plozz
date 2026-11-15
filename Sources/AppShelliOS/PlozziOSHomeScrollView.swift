@@ -29,7 +29,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     var body: some View {
         if #available(iOS 26.0, *) {
             scrollContent
-                .scrollEdgeEffectStyle(heroActive ? .soft : .automatic, for: .top)
+                .scrollEdgeEffectStyle(heroActive && !showsPageActions ? .soft : .automatic, for: .top)
         } else {
             scrollContent
         }
@@ -45,6 +45,8 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
                             pageActions.padding(.top, safeAreaTop)
                         }
                     }
+                    // Underlap only the artwork, not the scroll view's safe-area boundary.
+                    .padding(.top, showsPageActions ? -safeAreaTop : 0)
                 } else if showsPageActions {
                     pageActions
                 }
@@ -55,7 +57,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
             .plozzDesktopMediaRailLayout()
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
-        .ignoresSafeArea(.container, edges: heroActive ? .top : [])
+        .ignoresSafeArea(.container, edges: heroActive && !showsPageActions ? .top : [])
         .modifier(PlozziOSReducedTransparencyScrollFade(enabled: heroActive))
         .background {
             if showsPageActions && heroActive {

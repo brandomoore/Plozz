@@ -234,14 +234,17 @@ registry.
   background is hidden for this item so it cannot merge or stretch the circle.
   No second glass button style is added. Photos, emoji, and symbols keep their
   original colors; reduced-transparency and pre-iOS 26 systems use the shared frosted surface.
-  Home's hero uses Apple's native soft scroll-edge effect, with no additional
-  material, tint, or custom blur mask. The system owns its rendering and extent;
-  `.soft` prevents the automatic style from choosing a hard boundary on newer
-  systems. On compact horizontal layouts, Home's profile and trailer-mute actions
+  Home uses Apple's native scroll-edge effect, with no additional material, tint,
+  or custom blur mask. The system owns its rendering and extent. With a native
+  toolbar, `.soft` prevents a hard boundary on newer systems.
+  On compact horizontal layouts, Home's profile and trailer-mute actions
   sit in the scrolling content, like the other browse-page actions. They overlay
   the top of the hero below the status bar, or precede the rows when the hero is
-  disabled. The navigation bar is hidden there; scroll-edge rendering remains
-  system-owned. Empty/error pages retain their settings
+  disabled. The navigation bar is hidden there. Like other browse pages, the
+  scroll view respects the top safe area and uses the automatic edge treatment;
+  only the hero artwork extends upward behind the status bar. Trailer pause
+  thresholds use distance scrolled from the resting inset.
+  Empty/error pages retain their settings
   entry, and regular-width and vertical toolbars retain native placement.
   Reduced-transparency and Mac behavior remain unchanged. Home hides
   the regular-width tab-bar background so the hero stays visible behind that row.

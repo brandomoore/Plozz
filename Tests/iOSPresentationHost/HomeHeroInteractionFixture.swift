@@ -204,6 +204,7 @@ struct HomeHeroInteractionFixture: View {
                     onShowSettings: { settingsCount += 1 }
                 )
             }
+            .scrollClipDisabled()
             .overlay(alignment: .topTrailing) {
                 if testsAutoAdvance {
                     Button("Open Seasons") { presentsSeasons = true }
