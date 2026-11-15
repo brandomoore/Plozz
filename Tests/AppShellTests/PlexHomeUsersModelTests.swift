@@ -73,6 +73,27 @@ final class PlexHomeUsersModelTests: XCTestCase {
         return (model, hub, profiles)
     }
 
+    func testSeerrEmbyUsernameSuggestionsStayWithinTheActiveProfileAccounts() throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["plex"])
+        for id in ["first", "second"] {
+            let account = Account(
+                id: id,
+                server: MediaServer(id: id, name: "Emby", baseURL: URL(string: "https://\(id).example")!, provider: .emby),
+                userID: id, userName: "Emby \(id)", deviceID: "device"
+            )
+            try hub.accountStore.add(account, token: "fixture-\(id)")
+        }
+        hub.reloadAccounts()
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore())
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        profiles.setActiveAccountIDs(["first", "plex"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.embyUsernames(), ["Emby first"])
+        profiles.setActiveAccountIDs(["second"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.embyUsernames(), ["Emby second"])
+        profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
+        XCTAssertTrue(service.embyUsernames().isEmpty)
+    }
+
     func testSeerrOffersTheExistingAccountWhenPlexAuthorizationFinishes() async throws {
         let (model, hub, profiles) = try makeModel(accountIDs: ["a"])
         profiles.update(profiles.activeProfile.settingHomeUserBinding(

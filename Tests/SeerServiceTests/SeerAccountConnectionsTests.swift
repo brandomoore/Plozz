@@ -25,6 +25,51 @@ final class SeerAccountConnectionsTests: XCTestCase {
     }
 
     @MainActor
+    func testSetupServerSurvivesServiceRecreationWithoutConfiguringRequests() throws {
+        let secure = SeerFixtureSecureStore()
+        let profile = Profile(id: "first", name: "First")
+        func makeService() -> SeerService {
+            let service = SeerService(connectionStore: InMemorySeerConnectionStore())
+            service.configureProfiles(store: SeerAccountConnectionStore(secureStore: secure),
+                                      profiles: [profile], current: { profile })
+            return service
+        }
+        let selected = URL(string: "https://plex.example.test:15056/seerr")!
+        let original = makeService()
+        let revision = original.connectionRevision
+        try original.rememberSetupServer(selected, expectedProfileID: profile.id)
+        XCTAssertEqual(original.connectionRevision, revision)
+
+        let restored = makeService()
+        XCTAssertEqual(restored.profileConnections.setupServer?.canonicalURL, selected.absoluteString)
+        XCTAssertFalse(restored.isConfigured)
+        XCTAssertTrue(restored.profileConnections.connections.isEmpty)
+        try restored.saveAccount(account(), expectedProfileID: profile.id, expectedRevision: restored.connectionRevision)
+        XCTAssertNil(makeService().profileConnections.setupServer)
+    }
+
+    @MainActor
+    func testSetupServerRejectsCrossProfileWritesAndSecretBearingAddresses() throws {
+        let first = Profile(id: "first", name: "First")
+        let second = Profile(id: "second", name: "Second")
+        var current = first
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore())
+        service.configureProfiles(store: InMemorySeerAccountConnectionStore(),
+                                  profiles: [first, second], current: { current })
+        try service.rememberSetupServer(url, expectedProfileID: first.id)
+        current = second
+        XCTAssertThrowsError(try service.rememberSetupServer(url, expectedProfileID: first.id))
+        XCTAssertNil(service.profileConnections.setupServer)
+        XCTAssertThrowsError(try service.rememberSetupServer(
+            URL(string: "https://fixture:secret@example.test")!, expectedProfileID: second.id
+        ))
+        XCTAssertNil(service.profileConnections.setupServer)
+        current = first
+        service.synchronizeProfile()
+        XCTAssertEqual(service.profileConnections.setupServer, SeerServerIdentity(baseURL: url))
+    }
+
+    @MainActor
     func testProfileSwitchRejectsLateSignInAndDoesNotBorrowConnection() throws {
         let first = Profile(id: "first", name: "First")
         let second = Profile(id: "second", name: "Second")
@@ -277,14 +322,20 @@ final class SeerAccountConnectionsTests: XCTestCase {
         state.connections = [key, session]
         state.defaultID = session.id
         state.configured = true
+        state.setupServer = SeerServerIdentity(baseURL: URL(string: "https://unfinished.example.test")!)
         try store.save(state, profileID: "first")
         let exported = try store.exportAPIKeys()
+        XCTAssertNil(exported["first"]?.setupServer)
         XCTAssertEqual(exported["first"]?.connections, [key])
         XCTAssertEqual(exported["first"]?.defaultID, key.id)
         XCTAssertTrue(try store.importAPIKeysIfAbsent(exported, allowedProfiles: ["first"]).isEmpty)
         XCTAssertEqual(try store.load(profileID: "first"), state)
         XCTAssertThrowsError(try store.importAPIKeysIfAbsent(["second": state], allowedProfiles: ["second"]))
         XCTAssertTrue(try store.load(profileID: "second").connections.isEmpty)
+        var incoming = try XCTUnwrap(exported["first"])
+        incoming.setupServer = state.setupServer
+        try store.importAPIKeysIfAbsent(["second": incoming], allowedProfiles: ["second"])
+        XCTAssertNil(try store.load(profileID: "second").setupServer)
     }
 
     @MainActor

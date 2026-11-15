@@ -64,6 +64,7 @@ public struct ProfileSeerrSetupView: View {
                         SeerSignInForm(
                             seer: seer,
                             replacing: changingAccount ? seer.profileConnections.selected?.id : nil,
+                            suggestsSetup: !changingAccount,
                             onConnected: onContinue
                         )
                         Divider()

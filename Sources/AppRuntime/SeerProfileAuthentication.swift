@@ -30,6 +30,13 @@ public enum SeerProfileAuthentication {
             guard profiles.activeProfileID == profileID else { throw CancellationError() }
             return result
         }
+        service.embyUsernames = { [weak profiles, weak accounts] in
+            guard let profiles, let accounts else { return [] }
+            let allowed = Set(accounts.activeAccountIDs(forProfile: profiles.activeProfileID))
+            return accounts.accounts.filter {
+                allowed.contains($0.id) && $0.server.provider == .emby
+            }.map(\.userName)
+        }
         service.loginOptions = { [weak profiles, weak accounts, weak plex] in
             guard let profiles, let accounts, let plex else { return [] }
             // Credentials are deliberately unobserved; refresh choices when their identity becomes ready.

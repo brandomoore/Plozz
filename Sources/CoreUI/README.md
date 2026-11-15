@@ -2,7 +2,8 @@
 
 `ServerDiscoveryRow` is the shared discovery-button label for media-server and
 Seerr setup: leading icon, server name, secondary address, and disclosure
-chevron. The surrounding settings group/action owns padding and interaction.
+chevron. In-place selections, such as Seerr setup, omit the disclosure chevron.
+The surrounding settings group/action owns padding and interaction.
 
 `PlozziOSPageHeader` owns the mobile scrolling header's 20-point horizontal
 insets, 44-point minimum height and 12-point action spacing. Callers must not

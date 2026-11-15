@@ -53,6 +53,7 @@ public final class SeerService {
     @ObservationIgnored private var profileSource: (() -> Profile)?
     @ObservationIgnored private var accountConnectionStore: SeerAccountConnectionStoring = InMemorySeerAccountConnectionStore()
     @ObservationIgnored public var loginOptions: () -> [SeerLoginOption] = { [] }
+    @ObservationIgnored public var embyUsernames: () -> [String] = { [] }
     @ObservationIgnored public var suggestedAddresses: () async throws -> [URL] = { [] }
     @ObservationIgnored public var localDiscoveryHosts: () -> [String] = { [] }
     @ObservationIgnored public var discoverServers: ([String]) -> AsyncStream<DiscoveredSeerServer> = {
@@ -234,6 +235,23 @@ public final class SeerService {
         }
     }
 
+    public func rememberSetupServer(_ url: URL, expectedProfileID: String) throws {
+        synchronizeProfile()
+        guard activeProfileID == expectedProfileID else { throw CancellationError() }
+        guard let server = SeerServerIdentity(baseURL: url) else { throw AppError.invalidResponse }
+        guard profileConnections.setupServer != server else { return }
+        var state = profileConnections
+        state.setupServer = server
+        do {
+            try accountConnectionStore.save(state, profileID: expectedProfileID)
+        } catch {
+            PlozzLog.sync.error("Seerr setup address could not be saved")
+            throw error
+        }
+        // A draft must not adopt credentials or invalidate an authenticated operation.
+        profileConnections = state
+    }
+
     public func saveAccount(
         _ account: SeerAuthenticatedAccount, expectedProfileID: String,
         expectedRevision: UUID, replacing: UUID? = nil
@@ -275,6 +293,7 @@ public final class SeerService {
         state.connections.append(saved)
         state.repairSelection()
         state.configured = true
+        state.setupServer = nil
         try persist(state)
     }
 

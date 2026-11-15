@@ -47,6 +47,8 @@ public struct SeerProfileConnections: Codable, Hashable, Sendable {
     public var askEachTime = false
     // A deliberate empty list must not re-adopt a legacy household key.
     public var configured = false
+    /// Device-local, unauthenticated setup progress; never a request destination.
+    public var setupServer: SeerServerIdentity?
 
     public init() {}
 
@@ -110,6 +112,7 @@ public final class SeerAccountConnectionStore: SeerAccountConnectionStoring, @un
         lock.lock(); defer { lock.unlock() }
         return try read().profiles.compactMapValues { state in
             var result = state
+            result.setupServer = nil
             result.connections = state.connections.filter {
                 if case .apiKey = $0.credential { return true }
                 return false
@@ -135,6 +138,7 @@ public final class SeerAccountConnectionStore: SeerAccountConnectionStoring, @un
                       return !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && userID.map { $0 > 0 } != false
                   }) else { throw AppError.invalidResponse }
             var imported = state
+            imported.setupServer = nil
             imported.repairSelection()
             imported.configured = true
             ledger.profiles[profileID] = imported

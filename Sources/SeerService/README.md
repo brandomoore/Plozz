@@ -23,15 +23,29 @@ same `SeerConnectionsView` and authentication implementation.
   Silo and other providers can use a supported Seerr login or an API key.
 - Setup automatically checks a compatible Jellyfin plugin for an address, then
   runs bounded local discovery if none is supplied. Its administrator key is never
-  imported. A single result fills the address; multiple results remain explicit
-  choices. Late discovery never replaces user input or crosses profiles.
+  imported. Onboarding preselects a single discovered or suggested server and
+  checks its public sign-in capabilities without changing pages or opening a
+  password form. Its stable server/account summary offers **Continue as [name]**
+  only for one matching profile account; **Set up manually** remains available.
+  Multiple servers/accounts require an explicit choice. Late discovery never
+  replaces user input or crosses profiles.
   Generated local probes normalize Plex's IPv4 certificate hostname to its
   embedded address before deduplicating against the subnet sweep, so that one
   host appears once. Other hostnames and configured server URLs are unchanged.
   Discovery uses the shared named server row, with its address as secondary
   text and scan status in the section header. Manual address entry is separate.
+  Selecting Seerr updates the current form, so its rows have no navigation
+  chevron. An unfinished setup remembers its selected address per profile on
+  this device and rechecks that server on relaunch instead of rediscovering a
+  different one. This draft contains no sign-in session, does not configure
+  requests, is excluded from pairing transfers, and clears after connection.
   Authorized Plex account choices refresh when the profile's resolved identity
   changes; pending authorization never substitutes the owner's credential.
+  Continuing with a named, authorized Plex/Jellyfin account verifies that
+  identity and saves it without a second confirmation. Emby has no equivalent
+  session exchange: a single profile-scoped Emby username can be suggested,
+  but Continue opens an editable Emby username/password form. Local Seerr
+  credentials are separate and never inherit the Emby username.
   Explicit Plex browser sign-in opens directly on iPhone/iPad, with a button to
   reopen it if needed. Only Apple TV shows a QR code and asks the user to scan
   with another device.
@@ -40,8 +54,8 @@ same `SeerConnectionsView` and authentication implementation.
   starts a separate sign-in rather than competing with the saved-account action.
   Supported alternatives, including API-key entry, appear directly as full-width
   secondary buttons rather than in a menu. Password forms name the account type.
-  Finding a server never authenticates or saves an account. The authenticated
-  identity is shown for confirmation before saving.
+  Finding a server never authenticates or saves an account. Manual sign-ins
+  show the authenticated identity for confirmation before saving.
 - First-run and new-profile setup use a focused, optional onboarding page, not
   the saved-account Settings page. Saving the confirmed account advances setup;
   existing connections keep their request identity and show a simple Continue.

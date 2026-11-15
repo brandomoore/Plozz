@@ -6,11 +6,13 @@ public struct ServerDiscoveryRow<Icon: View>: View {
     private let name: Text
     private let address: URL
     private let icon: Icon
+    private let showsDisclosure: Bool
 
-    public init(name: Text, address: URL, @ViewBuilder icon: () -> Icon) {
+    public init(name: Text, address: URL, showsDisclosure: Bool = true, @ViewBuilder icon: () -> Icon) {
         self.name = name
         self.address = address
         self.icon = icon()
+        self.showsDisclosure = showsDisclosure
     }
 
     public var body: some View {
@@ -23,8 +25,10 @@ public struct ServerDiscoveryRow<Icon: View>: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            Image(systemName: "chevron.forward")
-                .foregroundStyle(.secondary).accessibilityHidden(true)
+            if showsDisclosure {
+                Image(systemName: "chevron.forward")
+                    .foregroundStyle(.secondary).accessibilityHidden(true)
+            }
         }
         .frame(minHeight: 44)
     }
