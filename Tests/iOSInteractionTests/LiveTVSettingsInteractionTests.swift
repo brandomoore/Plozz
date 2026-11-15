@@ -108,6 +108,29 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
         add(attachment)
     }
 
+    func testBrowsingDrillInRowsUseStandardPaddedTouchTargets() {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--source-settings", "--configured-sources"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-tv-add-source"].waitForExistence(timeout: 10))
+        for (identifier, title) in [
+            ("live-tv-guide-preferences", "Guide preferences"),
+            ("live-tv-channel-visibility", "Channel visibility")
+        ] {
+            let row = app.buttons[identifier]
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+            XCTAssertLessThanOrEqual(row.frame.height, 60, "Use standard settings row sizing.")
+            XCTAssertTrue(row.isHittable)
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
+                .withOffset(CGVector(dx: 0, dy: -2)).tap()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), app.debugDescription)
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.navigationBars["Live TV"].waitForExistence(timeout: 5))
+        }
+    }
+
     func testBrowsingChoicesChangeInlineAndSaveImmediately() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
         app.launchArguments = ["--source-settings", "--configured-sources"]

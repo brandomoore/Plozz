@@ -95,7 +95,6 @@ private struct LiveTVBrowsingSettingsSections: View {
             } label: {
                 SettingsDisclosureLabel { Label("Guide preferences", systemImage: "calendar") }
             }
-            .buttonStyle(SettingsFormButtonStyle())
             .settingsActionRow()
             .accessibilityIdentifier("live-tv-guide-preferences")
             .settingsSearchAnchor("guide-preferences")
@@ -106,7 +105,6 @@ private struct LiveTVBrowsingSettingsSections: View {
             } label: {
                 SettingsDisclosureLabel { Label("Channel visibility", systemImage: "eye") }
             }
-            .buttonStyle(SettingsFormButtonStyle())
             .settingsActionRow()
             .accessibilityIdentifier("live-tv-channel-visibility")
             .settingsSearchAnchor("channel-visibility")

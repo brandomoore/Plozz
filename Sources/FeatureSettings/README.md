@@ -85,6 +85,9 @@ Mobile disclosure and action rows share `settingsActionRow()` from CoreUI;
 composite controls retain separate minimum touch targets with
 `settingsControlTarget()`. Per-view customization menus respond across their
 whole title/value row, not only the value. Native toggles remain independent.
+Do not put `SettingsFormButtonStyle` inside `settingsActionRow()`: it overrides
+the mobile padding while the group omits its own insets. Grouped Live TV links
+inherit the TV form style from `SettingsSectionGroup` instead.
 
 TV label customization uses `ViewCustomizationRow` for Only show descriptions on focus,
 matching the neighboring controls' sizing and focus treatment. Its live episode
