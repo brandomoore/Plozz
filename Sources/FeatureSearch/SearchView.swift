@@ -10,6 +10,10 @@ public struct SearchView: View {
     @State private var viewModel: SearchViewModel
     private let spoilerSettings: SpoilerSettings
     private let onSelect: (MediaItem) -> Void
+    private let popup: SeeAllPopup?
+    #if os(tvOS)
+    @State private var popupModel = SeeAllPopupModel()
+    #endif
 
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzPinnedSidebarInteraction) private var pinnedSidebarInteraction
@@ -18,8 +22,10 @@ public struct SearchView: View {
     public init(
         viewModel: SearchViewModel,
         spoilerSettings: SpoilerSettings = .default,
+        popup: SeeAllPopup? = nil,
         onSelect: @escaping (MediaItem) -> Void
     ) {
+        self.popup = popup
         _viewModel = State(initialValue: viewModel)
         self.spoilerSettings = spoilerSettings
         self.onSelect = onSelect
@@ -89,6 +95,15 @@ public struct SearchView: View {
                                     onSelect(item)
                                 }
                                 .focused($focusedResultID, equals: item.stablePresentationID)
+                                #if os(tvOS)
+                                .background {
+                                    if popupModel.focusedKey == item.stablePresentationID {
+                                        Color.clear.onGeometryChange(for: CGRect.self) {
+                                            $0.frame(in: .named("searchResults"))
+                                        } action: { popupModel.anchor = $0 }
+                                    }
+                                }
+                                #endif
                             }
                         }
                         .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
@@ -102,6 +117,20 @@ public struct SearchView: View {
         }
         // Never clip a focused card's lift, shadow or border.
         .scrollClipDisabled()
+        #if os(tvOS)
+        .coordinateSpace(name: "searchResults")
+        .environment(\.plozzCardFocusReporter, popup.map { popup in
+            { [popupModel] item, focused in
+                popupModel.focusChanged(
+                    key: item.stablePresentationID, focused: focused, delay: popup.delay
+                ) {
+                    SeeAllPopupContent(item: await popup.detail(item), spoilers: popup.spoilers)
+                }
+            }
+        })
+        .overlay { SeeAllPopupOverlay(model: popupModel) }
+        .onDisappear { popupModel.hide() }
+        #endif
         .scrollsTopNavigation()
     }
 }

@@ -51,6 +51,7 @@ public struct PosterCardView: View {
     private let captionHorizontalInset: CGFloat?
     private let focusRequest: UUID?
     private let onFocusRequestHandled: (() -> Void)?
+    private let onFocusChange: ((Bool) -> Void)?
     private let action: () -> Void
     private var artworkOnlyConfiguration: ArtworkOnlyConfiguration?
     @State private var artworkOnlyPlaybackHeight: CGFloat = 0
@@ -63,6 +64,7 @@ public struct PosterCardView: View {
     }
 
     @PlozzCardFocus private var isFocused: Bool
+    @Environment(\.plozzCardFocusReporter) private var focusReporter
     #if os(tvOS)
     @State private var detailTransitionSource = DetailTransitionSourceReference()
     #endif
@@ -130,6 +132,7 @@ public struct PosterCardView: View {
         captionHorizontalInset: CGFloat? = nil,
         focusRequest: UUID? = nil,
         onFocusRequestHandled: (() -> Void)? = nil,
+        onFocusChange: ((Bool) -> Void)? = nil,
         textlessBackdropStore: TextlessBackdropStore? = nil,
         action: @escaping () -> Void
     ) {
@@ -151,6 +154,7 @@ public struct PosterCardView: View {
         self.captionHorizontalInset = captionHorizontalInset
         self.focusRequest = focusRequest
         self.onFocusRequestHandled = onFocusRequestHandled
+        self.onFocusChange = onFocusChange
         self.action = action
     }
 
@@ -264,6 +268,10 @@ public struct PosterCardView: View {
             .fittingPortraitPlaybackReflection(showsSeriesArtwork && style == .poster && showsResumeChip)
             .environment(\.plozzArtworkArea, presentationArtworkPolicy.area)
             .plozzChromeFocused(usesNativePoster ? false : isFocused)
+            .onChange(of: isFocused) { _, focused in
+                onFocusChange?(focused)
+                focusReporter?(item, focused)
+            }
             .mediaItemContextMenu(for: item)
             .modifier(PosterFocusBehavior(
                 item: item, focus: $isFocused,

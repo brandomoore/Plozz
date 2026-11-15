@@ -594,6 +594,23 @@ struct HomeTab: View {
         }
     }
 
+    /// Pop-up details on the See all screen of a Home row (tvOS only).
+    private var seeAllPopup: SeeAllPopup? {
+        #if os(tvOS)
+        SeeAllPopup(
+            delay: libraryPresentation.settings.seeAllPopupDelayIfEnabled, spoilers: spoilerSettings
+        ) { item in
+            guard let accountID = item.sourceAccountID,
+                  let provider = try? resolveProvider(accountID, in: accounts),
+                  let detail = try? await provider.item(id: item.id), detail.id == item.id
+            else { return item }
+            return detail.taggingSource(accountID)
+        }
+        #else
+        nil
+        #endif
+    }
+
     var body: some View {
         let _ = plozzPrintChanges { Self._printChanges() }
         let _ = PlozzBodyRate.tick("HomeTab")
@@ -608,7 +625,8 @@ struct HomeTab: View {
                             model: browser,
                             columns: browser.style == .landscape
                                 ? Array(metrics.posterColumns.prefix(max(1, metrics.posterColumns.count / 2)))
-                                : metrics.posterColumns
+                                : metrics.posterColumns,
+                            popup: seeAllPopup
                         ) { item in
                             PosterCardView(
                                 item: item, style: browser.style == .landscape ? .landscape : .poster,
@@ -1320,7 +1338,8 @@ struct HomeTab: View {
                     containerKind: route.kind,
                     sourceAccountID: route.accountID,
                     browseScope: route.kind == .playlist ? .playlistMembers : .collectionMembers,
-                    settingsNamespace: libraryPreferencesNamespace
+                    settingsNamespace: libraryPreferencesNamespace,
+                    presentation: libraryPresentation
                 ),
                 title: Text(verbatim: route.title),
                 spoilerSettings: spoilerSettings,

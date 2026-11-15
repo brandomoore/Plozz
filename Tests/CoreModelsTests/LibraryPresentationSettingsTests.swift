@@ -11,6 +11,28 @@ final class LibraryPresentationSettingsTests: XCTestCase {
         XCTAssertEqual(settings.visibleRows(rows, at: "library"), rows)
     }
 
+    func testSeeAllPopupDefaultsToPlainGridAndClampsDelayToOneThroughFive() throws {
+        let settings = LibraryPresentationSettings.default
+        XCTAssertEqual(settings.seeAllLayout, .grid)
+        XCTAssertEqual(settings.seeAllPopupDelay, 2.0)
+        XCTAssertNil(settings.seeAllPopupDelayIfEnabled)
+
+        var popup = LibraryPresentationSettings(seeAllLayout: .gridWithPopup, seeAllPopupDelay: 9)
+        XCTAssertEqual(popup.seeAllPopupDelay, 5)
+        XCTAssertEqual(popup.seeAllPopupDelayIfEnabled, .seconds(5))
+        popup.seeAllPopupDelay = 0
+        XCTAssertEqual(popup.seeAllPopupDelayIfEnabled, .seconds(0.5))
+        popup.seeAllPopupDelay = 1.3
+        XCTAssertEqual(popup.seeAllPopupDelayIfEnabled, .seconds(1.5))
+        XCTAssertEqual(LibraryPresentationSettings.popupDelayChoices.count, 10)
+
+        let decoded = try JSONDecoder().decode(
+            LibraryPresentationSettings.self, from: JSONEncoder().encode(LibraryPresentationSettings(
+                seeAllLayout: .gridWithPopup, seeAllPopupDelay: 4.5)))
+        XCTAssertEqual(decoded.seeAllLayout, .gridWithPopup)
+        XCTAssertEqual(decoded.seeAllPopupDelay, 4.5)
+    }
+
     func testSharedNavigationPreservesUnsupportedIntentAndAlwaysLeavesAnExit() {
         var settings = LibraryPresentationSettings(
             navigation: .init(order: ["playlists", "collections", "titles", "recommended"], hidden: ["titles"])

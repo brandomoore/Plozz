@@ -24,6 +24,21 @@ public enum LibraryContentMode: String, CaseIterable, Sendable {
     }
 }
 
+/// How a library's See all grid presents the title that has focus.
+public enum SeeAllLayout: String, Codable, CaseIterable, Sendable {
+    /// The plain grid.
+    case grid
+    /// The full grid; a floating details card appears once focus has rested on a title.
+    case gridWithPopup
+
+    public var displayName: LocalizedStringResource {
+        switch self {
+        case .grid: "Grid"
+        case .gridWithPopup: "Grid with pop-up details"
+        }
+    }
+}
+
 /// Saved intent survives temporarily unavailable tabs and recommendation rows.
 public struct LibraryContentLayout: Codable, Equatable, Sendable {
     public var order: [String]
@@ -53,25 +68,62 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
     public var navigation: LibraryContentLayout
     public var recommendedRows: [String: LibraryContentLayout]
     public var collectionCoverLayouts: [String: CollectionCoverLayout]
+    public var seeAllLayout: SeeAllLayout
+    /// Seconds focus must rest on a title before the pop-up appears.
+    public var seeAllPopupDelay: Double
+    /// Whether the Search screen's cards also get the pop-up (same delay).
+    public var searchPopupEnabled: Bool
+
+    public static let popupDelayRange = 0.5...5.0
+    public static let popupDelayStep = 0.5
+    public static let defaultPopupDelay = 2.0
+    /// 0.5 s … 5 s in half-second steps.
+    public static let popupDelayChoices: [Double] = stride(
+        from: popupDelayRange.lowerBound, through: popupDelayRange.upperBound, by: popupDelayStep
+    ).map { $0 }
 
     public static let `default` = LibraryPresentationSettings()
+
+    /// Snaps to the nearest half second within 0.5 s … 5 s.
+    public static func clampedPopupDelay(_ seconds: Double) -> Double {
+        guard seconds.isFinite else { return defaultPopupDelay }
+        let snapped = (seconds / popupDelayStep).rounded() * popupDelayStep
+        return min(max(snapped, popupDelayRange.lowerBound), popupDelayRange.upperBound)
+    }
+
+    /// The Search screen's pop-up delay, or `nil` when search shows no pop-up.
+    public var searchPopupDelayIfEnabled: Duration? {
+        searchPopupEnabled ? .seconds(Self.clampedPopupDelay(seeAllPopupDelay)) : nil
+    }
+
+    /// The pop-up delay, or `nil` when the layout shows no pop-up.
+    public var seeAllPopupDelayIfEnabled: Duration? {
+        seeAllLayout == .gridWithPopup ? .seconds(Self.clampedPopupDelay(seeAllPopupDelay)) : nil
+    }
 
     public init(
         logoSize: HeroLogoSize = .default,
         textSize: HeroTextSize = .default,
         navigation: LibraryContentLayout = .init(),
         recommendedRows: [String: LibraryContentLayout] = [:],
-        collectionCoverLayouts: [String: CollectionCoverLayout] = [:]
+        collectionCoverLayouts: [String: CollectionCoverLayout] = [:],
+        seeAllLayout: SeeAllLayout = .grid,
+        seeAllPopupDelay: Double = LibraryPresentationSettings.defaultPopupDelay,
+        searchPopupEnabled: Bool = false
     ) {
         self.logoSize = logoSize
         self.textSize = textSize
         self.navigation = navigation
         self.recommendedRows = recommendedRows
         self.collectionCoverLayouts = collectionCoverLayouts
+        self.seeAllLayout = seeAllLayout
+        self.seeAllPopupDelay = Self.clampedPopupDelay(seeAllPopupDelay)
+        self.searchPopupEnabled = searchPopupEnabled
     }
 
     private enum CodingKeys: String, CodingKey {
         case logoSize, textSize, navigation, recommendedRows, collectionCoverLayouts
+        case seeAllLayout, seeAllPopupDelay, searchPopupEnabled
     }
 
     public init(from decoder: Decoder) throws {
@@ -85,7 +137,11 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
             ) ?? [:],
             collectionCoverLayouts: try values.decodeIfPresent(
                 [String: CollectionCoverLayout].self, forKey: .collectionCoverLayouts
-            ) ?? [:]
+            ) ?? [:],
+            seeAllLayout: try values.decodeIfPresent(SeeAllLayout.self, forKey: .seeAllLayout) ?? .grid,
+            seeAllPopupDelay: try values.decodeIfPresent(Double.self, forKey: .seeAllPopupDelay)
+                ?? Self.defaultPopupDelay,
+            searchPopupEnabled: try values.decodeIfPresent(Bool.self, forKey: .searchPopupEnabled) ?? false
         )
     }
 

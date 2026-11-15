@@ -213,6 +213,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     private var measuredHeaderHeight: CGFloat = 0
     private var hidesScrollIndicator = false
     private var viewportReport: Task<Void, Never>?
+    private let popup = SeeAllPopupPresenter()
     private let navigationScrollID = UUID()
     private weak var navigationScroll: TopNavigationScroll?
     private var traversalRecorder: LibraryTraversalRecorder? =
@@ -244,6 +245,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
             withReuseIdentifier: "header")
         layout.sectionHeadersPinToVisibleBounds = false
         view.addSubview(collection)
+        popup.attach(to: self)
         if traversalRecorder != nil { enableTraversalRecording() }
         addChild(headerHost)
         headerHost.safeAreaRegions = []
@@ -390,6 +392,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if popup.isShowing { popup.hide() }
         let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
         scrollTarget?.moveHeader(with: offset)
         navigationScroll?.update(offset: offset, source: navigationScrollID)
@@ -534,6 +537,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     }
 
     func stopObserving() {
+        popup.hide()
         navigationScroll?.unregister(source: navigationScrollID)
         navigationScroll = nil
         viewportReport?.cancel()
@@ -581,12 +585,37 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         with coordinator: UIFocusAnimationCoordinator
     ) {
         let next = context.nextFocusedIndexPath?.item
+        updatePopup(for: context.nextFocusedIndexPath)
         traversalRecorder?.record(
             from: context.previouslyFocusedIndexPath?.item, to: next,
             loaded: next.flatMap { model?.item(at: $0) } != nil,
             uptime: ProcessInfo.processInfo.systemUptime
         )
         if let path = context.nextFocusedIndexPath { lastFocusedIndex = path }
+    }
+
+    private func updatePopup(for path: IndexPath?) {
+        guard let path, let model, let delay = model.presentation.settings.seeAllPopupDelayIfEnabled,
+              let item = model.item(at: path.item), environment.isEnabled else {
+            popup.hide()
+            return
+        }
+        let spoilers = spoilerSettings
+        popup.schedule(
+            path: path, delay: delay,
+            bounds: { [weak self] in self?.view.bounds.insetBy(dx: 0, dy: 40) ?? .zero },
+            anchor: { [weak self] in
+                guard let self, let cell = self.collection.cellForItem(at: path) else { return nil }
+                return self.view.convert(cell.frame, from: self.collection)
+            },
+            isRightToLeft: environment.layoutDirection == .rightToLeft, environment: environment,
+            content: { [weak model] in
+                guard let model else { return nil }
+                let detail = await model.popupDetail(for: item)
+                return SeeAllPopupContent(item: detail, spoilers: spoilers)
+            },
+            isStillFocused: { [weak self] in self?.lastFocusedIndex == path && self?.collection.cellForItem(at: path)?.isFocused == true }
+        )
     }
 
     var traversalSnapshot: LibraryTraversalSnapshot? {

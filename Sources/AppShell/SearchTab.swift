@@ -29,6 +29,7 @@ struct SearchTab: View {
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @State private var externalOpening = ExternalMediaOpening()
     @Environment(ProfilesModel.self) private var profilesModel: ProfilesModel?
+    @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation: LibraryPresentationSettingsModel?
     /// The rail's chrome model, present only under ``NavigationStyle/rail``. This
     /// stack reports its depth so the rail steps aside on a detail page.
     @Environment(NavigationChromeModel.self) private var navigationChrome: NavigationChromeModel?
@@ -145,6 +146,22 @@ struct SearchTab: View {
         }
     }
 
+    /// Pop-up details on Search result cards (tvOS, opt-in per profile).
+    private var searchPopup: SeeAllPopup? {
+        #if os(tvOS)
+        guard let delay = libraryPresentation?.settings.searchPopupDelayIfEnabled else { return nil }
+        return SeeAllPopup(delay: delay, spoilers: spoilerSettings) { item in
+            guard let accountID = item.sourceAccountID,
+                  let provider = try? resolveProvider(accountID, in: accounts),
+                  let detail = try? await provider.item(id: item.id), detail.id == item.id
+            else { return item }
+            return detail.taggingSource(accountID)
+        }
+        #else
+        nil
+        #endif
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             SearchView(
@@ -161,6 +178,7 @@ struct SearchTab: View {
                     }
                 ),
                 spoilerSettings: spoilerSettings,
+                popup: searchPopup,
                 onSelect: { open($0) }
             )
             .modifier(NavigationRailSearchRootInset())

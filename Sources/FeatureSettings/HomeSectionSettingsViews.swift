@@ -677,6 +677,7 @@ struct HomeRowStyleSettingsView: View {
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
     @Environment(HeroSettingsModel.self) private var hero
+    @Environment(LibraryPresentationSettingsModel.self) private var presentation: LibraryPresentationSettingsModel?
     @State private var navigation = SettingsDetailNavigation()
 
     var body: some View {
@@ -688,6 +689,9 @@ struct HomeRowStyleSettingsView: View {
                     logoSize: hero.settings.showcaseLogoSize,
                     textSize: hero.settings.showcaseTextSize
                 )
+                if let presentation {
+                    SettingsControlGroup { SeeAllPopupSettingsControls(model: presentation) }
+                }
                 if hero.settings.immersiveRows {
                     SettingsControlGroup {
                         HeroLogoSizeControl(
