@@ -463,6 +463,7 @@
         @Environment(\.mediaItemNavigator) private var navigate
         #if os(iOS)
             @Environment(\.plozzCardStyle) private var cardStyle
+            @Environment(\.mediaItemArtworkNavigator) private var navigateArtwork
         #endif
 
         public init(
@@ -506,12 +507,16 @@
                     ) {
                         PlozziOSMediaRailScroll {
                             ForEach(releases) { release in
-                                PosterCardView(
-                                    item: release.item, style: .landscape,
-                                    reservesSubtitleSpace: false, statusCue: statusCue(for: release)
-                                ) {
-                                    navigate?(release.item)
+                                MediaArtworkZoomButton(id: release.item.stablePresentationID) { source in
+                                    if let navigateArtwork { navigateArtwork(release.item, source) }
+                                    else { navigate?(release.item) }
+                                } label: {
+                                    PosterCardView(
+                                        item: release.item, style: .landscape,
+                                        reservesSubtitleSpace: false, statusCue: statusCue(for: release)
+                                    ) {}
                                 }
+                                .buttonStyle(.plain)
                                 .frame(width: metrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle))
                             }
                         }
@@ -533,8 +538,23 @@
     private struct UpcomingReleaseCard: View {
         let release: UpcomingRelease
         @Environment(\.mediaItemNavigator) private var navigate
+        #if os(iOS)
+            @Environment(\.mediaItemArtworkNavigator) private var navigateArtwork
+        #endif
 
         var body: some View {
+            #if os(iOS)
+            MediaArtworkZoomButton(id: release.item.stablePresentationID) { source in
+                if let navigateArtwork { navigateArtwork(release.item, source) }
+                else { navigate?(release.item) }
+            } label: { card }
+            .buttonStyle(.plain)
+            #else
+            card
+            #endif
+        }
+
+        private var card: some View {
             PosterCardView(
                 item: release.item, style: .poster, captionSubtitle: release.posterSubtitle
             ) { navigate?(release.item) }

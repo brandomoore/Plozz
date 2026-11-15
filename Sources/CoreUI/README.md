@@ -3,6 +3,10 @@
 `PosterCardView.captionSubtitle` supplies localized, caller-owned context in the
 normal caption and accessibility value without mutating media metadata. Omitting
 it preserves the standard provider subtitle and runtime.
+On iOS, `PosterCardView` supplies the card visuals, not a tap handler. Callers
+must wrap it in a native button or navigation link; `MediaArtworkZoomButton`
+supports closure-driven selection with the shared artwork transition. tvOS
+selection remains owned by the card's focus control.
 
 `PlozziOSPageHeader` owns the mobile scrolling header's 20-point horizontal
 insets, 44-point minimum height and 12-point action spacing. Callers must not

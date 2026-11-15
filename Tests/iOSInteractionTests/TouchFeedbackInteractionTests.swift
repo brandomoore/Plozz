@@ -3,6 +3,39 @@ import XCTest
 
 @MainActor
 final class TouchFeedbackInteractionTests: XCTestCase {
+    func testUpcomingAgendaPosterOpensTitleDetails() throws {
+        try verifyUpcomingPosterNavigation(fromHome: false)
+    }
+
+    func testComingSoonPosterOpensTitleDetails() throws {
+        try verifyUpcomingPosterNavigation(fromHome: true)
+    }
+
+    private func verifyUpcomingPosterNavigation(fromHome: Bool) throws {
+        let previousOrientation = XCUIDevice.shared.orientation
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--upcoming-capture-fixture"]
+        if fromHome { app.launchArguments.append("--capture-home") }
+        app.launch()
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = previousOrientation
+        }
+        let title = app.staticTexts["The Simpsons"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 30), app.debugDescription)
+        for _ in 0..<3 where !title.isHittable { app.swipeUp() }
+        XCTAssertTrue(title.isHittable, app.debugDescription)
+        title.tap()
+        let detail = app.staticTexts["Upcoming detail for The Simpsons."].firstMatch
+        XCTAssertTrue(detail.waitForExistence(timeout: 10), app.debugDescription)
+        guard detail.exists else { return }
+        attachScrub(app, name: fromHome ? "Coming Soon opens title details" : "Upcoming opens title details")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(detail.exists, "Back must return to the originating page")
+    }
+
     func testUpcomingActualPullHoldsThenSpringsAndPops() throws {
         let previousOrientation = XCUIDevice.shared.orientation
         XCUIDevice.shared.orientation = .portrait

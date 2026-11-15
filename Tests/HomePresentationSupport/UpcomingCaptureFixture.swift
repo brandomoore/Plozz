@@ -850,6 +850,7 @@ private struct UpcomingCaptureProvider: MediaProvider {
         )
         item.sourceAccountID = "upcoming-capture"
         item.libraryID = "shows"
+        item.overview = "Upcoming detail for \(example.0)."
         item.posterURL = URL(string: "https://static.tvmaze.com/uploads/images/original_untouched/\(example.1).jpg")
         item.backdropURL = URL(string: "https://static.tvmaze.com/uploads/images/original_untouched/\(example.2).jpg")
         return item
