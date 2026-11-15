@@ -99,11 +99,6 @@
                             guard !Task.isCancelled, !hasScrolledAgenda else { return }
                             scrollPosition.scrollTo(id: selectedDay, anchor: .top)
                         }
-                        .onChange(of: selectedDay) { _, day in
-                            todayDetent.cancelInteraction()
-                            hasScrolledAgenda = false
-                            scrollPosition.scrollTo(id: day, anchor: .top)
-                        }
                         #else
                         .onChange(of: selectedDay) { _, day in
                             proxy.scrollTo(day, anchor: .top)
@@ -120,7 +115,7 @@
                         #if os(iOS)
                         if showsInlineCalendar {
                             UpcomingCalendar(
-                                selectedDay: $selectedDay, interval: interval, dismissesOnSelection: false
+                                selectedDay: calendarSelection, interval: interval, dismissesOnSelection: false
                             )
                             .transition(.opacity)
                         }
@@ -180,7 +175,7 @@
             #if os(iOS)
             .accessibilityAddTraits(showsInlineCalendar ? .isSelected : [])
             .popover(isPresented: $showingCalendar) {
-                UpcomingCalendar(selectedDay: $selectedDay, interval: interval)
+                UpcomingCalendar(selectedDay: calendarSelection, interval: interval)
                     .presentationCompactAdaptation(.popover)
             }
             #endif
@@ -203,6 +198,19 @@
         }
 
         #if os(iOS)
+        private var calendarSelection: Binding<Date> {
+            Binding(
+                get: { selectedDay },
+                set: { day in
+                    guard day != selectedDay else { return }
+                    selectedDay = day
+                    todayDetent.cancelInteraction()
+                    hasScrolledAgenda = false
+                    scrollPosition.scrollTo(id: day, anchor: .top)
+                }
+            )
+        }
+
         private var agendaMetrics: PlozzMetrics {
             guard sizeClass == .compact else { return metrics }
             return PlozziOSHomeRailLayout<EmptyView>.posterMetrics(

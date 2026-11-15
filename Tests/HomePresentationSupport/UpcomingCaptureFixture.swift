@@ -525,6 +525,11 @@ struct UpcomingCaptureFixture: View {
             var futureFrames = 0
             var futureMinimumOffset: Double = 1_000_000
             var activeRetouches = 0
+            var navigationUpFrames = 0
+            var navigationDownFrames = 0
+            var navigationUpTravel: Double = 0
+            var navigationDownTravel: Double = 0
+            var navigationMaximumStep: Double = 0
         }
         try await Task.sleep(for: .seconds(1))
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
@@ -596,6 +601,17 @@ struct UpcomingCaptureFixture: View {
             if gestureOrigin > 2, detent.phase == .interacting || detent.phase == .decelerating {
                 evidence.futureFrames += 1
                 evidence.futureMinimumOffset = min(evidence.futureMinimumOffset, evidence.offset)
+            }
+            if detent.phase == .animating {
+                let step = evidence.offset - previousOffset
+                if step < -0.5 {
+                    evidence.navigationUpFrames += 1
+                    evidence.navigationUpTravel -= step
+                } else if step > 0.5 {
+                    evidence.navigationDownFrames += 1
+                    evidence.navigationDownTravel += step
+                }
+                evidence.navigationMaximumStep = max(evidence.navigationMaximumStep, abs(step))
             }
             previousPhase = detent.phase
             previousOffset = evidence.offset

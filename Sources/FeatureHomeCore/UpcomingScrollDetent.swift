@@ -16,9 +16,9 @@ extension UpcomingView {
             }
             return view.subviews.lazy.compactMap { findProbe(in: $0) }.first
         }
-        guard let probe = findProbe(in: scrollView), let action = probe.onScrollToToday else { return false }
-        action()
-        probe.detent?.scrollToToday()
+        guard let probe = findProbe(in: scrollView), let detent = probe.detent,
+              let action = probe.onScrollToToday else { return false }
+        detent.scrollToToday(action)
         return true
     }
 }
@@ -43,7 +43,7 @@ struct UpcomingTodayAnchor: View {
 }
 
 struct UpcomingScrollDetentDrag: Sendable {
-    private static let resistanceScale: CGFloat = 1.66
+    private static let resistanceScale: CGFloat = 1.2
     static let fullReleaseDistance: CGFloat = 360 * resistanceScale
     static let snapDistance: CGFloat = 48
     static let maximumSnapVelocity: CGFloat = 1_200
@@ -157,8 +157,15 @@ final class UpcomingScrollTargetState: Sendable {
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     func update(today: CGFloat?, inset: CGFloat, offset: CGFloat, translation: CGFloat,
-                drag: UpcomingScrollDetentDrag?, enabled: Bool) {
+                drag: UpcomingScrollDetentDrag?, isDragging: Bool, enabled: Bool) {
         state.withLock {
+            // Layout can query targets before release. Do not latch that early
+            // choice while the finger is still moving; retain it during deceleration.
+            if isDragging, $0.offset != offset || $0.translation != translation {
+                $0.resolved = false
+                $0.target = nil
+                $0.feedbackPending = false
+            }
             $0.today = today
             $0.inset = inset
             $0.offset = offset
@@ -296,13 +303,10 @@ final class UpcomingScrollDetent {
         releaseShift = 0
     }
 
-    func scrollToToday() {
+    func scrollToToday(_ updatePosition: () -> Void) {
+        stopMotion(preservingPosition: true)
         cancelInteraction()
-        updateAnchor()
-        guard let scrollView, let todayOffset else { return }
-        scrollView.setContentOffset(
-            CGPoint(x: scrollView.contentOffset.x, y: todayOffset), animated: !reduceMotion
-        )
+        withAnimation(reduceMotion ? nil : .smooth) { updatePosition() }
     }
 
     func setAnchor(_ view: UIView) {
@@ -435,12 +439,15 @@ final class UpcomingScrollDetent {
 
     private func updateTargetState() {
         guard let scrollView else { return }
+        let pan = scrollView.panGestureRecognizer
         targetState.update(
             today: todayOffset,
             inset: scrollView.adjustedContentInset.top,
             offset: scrollView.contentOffset.y,
-            translation: scrollView.panGestureRecognizer.translation(in: scrollView.window).y,
-            drag: drag, enabled: !usesAssistiveScrolling
+            translation: pan.translation(in: scrollView.window).y,
+            drag: drag,
+            isDragging: phase == .interacting && (pan.state == .began || pan.state == .changed),
+            enabled: !usesAssistiveScrolling
         )
     }
 

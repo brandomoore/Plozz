@@ -35,7 +35,7 @@ final class TouchFeedbackInteractionTests: XCTestCase {
                 withVelocity: .slow, thenHoldForDuration: hold
             )
         }
-        let releasePull = min(597.6, try XCTUnwrap(initial["viewport"]) * 0.85) + 35
+        let releasePull = min(432, try XCTUnwrap(initial["viewport"]) * 0.85) + 35
         XCTAssertLessThan(startY + releasePull, app.frame.maxY - 30, "The stronger release must fit on screen")
         pull(420)
         let caught = expectation(
@@ -44,8 +44,8 @@ final class TouchFeedbackInteractionTests: XCTestCase {
         wait(for: [caught], timeout: 3)
         let held = try snapshot()
         XCTAssertGreaterThan(try XCTUnwrap(held["pull"]), 390, "The former 360-point release must now remain held")
-        XCTAssertGreaterThan(try XCTUnwrap(held["held"]), 60, "The tuned pull must be softer than the 2.5x curve")
-        XCTAssertLessThan(try XCTUnwrap(held["held"]), 67, "The pull must retain the requested 1.66x resistance")
+        XCTAssertGreaterThan(try XCTUnwrap(held["held"]), 71, "The tuned pull must be softer than the 1.66x curve")
+        XCTAssertLessThan(try XCTUnwrap(held["held"]), 75, "The pull must retain the requested 1.2x resistance")
         XCTAssertEqual(try XCTUnwrap(held["pops"]), 0, "The former threshold must no longer unlock history")
         XCTAssertEqual(try XCTUnwrap(held["catches"]), 1)
         XCTAssertEqual(try XCTUnwrap(held["offset"]), 0, accuracy: 1)
@@ -73,6 +73,39 @@ final class TouchFeedbackInteractionTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(released["viewportDrift"]), 1,
                           "The release spring must also leave the native edge blur stationary")
         attachScrub(app, name: "Upcoming history after a real release pop")
+
+        let upcoming = app.buttons["Upcoming"].firstMatch
+        XCTAssertTrue(upcoming.isHittable, app.debugDescription)
+        upcoming.tap()
+        let fromHistory = try snapshot()
+        XCTAssertEqual(try XCTUnwrap(fromHistory["offset"]), 0, accuracy: 1)
+        XCTAssertGreaterThan(try XCTUnwrap(fromHistory["navigationDownFrames"]), 3)
+        XCTAssertGreaterThan(try XCTUnwrap(fromHistory["navigationDownTravel"]),
+                             abs(try XCTUnwrap(released["offset"])) * 0.75)
+        XCTAssertLessThan(try XCTUnwrap(fromHistory["navigationMaximumStep"]),
+                          abs(try XCTUnwrap(released["offset"])) * 0.5, "A tab tap must not teleport")
+
+        let lower = start.withOffset(CGVector(dx: 0, dy: 350))
+        lower.press(
+            forDuration: 0.05, thenDragTo: lower.withOffset(CGVector(dx: 0, dy: -300)),
+            withVelocity: .slow, thenHoldForDuration: 0.3
+        )
+        let future = try snapshot()
+        XCTAssertGreaterThan(try XCTUnwrap(future["offset"]), 250)
+        upcoming.tap()
+        let fromFuture = try snapshot()
+        XCTAssertEqual(try XCTUnwrap(fromFuture["offset"]), 0, accuracy: 1)
+        XCTAssertGreaterThan(try XCTUnwrap(fromFuture["navigationUpFrames"]), 3)
+        XCTAssertGreaterThan(try XCTUnwrap(fromFuture["navigationUpTravel"]),
+                             try XCTUnwrap(future["offset"]) * 0.75)
+        XCTAssertLessThan(try XCTUnwrap(fromFuture["navigationMaximumStep"]),
+                          try XCTUnwrap(future["offset"]) * 0.5)
+        upcoming.tap()
+        let repeated = try snapshot()
+        XCTAssertEqual(try XCTUnwrap(repeated["offset"]), 0, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(repeated["catches"]), 1, "Tab resets must remain silent")
+        XCTAssertEqual(try XCTUnwrap(repeated["pops"]), 1)
+        attachScrub(app, name: "Upcoming returns to Today after actual tab taps in both directions")
     }
 
     func testUpcomingFutureApproachStopsWhileDraggingAndDuringMomentum() throws {
@@ -110,7 +143,7 @@ final class TouchFeedbackInteractionTests: XCTestCase {
             )
             let future = try snapshot()
             XCTAssertGreaterThan(try XCTUnwrap(future["offset"]), 250)
-            let distance = momentum ? 100 : min(597.6, try XCTUnwrap(future["viewport"]) * 0.85) + 35
+            let distance = momentum ? 100 : min(432, try XCTUnwrap(future["viewport"]) * 0.85) + 35
             upper.press(
                 forDuration: 0.05, thenDragTo: upper.withOffset(CGVector(dx: 0, dy: distance)),
                 withVelocity: momentum ? .fast : .slow, thenHoldForDuration: momentum ? 0 : 0.3

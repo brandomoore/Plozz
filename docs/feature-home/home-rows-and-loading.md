@@ -34,9 +34,9 @@ native date-target scroll positioning keeping Today in place when progressive
 results insert older dates. The selected date and following groups occupy at least
 the viewport height so a sparse agenda can align below the native toolbar without
 being clamped to the bottom of its history.
-On mobile, Today holds entry into history until a deliberate 597.6-point pull,
+On mobile, Today holds entry into history until a deliberate 432-point pull,
 capped at 85% of the usable scroll viewport height so release stays reachable
-on phones and smaller windows. The elastic curve requires 1.66 times the original
+on phones and smaller windows. The elastic curve requires 1.2 times the original
 finger travel for the same deflection.
 A continuous rubber-band curve gives the agenda visible initial movement and
 progressively stronger resistance, reaching up to about 75 points before release.
@@ -58,8 +58,11 @@ Releasing within 48 points of Today also settles there unless it is a fast
 pass-through fling. `ScrollTargetBehavior`
 selects Today before native deceleration begins, using the actual release position
 even when its projected destination is farther away. A moderate approach whose
-projected destination is within the same range also catches Today. There is no
-second per-frame scroll driver racing the scroll view's release. Native release velocity is
+projected destination is within the same range also catches Today.
+Layout may query the behavior while the finger is down,
+so movement invalidates that provisional choice. Only the release decision stays
+fixed during deceleration; a swipe after tab reselection must remain free to leave Today.
+There is no second per-frame scroll driver racing the scroll view's release. Native release velocity is
 converted from points/ms to the policy's points/s.
 Deliberate released pulls, ordinary future scrolling, existing history scrolling,
 and calendar jumps remain available. Native outer-edge bounce is unchanged.
@@ -95,9 +98,13 @@ Positioning, calendar jumps, cancelled catches, and repeated layout callbacks do
 not emit feedback.
 Ordinary approach deceleration remains system-owned. Reduce Motion skips the
 elastic animations and makes explicit Today resets nonanimated.
-Reselecting Upcoming in native or opaque navigation returns its visible agenda
-to Today, including repeated taps after scrolling away. The shell resolves the
-visible scroll owner before invoking this page-local reset; detail pages and
+Reselecting Upcoming in native or opaque navigation animates its visible agenda
+back to Today from either direction, including repeated taps after scrolling away.
+The page issues one animated typed date-position command, not a competing native
+offset animation or a second unanimated selection observer. Calendar input owns
+its separate positioning action. Interrupted
+elastic motion is picked up at its rendered position before navigation begins.
+The shell resolves the visible scroll owner before invoking this page-local reset; detail pages and
 other tabs retain their usual scroll-to-top behavior.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.

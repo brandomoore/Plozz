@@ -34,7 +34,9 @@ final class SettingsTabDelegateTests: XCTestCase {
             UpcomingFeedSnapshot(releases: releases)
         }
         let host = UIHostingController(rootView:
-            UpcomingView(model: model, interval: DateInterval(start: today, duration: 90 * 86_400))
+            UpcomingView(model: model, interval: DateInterval(
+                start: today.addingTimeInterval(-30 * 86_400), duration: 120 * 86_400
+            ))
                 .environment(\.plozzMetrics, .touch(density: .standard))
                 .environment(\.horizontalSizeClass, size.width < 800 ? .compact : .regular)
         )
@@ -117,7 +119,66 @@ final class SettingsTabDelegateTests: XCTestCase {
             if shouldCatch { expectedCatches += 1 }
             XCTAssertEqual(catches, expectedCatches, "Each completed catch emits feedback once")
         }
+        try await verifyUpcomingAnimatedReselection(detent: detent, scroll: scroll)
+        if size.width >= 800 {
+            let calendar = try XCTUnwrap(descendants(host.view).compactMap { $0 as? UIDatePicker }.first)
+            for days in [-5, 5] {
+                calendar.date = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: days, to: today))
+                calendar.sendActions(for: .valueChanged)
+                try await Task.sleep(for: .milliseconds(300))
+                XCTAssertGreaterThan(abs(scroll.contentOffset.y - (try XCTUnwrap(detent.todayOffset))), 300)
+                try await verifyUpcomingAnimatedReset(detent: detent, scroll: scroll)
+            }
+        }
         try await verifyUpcomingNativeSpring(detent: detent, scroll: scroll, today: initialToday)
+    }
+
+    private func verifyUpcomingAnimatedReselection(
+        detent: UpcomingScrollDetent, scroll: UIScrollView
+    ) async throws {
+        detent.reduceMotion = false
+        for displacement in [-600.0, 1_500.0] {
+            let today = try XCTUnwrap(detent.todayOffset)
+            scroll.contentOffset.y = today + displacement
+            try await Task.sleep(for: .milliseconds(100))
+            try await verifyUpcomingAnimatedReset(detent: detent, scroll: scroll, repeatsDuringMotion: true)
+        }
+    }
+
+    private func verifyUpcomingAnimatedReset(
+        detent: UpcomingScrollDetent, scroll: UIScrollView, repeatsDuringMotion: Bool = false
+    ) async throws {
+        let start = try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y
+        var today = try XCTUnwrap(detent.todayOffset)
+        let distance = abs(start - today)
+        XCTAssertTrue(UpcomingView.scrollToToday(in: scroll))
+        var intermediateOffsets: [CGFloat] = []
+        var previousOffset = start
+        var repeated = false
+        let deadline = Date().addingTimeInterval(3)
+        repeat {
+            try await Task.sleep(for: .milliseconds(10))
+            let offset = try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y
+            today = try XCTUnwrap(detent.todayOffset)
+            if abs(offset - today) > 2, abs(offset - start) > 2 {
+                intermediateOffsets.append(offset)
+            }
+            XCTAssertLessThan(abs(offset - previousOffset), distance * 0.5, "Navigation must not jump between frames")
+            if repeatsDuringMotion, !repeated, intermediateOffsets.count >= 4 {
+                XCTAssertTrue(UpcomingView.scrollToToday(in: scroll))
+                repeated = true
+            }
+            previousOffset = offset
+        } while (abs(scroll.contentOffset.y - today) > 1 || detent.phase != .idle)
+            && Date() < deadline
+        XCTAssertEqual(scroll.contentOffset.y, try XCTUnwrap(detent.todayOffset), accuracy: 1)
+        XCTAssertGreaterThan(intermediateOffsets.count, 3,
+                             "Tab reselection must visibly scroll toward Today from either direction")
+        XCTAssertGreaterThan(
+            (intermediateOffsets.max() ?? 0) - (intermediateOffsets.min() ?? 0),
+            distance * 0.5, "Observe travel, not a delayed teleport"
+        )
+        if repeatsDuringMotion { XCTAssertTrue(repeated) }
     }
 
     private func verifyUpcomingNativeSpring(
@@ -224,6 +285,23 @@ final class SettingsTabDelegateTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(afterTap.min()), today - 5,
                           "A touch without a drag must resume the interrupted return, not strand the held offset")
         XCTAssertFalse(events.contains(.selection), "Cancelling a return with a tap must not replay feedback")
+
+        try await beginPull()
+        scroll.contentOffset.y = today - 54.247
+        try await returnHeldPull()
+        try await Task.sleep(for: .milliseconds(30))
+        let visibleBeforeNavigation = try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y
+            - (try XCTUnwrap(contentLayer.presentation()).transform.m42 - contentLayer.transform.m42)
+        XCTAssertTrue(UpcomingView.scrollToToday(in: scroll))
+        XCTAssertEqual(scroll.contentOffset.y, visibleBeforeNavigation, accuracy: 0.5,
+                       "Navigation must pick up the visible spring before animating its date target")
+        let navigationDeadline = Date().addingTimeInterval(3)
+        while abs(scroll.contentOffset.y - today) > 1 || detent.phase != .idle, Date() < navigationDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(scroll.contentOffset.y, today, accuracy: 1)
+        XCTAssertNil(contentLayer.animation(forKey: animationKey))
+        XCTAssertFalse(events.contains(.selection), "Navigation must cancel pending spring feedback")
     }
 
     func testPageReselectionOverrideHandlesNativeLegacyAndOpaqueRequests() {

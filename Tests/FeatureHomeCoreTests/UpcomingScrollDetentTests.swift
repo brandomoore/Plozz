@@ -9,20 +9,20 @@ final class UpcomingScrollDetentTests: XCTestCase {
         var drag = UpcomingScrollDetentDrag(start: 1_000, translation: 0, today: 1_000)
         XCTAssertGreaterThan(drag.offset(translation: 40), 970)
         XCTAssertLessThan(drag.offset(translation: 40), 997, "The initial tug must be visibly responsive")
-        XCTAssertEqual(drag.offset(translation: 40), 988.065, accuracy: 0.001,
-                       "The initial tug uses 1.66 times the original resistance, not 2.5")
+        XCTAssertEqual(drag.offset(translation: 40), 984.096, accuracy: 0.001,
+                       "The initial tug uses 1.2 times the original resistance")
         XCTAssertLessThan(drag.offset(translation: 40), 1_000)
         XCTAssertTrue(drag.shouldSnap(offset: 987, translation: 40, velocity: -600))
         XCTAssertEqual(drag.offset(translation: -80), 1_080)
         XCTAssertFalse(drag.shouldSnap(offset: 1_080, translation: -80, velocity: 600))
-        XCTAssertGreaterThan(drag.offset(translation: 597), 925)
-        XCTAssertTrue(drag.shouldSnap(offset: drag.offset(translation: 597), translation: 597, velocity: -2_000))
+        XCTAssertGreaterThan(drag.offset(translation: 431), 925)
+        XCTAssertTrue(drag.shouldSnap(offset: drag.offset(translation: 431), translation: 431, velocity: -2_000))
         XCTAssertNotEqual(drag.advance(translation: 360), .pop, "The former release distance must still hold")
-        XCTAssertNotEqual(drag.advance(translation: 597), .pop)
-        XCTAssertEqual(drag.advance(translation: 597.6), .pop)
-        XCTAssertEqual(drag.offset(translation: 597.6), 925.283, accuracy: 0.001,
-                       "The original 360-point stretch now requires 1.66 times the pull")
-        XCTAssertFalse(drag.shouldSnap(offset: 925.283, translation: 597.6, velocity: 0))
+        XCTAssertNotEqual(drag.advance(translation: 431), .pop)
+        XCTAssertEqual(drag.advance(translation: 432), .pop)
+        XCTAssertEqual(drag.offset(translation: 432), 925.283, accuracy: 0.001,
+                       "The original 360-point stretch now requires 1.2 times the pull")
+        XCTAssertFalse(drag.shouldSnap(offset: 925.283, translation: 432, velocity: 0))
     }
 
     func testResistanceIsContinuousAndRegainsFingerSpeed() {
@@ -33,11 +33,11 @@ final class UpcomingScrollDetentTests: XCTestCase {
             let next = drag.offset(translation: CGFloat(pull))
             XCTAssertGreaterThan(previous - next, 0)
             XCTAssertLessThanOrEqual(previous - next, 1.001)
-            if pull <= 597 { XCTAssertGreaterThanOrEqual(next, 925) }
+            if pull <= 431 { XCTAssertGreaterThanOrEqual(next, 925) }
             previous = next
         }
-        XCTAssertEqual(drag.offset(translation: 597.6), 925.283, accuracy: 0.001)
-        XCTAssertEqual(drag.offset(translation: 598.6), 924.283, accuracy: 0.001)
+        XCTAssertEqual(drag.offset(translation: 432), 925.283, accuracy: 0.001)
+        XCTAssertEqual(drag.offset(translation: 433), 924.283, accuracy: 0.001)
         for pull in stride(from: 900, through: -40, by: -1) {
             XCTAssertEqual(
                 drag.offset(translation: CGFloat(pull - 1)) - drag.offset(translation: CGFloat(pull)),
@@ -47,11 +47,11 @@ final class UpcomingScrollDetentTests: XCTestCase {
     }
 
     func testRegrabbingStretchPreservesTheTunedPullDistance() {
-        for releaseDistance: CGFloat in [527, 597.6] {
+        for releaseDistance: CGFloat in [357, 432] {
             let drag = UpcomingScrollDetentDrag(
                 start: 1_000, translation: 0, today: 1_000, releaseDistance: releaseDistance
             )
-            for pull: CGFloat in [40, 240, 400, releaseDistance - 1] {
+            for pull: CGFloat in [40, 240, 300, releaseDistance - 1] {
                 XCTAssertEqual(
                     UpcomingScrollDetentDrag.pull(
                         forStretch: 1_000 - drag.offset(translation: pull), releaseDistance: releaseDistance
@@ -159,13 +159,13 @@ final class UpcomingScrollDetentTests: XCTestCase {
             var events: [TouchFeedback.Event] = []
             detent.onFeedback = { events.append($0) }
             detent.reduceMotion = true
-            scroll.frame.size.height = 700
+            scroll.frame.size.height = 500
             scroll.contentOffset.y = 1_000
             detent.phaseChanged(to: .interacting)
-            for pull in 1...526 {
+            for pull in 1...356 {
                 scroll.testPan.setTranslation(CGPoint(x: 0, y: CGFloat(pull)), in: scroll.window)
                 scroll.contentOffset.y = 1_000 - CGFloat(pull)
-                XCTAssertGreaterThanOrEqual(scroll.contentOffset.y, 928)
+                XCTAssertGreaterThanOrEqual(scroll.contentOffset.y, 930)
             }
             let intensities = events.compactMap { event -> Double? in
                 if case let .tension(intensity) = event { return intensity }
@@ -176,23 +176,23 @@ final class UpcomingScrollDetentTests: XCTestCase {
             XCTAssertGreaterThan(try XCTUnwrap(intensities.first), 0.4)
             XCTAssertGreaterThan(try XCTUnwrap(intensities.last), 0.9)
             XCTAssertTrue(zip(intensities, intensities.dropFirst()).allSatisfy { $0.0 < $0.1 })
-            for pull in [526, 440, 526] {
+            for pull in [356, 300, 356] {
                 scroll.testPan.setTranslation(CGPoint(x: 0, y: CGFloat(pull)), in: scroll.window)
                 scroll.contentOffset.y = 1_000 - CGFloat(pull)
             }
             XCTAssertEqual(events.count, 7, "Holding or reversing within the pull cannot buzz repeatedly")
-            scroll.testPan.setTranslation(CGPoint(x: 0, y: 528), in: scroll.window)
-            scroll.contentOffset.y = 472
+            scroll.testPan.setTranslation(CGPoint(x: 0, y: 358), in: scroll.window)
+            scroll.contentOffset.y = 642
             XCTAssertEqual(events.last, .pop)
             XCTAssertEqual(events.count, 8)
-            XCTAssertEqual(scroll.contentOffset.y, 927.878, accuracy: 0.5,
+            XCTAssertEqual(scroll.contentOffset.y, 929.771, accuracy: 0.5,
                            "A phone caps release at 85% of its usable height, keeping it reachable")
             XCTAssertNil(scroll.layer.animation(forKey: "plozz.upcoming.elasticity"),
                          "Reduce Motion must not add elastic release animation")
             XCTAssertNil(detent.contentLayer?.animation(forKey: "plozz.upcoming.elasticity"))
             XCTAssertNil(detent.targetState.target(projected: 1_060, velocity: 0),
                          "A deliberate pop must not be recaptured by the nearby-target rule")
-            for pull in [540, 500, 560] {
+            for pull in [370, 330, 390] {
                 scroll.testPan.setTranslation(CGPoint(x: 0, y: CGFloat(pull)), in: scroll.window)
                 scroll.contentOffset.y = 1_000 - CGFloat(pull)
             }
@@ -203,7 +203,7 @@ final class UpcomingScrollDetentTests: XCTestCase {
             XCTAssertEqual(events.count, 8, "Released motion must not emit a second catch")
             scroll.contentOffset.y = 300
             detent.reduceMotion = true
-            detent.scrollToToday()
+            detent.scrollToToday { scroll.contentOffset.y = 1_000 }
             XCTAssertEqual(events.count, 8, "Programmatic positioning must stay silent")
         }
     }
@@ -212,11 +212,36 @@ final class UpcomingScrollDetentTests: XCTestCase {
         let state = UpcomingScrollTargetState()
         state.update(
             today: 1_000, inset: 80, offset: 1_200, translation: 100,
-            drag: UpcomingScrollDetentDrag(start: 1_300, translation: 0, today: 1_000), enabled: true
+            drag: UpcomingScrollDetentDrag(start: 1_300, translation: 0, today: 1_000),
+            isDragging: false, enabled: true
         )
         state.begin()
         XCTAssertEqual(state.target(projected: 300, velocity: -2_500), 1_080,
                        "A fast flick released before Today must land there rather than bypass the pull")
+    }
+
+    func testTargetQueriesDuringDraggingDoNotLatchAnEarlyTodaySnap() {
+        let state = UpcomingScrollTargetState()
+        let drag = UpcomingScrollDetentDrag(start: 1_000, translation: 0, today: 1_000)
+        state.update(
+            today: 1_000, inset: 80, offset: 1_000, translation: 0,
+            drag: drag, isDragging: true, enabled: true
+        )
+        state.begin()
+        XCTAssertEqual(state.target(projected: 1_080, velocity: 0), 1_080)
+        state.update(
+            today: 1_000, inset: 80, offset: 1_300, translation: -300,
+            drag: drag, isDragging: true, enabled: true
+        )
+        XCTAssertNil(state.target(projected: 1_500, velocity: 600),
+                     "A layout query near touch-down must not pull a later future-side release back to Today")
+        state.update(
+            today: 1_000, inset: 80, offset: 1_020, translation: 0,
+            drag: drag, isDragging: false, enabled: true
+        )
+        XCTAssertNil(state.target(projected: 1_080, velocity: 0),
+                     "After release, offset changes and recognizer reset must not replace the settled target")
+        XCTAssertFalse(state.consumeArrival())
     }
 
     @MainActor
@@ -244,7 +269,7 @@ final class UpcomingScrollDetentTests: XCTestCase {
         detent.phaseChanged(to: .interacting)
         scroll.testPan.setTranslation(CGPoint(x: 0, y: 100), in: window)
         scroll.contentOffset.y = 900
-        XCTAssertGreaterThan(scroll.contentOffset.y, 970)
+        XCTAssertEqual(scroll.contentOffset.y, 966.834, accuracy: 0.5)
         XCTAssertEqual(events.count, 1)
         scroll.testPan.setTranslation(CGPoint(x: 0, y: -20), in: window)
         scroll.contentOffset.y += 120
@@ -252,7 +277,7 @@ final class UpcomingScrollDetentTests: XCTestCase {
         XCTAssertEqual(events.count, 1, "Moving into the future does not emit tension")
         scroll.testPan.setTranslation(CGPoint(x: 0, y: 100), in: window)
         scroll.contentOffset.y -= 120
-        XCTAssertGreaterThan(scroll.contentOffset.y, 970)
+        XCTAssertEqual(scroll.contentOffset.y, 966.834, accuracy: 0.5)
         XCTAssertEqual(events.count, 2, "Returning fully to Today rearms the next pull")
         XCTAssertEqual(events.first, events.last)
         XCTAssertGreaterThan(previous.scrolls, 0)
@@ -320,7 +345,7 @@ final class UpcomingScrollDetentTests: XCTestCase {
             XCTAssertEqual(catches, 1, "Repeated layout queries and offset updates cannot rearm feedback")
             scroll.contentOffset.y = 300
             detent.reduceMotion = true
-            detent.scrollToToday()
+            detent.scrollToToday { scroll.contentOffset.y = 1_000 }
             XCTAssertEqual(scroll.contentOffset.y, 1_000)
             XCTAssertEqual(catches, 1, "Navigation to Today remains silent")
         }
@@ -335,7 +360,10 @@ final class UpcomingScrollDetentTests: XCTestCase {
         ]
         for (offset, projected, velocity, enabled, expected) in cases {
             let state = UpcomingScrollTargetState()
-            state.update(today: 1_000, inset: 80, offset: offset, translation: 0, drag: nil, enabled: enabled)
+            state.update(
+                today: 1_000, inset: 80, offset: offset, translation: 0,
+                drag: nil, isDragging: false, enabled: enabled
+            )
             state.begin()
             XCTAssertEqual(state.target(projected: projected, velocity: velocity), expected)
             XCTAssertFalse(state.consumeArrival())
@@ -374,7 +402,7 @@ final class UpcomingScrollDetentTests: XCTestCase {
     func testCancellingElasticReturnRemovesMotionAndPendingFeedback() {
         let cancellations: [(UpcomingScrollDetent, UIView) -> Void] = [
             { detent, _ in detent.cancelInteraction() },
-            { detent, _ in detent.scrollToToday() },
+            { detent, _ in detent.scrollToToday { detent.scrollView?.contentOffset.y = 1_000 } },
             { detent, _ in detent.detach() },
             { detent, anchor in
                 anchor.frame.origin.y += 10
