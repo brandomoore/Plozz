@@ -1983,6 +1983,48 @@ profiles completed, but neither reproduces the complete live-server session.
 The live endpoint rejected public API access before authentication, so this
 evidence does not establish physical-device responsiveness or network improvement.
 
+For Showcase gutter discovery, `home-focus-discovery` performs 24 actual native
+focus changes across eight production rows of 75 cards, including horizontal
+movement and row changes. It counts queried rows and native focus containers,
+then checks title updates, focus retention and visible overscan artwork.
+It does not measure network loading, screen frame rate or device hang duration.
+
+A later symbolicated physical hang reached `UIFocusSystem.didUpdateNotification`
+and `FocusHeroMotionSurface.Controller.updateRowEntryGuides`, inside UIKit's
+focus-container traversal. All other rows previously searched their full
+horizontal viewport on every move. Discovery now visits only the two possible
+neighbor rows (one at the boundary), and guide setters skip unchanged values.
+The same simulator/toolchain and optimized Debug settings above measured:
+
+| 24 native focus moves | Original median | Adjacent-row median |
+| --- | ---: | ---: |
+| CPU | 131.878 ms | 63.006 ms |
+| Wall time | 131.668 ms | 62.852 ms |
+| Row scans | 168 | 42 |
+| Container queries | 14,196 | 4,476 |
+
+Baseline `a4f4c31b81914c9e94a8c6bc4dfd831c`, candidate
+`1a82457dcdb943bf8c3a9ebaf0d9be70`, and comparison
+`7e39ba6782e6414db84db8fd96f2b30b` preserve matching fixtures and environment.
+The roughly 52% CPU reduction is specific to this workload, not a claim that
+whole-app navigation or the physical hang duration improved by that amount.
+Separate regression coverage verifies that discovery follows row reordering.
+
+The same device diagnostics also captured synchronous `SecItemCopyMatching`
+from automatic sign-in publication. Channel capture and account-verification
+reads now run on a serial utility queue. `ProviderCredentialSyncTests` holds
+state/ownership reads behind a gate while the main actor continues, verifies
+unchanged owned output for Jellyfin and Plex, and rejects cancellation and
+sign-in/authorization changes during the read. This proves executor placement
+and stale-result rejection, not a simulated Keychain service latency improvement.
+Neither change alters foreground-refresh timing or disables background features.
+The final AppRuntime run passed 516 tests with 25 tests skipped and no
+failures. Eight native Showcase remote controls passed, covering short rows
+under all three navigation styles, both focus appearances, pinned return,
+vertical reversals and delayed initial loading across background/foreground.
+The hosted adjacency/reordering regression also passed. These remain simulator
+results; the new changes have not yet been installed or verified on hardware.
+
 For card-activation and menu stalls, `mobile-home-card-routing` updates 24 real
 mobile Home cards against a four-source identity index and counts source
 resolutions without activating a card. Detail routing belongs in the presented

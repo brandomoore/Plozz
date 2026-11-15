@@ -59,12 +59,12 @@ public final class ProviderCredentialSync {
         }
     }
 
-    private struct State: Codable {
+    private struct State: Codable, Sendable {
         var records: [String: Data] = [:]
         var suppressed: [String: CredentialRevision] = [:]
         var declined: [String: CredentialRevision] = [:]
     }
-    private struct PublicationOwner: Codable {
+    private struct PublicationOwner: Codable, Sendable, Equatable {
         let identity: String
         let revision: CredentialRevision
         let credentialDigest: Data
@@ -83,6 +83,7 @@ public final class ProviderCredentialSync {
     private let discard: @Sendable (UserSession) async -> Void
     private var task: Task<Void, Never>?
     private var generation: UInt64 = 0
+    private var publicationGeneration: UInt64 = 0
     private var authorityConfirmed = false
     private var resetPending = false
     private var latestSequence: UInt64?
@@ -90,8 +91,9 @@ public final class ProviderCredentialSync {
     private var cloudAccountID: String?
     public private(set) var publicationPermission: PublicationPermission?
     public private(set) var isRestoringSignIn = false
-    private static let stateKey = "provider-credentials.v2"
+    nonisolated private static let stateKey = "provider-credentials.v2"
     private static let resetKey = "com.plozz.providerSyncResetPending.v1"
+    private static let publicationQueue = DispatchQueue(label: "com.plozz.provider-sync.reads", qos: .utility)
 
     public init(
         accounts: any AccountPersisting,
@@ -157,71 +159,49 @@ public final class ProviderCredentialSync {
 
     var snapshotAuthority: String { authority.value }
 
-    private func capture(_ snapshot: SyncChannelSnapshot) throws -> [String: Data] {
+    private func capture(_ snapshot: SyncChannelSnapshot) async throws -> [String: Data] {
         guard snapshot.authority == authority.value, let identity = cloudAccountID,
               snapshot.cloudAccountID == identity else { throw CancellationError() }
-        return try capture(fallback: snapshot.records)
+        guard enabled() else { return snapshot.records }
+        try finishAccountReset()
+        let result = try await readPublication(fallback: snapshot.records)
+        updatePublicationPermission(result)
+        return result.records
     }
 
     func capture(fallback: [String: Data]) throws -> [String: Data] {
         guard enabled() else { return fallback }
         guard cloudAccountID != nil else { throw CancellationError() }
         try finishAccountReset()
-        try refreshPublicationPermission()
-        let state = try load()
-        let removed = RemovedAccountsStore(defaults: defaults).removedIDs
-        var records: [String: Data] = [:]
-        for (name, data) in fallback {
-            let record = try decode(data, name: name)
-            records[name] = removed.contains(record.account.id)
-                ? try Self.encoder().encode(record.tombstone) : data
-        }
-        for account in accounts.loadAccounts() {
-            guard !removed.contains(account.id),
-                  state.suppressed[account.id] != account.credentialRevision,
-                  try owner(for: account.id) == cloudAccountID else { continue }
-            let record: ProviderCredentialRecord
-            let capturedCredential: String
-            if account.server.provider == .mediaShare {
-                let credential = try accounts.mediaShareCredential(for: account.id)
-                if case .generatedKey = credential.authentication {
-                    let revoked = ProviderCredentialRecord(
-                        version: 1, sourceDeviceID: accounts.deviceID(), account: account,
-                        token: nil, share: nil, silo: nil, revoked: true)
-                    records[revoked.recordName] = try Self.encoder().encode(revoked)
-                    continue
-                }
-                capturedCredential = try MediaShareCredentialCodec.encode(credential)
-                record = .init(version: 1, sourceDeviceID: accounts.deviceID(), account: account,
-                               token: nil, share: capturedCredential, silo: nil)
-            } else {
-                guard let raw = accounts.token(for: account.id) else {
-                    // An unavailable local Keychain item is not a household sign-out.
-                    continue
-                }
-                capturedCredential = raw
-                if account.server.provider == .iptv, try IPTVCredential.decode(raw).mode == .file {
-                    // A legacy imported file needs its content, not just its catalog key.
-                    let revoked = ProviderCredentialRecord(
-                        version: 1, sourceDeviceID: accounts.deviceID(), account: account,
-                        token: nil, share: nil, silo: nil, revoked: true)
-                    records[revoked.recordName] = try Self.encoder().encode(revoked)
-                    continue
-                }
-                if account.server.provider == .silo {
-                    let credential = try SiloCredential.decode(raw)
-                    guard credential.refreshPending != true else { continue }
-                    record = .init(version: 1, sourceDeviceID: accounts.deviceID(), account: account,
-                                   token: nil, share: nil, silo: SiloSyncCredential(credential))
-                } else {
-                    record = .init(version: 1, sourceDeviceID: accounts.deviceID(), account: account,
-                                   token: raw, share: nil, silo: nil)
-                }
+        let result = try publicationReader().read(fallback: fallback)
+        updatePublicationPermission(result)
+        return result.records
+    }
+
+    private func publicationReader() throws -> PublicationReader {
+        guard let identity = cloudAccountID else { throw CancellationError() }
+        return PublicationReader(accounts: accounts, storage: storage, ownership: ownership,
+                                 identity: identity, removed: RemovedAccountsStore(defaults: defaults).removedIDs)
+    }
+
+    private func readPublication(fallback: [String: Data]? = nil) async throws -> PublicationRead {
+        try Task.checkCancellation()
+        let reader = try publicationReader()
+        let current = publicationGeneration
+        let expectedAuthority = authority.value
+        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<PublicationRead, Error>) in
+            Self.publicationQueue.async {
+                do { continuation.resume(returning: try reader.read(fallback: fallback)) }
+                catch { continuation.resume(throwing: error) }
             }
-            guard try hasPublicationOwnership(account, credential: capturedCredential) else { continue }
-            records[record.recordName] = try Self.encoder().encode(record)
         }
-        return records
+        try Task.checkCancellation()
+        guard enabled(), current == publicationGeneration, expectedAuthority == authority.value,
+              reader.identity == cloudAccountID, result.accounts == accounts.loadAccounts(),
+              reader.removed == RemovedAccountsStore(defaults: defaults).removedIDs else {
+            throw CancellationError()
+        }
+        return result
     }
 
     func apply(_ snapshot: SyncChannelSnapshot) {
@@ -229,8 +209,9 @@ public final class ProviderCredentialSync {
         if let latestSequence, snapshot.sequence < latestSequence { return }
         do {
             guard let identity = cloudAccountID, snapshot.cloudAccountID == identity else { throw CancellationError() }
+            publicationGeneration &+= 1
             try finishAccountReset()
-            for (name, data) in snapshot.records { _ = try decode(data, name: name) }
+            for (name, data) in snapshot.records { _ = try Self.decode(data, name: name) }
             var state = try load()
             state.records = snapshot.records
             try save(state)
@@ -243,6 +224,7 @@ public final class ProviderCredentialSync {
     }
 
     public func cancel() {
+        publicationGeneration &+= 1
         generation &+= 1
         task?.cancel()
         task = nil
@@ -268,6 +250,7 @@ public final class ProviderCredentialSync {
 
     private func finishAccountReset() throws {
         guard resetPending else { return }
+        publicationGeneration &+= 1
         var state = State()
         for account in accounts.loadAccounts() {
             state.suppressed[account.id] = account.credentialRevision
@@ -283,6 +266,7 @@ public final class ProviderCredentialSync {
     }
 
     public func didAuthenticateLocally(accountID: String) {
+        publicationGeneration &+= 1
         do {
             try finishAccountReset()
             var state = try load()
@@ -293,7 +277,7 @@ public final class ProviderCredentialSync {
             } else {
                 // A sign-in without a verified cloud identity is not permission
                 // to export into whichever Apple Account appears later.
-                try ownership.removeValue(for: ownershipKey(accountID))
+                try ownership.removeValue(for: Self.ownershipKey(accountID))
                 PlozzLog.sync.info("Local sign-in has no verified iCloud publication owner")
             }
             try save(state)
@@ -311,9 +295,13 @@ public final class ProviderCredentialSync {
         try refreshPublicationPermission()
     }
 
-    private func admitVerifiedAccount(_ identity: String, verification: String) throws {
-        guard verificationFence.value == verification else { throw CancellationError() }
-        try accountVerified(identity, authority: authority.value)
+    private func admitVerifiedAccount(_ identity: String, verification: String) async throws {
+        guard verificationFence.value == verification, enabled(), !Task.isCancelled, !identity.isEmpty,
+              cloudAccountID == nil || cloudAccountID == identity else { throw CancellationError() }
+        cloudAccountID = identity
+        try finishAccountReset()
+        let result = try await readPublication()
+        updatePublicationPermission(result)
     }
 
     /// Household playback access is independent of permission to export a sign-in.
@@ -332,6 +320,7 @@ public final class ProviderCredentialSync {
     public func resolvePublicationPermission(_ request: PublicationPermission, allow: Bool) -> Bool {
         guard enabled(), canRestore(), publicationPermission == request,
               cloudAccountID == request.cloudAccountID, authority.value == request.authority else { return false }
+        publicationGeneration &+= 1
         do {
             let current = accounts.loadAccounts()
             let removed = RemovedAccountsStore(defaults: defaults).removedIDs
@@ -350,7 +339,7 @@ public final class ProviderCredentialSync {
                     let owner = PublicationOwner(identity: request.cloudAccountID,
                                                  revision: account.credentialRevision, credentialDigest: digest)
                     guard try ownership.insertStringIfAbsent(
-                        String(decoding: try Self.encoder().encode(owner), as: UTF8.self), for: ownershipKey(account.id)
+                        String(decoding: try Self.encoder().encode(owner), as: UTF8.self), for: Self.ownershipKey(account.id)
                     ) else { throw AppError.conflict }
                     state.suppressed.removeValue(forKey: account.id)
                 } else {
@@ -368,23 +357,15 @@ public final class ProviderCredentialSync {
     }
 
     private func refreshPublicationPermission() throws {
-        guard enabled(), let cloudAccountID else { publicationPermission = nil; return }
-        let state = try load()
-        let removed = RemovedAccountsStore(defaults: defaults).removedIDs
-        let unowned = try accounts.loadAccounts().filter { account in
-            guard !removed.contains(account.id), state.declined[account.id] != account.credentialRevision,
-                  try owner(for: account.id) == nil else { return false }
-            if account.server.provider == .mediaShare {
-                if case .generatedKey = try accounts.mediaShareCredential(for: account.id).authentication { return false }
-                return true
-            }
-            guard let token = accounts.token(for: account.id) else { return false }
-            if account.server.provider == .iptv { return try IPTVCredential.decode(token).mode != .file }
-            return true
-        }
+        guard enabled(), cloudAccountID != nil else { publicationPermission = nil; return }
+        updatePublicationPermission(try publicationReader().read(fallback: nil))
+    }
+
+    private func updatePublicationPermission(_ result: PublicationRead) {
+        guard let cloudAccountID else { publicationPermission = nil; return }
+        let unowned = result.unowned
+        let digests = result.digests
         guard !unowned.isEmpty else { publicationPermission = nil; return }
-        var digests: [String: Data] = [:]
-        for account in unowned { digests[account.id] = try credentialDigest(for: account) }
         // Discovery can refresh names and routes while the native alert still
         // holds its original request. Keep that request for unchanged sign-ins.
         if let pending = publicationPermission, pending.matchesSignIns(unowned),
@@ -395,7 +376,7 @@ public final class ProviderCredentialSync {
             authority: authority.value, credentialDigests: digests)
     }
 
-    private func ownershipKey(_ accountID: String) -> String {
+    nonisolated private static func ownershipKey(_ accountID: String) -> String {
         "owner:" + SHA256.hash(data: Data(accountID.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -404,7 +385,7 @@ public final class ProviderCredentialSync {
     }
 
     private func publicationOwner(for accountID: String) throws -> PublicationOwner? {
-        guard let raw = try ownership.readString(for: ownershipKey(accountID)) else { return nil }
+        guard let raw = try ownership.readString(for: Self.ownershipKey(accountID)) else { return nil }
         return try JSONDecoder().decode(PublicationOwner.self, from: Data(raw.utf8))
     }
 
@@ -420,15 +401,13 @@ public final class ProviderCredentialSync {
             credential = try captured ?? MediaShareCredentialCodec.encode(accounts.mediaShareCredential(for: account.id))
         } else {
             guard let token = captured ?? accounts.token(for: account.id) else { throw AppError.unauthorized }
-            // Silo refresh rotates tokens within the same authenticated login.
-            credential = account.server.provider == .silo
-                ? try SiloCredential.decode(token).loginID.uuidString : token
+            credential = token
         }
-        return Data(SHA256.hash(data: Data(credential.utf8)))
+        return try Self.digest(credential, provider: account.server.provider)
     }
 
     private func setOwner(_ identity: String, for accountID: String) throws {
-        try ownership.setString(encodedOwner(identity, for: accountID), for: ownershipKey(accountID))
+        try ownership.setString(encodedOwner(identity, for: accountID), for: Self.ownershipKey(accountID))
     }
 
     private func encodedOwner(_ identity: String, for accountID: String) throws -> String {
@@ -441,17 +420,18 @@ public final class ProviderCredentialSync {
     }
 
     private func setRestoredOwner(_ identity: String, account: Account, credential: String) throws {
+        publicationGeneration &+= 1
         let owner = PublicationOwner(identity: identity, revision: account.credentialRevision,
                                      credentialDigest: try credentialDigest(for: account, captured: credential))
         try ownership.setString(
-            String(decoding: try Self.encoder().encode(owner), as: UTF8.self), for: ownershipKey(account.id))
+            String(decoding: try Self.encoder().encode(owner), as: UTF8.self), for: Self.ownershipKey(account.id))
     }
 
     public func hasCredential(for accountID: String) -> Bool {
         guard authorityConfirmed, enabled() else { return false }
         do {
             return try load().records.contains { name, data in
-                let record = try decode(data, name: name)
+                let record = try Self.decode(data, name: name)
                 return record.account.id == accountID && record.silo == nil && record.revoked != true
             }
         } catch {
@@ -483,7 +463,7 @@ public final class ProviderCredentialSync {
             do {
                 let state = try load()
                 let candidates = try state.records.sorted { $0.key < $1.key }.map {
-                    try decode($0.value, name: $0.key)
+                    try Self.decode($0.value, name: $0.key)
                 }
 
                 for record in candidates {
@@ -518,7 +498,7 @@ public final class ProviderCredentialSync {
               !RemovedAccountsStore(defaults: defaults).isRemoved(record.account.id) else { return false }
         do {
             guard let data = try load().records[record.recordName],
-                  try decode(data, name: record.recordName) == record else { return false }
+                  try Self.decode(data, name: record.recordName) == record else { return false }
         } catch {
             PlozzLog.sync.error("Could not verify the current automatic sign-in credential")
             return false
@@ -589,7 +569,7 @@ public final class ProviderCredentialSync {
         try storage.setString(String(decoding: try Self.encoder().encode(state), as: UTF8.self), for: Self.stateKey)
     }
 
-    private func decode(_ data: Data, name: String) throws -> ProviderCredentialRecord {
+    nonisolated private static func decode(_ data: Data, name: String) throws -> ProviderCredentialRecord {
         let record = try JSONDecoder().decode(ProviderCredentialRecord.self, from: data)
         guard record.version == 1, record.recordName == name, !record.sourceDeviceID.isEmpty,
               !record.account.id.isEmpty, !record.account.server.id.isEmpty,
@@ -597,10 +577,122 @@ public final class ProviderCredentialSync {
         return record
     }
 
-    private static func encoder() -> JSONEncoder {
+    nonisolated private static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return encoder
+    }
+
+    private struct PublicationRead: Sendable {
+        var accounts: [Account]
+        var records: [String: Data] = [:]
+        var unowned: [Account] = []
+        var digests: [String: Data] = [:]
+    }
+
+    /// Short-lived read results, never an ownership or credential cache.
+    private struct PublicationReader: Sendable {
+        let accounts: any AccountPersisting
+        let storage: any SecureStoring
+        let ownership: any SecureStore
+        let identity: String
+        let removed: Set<String>
+
+        func read(fallback: [String: Data]?) throws -> PublicationRead {
+            let state: State
+            if let raw = try storage.readString(for: ProviderCredentialSync.stateKey) {
+                state = try JSONDecoder().decode(State.self, from: Data(raw.utf8))
+            } else {
+                state = State()
+            }
+            var result = PublicationRead(accounts: accounts.loadAccounts())
+            let deviceID = accounts.deviceID()
+            let encoder = ProviderCredentialSync.encoder()
+            for (name, data) in fallback ?? [:] {
+                let record = try ProviderCredentialSync.decode(data, name: name)
+                result.records[name] = removed.contains(record.account.id)
+                    ? try encoder.encode(record.tombstone) : data
+            }
+            for account in result.accounts where !removed.contains(account.id) {
+                let needsPermission = state.declined[account.id] != account.credentialRevision
+                let needsCapture = fallback != nil && state.suppressed[account.id] != account.credentialRevision
+                guard needsPermission || needsCapture else { continue }
+                let owner = try publicationOwner(account.id)
+                let mayAsk = needsPermission && owner == nil
+                let mayCapture = needsCapture && owner?.identity == identity
+                guard mayAsk || mayCapture else { continue }
+
+                let raw: String
+                let portable: Bool
+                if account.server.provider == .mediaShare {
+                    let credential = try accounts.mediaShareCredential(for: account.id, revision: account.credentialRevision)
+                    raw = try MediaShareCredentialCodec.encode(credential)
+                    if case .generatedKey = credential.authentication { portable = false }
+                    else { portable = true }
+                } else {
+                    // Unavailable credentials are not a household sign-out.
+                    guard let token = accounts.token(for: account.id) else { continue }
+                    raw = token
+                    portable = try account.server.provider != .iptv || IPTVCredential.decode(token).mode != .file
+                }
+                let digest = try ProviderCredentialSync.digest(raw, provider: account.server.provider)
+                if mayAsk && portable {
+                    result.unowned.append(account)
+                    result.digests[account.id] = digest
+                }
+                if mayCapture {
+                    let record: ProviderCredentialRecord
+                    if !portable {
+                        record = .init(version: 1, sourceDeviceID: deviceID, account: account,
+                                       token: nil, share: nil, silo: nil, revoked: true)
+                    } else {
+                        guard owner?.revision == account.credentialRevision,
+                              owner?.credentialDigest == digest else { continue }
+                        if account.server.provider == .mediaShare {
+                            record = .init(version: 1, sourceDeviceID: deviceID, account: account,
+                                           token: nil, share: raw, silo: nil)
+                        } else if account.server.provider == .silo {
+                            let credential = try SiloCredential.decode(raw)
+                            guard credential.refreshPending != true else { continue }
+                            record = .init(version: 1, sourceDeviceID: deviceID, account: account,
+                                           token: nil, share: nil, silo: SiloSyncCredential(credential))
+                        } else {
+                            record = .init(version: 1, sourceDeviceID: deviceID, account: account,
+                                           token: raw, share: nil, silo: nil)
+                        }
+                    }
+                    result.records[record.recordName] = try encoder.encode(record)
+                }
+                // Storage can change independently while securityd is blocked.
+                guard try publicationOwner(account.id) == owner,
+                      try currentDigest(account) == digest else { throw CancellationError() }
+            }
+            guard result.accounts == accounts.loadAccounts() else { throw CancellationError() }
+            return result
+        }
+
+        private func publicationOwner(_ id: String) throws -> PublicationOwner? {
+            guard let raw = try ownership.readString(for: ProviderCredentialSync.ownershipKey(id)) else { return nil }
+            return try JSONDecoder().decode(PublicationOwner.self, from: Data(raw.utf8))
+        }
+
+        private func currentDigest(_ account: Account) throws -> Data {
+            let raw: String
+            if account.server.provider == .mediaShare {
+                raw = try MediaShareCredentialCodec.encode(
+                    accounts.mediaShareCredential(for: account.id, revision: account.credentialRevision))
+            } else {
+                guard let token = accounts.token(for: account.id) else { throw CancellationError() }
+                raw = token
+            }
+            return try ProviderCredentialSync.digest(raw, provider: account.server.provider)
+        }
+    }
+
+    nonisolated private static func digest(_ raw: String, provider: ProviderKind) throws -> Data {
+        // Refresh rotates Silo tokens within the same authenticated login.
+        let value = provider == .silo ? try SiloCredential.decode(raw).loginID.uuidString : raw
+        return Data(SHA256.hash(data: Data(value.utf8)))
     }
 
     public func finishPendingRestoration() async {
