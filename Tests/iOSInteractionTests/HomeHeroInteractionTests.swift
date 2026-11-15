@@ -130,6 +130,43 @@ final class HomeHeroInteractionTests: XCTestCase {
         XCTAssertTrue(artwork.wait(for: \.isHittable, toEqual: true, timeout: 5))
     }
 
+    func testCompactHomeActionsScrollAwayAndRemainUsableWithOrWithoutHero() {
+        for heroEnabled in [true, false] {
+            app.terminate()
+            app.launchArguments = [
+                "--home-hero-fixture", "--hero-native-chrome", "--hero-header-audio"
+            ] + (heroEnabled ? [] : ["--hero-disabled"])
+            app.launch()
+            let profile = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings for ")).firstMatch
+            XCTAssertTrue(profile.wait(for: \.isHittable, toEqual: true, timeout: 15), app.debugDescription)
+            XCTAssertEqual(app.navigationBars.count, 0,
+                           "Compact horizontal Home must not reserve a navigation row for its actions.")
+            let initialFrame = profile.frame
+            XCTAssertEqual(initialFrame.width, 44, accuracy: 1)
+            XCTAssertEqual(initialFrame.height, 44, accuracy: 1)
+            profile.tap()
+            XCTAssertTrue(app.staticTexts["hero-settings-count"].wait(for: \.label, toEqual: "1", timeout: 5))
+            let unmute = app.buttons["Unmute trailer"]
+            XCTAssertTrue(unmute.isHittable, app.debugDescription)
+            unmute.tap()
+            XCTAssertTrue(app.buttons["Mute trailer"].waitForExistence(timeout: 5), app.debugDescription)
+            capture("scrolling-home-actions-hero-\(heroEnabled)-rest")
+            let scroll = app.scrollViews.firstMatch
+            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.65))
+            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.25))
+            start.press(forDuration: 0.05, thenDragTo: end)
+            XCTAssertTrue(profile.wait(for: \.isHittable, toEqual: false, timeout: 5),
+                          "Profile must scroll away instead of staying pinned above the page.")
+            XCTAssertFalse(app.buttons["Mute trailer"].isHittable)
+            capture("scrolling-home-actions-hero-\(heroEnabled)-scrolled")
+            scroll.swipeDown()
+            XCTAssertTrue(profile.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            XCTAssertEqual(profile.frame.minY, initialFrame.minY, accuracy: 1)
+            profile.tap()
+            XCTAssertTrue(app.staticTexts["hero-settings-count"].wait(for: \.label, toEqual: "2", timeout: 5))
+        }
+    }
+
     func testTitleAndDescriptionOpenDetailsWithoutStartingPlayback() {
         let artwork = app.buttons["home-hero-artwork-detail"]
         XCTAssertTrue(artwork.waitForExistence(timeout: 15), app.debugDescription)

@@ -237,8 +237,13 @@ registry.
   Home's hero uses Apple's native soft scroll-edge effect, with no additional
   material, tint, or custom blur mask. The system owns its rendering and extent;
   `.soft` prevents the automatic style from choosing a hard boundary on newer
-  systems. Header geometry, reduced-transparency and Mac behavior remain
-  unchanged. Home hides
+  systems. On compact horizontal layouts, Home's profile and trailer-mute actions
+  sit in the scrolling content, like the other browse-page actions. They overlay
+  the top of the hero below the status bar, or precede the rows when the hero is
+  disabled. The navigation bar is hidden there; scroll-edge rendering remains
+  system-owned. Empty/error pages retain their settings
+  entry, and regular-width and vertical toolbars retain native placement.
+  Reduced-transparency and Mac behavior remain unchanged. Home hides
   the regular-width tab-bar background so the hero stays visible behind that row.
   The individual native glass controls remain; other destinations and compact
   bottom-tab backgrounds retain their existing treatment. Search's collapsing

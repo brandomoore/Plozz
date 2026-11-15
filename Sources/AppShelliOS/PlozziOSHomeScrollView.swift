@@ -2,12 +2,29 @@
 import CoreUI
 import SwiftUI
 
-struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
+struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     @Environment(\.plozzMetrics) private var metrics
     @State private var viewportWidth: CGFloat = 0
+    @State private var safeAreaTop: CGFloat = 0
     let heroActive: Bool
-    @ViewBuilder var hero: Hero
-    @ViewBuilder var rows: Rows
+    let showsPageActions: Bool
+    let hero: Hero
+    let rows: Rows
+    let pageActions: PageActions
+
+    init(
+        heroActive: Bool,
+        showsPageActions: Bool = false,
+        @ViewBuilder hero: () -> Hero,
+        @ViewBuilder rows: () -> Rows,
+        @ViewBuilder pageActions: () -> PageActions = { EmptyView() }
+    ) {
+        self.heroActive = heroActive
+        self.showsPageActions = showsPageActions
+        self.hero = hero()
+        self.rows = rows()
+        self.pageActions = pageActions()
+    }
 
     var body: some View {
         if #available(iOS 26.0, *) {
@@ -22,7 +39,15 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
         ScrollView {
             // Eager vertical sizing avoids estimated heights changing during scrolling.
             VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
-                if heroActive { hero }
+                if heroActive {
+                    hero.overlay(alignment: .top) {
+                        if showsPageActions {
+                            pageActions.padding(.top, safeAreaTop)
+                        }
+                    }
+                } else if showsPageActions {
+                    pageActions
+                }
                 rows
             }
             .padding(.bottom)
@@ -33,9 +58,34 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
         .ignoresSafeArea(.container, edges: heroActive ? .top : [])
         .modifier(PlozziOSReducedTransparencyScrollFade(enabled: heroActive))
         .background {
+            if showsPageActions && heroActive {
+                PlozziOSWindowSafeAreaTopReader { safeAreaTop = $0 }
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             PlozziOSStationaryNavigationSource()
                 .frame(width: 0, height: 0)
         }
+    }
+}
+
+struct PlozziOSHomePageActions: View {
+    let showsAudio: Bool
+    let isMuted: Bool
+    let onToggleMute: () -> Void
+    let onShowSettings: () -> Void
+
+    var body: some View {
+        HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) {
+            Spacer(minLength: 0)
+            if showsAudio {
+                PlozziOSHeroAudioMuteToolbarButton(isMuted: isMuted, onToggle: onToggleMute)
+                    .plozziOSPageAction()
+            }
+            PlozziOSSettingsAvatarButton(action: onShowSettings)
+        }
+        .padding(.horizontal, PlozziOSPageHeaderLayout.horizontalInset)
     }
 }
 

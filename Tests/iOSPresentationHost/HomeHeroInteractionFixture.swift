@@ -69,6 +69,7 @@ struct FeaturedCardInteractionFixture: View {
 
 struct HomeHeroInteractionFixture: View {
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
+    @Environment(\.horizontalSizeClass) private var sizeClass
     private var colorScheme: ColorScheme {
         ProcessInfo.processInfo.arguments.contains("--hero-light") ? .light : .dark
     }
@@ -78,6 +79,8 @@ struct HomeHeroInteractionFixture: View {
     @State private var pull = PlozziOSHomeHeroPullModel()
     @State private var actions = HeroInteractionActions()
     @State private var playCount = 0
+    @State private var settingsCount = 0
+    @State private var isMuted = true
     @State private var presentsSeasons = false
     @State private var pinnedIDs = ""
     private var testsAutoAdvance: Bool {
@@ -85,6 +88,9 @@ struct HomeHeroInteractionFixture: View {
     }
     private var usesNativeChrome: Bool {
         ProcessInfo.processInfo.arguments.contains("--hero-native-chrome")
+    }
+    private var usesScrollingPageActions: Bool {
+        usesNativeChrome && sizeClass == .compact && !usesVerticalToolbar
     }
 
     init() {
@@ -153,7 +159,10 @@ struct HomeHeroInteractionFixture: View {
 
     private var home: some View {
         NavigationStack {
-            PlozziOSHomeScrollView(heroActive: true) {
+            PlozziOSHomeScrollView(
+                heroActive: !ProcessInfo.processInfo.arguments.contains("--hero-disabled"),
+                showsPageActions: usesScrollingPageActions
+            ) {
                 PlozziOSHomeHeroCarousel(
                     items: HeroInteractionProvider.slides,
                     autoAdvance: testsAutoAdvance,
@@ -188,6 +197,12 @@ struct HomeHeroInteractionFixture: View {
                     .accessibilityIdentifier("home-poster")
                 }
                 Color.clear.frame(height: 1_200)
+            } pageActions: {
+                PlozziOSHomePageActions(
+                    showsAudio: ProcessInfo.processInfo.arguments.contains("--hero-header-audio"),
+                    isMuted: isMuted, onToggleMute: { isMuted.toggle() },
+                    onShowSettings: { settingsCount += 1 }
+                )
             }
             .overlay(alignment: .topTrailing) {
                 if testsAutoAdvance {
@@ -210,9 +225,12 @@ struct HomeHeroInteractionFixture: View {
             .plozziOSRailPlay { _ in playCount += 1 }
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
+            .toolbar(
+                usesScrollingPageActions ? .hidden : (usesVerticalToolbar ? .visible : .automatic),
+                for: .navigationBar
+            )
             .toolbar {
-                if usesNativeChrome {
+                if usesNativeChrome && !usesScrollingPageActions {
                     if ProcessInfo.processInfo.arguments.contains("--hero-header-audio") && usesVerticalToolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             PlozziOSHeroAudioMuteToolbarButton(isMuted: true, onToggle: {})
@@ -237,6 +255,7 @@ struct HomeHeroInteractionFixture: View {
             VStack {
                 Text(verbatim: "\(playCount)").accessibilityIdentifier("hero-play-count")
                 Text(verbatim: "\(actions.watchlistCount)").accessibilityIdentifier("hero-watchlist-count")
+                Text(verbatim: "\(settingsCount)").accessibilityIdentifier("hero-settings-count")
             }
             .allowsHitTesting(false)
         }
