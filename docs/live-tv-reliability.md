@@ -274,7 +274,10 @@ or a promise of OS background execution.
 Xtream channel schedules remain demand-driven. A provider capability limits
 startup and explicit preparation to the first viewport rather than issuing a
 request for every channel; browsing loads further channels as needed. XMLTV
-still indexes the complete catalog. Populated feeds with no matches or no rows
+still indexes the complete catalog, and once that index is saved and fresh it
+answers browsing requests before the native API is asked; a channel is still
+requested when its saved listings do not span the whole window. A transient native failure ends
+that batch's native requests and keeps the listings already retrieved. Populated feeds with no matches or no rows
 in the requested window retain normal source freshness. A truly empty XMLTV
 source and a successful empty viewport instead use a 60-second on-demand
 negative cache, not 12 hours; shorter source HTTP freshness still applies.

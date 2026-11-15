@@ -588,6 +588,12 @@ actor IPTVClient: ApplicationStorageParticipant {
         return try committedLiveChannels()
     }
 
+    func guideCatalogRevision() async throws -> String? {
+        try await ensureCatalog("live")
+        if let revision = try catalog.state("live-revision") { return revision }
+        return try catalog.state("live").map { "legacy:\($0)" }
+    }
+
     func guideChannels() async throws -> [IPTVProvider.IPTVGuideChannel] {
         try await ensureCatalog("live")
         try catalog.execute("BEGIN")
