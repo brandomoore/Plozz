@@ -141,7 +141,10 @@ struct LiveTVChannelNameSettings: View {
                 }
             }
         } footer: {
-            Text("Tidies IPTV names while keeping region and quality labels. Custom names stay unchanged.")
+            Text(
+                "Cleans up extra symbols and spacing. Names you've edited stay the same.",
+                comment: "IPTV channel-name formatting footer. User-renamed channels are not changed."
+            )
         }
     }
 }
