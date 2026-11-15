@@ -420,7 +420,9 @@ public final class AccountsProvidersModel {
         for account: Account,
         token: String
     ) -> ProviderResolutionContext {
-        let localMediaContext = [.mediaShare, .iptv, .plex].contains(account.server.provider)
+        // Jellyfin and Emby need one for Continue Watching dismissals, which the
+        // MediaBrowser API cannot store server-side.
+        let localMediaContext = [.mediaShare, .iptv, .plex, .jellyfin, .emby].contains(account.server.provider)
             ? LocalMediaContext(
                 accountID: account.id,
                 profileID: profilesModel.activeProfileID,

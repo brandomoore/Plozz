@@ -68,6 +68,39 @@ final class RemoveFromContinueWatchingCatalogTests: XCTestCase {
         XCTAssertFalse(offered.contains(.removeFromContinueWatching))
     }
 
+    /// On the Continue Watching row every card can be removed, including a Next
+    /// Up suggestion that has never been started.
+    func testOfferedForEveryCardOnTheContinueWatchingRow() {
+        for kind in [MediaItemKind.episode, .movie, .video] {
+            let offered = MediaItemActionCatalog.actions(
+                for: item(kind: kind), supportsWatchState: true, context: .continueWatching
+            )
+            XCTAssertTrue(offered.contains(.removeFromContinueWatching), "\(kind) on the row")
+            XCTAssertEqual(offered.last, .removeFromContinueWatching, "Still last, and set apart")
+        }
+    }
+
+    /// Off the row, an unstarted title still has nothing to remove.
+    func testAnUnstartedTitleOffTheRowStillHasNothingToRemove() {
+        XCTAssertFalse(
+            MediaItemActionCatalog.actions(for: item(kind: .episode), supportsWatchState: true, context: .none)
+                .contains(.removeFromContinueWatching)
+        )
+    }
+
+    func testTheRowDoesNotOverrideProviderCapabilityOrContainerKinds() {
+        XCTAssertFalse(
+            MediaItemActionCatalog.actions(
+                for: item(kind: .episode), supportsWatchState: false, context: .continueWatching
+            ).contains(.removeFromContinueWatching)
+        )
+        XCTAssertFalse(
+            MediaItemActionCatalog.actions(
+                for: item(kind: .series), supportsWatchState: true, context: .continueWatching
+            ).contains(.removeFromContinueWatching)
+        )
+    }
+
     func testTheActionIsNeitherNavigationNorDestructive() {
         XCTAssertFalse(MediaItemAction.removeFromContinueWatching.isNavigation)
         XCTAssertFalse(
@@ -108,7 +141,9 @@ final class RemoveFromContinueWatchingMenuOrderTests: XCTestCase {
 
     /// Nothing else is separated, or the separation stops meaning anything.
     func testNoOtherActionIsSetApart() {
-        let others = MediaItemAction.allCases.filter { $0 != .removeFromContinueWatching }
+        let others = MediaItemAction.allCases.filter {
+            $0 != .removeFromContinueWatching && $0 != .dropShow && $0 != .undropShow
+        }
         XCTAssertTrue(others.allSatisfy { !$0.isSetApartInMenu })
     }
 }

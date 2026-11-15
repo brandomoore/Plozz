@@ -596,7 +596,10 @@ final class PlozziOSAppModel {
                 }
             },
             makeActionConfirmation: { [unowned self] in self.makeLibraryActionFeedback() },
-            makeWatchlistFailureFeedback: { [unowned self] in self.makeLibraryActionFeedback(onCompletion: .error) }
+            makeWatchlistFailureFeedback: { [unowned self] in self.makeLibraryActionFeedback(onCompletion: .error) },
+            droppedShows: { [unowned self] in
+                DroppedShowsModel.shared(namespace: self.profiles.activeNamespace)
+            }
         )
 
     /// Internal (not private) so the KeychainSync extension in another file can read

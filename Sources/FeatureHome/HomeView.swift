@@ -693,6 +693,7 @@ public struct HomeView: View {
                                                 }
                                             } else {
                                                 libraryRowView(row, onBrowse: browseAction(for: presentation))
+                                                .mediaItemActionContext(presentation.actionContext)
                                                 .environment(
                                                     \.plozzLandscapeTitleLogo,
                                                     presentation.choice.collectionSection?.titleLogo ?? .off
@@ -1455,6 +1456,7 @@ public struct HomeView: View {
             )
             .browsingRow(row.items.isEmpty ? nil : onBrowse)
             .environment(\.plozzArtworkArea, .continueWatching)
+            .mediaItemActionContext(.continueWatching)
         case .watchlist:
             MediaRowView(
                 title: row.displayName,
@@ -1795,6 +1797,7 @@ public struct HomeView: View {
                     )
                     .browsingRow(row.items.isEmpty ? nil : onBrowse)
                     .environment(\.plozzArtworkArea, .continueWatching)
+                    .mediaItemActionContext(.continueWatching)
                 case .watchlist:
                     MediaRowView(
                         title: row.displayName,
@@ -1894,6 +1897,7 @@ public struct HomeView: View {
                     onSelect: playsOnSelect ? onPlayItem : onSelectItem
                 )
                 .browsingRow(row.isLoading ? nil : onBrowse)
+                .mediaItemActionContext(presentation.actionContext)
             }
         }
     }

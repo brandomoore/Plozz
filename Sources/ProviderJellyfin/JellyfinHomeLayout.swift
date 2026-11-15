@@ -139,6 +139,9 @@ extension JellyfinProvider {
                 result += items.filter { Self.isHomeVideo($0) && seen.insert($0.Id).inserted }
                     .map { map(item: $0).taggingLibrary(parent) }
             }
+            if section.kind == .continueWatching || section.kind == .nextUp {
+                result = continueWatchingDismissals.filtering(result)
+            }
             return Array(result.prefix(boundedLimit))
         }
         guard section.id.hasPrefix("web:") else { throw AppError.invalidResponse }
@@ -178,6 +181,9 @@ extension JellyfinProvider {
             }
             result += items.filter { Self.isHomeVideo($0) && seen.insert($0.Id).inserted }
                 .map { map(item: $0).taggingLibrary(parent) }
+        }
+        if section.kind == .continueWatching || section.kind == .nextUp {
+            result = continueWatchingDismissals.filtering(result)
         }
         return Array(result.prefix(boundedLimit))
     }

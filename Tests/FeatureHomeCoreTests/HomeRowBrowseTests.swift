@@ -4,6 +4,33 @@ import XCTest
 
 @MainActor
 final class HomeRowBrowseTests: XCTestCase {
+    /// A server's or library's own Continue Watching and Next Up rows give their
+    /// cards the same row actions (Drop Show) as the global Continue Watching row.
+    func testWatchNextRowsSupplyTheirMenuContext() {
+        func serverRow(_ kind: ServerHomeSection.Kind) -> HomePresentationRow {
+            let server = HomeServerRowDefinition(
+                accountID: "acct", serverName: "Server", providerKind: .jellyfin,
+                section: .init(id: kind.rawValue, kind: kind)
+            )
+            return HomePresentationRow(
+                choice: .init(serverRow: server), source: .library(HomeServerRow(definition: server).row)
+            )
+        }
+        func libraryRow(_ kind: LibraryHomeRowKind) -> HomePresentationRow {
+            let section = LibrarySection(id: kind.rawValue, title: "Row", items: [])
+            return HomePresentationRow(
+                choice: .init(id: .library("acct:L1", kind: kind), title: "Row", isProviderDefault: false),
+                source: .library(.init(section: section, isLoading: false, failure: nil))
+            )
+        }
+        XCTAssertEqual(serverRow(.continueWatching).actionContext, .continueWatching)
+        XCTAssertEqual(serverRow(.nextUp).actionContext, .nextUp)
+        XCTAssertEqual(serverRow(.recommendations).actionContext, .none)
+        XCTAssertEqual(libraryRow(.nextUp).actionContext, .nextUp)
+        XCTAssertEqual(libraryRow(.recentlyAdded).actionContext, .none)
+        XCTAssertFalse(libraryRow(.hubs).actionContext.offersShowDrop)
+    }
+
     func testContinueWatchingBrowserCuratesWithoutChangingProviderOffsets() async throws {
         var all = (0..<125).map {
             MediaItem(id: "\($0)", title: "Video", kind: .movie, runtime: 600, resumePosition: 2)

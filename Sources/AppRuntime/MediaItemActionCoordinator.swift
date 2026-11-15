@@ -134,6 +134,10 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
     private let makeActionConfirmation: @MainActor () -> (@MainActor () -> Void)
     /// Acknowledge the press now; invoke the returned feedback only if saving fails.
     private let makeWatchlistFailureFeedback: @MainActor () -> (@MainActor () -> Void)
+    /// The active profile's dropped shows, or `nil` where dropping is unavailable.
+    /// Resolved per call so a profile switch is picked up without a rebuild.
+    private let droppedShows: @MainActor () -> DroppedShowsModel?
+    private var playedObserver: (any NSObjectProtocol)?
 
     public init(
         providerResolver: @escaping (String?) -> (any MediaProvider)?,
@@ -172,9 +176,11 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
         downloadState: @escaping (MediaItem) -> MediaItemDownloadState?? = { _ in nil },
         performDownloadAction: @escaping (MediaItemAction, MediaItem) -> Void = { _, _ in },
         makeActionConfirmation: @escaping @MainActor () -> (@MainActor () -> Void) = { {} },
-        makeWatchlistFailureFeedback: @escaping @MainActor () -> (@MainActor () -> Void) = { {} }
+        makeWatchlistFailureFeedback: @escaping @MainActor () -> (@MainActor () -> Void) = { {} },
+        droppedShows: @escaping @MainActor () -> DroppedShowsModel? = { nil }
     ) {
         self.providerResolver = providerResolver
+        self.droppedShows = droppedShows
         self.makeActionConfirmation = makeActionConfirmation
         self.makeWatchlistFailureFeedback = makeWatchlistFailureFeedback
         self.providerCapabilityResolver = providerCapabilityResolver
@@ -225,11 +231,28 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
                 self.membershipRevision = nil
             }
         }
+        // Watching a dropped show again is the viewer changing their mind. Both a
+        // finished play and Mark as Watched announce themselves this way, with the
+        // item attached, so one observer covers every path to "watched".
+        playedObserver = NotificationCenter.default.addObserver(
+            forName: .mediaItemDidMutate,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let mutation = MediaItemMutation.from(notification),
+                  mutation.played == true, let item = mutation.item else { return }
+            MainActor.assumeIsolated {
+                self?.undropOnWatch(item)
+            }
+        }
     }
 
     deinit {
         if let watchlistChangeObserver {
             NotificationCenter.default.removeObserver(watchlistChangeObserver)
+        }
+        if let playedObserver {
+            NotificationCenter.default.removeObserver(playedObserver)
         }
     }
 
@@ -264,6 +287,17 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             item,
             identitySources: additionalSources(item)
         )
+        // Coming Soon cards keep whatever menu they would have had anywhere else;
+        // dropping the show is added to it, matched by the show's external ids.
+        if context.isUpcomingRow {
+            var base = context
+            base.isUpcomingRow = false
+            let dropActions = MediaItemActionCatalog.actions(
+                for: item, supportsWatchState: false,
+                isShowDropped: droppedShows()?.isDropped(item), context: context
+            ).filter { $0 == .dropShow || $0 == .undropShow }
+            return actions(for: item, context: base) + dropActions
+        }
         // An unaired episode exists on no server, so every action here — watch
         // state, watchlist, refresh, download — would silently fail.
         guard !item.isUpcomingUnaired else { return [] }
@@ -286,6 +320,7 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
                 : nil,
             supportsMetadataRefresh: capabilities.supportsMetadataRefresh,
             downloadState: isExternalDiscovery ? nil : downloadState(item),
+            isShowDropped: isExternalDiscovery ? nil : droppedShows()?.isDropped(item),
             context: context
         )
     }
@@ -313,6 +348,8 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             performRefresh(on: item)
         case .removeFromContinueWatching:
             performRemoveFromContinueWatching(on: item)
+        case .dropShow, .undropShow:
+            performShowDrop(action == .dropShow, on: item)
         case .startDownload, .pauseDownload, .resumeDownload, .removeDownload:
             performDownloadAction(action, item)
         case .goToSeason, .goToMovie, .goToEpisode, .browseFiles:
@@ -401,6 +438,67 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
         ).post()
 
         enqueueWatchMutation(mutation)
+    }
+
+    // MARK: - Dropped shows
+
+    /// Drops or takes back the show `item` belongs to.
+    ///
+    /// The drop takes effect in Plozz at once — every surface showing the show is
+    /// told, and Home leaves it out — and is then offered to each server holding
+    /// the show that can keep it too. That second step is what reaches
+    /// AIOMetadata: a disliked series is a dropped show there, and it passes the
+    /// drop on to its trackers.
+    private func performShowDrop(_ dropping: Bool, on item: MediaItem) {
+        guard let model = droppedShows() else { return }
+        let changed = dropping
+            ? model.drop(item, title: item.kind == .series ? item.title : item.parentTitle)
+            : model.undrop(item)
+        guard changed else { return }
+        makeActionConfirmation()()
+        syncShowDrop(dropping, for: item)
+    }
+
+    private func undropOnWatch(_ item: MediaItem) {
+        guard let model = droppedShows(), model.isDropped(item), model.undrop(item) else { return }
+        PlozzLog.app.info("Took back a dropped show after an episode was watched")
+        syncShowDrop(false, for: item)
+    }
+
+    /// Mirrors a drop to every server holding the show that can record one.
+    /// Best-effort per server: the drop already holds in Plozz, so one server
+    /// that cannot be reached does not undo it, but the failure is reported.
+    private func syncShowDrop(_ dropped: Bool, for item: MediaItem) {
+        var targets: [(accountID: String?, itemID: String, seriesID: String?)] = [(
+            item.sourceAccountID,
+            item.id,
+            item.kind == .series ? item.id : item.seriesID
+        )]
+        for source in additionalSources(item) + item.sources
+        where source.accountID != item.sourceAccountID
+            && !targets.contains(where: { $0.accountID == source.accountID }) {
+            targets.append((source.accountID, source.itemID, item.kind == .series ? source.itemID : nil))
+        }
+        let syncers: [(any ShowDropSyncing, String, String?)] = targets.compactMap { target in
+            guard let syncer = providerResolver(target.accountID) as? any ShowDropSyncing else { return nil }
+            return (syncer, target.itemID, target.seriesID)
+        }
+        guard !syncers.isEmpty else { return }
+        let reportFailure = makeWatchlistFailureFeedback()
+        Task {
+            var failed = false
+            for (syncer, itemID, seriesID) in syncers {
+                do {
+                    try await syncer.setShowDropped(dropped, itemID: itemID, seriesID: seriesID)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    failed = true
+                    PlozzLog.app.error("\(dropped ? "Drop" : "Undrop") show failed on a server: \(String(describing: (error as? AppError) ?? .unknown("")))")
+                }
+            }
+            if failed { reportFailure() }
+        }
     }
 
     /// "Mark watched up to here" stays scoped to the primary server: the preceding
