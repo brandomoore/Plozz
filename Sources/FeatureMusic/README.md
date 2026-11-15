@@ -7,6 +7,20 @@ The Music tab is integrated into the tvOS shell and, in development/TestFlight
 builds only, the iOS/iPadOS shell. App Store builds do not create the mobile
 music runtime or probe music libraries.
 
+The mobile Music landing page puts its large title and the shell's shared circular
+profile button in one scrolling header. The header remains available during
+loading, empty, and failed states. Pushed music pages retain their own native
+navigation and actions.
+Header insets, action sizing and spacing come from
+[the shared mobile header](../CoreUI/README.md), with no Music-specific top offset.
+The mobile landing page and browse grids use the shared `AppBackground` inside
+their navigation stack, following the app theme and Gradient Backgrounds setting.
+Artwork-led detail pages and the player keep their separate backgrounds.
+Mobile browsing rails reuse Home's section headings, adaptive page insets,
+section spacing and scroll clearance. Album, playlist and recent-track captions
+use the shared poster typography; artist labels use the same title metrics while
+retaining their circular artwork.
+
 Development/TestFlight source selection also offers **Navidrome (Subsonic)**.
 It joins the same music browser and player without adding video destinations.
 Plex/Jellyfin/Emby music remains available through their normal account sign-in;
@@ -124,6 +138,11 @@ The overlay stays outside that reservation so its position does not move.
 Both docks emphasize play/pause (30-point glyph) over previous/next (22 in the
 wide dock, 24 in the compact dock) and shuffle/repeat (18), without changing
 control spacing or hit regions.
+In tall regular-width windows, the expanded artwork, metadata, scrubber and
+transport form one vertically centered group with bounded internal spacing.
+Opening lyrics or the queue preserves that grouping in the player column;
+landscape and compact-width players retain their existing spacing. The utility
+row remains at the safe-area bottom.
 Both dock sizes reuse the expanded player's scaling play/pause transition and
 press feedback. Play/pause retains its press scaling and haptics without a
 circular background highlight, in both the docks and expanded player.

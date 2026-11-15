@@ -49,6 +49,7 @@ public struct PosterCardView: View {
     private let showsActionsMenu: Bool
     /// Keeps a Watchlist card visibly in flight while its durable row catches up.
     private let isPendingRemoval: Bool
+    private let captionHorizontalInset: CGFloat?
     private let focusRequest: UUID?
     private let onFocusRequestHandled: (() -> Void)?
     private let action: () -> Void
@@ -126,6 +127,7 @@ public struct PosterCardView: View {
         downloadState: MediaDownloadBadgeState? = nil,
         showsActionsMenu: Bool = false,
         isPendingRemoval: Bool = false,
+        captionHorizontalInset: CGFloat? = nil,
         focusRequest: UUID? = nil,
         onFocusRequestHandled: (() -> Void)? = nil,
         textlessBackdropStore: TextlessBackdropStore? = nil,
@@ -145,6 +147,7 @@ public struct PosterCardView: View {
         self.downloadState = downloadState
         self.showsActionsMenu = showsActionsMenu
         self.isPendingRemoval = isPendingRemoval
+        self.captionHorizontalInset = captionHorizontalInset
         self.focusRequest = focusRequest
         self.onFocusRequestHandled = onFocusRequestHandled
         self.action = action
@@ -494,7 +497,7 @@ public struct PosterCardView: View {
                 #endif
 
             if !captionsHidden {
-                captionBlock(inset: metrics.posterCaptionHorizontalInset, spacing: 2)
+                captionBlock(inset: captionHorizontalInset ?? metrics.posterCaptionHorizontalInset, spacing: 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, metrics.posterCaptionInset)
             }
@@ -729,6 +732,7 @@ public struct PosterCardView: View {
     /// the framed caption uses for this shape, so text lines up with the rounded
     /// artwork edge instead of butting against it.
     private var borderlessCaptionInset: CGFloat {
+        if let captionHorizontalInset { return captionHorizontalInset }
         switch style {
         case .poster: return metrics.posterCaptionHorizontalInset
         case .landscape: return metrics.landscapeCaptionHorizontalInset

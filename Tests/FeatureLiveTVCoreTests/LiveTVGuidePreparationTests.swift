@@ -98,6 +98,21 @@ final class LiveTVGuidePreparationTests: XCTestCase {
         XCTAssertEqual(model.completionRevision, 1)
     }
 
+    func testPerChannelPreparationAndManualRefreshNeverFanOutAcrossLineup() async {
+        let provider = PreparationProvider(channelCount: 2_001, usesPerChannelLiveTVGuide: true)
+        let model = model(provider)
+        for refresh in [false, true] {
+            model.start(accountID: "one", refresh: refresh)
+            await model.waitForCompletion(accountID: "one")
+            XCTAssertEqual(model.statuses["one"]?.channelCount, 12)
+            XCTAssertEqual(model.statuses["one"]?.channelsWithListings, 12)
+        }
+        let batches = await provider.batches
+        XCTAssertEqual(batches, [12, 12])
+        let counts = await provider.counts
+        XCTAssertEqual(counts.invalidations, 1)
+    }
+
     func testMissingGuideAndEmptyGuideAreDifferentOutcomes() async {
         let missingProvider = PreparationProvider(supportsGuide: false)
         let missing = model(missingProvider)
@@ -181,6 +196,7 @@ final class LiveTVGuidePreparationTests: XCTestCase {
 }
 
 private actor PreparationProvider: ServerLiveTVProviding {
+    nonisolated let usesPerChannelLiveTVGuide: Bool
     let supportsGuide: Bool
     let discoveredGuide: Bool?
     let availability: ServerLiveTVAvailability.Status
@@ -197,7 +213,8 @@ private actor PreparationProvider: ServerLiveTVProviding {
     init(
         channelCount: Int = 1, supportsGuide: Bool = true, hasListings: Bool = true,
         discoveredGuide: Bool? = nil, availability: ServerLiveTVAvailability.Status = .available,
-        started: @escaping @Sendable () -> Void = {}, suspended: Bool = false
+        started: @escaping @Sendable () -> Void = {}, suspended: Bool = false,
+        usesPerChannelLiveTVGuide: Bool = false
     ) {
         self.channelCount = channelCount
         self.supportsGuide = supportsGuide
@@ -206,6 +223,7 @@ private actor PreparationProvider: ServerLiveTVProviding {
         self.hasListings = hasListings
         self.started = started
         self.suspended = suspended
+        self.usesPerChannelLiveTVGuide = usesPerChannelLiveTVGuide
     }
 
     func liveTVAvailability() -> ServerLiveTVAvailability {

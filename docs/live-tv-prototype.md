@@ -41,8 +41,9 @@ Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
 failed refresh. Completion distinguishes missing guide configuration, no current
 listings, successful matching and failure; displayed matching counts cover the
-next six hours. Ordinary cache-driven refreshes retain their existing policy and
-do not create a setup-progress task. Profile/account authorization changes cancel
+next six hours (the first viewport for per-channel Xtream guides). Ordinary
+cache-driven refreshes use the freshness policy below and do not create a
+setup-progress task. Profile/account authorization changes cancel
 explicit work and discard its presentation state.
 
 Source setup explains that viewers must have authorization for their channels
@@ -514,15 +515,70 @@ utility-priority import has separate waiter cancellation, and teardown or explic
 refresh cancels and drains superseded work. Existing visible listings remain
 available in the presentation model while it refreshes.
 
-This does not introduce a new polling schedule. Parsed reuse retains the existing
-60-second maximum freshness, honoring shorter max-age and no-cache. An identical
-download can revalidate an eligible index without parsing again. No-store removes
-persisted source data before bounded transient parsing, including malformed
-replacements. Explicit refresh bypasses parsed freshness and the raw-response
-cache. Account HTTP validators are not introduced here: unlike existing standalone
-conditional fetching, this path still downloads expired bodies before comparing
-their digest. A changed catalog projection, language, or requested interval outside
-the retained horizon requires a new import.
+Account XMLTV indexes use a conventional 12-hour maximum/default freshness,
+honoring shorter HTTP max-age, Expires, Age and no-cache directives. ETag and
+Last-Modified are encrypted alongside the parsed index, within its existing
+account/credential-revision/profile scope. A conditional 304 advances freshness
+without transferring XML or replacing the parsed generation. Validators belong
+to the exact final response URL: redirects do not send them to another resource.
+A changed catalog projection, language, or requested interval outside the retained
+window requires a full response because a 304 cannot supply unindexed rows.
+
+If the validator-owning resource rejects a conditional request with 400, 405,
+412, 431 or 501 and no Retry-After header, the client attempts one ordinary
+download without validators. A failed fallback remains an error, with no further
+retry. Authentication, missing-feed, throttling and redirect restrictions are
+not bypassed. Oversized or newline-bearing optional cache headers are discarded
+without rejecting valid XMLTV. Unusable cache-policy headers disable persistence
+and reuse for that response; invalid validators are never forwarded.
+
+An identical 200 response can still reuse the generation by digest comparison.
+No-store removes persisted source data before bounded transient parsing, including
+malformed replacements. A 304 no-store revokes the old index and requires an
+unconditional replacement. Explicit refresh bypasses freshness, but may validate
+an unchanged index conditionally. The legacy raw-response cache remains bounded
+to one document and at most 60 seconds; it is not a second persistent XML store.
+
+The existing guide-use/resume request path checks loaded IPTV windows again after
+12 hours, without adding a timer or a coverage-triggered polling heuristic.
+Existing listings stay visible during refresh and ordinary failures remain
+observable without advancing freshness. Missing windows load on demand. This
+policy does not promise background execution while the OS suspends the app.
+Standalone prototype-source fetching retains its separate existing HTTP cache.
+
+Successful empty IPTV windows become retryable on use after 60 seconds. Truly
+empty XMLTV sources (no programme elements) use the same maximum negative-cache
+lifetime, honoring shorter HTTP freshness, including after restoration and
+304 or identical-200 revalidation. A populated feed with no matches or no rows
+in the requested window retains normal source freshness: an empty viewport is
+not a reason to repeatedly download the whole feed. Legacy zero-row indexes
+without a source programme count require one full rebuild to distinguish these
+cases. There is no new polling timer.
+
+Xtream without an explicit XMLTV URL advertises per-channel guide loading.
+Startup discovery and guide preparation warm only the first 12 channels, then
+browsing requests its bounded neighborhood. Preparation counts describe that
+sample, not the complete lineup. Explicit XMLTV sources still prepare the complete
+catalog through one shared index; neither mode opens streams during preparation.
+
+The guide-only filter keeps per-channel sources' unrequested channels eligible
+for demand discovery. A successful guide response resolves that pending state
+for the requested channels; partial failures resolve only channels with returned
+listings. Confirmed empty channels are filtered out, while failures remain
+discoverable for retry. Pending channels do not count as known guide matches.
+Explicit per-channel source refresh clears window freshness and restarts
+discovery, retaining visible programmes and fetching unsampled windows when used.
+An ordinary catalogue reload preserves already-resolved discovery state.
+
+Catalogue imports, XMLTV downloads and Xtream per-channel guide requests share
+cancellable admission within each IPTV provider instance. They do not compete
+for a provider connection. A started transfer finishes without being discarded;
+queued catalogue work precedes the next guide transfer. Cached guide reads and
+saved playback-locator reads need no admission, and other account instances remain
+independent. Teardown rejects queued work; retry backoff does not hold admission.
+This intentionally trades waiting behind an active transfer for avoiding its
+cancellation and re-download. It does not serialize playback streams or promise
+that unrelated provider APIs never overlap.
 
 The bounded-retry comparison used
 [Kodi IPTV Simple's XMLTV loader](https://github.com/kodi-pvr/pvr.iptvsimple/blob/f4071e16c747e1a13d4710e249cb03ff11204f17/src/iptvsimple/Epg.cpp)
@@ -541,15 +597,21 @@ and distinguishes it from
 Neither implementation establishes a speed estimate for Plozz or justifies
 replacing its bounded streaming XML/gzip validation with a materialized XML tree.
 
-XMLTV accepts minute- or second-precision programme timestamps, compact and
+XMLTV accepts year-, month-, day-, hour-, minute- and second-precision timestamps, compact and
 colon-separated numeric timezone offsets, and the unambiguous UTC/GMT/Z labels.
-Absent zones mean UTC. Calendar and offset validation remains strict; coarser
-dates and ambiguous regional timezone abbreviations do not invent airtimes.
+Missing date fields use the start of the specified period (January/first day,
+midnight, zero minutes/seconds); absent zones mean UTC, never device time.
+Calendar and offset validation remains strict, and ambiguous regional timezone
+abbreviations are rejected. A programme still needs an end after its start or
+the existing bounded same-station missing-stop inference.
 Programme-only feeds can supply exact channel IDs without invented display names
 or relaxed station matching. Repeated channel declarations with the same exact
 ID combine distinct display names in source order, rather than rejecting the
 whole guide. Different IDs remain separate and ambiguous names do not establish
-a match. Referenced IDs and declared channels share the channel/text budgets;
+a match. Manual station search includes every declared display name, including
+names merged from repeated declarations, while showing the first name and the
+safe station ID. Searching never changes an automatic match or saves a correction.
+Referenced IDs and declared channels share the channel/text budgets;
 repeated declarations still count toward the declaration limit. Declarations
 with missing, empty or whitespace-only IDs are skipped without inventing an
 identity; they still count toward declaration limits and their display names
@@ -571,6 +633,23 @@ text in comments, processing instructions and CDATA is not a declaration.
 numeric parser code, line/column and channel/programme counts. They never include
 XML fragments, station names, URLs or native error descriptions. Compatible
 duplicate and skipped declarations are reported once per metadata pass as counts.
+Successful parses requested for channels also report candidate station counts,
+retained listings and skipped-row reasons (channel ID, start, stop, missing title,
+outside the window, unmatched station or unresolved missing stop). Account index
+imports identify themselves as `stationIndex`, not final per-channel matches.
+Both account projections and standalone cache settings include the parser version,
+so an older empty index cannot mask newly supported timestamps.
+
+`tools/iptv-guide-corpus.py` captures two public XMLTV feeds into ignored local
+storage, with hashes and independent exact-ID schedule references. The opt-in
+`IPTVGuideRefreshTests` replay those bytes through production networking/parsing
+and a controlled single-connection transport; ordinary tests do not download
+guides. A separate `PLOZZ_LIVE_GUIDE_PROBE=1` opt-in exercises the public endpoints
+through the production downloader and full station-index parser. Neither route
+opens a stream or establishes commercial-provider limits. See
+[the comparison evidence](live-tv-reliability.md#refresh-coordination-and-real-guide-evidence)
+for the measured sample and remaining limitations.
+
 Playlist and imported-file accounts without an explicit or playlist-declared
 guide immediately report no guide capability. Both platforms show "No program
 guide available" and skip guide warmup and browsing requests instead of showing

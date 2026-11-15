@@ -831,6 +831,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             loadedKey = key
             pinnedIdentity = pinIdentity
             displayedReference = first
+            rememberPreview(loaded, reference: first)
         }
         // Attempt the network passes more than once. A `nil` from the cache means
         // only "no image came back" — it does NOT distinguish "this title has no
@@ -876,6 +877,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     loadedKey = key
                     pinnedIdentity = pinIdentity
                     displayedReference = .remote(url)
+                    rememberPreview(preview, reference: .remote(url))
                 }
                 if let loaded = await ArtworkImageCache.shared.image(
                     for: url,
@@ -915,6 +917,9 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         loadedKey = key
         pinnedIdentity = pinIdentity
         displayedReference = firstPaint.reference
+        if isPreviewQuality {
+            rememberPreview(firstPaint.image, reference: firstPaint.reference)
+        }
         onResolveReference?(firstPaint.reference)
         if isPreviewQuality,
            let loaded = await ArtworkImageCache.shared.image(for: firstPaint.reference, variant: variant),
@@ -931,6 +936,18 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     }
 
 
+
+    private func rememberPreview(_ image: UIImage, reference: ArtworkReference) {
+        guard let previewVariant else { return }
+        // A carousel can replace this view before its full-size await finishes.
+        // Retain the painted preview under its own quality key for that first frame.
+        let key = ArtworkResolveKey.make(
+            references: references, variant: previewVariant, maxAspectRatio: maxAspectRatio,
+            pinIdentity: pinIdentity, providerPolicyIdentity: providerPolicyIdentity,
+            prefersPrimaryReference: prefersPrimaryReference, prefersLandscape: prefersLandscape
+        )
+        ArtworkSeedMemo.store(image, reference: reference, for: key)
+    }
 
     /// Stable key for a given set of inputs, used both as the `.task` id and to
     /// remember which inputs the current `image` was resolved for.

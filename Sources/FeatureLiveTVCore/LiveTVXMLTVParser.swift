@@ -12,6 +12,7 @@ public struct LiveTVGuideImport: Codable, Sendable {
     public let matchedChannelCount: Int
     public let guideChannelCount: Int
     public let programCount: Int
+    public let sourceProgramCount: Int?
     public let coverageStart: Date?
     public let coverageEnd: Date?
     public let matches: [String: LiveTVGuideMatch]
@@ -25,7 +26,8 @@ public struct LiveTVGuideImport: Codable, Sendable {
         coverageStart: Date?,
         coverageEnd: Date?,
         matches: [String: LiveTVGuideMatch] = [:],
-        guideChannels: [String: [String]] = [:]
+        guideChannels: [String: [String]] = [:],
+        sourceProgramCount: Int? = nil
     ) {
         self.programs = programs
         self.matchedChannelCount = matchedChannelCount
@@ -35,10 +37,12 @@ public struct LiveTVGuideImport: Codable, Sendable {
         self.coverageEnd = coverageEnd
         self.matches = matches
         self.guideChannels = guideChannels
+        self.sourceProgramCount = sourceProgramCount
     }
 }
 
 public struct LiveTVXMLTVParser: Sendable {
+    static let cacheVersion = 3
     public static let maximumCompressedBytes = XMLTVResourceLimits.compressedBytes
     public static let maximumExpandedBytes = XMLTVResourceLimits.expandedBytes
     public static let maximumGuideChannels = 100_000
@@ -190,11 +194,18 @@ public struct LiveTVXMLTVParser: Sendable {
         )
         try parseXML(stream: makeStream(), delegate: programmeDelegate)
         try checkCancellation()
-        return try programmeDelegate.makeResult(
+        let result = try programmeDelegate.makeResult(
             guideChannelCount: guideChannels.count,
             assignments: matching.assignments,
             guideChannels: guideChannels
         )
+        if !channels.isEmpty {
+            programmeDelegate.logSummary(
+                requestedChannels: channels.count, matchedStations: channelsByGuideID.count,
+                result: result, indexGuideStations: indexGuideStations
+            )
+        }
+        return result
     }
 
     private func parseXML(stream: InputStream, delegate: XMLTVDelegate) throws {
@@ -243,6 +254,9 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
     enum FailureReason: String {
         case syntax, structure, root, entity, encoding, stream
     }
+    private enum SkippedProgrammeReason: String, CaseIterable {
+        case channelID, start, stop, title, outsideWindow, unmatchedChannel, missingStop
+    }
 
     private let pass: Pass
     private let channelsByGuideID: [String: [LiveTVPrototypeChannel]]
@@ -289,6 +303,22 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
     private(set) var error: LiveTVSourceImportError?
     private(set) var coverageStart: Date?
     private(set) var coverageEnd: Date?
+    private var skippedProgrammes: [SkippedProgrammeReason: Int] = [:]
+
+    func logSummary(
+        requestedChannels: Int, matchedStations: Int, result: LiveTVGuideImport, indexGuideStations: Bool
+    ) {
+        let skipped = SkippedProgrammeReason.allCases.map {
+            "skipped_\($0.rawValue)=\(skippedProgrammes[$0, default: 0])"
+        }.joined(separator: " ")
+        let stationCount = indexGuideStations ? "candidateStations" : "matchedStations"
+        PlozzLog.networking.info(
+            "XMLTV_PARSE pass=programmes outcome=succeeded mode=\(indexGuideStations ? "stationIndex" : "channelMatch")"
+                + " requestedChannels=\(requestedChannels) \(stationCount)=\(matchedStations)"
+                + " guideChannels=\(result.guideChannelCount) programmes=\(sourceProgramCount)"
+                + " retainedPrograms=\(result.programCount) \(skipped)"
+        )
+    }
 
     func logFailure(
         _ parser: XMLParser, error: LiveTVSourceImportError, reason: FailureReason? = nil
@@ -368,6 +398,7 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
         if isCancelled() {
             throw LiveTVSourceImportError.cancelled
         }
+        skippedProgrammes[.missingStop, default: 0] += missingEndPrograms.count
         if truncatedDescriptions > 0 {
             PlozzLog.networking.info(
                 "XMLTV_PARSE pass=programmes outcome=succeeded truncatedDescriptions=\(truncatedDescriptions)"
@@ -381,7 +412,8 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
             coverageStart: coverageStart,
             coverageEnd: coverageEnd,
             matches: assignments,
-            guideChannels: guideChannels
+            guideChannels: guideChannels,
+            sourceProgramCount: sourceProgramCount
         )
     }
 
@@ -467,17 +499,25 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
                 }
                 insideProgramme = true
                 selectedTextPriorities.removeAll(keepingCapacity: true)
-                guard let guideChannelID = bounded(attributeDict["channel"], maximum: 4_096),
-                      let startText = bounded(attributeDict["start"], maximum: 64),
-                      let start = parsedDate(startText)
-                else {
+                guard let guideChannelID = bounded(attributeDict["channel"], maximum: 4_096) else {
+                    skippedProgrammes[.channelID, default: 0] += 1
+                    currentProgram = nil
+                    return
+                }
+                guard let startText = bounded(attributeDict["start"], maximum: 64),
+                      let start = parsedDate(startText) else {
+                    skippedProgrammes[.start, default: 0] += 1
                     currentProgram = nil
                     return
                 }
                 let end: Date
                 if let stop = attributeDict["stop"] {
                     guard let text = bounded(stop, maximum: 64), let parsed = parsedDate(text),
-                          parsed > start else { currentProgram = nil; return }
+                          parsed > start else {
+                        skippedProgrammes[.stop, default: 0] += 1
+                        currentProgram = nil
+                        return
+                    }
                     end = parsed
                 } else {
                     end = start
@@ -492,14 +532,21 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
                         previous.details.endWasInferred = true
                         emitProgramme(previous, parser: parser)
                         if error != nil { return }
+                    } else {
+                        skippedProgrammes[.missingStop, default: 0] += 1
                     }
                 }
                 coverageStart = min(coverageStart ?? start, start)
                 if end > start { coverageEnd = max(coverageEnd ?? end, end) }
                 guard let lowerBound, let upperBound,
-                      start < upperBound, (end > start ? end : start.addingTimeInterval(6 * 3_600)) > lowerBound,
-                      channelsByGuideID[guideChannelID] != nil
+                      start < upperBound, (end > start ? end : start.addingTimeInterval(6 * 3_600)) > lowerBound
                 else {
+                    skippedProgrammes[.outsideWindow, default: 0] += 1
+                    currentProgram = nil
+                    return
+                }
+                guard channelsByGuideID[guideChannelID] != nil else {
+                    skippedProgrammes[.unmatchedChannel, default: 0] += 1
                     currentProgram = nil
                     return
                 }
@@ -793,10 +840,11 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
             insideProgramme = false
             currentProgram = nil
         }
-        guard case .programmes = pass,
-              let program = currentProgram,
-              !program.title.isEmpty
-        else { return }
+        guard case .programmes = pass, let program = currentProgram else { return }
+        guard !program.title.isEmpty else {
+            skippedProgrammes[.title, default: 0] += 1
+            return
+        }
         if program.end == program.start {
             missingEndTextBytes += program.textBytes
             guard missingEndPrograms.count < LiveTVXMLTVParser.maximumGuideChannels,
@@ -929,7 +977,7 @@ public enum XMLTVDateParser {
     public static func date(from input: String) -> Date? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let timestamp = trimmed.prefix { $0.isASCII && $0.isNumber }
-        guard timestamp.count == 12 || timestamp.count == 14 else { return nil }
+        guard [4, 6, 8, 10, 12, 14].contains(timestamp.count) else { return nil }
         let remainder = trimmed[timestamp.endIndex...]
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let offsetText: String
@@ -956,10 +1004,12 @@ public enum XMLTVDateParser {
             }
         }
         let year = integer(0, 4)
-        let month = integer(4, 2)
-        let day = integer(6, 2)
-        let hour = integer(8, 2)
-        let minute = integer(10, 2)
+        // XMLTV permits truncated timestamps; use the start of the specified
+        // period in its explicit offset (UTC when omitted), never device time.
+        let month = digits.count >= 6 ? integer(4, 2) : 1
+        let day = digits.count >= 8 ? integer(6, 2) : 1
+        let hour = digits.count >= 10 ? integer(8, 2) : 0
+        let minute = digits.count >= 12 ? integer(10, 2) : 0
         let second = digits.count == 14 ? integer(12, 2) : 0
         guard (1...9_999).contains(year),
               (1...12).contains(month),

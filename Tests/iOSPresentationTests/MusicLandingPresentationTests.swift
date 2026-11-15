@@ -10,6 +10,71 @@ import XCTest
 
 @MainActor
 final class MusicLandingPresentationTests: XCTestCase {
+    func testMusicRootAndBrowseBackgroundsMatchTheAppAcrossThemes() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(Color.clear))
+        let controller = AudioPlaybackController()
+        let settings = MusicPlayerSettingsModel()
+        let navigation = MusicNavigation()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            controller.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width in [430.0, 834.0] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 1_194)
+            for palette in [ThemePalette.dark, .light, .pureBlack] {
+                for gradient in [false, true] {
+                    func themed<Content: View>(_ content: Content) -> AnyView {
+                        AnyView(content
+                            .environment(\.themePalette, palette)
+                            .environment(\.gradientBackgroundsEnabled, gradient)
+                            .transaction { $0.disablesAnimations = true }
+                            .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                            .preferredColorScheme(palette == .light ? .light : .dark))
+                    }
+                    host.rootView = themed(NavigationStack {
+                        Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background { AppBackground(palette: palette) }
+                            .toolbar(.hidden, for: .navigationBar)
+                    })
+                    try await Task.sleep(for: .milliseconds(300))
+                    window.layoutIfNeeded()
+                    let reference = capture(window)
+                    navigation.reset()
+                    host.rootView = themed(MusicTabView(
+                        accounts: [], controller: controller,
+                        authenticatedHTTPResolver: MusicBackgroundHTTPResolver(),
+                        musicPlayer: settings, showNowPlaying: .constant(false),
+                        navigation: navigation, namespace: "music-background-fixture"
+                    ))
+                    for path in [[], [.grid(.album)]] as [[MusicRoute]] {
+                        navigation.path = path
+                        try await Task.sleep(for: .milliseconds(500))
+                        window.layoutIfNeeded()
+                        let actual = capture(window)
+                        for x in [8.0, width - 8] {
+                            for y in [200.0, 500, 950] {
+                                let point = CGPoint(x: x, y: y)
+                                let expected = try pixel(reference, at: point)
+                                let observed = try pixel(actual, at: point)
+                                for channel in 0..<3 {
+                                    XCTAssertEqual(observed[channel], expected[channel], accuracy: 0.02,
+                                                   "\(palette), gradient \(gradient), width \(width), route \(path), \(point)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testBrowsePillsAndRailsHaveMobileMarginsAndNeutralInk() async throws {
         for width in [430.0, 834.0] {
             for palette in [ThemePalette.dark, .light, .pureBlack] {
@@ -20,7 +85,8 @@ final class MusicLandingPresentationTests: XCTestCase {
                     let image = self.capture(window)
                     let labels = try self.textFrames(image)
                     let recent = try XCTUnwrap(labels["Recently Played"])
-                    XCTAssertEqual(recent.minX, 20, accuracy: 3)
+                    let inset: CGFloat = width < 600 ? 22 : 36
+                    XCTAssertEqual(recent.minX, inset, accuracy: 3)
                     let titles = ["Playlists", "Albums", "Artists", "Genres"]
                     let frames = try titles.map { title in
                         try XCTUnwrap(labels[title], "Missing browse destination: \(title)")
@@ -34,10 +100,9 @@ final class MusicLandingPresentationTests: XCTestCase {
                     XCTAssertLessThan(frames[0].maxY, recent.minY)
                     XCTAssertLessThan(recent.height, 30, "Use a touch-scale section heading, not TV typography")
                     let rail = try XCTUnwrap(scrolls.first { $0.bounds.height > 100 && $0.bounds.height < 400 })
-                    XCTAssertEqual(rail.contentOffset.x, 0, accuracy: 1)
                     let artY = rail.convert(rail.bounds, to: window).minY + 75
                     let outside = try self.pixel(image, at: CGPoint(x: 10, y: artY))
-                    let inside = try self.pixel(image, at: CGPoint(x: 30, y: artY))
+                    let inside = try self.pixel(image, at: CGPoint(x: inset + 10, y: artY))
                     XCTAssertLessThan(abs(outside[0] - outside[2]), 0.03, "Artwork must not touch the screen edge")
                     XCTAssertGreaterThan(abs(inside[0] - inside[2]), 0.1, "The first artwork begins inside the margin")
                     try self.assertNeutral(image, in: pills.convert(pills.bounds, to: window))
@@ -94,13 +159,15 @@ final class MusicLandingPresentationTests: XCTestCase {
         let artworkURL = try XCTUnwrap(content.albums.first?.artworkURL)
         let artwork = await ArtworkImageCache.shared.image(for: artworkURL, variant: .original)
         XCTAssertNotNil(artwork, "Resolve fixture artwork before measuring its edge")
-        let view = MusicLandingContent(
+        let view = ScrollView { MusicLandingContent(
             content: content, controller: controller,
             onSelectRoute: { _ in }, onPlayTrack: { _ in }
-        )
+        ) }
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette == .light ? .light : .dark)
         .environment(\.dynamicTypeSize, textSize)
+        .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+        .environment(\.plozzMetrics, .touch(density: .standard, dynamicTypeSize: textSize))
         .environment(\.plozzReducePanelGlass, reducePanelGlass)
         .environment(\.plozzReduceTransparency, reduceTransparency)
         .tint(.blue)
@@ -171,6 +238,12 @@ final class MusicLandingPresentationTests: XCTestCase {
             context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
         return bytes.prefix(3).map { Double($0) / 255 }
+    }
+}
+
+private struct MusicBackgroundHTTPResolver: AuthenticatedHTTPResourceResolving {
+    func resolve(_ locator: AuthenticatedHTTPPlaybackLocator) async throws -> URL {
+        throw AppError.notFound
     }
 }
 #endif

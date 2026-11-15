@@ -213,7 +213,17 @@ struct HomeHeroInteractionFixture: View {
             .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
             .toolbar {
                 if usesNativeChrome {
-                    PlozziOSSettingsToolbarItem {}
+                    if ProcessInfo.processInfo.arguments.contains("--hero-header-audio") && usesVerticalToolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            PlozziOSHeroAudioMuteToolbarButton(isMuted: true, onToggle: {})
+                        }
+                    }
+                    PlozziOSSettingsToolbarItem(leadingActions: {
+                        if ProcessInfo.processInfo.arguments.contains("--hero-header-audio") && !usesVerticalToolbar {
+                            PlozziOSHeroAudioMuteToolbarButton(isMuted: true, onToggle: {})
+                                .plozziOSPageAction()
+                        }
+                    }, action: {})
                 }
             }
         }
@@ -258,6 +268,7 @@ private struct HeroInteractionNavigationChrome<Content: View>: View {
                 Tab("Search", systemImage: "magnifyingglass", value: 3, role: .search) { Text("Search fixture") }
             }
             .tabViewStyle(.sidebarAdaptable)
+            .modifier(PlozziOSNavigationBackground(hidesRegularTabBackdrop: selection == 0))
             .background {
                 PlozziOSHomeSidebarOverlapProbe(enabled: selection == 0, geometryModel: sidebar)
                     .frame(width: 0, height: 0)

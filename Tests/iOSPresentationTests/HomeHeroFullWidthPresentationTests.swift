@@ -10,6 +10,115 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testColdHeroPreviewSurvivesRebuildingBeforeFullResolution() async throws {
+        for landscape in [false, true] {
+            let url = try XCTUnwrap(URL(string: "https://hero-preview.invalid/\(UUID()).png"))
+            let artwork = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 600)).image { context in
+                UIColor.blue.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
+            }
+            let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: url, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
+            ))
+            cache.storeCachedResponse(
+                CachedURLResponse(response: response, data: try XCTUnwrap(artwork.pngData())),
+                for: URLRequest(url: url)
+            )
+            defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
+            let preview = await ArtworkImageCache.shared.image(for: url, variant: .heroPreview)
+            XCTAssertNotNil(preview)
+            XCTAssertNil(ArtworkImageCache.shared.cachedImage(for: url, variant: .heroBackdrop))
+            let identity = UUID().uuidString
+            let policy = ArtworkPresentationPolicy(area: .home, settings: ArtworkSettings(preference: .online))
+            var rebuilt: UIImage?
+            func picture(onResolve: ((ArtworkReference?) -> Void)? = nil) -> some View {
+                FallbackAsyncImage(
+                    references: [], prefersLandscape: landscape, maxAspectRatio: 3,
+                    variant: .heroBackdrop, previewVariant: .heroPreview,
+                    artworkPolicy: policy, asyncFallbackURL: { url },
+                    onResolveReference: onResolve, pinIdentity: identity
+                ) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { Color.red }
+                .showingPlaceholderWhileLoading(true)
+                .frame(width: 200, height: 150)
+                .clipped()
+            }
+            let item = MediaItem(id: identity, title: "Preview", kind: .movie, allowsTitleBasedMetadataMatching: false)
+            try await withWindow(
+                item: item, size: CGSize(width: 390, height: 844), sizeClass: .compact,
+                insets: .zero, pull: PlozziOSHomeHeroPullModel()
+            ) { window, host in
+                host.rootView = AnyView(picture { _ in
+                    guard rebuilt == nil else { return }
+                    // Capture the replacement synchronously, before the full-quality
+                    // await can finish. This is the carousel's landing-frame boundary.
+                    rebuilt = ImageRenderer(content: picture()).uiImage
+                })
+                let deadline = ContinuousClock.now + .seconds(3)
+                while rebuilt == nil, ContinuousClock.now < deadline {
+                    try await waitForHostedLayout(window)
+                }
+                let image = try XCTUnwrap(rebuilt)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "cold-preview-rebuild-\(landscape)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let center = try pixel(image, at: CGPoint(x: 100, y: 75))
+                XCTAssertGreaterThan(center[2], 230, "A rebuilt hero must keep its already displayed blue preview.")
+                XCTAssertLessThan(center[0], 20, "The red loading background must never replace the preview.")
+            }
+        }
+    }
+
+    func testSlidingAndIdleHeroReuseTheSameResolvedArtworkIdentity() async throws {
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 600)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
+        }
+        for style in [HeroArtworkStyle.compactPortrait, .landscape] {
+            let item = MediaItem(
+                id: UUID().uuidString, title: "Hero", kind: .movie, allowsTitleBasedMetadataMatching: false
+            )
+            let policy = ArtworkPresentationPolicy(
+                area: .home, settings: ArtworkSettings(preference: .online), placement: .homeHero
+            )
+            let key = ArtworkResolveKey.make(
+                references: [], variant: .heroBackdrop, maxAspectRatio: 3,
+                pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(item.id)", style: style),
+                providerPolicyIdentity: policy.identity, prefersLandscape: style != .compactPortrait
+            )
+            let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://prepared.invalid/\(UUID()).png")))
+            ArtworkSeedMemo.store(artwork, reference: reference, for: key)
+            try await withWindow(
+                item: item, size: CGSize(width: 600, height: 844), sizeClass: .regular,
+                insets: .zero, pull: PlozziOSHomeHeroPullModel()
+            ) { window, host in
+                for sliding in [true, false, true] {
+                    host.rootView = AnyView(
+                        PlozziOSHomeStaticBackdrop(
+                            item: item, style: style, height: 400,
+                            showsTrailer: false, usesSlidingArtwork: sliding
+                        )
+                        .environment(PlozziOSSidebarGeometryModel())
+                        .environment(HeroTrailerController())
+                        .environment(\.plozzArtworkArea, .home)
+                        .environment(\.plozzArtworkSettings, policy.settings)
+                        .environment(\.themePalette, .dark)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    )
+                    try await waitForHostedLayout(window)
+                    let image = snapshot(window, name: "hero-identity-\(style)-\(sliding)")
+                    let center = try pixel(image, at: CGPoint(x: 300, y: 100))
+                    XCTAssertGreaterThan(Int(center[2]) - Int(center[0]), 200,
+                                         "Sliding and idle must reuse the same already-selected image.")
+                }
+            }
+        }
+    }
+
     func testPendingParentShowPaintsArtworkAndTitleInsteadOfABlackSpinner() async throws {
         var item = try await artworkItem()
         item.kind = .episode
@@ -490,7 +599,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    func testMacNavigationBackgroundKeepsArtworkClearAndNativeControlsVisible() async throws {
+    func testHomeKeepsNativeTopBlurWhileMacKeepsArtworkClear() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let item = try await artworkItem()
@@ -498,9 +607,9 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil,
             insets: .zero, pull: PlozziOSHomeHeroPullModel()
         ) { window, host in
-            for isRunningOnMac in [false, true, false] {
+            for (isRunningOnMac, hidesRegularTabBackdrop) in [(false, false), (false, true), (true, false), (false, false)] {
                 host.rootView = AnyView(
-                    MacNavigationBackgroundFixture()
+                    MacNavigationBackgroundFixture(hidesRegularTabBackdrop: hidesRegularTabBackdrop)
                         .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
                         .environment(\.colorScheme, .dark)
                 )
@@ -512,11 +621,12 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     let navigation = try XCTUnwrap(findController(UINavigationController.self, in: tabs))
                     let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
                         .first { $0.contentSize.height > $0.bounds.height })
-                    XCTAssertEqual(scroll.topEdgeEffect.isHidden, isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled)
+                    XCTAssertEqual(scroll.topEdgeEffect.isHidden,
+                                   isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled)
                     XCTAssertEqual(scroll.bottomEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
                     XCTAssertFalse(navigation.isNavigationBarHidden)
                     XCTAssertEqual(tabs.sidebar.isHidden, sidebarHidden)
-                    let image = snapshot(window, name: "navigation-background-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)")
+                    let image = snapshot(window, name: "navigation-background-home-\(hidesRegularTabBackdrop)-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)")
                     let trailing = CGRect(x: image.size.width - 240, y: 0, width: 240, height: 150)
                     let controlImage = UIImage(
                         cgImage: try XCTUnwrap(image.cgImage?.cropping(to: trailing.applying(
@@ -526,17 +636,22 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     let controls = try HeroTextInk.frames(in: controlImage, terms: ["PROFILE"])
                     let profile = try XCTUnwrap(controls["PROFILE"])
                     XCTAssertTrue(window.bounds.contains(profile.offsetBy(dx: trailing.minX, dy: 0)))
+                    let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+                    let x = bar.minX + 4
+                    let top = try pixel(image, at: CGPoint(x: x, y: bar.midY))
+                    let content = try pixel(image, at: CGPoint(x: x, y: bar.maxY + 120))
                     if isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled {
-                        let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
-                        let x = bar.minX + 4
-                        let top = try pixel(image, at: CGPoint(x: x, y: bar.midY))
-                        let content = try pixel(image, at: CGPoint(x: x, y: bar.maxY + 120))
                         for channel in 0..<3 {
                             XCTAssertLessThan(
                                 abs(Int(top[channel]) - Int(content[channel])), 10,
                                 "The navigation area must not add a backdrop over the artwork."
                             )
                         }
+                    } else {
+                        XCTAssertGreaterThan(
+                            Int(content[1]) - Int(top[1]), 20,
+                            "The native top-edge treatment must render over the cyan artwork at rest."
+                        )
                     }
                 }
             }
@@ -1105,23 +1220,126 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    func testNativeTabChromeKeepsArtworkBehindTheSideRail() async throws {
+    func testNativeTopTabsKeepTheHeroFullWidth() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let item = try await artworkItem()
         let size = scene.coordinateSpace.bounds.size
         try await withWindow(
             item: item, size: size, sizeClass: nil, insets: .zero,
             pull: PlozziOSHomeHeroPullModel(), nativeTabs: true
-        ) { window, _ in
+        ) { window, host in
+            let tabs = try XCTUnwrap(findController(UITabBarController.self, in: host))
+            tabs.sidebar.isHidden = true
             try await waitForHostedLayout(window)
+            XCTAssertTrue(tabs.sidebar.isHidden)
             let image = snapshot(window, name: "native-hero-width-\(Int(size.width))x\(Int(size.height))")
-            try assertArtworkAtBothEdges(image)
+            for x in [CGFloat(3), image.size.width - 3] {
+                let edge = try pixel(image, at: CGPoint(x: x, y: 150))
+                XCTAssertGreaterThan(Int(edge[2]), 120, "The top-tab hero must reach both window edges.")
+                XCTAssertGreaterThan(Int(edge[2]) - Int(edge[0]), 60)
+            }
         }
     }
 
-    private func artworkItem(marksTop: Bool = false) async throws -> MediaItem {
+    func testNativeSidebarKeepsBothHeroEdgesInTheUncoveredContent() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native content layout guide requires iOS 26.") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let item = try await artworkItem(marksSides: true)
+        try await withWindow(
+            item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil, insets: .zero,
+            pull: PlozziOSHomeHeroPullModel(), nativeTabs: true
+        ) { window, host in
+            let tabs = try XCTUnwrap(findController(UITabBarController.self, in: host))
+            let delegate = tabs.sidebar.delegate
+            for size in [CGSize(width: 1194, height: 834), CGSize(width: 834, height: 1194)] {
+                window.frame = CGRect(origin: .zero, size: size)
+                try await waitForHostedLayout(window)
+                var fullWidthSamples: [[UInt8]]?
+                for hidden in [true, false, true, false] {
+                    tabs.sidebar.isHidden = hidden
+                    try await waitForHostedLayout(window)
+                    let safe = tabs.view.convert(tabs.contentLayoutGuide.layoutFrame, to: window)
+                    XCTAssertEqual(tabs.sidebar.isHidden, hidden)
+                    XCTAssertTrue(tabs.sidebar.delegate === delegate)
+                    let probe = try XCTUnwrap(findController(PlozziOSHomeSidebarOverlapProbe.ProbeController.self, in: host))
+                    XCTAssertTrue(probe.tabBarController === tabs)
+                    XCTAssertEqual(probe.geometryModel?.isVisible, !hidden)
+                    if !hidden {
+                        XCTAssertEqual(try XCTUnwrap(probe.geometryModel?.coveredWidth), safe.minX, accuracy: 1)
+                        XCTAssertGreaterThan(safe.minX, 100)
+                    }
+                    let image = snapshot(window, name: "native-sidebar-\(Int(size.width))-hidden-\(hidden)")
+                    let left = try pixel(image, at: CGPoint(x: safe.minX + safe.width * 0.05, y: 150))
+                    let right = try pixel(image, at: CGPoint(x: safe.maxX - safe.width * 0.05, y: 150))
+                    if !hidden {
+                        XCTAssertGreaterThan(Int(left[0]) - Int(left[2]), 100, "The red left edge must remain beside the sidebar.")
+                        XCTAssertGreaterThan(Int(right[1]) - Int(right[2]), 100, "The green right edge must remain visible.")
+                        let reflection = try pixel(image, at: CGPoint(x: safe.minX - 50, y: 250))
+                        XCTAssertGreaterThan(Int(reflection[0]) - Int(reflection[2]), 8,
+                                             "The blurred reflection must retain the red edge's hue, not paint a black strip.")
+                    } else {
+                        let samples = try [CGFloat(0.1), 0.5, 0.9].map {
+                            try pixel(image, at: CGPoint(x: window.bounds.width * $0, y: 150))
+                        }
+                        if let fullWidthSamples {
+                            XCTAssertEqual(samples, fullWidthSamples, "Closing the sidebar must restore full-width artwork.")
+                        } else {
+                            fullWidthSamples = samples
+                        }
+                    }
+                }
+            }
+            let probe = try XCTUnwrap(findController(PlozziOSHomeSidebarOverlapProbe.ProbeController.self, in: host))
+            let model = try XCTUnwrap(probe.geometryModel)
+            PlozziOSHomeSidebarOverlapProbe.dismantleUIViewController(probe, coordinator: ())
+            XCTAssertFalse(descendants(tabs.view).contains { $0 is PlozziOSHomeSidebarOverlapProbe.ProbeController.GeometryView })
+            XCTAssertFalse(model.isVisible)
+        }
+    }
+
+    func testSidebarArtworkKeepsTheSameFramingAtSwipeLanding() async throws {
+        let item = try await artworkItem(marksSides: true)
+        try await withWindow(
+            item: item, size: CGSize(width: 1024, height: 768), sizeClass: .regular,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            let sidebar = PlozziOSSidebarGeometryModel()
+            sidebar.recordCoveredWidth(280)
+            sidebar.setVisible(true)
+            let trailer = HeroTrailerController()
+            var idleSamples: [[UInt8]]?
+            for sliding in [false, true, false] {
+                host.rootView = AnyView(
+                    PlozziOSHomeStaticBackdrop(
+                        item: item, style: .landscape, height: 680,
+                        showsTrailer: false, usesSlidingArtwork: sliding
+                    )
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea()
+                    .environment(sidebar)
+                    .environment(trailer)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                )
+                try await waitForHostedLayout(window)
+                let image = snapshot(window, name: "sidebar-swipe-landing-\(sliding)")
+                let samples = try [CGPoint(x: 310, y: 150), CGPoint(x: 650, y: 150), CGPoint(x: 980, y: 150)].map {
+                    try pixel(image, at: $0)
+                }
+                XCTAssertGreaterThan(Int(samples[0][0]) - Int(samples[0][2]), 100)
+                XCTAssertGreaterThan(Int(samples[2][1]) - Int(samples[2][2]), 100)
+                if let idleSamples {
+                    XCTAssertEqual(samples, idleSamples, "Landing must not crop or recenter the complete image.")
+                } else {
+                    idleSamples = samples
+                }
+            }
+        }
+    }
+
+    private func artworkItem(marksTop: Bool = false, marksSides: Bool = false) async throws -> MediaItem {
         let url = try XCTUnwrap(URL(string: "https://hero-width.invalid/\(UUID().uuidString).png"))
-        let size = marksTop ? CGSize(width: 1_600, height: 900) : CGSize(width: 900, height: 1_200)
+        let size = marksTop || marksSides ? CGSize(width: 1_600, height: 900) : CGSize(width: 900, height: 1_200)
         let image = UIGraphicsImageRenderer(size: size).image { context in
             UIColor(red: 0.15, green: 0.75, blue: 0.95, alpha: 1).setFill()
             context.fill(CGRect(origin: .zero, size: size))
@@ -1132,6 +1350,12 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             if marksTop {
                 UIColor.magenta.setFill()
                 context.fill(CGRect(x: 0, y: 0, width: size.width, height: 140))
+            }
+            if marksSides {
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 240, height: size.height))
+                UIColor.green.setFill()
+                context.fill(CGRect(x: size.width - 240, y: 0, width: 240, height: size.height))
             }
         }
         let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
@@ -1353,6 +1577,8 @@ private struct PushedDetailTransparencyFixture: View {
 
 @available(iOS 26.0, *)
 private struct MacNavigationBackgroundFixture: View {
+    var hidesRegularTabBackdrop = false
+
     var body: some View {
         TabView {
             Tab("Home", systemImage: "house") {
@@ -1377,7 +1603,7 @@ private struct MacNavigationBackgroundFixture: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .scrollEdgeEffectStyle(.hard, for: .top)
-        .modifier(PlozziOSNavigationBackground())
+        .modifier(PlozziOSNavigationBackground(hidesRegularTabBackdrop: hidesRegularTabBackdrop))
     }
 }
 
@@ -1396,10 +1622,6 @@ private struct HomeHeroWidthFixture: View {
                 Tab("Search", systemImage: "magnifyingglass", role: .search) { Text("Search") }
             }
             .tabViewStyle(.sidebarAdaptable)
-            .background {
-                PlozziOSHomeSidebarOverlapProbe(enabled: true, geometryModel: sidebar)
-                    .frame(width: 0, height: 0)
-            }
         } else {
             home
         }
@@ -1426,6 +1648,12 @@ private struct HomeHeroWidthFixture: View {
                 Color.clear.frame(height: 1200)
             }
             .background(Color.black.ignoresSafeArea())
+            .background {
+                if nativeTabs {
+                    PlozziOSHomeSidebarOverlapProbe(enabled: true, geometryModel: sidebar)
+                        .frame(width: 0, height: 0)
+                }
+            }
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

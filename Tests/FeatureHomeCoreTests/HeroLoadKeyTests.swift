@@ -17,14 +17,55 @@ final class HeroLoadKeyTests: XCTestCase {
         _ settings: HeroSettings, revision: Int,
         content: HomeViewModel.Content = .init(),
         membershipRevision: Int = 0,
-        scopeID: ObjectIdentifier? = nil
+        scopeID: ObjectIdentifier? = nil,
+        isPreparingHome: Bool = false,
+        loadingRows: Set<HomeRowKind> = []
     ) -> HeroCurationLoadKey {
         HeroCurationLoadKey(
             content: content, settings: settings, visibility: .default,
             freshnessRevision: 0, identityIndexRevision: revision,
             watchlistMembershipRevision: membershipRevision,
-            scopeID: scopeID ?? ObjectIdentifier(scope), seerRevision: connection
+            scopeID: scopeID ?? ObjectIdentifier(scope), seerRevision: connection,
+            isPreparingHome: isPreparingHome, loadingRows: loadingRows
         )
+    }
+
+    func testPendingEmptySourcesCannotCompleteHeroAndReadyEmptySourcesRestartCuration() {
+        let dependencies: [(HeroSourceKind, HomeRowKind)] = [
+            (.continueWatching, .continueWatching), (.recentlyAdded, .recentlyAdded),
+            (.watchlist, .watchlist), (.randomFromLibrary, .libraries)
+        ]
+        for (source, row) in dependencies {
+            var settings = HeroSettings.default
+            settings.sources = [source]
+            let preparing = curation(settings, revision: 0, isPreparingHome: true)
+            let pending = curation(settings, revision: 0, loadingRows: [row])
+            let ready = curation(settings, revision: 0)
+            XCTAssertTrue(preparing.isAwaitingSources)
+            XCTAssertTrue(pending.isAwaitingSources)
+            XCTAssertFalse(ready.isAwaitingSources)
+            XCTAssertNotEqual(pending, ready, "Even a successful empty source must restart the task.")
+            XCTAssertEqual(
+                ready,
+                curation(settings, revision: 0, loadingRows: Set(HomeRowKind.allCases).subtracting([row])),
+                "Unrelated Home rows must not delay or restart this hero."
+            )
+        }
+    }
+
+    func testAsyncHeroSourcesWaitForPreparationButNotUnrelatedRows() {
+        for source: HeroSourceKind in [.featured, .collection] {
+            var settings = HeroSettings.default
+            settings.sources = [source]
+            let preparing = curation(settings, revision: 0, isPreparingHome: true)
+            let pendingRows = curation(settings, revision: 0, loadingRows: Set(HomeRowKind.allCases))
+            XCTAssertTrue(preparing.isAwaitingSources)
+            XCTAssertEqual(pendingRows.isAwaitingSources, settings.usesDiscoveryWatchlistSeeds)
+            XCTAssertFalse(curation(settings, revision: 0).isAwaitingSources)
+        }
+        var settings = featured
+        settings.isEnabled = false
+        XCTAssertFalse(curation(settings, revision: 0, loadingRows: Set(HomeRowKind.allCases)).isAwaitingSources)
     }
 
     func testFeaturedOnlyReloadsWhenItsIndexWarmsWithoutHomeRowChanges() {

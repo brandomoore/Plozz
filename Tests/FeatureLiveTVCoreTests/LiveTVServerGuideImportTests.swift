@@ -7,6 +7,150 @@ import XCTest
 final class LiveTVServerGuideImportTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    func testGuideOnlyKeepsUnrequestedPerChannelGuidesDiscoverableUntilChecked() async throws {
+        let lineup = (0..<14).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
+        let provider = WindowGuideProvider(
+            channels: lineup, programs: [program("discovered", channelID: "channel-12")],
+            usesPerChannelLiveTVGuide: true
+        )
+        let time = now
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        model.guideOnly = true
+        await imports.reload(into: model)
+        let populated = try globalID("channel-12", in: imports)
+        let empty = try globalID("channel-13", in: imports)
+        XCTAssertEqual(Set(model.guideRowIDs.map(\.channelID)), [populated, empty])
+        await imports.reloadServerGuides(
+            channelIDs: model.guideRowIDs.map(\.channelID), from: now, to: now.addingTimeInterval(21_600), into: model
+        )
+        XCTAssertEqual(model.currentProgram(for: populated)?.title, "discovered")
+        XCTAssertEqual(model.guideRowIDs.map(\.channelID), [populated])
+        let calls = await provider.guideCalls
+        XCTAssertEqual(calls.map { $0.channelIDs.count }, [12, 2])
+        XCTAssertEqual(Set(calls.last?.channelIDs ?? []), ["channel-12", "channel-13"])
+        await imports.reloadServers(into: model, forceRefresh: false)
+        XCTAssertEqual(model.guideRowIDs.map(\.channelID), [populated], "Ordinary catalog reload must preserve confirmed empty results.")
+    }
+
+    func testExplicitSourceRefreshMakesPreviouslyBrowsedUnsampledWindowsDue() async throws {
+        let lineup = (0..<13).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
+        let provider = WindowGuideProvider(
+            channels: lineup, programs: [program("old", channelID: "channel-12")],
+            usesPerChannelLiveTVGuide: true
+        )
+        let time = now
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        await imports.reload(into: model)
+        let id = try globalID("channel-12", in: imports)
+        let end = now.addingTimeInterval(21_600)
+        await imports.reloadServerGuides(channelIDs: [id], from: now, to: end, into: model)
+        await provider.replacePrograms([program("new", channelID: "channel-12")])
+        try await imports.reloadSource(serverSource.id, into: model)
+        XCTAssertEqual(model.currentProgram(for: id)?.title, "old", "Refresh must retain visible listings until replacement.")
+        await imports.reloadServerGuides(channelIDs: [id], from: now, to: end, into: model)
+        XCTAssertEqual(model.currentProgram(for: id)?.title, "new")
+        await imports.reloadServerGuides(channelIDs: [id], from: now, to: end, into: model)
+        let calls = await provider.guideCalls
+        XCTAssertEqual(calls.map { $0.channelIDs.count }, [12, 1, 12, 1])
+        XCTAssertEqual(calls.last?.channelIDs, ["channel-12"])
+    }
+
+    func testGuideOnlyRetainsPendingChannelsAfterPartialFailureButNotGuideDenial() async throws {
+        let lineup = (0..<14).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
+        let provider = WindowGuideProvider(
+            channels: lineup, programs: [program("partial", channelID: "channel-12")],
+            usesPerChannelLiveTVGuide: true
+        )
+        let time = now
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        model.guideOnly = true
+        await imports.reload(into: model)
+        let populated = try globalID("channel-12", in: imports)
+        let pending = try globalID("channel-13", in: imports)
+        let end = now.addingTimeInterval(21_600)
+        await provider.setPartialFailure(ServerLiveTVError.invalidGuideWindow)
+        await imports.reloadServerGuides(channelIDs: model.guideRowIDs.map(\.channelID), from: now, to: end, into: model)
+        XCTAssertEqual(model.currentProgram(for: populated)?.title, "partial")
+        XCTAssertEqual(Set(model.guideRowIDs.map(\.channelID)), [populated, pending])
+        XCTAssertEqual(imports.serverGuideState(channelID: pending, from: now, to: end), .failed)
+        await provider.setPartialFailure(AppError.unauthorized)
+        await imports.reloadServerGuides(channelIDs: [pending], from: now, to: end, into: model)
+        XCTAssertTrue(model.guideRowIDs.isEmpty)
+        XCTAssertEqual(imports.serverSources[0].guideFailure, .permissionDenied)
+    }
+
+    func testGuideOnlyDoesNotExposePendingChannelsWithoutGuideCapability() async throws {
+        let provider = WindowGuideProvider(channels: channels, supportsGuide: false, usesPerChannelLiveTVGuide: true)
+        let (imports, model) = makeImport(provider, kind: .iptv)
+        model.guideOnly = true
+        await imports.reload(into: model)
+        XCTAssertEqual(model.channels.count, 2)
+        XCTAssertTrue(model.guideRowIDs.isEmpty)
+        let calls = await provider.guideCalls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testEmptyIPTVWindowRetriesOnUseWithoutWaitingTwelveHours() async throws {
+        var time = now
+        let provider = WindowGuideProvider(channels: channels)
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        await imports.reload(into: model)
+        let one = try globalID("one", in: imports)
+        let end = now.addingTimeInterval(21_600)
+        time = now.addingTimeInterval(59)
+        await imports.reloadServerGuides(channelIDs: [one], from: now, to: end, into: model)
+        let fresh = await provider.guideCalls
+        XCTAssertEqual(fresh.count, 1)
+        time = now.addingTimeInterval(60)
+        await provider.replacePrograms([program("recovered")])
+        await imports.reloadServerGuides(channelIDs: [one], from: now, to: end, into: model)
+        XCTAssertEqual(model.currentProgram(for: one)?.title, "recovered")
+        let calls = await provider.guideCalls
+        XCTAssertEqual(calls.map(\.channelIDs), [["one", "two"], ["one"]])
+    }
+
+    func testPerChannelIPTVWarmupOnlyRequestsInitialViewportThenDemandedChannel() async throws {
+        let lineup = (0..<2_001).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
+        let provider = WindowGuideProvider(channels: lineup, usesPerChannelLiveTVGuide: true)
+        let (imports, model) = makeImport(provider, kind: .iptv)
+        await imports.reload(into: model)
+        let initial = await provider.guideCalls
+        XCTAssertEqual(initial.map(\.channelIDs), [Array(lineup.prefix(12).map(\.id))])
+        let channelID = try globalID("channel-1000", in: imports)
+        await imports.reloadServerGuides(
+            channelIDs: [channelID], from: now, to: now.addingTimeInterval(21_600), into: model
+        )
+        let calls = await provider.guideCalls
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(calls.last?.channelIDs, ["channel-1000"])
+        XCTAssertEqual(model.channels.count, 2_001)
+    }
+
+    func testReturningToIPTVWindowReusesFreshRowsAndRefreshesOnlyRequestedChannelsWhenDue() async throws {
+        var time = now
+        let provider = WindowGuideProvider(channels: channels, programs: [program("old-one"), program("old-two", channelID: "two")])
+        let (imports, model) = makeImport(provider, kind: .iptv, guideClock: { time })
+        await imports.reload(into: model)
+        let one = try globalID("one", in: imports)
+        let two = try globalID("two", in: imports)
+        let end = now.addingTimeInterval(21_600)
+        time = now.addingTimeInterval(43_199)
+        await imports.reloadServerGuides(channelIDs: [one], from: now, to: end, into: model)
+        let freshCalls = await provider.guideCalls
+        XCTAssertEqual(freshCalls.count, 1)
+        time = now.addingTimeInterval(43_200)
+        await provider.failNextGuide(.invalidGuideWindow)
+        await imports.reloadServerGuides(channelIDs: [one], from: now, to: end, into: model)
+        XCTAssertEqual(model.currentProgram(for: one)?.title, "old-one")
+        XCTAssertEqual(imports.serverGuideState(channelID: one, from: now, to: end), .failed)
+        await provider.replacePrograms([program("new-one")])
+        await imports.reloadServerGuides(channelIDs: [one], from: now, to: end, into: model)
+        let calls = await provider.guideCalls
+        XCTAssertEqual(calls.map(\.channelIDs), [["one", "two"], ["one"], ["one"]])
+        XCTAssertEqual(model.currentProgram(for: one)?.title, "new-one")
+        XCTAssertEqual(model.currentProgram(for: two)?.title, "old-two")
+    }
+
     func testPlexDiscoversEntireLineupButOnlyWarmsFirstViewportAndFillsFocusedFutureChannel() async throws {
         let channels = (0..<2_000).map { ServerLiveTVChannel(id: "channel-\($0)", name: "Channel \($0)") }
         let provider = WindowGuideProvider(
@@ -669,13 +813,14 @@ final class LiveTVServerGuideImportTests: XCTestCase {
     }
 
     private func makeImport(
-        _ provider: WindowGuideProvider, kind: LiveTVPrototypeSource = .jellyfin
+        _ provider: WindowGuideProvider, kind: LiveTVPrototypeSource = .jellyfin,
+        guideClock: @escaping @MainActor () -> Date = Date.init
     ) -> (LiveTVPrototypeImportModel, LiveTVPrototypeModel) {
         let authorized = context(provider, kind: kind)
         return (
             LiveTVPrototypeImportModel(
                 configuration: LiveTVSourcesConfiguration(servers: [serverSource]),
-                serverProviderResolver: { _ in authorized }
+                serverProviderResolver: { _ in authorized }, guideClock: guideClock
             ),
             LiveTVPrototypeModel(now: now, channels: [])
         )
@@ -692,6 +837,7 @@ private final class WindowAuthorization {
 }
 
 private actor WindowGuideProvider: ServerLiveTVProviding {
+    nonisolated let usesPerChannelLiveTVGuide: Bool
     struct GuideCall: Sendable {
         let channelIDs: [String]
         let from: Date
@@ -710,10 +856,14 @@ private actor WindowGuideProvider: ServerLiveTVProviding {
     private(set) var catalogLoads = 0
     private(set) var opens = 0
 
-    init(channels: [ServerLiveTVChannel], programs: [ServerLiveTVProgramme] = [], supportsGuide: Bool = true) {
+    init(
+        channels: [ServerLiveTVChannel], programs: [ServerLiveTVProgramme] = [], supportsGuide: Bool = true,
+        usesPerChannelLiveTVGuide: Bool = false
+    ) {
         self.channels = channels
         self.programs = programs
         self.supportsGuide = supportsGuide
+        self.usesPerChannelLiveTVGuide = usesPerChannelLiveTVGuide
     }
 
     func replacePrograms(_ value: [ServerLiveTVProgramme]) { programs = value }

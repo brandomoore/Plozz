@@ -21,20 +21,60 @@ private enum MusicLayout {
 
 // MARK: - Landing
 
-struct MusicLandingView: View {
+struct MusicLandingView<LandingActions: View>: View {
     @State var viewModel: MusicLandingViewModel
     @State private var retryRevision = 0
     let controller: AudioPlaybackController
     let onSelectRoute: (MusicRoute) -> Void
     let onPlayTrack: (MusicTrack) -> Void
     var layout: MusicLandingLayout = .default
+    let landingActions: LandingActions
+    private var navigationTitles = NavigationTitles()
+
+    init(
+        viewModel: MusicLandingViewModel, controller: AudioPlaybackController,
+        onSelectRoute: @escaping (MusicRoute) -> Void, onPlayTrack: @escaping (MusicTrack) -> Void,
+        layout: MusicLandingLayout = .default,
+        @ViewBuilder landingActions: () -> LandingActions = { EmptyView() }
+    ) {
+        _viewModel = State(initialValue: viewModel)
+        self.controller = controller
+        self.onSelectRoute = onSelectRoute
+        self.onPlayTrack = onPlayTrack
+        self.layout = layout
+        self.landingActions = landingActions()
+    }
 
     var body: some View {
-        ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
-            MusicLandingContent(
-                content: content, controller: controller, onSelectRoute: onSelectRoute,
-                onPlayTrack: onPlayTrack, layout: layout
-            )
+        Group {
+            #if os(iOS)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.musicKey, default: Text("Music"))) {
+                        landingActions
+                    }
+                    .padding(.bottom, 20)
+                    ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
+                        MusicLandingContent(
+                            content: content, controller: controller, onSelectRoute: onSelectRoute,
+                            onPlayTrack: onPlayTrack, layout: layout
+                        )
+                    }
+                }
+            }
+            .scrollsTopNavigation()
+            #else
+            ContentStateView(state: viewModel.state, emptyMessage: "No music found in your libraries.", onRetry: { retryRevision += 1 }) { content in
+                ScrollView {
+                    MusicLandingContent(
+                        content: content, controller: controller, onSelectRoute: onSelectRoute,
+                        onPlayTrack: onPlayTrack, layout: layout
+                    )
+                }
+                .scrollClipDisabled()
+                .scrollsTopNavigation()
+            }
+            #endif
         }
         .navigationEntryFocus(viewModel.state == .idle || viewModel.state.isLoading ? .pending : nil)
         .task(id: retryRevision) { await viewModel.load() }
@@ -61,22 +101,27 @@ struct MusicLandingContent: View {
 
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
+
+    private var sectionSpacing: CGFloat {
+        #if os(iOS)
+        PlozziOSMediaRailLayout.sectionGap(metrics: metrics)
+        #else
+        metrics.rowSpacing
+        #endif
+    }
 
     var body: some View {
         let firstSection = firstRenderedSection(content)
-        ScrollView {
-            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-                ForEach(layout.visibleSections, id: \.self) { section in
-                    sectionView(section, content: content, isFirst: section == firstSection)
-                }
+        VStack(alignment: .leading, spacing: sectionSpacing) {
+            ForEach(layout.visibleSections, id: \.self) { section in
+                sectionView(section, content: content, isFirst: section == firstSection)
             }
-            .padding(.top, MusicLayout.isMobile ? 12 : metrics.rowSpacing)
-            .padding(.bottom, metrics.rowSpacing)
         }
-        #if os(tvOS)
-        .scrollClipDisabled()
-        #endif
-        .scrollsTopNavigation()
+        .padding(.top, MusicLayout.isMobile ? 0 : metrics.rowSpacing)
+        .padding(.bottom, metrics.rowSpacing)
     }
 
     /// The first section that will actually render given the loaded content, so
@@ -164,7 +209,11 @@ struct MusicLandingContent: View {
                 browseButtons
             }
         }
-        .contentMargins(.horizontal, MusicLayout.screenPadding, for: .scrollContent)
+        .contentMargins(
+            .horizontal,
+            PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
+            for: .scrollContent
+        )
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         #else
         HStack(alignment: .center, spacing: metrics.cardSpacing) {
@@ -309,12 +358,30 @@ private struct MusicRow<Content: View>: View {
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MusicLayout.isMobile ? 12 : metrics.sectionTitleSpacing) {
+        #if os(iOS)
+        PlozziOSMediaSection(title: Text(title)) {
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)) {
+                    content()
+                }
+            }
+            .contentMargins(
+                .horizontal,
+                PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
+                for: .scrollContent
+            )
+            .plozziOSMediaRailClearance()
+        }
+        #else
+        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
             HStack(spacing: 24) {
                 Text(title)
-                    .font(MusicLayout.isMobile ? .title2.bold() : .system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                    .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if let trailing { trailing }
@@ -352,6 +419,7 @@ private struct MusicRow<Content: View>: View {
                 .padding(.bottom, MusicLayout.isMobile ? 0 : metrics.railBottomClearanceOffset)
             }
         }
+        #endif
     }
 }
 

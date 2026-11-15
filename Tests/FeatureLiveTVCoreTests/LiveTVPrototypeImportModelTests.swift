@@ -44,6 +44,30 @@ final class LiveTVPrototypeImportModelTests: XCTestCase {
         XCTAssertEqual(model.currentProgram(for: channel.id), program)
     }
 
+    func testInMemoryStationSearchFindsAliasesWithoutChoosingBetweenRegions() async throws {
+        let source = LiveTVGuideSource(
+            id: "guide", name: "Guide", url: URL(string: "https://example.test/guide.xml")!
+        )
+        let guide = LiveTVGuideImport(
+            programs: [], matchedChannelCount: 0, guideChannelCount: 2, programCount: 0,
+            coverageStart: nil, coverageEnd: nil,
+            guideChannels: [
+                "one": ["Primary name", "Alternate name"],
+                "two": ["Regional name", "Alternate name"]
+            ]
+        )
+        let imports = LiveTVPrototypeImportModel(sources: [source], loader: MultiGuideLoader(
+            channels: [LiveTVPrototypeCatalog.channels[0]], guides: [source.url: guide]
+        ))
+        let model = LiveTVPrototypeModel(channels: [])
+        await imports.reload(into: model)
+        let options = try await imports.guideChannelOptions(sourceID: source.id, query: "Alternate")
+        XCTAssertEqual(options.map(\.id), ["one", "two"])
+        XCTAssertEqual(options.map(\.name), ["Primary name", "Regional name"])
+        XCTAssertTrue(imports.mappingOverrides.isEmpty)
+        XCTAssertNil(model.currentProgram(for: LiveTVPrototypeCatalog.channels[0].id))
+    }
+
     func testCatalogHooksRunSynchronouslyBeforeRefreshAndPublication() async throws {
         let channels = Array(LiveTVPrototypeCatalog.channels.prefix(2))
         let imports = LiveTVPrototypeImportModel(sources: [.us2], loader: ImportLoaderStub(channels: channels))

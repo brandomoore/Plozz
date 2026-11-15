@@ -192,6 +192,7 @@ public final class LiveTVPrototypeImportModel {
     }
 
     @ObservationIgnored private let loader: any LiveTVSourceLoading
+    @ObservationIgnored let guideClock: @MainActor () -> Date
     @ObservationIgnored private let cache: LiveTVIndexedCache?
     @ObservationIgnored private let catalogIsAuthorized: @MainActor () -> Bool
     @ObservationIgnored public var beforeCatalogPublication:
@@ -254,7 +255,8 @@ public final class LiveTVPrototypeImportModel {
         serverProviderResolver: @escaping LiveTVServerProviderResolver = { _ in nil },
         cache: LiveTVIndexedCache? = nil,
         catalogIsAuthorized: @escaping @MainActor () -> Bool = { true },
-        generatedProgramLoader: LiveTVGeneratedProgramLoader? = nil
+        generatedProgramLoader: LiveTVGeneratedProgramLoader? = nil,
+        guideClock: @escaping @MainActor () -> Date = Date.init
     ) {
         self.configuration = configuration
         playlistSources = configuration.playlists.map { LiveTVPlaylistSourceStatus(source: $0) }
@@ -272,6 +274,7 @@ public final class LiveTVPrototypeImportModel {
         self.cache = cache
         self.catalogIsAuthorized = catalogIsAuthorized
         self.generatedProgramLoader = generatedProgramLoader
+        self.guideClock = guideClock
     }
 
     #if DEBUG
@@ -298,6 +301,7 @@ public final class LiveTVPrototypeImportModel {
         self.loader = loader
         self.cache = nil
         self.catalogIsAuthorized = { true }
+        self.guideClock = Date.init
     }
     #endif
 
@@ -818,8 +822,12 @@ public final class LiveTVPrototypeImportModel {
         beforeCatalogPublication?(configuration, sourceChannels)
         guard ensureCatalogAuthorization(into: model) else { throw CancellationError() }
         try model.replaceCatalog(channels: sourceChannels, programs: programs)
+        let pendingNativeChannels = serverSources.filter {
+            $0.source.isEnabled && $0.availability?.supportsGuide == true && $0.guideFailure != .permissionDenied
+        }.compactMap { cachedServerCatalogs[$0.id] }.flatMap(\.pendingGuideChannelIDs)
         model.setKnownGuideChannels(
-            Set(chosen.keys).union(nativePrograms.map(\.channelID)).union(generatedChannels.map(\.id))
+            Set(chosen.keys).union(nativePrograms.map(\.channelID)).union(generatedChannels.map(\.id)),
+            pending: Set(pendingNativeChannels)
         )
         selectedSourceByChannel = chosen.mapValues(\.sourceID)
         guideChannelCount = channelCount
@@ -1178,11 +1186,11 @@ public final class LiveTVPrototypeImportModel {
             guard request == revision, !Task.isCancelled, catalogIsAuthorized() else { throw CancellationError() }
             if !indexed.isEmpty { return indexed }
         }
-        return Array((cachedGuides[sourceID]?.guideChannels ?? [:]).map {
-            LiveTVGuideChannelOption(id: $0.key, name: $0.value.first ?? $0.key)
-        }.filter {
-            query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
-                || ($0.displayID?.localizedCaseInsensitiveContains(query) ?? false)
+        return Array((cachedGuides[sourceID]?.guideChannels ?? [:]).compactMap { id, names -> LiveTVGuideChannelOption? in
+            let option = LiveTVGuideChannelOption(id: id, name: names.first ?? id)
+            guard query.isEmpty || names.contains(where: { $0.localizedCaseInsensitiveContains(query) })
+                || (option.displayID?.localizedCaseInsensitiveContains(query) ?? false) else { return nil }
+            return option
         }
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }.prefix(100))
     }
