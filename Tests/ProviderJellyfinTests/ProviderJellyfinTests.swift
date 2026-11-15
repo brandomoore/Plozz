@@ -702,6 +702,24 @@ final class JellyfinProviderMappingTests: XCTestCase {
         XCTAssertEqual(episodeQueries.first?.first { $0.name == "Limit" }?.value, "1")
     }
 
+    func testHistoryMembershipCanSkipRecencyEnrichmentWithoutDroppingNextUp() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: """
+        {"Items":[{"Id":"resumed","Type":"Episode","SeriesId":"first-show",
+          "UserData":{"PlaybackPositionTicks":1200000000}}],"TotalRecordCount":1}
+        """)
+        stub.stub(pathSuffix: "/Shows/NextUp", json: """
+        {"Items":[{"Id":"next","Type":"Episode","SeriesId":"returning-show"}],"TotalRecordCount":1}
+        """)
+        let provider: any MediaProvider = JellyfinProvider(session: makeSession(), http: stub)
+
+        let items = try await provider.continueWatching(limit: .max, includeSeriesRecency: false)
+
+        XCTAssertEqual(Set(items.map(\.id)), ["resumed", "next"])
+        XCTAssertEqual(Set(items.compactMap(\.seriesID)), ["first-show", "returning-show"])
+        XCTAssertEqual(stub.sentPaths.count, 2, "Membership must not fetch parent dates or latest played episodes")
+    }
+
     func testOlderNextUpSeriesMovesBackWithoutBeingRemoved() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: #"{"Items":[],"TotalRecordCount":0}"#)

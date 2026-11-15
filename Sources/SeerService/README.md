@@ -47,6 +47,9 @@ same `SeerConnectionsView` and authentication implementation.
   requests have a three-second resource budget, separate from interactive login.
   The shared `ServerDiscoveryRow` and bundled Seerr logo present the detected
   server in both suggested and manual setup, without a navigation chevron.
+  Discovery labels use **Detected server** for one displayed result and
+  **Detected servers** for several. Restored or manually entered addresses
+  remain **Server**; an empty search remains **Servers**.
   Scan progress uses the standard section-header indicator, not a second
   account panel or button spinner. The stable setup offers
   **Continue as [name]** for one matching profile account, and otherwise names

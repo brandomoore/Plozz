@@ -334,6 +334,13 @@ public struct PlozzMetrics: Equatable, Sendable {
         return metrics
     }
 
+    public func sizingPosters(width: CGFloat) -> PlozzMetrics {
+        var metrics = self
+        metrics.posterWidth = width
+        metrics.posterHeight = width * posterHeight / posterWidth
+        return metrics
+    }
+
     public func fittingContinueWatchingRail(
         in viewportWidth: CGFloat, leadingInset: CGFloat, peek: CGFloat,
         spacing: CGFloat, cardStyle: CardStyle

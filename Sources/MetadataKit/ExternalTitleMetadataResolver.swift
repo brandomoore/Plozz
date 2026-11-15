@@ -140,6 +140,7 @@ public actor ExternalTitleMetadataResolver {
         availabilityTasks[key] = task
         let resolved = await task.value
         availabilityTasks[key] = nil
+        guard resolved.releaseDatesAvailable != false else { return resolved }
         availabilityCache[key] = CachedAvailability(
             value: resolved,
             expiresAt: Date().addingTimeInterval(

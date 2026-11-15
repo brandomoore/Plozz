@@ -4,6 +4,67 @@ import notify
 
 @MainActor
 final class ShowcaseNavigationTests: XCTestCase {
+    func testLoadingDiscoveryCannotHideShortRowGutters() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        let release = "com.thatcube.Plozz.DiscoveryShortRow.\(UUID())"
+        app.launchArguments = [
+            "--production-home-fixture", "--pinned-home", "--immersive-home",
+            "--short-showcase-rows", "--showcase-discover-fixture", "--discovery-short-row"
+        ]
+        app.launchEnvironment["PLOZZ_HOME_DISCOVER_RELEASE_NOTIFICATION"] = release
+        app.launch()
+        defer { notify_post(release); app.terminate() }
+        XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["Fixture movie 24"].waitForExistence(timeout: 15))
+        let discovery = app.staticTexts["home-fixture-discover-state"]
+        XCTAssertEqual(discovery.label, "pending")
+        func expectFocus(_ index: Int, _ message: String = "") {
+            let target = app.buttons["Fixture movie \(index)"]
+            let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hasFocus == true"), object: target
+            )], timeout: 15)
+            if result != .completed {
+                let tree = XCTAttachment(string: app.debugDescription)
+                tree.lifetime = .keepAlways
+                add(tree)
+                let image = XCTAttachment(screenshot: app.screenshot())
+                image.lifetime = .keepAlways
+                add(image)
+            }
+            XCTAssertEqual(result, .completed, message)
+        }
+        let first = app.buttons["Fixture movie 0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 15))
+        if !first.hasFocus { XCUIRemote.shared.press(.right) }
+        expectFocus(0)
+        for _ in 0..<5 { XCUIRemote.shared.press(.right) }
+        expectFocus(5)
+        XCUIRemote.shared.press(.down)
+        expectFocus(24, "The one-card row must remain reachable past a non-focusable loading row.")
+        XCUIRemote.shared.press(.down)
+        expectFocus(44)
+        for _ in 0..<5 { XCUIRemote.shared.press(.right) }
+        expectFocus(49)
+        XCUIRemote.shared.press(.up)
+        expectFocus(24)
+        notify_post(release)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "ready"), object: discovery
+        )], timeout: 15), .completed)
+        XCUIRemote.shared.press(.up)
+        let discoveredCard = app.buttons.matching(NSPredicate(
+            format: "hasFocus == true AND label MATCHES %@", "Fixture movie (48[0-9]|49[0-9]|50[0-3])"
+        )).firstMatch
+        XCTAssertTrue(discoveredCard.waitForExistence(timeout: 15))
+        let firstDiscoveryCard = discoveredCard.label
+        for _ in 0..<5 { XCUIRemote.shared.press(.right) }
+        XCTAssertTrue(discoveredCard.waitForExistence(timeout: 15))
+        XCTAssertNotEqual(discoveredCard.label, firstDiscoveryCard, "Navigate the curated row without assuming its order.")
+        XCUIRemote.shared.press(.down)
+        expectFocus(24, "Loading completion must restore the newly available adjacent row.")
+    }
+
     func testNativeSidebarShowcaseCannotSkipShortRows() throws {
         try checkShortRows(navigation: "--native-sidebar-home")
     }

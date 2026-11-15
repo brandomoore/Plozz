@@ -135,6 +135,32 @@ final class ProviderResultCacheTests: XCTestCase {
         XCTAssertEqual(identified, key(["IMDb ID": " TT0111161 ", "anilistid": "01"]))
     }
 
+    func testCalendarResultsExpireWithoutExpiringOrdinaryMetadata() async {
+        for resilient in [false, true] {
+            for output in [sourced("schedule", .tvmaze), MetadataEnrichment()] {
+                let clock = MutableClock(Date(timeIntervalSince1970: 1000))
+                let cache = ProviderResultCache(now: { clock.value })
+                let base = CountingProvider(id: .tvmaze, version: 1, output: output)
+                let provider: any MetadataEnrichmentProvider = resilient
+                    ? ResilientEnrichmentProvider(base: base, breaker: ProviderCircuitBreaker(), cache: cache)
+                    : CachedEnrichmentProvider(base: base, cache: cache)
+                let calendar = query().forScheduleStarting(at: clock.value)
+                for _ in 0..<2 {
+                    _ = await provider.enrich(calendar, missing: [.nextAiringEpisode])
+                    _ = await provider.enrich(query(), missing: [.overview])
+                }
+                XCTAssertEqual(base.calls, 2)
+                clock.value = clock.value.addingTimeInterval(6 * 60 * 60 - 1)
+                _ = await provider.enrich(calendar, missing: [.nextAiringEpisode])
+                XCTAssertEqual(base.calls, 2)
+                clock.value = clock.value.addingTimeInterval(1)
+                _ = await provider.enrich(calendar, missing: [.nextAiringEpisode])
+                _ = await provider.enrich(query(), missing: [.overview])
+                XCTAssertEqual(base.calls, 3, "Only the calendar must be refetched after six hours")
+            }
+        }
+    }
+
     func testExpiryIsHonored() async {
         let clock = MutableClock(Date(timeIntervalSince1970: 1000))
         let cache = ProviderResultCache(negativeTTL: 10, now: { clock.value })

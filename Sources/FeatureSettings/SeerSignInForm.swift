@@ -29,6 +29,7 @@ struct SeerSignInForm: View {
     @State private var discoveryRevision = UUID()
     @State private var rescan = false
     @State private var addressEdited = false
+    @State private var detectedServer = false
     @FocusState private var primaryFocused: Bool
     private enum Action { case check, existing(SeerLoginOption), password, apiKey, plex }
     private struct Operation: Identifiable {
@@ -56,6 +57,7 @@ struct SeerSignInForm: View {
             } else if showsSuggestedSetup {
                 SeerSuggestedSetupView(
                     address: address,
+                    detectedServer: detectedServer,
                     accountName: suggestedAccountName,
                     signInTitle: suggestedSignInTitle,
                     canContinue: methods != nil,
@@ -131,6 +133,7 @@ struct SeerSignInForm: View {
             guard !addressEdited else { return }
             methods = nil
             address = ""
+            detectedServer = false
             seer.prepareSetup()
             applyPreparedSetup()
         }
@@ -360,6 +363,7 @@ struct SeerSignInForm: View {
         address = seer.profileConnections.connections.first(where: { $0.id == replacing })?.baseURL.absoluteString
             ?? seer.profileConnections.setupServer?.canonicalURL
             ?? seer.savedBaseURLString ?? ""
+        detectedServer = false
         if !address.isEmpty, !showsSuggestedSetup {
             start(.check)
             return
@@ -378,6 +382,7 @@ struct SeerSignInForm: View {
         if showsSuggestedSetup, let selected = preparation.selected {
             address = selected.baseURL.absoluteString
             methods = selected.loginMethods
+            detectedServer = preparation.scope?.preferredURL == nil
         }
     }
 
@@ -484,6 +489,7 @@ struct SeerSignInForm: View {
 
 struct SeerSuggestedSetupView: View {
     let address: String
+    let detectedServer: Bool
     let accountName: String?
     let signInTitle: LocalizedStringResource
     let canContinue: Bool
@@ -497,7 +503,7 @@ struct SeerSuggestedSetupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            SettingsSectionGroup("Server") {
+            SettingsSectionGroup(serverTitle) {
                 ZStack {
                     if discovering || signingIn {
                         ProgressView().controlSize(.small)
@@ -506,6 +512,7 @@ struct SeerSuggestedSetupView: View {
                     }
                 }
                 .frame(width: 20, height: 20)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
             } content: {
                 Group {
                     if let url = URL(string: address), SeerServerIdentity(baseURL: url) != nil {
@@ -550,6 +557,11 @@ struct SeerSuggestedSetupView: View {
     private var primaryTitle: LocalizedStringResource {
         if let accountName { return "Continue as \(accountName)" }
         return signInTitle
+    }
+
+    private var serverTitle: LocalizedStringResource {
+        if detectedServer { return "Detected server" }
+        return address.isEmpty ? "Servers" : "Server"
     }
 }
 
@@ -599,7 +611,7 @@ private struct SeerServerDiscoverySection: View {
     let onSelect: (URL) -> Void
 
     var body: some View {
-        SettingsSectionGroup("Servers") {
+        SettingsSectionGroup(sectionTitle) {
             if discovering {
                 ProgressView().controlSize(.small)
                     .accessibilityLabel(Text("Looking for Seerr…"))
@@ -622,6 +634,14 @@ private struct SeerServerDiscoverySection: View {
                 .accessibilityHint("Select server")
                 .accessibilityIdentifier("seerr-discovered-server-\(url.absoluteString)")
             }
+        }
+    }
+
+    private var sectionTitle: LocalizedStringResource {
+        switch suggestions.count {
+        case 0: return "Servers"
+        case 1: return "Detected server"
+        default: return "Detected servers"
         }
     }
 }

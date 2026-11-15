@@ -77,6 +77,8 @@ public struct TitleWatchOffer: Codable, Hashable, Sendable, Identifiable {
 public struct ExternalTitleAvailability: Codable, Hashable, Sendable {
     public var regionCode: String
     public var releaseEvents: [TitleReleaseEvent]
+    /// `nil` for older cached values; false distinguishes an outage from no dates.
+    public var releaseDatesAvailable: Bool?
     public var watchOffers: [TitleWatchOffer]
     /// URL TMDb/JustWatch supplies for provider attribution/deep-link context.
     public var watchProvidersURL: URL?
@@ -85,10 +87,12 @@ public struct ExternalTitleAvailability: Codable, Hashable, Sendable {
         regionCode: String,
         releaseEvents: [TitleReleaseEvent] = [],
         watchOffers: [TitleWatchOffer] = [],
-        watchProvidersURL: URL? = nil
+        watchProvidersURL: URL? = nil,
+        releaseDatesAvailable: Bool? = nil
     ) {
         self.regionCode = regionCode
         self.releaseEvents = releaseEvents
+        self.releaseDatesAvailable = releaseDatesAvailable
         self.watchOffers = watchOffers
         self.watchProvidersURL = watchProvidersURL
     }

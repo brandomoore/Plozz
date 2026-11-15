@@ -8,6 +8,116 @@ import ProviderSilo
 
 @MainActor
 final class ProviderCredentialSyncTests: XCTestCase {
+    func testCloudCaptureReadsStorageOffMainAndPreservesOwnedCredentials() async throws {
+        for provider in [ProviderKind.plex, .jellyfin] {
+            for blockOwnership in [false, true] {
+                let suite = "ProviderCaptureExecutor.\(UUID())"
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let accounts = AccountStore(secureStore: InMemorySecureStore())
+                let account = makeAccount(provider)
+                try accounts.add(account, token: "fixture-token")
+                let storage = BlockingPublicationStore()
+                let ownership = BlockingPublicationStore()
+                let bridge = ProviderCredentialSync(
+                    accounts: accounts, storage: storage, ownership: ownership,
+                    defaults: defaults, enabled: { true }, didRestore: {})
+                try bridge.accountVerified("A", authority: bridge.snapshotAuthority)
+                bridge.didAuthenticateLocally(accountID: account.id)
+                let expected = try bridge.capture(fallback: [:])
+                let capture = try XCTUnwrap(bridge.channel(stateFileURL: URL(fileURLWithPath: "/unused")).captureSnapshot)
+                let blocked = blockOwnership ? ownership : storage
+                let started = expectation(description: "Publication storage read started")
+                blocked.pauseRead { started.fulfill() }
+                defer { blocked.release() }
+                let pending = Task {
+                    try await capture(.init(sequence: 1, authority: bridge.snapshotAuthority,
+                                            records: [:], cloudAccountID: "A"))
+                }
+                await fulfillment(of: [started], timeout: 2)
+                XCTAssertFalse(blocked.readOnMain, "The UI executor must run while storage is still blocked.")
+                blocked.release()
+                let records = try await pending.value
+                XCTAssertEqual(records, expected)
+                XCTAssertEqual(records.count, 1)
+                XCTAssertNil(bridge.publicationPermission)
+            }
+        }
+    }
+
+    func testCloudCaptureRejectsAuthorityAndSignInChangesDuringStorageRead() async throws {
+        enum Change: CaseIterable { case cancel, taskCancellation, disable, remove, replace, tokenReplacement, reauthenticate }
+        for change in Change.allCases {
+            let suite = "ProviderCaptureStaleness.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let accounts = AccountStore(secureStore: InMemorySecureStore())
+            let account = makeAccount(.plex)
+            try accounts.add(account, token: "fixture-token")
+            let ownership = BlockingPublicationStore()
+            var enabled = true
+            let bridge = ProviderCredentialSync(
+                accounts: accounts, storage: InMemorySecureStore(), ownership: ownership,
+                defaults: defaults, enabled: { enabled }, didRestore: {})
+            try bridge.accountVerified("A", authority: bridge.snapshotAuthority)
+            bridge.didAuthenticateLocally(accountID: account.id)
+            let capture = try XCTUnwrap(bridge.channel(stateFileURL: URL(fileURLWithPath: "/unused")).captureSnapshot)
+            let started = expectation(description: "Ownership read suspended")
+            ownership.pauseRead(number: change == .tokenReplacement ? 2 : 1) { started.fulfill() }
+            defer { ownership.release() }
+            let pending = Task {
+                try await capture(.init(sequence: 1, authority: bridge.snapshotAuthority,
+                                        records: [:], cloudAccountID: "A"))
+            }
+            await fulfillment(of: [started], timeout: 2)
+            switch change {
+            case .cancel: bridge.cancel()
+            case .taskCancellation: pending.cancel()
+            case .disable: enabled = false
+            case .remove: try accounts.remove(id: account.id)
+            case .replace: try accounts.replaceAuthenticatedSession(account.session(token: "replacement"), expected: account)
+            case .tokenReplacement: try accounts.add(account, token: "replacement")
+            case .reauthenticate: bridge.didAuthenticateLocally(accountID: account.id)
+            }
+            ownership.release()
+            do {
+                _ = try await pending.value
+                XCTFail("A changed publication must be recaptured, not exported: \(change)")
+            } catch is CancellationError {}
+        }
+    }
+
+    func testVerificationReadsOffMainAndCancellationCannotRestoreConsentPrompt() async throws {
+        for cancel in [false, true] {
+            let suite = "ProviderVerificationExecutor.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let accounts = AccountStore(secureStore: InMemorySecureStore())
+            try accounts.add(makeAccount(.jellyfin), token: "fixture-token")
+            let ownership = BlockingPublicationStore()
+            let bridge = ProviderCredentialSync(
+                accounts: accounts, storage: InMemorySecureStore(), ownership: ownership,
+                defaults: defaults, enabled: { true }, didRestore: {})
+            let channel = bridge.channel(stateFileURL: URL(fileURLWithPath: "/unused"))
+            let started = expectation(description: "Verification storage read started")
+            ownership.pauseRead { started.fulfill() }
+            defer { ownership.release() }
+            let pending = Task { try await channel.onAccountVerified("A", channel.accountVerificationAuthority()) }
+            await fulfillment(of: [started], timeout: 2)
+            XCTAssertFalse(ownership.readOnMain)
+            if cancel { bridge.cancel() }
+            ownership.release()
+            do {
+                try await pending.value
+                XCTAssertFalse(cancel)
+                XCTAssertNotNil(bridge.publicationPermission)
+            } catch is CancellationError {
+                XCTAssertTrue(cancel)
+                XCTAssertNil(bridge.publicationPermission)
+            }
+        }
+    }
+
     func testWebDAVCredentialsRestoreForPasswordAnonymousAndBearerAccounts() async throws {
         let authentications: [MediaShareAuthentication] = [
             .password(username: "Viewer", password: "fixture-password"),
@@ -592,6 +702,47 @@ final class ProviderCredentialSyncTests: XCTestCase {
                 baseURL: URL(string: "https://trusted.test")!, provider: provider),
                 userID: "user", userName: "Viewer", deviceID: "source")
     }
+}
+
+private final class BlockingPublicationStore: SecureStore, @unchecked Sendable {
+    private let store = InMemorySecureStore()
+    private let lock = NSLock()
+    private let gate = DispatchSemaphore(value: 0)
+    private var onRead: (@Sendable () -> Void)?
+    private var readsRemaining = 0
+    private var observedMainRead = false
+
+    var readOnMain: Bool { lock.withLock { observedMainRead } }
+
+    func pauseRead(number: Int = 1, _ started: @escaping @Sendable () -> Void) {
+        lock.withLock { onRead = started; readsRemaining = number; observedMainRead = false }
+    }
+
+    func release() { gate.signal() }
+
+    func readString(for key: String) throws -> String? {
+        let started: (@Sendable () -> Void)? = lock.withLock {
+            guard readsRemaining > 0 else { return nil }
+            readsRemaining -= 1
+            guard readsRemaining == 0 else { return nil }
+            let started = onRead
+            if started != nil { observedMainRead = Thread.isMainThread }
+            onRead = nil
+            return started
+        }
+        if let started {
+            started()
+            guard gate.wait(timeout: .now() + 5) == .success else { throw CocoaError(.fileReadUnknown) }
+        }
+        return try store.readString(for: key)
+    }
+
+    func string(for key: String) -> String? { store.string(for: key) }
+    func setString(_ value: String, for key: String) throws { try store.setString(value, for: key) }
+    func insertStringIfAbsent(_ value: String, for key: String) throws -> Bool {
+        try store.insertStringIfAbsent(value, for: key)
+    }
+    func removeValue(for key: String) throws { try store.removeValue(for: key) }
 }
 
 private struct UnavailableOwnershipStore: SecureStore {

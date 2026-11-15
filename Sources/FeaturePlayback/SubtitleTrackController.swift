@@ -31,7 +31,7 @@ protocol SubtitleTrackControllerHost: AnyObject {
     func trackApplySubtitleStyle(_ style: SubtitleStyle)
     func trackRememberedSubtitle(for item: MediaItem) -> RememberedSubtitleSelection?
     func trackEffectiveSubtitleRule(for item: MediaItem) -> SubtitlePolicy.Rule
-    func trackRecordAudioSelection(language: String?)
+    func trackRecordAudioSelection(language: String?, request: PlaybackRequest?)
     @discardableResult func trackSelectAudioTrack(_ track: MediaTrack) -> Bool
     func trackRecordSubtitleSelection(_ selection: RememberedSubtitleSelection?)
     func trackRefreshSubtitleDelayAvailability()
@@ -342,6 +342,8 @@ final class SubtitleTrackController {
     func selectAudioOption(id: Int) {
         guard let host else { return }
         let engine = host.trackEngine
+        // Selecting a server-transcoded track can synchronously retire the request.
+        let request = host.trackRequest
         guard let track = engine.audioTracks.first(where: { $0.id == id }) else { return }
         guard host.trackSelectAudioTrack(track) else { return }
         #if canImport(UIKit)
@@ -350,14 +352,17 @@ final class SubtitleTrackController {
             return
         }
         #endif
-        viewerChangedAudioThisSession = true
-        // Remember this language for the series so later episodes start here.
-        host.trackRecordAudioSelection(language: track.language)
+        recordManualAudioSelection(track, request: request)
         // Show the target immediately; the engine's reload-to-switch lags, so we
         // hold this optimistic pick until `currentAudioTrackID` confirms it.
         pendingAudioTrackID = id
         selectedAudioTrackID = id
         loadTrackOptions()
+    }
+
+    func recordManualAudioSelection(_ track: MediaTrack, request: PlaybackRequest?) {
+        viewerChangedAudioThisSession = true
+        host?.trackRecordAudioSelection(language: track.language, request: request)
     }
 
     /// Applies a pending cross-server audio import once the engine's audio tracks

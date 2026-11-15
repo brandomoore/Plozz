@@ -1,19 +1,21 @@
 import Foundation
+import os
 
-/// Per-profile persistence of remembered per-series audio/subtitle language
-/// choices. Read at load (to steer the initial tracks) and written on a manual
-/// track switch. Reads/writes are serialized so the player's manual-switch
+/// Per-profile persistence of series tracks, movie audio and title zoom choices.
+/// Read at load and written only on a manual choice. Reads/writes are serialized so the player's manual-switch
 /// writes and load-time reads can't interleave a lost update.
 public protocol SeriesTrackPreferenceStoring: Sendable {
     func preference(forKey key: String) -> SeriesTrackPreference?
     func setAudioLanguage(_ language: String?, forKey key: String)
     func setSubtitle(_ selection: RememberedSubtitleSelection?, forKey key: String)
+    func setVideoZoom(_ zoom: VideoZoomPreference?, forKey key: String)
 }
 
 public final class SeriesTrackPreferenceStore: SeriesTrackPreferenceStoring, @unchecked Sendable {
     private let defaults: UserDefaults
     private let key: String
-    private let lock = NSLock()
+    private static let lock = NSLock()
+    private static let logger = Logger(subsystem: "com.plozz.app", category: "settings")
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
     ///   profile) uses the un-suffixed key; other profiles pass their
@@ -24,9 +26,9 @@ public final class SeriesTrackPreferenceStore: SeriesTrackPreferenceStoring, @un
     }
 
     public func preference(forKey key: String) -> SeriesTrackPreference? {
-        lock.lock()
-        defer { lock.unlock() }
-        return loadAll()[key]
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        return loadAll()?[key]
     }
 
     public func setAudioLanguage(_ language: String?, forKey key: String) {
@@ -37,14 +39,18 @@ public final class SeriesTrackPreferenceStore: SeriesTrackPreferenceStoring, @un
         mutate(key) { $0.subtitle = selection }
     }
 
+    public func setVideoZoom(_ zoom: VideoZoomPreference?, forKey key: String) {
+        mutate(key) { $0.videoZoom = zoom }
+    }
+
     // MARK: - Private
 
     /// Read-modify-write one series entry under the lock, dropping the entry when
     /// it becomes empty so the persisted map doesn't grow with no-op records.
     private func mutate(_ key: String, _ body: (inout SeriesTrackPreference) -> Void) {
-        lock.lock()
-        defer { lock.unlock() }
-        var all = loadAll()
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        guard var all = loadAll() else { return }
         var entry = all[key] ?? SeriesTrackPreference()
         body(&entry)
         if entry.isEmpty {
@@ -55,17 +61,21 @@ public final class SeriesTrackPreferenceStore: SeriesTrackPreferenceStoring, @un
         saveAll(all)
     }
 
-    private func loadAll() -> [String: SeriesTrackPreference] {
-        guard let data = defaults.data(forKey: key),
-              let map = try? JSONDecoder().decode([String: SeriesTrackPreference].self, from: data) else {
-            return [:]
+    private func loadAll() -> [String: SeriesTrackPreference]? {
+        guard let data = defaults.data(forKey: key) else { return [:] }
+        do {
+            return try JSONDecoder().decode([String: SeriesTrackPreference].self, from: data)
+        } catch {
+            Self.logger.error("Unable to decode title playback preferences; preserving the stored data.")
+            return nil
         }
-        return map
     }
 
     private func saveAll(_ map: [String: SeriesTrackPreference]) {
-        if let data = try? JSONEncoder().encode(map) {
-            defaults.set(data, forKey: key)
+        do {
+            defaults.set(try JSONEncoder().encode(map), forKey: key)
+        } catch {
+            Self.logger.error("Unable to encode title playback preferences.")
         }
     }
 }

@@ -135,6 +135,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             let continueBefore = try XCTUnwrap(before.first { $0.text == "Continue" })
             XCTAssertEqual(self.activityIndicators(in: window).filter(\.isAnimating).count, 1)
             XCTAssertFalse(before.contains { $0.text.contains("Checking sign-in options") })
+            XCTAssertFalse(before.contains { $0.text.localizedCaseInsensitiveContains("Detected") })
             XCTAssertTrue(before.contains { $0.text == "Set up manually" })
             continuation?.yield(.init(baseURL: discovered, version: "1"))
             try await Task.sleep(for: .milliseconds(150))
@@ -145,6 +146,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                                             "A usable server must be ready while the remaining scan is still suspended")
             XCTAssertEqual(continueBefore.frame.minY, continueAfter.frame.minY, accuracy: 2)
             XCTAssertTrue(text.contains { $0.text.contains("nearby.example") })
+            XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveCompare("Detected server") == .orderedSame })
             XCTAssertGreaterThanOrEqual(text.filter { $0.text == "Seerr" }.count, 2,
                                        "The detected server must retain the shared named server row")
             XCTAssertTrue(self.textFields(in: window).isEmpty)
@@ -186,27 +188,32 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
     }
 
     func testDiscoveryChoicesUseNamedRowsSeparateFromManualEntry() async throws {
-        let urls = [URL(string: "http://192.168.1.9:5055")!, URL(string: "http://192.168.1.10:5055")!]
-        try await render(size: .init(width: 768, height: 1024), state: .unconfigured, manualForm: true, configure: { service in
-            service.discoverServers = { _ in
-                AsyncStream {
-                    for url in urls { $0.yield(.init(baseURL: url, version: "3.5.2")) }
-                    $0.finish()
+        let candidates = [URL(string: "http://192.168.1.9:5055")!, URL(string: "http://192.168.1.10:5055")!]
+        for count in 1...candidates.count {
+            let urls = Array(candidates.prefix(count))
+            try await render(size: .init(width: 768, height: 1024), state: .unconfigured, manualForm: true, configure: { service in
+                service.discoverServers = { _ in
+                    AsyncStream {
+                        for url in urls { $0.yield(.init(baseURL: url, version: "3.5.2")) }
+                        $0.finish()
+                    }
                 }
+            }) { window, scroll, service in
+                let text = try self.recognize(self.capture(window), size: window.bounds.size)
+                let addresses = text.filter { line in urls.contains { line.text.contains($0.host!) } }
+                XCTAssertEqual(addresses.count, count)
+                let title = count == 1 ? "Detected server" : "Detected servers"
+                XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveCompare(title) == .orderedSame })
+                XCTAssertGreaterThanOrEqual(text.filter { $0.text == "Seerr" }.count, count + 1)
+                let entry = try XCTUnwrap(self.textFields(in: window).first)
+                let entryFrame = entry.convert(entry.bounds, to: window)
+                XCTAssertTrue(addresses.allSatisfy { $0.frame.maxY < entryFrame.minY },
+                              "Discovered servers belong above the separate manual address field")
+                XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveCompare("Scan Again") == .orderedSame },
+                              text.map(\.text).joined(separator: " | "))
+                XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+                XCTAssertFalse(service.isConfigured)
             }
-        }) { window, scroll, service in
-            let text = try self.recognize(self.capture(window), size: window.bounds.size)
-            let addresses = text.filter { line in urls.contains { line.text.contains($0.host!) } }
-            XCTAssertEqual(addresses.count, 2)
-            XCTAssertGreaterThanOrEqual(text.filter { $0.text == "Seerr" }.count, 3)
-            let entry = try XCTUnwrap(self.textFields(in: window).first)
-            let entryFrame = entry.convert(entry.bounds, to: window)
-            XCTAssertTrue(addresses.allSatisfy { $0.frame.maxY < entryFrame.minY },
-                          "Discovered servers belong above the separate manual address field")
-            XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveCompare("Scan Again") == .orderedSame },
-                          text.map(\.text).joined(separator: " | "))
-            XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
-            XCTAssertFalse(service.isConfigured)
         }
     }
 
@@ -253,6 +260,8 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }) { window, _, service in
             let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
             XCTAssertTrue(text.contains("Continue as Alex"))
+            XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare("Server") == .orderedSame })
+            XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("Detected") })
             XCTAssertFalse(text.contains { $0.contains("Jellyfin") })
             XCTAssertFalse(service.isConfigured)
         }

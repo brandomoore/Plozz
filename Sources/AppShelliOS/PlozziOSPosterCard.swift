@@ -50,7 +50,7 @@ struct PlozziOSPosterCard: View {
             spoilerSettings: spoilerSettings,
             showsSeriesArtwork: showsSeriesArtwork,
             reservesSubtitleSpace: reservesSubtitleSpace,
-            statusCue: statusCue,
+            statusCue: statusCue.map { Text($0) },
             showsResumeChip: showsResumeChip,
             downloadState: downloadState,
             showsActionsMenu: showsActionsMenu,

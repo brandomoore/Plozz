@@ -5,6 +5,33 @@ import CoreModels
 @testable import CoreUI
 
 final class PlozzMetricsTests: XCTestCase {
+    #if os(iOS)
+    func testPosterGridFillsWholeColumnsAtWindowAndCalendarWidths() {
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics.touch(density: density)
+            for style in CardStyle.allCases {
+                for viewport: CGFloat in [320, 390, 482, 700, 834, 842, 1194] {
+                    let pageInset: CGFloat = viewport < 600 ? 22 : 36
+                    let inset = PlozziOSMediaRailLayout.artworkAlignedInset(pageInset, metrics: metrics, cardStyle: style)
+                    let width = viewport - 2 * inset
+                    let layout = PlozziOSPosterGridLayout(contentWidth: width, metrics: metrics, cardStyle: style)
+                    let slot = layout.metrics.cardSlotWidth(for: .poster, cardStyle: style)
+                    XCTAssertEqual(
+                        CGFloat(layout.columns) * slot + CGFloat(layout.columns - 1) * layout.spacing,
+                        width, accuracy: 0.001
+                    )
+                    XCTAssertEqual(
+                        layout.metrics.posterHeight / layout.metrics.posterWidth,
+                        metrics.posterHeight / metrics.posterWidth, accuracy: 0.001
+                    )
+                    XCTAssertGreaterThan(layout.metrics.posterWidth, 0)
+                    let margin = (slot - layout.metrics.posterWidth) / 2
+                    XCTAssertEqual(inset + margin, pageInset, accuracy: 0.001)
+                }
+            }
+        }
+    }
+    #endif
     func testSettingsControlLabelsUseTheNavigationBodyFont() {
         XCTAssertEqual(SettingsRowMetrics.titleFont, Font.body)
         #if os(tvOS)

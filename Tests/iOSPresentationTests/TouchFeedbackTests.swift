@@ -14,10 +14,15 @@ final class TouchFeedbackTests: XCTestCase {
         let feedback = TouchFeedback(output: { events.append($0) }, isActive: { active })
         feedback.emit(.impact)
         feedback.emit(.selection)
+        feedback.emit(.tension(intensity: 0.25))
+        feedback.emit(.tension(intensity: 0.85))
+        feedback.emit(.pop)
         active = false
         feedback.emit(.impact)
         feedback.emit(.selection)
-        XCTAssertEqual(events, [.impact, .selection])
+        feedback.emit(.tension(intensity: 0.85))
+        feedback.emit(.pop)
+        XCTAssertEqual(events, [.impact, .selection, .tension(intensity: 0.25), .tension(intensity: 0.85), .pop])
     }
 
     func testConfirmationIsExplicitAndOneShot() {

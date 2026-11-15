@@ -290,6 +290,7 @@ struct LargeNativeNavigationFixture: View {
     private func title(for destination: NavigationRailDestination) -> String {
         switch destination {
         case .home: "Home"
+        case .upcoming: "Upcoming"
         case .watchlist: "Watchlist"
         case .discover: "Discover"
         case .liveTV: "Live TV"

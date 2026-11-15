@@ -83,6 +83,7 @@ private struct PlozziOSPageActionLabelStyle: LabelStyle {
 }
 
 public enum PlozziOSMediaRailLayout {
+    public static let headingFont: Font = .title3.weight(.semibold)
     public static let sectionSpacing: CGFloat = 32
     public static let headingSpacing: CGFloat = 12
     public static let visibleSpacing: CGFloat = 12
@@ -119,6 +120,22 @@ public enum PlozziOSMediaRailLayout {
         case .borderless:
             max(0, visibleSpacing - metrics.borderlessCardSideMargin * 2)
         }
+    }
+}
+
+public struct PlozziOSPosterGridLayout {
+    public let columns: Int
+    public let metrics: PlozzMetrics
+    public let spacing: CGFloat
+
+    public init(contentWidth: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle) {
+        spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+        let slot = metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle)
+        let width = contentWidth > 0 ? contentWidth : slot
+        columns = max(1, Int(floor((width + spacing) / (slot + spacing))))
+        let margin = slot - metrics.posterWidth
+        let artworkWidth = (width - CGFloat(columns - 1) * spacing) / CGFloat(columns) - margin
+        self.metrics = metrics.sizingPosters(width: max(1, artworkWidth))
     }
 }
 
@@ -162,7 +179,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
                     else if let onHeadingTap { title.onTapGesture(perform: onHeadingTap) }
                     else { title }
                 }
-                    .font(.title3.weight(.semibold))
+                    .font(PlozziOSMediaRailLayout.headingFont)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)

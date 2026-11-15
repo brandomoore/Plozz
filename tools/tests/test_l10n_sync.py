@@ -50,6 +50,14 @@ def info_documents(*languages: str) -> dict[Path, dict]:
 
 
 class LanguageReleaseParityTests(unittest.TestCase):
+    def test_episode_indices_are_identifiers_but_release_counts_require_plurals(self) -> None:
+        for key in ("Season %lld · Episode %lld", "S%lld · E%lld"):
+            with self.subTest(key=key):
+                self.assertEqual(l10n_sync.plural_problems({key: {}}), [])
+        for key in ("%lld episodes", "Season %lld · %lld episodes", "S%lld · %lld episodes"):
+            with self.subTest(key=key):
+                self.assertEqual(len(l10n_sync.plural_problems({key: {}})), 1)
+
     def test_version_number_is_an_identifier_but_version_counts_require_plurals(self) -> None:
         self.assertEqual(l10n_sync.plural_problems({"Version %lld": {}}), [])
         for key in ("%lld versions", "%lld versions selected"):

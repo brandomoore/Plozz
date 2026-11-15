@@ -37,6 +37,11 @@ explicit choices stay independent. The picker updates the active player's
 settings model directly, without changing the app theme or music browsing pages.
 Preview-card title heights match only within each visible row; wrapped labels
 do not add empty space to other rows or single-column accessibility layouts.
+Both mobile grids own even 8-point outer insets and gaps through
+`settingsPreviewRow()`, without a second row inset from the group. Their 18-point
+card corners nest inside the 26-point settings group; the 8-point preview inset
+leaves 10-point swatch corners. Ordinary rows keep their 16-point insets.
+Onboarding and TV retain their standalone card geometry.
 Settings search reaches the same
 control; production mobile builds hide the page and its search entry. The TV-only track
 details toggle is not offered on mobile.
@@ -306,10 +311,24 @@ asked once after this migration; reporting stays off until they choose to share.
 Either choice continues setup and survives relaunch and profile switching.
 Help & Diagnostics can change it later. Consent is not synced or transferred.
 The prompt and its primary Share Diagnostics and secondary Don't Share actions
-use the shared Settings card above a separate bottom privacy footer, with
+use the shared Settings card, with
 48-point content insets on tvOS and the standard card insets on mobile.
-Its GitHub-marked link opens the repository
-on mobile or a scannable QR sheet on Apple TV; opening it does not grant consent.
+Like other first-use prompts, it supplies the palette's neutral accent to native
+controls rather than inheriting the system-blue tint.
+Its circular info button uses the same native secondary action style as Don't
+Share (Liquid Glass where available). On mobile, the glass circle is 44 points
+across and the GitHub action is 44 points tall at the default text size, scaling
+with Dynamic Type. Flexible native button sizing sets the glass height rather
+than enlarging the label vertically. The mobile GitHub label adds 6 points of
+trailing padding while retaining the icon's native leading inset.
+Older mobile systems retain 44-point minimum
+targets, and tvOS keeps its native control sizing.
+It sits 12 points inside the card's top-trailing corner, independently of its
+content insets. It opens the shared sheet with detailed disclosures, the
+optional-sharing explanation and the Privacy Policy link; opening or dismissing
+it does not choose consent. The footer contains only the GitHub repo link, which
+opens the repository on mobile or a scannable QR sheet on Apple TV; opening it
+does not grant consent.
 
 Settings and the consent screen also expose **Privacy Policy**, opening the
 public policy on mobile or its URL and QR code on Apple TV. `SettingsCopy` keeps

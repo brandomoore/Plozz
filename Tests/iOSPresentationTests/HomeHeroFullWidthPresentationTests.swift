@@ -658,6 +658,152 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
+    func testScrollingHomeActionsMatchToolbarFreeNativeRendering() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        guard scene.traitCollection.horizontalSizeClass == .compact else {
+            throw XCTSkip("This check covers compact horizontal Home chrome.")
+        }
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(
+            MacNavigationBackgroundFixture(edgeStyle: .automatic, hidesNavigationBar: true)
+                .environment(\.colorScheme, .dark)
+        ))
+        host.overrideUserInterfaceStyle = .dark
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKeyAndVisible()
+        }
+        try await waitForHostedLayout(window)
+        let reference = snapshot(window, name: "native-status-edge-without-navigation-row")
+        let referenceNavigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
+        let referenceScroll = try XCTUnwrap(descendants(referenceNavigation.view).compactMap { $0 as? UIScrollView }
+            .first { $0.contentSize.height > $0.bounds.height })
+        let referenceTop = referenceScroll.convert(referenceScroll.bounds, to: window).minY
+            + referenceScroll.adjustedContentInset.top
+        let referenceEdgeStyle = referenceScroll.topEdgeEffect.style
+        var actionsFrame = CGRect.zero
+        host.rootView = AnyView(
+            MacNavigationBackgroundFixture(
+                usesHomeScrollView: true, edgeStyle: .automatic, hidesNavigationBar: true, showsPageActions: true,
+                onActionsFrame: { actionsFrame = $0 }
+            )
+            .environment(\.colorScheme, .dark)
+        )
+        try await waitForHostedLayout(window)
+        let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
+        XCTAssertTrue(navigation.isNavigationBarHidden)
+        let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
+            .first { $0.contentSize.height > $0.bounds.height })
+        let initialFrame = actionsFrame
+        XCTAssertEqual(initialFrame.minY, window.safeAreaInsets.top, accuracy: 1)
+        XCTAssertEqual(initialFrame.height, 44, accuracy: 1)
+        let visibleTop = scroll.convert(scroll.bounds, to: window).minY + scroll.adjustedContentInset.top
+        XCTAssertEqual(visibleTop, referenceTop, accuracy: 1,
+                       "Home must use the same safe-area boundary as a normal toolbar-free page.")
+        let restingOffset = scroll.contentOffset.y
+        for offset: CGFloat in [0, 200, 0] {
+            scroll.setContentOffset(CGPoint(x: 0, y: restingOffset + offset), animated: false)
+            try await waitForHostedLayout(window)
+            XCTAssertEqual(actionsFrame.minY, initialFrame.minY - offset, accuracy: 1,
+                           "Home actions must scroll with the hero rather than remain in the toolbar.")
+            XCTAssertEqual(scroll.topEdgeEffect.style, referenceEdgeStyle)
+            XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
+            let image = snapshot(window, name: "scrolling-home-status-edge-\(offset)")
+            for y in stride(from: CGFloat(2), through: initialFrame.maxY + 60, by: 2) {
+                let actual = try pixel(image, at: CGPoint(x: 4, y: y))
+                let native = try pixel(reference, at: CGPoint(x: 4, y: y))
+                for channel in 0..<3 {
+                    XCTAssertLessThan(abs(Int(actual[channel]) - Int(native[channel])), 5,
+                                      "Scrolling actions must not enlarge or add tint to the native status edge.")
+                }
+            }
+            let besideActions = try pixel(image, at: CGPoint(x: 4, y: initialFrame.midY))
+            let clearArtwork = try pixel(image, at: CGPoint(x: 4, y: initialFrame.maxY + 100))
+            for channel in 0..<3 {
+                XCTAssertLessThan(abs(Int(besideActions[channel]) - Int(clearArtwork[channel])), 10,
+                                  "The native edge must leave artwork beside the action row clear.")
+            }
+        }
+    }
+
+    func testHomeMatchesNativeScrollEdgeWithoutAnAddedMaterial() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(
+            MacNavigationBackgroundFixture(hidesRegularTabBackdrop: true, edgeStyle: .soft)
+                .environment(\.colorScheme, .dark)
+                .environment(\.plozzReduceTransparency, false)
+                .environment(\.plozziOSIsRunningOnMac, false)
+        ))
+        host.overrideUserInterfaceStyle = .dark
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKeyAndVisible()
+        }
+        try await waitForHostedLayout(window)
+        let reference = snapshot(window, name: "home-unmodified-native-edge-reference")
+        host.rootView = AnyView(
+            MacNavigationBackgroundFixture(hidesRegularTabBackdrop: true, usesHomeScrollView: true)
+                .environment(\.colorScheme, .dark)
+                .environment(\.plozzReduceTransparency, false)
+                .environment(\.plozziOSIsRunningOnMac, false)
+        )
+        try await waitForHostedLayout(window)
+        let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
+        let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
+            .first { $0.contentSize.height > $0.bounds.height })
+        let initialBar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+        for offset: CGFloat in [0, 400, 0] {
+            scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+            try await waitForHostedLayout(window)
+            XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
+            XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
+            let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+            XCTAssertEqual(bar, initialBar, "The blur style must not change header geometry.")
+            let image = snapshot(window, name: "home-native-edge-scroll-\(offset)")
+            var previous = try pixel(image, at: CGPoint(x: 4, y: 0))
+            var largestStep = 0
+            for y in stride(from: CGFloat(2), through: 220, by: 2) {
+                let current = try pixel(image, at: CGPoint(x: 4, y: y))
+                let native = try pixel(reference, at: CGPoint(x: 4, y: y))
+                for channel in 0..<3 {
+                    largestStep = max(largestStep, abs(Int(current[channel]) - Int(previous[channel])))
+                    XCTAssertLessThan(abs(Int(current[channel]) - Int(native[channel])), 5,
+                                      "Home must match the system edge, without any additional material or tint.")
+                }
+                previous = current
+            }
+            XCTAssertLessThan(largestStep, 20,
+                              "The native soft edge must not become a hard toolbar boundary.")
+        }
+        for (appReduced, onMac) in [(true, false), (false, true)] {
+            host.rootView = AnyView(
+                MacNavigationBackgroundFixture(hidesRegularTabBackdrop: true, usesHomeScrollView: true)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.plozzReduceTransparency, appReduced)
+                    .environment(\.plozziOSIsRunningOnMac, onMac)
+            )
+            try await waitForHostedLayout(window)
+            let image = snapshot(window, name: "home-status-bar-fallback-\(appReduced)-\(onMac)")
+            let top = try pixel(image, at: CGPoint(x: 4, y: 20))
+            let artwork = try pixel(image, at: CGPoint(x: 4, y: 220))
+            for channel in 0..<3 {
+                XCTAssertLessThan(abs(Int(top[channel]) - Int(artwork[channel])), 10,
+                                  "Reduced transparency and Mac must not add a material over the resting hero.")
+            }
+        }
+    }
+
     func testReducedTransparencyKeepsPhoneNavigationEdgesClearWithoutHidingControls() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         if let expected = ProcessInfo.processInfo.environment["PLOZZ_EXPECT_REDUCED_TRANSPARENCY"] {
@@ -1578,18 +1724,46 @@ private struct PushedDetailTransparencyFixture: View {
 @available(iOS 26.0, *)
 private struct MacNavigationBackgroundFixture: View {
     var hidesRegularTabBackdrop = false
+    var usesHomeScrollView = false
+    var edgeStyle: ScrollEdgeEffectStyle = .hard
+    var hidesNavigationBar = false
+    var showsPageActions = false
+    var onActionsFrame: (CGRect) -> Void = { _ in }
+
+    @ViewBuilder private var content: some View {
+        if usesHomeScrollView {
+            PlozziOSHomeScrollView(heroActive: true, showsPageActions: showsPageActions) {
+                Color(uiColor: .cyan).frame(height: 3_000)
+            } rows: {
+                EmptyView()
+            } pageActions: {
+                HStack {
+                    Spacer()
+                    Button("Profile") {}
+                        .frame(width: 44, height: 44)
+                }
+                .padding(.horizontal, 20)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onActionsFrame($0) }
+            }
+        } else {
+            ScrollView {
+                Color(uiColor: .cyan).frame(height: 3_000)
+            }
+        }
+    }
 
     var body: some View {
         TabView {
             Tab("Home", systemImage: "house") {
                 NavigationStack {
-                    ScrollView {
-                        Color(uiColor: .cyan).frame(height: 3_000)
-                    }
-                    .ignoresSafeArea()
+                    content
+                    .ignoresSafeArea(.container, edges: hidesNavigationBar ? .bottom : .all)
+                    .scrollClipDisabled()
+                    .background(Color(uiColor: .cyan).ignoresSafeArea())
                     .navigationTitle("")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(.hidden, for: .navigationBar)
+                    .toolbar(hidesNavigationBar ? .hidden : .visible, for: .navigationBar)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(action: {}) {
@@ -1602,7 +1776,7 @@ private struct MacNavigationBackgroundFixture: View {
             Tab("Search", systemImage: "magnifyingglass", role: .search) { Text("Search") }
         }
         .tabViewStyle(.sidebarAdaptable)
-        .scrollEdgeEffectStyle(.hard, for: .top)
+        .scrollEdgeEffectStyle(edgeStyle, for: .top)
         .modifier(PlozziOSNavigationBackground(hidesRegularTabBackdrop: hidesRegularTabBackdrop))
     }
 }

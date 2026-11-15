@@ -363,9 +363,12 @@ public struct StreamingPlaybackOptions: Hashable, Sendable {
                     && $0.isCommentary == audioTrack.isCommentary
             }) { return sameLanguage }
         }
-        return AudioLanguagePolicy.fallbackTrackID(preferredLanguages: preferredAudioLanguages, tracks: tracks)
-            .flatMap { id in tracks.first { $0.id == id } }
-            ?? tracks.first(where: \.isDefault) ?? tracks.first
+        for language in preferredAudioLanguages {
+            if let match = tracks.first(where: { LanguageMatch.matches($0.language, language) }) {
+                return match
+            }
+        }
+        return tracks.first(where: \.isDefault) ?? tracks.first
     }
 
     public func selectedSubtitle(in tracks: [MediaTrack]) -> MediaTrack? {

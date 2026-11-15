@@ -61,6 +61,366 @@ private final class ContentPickerSelectionFixture {
 
 @MainActor
 extension HomeRowArrangementHostedTests {
+    func testUpcomingToolbarStaysAtTopWhileTheAgendaScrolls() async throws {
+        let today = Calendar.current.startOfDay(for: Date())
+        let interval = DateInterval(start: today, duration: 60 * 86_400)
+        let releases = (0..<30).flatMap { index in
+            UpcomingReleaseBuilder.movies(
+                [.init(kind: .digital, date: today.addingTimeInterval(Double(index) * 86_400), regionCode: "US")],
+                for: MediaItem(id: "release-\(index)", title: "Release \(index)", kind: .movie),
+                interests: [.watchlist], regionCode: "US"
+            )
+        }
+        #if os(iOS)
+        let cases = [
+            (CGSize(width: 390, height: 844), false),
+            (CGSize(width: 700, height: 900), false),
+            (CGSize(width: 834, height: 1194), false),
+            (CGSize(width: 1194, height: 834), false),
+            (CGSize(width: 834, height: 1194), true)
+        ]
+        #else
+        let cases = [(CGSize(width: 1920, height: 1080), false)]
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "toolbar-test", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        #endif
+        for (size, reducedTransparency) in cases {
+            #if os(iOS)
+            let fixture = UpcomingCaptureState(releases: releases)
+            await fixture.load()
+            #endif
+            try await withWindow(size: size) {
+                #if os(iOS)
+                fixture.shell
+                    .environment(fixture.app)
+                    .environment(fixture.trailer)
+                    .environment(fixture.sidebar)
+                    .environment(\.plozzMetrics, .touch(density: .standard))
+                    .environment(\.plozzReduceTransparency, reducedTransparency)
+                    .environment(\.horizontalSizeClass, size.width >= 800 ? .regular : .compact)
+                #else
+                NavigationStack {
+                    UpcomingView(model: model, interval: interval)
+                }
+                #endif
+            } inspect: { window in
+                func descendants(_ view: UIView) -> [UIView] {
+                    [view] + view.subviews.flatMap(descendants)
+                }
+                #if os(iOS)
+                func controllers(_ controller: UIViewController) -> [UIViewController] {
+                    [controller] + controller.children.flatMap(controllers)
+                }
+                try await Task.sleep(for: .milliseconds(500))
+                fixture.app.screenshotDirector.tab = "upcoming"
+                for controller in controllers(try XCTUnwrap(window.rootViewController)) {
+                    (controller as? UITabBarController)?.sidebar.isHidden = true
+                }
+                #endif
+                let initial = try await self.capture(window, name: "Upcoming toolbar \(size.width)")
+                XCTAssertFalse(initial.contains { ["All", "Shows", "Movies"].contains($0.0) })
+                #if os(iOS)
+                let inlinePicker = descendants(window).compactMap { $0 as? UIDatePicker }.first
+                XCTAssertEqual(inlinePicker != nil, size.width >= 800)
+                let inlineFrame = inlinePicker.map { $0.convert($0.bounds, to: window) }
+                var barItems: [UIBarButtonItem] = []
+                for controller in controllers(try XCTUnwrap(window.rootViewController)) {
+                    let item = controller.navigationItem
+                    barItems += item.leftBarButtonItems ?? []
+                    barItems += item.rightBarButtonItems ?? []
+                    let groups = item.leadingItemGroups + item.centerItemGroups + item.trailingItemGroups
+                    barItems += groups.flatMap(\.barButtonItems)
+                    XCTAssertNotEqual(item.title, "Upcoming")
+                }
+                for title in ["Calendar", "Filters"] {
+                    XCTAssertTrue(barItems.contains { $0.title == title }, title)
+                }
+                XCTAssertFalse(barItems.contains { $0.title == "Today" })
+                let navigationBar = try XCTUnwrap(descendants(window).compactMap { $0 as? UINavigationBar }.first {
+                    guard !$0.isHidden, $0.alpha > 0, $0.bounds.width > 0, let item = $0.topItem else {
+                        return false
+                    }
+                    let actions = (item.rightBarButtonItems ?? []) + item.trailingItemGroups.flatMap(\.barButtonItems)
+                    return ["Calendar", "Filters"].allSatisfy { title in actions.contains { $0.title == title } }
+                })
+                XCTAssertLessThanOrEqual(
+                    navigationBar.convert(navigationBar.bounds, to: window).maxY,
+                    window.safeAreaInsets.top + 64
+                )
+                let controls = [navigationBar]
+                #else
+                XCTAssertNil(descendants(window).first { $0.accessibilityIdentifier == "upcoming.today" })
+                let controls = try ["upcoming.calendar", "upcoming.filters"].map { id in
+                    try XCTUnwrap(descendants(window).first { $0.accessibilityIdentifier == id }, id)
+                }
+                #endif
+                let frames = controls.map { $0.convert($0.bounds, to: window) }
+                for frame in frames {
+                    XCTAssertGreaterThan(frame.width, 0)
+                    XCTAssertLessThan(frame.maxY, size.height * 0.25)
+                }
+                let scroll = try XCTUnwrap(descendants(window).compactMap { $0 as? UIScrollView }.first {
+                    $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height + 100
+                })
+                scroll.setContentOffset(
+                    CGPoint(x: 0, y: scroll.contentSize.height - scroll.bounds.height),
+                    animated: false
+                )
+                _ = try await self.snapshot(window, name: "Upcoming scrolled \(size.width)")
+                for (control, before) in zip(controls, frames) {
+                    XCTAssertEqual(control.convert(control.bounds, to: window).minY, before.minY, accuracy: 2)
+                }
+                #if os(iOS)
+                if let inlinePicker, let inlineFrame {
+                    XCTAssertEqual(inlinePicker.convert(inlinePicker.bounds, to: window).minY, inlineFrame.minY, accuracy: 2)
+                }
+                XCTAssertNil(descendants(window).first {
+                    $0.accessibilityIdentifier == "upcoming.navigationBackdrop"
+                }, "Upcoming must not stack a material overlay over the system scroll edge")
+                if #available(iOS 26.0, *) {
+                    XCTAssertEqual(scroll.topEdgeEffect.isHidden, reducedTransparency)
+                    XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
+                }
+                let calendar = try XCTUnwrap(barItems.first { $0.title == "Calendar" })
+                if inlinePicker == nil {
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                }
+                #else
+                let calendar = try XCTUnwrap(controls[0] as? UIControl)
+                calendar.sendActions(for: .primaryActionTriggered)
+                #endif
+                let opened = try await self.capture(window, name: "Upcoming native calendar")
+                #if os(iOS)
+                XCTAssertFalse(opened.contains { ["Calendar", "Done"].contains($0.0) })
+                let picker = try XCTUnwrap(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                XCTAssertGreaterThanOrEqual(picker.bounds.width, 280)
+                XCTAssertLessThanOrEqual(picker.bounds.width, 400)
+                XCTAssertGreaterThan(picker.bounds.height, 250)
+                XCTAssertLessThan(picker.bounds.height, 450)
+                XCTAssertTrue(window.bounds.contains(picker.convert(picker.bounds, to: window)))
+                let selected = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: picker.date))
+                picker.setDate(selected, animated: false)
+                picker.sendActions(for: .valueChanged)
+                _ = try await self.snapshot(window, name: "Upcoming selected date")
+                XCTAssertEqual(picker.window != nil, inlinePicker != nil)
+                if inlinePicker != nil {
+                    let expandedWidth = scroll.bounds.width
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                    _ = try await self.snapshot(window, name: "Upcoming minimized calendar")
+                    XCTAssertNil(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                    XCTAssertGreaterThan(scroll.bounds.width, expandedWidth + 300)
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                    _ = try await self.snapshot(window, name: "Upcoming restored calendar")
+                    let restored = try XCTUnwrap(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                    XCTAssertTrue(Calendar.current.isDate(restored.date, inSameDayAs: selected))
+                    XCTAssertEqual(scroll.bounds.width, expandedWidth, accuracy: 2)
+                }
+                #else
+                XCTAssertTrue(opened.contains { $0.0 == "Cancel" })
+                #endif
+            }
+        }
+    }
+
+    #if os(iOS)
+    func testUpcomingHomeCuesLocalizeEpisodeCountsAndKeepMovieDatesAsContent() async throws {
+        let date = Date(timeIntervalSince1970: 1_799_928_000)
+        let movieDate = date.addingTimeInterval(4 * 86_400)
+        let series = MediaItem(id: "localized-series", title: "Fixture Series", kind: .series)
+        let episodes = (1...5).map {
+            UpcomingEpisode(
+                seriesIdentity: .external(source: "tvmaze", value: "42"),
+                seasonNumber: 2, episodeNumber: $0, airDate: date,
+                datePrecision: .dateOnly, source: .tvmaze, refreshedAt: date
+            )
+        }
+        let episodeRelease = try XCTUnwrap(UpcomingReleaseBuilder.episodes(episodes, for: series).first)
+        let movieRelease = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: movieDate, regionCode: "US")],
+            for: MediaItem(id: "localized-film", title: "Fixture Film", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        for (identifier, expectedSubtitle, visibleSeason) in [
+            ("en_US", "Season 2 · 5 episodes", "Season 2"),
+            ("de_DE", "Staffel 2 · 5 Folgen", "Staffel 2"),
+        ] {
+            let locale = Locale(identifier: identifier)
+            var subtitle = try XCTUnwrap(episodeRelease.subtitle)
+            subtitle.locale = locale
+            XCTAssertEqual(String(localized: subtitle), expectedSubtitle)
+            let expectedDate = movieDate.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+            try await withWindow(size: CGSize(width: 1024, height: 768)) {
+                UpcomingHomeRow(releases: [episodeRelease, movieRelease], onSeeAll: {})
+                    .environment(\.locale, locale)
+                    .environment(\.plozzMetrics, .touch(density: .standard))
+                    .environment(\.plozzCardStyle, .borderless)
+            } inspect: { window in
+                let lines = try await self.capture(window, name: "Upcoming localized cues \(identifier)", scale: 2)
+                let rendered = lines.map(\.0).joined(separator: " | ")
+                XCTAssertTrue(rendered.contains(visibleSeason), rendered)
+                XCTAssertTrue(rendered.contains(expectedDate), rendered)
+                XCTAssertFalse(rendered.contains("upcoming.release.status"), rendered)
+                if identifier == "de_DE" {
+                    XCTAssertFalse(rendered.contains("Season 2"), rendered)
+                }
+            }
+        }
+    }
+
+    func testUpcomingHomeRowUsesStandardRailGeometry() async throws {
+        let release = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: Date(), regionCode: "US")],
+            for: MediaItem(id: "saved-movie", title: "Saved movie", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        let choice = HomeRowChoice(id: .global(.comingSoon), title: "Coming Soon", isProviderDefault: false)
+        let row = HomeLibrarySectionGroup.Row(
+            section: LibrarySection(id: "coming-soon", title: "Coming Soon", style: .landscape, items: [release.item]),
+            isLoading: false, failure: nil
+        )
+        var upcomingHeight: CGFloat = 0
+        var standardHeight: CGFloat = 0
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            ScrollView {
+                VStack(spacing: PlozziOSMediaRailLayout.sectionSpacing) {
+                    PlozziOSMediaSection(title: Text("Before")) { Color.clear.frame(height: 50) }
+                    PlozziOSHomeRowSlot(
+                        presentation: HomePresentationRow(choice: choice, source: .library(row)),
+                        captions: .default, continueWatchingLayout: .landscape,
+                        continueWatchingUsesSeriesArtwork: true
+                    ) {
+                        UpcomingHomeRow(releases: [release], onSeeAll: {})
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { upcomingHeight = $0 }
+                    PlozziOSHomeRowSlot(
+                        presentation: HomePresentationRow(
+                            choice: HomeRowChoice(
+                                id: .global(.recentlyAdded), title: "After", isProviderDefault: false
+                            ),
+                            source: .library(.init(
+                                section: LibrarySection(
+                                    id: "after", title: "After", style: .landscape, items: [release.item]
+                                ),
+                                isLoading: false, failure: nil
+                            ))
+                        ),
+                        captions: .default, continueWatchingLayout: .landscape,
+                        continueWatchingUsesSeriesArtwork: true
+                    ) {
+                        HomeRowPreviewView(title: Text("After"), items: [release.item], style: .landscape)
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { standardHeight = $0 }
+                }
+            }
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+        } inspect: { window in
+            let text = try await self.capture(window, name: "Coming Soon between ordinary Home rows")
+            let before = try XCTUnwrap(text.first { $0.0 == "Before" }).1
+            let upcoming = try XCTUnwrap(text.first { $0.0.hasPrefix("Coming Soon") }).1
+            let after = try XCTUnwrap(text.first { $0.0 == "After" }).1
+            XCTAssertEqual(upcoming.minX, before.minX, accuracy: 0.01)
+            XCTAssertEqual(upcoming.minX, after.minX, accuracy: 0.01)
+            XCTAssertGreaterThan(standardHeight, 0)
+            XCTAssertEqual(upcomingHeight, standardHeight, accuracy: 1)
+        }
+    }
+
+    func testUpcomingAgendaUsesSharedRowTypography() async throws {
+        let now = Date()
+        let release = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: now, regionCode: "US")],
+            for: MediaItem(id: "saved-movie", title: "Matching title", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "typography-test", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: [release])
+        }
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            VStack {
+                PlozziOSMediaSection(title: Text("Today")) {
+                    PosterCardView(item: release.item, enablesAsyncArtworkFallback: false) {}
+                        .frame(width: PlozzMetrics.touch(density: .standard).cardSlotWidth(
+                            for: .poster, cardStyle: .borderless
+                        ))
+                }
+                UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
+            }
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            .environment(\.plozzCardStyle, .borderless)
+        } inspect: { window in
+            let text = try await self.capture(window, name: "Shared Upcoming typography")
+            for label in ["Today", "Matching title"] {
+                let labels = text.filter { $0.0 == label }.sorted { $0.1.midY > $1.1.midY }
+                XCTAssertEqual(labels.count, 2)
+                if let first = labels.first, let last = labels.last {
+                    XCTAssertEqual(first.1.height, last.1.height, accuracy: 0.004, label)
+                }
+            }
+        }
+    }
+
+    func testUpcomingPostersStayAdjacentAndWrapBusyDates() async throws {
+        let now = Calendar.current.startOfDay(for: Date())
+        let titles = ["First show", "Second show", "Third show", "Fourth show", "Fifth show"]
+        let releases = titles.enumerated().flatMap { index, title in
+            UpcomingReleaseBuilder.episodes(
+                [.init(
+                    seriesIdentity: .external(source: "fixture", value: "\(index)"),
+                    seasonNumber: 1, episodeNumber: index + 1, title: nil,
+                    airDate: now, datePrecision: .dateOnly, source: .tvmaze,
+                    sourceURL: nil, refreshedAt: now
+                )],
+                for: MediaItem(id: "\(index)", title: title, kind: .series, allowsTitleBasedMetadataMatching: false)
+            )
+        }
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "poster-layout", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        let metrics = PlozzMetrics.touch(density: .standard)
+        for width: CGFloat in [390, 1194] {
+            let agendaWidth = width > 800 ? width - 336 : width
+            let columns = width < 600 ? 3 : 5
+            let pageInset = PlozziOSMediaRailLayout.pageInset(for: width > 600 ? .regular : .compact)
+            let pitch = (agendaWidth - 2 * pageInset + PlozziOSMediaRailLayout.visibleSpacing) / CGFloat(columns)
+            try await withWindow(size: CGSize(width: width, height: 1000)) {
+                UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
+                    .environment(\.plozzMetrics, metrics)
+                    .environment(\.plozzCardStyle, .borderless)
+                    .environment(\.horizontalSizeClass, width > 600 ? .regular : .compact)
+            } inspect: { window in
+                let text = try await self.capture(window, name: "Upcoming poster groups \(width)")
+                let frames = try titles.map { title in
+                    try XCTUnwrap(text.first { $0.0 == title }, title).1
+                }
+                XCTAssertEqual(frames[0].midY, frames[1].midY, accuracy: 0.005)
+                XCTAssertEqual((frames[1].minX - frames[0].minX) * width, pitch, accuracy: 3)
+                XCTAssertEqual(
+                    frames[0].minX * width, pageInset + metrics.posterCaptionHorizontalInset, accuracy: 3
+                )
+                if width < 600 {
+                    XCTAssertEqual(frames[2].midY, frames[0].midY, accuracy: 0.005)
+                    XCTAssertLessThan(frames[3].midY, frames[0].midY)
+                    XCTAssertEqual(frames[3].minX, frames[0].minX, accuracy: 0.005)
+                } else {
+                    XCTAssertEqual(frames[4].midY, frames[0].midY, accuracy: 0.005)
+                }
+                XCTAssertTrue(text.contains { $0.0.contains("S1") && $0.0.contains("E1") })
+            }
+        }
+    }
+    #endif
+
     func testMultiSourcePickerRetainsSelectionsAndNativeFocus() async throws {
         let suite = "ContentPicker.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

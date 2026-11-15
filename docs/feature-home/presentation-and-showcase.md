@@ -143,8 +143,17 @@ Guides are disabled while focus is inside their row or outside Showcase rows,
 preserving horizontal scrolling, sidebar entry, hero handoff, and detail return.
 Focus ownership includes SwiftUI virtual items and nested native controls,
 not only UIView-backed controls.
+Only the focused row's nearest eligible neighbors query native focus containers
+for gutter targets. Non-focusable loading rows are skipped; the first row's
+reserved loading target, partially loaded rows, and non-media controls remain
+eligible. Neighbor identities come from the current ordered rows, so
+reordering does not leave a cached geometric neighbor. Layout and focus changes
+still rediscover visible edge cards; unchanged guide targets and enablement are
+not reassigned. This bounds focus-discovery work without caching card geometry
+or replacing native column-aligned navigation.
 `ShowcaseNavigationTests` covers exact entry into controlled one-, two-, and
-three-card rows. The opt-in Showcase cases in `LiveJellyfinHomeRemoteTests`
+three-card rows, including entry past loading Discovery and after it completes.
+The opt-in Showcase cases in `LiveJellyfinHomeRemoteTests`
 also traverse unmodified Jellyfin and Plex Home rows through the read-only
 loopback credential broker, including any short rows in those live libraries.
 They compare card positions rather than titles, since real episodes can share

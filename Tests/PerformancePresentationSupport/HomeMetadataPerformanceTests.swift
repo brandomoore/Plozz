@@ -9,6 +9,44 @@ import XCTest
 
 @MainActor
 final class HomeMetadataPerformanceTests: XCTestCase {
+    func testPerformanceSeriesArtworkIdentity() async throws {
+        try PerformanceProbe.requireEnabled()
+        let sources = (0..<408).map { index in
+            var item = MediaItem(
+                id: "identity-\(index)", title: "Identity \(index)",
+                kind: index.isMultiple(of: 2) ? .movie : .episode
+            )
+            item.parentTitle = "Series \(index / 2)"
+            item.providerIDs = [
+                "Imdb": "tt\(100000 + index)", "TMDb ID": "\(10000 + index)",
+                "TheTVDB.com": "\(20000 + index)", "TvMaze": "\(30000 + index)",
+                "SeriesImdb": "tt\(400000 + index)", "SeriesTmdb": "\(50000 + index)",
+                "SeriesTvdb": "\(60000 + index)", "SeriesTvMaze": "\(70000 + index)",
+                "PlexGuid": "plex://movie/identity-\(index)",
+                "Other Provider": "\(80000 + index)"
+            ]
+            if index.isMultiple(of: 4) { item.providerIDs["MyAnimeList ID"] = "\(90000 + index)" }
+            return ContinueWatchingArtworkSource(
+                item: item, style: .landscape, policy: .init(area: .home),
+                enablesAsyncArtworkFallback: false
+            )
+        }
+        let expected = sources.map(\.identity)
+        XCTAssertEqual(Set(expected).count, sources.count)
+        try await PerformanceProbe.measure(self, scenario: "home-series-artwork-identity") {
+            var identities = 0
+            var bytes = 0
+            for _ in 0..<4 {
+                let actual = sources.map(\.identity)
+                XCTAssertEqual(actual, expected)
+                identities += actual.count
+                bytes += actual.reduce(0) { $0 + $1.utf8.count }
+            }
+            XCTAssertEqual(identities, 1632)
+            return ["items": sources.count, "identities": identities, "identityBytes": bytes]
+        }
+    }
+
     func testPerformanceHomeMetadataPublication() async throws {
         try PerformanceProbe.requireEnabled()
         let fixture = try PublicationFixture(itemCount: 200, peoplePerItem: 32, kind: .mediaShare)
@@ -585,7 +623,7 @@ final class HomeMetadataPerformanceTests: XCTestCase {
         var cardInputs = 0
         var observedTailBiography: String?
         var presentedItems: [String: MediaItem] = [:]
-        lazy var statusCue: (MediaItem) -> LocalizedStringResource? = { [weak self] item in
+        lazy var statusCue: (MediaItem) -> Text? = { [weak self] item in
             self?.cardInputs += 1
             self?.presentedItems[item.stablePresentationID] = item
             return nil

@@ -3,6 +3,199 @@ import XCTest
 
 @MainActor
 final class TouchFeedbackInteractionTests: XCTestCase {
+    func testUpcomingAgendaPosterOpensTitleDetails() throws {
+        try verifyUpcomingPosterNavigation(fromHome: false)
+    }
+
+    func testComingSoonPosterOpensTitleDetails() throws {
+        try verifyUpcomingPosterNavigation(fromHome: true)
+    }
+
+    private func verifyUpcomingPosterNavigation(fromHome: Bool) throws {
+        let previousOrientation = XCUIDevice.shared.orientation
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--upcoming-capture-fixture"]
+        if fromHome { app.launchArguments.append("--capture-home") }
+        app.launch()
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = previousOrientation
+        }
+        let title = app.staticTexts["The Simpsons"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 30), app.debugDescription)
+        for _ in 0..<3 where !title.isHittable { app.swipeUp() }
+        XCTAssertTrue(title.isHittable, app.debugDescription)
+        title.tap()
+        let detail = app.staticTexts["Upcoming detail for The Simpsons."].firstMatch
+        XCTAssertTrue(detail.waitForExistence(timeout: 10), app.debugDescription)
+        guard detail.exists else { return }
+        attachScrub(app, name: fromHome ? "Coming Soon opens title details" : "Upcoming opens title details")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(detail.exists, "Back must return to the originating page")
+    }
+
+    func testUpcomingActualPullHoldsThenSpringsAndPops() throws {
+        let previousOrientation = XCUIDevice.shared.orientation
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--upcoming-capture-fixture", "--capture-elasticity"]
+        app.launch()
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = previousOrientation
+        }
+        let evidence = app.staticTexts["upcoming-gesture-evidence"]
+        XCTAssertTrue(evidence.waitForExistence(timeout: 30), app.debugDescription)
+        let agenda = app.scrollViews["upcoming-gesture-agenda"]
+        XCTAssertTrue(agenda.exists, app.debugDescription)
+        func snapshot() throws -> [String: Double] {
+            let json = try XCTUnwrap(evidence.value as? String)
+            let attachment = XCTAttachment(string: json)
+            attachment.name = "Upcoming native gesture evidence"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return try JSONDecoder().decode([String: Double].self, from: Data(json.utf8))
+        }
+        let initial = try snapshot()
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let startY = try XCTUnwrap(initial["viewportTop"]) + 20
+        let start = origin.withOffset(CGVector(dx: agenda.frame.midX, dy: startY))
+        func pull(_ distance: CGFloat, hold: TimeInterval = 0.3) {
+            start.press(
+                forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)),
+                withVelocity: .slow, thenHoldForDuration: hold
+            )
+        }
+        let releasePull = min(432, try XCTUnwrap(initial["viewport"]) * 0.85) + 35
+        XCTAssertLessThan(startY + releasePull, app.frame.maxY - 30, "The stronger release must fit on screen")
+        pull(420)
+        let caught = expectation(
+            for: NSPredicate(format: "value CONTAINS %@", "\"catches\":1"), evaluatedWith: evidence
+        )
+        wait(for: [caught], timeout: 3)
+        let held = try snapshot()
+        XCTAssertGreaterThan(try XCTUnwrap(held["pull"]), 390, "The former 360-point release must now remain held")
+        XCTAssertGreaterThan(try XCTUnwrap(held["held"]), 71, "The tuned pull must be softer than the 1.66x curve")
+        XCTAssertLessThan(try XCTUnwrap(held["held"]), 75, "The pull must retain the requested 1.2x resistance")
+        XCTAssertEqual(try XCTUnwrap(held["pops"]), 0, "The former threshold must no longer unlock history")
+        XCTAssertEqual(try XCTUnwrap(held["catches"]), 1)
+        XCTAssertEqual(try XCTUnwrap(held["offset"]), 0, accuracy: 1)
+        XCTAssertGreaterThan(try XCTUnwrap(held["returnFrames"]), 3)
+        XCTAssertGreaterThan(try XCTUnwrap(held["returnTravel"]), 20)
+        XCTAssertLessThan(try XCTUnwrap(held["returnModelDrift"]), 1,
+                          "Actual native deceleration must not fight the return spring")
+        XCTAssertLessThan(try XCTUnwrap(held["viewportDrift"]), 1,
+                          "The viewport and native edge blur must not move with the return spring")
+        attachScrub(app, name: "Upcoming returns after a real resisted pull")
+
+        pull(releasePull, hold: 0)
+        for _ in 0..<3 {
+            pull(30, hold: 0)
+        }
+        let released = try snapshot()
+        XCTAssertEqual(try XCTUnwrap(released["pops"]), 1)
+        XCTAssertEqual(try XCTUnwrap(released["catches"]), 1, "Released history must not be recaptured")
+        XCTAssertLessThan(try XCTUnwrap(released["offset"]), -95)
+        XCTAssertGreaterThan(try XCTUnwrap(released["tensionCount"]), 5)
+        XCTAssertGreaterThan(try XCTUnwrap(released["minimumTension"]), 0.4)
+        XCTAssertGreaterThan(try XCTUnwrap(released["maximumTension"]), 0.9)
+        XCTAssertGreaterThan(try XCTUnwrap(released["releaseFrames"]), 3,
+                             "The pop must visibly animate while the finger remains down")
+        XCTAssertLessThan(try XCTUnwrap(released["viewportDrift"]), 1,
+                          "The release spring must also leave the native edge blur stationary")
+        attachScrub(app, name: "Upcoming history after a real release pop")
+
+        let upcoming = app.buttons["Upcoming"].firstMatch
+        XCTAssertTrue(upcoming.isHittable, app.debugDescription)
+        upcoming.tap()
+        let fromHistory = try snapshot()
+        XCTAssertEqual(try XCTUnwrap(fromHistory["offset"]), 0, accuracy: 1)
+        XCTAssertGreaterThan(try XCTUnwrap(fromHistory["navigationDownFrames"]), 3)
+        XCTAssertGreaterThan(try XCTUnwrap(fromHistory["navigationDownTravel"]),
+                             abs(try XCTUnwrap(released["offset"])) * 0.75)
+        XCTAssertLessThan(try XCTUnwrap(fromHistory["navigationMaximumStep"]),
+                          abs(try XCTUnwrap(released["offset"])) * 0.5, "A tab tap must not teleport")
+
+        let lower = start.withOffset(CGVector(dx: 0, dy: 350))
+        lower.press(
+            forDuration: 0.05, thenDragTo: lower.withOffset(CGVector(dx: 0, dy: -300)),
+            withVelocity: .slow, thenHoldForDuration: 0.3
+        )
+        let future = try snapshot()
+        XCTAssertGreaterThan(try XCTUnwrap(future["offset"]), 250)
+        upcoming.tap()
+        let fromFuture = try snapshot()
+        XCTAssertEqual(try XCTUnwrap(fromFuture["offset"]), 0, accuracy: 1)
+        XCTAssertGreaterThan(try XCTUnwrap(fromFuture["navigationUpFrames"]), 3)
+        XCTAssertGreaterThan(try XCTUnwrap(fromFuture["navigationUpTravel"]),
+                             try XCTUnwrap(future["offset"]) * 0.75)
+        XCTAssertLessThan(try XCTUnwrap(fromFuture["navigationMaximumStep"]),
+                          try XCTUnwrap(future["offset"]) * 0.5)
+        upcoming.tap()
+        let repeated = try snapshot()
+        XCTAssertEqual(try XCTUnwrap(repeated["offset"]), 0, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(repeated["catches"]), 1, "Tab resets must remain silent")
+        XCTAssertEqual(try XCTUnwrap(repeated["pops"]), 1)
+        attachScrub(app, name: "Upcoming returns to Today after actual tab taps in both directions")
+    }
+
+    func testUpcomingFutureApproachStopsWhileDraggingAndDuringMomentum() throws {
+        let previousOrientation = XCUIDevice.shared.orientation
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--upcoming-capture-fixture", "--capture-elasticity"]
+        app.launch()
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = previousOrientation
+        }
+        let evidence = app.staticTexts["upcoming-gesture-evidence"]
+        XCTAssertTrue(evidence.waitForExistence(timeout: 30), app.debugDescription)
+        let agenda = app.scrollViews["upcoming-gesture-agenda"]
+        XCTAssertTrue(agenda.exists)
+        func snapshot() throws -> [String: Double] {
+            let json = try XCTUnwrap(evidence.value as? String)
+            let attachment = XCTAttachment(string: json)
+            attachment.name = "Upcoming future approach"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return try JSONDecoder().decode([String: Double].self, from: Data(json.utf8))
+        }
+        let initial = try snapshot()
+        let top = try XCTUnwrap(initial["viewportTop"])
+        let height = try XCTUnwrap(initial["viewport"])
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let upper = origin.withOffset(CGVector(dx: agenda.frame.midX, dy: top + 20))
+        let lower = origin.withOffset(CGVector(dx: agenda.frame.midX, dy: top + height - 20))
+        for momentum in [false, true] {
+            lower.press(
+                forDuration: 0.05, thenDragTo: lower.withOffset(CGVector(dx: 0, dy: -300)),
+                withVelocity: .slow, thenHoldForDuration: 0.3
+            )
+            let future = try snapshot()
+            XCTAssertGreaterThan(try XCTUnwrap(future["offset"]), 250)
+            let distance = momentum ? 100 : min(432, try XCTUnwrap(future["viewport"]) * 0.85) + 35
+            upper.press(
+                forDuration: 0.05, thenDragTo: upper.withOffset(CGVector(dx: 0, dy: distance)),
+                withVelocity: momentum ? .fast : .slow, thenHoldForDuration: momentum ? 0 : 0.3
+            )
+            let caught = expectation(
+                for: NSPredicate(format: "value CONTAINS %@", "\"catches\":\(momentum ? 2 : 1)"),
+                evaluatedWith: evidence
+            )
+            wait(for: [caught], timeout: 5)
+            let result = try snapshot()
+            XCTAssertEqual(try XCTUnwrap(result["offset"]), 0, accuracy: 1)
+            XCTAssertEqual(try XCTUnwrap(result["pops"]), 0, "An approach must stop, not unlock history")
+            XCTAssertGreaterThan(try XCTUnwrap(result["futureFrames"]), 5)
+            XCTAssertGreaterThanOrEqual(try XCTUnwrap(result["futureMinimumOffset"]), -1,
+                                        "Stop at Today during the gesture and momentum, not after flying past it")
+        }
+        attachScrub(app, name: "Upcoming stops at Today from later dates")
+    }
+
     func testHeroWatchlistAcknowledgesImmediatelyAndOnlyFailureAddsFeedback() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
         app.launchArguments = ["--watchlist-feedback-fixture"]

@@ -1473,10 +1473,18 @@ back to coded dimensions.
 Authored bitmap clearance maps the image, lower-region envelope, and protected
 artwork boundary through that same zoom/stretch geometry before moving a region.
 
-Zoom belongs to the current player session, not a global/profile preference.
-A new VOD player or a different live channel starts at Normal. PiP and AirPlay retain
+Movies and episodes default to Auto Crop when the engine supports analysis.
+An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
+per profile and movie/series using the existing title preference store. Only the
+mode and percentage are saved, never detected rectangles. Defaults and temporary
+unsupported-engine fallbacks do not write preferences. Series choices follow later
+episodes and shared external IDs across servers; movie keys use strong external
+IDs with an account-scoped fallback, never title matching. Existing series keys
+and profile-transfer storage remain compatible. Trailers, extras, unidentified
+disc timelines and Live TV retain their existing defaults; a different live
+channel still starts at Normal. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
-Both production playback engines offer opt-in **Auto-crop black bars**, with no
+Both production playback engines offer **Auto-crop black bars**, with no
 menu subtext. A shared, cancellable
 AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
 Dolby Vision output, using existing frames
@@ -1486,32 +1494,68 @@ The detected picture fits the full player bounds, not the safe area, preserving
 its aspect ratio without deliberately trimming picture content. Video may extend
 behind the Dynamic Island or other display cutouts; controls retain their safe-area
 placement. Aspect-ratio differences can still leave bars.
-Unknown, stale, unsupported or invalid measurements use Normal. Sparse detection
+Before the first confirmed measurement, Auto Crop uses Normal. Once confirmed,
+framing survives seeks, buffering and unavailable/expired detector evidence for
+the same source and display aspect ratio. Fresh confirmed measurements, including
+full-frame evidence, replace it without an intermediate Normal zoom. A separate
+source identity changes on loads/stops, not on seeks or analysis resets; source
+replacement, known display-aspect changes, unsupported/invalid measurements and
+presentation teardown clear retained framing. Engines without a source identity
+do not retain unavailable evidence. Missing or provisional dimensions during a
+seek keep the last confirmed display aspect until playback is ready. Sparse detection
 can miss changing edge content; fitting is best effort, not a guarantee against
 clipping tickers or burned-in captions. Dark or uninformative frames cannot
 establish a crop. Native quarter-turn rotation and mirroring map measurements
 into the upright display canvas after clean-aperture/sample-aspect correction.
 Multiview keeps its original slots and defaults; visible
 panes share the engine's bounded four-session analysis admission.
-Native analysis requests CPU-readable NV12 for SDR, P010 for PQ/HLG, and
-converted half-float RGB for Dolby Vision or unknown source color. It does not
+Native analysis borrows the decoder's original pixel format and size. A bounded
+worker converts its private copy to CPU-readable NV12 for SDR, P010 for PQ/HLG,
+and half-float RGB for Dolby Vision or unknown source color. It does not
 interpret a Profile 5/10 IPT base layer as ordinary PQ luma or change playback
 color settings. Output selection follows source color, not the panel-clamped
 playback badge, including on SDR displays. `NativeVideoEngine` receives the shared analyzer from both app
 composition roots; its default/test initializer remains explicitly unsupported
 without injection. Load, seek, teardown and PiP release or invalidate analysis.
-AVFoundation may materialize/decompress that output; the 2 Hz analysis limit
-does not bound system-side output cost. HDR and particularly half-float outputs
-can require larger surfaces internally. The tap requests only 320x180 pixels;
-its original display canvas is retained separately and size changes invalidate
-pending results. Disabling analysis releases only its owned tap.
+Pixel-format and size requirements must not be placed on the AVPlayer output:
+they also renegotiate the displayed format and can persist after the tap is
+removed, affecting HDR/Dolby Vision presentation. Private conversion runs at the
+2 Hz analysis cadence into a buffer no larger than 320x180; the borrowed decoder
+buffer can remain full resolution. Its original display canvas is retained
+separately and size changes invalidate pending results. Disabling analysis
+releases only its owned tap.
+
+Manual movie audio selections now remember the normalized language per profile
+and movie, independently of the per-series audio-memory toggle. Returning playback
+re-matches that language against the current file's tracks, falling back to the
+provider default when unavailable. Audio memory captures the outgoing title before
+a server-rendition replacement clears its request. Series audio/subtitle toggles
+and series-only subtitle memory are unchanged. Storage is read during playback
+setup and written for manual choices, not during frame analysis or seeking.
+Server-rendition selection receives remembered language before requesting the
+stream, using the selected title's metadata or a passive provider metadata read
+when an ID-only caller has no item. Next-title preparation must not reuse the
+outgoing title's preference metadata.
+
+Dark picture content can establish a crop without reaching a bright-scene
+average: the detector also accepts a broadly supported center distinguishable
+from black, with a candidate spanning at least half the frame. Near-black noise
+and isolated dim objects remain unknown. This does not shorten the existing
+three-sample, one-second confirmation or hold playback for detection.
+When a dark foreground hides the center but distinguishable content reaches
+all four sampled edges and covers at least a quarter of the frame, the detector
+can confirm full frame instead of losing confidence. This additional path can
+only preserve or expand to full frame; it never authorizes an inward crop.
+Detector evidence still expires normally, and seeks/source changes still reset it;
+the presentation's retained framing is not a fresh detector observation.
 
 The hosted active-picture regression uses original `testsrc2` fixtures at
 320x180/24 fps for 18 seconds: 28-pixel top/bottom bars before 8 seconds and
 from 14 seconds onward, with full-frame content between. The MP4 uses libx264,
 CRF 28 and yuv420p; its WebM counterpart uses libvpx-vp9, CRF 32. Tests require
-real native/software detection, forward/backward seeks, pause, and retained
-surface identity. The native case serves the MP4 stream-copied as finite loopback
+real native/software detection, continuous cropped presentation through forward/
+backward seeks, positive expansion to full frame, pause, and retained surface
+identity. The native case serves the MP4 stream-copied as finite loopback
 HLS, avoiding an assumption that the simulator supports hardware H.264 decoding.
 Checks seek to a known starting position after loading so startup latency cannot
 consume the short test clip. The performance lab uses the existing 1080p fixture
@@ -1522,7 +1566,60 @@ changing the video layer, playback position, or subtitle text geometry.
 The rotated fixture is a stream copy of `active-picture.mp4`, produced with
 FFmpeg `-display_rotation 90 -i active-picture.mp4 -map 0:v:0 -c copy
 active-picture-rotated.mp4`. Native analysis must retain the original upright
-aspect and crop axis while returning buffers no larger than 320x180.
+aspect and crop axis while retaining the native output's original dimensions.
+Engine regressions bound the worker-owned buffers to 320x180. A hosted HDR
+regression compares the same displayed frame's native format and linear RGB
+before, during, and after analysis, including the half-float conversion policy.
+This does not substitute for physical-device Dolby Vision output verification.
+
+`active-picture-dark.mp4` is an original six-second SDR fixture with an animated
+dim pattern and 28-pixel top/bottom bars. The native and software hosted regression
+requires a crop within three seconds of the first displayed frame, without a
+bright scene or paused playback. Generate it with FFmpeg:
+
+```sh
+ffmpeg -f lavfi -i "nullsrc=s=320x180:r=24:d=6,geq=lum='if(between(Y,28,151),28+mod(X+Y+N,6),16)':cb=128:cr=128" \
+  -an -c:v libx264 -preset fast -crf 12 -pix_fmt yuv420p -color_range tv \
+  -colorspace bt709 -color_primaries bt709 -color_trc bt709 -movflags +faststart \
+  active-picture-dark.mp4
+```
+
+`testLocalSDRActivePictureSceneReproduction` accepts a private JSON configuration
+file through `PLOZZ_CROP_MEDIA_REPRO` (`TEST_RUNNER_PLOZZ_CROP_MEDIA_REPRO` from
+xcodebuild), containing a local-file or loopback `url` and a `start` time in
+seconds. It uses Plozzigen for SDR media, including HEVC files that the native
+player rejects, and retains twelve seconds of timestamped measurement/unknown
+states and the selected engine route. It checks initial recognition within three
+seconds and advancing playback, not uninterrupted confidence or HDR color
+fidelity. Inspect the entire trace for subsequent confidence loss. Credentials,
+source media, and captures stay outside source control; the operator owns and
+closes any authenticated loopback source.
+
+`testLocalActivePictureVariety` extends real-media coverage through a private
+`PLOZZ_CROP_VARIETY_REPRO` JSON file (`TEST_RUNNER_PLOZZ_CROP_VARIETY_REPRO` from
+xcodebuild). Supply an array of at most twelve cases, each with `label`, local-file
+or loopback `url`, `start` seconds, `videoRange` (`SDR`, `HDR10`, or `DolbyVision`),
+and independently inspected `references`. Each reference contains `from`/`to`
+seconds relative to `start` and a normalized `[x, y, width, height]` `rect`.
+Use reference intervals only where source framing is known; leave transition
+intervals out rather than pretending sparse screenshots locate an exact cut.
+Verify source signaling independently and do not derive reference bounds from
+the detector being tested.
+
+The twelve-second replay retains per-case first-frame readiness, first accurate
+measurement, advancing source positions, unknown states, geometry and route.
+It checks recognition within three seconds of enabling analysis, boundary error
+within 0.015 per normalized edge, no clipping beyond that tolerance, no later
+confidence loss, at least one accurate sample in every reference interval, and
+more than ten seconds of playback progress. Each case runs
+even if an earlier case fails. Native presentation additionally compares a paused,
+same-time displayed frame before, during and after analysis using the HDR
+regression's readback helper; software presentation explicitly reports that
+native color readback is unavailable. This is neither a startup-overhead benchmark
+nor physical-device Dolby Vision verification. Preserve complete traces, including
+failed cases; a single early correct measurement does not establish stability.
+Reference thumbnails may be brightened privately to inspect boundaries, but
+their appearance is not evidence of HDR color fidelity.
 
 The optional `testLocalPictureRelativePGSStaysInsideMeasuredPicture` hosted
 test accepts an authorized local HDR clip through `PLOZZ_PICTURE_MEDIA_REPRO`

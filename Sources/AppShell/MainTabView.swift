@@ -142,10 +142,11 @@ struct MainTabView: View {
             case .home:
                 switch activeLibraryNavigationDestination {
                 case .home, .library, .allLibraries: return true
-                case .watchlist, .discover, .search, .music, .settings: return false
+                case .watchlist, .upcoming, .discover, .search, .music, .settings: return false
                 case .liveTV: return false
                 }
             case .watchlist: return activeLibraryNavigationDestination == .watchlist
+            case .upcoming: return activeLibraryNavigationDestination == .upcoming
             case .discover: return activeLibraryNavigationDestination == .discover
             case .search: return activeLibraryNavigationDestination == .search
             case .liveTV: return activeLibraryNavigationDestination == .liveTV
@@ -157,7 +158,7 @@ struct MainTabView: View {
     }
 
     private enum MainTab: String {
-        case home, watchlist, discover, search
+        case home, watchlist, upcoming, discover, search
         case liveTV
         case music, settings
     }
@@ -413,6 +414,8 @@ struct MainTabView: View {
     /// type-checker's budget that one extra computed value in it fails the
     /// build outright.
     let homeRuntime: HomeTabRuntime
+    var upcomingAccounts: @MainActor () -> [ResolvedAccount] = { [] }
+    var upcomingWatchlist: @MainActor () -> [MediaItem] = { [] }
     let isAccountIncludedInActiveProfile: (String) -> Bool
     let onSetAccountIncluded: (String, Bool) -> Void
     let onSaveProfile: (ProfileDraft) -> Void
@@ -775,6 +778,7 @@ struct MainTabView: View {
         switch destination {
         case .home, .library, .allLibraries: return .home
         case .watchlist: return .watchlist
+        case .upcoming: return .upcoming
         case .discover: return .discover
         case .search: return .search
         case .liveTV: return .liveTV
@@ -820,6 +824,7 @@ struct MainTabView: View {
         switch tab {
         case .home: return .home
         case .watchlist: return .watchlist
+        case .upcoming: return .upcoming
         case .discover: return .discover
         case .search: return .search
         case .liveTV: return .liveTV
@@ -1205,6 +1210,8 @@ struct MainTabView: View {
             return HomeTab(
                 root: root,
                 accounts: accounts,
+                upcomingAccounts: upcomingAccounts,
+                upcomingWatchlist: upcomingWatchlist,
                 isProfileAuthorized: isLiveTVProfileAuthorized,
                 configuredServerCount: displayAccounts.count,
                 libraryPreferencesNamespace: liveTVPreferencesNamespace,
@@ -1403,6 +1410,10 @@ struct MainTabView: View {
             return AnyView(homeTabContent(
                 root: .discover, id: "\(homeScopeKey)|discover", isActive: isActive
             ))
+        case .upcoming:
+            return AnyView(homeTabContent(
+                root: .upcoming, id: "\(homeScopeKey)|upcoming", isActive: isActive
+            ))
         case .liveTV:
             return AnyView(LiveTVShellDestination(
                 isActive: isActive,
@@ -1445,6 +1456,11 @@ struct MainTabView: View {
             return AnyView(searchTabLabel)
         case .watchlist:
             return AnyView(watchlistTabLabel)
+        case .upcoming:
+            return AnyView(RootNavigationTabLabel(
+                title: navigationTitles(NavigationLibraryLayout.upcomingKey, default: Text("Upcoming")),
+                systemImage: "calendar", usesCompactSidebarText: navigationStyle == .sidebar
+            ))
         case .discover:
             return AnyView(RootNavigationTabLabel(
                 title: navigationTitles(NavigationLibraryLayout.discoverKey, default: Text("Discover")), systemImage: "sparkles",
@@ -1644,6 +1660,10 @@ struct MainTabView: View {
         case .discover:
             return AnyView(homeTabContent(
                 root: .discover, id: "\(homeScopeKey)|discover", isActive: true
+            ))
+        case .upcoming:
+            return AnyView(homeTabContent(
+                root: .upcoming, id: "\(homeScopeKey)|upcoming", isActive: true
             ))
         case .search:
             return AnyView(searchTabContent())

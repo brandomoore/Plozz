@@ -161,6 +161,7 @@ public struct NavigationLibrariesDetailView: View {
             NavigationLibraryLayout.homeKey: .init(title: Text("Home"), symbolName: "house.fill"),
             NavigationLibraryLayout.searchKey: .init(title: Text("Search"), symbolName: "magnifyingglass"),
             NavigationLibraryLayout.watchlistKey: .init(title: Text("Watchlist"), symbolName: "bookmark.fill"),
+            NavigationLibraryLayout.upcomingKey: .init(title: Text("Upcoming"), symbolName: "calendar"),
             NavigationLibraryLayout.discoverKey: .init(title: Text("Discover"), symbolName: "sparkles"),
             NavigationLibraryLayout.musicKey: .init(title: Text("Music"), symbolName: "music.note"),
             NavigationLibraryLayout.downloadsKey: .init(title: Text("Downloads"), symbolName: "arrow.down.circle"),

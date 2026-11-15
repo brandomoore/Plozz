@@ -192,6 +192,29 @@ item. The broker may supply two explicit `resetEpisodeIDs` from a bounded approv
 sample. These cases verify persisted zero progress and an unplayed flag, not just
 successful HTTP writes. They restore the sampled item's watched/resume values.
 
+## Live share and music smoke tests
+
+`LiveProviderSmokeTests` in `PlozziOSPresentationTests` uses
+`PLOZZ_PROVIDER_SMOKE_BROKER` in the test process. Follow the private loopback
+broker protections above; its `/smb`, `/sftp`, `/ftp`, `/nfs`, `/webdav`, and
+`/subsonic` routes resolve only authorized internal configurations in memory.
+Share routes supply the fields required by their production account setup:
+`host`, optional `port`, `share` or `exportPath`, scoped `path`, or `baseURL`,
+plus `username` and `password` when required. SFTP also requires
+`hostKeySHA256` as a base64-encoded 32-byte fingerprint; never bypass host-key
+verification. Subsonic supplies `baseURL`, `username`, and `password`.
+
+Use a fresh owned iOS simulator and a read-only demo directory containing an
+MP4. Each share check uses production account persistence, provider browsing,
+detail resolution, and network-file playback. Browsing is bounded to eight
+folders and thirty entries per folder. Playback must render a frame within
+forty seconds, advance more than three seconds in five seconds, and remain
+stable while paused. The Subsonic check signs in, browses albums and tracks,
+and verifies audio playback progress and pause. Tests retire their share
+runtime and stop their players; the operator owns broker and simulator cleanup.
+These checks do not establish physical-device audio/video fidelity, cloud
+credential delivery, exhaustive format support, or offline download behavior.
+
 ## Live WebDAV Watchlist journeys
 
 `LiveWebDAVWatchlistInteractionTests` in `PlozzHomeRemoteTests` is an opt-in

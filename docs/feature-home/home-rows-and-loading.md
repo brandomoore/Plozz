@@ -2,6 +2,247 @@
 
 [Home task map](../../Sources/FeatureHome/README.md#where-to-look-first)
 
+## Upcoming and Coming Soon
+
+`UpcomingFeedLoader` builds the personal release agenda from the active profile's
+authorized accounts, resolved universal watchlist and own Seerr requests. It reads
+watched series across paged provider libraries, including caught-up shows, and
+uses the complete Resume/Next Up feed to include a first unfinished episode and
+history missing from a series container. It omits optional parent-recency reads,
+not feed membership; Upcoming orders by release date rather than playback recency.
+Ordinary Continue Watching keeps its existing recency enrichment. Merely owning,
+watchlisting or requesting an unwatched show does not enroll it. Movies come from
+the watchlist and personal requests; the household request list is never used.
+Seerr is optional.
+
+Dates come through the existing metadata providers: TVmaze/TheTVDB episode
+listings, AniList's next episode, and regional TMDB movie release events. A
+calendar query has a separate cache identity and cannot replace the detail
+page's next-episode record with yesterday's episode. No announcement is treated
+as proof of library ownership or playability; cards open existing title details.
+Movies have one entry, on their first announced digital release date in the
+device region. Theatrical, premiere, broadcast, and physical-disc dates neither
+create cards nor substitute for an unknown digital date. Later digital entries
+do not reintroduce an already-released movie. Movie dates are omitted when no
+device region is available. There are no release-type filters or repetitive
+movie-release labels; episode cards retain season/episode information.
+
+The current window is 30 days back through 90 days ahead. TV starts at Today;
+earlier days are selected through the calendar, keeping Up from the first card
+available to reach the toolbar. Phone and tablet retain scrollable history, with
+native date-target scroll positioning keeping Today in place when progressive
+results insert older dates. The selected date and following groups occupy at least
+the viewport height so a sparse agenda can align below the native toolbar without
+being clamped to the bottom of its history.
+On mobile, Today holds entry into history until a deliberate 432-point pull,
+capped at 85% of the usable scroll viewport height so release stays reachable
+on phones and smaller windows. The elastic curve requires 1.2 times the original
+finger travel for the same deflection.
+A continuous rubber-band curve gives the agenda visible initial movement and
+progressively stronger resistance, reaching up to about 75 points before release.
+The entire agenda moves together; artwork, row spacing and date geometry are
+not distorted. Seven distance milestones deliver increasingly strong weighted
+haptics, followed by one distinct pop at the release threshold. Holding still
+or retreating within that pull does not repeat the milestones; returning fully
+to Today rearms the next pull. Feedback follows distance, not touch pressure.
+After the pop, a short spring releases another 24 points of stored tension while
+finger tracking continues 1:1, including reversals. Neither resistance nor
+snapping reattaches mid-gesture. A shorter pull springs back to Today, and
+momentum cannot bypass the unreleased boundary from the future side.
+An approach from later dates stops at Today, including while the finger remains
+down and during fast momentum. That gesture cannot unlock history: lift and
+start a new deliberate pull from Today. Further travel against the stop is
+discarded so reversing back toward later dates responds immediately. Arrival
+feedback fires once, without repeating when the native target later settles.
+Releasing within 48 points of Today also settles there unless it is a fast
+pass-through fling. `ScrollTargetBehavior`
+selects Today before native deceleration begins, using the actual release position
+even when its projected destination is farther away. A moderate approach whose
+projected destination is within the same range also catches Today.
+Layout may query the behavior while the finger is down,
+so movement invalidates that provisional choice. Only the release decision stays
+fixed during deceleration; a swipe after tab reselection must remain free to leave Today.
+There is no second per-frame scroll driver racing the scroll view's release. Native release velocity is
+converted from points/ms to the policy's points/s.
+Deliberate released pulls, ordinary future scrolling, existing history scrolling,
+and calendar jumps remain available. Native outer-edge bounce is unchanged.
+Mobile date sections keep their headers mounted, including
+an empty Today, so lazy recycling cannot remove the detent while scrolling
+through history or future dates. Poster grids remain lazy. Initial alignment
+uses the selected date rather than an interim scroll-position report from layout.
+The typed `ScrollPosition` relinquishes programmatic positioning when interaction
+begins; an older date command must not move the viewport during the drag.
+The page-scoped adapter observes native content-offset changes without replacing
+SwiftUI's scroll delegate; VoiceOver and Switch Control scrolling bypass it.
+Target selection exchanges locked value snapshots with the native adapter rather
+than accessing UIKit from the nonisolated behavior. A held pull's return commits
+that native target once, stopping deceleration, and animates an equal-and-opposite
+additive translation of the agenda's content host back to zero. The viewport
+bounds, native scroll-edge blur and scroll indicators are not animated with the
+content. The compositor owns the spring, without per-frame SwiftUI updates or
+moving the layout's Today anchor. A new touch converts the content host's current
+presentation translation back into the native offset; navigation, relayout, detach
+and app deactivation cancel the owned animation. Regrabbing a return preserves
+its unbroken hold. Gesture setup recovers the touch-down position from native
+translation when SwiftUI's interaction phase arrives after the first movement;
+those initial points must not incorrectly classify a Today pull as history.
+Lifting a re-touch without dragging resumes the interrupted return silently.
+Every new interacting phase owns a fresh gesture, even when a touch interrupts
+deceleration without a tracking callback. Tracking saves the visible origin,
+not the recognizer's still-stale translation from the previous gesture. Released
+displacements and targets never carry into the next touch.
+A single shared selection
+haptic fires when the return actually finishes, not when its model offset is
+committed and not after a deliberate pop.
+Positioning, calendar jumps, cancelled catches, and repeated layout callbacks do
+not emit feedback.
+Ordinary approach deceleration remains system-owned. Reduce Motion skips the
+elastic animations and makes explicit Today resets nonanimated.
+Reselecting Upcoming in native or opaque navigation animates its visible agenda
+back to Today from either direction, including repeated taps after scrolling away.
+The page issues one animated typed date-position command, not a competing native
+offset animation or a second unanimated selection observer. Calendar input owns
+its separate positioning action. Interrupted
+elastic motion is picked up at its rendered position before navigation begins.
+The shell resolves the visible scroll owner before invoking this page-local reset; detail pages and
+other tabs retain their usual scroll-to-top behavior.
+Same-day, same-season episodes form one card without episode-title spoilers.
+Filters are page-local; hidden titles persist per profile and also affect Home.
+Media type lives inside Filters, rather than in a separate segmented control.
+Calendar and Filters remain at the top while the agenda scrolls: mobile
+uses the native navigation toolbar without a duplicate page title. The tab shell
+keeps its appearance bridge inside `NavigationStack`, so UIKit can recognize the
+stack and merge its inline-large toolbar into the iPad tab-bar line. Wrapping the
+stack in that bridge's background breaks the merge even when the bridge is inactive.
+Content insets belong to the agenda, not the scroll viewport. Content scrolls
+behind the native toolbar using the system's soft scroll-edge effect on iOS 26+.
+There is no additional material, gradient mask, or full-width background overlay:
+stacking one over the native edge obscures rows and tints the page background.
+The system owns the transition's blur and opacity; reduced transparency retains
+the shell's existing fallback. On wide, regular-size mobile layouts with enough
+height, a native month calendar sits beside the agenda and stays fixed while it
+scrolls. Calendar in the toolbar minimizes or reopens it, returning the space to
+the poster grid; this is page-local presentation state, not a saved preference.
+Selecting a date scrolls the agenda without dismissing the side calendar.
+The inline picker has no additional leading padding, so the visible poster-to-calendar
+gutter matches the agenda's outer page inset rather than stacking both paddings.
+Phone and narrow iPad layouts use the same native picker in a content-sized
+popover anchored to Calendar; selecting a date closes that popover. Resizing
+preserves the selected date and manual minimization, and widening dismisses any
+open popover. TV uses native secondary glass controls
+below the selected navigation chrome.
+Upcoming date headings use the shared rail typography. Each date uses standard
+poster cards with shared captions, artwork, and focus behavior. Mobile fits whole
+columns to the actual agenda width after the calendar and shared page insets,
+resizing the artwork itself while retaining the normal visible card gaps.
+Compact layouts use Home's responsive poster sizes as the grid's starting point,
+fitting three whole posters across standard-width phones instead of two oversized
+cards. Smaller phones, density preferences, and wider windows retain responsive sizing.
+Every date uses the same column widths, including sparse dates and partial final
+rows. TV retains its standard adaptive poster slots. Episode numbers
+or grouped episode counts appear in the poster's subtitle, without extra containers
+or changes to the underlying detail-navigation item. Coming Soon uses full-size landscape
+media cards on both platforms, with the shared Home headings, spacing, captions
+and mobile row footprint. Dates and episode information use the shared artwork
+status cue rather than a separate compact-row design.
+The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and
+`--upcoming-capture-fixture --capture-home` (the production Home screen with
+Continue Watching, Coming Soon and Recently Added). These previews use sample
+dates/history and public artwork, not a signed-in account; Home's hero is disabled.
+Mobile previews mount the production `PlozziOSTabShell`, including its navigation
+and appearance bridges, with a seeded feed loader rather than live release lookup.
+`--capture-dense` puts five shows on one date and checks rendered poster spacing,
+phone wrapping, and single/grouped episode captions.
+`--capture-progressive` exercises centered initial loading, first publication,
+and subsequent insertion of thirty days of history; Today must remain immediately
+below the toolbar. Explicit phase gates separate loading, first-publication, and
+completed renders, including when a shell refresh coalesces.
+`--capture-thirty` instead places thirty uniquely numbered sample cards on Today,
+reusing the fixture artwork. Its scrolled capture reaches the last card and the
+following date; its minimized capture retains Today to compare the same grid.
+They also support
+`--capture-scrolled`, `--capture-calendar` and
+`--capture-selection` to exercise pinned controls, the real calendar presentation
+and the appropriate inline/popover behavior after choosing a date.
+`--capture-calendar-collapsed` checks hide/reopen, recovered poster width and date
+retention, ending minimized. `--capture-calendar-resize` additionally checks the
+narrow popover and its dismissal when returning to a wide layout.
+Add `--capture-opaque` to the scrolled capture
+to check the app's reduced-transparency fallback. Add `--capture-edge-comparison`
+to save same-position native-window renders with only the system's top edge effect
+enabled and disabled (`tmp/upcoming-edge-enabled.png` and `tmp/upcoming-edge-disabled.png`).
+Add `--capture-landscape` to an
+action capture to render a 1194-by-834 native test window with the sidebar collapsed;
+this checks wide layout, not device rotation. That render is saved to
+`tmp/upcoming-landscape.png` in the presentation host's data container.
+`--capture-narrow` instead renders a 700-by-900 iPad window to
+`tmp/upcoming-narrow.png`, exercising the compact-calendar fallback.
+
+`HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
+request-connection changes invalidate in-flight results. Viewing/watchlist
+mutations and request attempts refresh the feed; foreground entry checks freshness
+instead of invalidating a fresh result. The retained feed model observes watchlist
+changes, cache restoration and request completion even when its tab is absent.
+Request completion from a disconnected service is ignored. tvOS gates network
+refreshes, not invalidation, on tab visibility. Opening
+Upcoming reuses Home's existing work and data, checking freshness rather than
+unconditionally restarting it.
+An off-main, bounded disk snapshot restores releases across model recreation and
+app relaunch before network work. Cache identity includes the profile, accounts,
+credential revisions, server users, request identity/server, language and region;
+process-local request-connection revisions remain runtime fences, not disk keys.
+Authorization is checked before and after hydration. Artwork credentials are
+removed before persistence and rebuilt through the current action handler.
+Snapshots older than seven days are ignored; stale usable data remains visible
+while refreshing, and successful empty responses replace prior records.
+Initial loading is centered in the agenda viewport. Once cards are available,
+refreshing does not add a spinner; recoverable source errors follow the cards
+rather than displacing the first date.
+Episode calendars and personal-movie loading run independently, publishing each
+completed title while the rest continue. Calendar concurrency remains bounded;
+returning and recently watched series are checked first without omitting older
+or ended series. Same-scope changes finish useful in-flight work and coalesce
+into a follow-up refresh using the latest inputs. Successful unchanged feeds
+remain fresh for six hours; partial/error results have a one-minute automatic-retry
+cooldown, with a new local day also requiring refresh, while explicit Retry bypasses it.
+Calendar provider results also expire within six hours, rather than retaining the
+longer artwork/text cache lifetime.
+A failed source is reported and its
+previous same-scope entries remain available rather than turning an outage into
+a successful empty agenda.
+Successful empty full-calendar listings retain their completeness in the provider
+cache and stop unnecessary fallback; a single-next-episode source still permits
+full-calendar fallback. A successful single-next response cannot mask a failed
+full-calendar request; complete listings, including empty ones, replace partial
+next-episode answers. TVmaze reuses a known show ID and does not fetch unused
+cadence metadata for calendar requests. An authoritative unmatched title means
+no announced dates, not a source outage. Transport, decoding, listing, and
+fallback failures remain distinguishable from that result.
+Unavailable listings are not cached as authoritative negatives, so Retry
+can recover subject to the provider's existing outage cooldown.
+
+Coming Soon is an ordinary Home row, enabled by default while respecting explicit
+hiding, renaming and saved ordering. It previews the next announced event per
+title, at most 20 cards, independently of agenda filters. Its See All action
+opens Upcoming even when that destination is hidden from primary navigation.
+The destination participates in all TV navigation styles and mobile's existing
+tab/More/sidebar arrangement. The TV Home row uses the shared native media rail,
+including Showcase card-focus reporting and the standard browse action.
+
+`UpcomingScheduleTests` includes an opt-in public TVmaze listing comparison
+(`PLOZZ_UPCOMING_LIVE=1`). It checks the production calendar path against the full
+episode listing, including the history window, without media-server credentials.
+The deterministic runtime tests separately cover provider paging, first-episode
+history, personal interests, progressive publication, scope cancellation,
+coalesced refreshes and partial-source retention. `UpcomingLivePerformanceTests`
+uses an explicitly authorized ephemeral internal-server broker to measure first
+content, first upcoming content, full completion, repeat visits, disk restoration and real request
+counts against production Jellyfin/Plex providers and metadata. These are
+data-publication timings, not rendered-frame or physical-device measurements.
+Both dedicated identities must have watched returning shows with announced
+future episodes: an empty future feed cannot pass as fast loading. Repeat
+visits must preserve the feed without additional server requests.
+
 ## History diagnostics
 
 Home history completion records returned, curated and visible item counts plus

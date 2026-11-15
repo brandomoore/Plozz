@@ -1437,13 +1437,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     connectIPTV: providerSetupRouter == nil ? nil : requestIPTVConnection,
                     sourceFilterID: model.configuredSourceID,
                     browseSource: { sourceID in
-                        #if os(iOS)
                         selectBrowseSource(sourceID)
-                        #else
-                        model.source = nil
-                        model.configuredSourceID = sourceID
-                        topRequest &+= 1
-                        #endif
                         sheet = nil
                     },
                     didConfigurePlaylist: didConfigurePlaylist,
@@ -1758,12 +1752,14 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 PrototypeLoadingSidebar()
             } else {
                 PrototypeBrowseSidebar(
-                    model: model, active: $controlsActive,
+                    model: model, configuration: imports.configuration, active: $controlsActive,
                     focusRequest: toolbarFocusRequest, isSearching: isSearching,
                     categoryFocusRequest: categoryFocusRequest,
                     restoresCategoryFocus: sidebarRestoresCategoryFocus,
                     search: { if isSearching { closeSearch() } else { openSearch() } },
                     enterGuide: enterGuide,
+                    selectSource: selectBrowseSource,
+                    addSource: { sheet = .addSource },
                     selectCategory: { showCategory($0, enteringGuide: false) },
                     multiviews: multiviewSelection == nil ? { sheet = .multiviewFavorites } : nil,
                     manageChannels: multiviewSelection == nil ? { sheet = .organization } : nil
@@ -2309,6 +2305,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             model.category = nil
         }
     }
+    #endif
 
     private func selectBrowseSource(_ sourceID: String?) {
         guard isActive, scenePhase == .active, isProfileAuthorized(), !sourceApplicationFailed,
@@ -2329,7 +2326,6 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         focusedProgram = nil
         topRequest &+= 1
     }
-    #endif
 
     private func showCategories() {
         playback.cancelWatch()

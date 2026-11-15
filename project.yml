@@ -492,6 +492,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/FocusHost
+      - path: Tests/HomePresentationSupport/UpcomingCaptureFixture.swift
       - path: Tests/HomePresentationSupport/DetailSelectionFixture.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnFixture.swift
       - path: Tests/iOSPresentationHost/DetailInformationFixture.swift
@@ -532,6 +533,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/iOSPresentationHost
+      - path: Tests/HomePresentationSupport/UpcomingCaptureFixture.swift
       - path: Tests/HomePresentationSupport/DetailSelectionFixture.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnFixture.swift
       - path: Tests/DiscoverPresentationSupport/DiscoverBrowseFixture.swift
@@ -603,9 +605,18 @@ targets:
       - path: Tests/CoreModelsTests/ContinueWatchingInPlayerSettingsTests.swift
       - path: Tests/FeaturePlaybackTests/ContinueWatchingSelectionTests.swift
       - path: Tests/CoreUITests/DetailInformationPreviewTests.swift
+      - path: Tests/CoreUITests/AmbientGradientTests.swift
       - path: Tests/CoreUITests/DetailHeaderMetadataRowTests.swift
       - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/FeaturePlaybackTests/NativePlaybackLifecycleTests.swift
+      - path: Tests/FeaturePlaybackTests/PlayerVideoZoomTests.swift
+      - path: Tests/FeaturePlaybackTests/PlayerViewModelEOFTests.swift
+      - path: Tests/FeaturePlaybackTests/VideoNowPlayingCoordinatorTests.swift
+      - path: Tests/FeaturePlaybackTests/SystemPlaybackAudioTests.swift
+      - path: Tests/FeaturePlaybackTests/SeriesTrackMemoryTests.swift
+      - path: Tests/FeaturePlaybackTests/StreamingPlaybackTests.swift
+      - path: Tests/FeaturePlaybackTests/SubtitleTrackControllerTests.swift
+      - path: Tests/CoreModelsTests/SeriesTrackPreferenceStoreTests.swift
       - path: Tests/FeatureLiveTVCoreTests/LiveTVPlaybackCoordinatorTests.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
       - path: Tests/CoreModelsTests/SettingsHydrationTests.swift

@@ -17,7 +17,7 @@ final class LargeNativeNavigationRemoteTests: XCTestCase {
         }
         defer { if !attach { app.terminate() } }
         XCTAssertTrue(app.buttons["top-navigation-home"].waitForExistence(timeout: 15))
-        if !attach {
+        if !app.buttons["top-navigation-home"].hasFocus {
             assertFocused(app.buttons["large-navigation-content"], in: app)
             XCUIRemote.shared.press(.menu)
         }
@@ -26,7 +26,7 @@ final class LargeNativeNavigationRemoteTests: XCTestCase {
         for _ in 0..<3 {
             let start = ProcessInfo.processInfo.systemUptime
             for _ in 0..<15 { XCUIRemote.shared.press(.right) }
-            assertFocused(app.buttons["top-navigation-library:plex:10"], in: app)
+            assertFocused(app.buttons["top-navigation-library:plex:9"], in: app)
             for _ in 0..<15 { XCUIRemote.shared.press(.left) }
             assertFocused(app.buttons["top-navigation-home"], in: app)
             durations.append(ProcessInfo.processInfo.systemUptime - start)

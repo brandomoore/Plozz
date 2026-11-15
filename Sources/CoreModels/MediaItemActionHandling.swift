@@ -128,6 +128,10 @@ public extension Notification.Name {
     static let universalWatchlistCacheDidLoad =
         Notification.Name("PlozzUniversalWatchlistCacheDidLoad")
 
+    /// A request attempt completed for the current service connection. Retained
+    /// personal feeds invalidate without depending on a mounted request screen.
+    static let personalRequestsDidChange = Notification.Name("PlozzPersonalRequestsDidChange")
+
     /// Posted after a native read has resolved complete membership and ordering,
     /// before slower per-title ownership checks finish. Existing cards stay put;
     /// Home and Watchlist add skeleton slots for the unresolved remainder.

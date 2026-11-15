@@ -1047,13 +1047,34 @@ The `active-picture-hls` fixtures are generated with FFmpeg `-c copy -f hls
 `active-picture.mp4` and `glow-hd.mp4`; no video is re-encoded. Native SDR output
 materialization is included in the comparison, not bounded by the CPU sampler's
 2 Hz limit. Independent subtitle outputs are preserved when the video tap stops.
-Native analysis requests 320x180 output while retaining the original display
-canvas separately. This reduces the requested analysis surface, not necessarily
-AVFoundation's internal decode/render allocations. In an isolated tvOS simulator
-four-player pair, enabled analysis added approximately 16 MiB resident memory;
-CPU medians were 935 versus 952 ms per 2.3-second window, within the measured
-dispersion. These are one controlled SDR comparison, not a hardware or HDR
-performance guarantee.
+The native tap borrows the original format and size; a worker converts a private
+copy to at most 320x180. Applying that size/format requirement to AVPlayer itself
+can change displayed colors. The private buffer bound does not cap AVFoundation's
+internal decode/render allocations or the original frame retained during analysis.
+
+At `c8230507a` (engine `055860a`), Xcode 27.1 and an iOS 27.1 iPhone simulator
+measured the single-player pair below. Each case discarded one warmup and retained
+five 2.3-second windows. CPU figures are medians of app-process CPU milliseconds
+per elapsed second, not wall-clock processing delays.
+
+| Comparison | Analysis off | Analysis on | Extra CPU ms/s | Resident snapshot difference |
+| --- | ---: | ---: | ---: | ---: |
+| Off then on, same test process | 146.3 | 192.8 | 46.5 | +3.9 MiB |
+| Fresh processes, on then off | 93.0 | 115.3 | 22.3 | +8.5 MiB |
+
+Enabled windows completed four or five fresh samples each; disabled windows
+completed none, and both retained advancing playback. The observed CPU difference
+is about 2.2-4.6 percentage points of one core. Physical-footprint snapshot
+differences were much smaller (-0.42/+0.19 MiB); resident snapshots include shared
+and externally backed pages and are not allocation or peak-memory measurements.
+Host load was high and variable, so these two comparisons are not a precise
+device budget. They exclude startup, GPU/render-server cost, 4K/HDR conversion
+and physical-device energy. They also do not attribute CPU cost between native
+output materialization, private conversion and the bounded pixel scan.
+
+Evidence is in `.build/performance/runs/4473a06724cc4e77810db2b220a10cb2`
+(paired), `1553f84e12cf4fbbb5bbf43f105873d1` (isolated enabled), and
+`f16d4d272b694863b4d93c161594da37` (isolated disabled).
 
 The glow fixtures in `Tests/SubtitlePresentationSupport/Fixtures` are synthetic:
 `live-continuity-dim.mp4` is the first 30 seconds of `live-continuity.mp4`,
@@ -1939,6 +1960,91 @@ workload with the in-memory diagnostic recorder disabled/enabled. The enabled
 variant does not start Sentry or upload anything.
 Credits, sort metadata, membership/order, and provider parity
 remain correctness controls; unchanged identity must not hide changed metadata.
+
+For metadata work during row layout, `home-series-artwork-identity` runs the
+production `ContinueWatchingArtworkSource.identity` pipeline over 408 synthetic
+movie/episode sources, four complete passes per sample. It covers classification,
+series-ID promotion, metadata cache keys and provider aliases without networking
+or rendering. Every sample verifies all 1,632 identities and their complete
+174,592-byte output. It is not a frame-rate or whole-navigation benchmark.
+
+A symbolicated physical tvOS hang reached this pipeline from `MediaRowView`
+inside Showcase host fitting. Each namespace lookup rebuilt the entire normalized
+provider-ID dictionary, including per-character strings for ordinary ASCII keys.
+The lookup now selects the highest-priority valid alias directly; ASCII
+normalization uses bytes while other spellings keep the original Unicode path.
+Alias priority, whitespace handling and normalized-key collisions remain covered
+by `ProviderIDNamespaceTests`. There is no cache to invalidate, truncated metadata,
+new background task or change to native focus/layout ownership.
+
+On an Apple TV 4K simulator running tvOS 26.2, optimized Debug, one warmup and
+five samples, the final matched pair measured:
+
+| Workload | Original median CPU | Optimized median CPU |
+| --- | ---: | ---: |
+| 1,632 artwork identities | 294.179 ms | 60.621 ms |
+| Twelve settled artwork publications | 28.981 ms | 26.280 ms |
+| Cold Showcase graph, warm images | 382.900 ms | 375.129 ms |
+| Duplicate artwork reports | 5.140 ms | 4.832 ms |
+
+Baseline `4a3474bf702e449f9d5c45dbeca32b66` and candidate
+`230fc391efc047d6933f3112914339cc` have identical runner, fixtures, scenarios and
+environment; comparison `6c2ea2bbb07443bfb4552cbc932a9a0c` was within budget.
+Identity CPU fell about 79%, consistently reaching 60–63 ms across three
+candidate runs versus 289–294 ms for original-code runs. An exploratory
+lookup-only candidate measured 225 ms before the ASCII path was added.
+
+Do not infer an artwork speedup from the small control differences. Earlier
+comparisons flagged artwork CPU regressions, and an original-code A/A control
+also flagged artwork/duplicate regressions
+(`6bbd69ba038b458e84d1cdbc4a7caa0a`); shared-host load and outer layout counts
+varied. All complete runs retained the same publication, row-fitting, card-input
+and duplicate-suppression results. Synthetic native Home and horizontal navigation
+profiles completed, but neither reproduces the complete live-server session.
+The live endpoint rejected public API access before authentication, so this
+evidence does not establish physical-device responsiveness or network improvement.
+
+For Showcase gutter discovery, `home-focus-discovery` performs 24 actual native
+focus changes across eight production rows of 75 cards, including horizontal
+movement and row changes. It counts queried rows and native focus containers,
+then checks title updates, focus retention and visible overscan artwork.
+It does not measure network loading, screen frame rate or device hang duration.
+
+A later symbolicated physical hang reached `UIFocusSystem.didUpdateNotification`
+and `FocusHeroMotionSurface.Controller.updateRowEntryGuides`, inside UIKit's
+focus-container traversal. All other rows previously searched their full
+horizontal viewport on every move. Discovery now visits only the two possible
+neighbor rows (one at the boundary), and guide setters skip unchanged values.
+The same simulator/toolchain and optimized Debug settings above measured:
+
+| 24 native focus moves | Original median | Adjacent-row median |
+| --- | ---: | ---: |
+| CPU | 131.878 ms | 63.006 ms |
+| Wall time | 131.668 ms | 62.852 ms |
+| Row scans | 168 | 42 |
+| Container queries | 14,196 | 4,476 |
+
+Baseline `a4f4c31b81914c9e94a8c6bc4dfd831c`, candidate
+`1a82457dcdb943bf8c3a9ebaf0d9be70`, and comparison
+`7e39ba6782e6414db84db8fd96f2b30b` preserve matching fixtures and environment.
+The roughly 52% CPU reduction is specific to this workload, not a claim that
+whole-app navigation or the physical hang duration improved by that amount.
+Separate regression coverage verifies that discovery follows row reordering.
+
+The same device diagnostics also captured synchronous `SecItemCopyMatching`
+from automatic sign-in publication. Channel capture and account-verification
+reads now run on a serial utility queue. `ProviderCredentialSyncTests` holds
+state/ownership reads behind a gate while the main actor continues, verifies
+unchanged owned output for Jellyfin and Plex, and rejects cancellation and
+sign-in/authorization changes during the read. This proves executor placement
+and stale-result rejection, not a simulated Keychain service latency improvement.
+Neither change alters foreground-refresh timing or disables background features.
+The final AppRuntime run passed 516 tests with 25 tests skipped and no
+failures. Eight native Showcase remote controls passed, covering short rows
+under all three navigation styles, both focus appearances, pinned return,
+vertical reversals and delayed initial loading across background/foreground.
+The hosted adjacency/reordering regression also passed. These remain simulator
+results; the new changes have not yet been installed or verified on hardware.
 
 For card-activation and menu stalls, `mobile-home-card-routing` updates 24 real
 mobile Home cards against a four-source identity index and counts source

@@ -48,6 +48,9 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
     #endif
     public var subtitlePresentationTime: TimeInterval { underlyingEngine.subtitlePresentationTime }
     public var supportsActivePictureAnalysis: Bool { underlyingEngine.supportsActivePictureAnalysis }
+    public var activePictureSourceID: UUID? {
+        hasSource && decoderGeneration == generation ? underlyingEngine.activePictureSourceID : generation
+    }
     public func sampleActivePicture() async -> VideoActivePictureState {
         guard hasPresentedVideoFrame else { return .unavailable }
         let stamp = generation

@@ -54,6 +54,67 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "1")
     }
 
+    func testOnboardingInfoUsesNeutralThemeInk() throws {
+        for isLight in [false, true] {
+            launch(arguments: ["--diagnostics-onboarding"] + (isLight ? ["--light"] : []))
+            let info = app.buttons["About Diagnostic Sharing"]
+            XCTAssertTrue(info.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertEqual(info.frame.width, 44, accuracy: 0.5)
+            XCTAssertEqual(info.frame.height, 44, accuracy: 0.5)
+            let repository = app.buttons["diagnostics-consent-repository"]
+            XCTAssertTrue(repository.isHittable)
+            XCTAssertEqual(repository.frame.height, 44, accuracy: 0.5)
+            try assertNeutralInk(info)
+            capture("onboarding-neutral-\(isLight ? "light" : "dark")")
+            tapInfoTargetEdge(info)
+            let done = app.buttons["Done"]
+            XCTAssertTrue(done.waitForExistence(timeout: 5))
+            capture("onboarding-information-neutral-\(isLight ? "light" : "dark")")
+            done.tap()
+            XCTAssertTrue(info.waitForExistence(timeout: 5))
+            app.terminate()
+        }
+    }
+
+    func testOnboardingKeepsDisclosureInInformationWithoutChoosingConsent() {
+        for shares in [false, true] {
+            launch(arguments: ["--diagnostics-onboarding"])
+            let share = app.buttons["Share Diagnostics"]
+            let decline = app.buttons["Don't Share"]
+            XCTAssertTrue(share.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(share.isHittable)
+            XCTAssertTrue(decline.isHittable)
+            XCTAssertTrue(app.staticTexts["Help improve Plozz?"].exists)
+            XCTAssertTrue(app.staticTexts[
+                "Send diagnostics when something goes wrong to help improve reliability and performance."
+            ].exists)
+            let disclosures = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "through Sentry"))
+            XCTAssertEqual(disclosures.count, 0)
+            let repository = app.buttons["diagnostics-consent-repository"]
+            XCTAssertEqual(repository.label, "GitHub repo")
+            let info = app.buttons["About Diagnostic Sharing"]
+            XCTAssertTrue(info.isHittable)
+            capture("onboarding-simple")
+            tapInfoTargetEdge(info)
+            XCTAssertTrue(app.staticTexts["Automatic Reports"].waitForExistence(timeout: 5))
+            XCTAssertEqual(disclosures.count, 2)
+            XCTAssertTrue(app.staticTexts[
+                "Sharing is optional. Change anytime in Settings > Help & Diagnostics."
+            ].exists)
+            XCTAssertTrue(app.buttons["privacy-policy-link"].exists)
+            capture("onboarding-information")
+            app.buttons["Done"].tap()
+            XCTAssertTrue(share.waitForExistence(timeout: 5))
+            XCTAssertTrue(decline.exists, "Reading details must not choose consent.")
+            (shares ? share : decline).tap()
+            let toggle = app.switches["diagnostics-sharing-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+            XCTAssertEqual(toggle.value as? String, shares ? "1" : "0")
+            XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "0")
+            app.terminate()
+        }
+    }
+
     func testUnavailableBuildUsesNativeDisabledControlsAndExplainsWhy() {
         launch(arguments: ["--diagnostics-unavailable"])
         let send = app.buttons["diagnostics-submit"]
@@ -104,11 +165,12 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         launch()
         let info = app.buttons["diagnostics-information-button"]
         XCTAssertTrue(info.waitForExistence(timeout: 10))
-        XCTAssertGreaterThanOrEqual(info.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(info.frame.height, 44)
+        XCTAssertEqual(info.frame.width, 44, accuracy: 0.5)
+        XCTAssertEqual(info.frame.height, 44, accuracy: 0.5)
         let disclosures = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "through Sentry"))
         XCTAssertEqual(disclosures.count, 0, "Detailed disclosures should not crowd the settings page.")
-        info.tap()
+        capture("sharing-standard-info")
+        tapInfoTargetEdge(info)
         XCTAssertTrue(app.staticTexts["Automatic Reports"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Manual Reports"].exists)
         XCTAssertEqual(disclosures.count, 2)
@@ -118,6 +180,13 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         XCTAssertTrue(info.waitForExistence(timeout: 5))
         XCTAssertEqual(app.switches["diagnostics-sharing-toggle"].value as? String, "0")
         XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "0")
+    }
+
+    private func tapInfoTargetEdge(_ info: XCUIElement) {
+        // Exercise the target near its top edge, not just the glyph.
+        info.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: 0, dy: -21))
+            .tap()
     }
 
     private func launch(arguments: [String] = []) {

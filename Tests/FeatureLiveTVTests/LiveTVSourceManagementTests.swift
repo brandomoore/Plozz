@@ -7,6 +7,43 @@ import XCTest
 
 @MainActor
 final class LiveTVSourceManagementTests: XCTestCase {
+    func testBrowseMenuSimplifiesOnlyOneEnabledPlaylistOrServer() {
+        let playlist = source("playlist")
+        let server = LiveTVServerSource(id: "server", name: "Server", accountID: "account")
+        let disabledPlaylist = source("disabled", enabled: false)
+        let disabledServer = LiveTVServerSource(
+            id: "disabled-server", name: "Disabled server", accountID: "other-account", isEnabled: false
+        )
+        for (configuration, expectedID) in [
+            (LiveTVSourcesConfiguration(playlists: [playlist, disabledPlaylist], servers: [disabledServer]), "playlist"),
+            (LiveTVSourcesConfiguration(playlists: [disabledPlaylist], servers: [server, disabledServer]), "server")
+        ] {
+            let menu = PrototypeBrowseSourceMenu(
+                configuration: configuration, selectedSourceID: nil, includesLibraryChannels: false,
+                selectSource: { _ in XCTFail("Presenting a sole source must not change the saved filter.") },
+                addSource: {}
+            )
+            XCTAssertEqual(menu.singleSourceID, expectedID)
+        }
+    }
+
+    func testBrowseMenuRetainsAllWhenThereIsNotExactlyOneSource() {
+        let playlist = source("playlist")
+        let server = LiveTVServerSource(id: "server", name: "Server", accountID: "account")
+        for (configuration, includesLibraryChannels) in [
+            (LiveTVSourcesConfiguration.empty, false),
+            (LiveTVSourcesConfiguration(playlists: [source("disabled", enabled: false)]), false),
+            (LiveTVSourcesConfiguration(playlists: [playlist], servers: [server]), false),
+            (LiveTVSourcesConfiguration(playlists: [playlist]), true)
+        ] {
+            let menu = PrototypeBrowseSourceMenu(
+                configuration: configuration, selectedSourceID: nil,
+                includesLibraryChannels: includesLibraryChannels, selectSource: { _ in }, addSource: {}
+            )
+            XCTAssertNil(menu.singleSourceID)
+        }
+    }
+
     func testImportedSourceEditsPreserveOpaqueIdentityAndRejectStaleChanges() throws {
         let id = UUID()
         let locator = try XCTUnwrap(URL(string: "plozz-playlist://" + id.uuidString.lowercased()))

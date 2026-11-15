@@ -44,9 +44,11 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
 
     public static func displayState(
         _ state: LoadState<HomeViewModel.Content>,
-        liveTV: HomeLiveTVSnapshot, visibility: HomeLibraryVisibility
+        liveTV: HomeLiveTVSnapshot, visibility: HomeLibraryVisibility,
+        upcoming: [UpcomingRelease] = []
     ) -> LoadState<HomeViewModel.Content> {
-        if case .empty = state, hasLiveTVRows(liveTV, visibility: visibility) {
+        if case .empty = state,
+           !resolve(rows: [], content: .init(), visibility: visibility, liveTV: liveTV, upcoming: upcoming).isEmpty {
             return .loaded(.init())
         }
         return state
@@ -55,6 +57,7 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
     public static func resolve(
         rows: [HomeRow], content: HomeViewModel.Content, visibility: HomeLibraryVisibility,
         liveTV: HomeLiveTVSnapshot = .empty,
+        upcoming: [UpcomingRelease] = [],
         presentation: LibraryPresentationSettings = .default,
         showsEmptySectionMessages: Bool = true,
         serverInfo: [String: SourceServerInfo] = [:],
@@ -87,6 +90,18 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
             return Self(choice: choice, source: .home(row))
         }
         var available = rows.filter { $0.kind != .libraries }.compactMap(entry)
+        if !upcoming.isEmpty, let choice = shared.first(where: { $0.id == .global(.comingSoon) }) {
+            available.insert(Self(
+                choice: choice,
+                source: .library(.init(
+                    section: LibrarySection(
+                        id: "comingSoon", title: "Coming Soon", localizedTitle: "Coming Soon",
+                        style: .landscape, items: upcoming.map(\.item), hasMore: true
+                    ),
+                    isLoading: false, failure: nil
+                ))
+            ), at: min(1, available.count))
+        }
         if !liveTV.channels.isEmpty, let choice = shared.first(where: { $0.id == .liveTV }) {
             available.append(Self(choice: choice, source: .liveTV(liveTV.channels)))
         }
