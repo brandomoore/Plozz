@@ -4,11 +4,7 @@ import SwiftUI
 
 struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
     @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
-    @Environment(\.plozzReduceTransparency) private var reduceTransparency
-    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @State private var viewportWidth: CGFloat = 0
-    @State private var safeAreaTop: CGFloat = 0
     let heroActive: Bool
     @ViewBuilder var hero: Hero
     @ViewBuilder var rows: Rows
@@ -16,37 +12,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
     var body: some View {
         if #available(iOS 26.0, *) {
             scrollContent
-                .scrollEdgeEffectHidden(
-                    heroActive || isRunningOnMac || systemReduceTransparency || reduceTransparency,
-                    for: .top
-                )
-                .overlay(alignment: .top) {
-                    if heroActive, !isRunningOnMac, !systemReduceTransparency, !reduceTransparency,
-                       safeAreaTop > 0 {
-                        Rectangle()
-                            .fill(.ultraThinMaterial)
-                            .frame(height: safeAreaTop + 12)
-                            .mask {
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: .black, location: 0),
-                                        .init(color: .black, location: max(0, safeAreaTop - 12) / (safeAreaTop + 12)),
-                                        .init(color: .clear, location: 1)
-                                    ],
-                                    startPoint: .top, endPoint: .bottom
-                                )
-                            }
-                            .ignoresSafeArea(.container, edges: .top)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
-                }
-                .background {
-                    PlozziOSWindowSafeAreaTopReader { safeAreaTop = $0 }
-                        .frame(width: 0, height: 0)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
+                .scrollEdgeEffectStyle(heroActive ? .soft : .automatic, for: .top)
         } else {
             scrollContent
         }

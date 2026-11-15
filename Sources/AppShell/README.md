@@ -234,11 +234,11 @@ registry.
   background is hidden for this item so it cannot merge or stretch the circle.
   No second glass button style is added. Photos, emoji, and symbols keep their
   original colors; reduced-transparency and pre-iOS 26 systems use the shared frosted surface.
-  Home's hero replaces the full navigation-row scroll-edge effect with an
-  ultra-thin system-material backdrop behind the status bar. Its app-controlled
-  mask fades out twelve points below the window's top safe area, leaving the
-  profile row clear without changing header geometry. Reduced-transparency and
-  Mac behavior remain unchanged. Home hides
+  Home's hero uses Apple's native soft scroll-edge effect, with no additional
+  material, tint, or custom blur mask. The system owns its rendering and extent;
+  `.soft` prevents the automatic style from choosing a hard boundary on newer
+  systems. Header geometry, reduced-transparency and Mac behavior remain
+  unchanged. Home hides
   the regular-width tab-bar background so the hero stays visible behind that row.
   The individual native glass controls remain; other destinations and compact
   bottom-tab backgrounds retain their existing treatment. Search's collapsing
