@@ -1039,7 +1039,7 @@ final class IPTVIntegrationTests: XCTestCase {
         IPTVFixture.state.requests.filter { $0.url?.query?.contains("action=get_simple_data_table") == true }
     }
 
-    func testFreshSavedGuideIndexAnswersWithoutProviderRequestsAndOnlyIdentifiedGapsUseNativeAPI() async throws {
+    func testFreshSavedGuideIndexAnswersWithoutProviderRequestsAndOnlyGapsUseNativeAPI() async throws {
         IPTVFixture.state.handler = { request in
             if request.url?.path == "/prefix/xmltv.php" {
                 XCTFail("A saved index must not be downloaded again.")
@@ -1063,10 +1063,14 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertTrue(Self.nativeGuideRequests().isEmpty, "Covered channels need no provider request.")
 
         let mixed = try await provider.liveTVGuide(channelIDs: ["live:10", "live:11", "live:12"], from: from, to: to)
-        XCTAssertEqual(Set(mixed.map(\.channelID)), ["live:10", "live:11"])
-        let native = Self.nativeGuideRequests()
-        XCTAssertEqual(native.count, 1, "Only the identified channel missing from the index is requested.")
-        XCTAssertEqual(native.first?.url?.query?.contains("stream_id=11"), true)
+        XCTAssertEqual(Set(mixed.map(\.channelID)), ["live:10", "live:11", "live:12"])
+        let native = Self.nativeGuideRequests().compactMap { $0.url?.query }
+        XCTAssertEqual(native.count, 2, "Only channels missing from the index are requested.")
+        XCTAssertEqual(native.first?.contains("stream_id=11"), true)
+        XCTAssertEqual(
+            native.last?.contains("stream_id=12"), true,
+            "The native API is asked by stream, so a channel without a guide identity can still have listings."
+        )
         XCTAssertFalse(IPTVFixture.state.requests.contains { $0.url?.path == "/prefix/xmltv.php" })
         let loads = await index.loads
         XCTAssertEqual(loads, 0)
@@ -1074,7 +1078,85 @@ final class IPTVIntegrationTests: XCTestCase {
             $0.message.hasPrefix("IPTV_GUIDE ") && $0.message.contains("event=complete")
         }?.message
         XCTAssertEqual(report?.contains("channels=3 outcome=succeeded"), true)
-        XCTAssertEqual(report?.contains("indexed=1 nativeSkipped=1"), true)
+        XCTAssertEqual(report?.contains(" indexed=1 "), true)
+    }
+
+    func testSavedIndexCoveringOnlyPartOfTheWindowStillAsksNativeAPIForThatChannel() async throws {
+        IPTVFixture.state.handler = { request in
+            if request.url?.path == "/prefix/xmltv.php" {
+                XCTFail("A saved index must not be downloaded again.")
+                return (200, [:], Data("<tv/>".utf8))
+            }
+            if request.url?.query?.contains("action=get_live_streams") == true {
+                return (200, [:], Data(Self.mixedLineup.utf8))
+            }
+            if request.url?.query?.contains("action=get_simple_data_table") == true {
+                return (200, [:], Data(#"{"epg_listings":[{"id":"p1","title":"RWFybHk=","start_timestamp":"100","stop_timestamp":"300"},{"id":"p2","title":"TGF0ZQ==","start_timestamp":"300","stop_timestamp":"500"}]}"#.utf8))
+            }
+            return try Self.xtream(request)
+        }
+        let from = Date(timeIntervalSince1970: 100), middle = Date(timeIntervalSince1970: 300)
+        let to = Date(timeIntervalSince1970: 500)
+        let index = SavedGuideIndex(saved: [
+            .init(id: "whole-1", channelID: "live:10", title: "Whole 1", startDate: from, endDate: middle),
+            .init(id: "whole-2", channelID: "live:10", title: "Whole 2", startDate: middle, endDate: to),
+            .init(id: "first-half", channelID: "live:11", title: "Saved first half", startDate: from, endDate: middle)
+        ])
+        let provider = try await makeXtreamGuideProvider(guideIndex: index) { _, _, _, _, _ in
+            XCTFail("The saved index replaces the XMLTV loader.")
+            return []
+        }
+        let programmes = try await provider.liveTVGuide(channelIDs: ["live:10", "live:11"], from: from, to: to)
+        XCTAssertEqual(programmes.filter { $0.channelID == "live:10" }.map(\.title), ["Whole 1", "Whole 2"])
+        XCTAssertEqual(
+            programmes.filter { $0.channelID == "live:11" }.map(\.title), ["Early", "Late"],
+            "Native listings fill the uncovered half and replace, not duplicate, the saved half."
+        )
+        let native = Self.nativeGuideRequests()
+        XCTAssertEqual(native.count, 1, "A channel whose whole window is saved needs no provider request.")
+        XCTAssertEqual(native.first?.url?.query?.contains("stream_id=11"), true)
+        let loads = await index.loads
+        XCTAssertEqual(loads, 0)
+        let report = PlozzLog.recentEntries(limit: 500).last {
+            $0.message.hasPrefix("IPTV_GUIDE ") && $0.message.contains("event=complete")
+        }?.message
+        XCTAssertEqual(report?.contains(" indexed=1 "), true, "Only a fully answered channel counts as indexed.")
+    }
+
+    func testPartlySavedListingsAreKeptWhenNativeAPIAddsNothing() async throws {
+        for status in [200, 503] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.url?.query?.contains("action=get_live_streams") == true {
+                    return (200, [:], Data(Self.mixedLineup.utf8))
+                }
+                if request.url?.query?.contains("action=get_simple_data_table") == true {
+                    return (status, [:], Data(#"{"epg_listings":[]}"#.utf8))
+                }
+                return try Self.xtream(request)
+            }
+            let from = Date(timeIntervalSince1970: 100), to = Date(timeIntervalSince1970: 500)
+            let index = SavedGuideIndex(saved: [
+                .init(id: "first-half", channelID: "live:10", title: "Saved first half", startDate: from,
+                      endDate: Date(timeIntervalSince1970: 300))
+            ])
+            let provider = try await makeXtreamGuideProvider(guideIndex: index) { _, _, _, _, _ in
+                XCTFail("The saved index replaces the XMLTV loader.")
+                return []
+            }
+            do {
+                let programmes = try await provider.liveTVGuide(channelIDs: ["live:10"], from: from, to: to)
+                XCTAssertEqual(status, 200, "A failed native request must stay visible.")
+                XCTAssertEqual(programmes.map(\.title), ["Saved first half"])
+            } catch {
+                let partial = try XCTUnwrap(error as? ServerLiveTVPartialGuideError, "HTTP \(status): \(error)")
+                XCTAssertEqual(partial.programmes.map(\.title), ["Saved first half"])
+                XCTAssertEqual(partial.failure as? IPTVError, .httpStatus(503))
+            }
+            XCTAssertEqual(Self.nativeGuideRequests().count, 1)
+            XCTAssertFalse(IPTVFixture.state.requests.contains { $0.url?.path == "/prefix/xmltv.php" })
+            await provider.teardown()
+        }
     }
 
     func testNativeFailureAfterSavedIndexRowsKeepsThoseRowsAndReportsTheFailure() async throws {
@@ -1125,29 +1207,6 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertEqual(loads, 0)
     }
 
-    func testChannelsWithoutGuideIdentitySkipNativeAPIAndUseXMLTV() async throws {
-        IPTVFixture.state.handler = { request in
-            if request.url?.path == "/prefix/xmltv.php" { return (200, [:], Data("<tv/>".utf8)) }
-            if request.url?.query?.contains("action=get_live_streams") == true {
-                return (200, [:], Data(Self.mixedLineup.utf8))
-            }
-            return try Self.xtream(request)
-        }
-        let provider = try await makeXtreamGuideProvider { _, _, channels, from, to in
-            XCTAssertEqual(channels.map(\.id), ["live:12"])
-            return [.init(id: "loop", channelID: "live:12", title: "Loop", startDate: from, endDate: to)]
-        }
-        let programmes = try await provider.liveTVGuide(
-            channelIDs: ["live:10", "live:12"], from: Date(timeIntervalSince1970: 100),
-            to: Date(timeIntervalSince1970: 500)
-        )
-        XCTAssertEqual(programmes.map(\.title), ["News", "Loop"])
-        let native = Self.nativeGuideRequests()
-        XCTAssertEqual(native.count, 1, "The native API cannot resolve a channel without a guide identity.")
-        XCTAssertEqual(native.first?.url?.query?.contains("stream_id=10"), true)
-        XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
-    }
-
     func testTransientNativeFailureKeepsRetrievedListingsAndStopsAskingTheEndpoint() async throws {
         for status in [429, 502, 503] {
             IPTVFixture.state.reset()
@@ -1192,7 +1251,7 @@ final class IPTVIntegrationTests: XCTestCase {
             IPTVFixture.state.handler = { request in
                 if request.url?.path == "/prefix/xmltv.php" { return (200, [:], Data("<tv/>".utf8)) }
                 if request.url?.query?.contains("action=get_live_streams") == true {
-                    return (200, [:], Data(#"[{"stream_id":10,"name":"News","epg_channel_id":"news"},{"stream_id":11,"name":"Sports","epg_channel_id":"sports"}]"#.utf8))
+                    return (200, [:], Data(#"[{"stream_id":10,"name":"News"},{"stream_id":11,"name":"Sports"}]"#.utf8))
                 }
                 if request.url?.query?.contains("action=get_simple_data_table") == true {
                     return (status, [:], Data())
@@ -1269,7 +1328,7 @@ final class IPTVIntegrationTests: XCTestCase {
             IPTVFixture.state.reset()
             IPTVFixture.state.handler = { request in
                 if request.url?.query?.contains("action=get_live_streams") == true {
-                    return (200, [:], Data(#"[{"stream_id":10,"name":"News","epg_channel_id":"news"},{"stream_id":11,"name":"Sports","epg_channel_id":"sports"}]"#.utf8))
+                    return (200, [:], Data(#"[{"stream_id":10,"name":"News"},{"stream_id":11,"name":"Sports"}]"#.utf8))
                 }
                 if request.url?.query?.contains("action=get_simple_data_table") == true,
                    request.url?.query?.contains("stream_id=11") == true {

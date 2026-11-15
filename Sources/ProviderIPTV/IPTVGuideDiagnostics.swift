@@ -79,7 +79,6 @@ final class IPTVGuideDiagnostics {
     private var operations = 0
     private var fallbackCounts: [Fallback: Int] = [:]
     private var indexedChannels = 0
-    private var skippedChannels = 0
     private let source: String
     private let channels: Int
 
@@ -103,11 +102,8 @@ final class IPTVGuideDiagnostics {
         fallbackCounts[reason, default: 0] += channels
     }
 
-    /// Channels answered by the saved whole-guide index, with no provider request.
+    /// Channels whose whole window the saved guide index answered, with no provider request.
     func indexed(channels: Int) { indexedChannels += channels }
-
-    /// Channels with no guide identity, for which the native API is not asked.
-    func skippedNative(channels: Int = 1) { skippedChannels += channels }
 
     func finish(rows: Int? = nil, error: (any Error)? = nil) {
         var retained = samples
@@ -122,7 +118,7 @@ final class IPTVGuideDiagnostics {
             + " fallbackEmpty=\(fallbackCounts[.empty, default: 0])"
             + " fallbackMalformed=\(fallbackCounts[.malformed, default: 0])"
             + " fallbackUnavailable=\(fallbackCounts[.unavailable, default: 0])"
-            + " indexed=\(indexedChannels) nativeSkipped=\(skippedChannels)"
+            + " indexed=\(indexedChannels)"
             + " rows=\(rows.map(String.init) ?? "unknown") reason=\(failure?.reason.rawValue ?? "none")"
             + " elapsedMs=\(Self.milliseconds(since: started))"
         if error != nil, failure?.reason != .cancelled { PlozzLog.networking.error(summary) }

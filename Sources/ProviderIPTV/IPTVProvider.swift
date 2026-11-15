@@ -332,6 +332,8 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         let known = try await knownGuideChannels(channelIDs, catalog: catalog)
         var result: [ServerLiveTVProgramme] = []
         var covered = Set<String>()
+        // Saved listings that leave part of the window unanswered: used only if the native API adds nothing.
+        var partlyIndexed: [String: [ServerLiveTVProgramme]] = [:]
         // A fresh whole-guide index answers without a provider request. It is only
         // consulted, never loaded here: native listings must not wait for a download.
         let indexed = try await indexedGuide(
@@ -339,8 +341,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             diagnostics: diagnostics
         )
         if let indexed {
-            result += indexed
-            covered.formUnion(indexed.map(\.channelID))
+            for (id, programmes) in Dictionary(grouping: indexed, by: \.channelID) {
+                if Self.listings(programmes, cover: from, to: to) { covered.insert(id) }
+                else { partlyIndexed[id] = programmes }
+            }
+            result += indexed.filter { covered.contains($0.channelID) }
             diagnostics.indexed(channels: covered.count)
         }
         // The index already answered for its uncovered channels; asking XMLTV again adds nothing.
@@ -355,12 +360,6 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         }
         for id in channelIDs where !covered.contains(id) {
             try Task.checkCancellation()
-            // The native API resolves listings through the channel's guide identity.
-            if let channel = known[id], Self.guideIdentity(channel) == nil {
-                diagnostics.skippedNative()
-                fallBack(id)
-                continue
-            }
             if endpointUnavailable {
                 fallBack(id, .unavailable)
                 continue
@@ -377,7 +376,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                     diagnostics.record(request, endpoint: .xtream, error: error)
                     throw error
                 }
-                if programmes.isEmpty { fallBack(id, .empty) } else { result += programmes }
+                if programmes.isEmpty { fallBack(id, .empty) } else {
+                    result += programmes
+                    // Native listings replace the channel's incomplete saved ones rather than duplicate them.
+                    partlyIndexed[id] = nil
+                }
             } catch AppError.notFound, IPTVError.unsupported {
                 endpointUnavailable = true
                 fallBack(id, .unavailable)
@@ -392,6 +395,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                 break
             }
         }
+        for id in channelIDs { result += partlyIndexed.removeValue(forKey: id) ?? [] }
         if let nativeFailure {
             // A struggling provider is not also asked for its whole guide.
             guard !result.isEmpty else { throw nativeFailure }
@@ -415,11 +419,15 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         return result
     }
 
-    private static func guideIdentity(_ channel: IPTVGuideChannel) -> String? {
-        guard let id = channel.guideID?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else {
-            return nil
+    /// Whether the listings answer the whole window, with no gap the native API could fill.
+    private static func listings(_ programmes: [ServerLiveTVProgramme], cover from: Date, to: Date) -> Bool {
+        var answered = from
+        for programme in programmes.sorted(by: { $0.startDate < $1.startDate }) {
+            guard programme.startDate <= answered else { return false }
+            answered = max(answered, programme.endDate)
+            if answered >= to { return true }
         }
-        return id
+        return answered >= to
     }
 
     /// Requested channels present in the saved catalogue, keyed by channel ID.

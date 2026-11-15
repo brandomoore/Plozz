@@ -436,12 +436,14 @@ Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
 Xtream otherwise uses its native guide API, falling back to its `xmltv.php`
 for channels with empty, malformed or unsupported API listings. Successful
 native listings are retained. A fresh saved `xmltv.php` index is consulted
-first: channels it covers need no provider request, and only channels it does
-not cover are asked of the native API. The index is never downloaded for that
-check, so native listings do not wait for a whole-guide transfer, and channels
-it leaves uncovered are not sent to XMLTV a second time. A channel with no
-guide identity (`epg_channel_id`) is not requested from the native API, which
-resolves listings through that identity; it uses XMLTV matching only.
+first: a channel needs no provider request only when its saved listings span
+the whole requested window without a gap. Every other channel is asked of the
+native API, by stream, whether or not it has a guide identity
+(`epg_channel_id`). Native listings replace a channel's incomplete saved ones;
+the saved ones are kept when the native API returns none or fails. The index is
+never downloaded for that check, so native listings do not wait for a
+whole-guide transfer, and channels it leaves uncovered are not sent to XMLTV a
+second time.
 Working explicit guides remain preferred. If an
 explicit Xtream guide returns HTTP 404, other configured guides are tried in
 order before one attempt at the account's standard `xmltv.php` for uncovered
@@ -2312,9 +2314,8 @@ the Release model is empty; imported listings never receive synthetic gap filler
 Account-backed IPTV guide batches write `IPTV_GUIDE` events to Recent Activity
 on both platforms. A random batch ID links the source mode, requested channel
 count, Xtream-to-XMLTV fallback counts (empty, malformed, or unavailable),
-channels answered by the saved index (`indexed`), channels not requested from
-the native API for lack of a guide identity (`nativeSkipped`), and completion
-outcome. Up to six operation samples retain the first four, first
+channels whose whole window the saved index answered (`indexed`), and
+completion outcome. Up to six operation samples retain the first four, first
 failure, and last operation, with the omitted count reported explicitly.
 Samples identify `get_simple_data_table` or XMLTV, lookup/request/download/parse
 stage, observed HTTP status and allowlisted response type, bytes, cache use,
