@@ -32,6 +32,7 @@ public actor LiveTVGuideIndex {
     private var invalidating = false
     private var validated: [URL: UUID] = [:]
     private var requiresValidation = false
+    private var cachedProjection: (revision: String, value: String)?
     private var flight: Flight?
     private var transientTasks: [UUID: Task<[LiveTVPrototypeProgram], any Error>] = [:]
     private var admissionWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
@@ -140,8 +141,59 @@ public actor LiveTVGuideIndex {
         }
     }
 
+    /// Answers from a fresh saved index without starting or joining a download.
+    /// `nil` means only a source that can load the guide can answer. The lineup is
+    /// read only once a saved index could answer, so a miss costs no catalogue load.
+    /// A supplied revision must change whenever the catalog's matching fields change.
+    /// Without one, every lookup validates the full lineup.
+    public func cachedPrograms(
+        from url: URL, channels: [LiveTVPrototypeChannel], range: DateInterval,
+        catalogRevision: String? = nil,
+        catalog: @Sendable () async throws -> [LiveTVPrototypeChannel]
+    ) async throws -> [LiveTVPrototypeProgram]? {
+        guard range.duration > 0, range.duration <= 172_800,
+              range.start.timeIntervalSince1970.isFinite, range.end.timeIntervalSince1970.isFinite,
+              channels.count <= 2_000 else { throw LiveTVCacheError.invalidRange }
+        try Task.checkCancellation()
+        guard !closed, !invalidating else { throw CancellationError() }
+        // An explicit refresh must reach the provider before saved rows are trusted again.
+        guard !requiresValidation || validated[url] == epoch else { return nil }
+        let requestEpoch = epoch
+        let sourceID = Self.sourceID(url)
+        let now = clock()
+        let saved = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)
+        var result: [LiveTVPrototypeProgram]?
+        if let state = saved, state.contains(range), state.expiresAt > now,
+           state.cacheMetadata?.isFresh(at: now) ?? true {
+            let projection: String
+            if let catalogRevision, let cachedProjection, cachedProjection.revision == catalogRevision {
+                projection = cachedProjection.value
+            } else {
+                let lineup = try await catalog()
+                guard lineup.count <= 100_000 else { throw LiveTVCacheError.invalidRange }
+                projection = try Self.projection(lineup, language: language)
+                try Task.checkCancellation()
+                guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
+                if let catalogRevision { cachedProjection = (catalogRevision, projection) }
+            }
+            if state.projection == projection {
+                do {
+                    result = try await cache.indexedAccountPrograms(
+                        sourceID: sourceID, sourceURL: url, generation: state.generation,
+                        channels: channels, range: range
+                    )
+                } catch LiveTVGuideIndexError.generationChanged { result = nil }
+            }
+        }
+        // A miss is still an answer: it must not outlive cancellation or an invalidation.
+        try Task.checkCancellation()
+        guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
+        return result
+    }
+
     public func invalidate() async {
         epoch = UUID()
+        cachedProjection = nil
         requiresValidation = true
         validated.removeAll()
         invalidating = true
