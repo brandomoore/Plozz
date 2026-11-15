@@ -565,6 +565,13 @@ SCENARIOS = {
         "description": "180 production-row mount/unmount cycles in a fresh test process, including 30 discarded warmup cycles; weak hosts and views must release.",
         "counters": ["cycles", "survivingHosts"],
     },
+    "home-focus-discovery": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "HomeLayoutInvalidationPerformanceTests/testPerformanceShowcaseFocusDiscovery",
+        "file": "Tests/FocusIntegrationTests/HomeLayoutInvalidationPerformanceTests.swift",
+        "description": "24 actual native focus changes across production Showcase rows; count gutter discovery scans and container queries.",
+        "counters": ["focusMoves", "rowScans", "containerQueries"],
+    },
     "home-artwork-layout": {
         "suite": "ui", "platforms": ["tvOS"],
         "test": "HomeLayoutInvalidationPerformanceTests/testPerformanceArtworkPublicationLayout",
@@ -590,6 +597,13 @@ SCENARIOS = {
         "description": "New Home view graph with warm artwork; observe actual nested host fitting and automatic artwork publication.",
         "counters": ["realizedArtworkHosts", "rowContentSizeQueries", "rowContentPlacements",
                      "cardInputBuilds", "outerHostLayoutPasses"] + HOME_HOST_FITTING_COUNTERS,
+    },
+    "home-series-artwork-identity": {
+        "suite": "ui",
+        "test": "HomeMetadataPerformanceTests/testPerformanceSeriesArtworkIdentity",
+        "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
+        "description": "Four complete identity passes over 408 metadata-bearing movie/episode artwork sources; no network or rendering.",
+        "counters": ["items", "identities", "identityBytes"],
     },
     "home-metadata-publication": {
         "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceHomeMetadataPublication",

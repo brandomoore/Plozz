@@ -716,7 +716,7 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             && rows.first.map { $0.isPlaceholder || !$0.itemIDs.isEmpty || !$0.liveChannels.isEmpty } == true
         VStack(alignment: .leading, spacing: FocusHeroLayout.rowSpacing) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                rowBody(row)
+                rowBody(row, index: index)
                     .navigationEntryFocus(index == 0 ? (row.isPlaceholder ? .pending : .content) : nil)
                     .disabled(awaitsFirstEntry && index > 0)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
@@ -739,7 +739,7 @@ private struct FocusHeroRowStack<RowContent: View>: View {
     }
 
     @ViewBuilder
-    private func rowBody(_ row: FocusHeroRow) -> some View {
+    private func rowBody(_ row: FocusHeroRow, index: Int) -> some View {
         let content = rowContent(row, reporter(for: row))
             .environment(\.plozzRowTitleOffset, {
                 model.resolvedActiveRowID(in: rows) == row.id ? -FocusHeroLayout.activeTitleLift : 0
@@ -748,11 +748,25 @@ private struct FocusHeroRowStack<RowContent: View>: View {
         FocusHeroMotionSurface(
             content: content.fixedSize(horizontal: false, vertical: true)
                 .safeAreaPadding(.leading, FocusHeroLayout.maskHorizontalOverhang),
-            motion: model.motion, kind: .row(row.id)
+            motion: model.motion, kind: .row(row.id),
+            entrySourceRowIDs: entrySourceRowIDs(at: index)
         )
         .padding(.leading, -FocusHeroLayout.maskHorizontalOverhang)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
+    }
+
+    private func entrySourceRowIDs(at index: Int) -> Set<String> {
+        func hasEntryTarget(_ index: Int) -> Bool {
+            let row = rows[index]
+            // Only the first row reserves loading focus. Partially loaded rows
+            // and non-media rows (such as notices) can still contain controls.
+            return index == 0 || !row.isPlaceholder || !row.itemIDs.isEmpty || !row.liveChannels.isEmpty
+        }
+        guard hasEntryTarget(index) else { return [] }
+        let previous = rows.indices.prefix(index).last(where: hasEntryTarget)
+        let next = rows.indices.dropFirst(index + 1).first(where: hasEntryTarget)
+        return Set([previous, next].compactMap { $0.map { rows[$0].id } })
     }
 
     private func reporter(for row: FocusHeroRow) -> FocusHeroRowReporter {
@@ -1856,6 +1870,7 @@ final class FocusHeroLayoutMeasurement {
     }
 
     var onMeasure: ((Sample) -> Void)?
+    var onFocusScan: ((String, Int) -> Void)?
     private var nestingDepth = 0
 
     func measure(surface: Surface, proposal: CGSize, operation: () -> CGSize) -> CGSize {
@@ -1895,13 +1910,19 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
     let motion: FocusHeroRowMotion
     let kind: Kind
     var columnFit: FocusHeroColumnFit? = nil
+    var entrySourceRowIDs: Set<String> = []
 
     func makeUIViewController(context: Context) -> Controller {
-        Controller(content: hostedContent(environment: context.environment), motion: motion, kind: kind, columnFit: columnFit)
+        Controller(content: hostedContent(environment: context.environment), motion: motion,
+                   kind: kind, columnFit: columnFit, entrySourceRowIDs: entrySourceRowIDs)
     }
 
     func updateUIViewController(_ controller: Controller, context: Context) {
         if kind == .column { motion.configureColumnFit(columnFit) }
+        controller.entrySourceRowIDs = entrySourceRowIDs
+        #if DEBUG
+        controller.measurement = context.environment.focusHeroLayoutMeasurement
+        #endif
         controller.host.rootView = hostedContent(environment: context.environment)
     }
 
@@ -1948,12 +1969,18 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
         private let solid = CALayer()
         private let columnContainer = UIView()
         private var rowEntryGuides: [RowEntryGuide] = []
+        var entrySourceRowIDs: Set<String>
+        #if DEBUG
+        weak var measurement: FocusHeroLayoutMeasurement?
+        #endif
 
-        init(content: AnyView, motion: FocusHeroRowMotion, kind: Kind, columnFit: FocusHeroColumnFit?) {
+        init(content: AnyView, motion: FocusHeroRowMotion, kind: Kind, columnFit: FocusHeroColumnFit?,
+             entrySourceRowIDs: Set<String>) {
             host = UIHostingController(rootView: content)
             host.safeAreaRegions = []
             self.motion = motion
             self.kind = kind
+            self.entrySourceRowIDs = entrySourceRowIDs
             super.init(nibName: nil, bundle: nil)
             if kind == .column { motion.configureColumnFit(columnFit) }
         }
@@ -2029,7 +2056,7 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             var owner = NativeFocusRegion.owningController(of: focused)
             while let current = owner, !(current is Controller) { owner = current.parent }
             guard let source = owner as? Controller, source !== self, source.motion === motion,
-                  case .row = source.kind else {
+                  case .row(let sourceID) = source.kind, entrySourceRowIDs.contains(sourceID) else {
                 rowEntryGuides.forEach { $0.update(target: nil, frame: .zero) }
                 return
             }
@@ -2043,9 +2070,18 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             var seen = Set<ObjectIdentifier>()
             var first: (item: any UIFocusItem, frame: CGRect)?
             var last: (item: any UIFocusItem, frame: CGRect)?
+            #if DEBUG
+            var queries = 0
+            defer {
+                if case .row(let id) = kind { measurement?.onFocusScan?(id, queries) }
+            }
+            #endif
             while let container = containers.popLast() {
                 guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
                 let area = container.coordinateSpace.convert(query, from: content)
+                #if DEBUG
+                queries += 1
+                #endif
                 for item in container.focusItems(in: area) {
                     if let children = item.focusItemContainer { containers.append(children) }
                     if let child = item as? UIView { containers.append(child) }
@@ -2084,8 +2120,11 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             }
 
             func update(target: (any UIFocusItem)?, frame: CGRect) {
-                guide.preferredFocusEnvironments = target.map { [$0] } ?? []
-                guide.isEnabled = target != nil && frame.width > 1 && frame.height > 1
+                if guide.preferredFocusEnvironments.first !== target {
+                    guide.preferredFocusEnvironments = target.map { [$0] } ?? []
+                }
+                let enabled = target != nil && frame.width > 1 && frame.height > 1
+                if guide.isEnabled != enabled { guide.isEnabled = enabled }
                 if x.constant != frame.minX { x.constant = frame.minX }
                 if y.constant != frame.minY { y.constant = frame.minY }
                 if width.constant != frame.width { width.constant = frame.width }

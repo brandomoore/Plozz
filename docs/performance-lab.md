@@ -1961,6 +1961,91 @@ variant does not start Sentry or upload anything.
 Credits, sort metadata, membership/order, and provider parity
 remain correctness controls; unchanged identity must not hide changed metadata.
 
+For metadata work during row layout, `home-series-artwork-identity` runs the
+production `ContinueWatchingArtworkSource.identity` pipeline over 408 synthetic
+movie/episode sources, four complete passes per sample. It covers classification,
+series-ID promotion, metadata cache keys and provider aliases without networking
+or rendering. Every sample verifies all 1,632 identities and their complete
+174,592-byte output. It is not a frame-rate or whole-navigation benchmark.
+
+A symbolicated physical tvOS hang reached this pipeline from `MediaRowView`
+inside Showcase host fitting. Each namespace lookup rebuilt the entire normalized
+provider-ID dictionary, including per-character strings for ordinary ASCII keys.
+The lookup now selects the highest-priority valid alias directly; ASCII
+normalization uses bytes while other spellings keep the original Unicode path.
+Alias priority, whitespace handling and normalized-key collisions remain covered
+by `ProviderIDNamespaceTests`. There is no cache to invalidate, truncated metadata,
+new background task or change to native focus/layout ownership.
+
+On an Apple TV 4K simulator running tvOS 26.2, optimized Debug, one warmup and
+five samples, the final matched pair measured:
+
+| Workload | Original median CPU | Optimized median CPU |
+| --- | ---: | ---: |
+| 1,632 artwork identities | 294.179 ms | 60.621 ms |
+| Twelve settled artwork publications | 28.981 ms | 26.280 ms |
+| Cold Showcase graph, warm images | 382.900 ms | 375.129 ms |
+| Duplicate artwork reports | 5.140 ms | 4.832 ms |
+
+Baseline `4a3474bf702e449f9d5c45dbeca32b66` and candidate
+`230fc391efc047d6933f3112914339cc` have identical runner, fixtures, scenarios and
+environment; comparison `6c2ea2bbb07443bfb4552cbc932a9a0c` was within budget.
+Identity CPU fell about 79%, consistently reaching 60–63 ms across three
+candidate runs versus 289–294 ms for original-code runs. An exploratory
+lookup-only candidate measured 225 ms before the ASCII path was added.
+
+Do not infer an artwork speedup from the small control differences. Earlier
+comparisons flagged artwork CPU regressions, and an original-code A/A control
+also flagged artwork/duplicate regressions
+(`6bbd69ba038b458e84d1cdbc4a7caa0a`); shared-host load and outer layout counts
+varied. All complete runs retained the same publication, row-fitting, card-input
+and duplicate-suppression results. Synthetic native Home and horizontal navigation
+profiles completed, but neither reproduces the complete live-server session.
+The live endpoint rejected public API access before authentication, so this
+evidence does not establish physical-device responsiveness or network improvement.
+
+For Showcase gutter discovery, `home-focus-discovery` performs 24 actual native
+focus changes across eight production rows of 75 cards, including horizontal
+movement and row changes. It counts queried rows and native focus containers,
+then checks title updates, focus retention and visible overscan artwork.
+It does not measure network loading, screen frame rate or device hang duration.
+
+A later symbolicated physical hang reached `UIFocusSystem.didUpdateNotification`
+and `FocusHeroMotionSurface.Controller.updateRowEntryGuides`, inside UIKit's
+focus-container traversal. All other rows previously searched their full
+horizontal viewport on every move. Discovery now visits only the two possible
+neighbor rows (one at the boundary), and guide setters skip unchanged values.
+The same simulator/toolchain and optimized Debug settings above measured:
+
+| 24 native focus moves | Original median | Adjacent-row median |
+| --- | ---: | ---: |
+| CPU | 131.878 ms | 63.006 ms |
+| Wall time | 131.668 ms | 62.852 ms |
+| Row scans | 168 | 42 |
+| Container queries | 14,196 | 4,476 |
+
+Baseline `a4f4c31b81914c9e94a8c6bc4dfd831c`, candidate
+`1a82457dcdb943bf8c3a9ebaf0d9be70`, and comparison
+`7e39ba6782e6414db84db8fd96f2b30b` preserve matching fixtures and environment.
+The roughly 52% CPU reduction is specific to this workload, not a claim that
+whole-app navigation or the physical hang duration improved by that amount.
+Separate regression coverage verifies that discovery follows row reordering.
+
+The same device diagnostics also captured synchronous `SecItemCopyMatching`
+from automatic sign-in publication. Channel capture and account-verification
+reads now run on a serial utility queue. `ProviderCredentialSyncTests` holds
+state/ownership reads behind a gate while the main actor continues, verifies
+unchanged owned output for Jellyfin and Plex, and rejects cancellation and
+sign-in/authorization changes during the read. This proves executor placement
+and stale-result rejection, not a simulated Keychain service latency improvement.
+Neither change alters foreground-refresh timing or disables background features.
+The final AppRuntime run passed 516 tests with 25 tests skipped and no
+failures. Eight native Showcase remote controls passed, covering short rows
+under all three navigation styles, both focus appearances, pinned return,
+vertical reversals and delayed initial loading across background/foreground.
+The hosted adjacency/reordering regression also passed. These remain simulator
+results; the new changes have not yet been installed or verified on hardware.
+
 For card-activation and menu stalls, `mobile-home-card-routing` updates 24 real
 mobile Home cards against a four-source identity index and counts source
 resolutions without activating a card. Detail routing belongs in the presented
