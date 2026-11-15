@@ -233,6 +233,7 @@ extension HomeRowArrangementHostedTests {
     #if os(iOS)
     func testUpcomingHomeCuesLocalizeEpisodeCountsAndKeepMovieDatesAsContent() async throws {
         let date = Date(timeIntervalSince1970: 1_799_928_000)
+        let movieDate = date.addingTimeInterval(4 * 86_400)
         let series = MediaItem(id: "localized-series", title: "Fixture Series", kind: .series)
         let episodes = (1...5).map {
             UpcomingEpisode(
@@ -243,7 +244,7 @@ extension HomeRowArrangementHostedTests {
         }
         let episodeRelease = try XCTUnwrap(UpcomingReleaseBuilder.episodes(episodes, for: series).first)
         let movieRelease = try XCTUnwrap(UpcomingReleaseBuilder.movies(
-            [.init(kind: .digital, date: date, regionCode: "US")],
+            [.init(kind: .digital, date: movieDate, regionCode: "US")],
             for: MediaItem(id: "localized-film", title: "Fixture Film", kind: .movie),
             interests: [.watchlist], regionCode: "US"
         ).first)
@@ -255,7 +256,7 @@ extension HomeRowArrangementHostedTests {
             var subtitle = try XCTUnwrap(episodeRelease.subtitle)
             subtitle.locale = locale
             XCTAssertEqual(String(localized: subtitle), expectedSubtitle)
-            let expectedDate = date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+            let expectedDate = movieDate.formatted(.dateTime.month(.abbreviated).day().locale(locale))
             try await withWindow(size: CGSize(width: 1024, height: 768)) {
                 UpcomingHomeRow(releases: [episodeRelease, movieRelease], onSeeAll: {})
                     .environment(\.locale, locale)
