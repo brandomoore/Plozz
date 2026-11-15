@@ -61,6 +61,10 @@ cancelled and fenced, native metadata is restored before gap filling, and season
 loads remain usable. This preserves navigation and native server text; it does
 not translate a server's existing English synopsis. Language-aware external
 metadata and snapshots cannot reuse another language's text.
+Applicable TMDb, TheTVDB and Wikipedia translations are tried before
+English/original text fills remaining gaps. Wikipedia biographies follow the
+matched person's language link without weakening namesake checks; existing
+server biographies remain authoritative.
 Interrupted season requests restart without requiring a selection change.
 Account/language-scoped snapshots race opening hydration and can fill sparse
 seeds during transient outages. They never mask rejected authorization or a

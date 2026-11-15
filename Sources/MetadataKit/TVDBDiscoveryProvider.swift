@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 
 /// Public catalog discovery using the bundled project's existing v4 login.
@@ -24,7 +25,7 @@ public struct TVDBDiscoveryProvider: HeroDiscoveryProviding {
     public var isEnabled: Bool { config.isConfigured }
 
     public var cacheIdentifier: String {
-        let configuration = "\(config.apiBaseURL.absoluteString)\n\(config.apiKey ?? "")"
+        let configuration = "text-language-v2\n\(config.apiBaseURL.absoluteString)\n\(config.apiKey ?? "")"
         return "tvdb:" + MetadataDiscoveryHTTPClient.configurationFingerprint(configuration)
     }
 
@@ -62,9 +63,52 @@ public struct TVDBDiscoveryProvider: HeroDiscoveryProviding {
                 let item = feed[index]
                 guard seen.insert(item.id).inserted else { continue }
                 result.append(item)
-                if result.count == request.limit { return result }
+                if result.count == request.limit {
+                    return try await localized(result, language: request.language)
+                }
             }
         }
+        return try await localized(result, language: request.language)
+    }
+
+    private func localized(_ items: [MediaItem], language: String) async throws -> [MediaItem] {
+        guard !items.isEmpty, !LanguageMatch.matches(language, "en") else { return items }
+        var result = items
+        let client = client
+        @Sendable func translation(at index: Int) async -> (Int, TVDBMetadata?) {
+            let item = items[index]
+            guard !Task.isCancelled, let id = item.providerIDs.providerID(.tvdb) else { return (index, nil) }
+            return (index, await client.translatedText(id: id, isMovie: item.kind == .movie, language: language))
+        }
+        // Translation must not consume the whole discovery deadline and discard a
+        // usable feed. Keep original text for requests that miss this smaller budget.
+        await withTaskGroup(of: (Int, TVDBMetadata?)?.self) { group in
+            group.addTask {
+                do { try await Task.sleep(for: .seconds(4)) } catch { return nil }
+                return nil
+            }
+            var next = min(4, items.count)
+            var completed = 0
+            for index in 0..<next {
+                group.addTask { await translation(at: index) }
+            }
+            while let response = await group.next(), let (index, text) = response {
+                if let title = text?.title { result[index].title = title }
+                if let overview = text?.overview { result[index].overview = overview }
+                completed += 1
+                if completed == items.count { break }
+                if next < items.count {
+                    let index = next
+                    next += 1
+                    group.addTask { await translation(at: index) }
+                }
+            }
+            group.cancelAll()
+            if completed < items.count, !Task.isCancelled {
+                PlozzLog.discovery.error("TheTVDB translation deadline reached; retaining available discovery text.")
+            }
+        }
+        try Task.checkCancellation()
         return result
     }
 

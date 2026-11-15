@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -100,9 +101,10 @@ public actor TVDBClient {
         title: String,  // l10n:content — media title used as a TheTVDB lookup key
         year: Int?,
         isMovie: Bool,
-        episodeHints: [SeriesEpisodeHint] = []
+        episodeHints: [SeriesEpisodeHint] = [],
+        language: String = "en"
     ) async -> TVDBMetadata? {
-        await resolve(titles: [title], year: year, isMovie: isMovie, episodeHints: episodeHints)
+        await resolve(titles: [title], year: year, isMovie: isMovie, episodeHints: episodeHints, language: language)
     }
 
     /// Resolve metadata trying SEVERAL candidate titles in order, returning the
@@ -115,7 +117,8 @@ public actor TVDBClient {
         titles: [String],
         year: Int?,
         isMovie: Bool,
-        episodeHints: [SeriesEpisodeHint] = []
+        episodeHints: [SeriesEpisodeHint] = [],
+        language: String = "en"
     ) async -> TVDBMetadata? {
         guard config.isConfigured else { return nil }
         var seen = Set<String>()
@@ -124,7 +127,7 @@ public actor TVDBClient {
             let key = trimmed.lowercased()
             guard !trimmed.isEmpty, seen.insert(key).inserted else { continue }
             if let result = await search(query: trimmed, year: year, isMovie: isMovie,
-                                         episodeHints: episodeHints, allowRelogin: true) {
+                                         episodeHints: episodeHints, language: language, allowRelogin: true) {
                 return result
             }
         }
@@ -136,7 +139,7 @@ public actor TVDBClient {
     /// ambiguous title search entirely (fixes e.g. the 1999 One Piece anime, tagged
     /// `[tvdb-81797]`, resolving to a wrong same-named entry). Returns nil when
     /// unconfigured or the id doesn't resolve.
-    public func resolve(byTVDBID id: String, isMovie: Bool) async -> TVDBMetadata? {
+    public func resolve(byTVDBID id: String, isMovie: Bool, language: String = "en") async -> TVDBMetadata? {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard config.isConfigured, !trimmed.isEmpty, let token = await ensureToken() else { return nil }
         let type = isMovie ? "movies" : "series"
@@ -155,22 +158,50 @@ public actor TVDBClient {
             if source.contains("imdb") { imdb = v }
             else if source.contains("themoviedb") || source == "tmdb" { tmdb = v }
         }
-        // The extended record carries the PRIMARY-language name/overview (e.g.
-        // Japanese for an anime like One Piece). Prefer the English translation when
-        // available so descriptions read in English; fall back to the base fields.
-        let english = await translation(type: type, id: trimmed, language: "eng", token: token)
-        let overview = (english?.overview ?? data.overview)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
-        let name = (english?.name ?? data.name)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        let localized = await translatedText(id: trimmed, isMovie: isMovie, language: language)
+        let isEnglish = LanguageMatch.matches(language, "en")
+        let overview = (localized?.overview ?? (isEnglish ? data.overview : nil))?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        let name = (localized?.title ?? (isEnglish ? data.name : nil))?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         return TVDBMetadata(
             tvdbID: data.id.map(String.init) ?? trimmed,
             imdbID: imdb,
             tmdbID: tmdb,
             overview: overview,
             posterURL: data.image.flatMap(Self.imageURL),
-            genres: (data.genres ?? []).compactMap { $0.name?.nonEmpty },
+            genres: isEnglish ? (data.genres ?? []).compactMap { $0.name?.nonEmpty } : [],
             year: data.year.flatMap { Int($0) },
             title: name
         )
+    }
+
+    /// Requested-language text only. The pipeline tries other localized sources
+    /// before its separate English/original fallback pass.
+    func translatedText(id: String, isMovie: Bool, language: String) async -> TVDBMetadata? {
+        guard let numericID = Int(id), numericID > 0 else { return nil }
+        let code = LanguageMatch.matches(language, "nb") ? "nor"
+            : (Locale.Language(identifier: language).languageCode?.identifier(.alpha3)
+                ?? LanguageMatch.alpha3(language))
+        guard code.utf8.count == 3, code.utf8.allSatisfy({ (97...122).contains($0) }) else { return nil }
+        let type = isMovie ? "movies" : "series"
+        do {
+            let data = try await discoveryData(path: "\(type)/\(numericID)/translations/\(code)")
+            let response = try JSONDecoder().decode(TranslationResponse.self, from: data)
+            guard let text = response.data else { return nil }
+            if let returnedLanguage = text.language, !LanguageMatch.matches(returnedLanguage, code) {
+                PlozzLog.networking.error("TheTVDB returned text in a different language; trying another source.")
+                return nil
+            }
+            return TVDBMetadata(tvdbID: id,
+                                overview: text.overview?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+                                title: text.name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty)
+        } catch is CancellationError {
+            return nil
+        } catch MetadataDiscoveryHTTPError.status(404, _) {
+            return nil
+        } catch {
+            PlozzLog.networking.error("TheTVDB translation lookup failed; retaining available metadata.")
+            return nil
+        }
     }
 
     /// The series' next scheduled episode by a known TheTVDB id.
@@ -493,6 +524,7 @@ public actor TVDBClient {
 
     private func search(query: String, year: Int?, isMovie: Bool,
                         episodeHints: [SeriesEpisodeHint] = [],
+                        language: String = "en",
                         allowRelogin: Bool) async -> TVDBMetadata? {
         guard let token = await ensureToken(),
               let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) else { return nil }
@@ -507,7 +539,7 @@ public actor TVDBClient {
             if allowRelogin, !reachable {
                 self.token = nil
                 return await search(query: query, year: year, isMovie: isMovie,
-                                    episodeHints: episodeHints, allowRelogin: false)
+                                    episodeHints: episodeHints, language: language, allowRelogin: false)
             }
             return nil
         }
@@ -546,6 +578,19 @@ public actor TVDBClient {
         // Fallback: TheTVDB's own relevance order.
         if chosen == nil { chosen = pool.first }
         guard let chosen else { return nil }
+        if !LanguageMatch.matches(language, "en") {
+            var metadata = chosen.asMetadata()
+            let localized: TVDBMetadata?
+            if let id = metadata.tvdbID {
+                localized = await translatedText(id: id, isMovie: isMovie, language: language)
+            } else {
+                localized = nil
+            }
+            metadata.title = localized?.title
+            metadata.overview = localized?.overview
+            metadata.genres = []
+            return metadata
+        }
         // Prefer the English name/overview when the base record is another language
         // (TheTVDB serves the primary-language text for many anime — Japanese for
         // Death Note / One Piece / "…Slime").

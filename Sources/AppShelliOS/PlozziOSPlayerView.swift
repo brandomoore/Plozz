@@ -635,6 +635,7 @@ struct PlozziOSPlayerView: View {
         viewModel.controls.infoCard.castDetailLoader = makeCastDetailLoader(
             for: item,
             accounts: appModel.accountsProviders.resolvedActiveAccounts,
+            metadataLanguage: { (appModel.appLanguage.language.locale ?? .current).identifier },
             // See the tvOS shell: without this an owned show reached the row
             // stamped "not in your library" by whichever provider supplied it.
             librarySources: { [identityIndex = appModel.identityIndex] item in

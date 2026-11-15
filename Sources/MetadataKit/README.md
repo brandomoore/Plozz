@@ -81,18 +81,25 @@ load-bearing.
   copies retain language when promoting series IDs or threading matched IDs.
   Providers without requested-language text support cannot fill descriptions,
   genres, titles or taglines for non-English requests; their artwork and other
-  capabilities remain available. Missing localized text stays absent rather than
-  silently falling back to known English-only text. Server/NFO text is never
+  capabilities remain available. Once all applicable translated sources have been
+  tried, unresolved text can fall back to English/original metadata. Server/NFO text is never
   translated or replaced. Child descriptions use scoped providers, not a series
   description returned by an unscoped adapter. The independent English-only
   `OverviewRouter` no longer races library-detail enrichment.
-  Its keyless English Wikipedia overview fallback now participates in the same
+  Its keyless Wikipedia overview fallback now participates in the same
   ordered pipeline for movie/series gaps; Wikipedia artwork remains idle-only.
   Retained detail models update their language in place, discard late old-language
   work and refill gaps from native metadata, not previously enriched text.
-  This does not translate existing server metadata or change the language of
-  discovery-feed seeds or share-scanner metadata. Selecting French cannot guarantee
-  French descriptions when the server or external service has no such text.
+  TheTVDB requests ISO-639-3 translations for detail text and admitted discovery
+  candidates, with at most four translation requests in flight and a four-second
+  translation budget that retains original feed text on timeout.
+  Wikipedia follows the matched English article's language link,
+  including Chinese/Serbian script variants, rather than searching for a different
+  work or person. Person biographies preserve server priority and refresh external
+  prose when the selected language changes; in-player biography caches separate languages.
+  This does not translate existing server metadata or shared share-scanner records.
+  AniList and TVmaze retain their available original/English text. Selecting a language cannot guarantee
+  translated descriptions when the server or external service has no such text.
 - `HeroDiscoveryProviding` — separate candidate-feed seam for TMDB,
   AniList, TheTVDB, and TVmaze. It does not call Trakt.
 - `HeroDiscoveryService` — bounded, coalesced public-feed reads, provider-level

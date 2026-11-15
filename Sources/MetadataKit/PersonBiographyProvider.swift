@@ -1,6 +1,7 @@
 #if canImport(Foundation)
 import Foundation
 import CoreModels
+import CoreNetworking
 
 /// Somewhere a person's biography can be fetched from.
 ///
@@ -21,6 +22,13 @@ public protocol PersonBiographyProvider: Sendable {
     ///   - role: the provider-native role kind (`Actor`, `Director`, …) when
     ///     known, used to disambiguate people who share a name.
     func biography(for name: String, role: String?) async -> String?
+    func biography(for name: String, role: String?, language: String) async -> String?
+}
+
+public extension PersonBiographyProvider {
+    func biography(for name: String, role: String?, language: String) async -> String? {
+        await biography(for: name, role: role)
+    }
 }
 
 /// Biographies from Wikipedia.
@@ -30,32 +38,44 @@ public protocol PersonBiographyProvider: Sendable {
 /// licensed, and its coverage of *people* is broader than any film database's.
 /// That keeps the person page from resting on a single commercial provider.
 ///
-/// One request per lookup: a search generator returns the top candidates *with*
+/// The first request returns the top candidates *with*
 /// their intro extracts and short descriptions, so ranking, disambiguation and
-/// text retrieval all resolve together.
+/// English text retrieval all resolve together. A translation follows its language link.
 public struct WikipediaPersonBiographyProvider: PersonBiographyProvider {
     public let id = MetadataSource.wikipedia
 
-    /// Language edition to read. English has by far the widest coverage of
-    /// screen credits, and the biography is prose rather than UI copy.
+    /// The matched English article supplies identity; its language link supplies prose.
     private let language: String
+    private let http: MetadataDiscoveryHTTPClient
     private let maximumCandidates: Int
     /// Trimmed to a couple of paragraphs: this sits in a header beside a
     /// headshot, not in an encyclopaedia.
     private let maximumLength: Int
 
-    public init(language: String = "en", maximumCandidates: Int = 5, maximumLength: Int = 1200) {
+    public init(language: String = "en", maximumCandidates: Int = 5, maximumLength: Int = 1200,
+                http: MetadataDiscoveryHTTPClient = .init()) {
         self.language = language
+        self.http = http
         self.maximumCandidates = maximumCandidates
         self.maximumLength = maximumLength
     }
 
     public func biography(for name: String, role: String?) async -> String? {
+        await biography(for: name, role: role, language: language)
+    }
+
+    public func biography(for name: String, role: String?, language: String) async -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        guard let url = searchURL(for: trimmed) else { return nil }
+        guard let url = searchURL(for: trimmed, language: language) else { return nil }
         let started = Date()
-        guard let response = await MetadataHTTP.get(SearchResponse.self, url: url) else {
+        let response: SearchResponse
+        do {
+            response = try await http.decode(SearchResponse.self, from: URLRequest(url: url))
+        } catch is CancellationError {
+            return nil
+        } catch {
+            PlozzLog.networking.error("Wikipedia biography lookup failed.")
             PersonDiagnostics.emit(
                 "wiki.http name=\(trimmed) result=FAILED ms=\(Int(Date().timeIntervalSince(started) * 1000))"
             )
@@ -81,6 +101,20 @@ public struct WikipediaPersonBiographyProvider: PersonBiographyProvider {
                 "wiki.http name=\(trimmed) result=hit title=\(page.title ?? "?") "
                 + "candidates=\(candidates.count) ms=\(httpMS)"
             )
+            if !LanguageMatch.matches(language, "en") {
+                do {
+                    if let localized = try await WikipediaLocalizedText.extract(
+                        links: page.langlinks ?? [], language: language, http: http
+                    ) {
+                        return Self.trimmed(localized.text, to: maximumLength)
+                    }
+                } catch is CancellationError {
+                    return nil
+                } catch {
+                    PlozzLog.networking.error("Wikipedia biography translation failed; retaining available biography.")
+                }
+            }
+            guard !Task.isCancelled else { return nil }
             return Self.trimmed(extract, to: maximumLength)
         }
         // Which half rejected it matters: a namesake guard turning candidates
@@ -95,8 +129,8 @@ public struct WikipediaPersonBiographyProvider: PersonBiographyProvider {
         return nil
     }
 
-    private func searchURL(for name: String) -> URL? {
-        var components = URLComponents(string: "https://\(language).wikipedia.org/w/api.php")
+    private func searchURL(for name: String, language: String) -> URL? {
+        var components = URLComponents(string: "https://en.wikipedia.org/w/api.php")
         components?.queryItems = [
             URLQueryItem(name: "action", value: "query"),
             // A search *generator* so ranking, the intro text and the short
@@ -104,7 +138,7 @@ public struct WikipediaPersonBiographyProvider: PersonBiographyProvider {
             URLQueryItem(name: "generator", value: "search"),
             URLQueryItem(name: "gsrsearch", value: name),
             URLQueryItem(name: "gsrlimit", value: String(maximumCandidates)),
-            URLQueryItem(name: "prop", value: "extracts|description"),
+            URLQueryItem(name: "prop", value: "extracts|description|langlinks"),
             // Lead section only, as plain text: the full article is megabytes and
             // the wikitext would need rendering.
             URLQueryItem(name: "exintro", value: "1"),
@@ -114,6 +148,7 @@ public struct WikipediaPersonBiographyProvider: PersonBiographyProvider {
             URLQueryItem(name: "format", value: "json"),
             URLQueryItem(name: "formatversion", value: "2")
         ]
+        components?.queryItems?.append(contentsOf: WikipediaLocalizedText.linkParameters(language: language))
         return components?.url
     }
 
@@ -193,16 +228,17 @@ public struct WikipediaPersonBiographyProvider: PersonBiographyProvider {
         return clipped.trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
-    struct SearchResponse: Decodable {
-        struct Page: Decodable {
+    struct SearchResponse: Decodable, Sendable {
+        struct Page: Decodable, Sendable {
             let title: String?
             let extract: String?
             let description: String?
             /// Search rank; `formatversion=2` returns pages as an array but keeps
             /// this so the original ordering survives.
             let index: Int?
+            var langlinks: [WikipediaLocalizedText.Link]? = nil
         }
-        struct Query: Decodable {
+        struct Query: Decodable, Sendable {
             /// Ordered, because the order *is* the search ranking.
             let pages: [Page]?
 

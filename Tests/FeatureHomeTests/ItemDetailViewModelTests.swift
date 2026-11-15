@@ -1061,7 +1061,7 @@ final class ItemDetailViewModelTests: XCTestCase {
         var french = english
         french.overview = "Description FR"
         await cache.store(.init(item: english, children: []), for: "account|movie")
-        await cache.store(.init(item: french, children: []), for: "account|movie|text-language-v1:fr")
+        await cache.store(.init(item: french, children: []), for: "account|movie|text-language-v2:fr")
         let provider = FakeMediaProvider(allItems: [french])
         let entered = AsyncGate()
         let release = AsyncGate()

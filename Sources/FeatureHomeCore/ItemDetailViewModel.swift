@@ -593,7 +593,7 @@ public final class ItemDetailViewModel {
     /// key (they're all built with the series id as `itemID`).
     private var snapshotKey: String {
         let key = "\(activeSourceAccountID ?? "_")|\(activeItemID)"
-        return metadataLanguage == "en" ? key : "\(key)|text-language-v1:\(metadataLanguage)"
+        return metadataLanguage == "en" ? key : "\(key)|text-language-v2:\(metadataLanguage)"
     }
 
     public init(

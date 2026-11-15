@@ -4,6 +4,30 @@ import XCTest
 @testable import MetadataKit
 
 final class TVDBDiscoveryProviderTests: XCTestCase {
+    func testOnlyAdmittedDiscoveryItemsReceiveTranslatedDisplayText() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            switch request.url?.path {
+            case "/v4/movies/filter":
+                return .init(json: """
+                {"data":[{"id":42,"name":"Original","overview":"Original overview","year":"2026"},
+                         {"id":43,"name":"Outside limit","year":"2026"}]}
+                """)
+            case "/v4/movies/42/translations/fra":
+                return .init(json: #"{"data":{"name":"Titre FR","overview":"Description FR","language":"fra"}}"#)
+            default:
+                return TMDbTVDBDiscoveryFixture.tvdbReply(request)
+            }
+        }
+        let items = try await TVDBDiscoveryProvider(config: config, http: fixture.http).discover(
+            .init(limit: 1, language: "fr-CA", region: "CA", now: now)
+        )
+        XCTAssertEqual(items.map(\.title), ["Titre FR"])
+        XCTAssertEqual(items.first?.overview, "Description FR")
+        XCTAssertEqual(items.first?.providerIDs.providerID(.tvdb), "42")
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.filter { $0.url!.path.contains("/translations/") }.count, 1)
+    }
+
     private let now = Date(timeIntervalSince1970: 1_779_494_400)
 
     private var config: TVDBConfig {
