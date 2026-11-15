@@ -315,9 +315,12 @@ use the shared Settings card, with
 48-point content insets on tvOS and the standard card insets on mobile.
 Like other first-use prompts, it supplies the palette's neutral accent to native
 controls rather than inheriting the system-blue tint.
-Its circular info button uses regular native control sizing and the same secondary
-action style as Don't Share (Liquid Glass where available). The 44-point minimum
-target wraps the styled button rather than enlarging its label and glass surface.
+Its circular info button uses the same native secondary action style as Don't
+Share (Liquid Glass where available). On mobile, the glass circle is 44 points
+across and the GitHub action is 44 points tall at the default text size, scaling
+with Dynamic Type. Flexible native button sizing sizes the glass itself rather
+than adding padding to the label. Older mobile systems retain 44-point minimum
+targets, and tvOS keeps its native control sizing.
 It sits 12 points inside the card's top-trailing corner, independently of its
 content insets. It opens the shared sheet with detailed disclosures, the
 optional-sharing explanation and the Privacy Policy link; opening or dismissing

@@ -59,8 +59,11 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
             launch(arguments: ["--diagnostics-onboarding"] + (isLight ? ["--light"] : []))
             let info = app.buttons["About Diagnostic Sharing"]
             XCTAssertTrue(info.waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertLessThanOrEqual(info.frame.width, 44)
-            XCTAssertLessThanOrEqual(info.frame.height, 44)
+            XCTAssertEqual(info.frame.width, 44, accuracy: 0.5)
+            XCTAssertEqual(info.frame.height, 44, accuracy: 0.5)
+            let repository = app.buttons["diagnostics-consent-repository"]
+            XCTAssertTrue(repository.isHittable)
+            XCTAssertEqual(repository.frame.height, 44, accuracy: 0.5)
             try assertNeutralInk(info)
             capture("onboarding-neutral-\(isLight ? "light" : "dark")")
             tapInfoTargetEdge(info)
@@ -162,8 +165,11 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         launch()
         let info = app.buttons["diagnostics-information-button"]
         XCTAssertTrue(info.waitForExistence(timeout: 10))
+        XCTAssertEqual(info.frame.width, 44, accuracy: 0.5)
+        XCTAssertEqual(info.frame.height, 44, accuracy: 0.5)
         let disclosures = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "through Sentry"))
         XCTAssertEqual(disclosures.count, 0, "Detailed disclosures should not crowd the settings page.")
+        capture("sharing-standard-info")
         tapInfoTargetEdge(info)
         XCTAssertTrue(app.staticTexts["Automatic Reports"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Manual Reports"].exists)
@@ -177,7 +183,7 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
     }
 
     private func tapInfoTargetEdge(_ info: XCUIElement) {
-        // Exercise a 44-point touch target, not just the smaller native glass bounds.
+        // Exercise the target near its top edge, not just the glyph.
         info.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .withOffset(CGVector(dx: 0, dy: -21))
             .tap()

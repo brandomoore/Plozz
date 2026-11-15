@@ -13,15 +13,53 @@ public struct DiagnosticsInfoButton: View {
         } label: {
             Label("About Diagnostic Sharing", systemImage: "info")
                 .labelStyle(.iconOnly)
+                .modifier(DiagnosticsControlLabelSize())
         }
         .plozzActionButton(role: .secondary)
         .buttonBorderShape(.circle)
         .controlSize(.regular)
-        .frame(minWidth: 44, minHeight: 44)
+        .modifier(DiagnosticsControlSize(isCircular: true))
         .accessibilityIdentifier("diagnostics-information-button")
         .plozzSheet(isPresented: $showsInformation) {
             DiagnosticsInformationView()
         }
+    }
+}
+
+struct DiagnosticsControlLabelSize: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            // The label must accept the proposal for native glass to fill the control.
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+struct DiagnosticsControlSize: ViewModifier {
+    var isCircular = false
+    @ScaledMetric(relativeTo: .body) private var height = 44
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            content
+                .buttonSizing(.flexible)
+                .fixedSize(horizontal: !isCircular, vertical: false)
+                .frame(width: isCircular ? height : nil, height: height)
+        } else {
+            content.frame(minWidth: 44, minHeight: 44)
+        }
+        #else
+        content.frame(minWidth: 44, minHeight: 44)
+        #endif
     }
 }
 

@@ -142,6 +142,9 @@ private struct CrashReportingConsentFooter: View {
         }
         .plozzActionButton(role: .secondary)
         .controlSize(.small)
+        #if os(iOS)
+        .modifier(DiagnosticsControlSize())
+        #endif
         .accessibilityIdentifier("diagnostics-consent-repository")
         #if os(tvOS)
         .plozzSheet(isPresented: $showingRepository) {
@@ -160,6 +163,7 @@ private struct CrashReportingConsentFooter: View {
                 .scaledToFit()
                 .frame(width: iconSize, height: iconSize)
         }
+        .modifier(DiagnosticsControlLabelSize())
     }
 }
 
