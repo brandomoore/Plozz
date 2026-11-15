@@ -63,6 +63,10 @@ private struct CrashReportingConsentPrompt: View {
                 .scaledToFit()
                 .frame(width: 80, height: 80)
                 .accessibilityHidden(true)
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .topTrailing) {
+                    DiagnosticsInfoButton()
+                }
 
             VStack(spacing: 16) {
                 OnboardingHeader(Text("Help improve Plozz?"))
@@ -121,38 +125,22 @@ private struct CrashReportingConsentFooter: View {
     @ScaledMetric(relativeTo: .body) private var iconSize = 20
 
     var body: some View {
-        VStack(spacing: 16) {
-            VStack(spacing: 8) {
-                Text(SettingsCopy.automaticDiagnostics)
-                Text(SettingsCopy.automaticDiagnosticsExclusions)
-                Text("Sharing is optional. Change anytime in Settings > Help & Diagnostics.")
+        Group {
+            #if os(tvOS)
+            Button {
+                showingRepository = true
+            } label: {
+                repositoryLabel
             }
-            .font(.footnote)
-            .plozzForeground(.secondary)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-
-            PrivacyPolicyLink()
-                .plozzActionButton(role: .secondary)
-                .controlSize(.small)
-
-            Group {
-                #if os(tvOS)
-                Button {
-                    showingRepository = true
-                } label: {
-                    repositoryLabel
-                }
-                #else
-                Link(destination: AppLinks.repository) {
-                    repositoryLabel
-                }
-                #endif
+            #else
+            Link(destination: AppLinks.repository) {
+                repositoryLabel
             }
-            .plozzActionButton(role: .secondary)
-            .controlSize(.small)
-            .accessibilityIdentifier("diagnostics-consent-repository")
+            #endif
         }
+        .plozzActionButton(role: .secondary)
+        .controlSize(.small)
+        .accessibilityIdentifier("diagnostics-consent-repository")
         #if os(tvOS)
         .plozzSheet(isPresented: $showingRepository) {
             CrashReportingConsentRepositoryView()
@@ -162,7 +150,7 @@ private struct CrashReportingConsentFooter: View {
 
     private var repositoryLabel: some View {
         Label {
-            Text("Open GitHub repo")
+            Text("GitHub repo")
         } icon: {
             Image("GitHubMark")
                 .renderingMode(.template)

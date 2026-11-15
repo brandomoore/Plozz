@@ -39,6 +39,7 @@ private struct DiagnosticsInformationView: View {
                         Text("Automatic Reports").font(.headline)
                         Text(SettingsCopy.automaticDiagnostics)
                         Text(SettingsCopy.automaticDiagnosticsExclusions)
+                        Text("Sharing is optional. Change anytime in Settings > Help & Diagnostics.")
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Manual Reports").font(.headline)

@@ -4,11 +4,45 @@ import FeatureSettings
 import SwiftUI
 
 struct DiagnosticsSharingFixture: View {
+    @State private var showsOnboarding = ProcessInfo.processInfo.arguments.contains("--diagnostics-onboarding")
     @State private var sharingEnabled = ProcessInfo.processInfo.arguments.contains("--diagnostics-enabled")
     @State private var message = ProcessInfo.processInfo.arguments.contains("--diagnostics-with-message")
         ? "Search returned no matches" : ""
     @State private var submissions = 0
     private let isConfigured = !ProcessInfo.processInfo.arguments.contains("--diagnostics-unavailable")
+
+    var body: some View {
+        Group {
+            if showsOnboarding {
+                CrashReportingConsentView { choice in
+                    sharingEnabled = choice
+                    showsOnboarding = false
+                }
+            } else {
+                DiagnosticsSharingSettingsFixture(
+                    sharingEnabled: $sharingEnabled, message: $message,
+                    submissions: $submissions, isConfigured: isConfigured
+                )
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            Text(verbatim: "\(submissions)")
+                .foregroundStyle(.clear)
+                .accessibilityIdentifier("diagnostics-submission-count")
+                .allowsHitTesting(false)
+        }
+        .environment(\.themePalette, .dark)
+        .environment(\.colorScheme, .dark)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .preferredColorScheme(.dark)
+    }
+}
+
+private struct DiagnosticsSharingSettingsFixture: View {
+    @Binding var sharingEnabled: Bool
+    @Binding var message: String
+    @Binding var submissions: Int
+    let isConfigured: Bool
 
     var body: some View {
         NavigationStack {
@@ -41,15 +75,5 @@ struct DiagnosticsSharingFixture: View {
             .settingsPageSurface()
             .navigationTitle("Help & Diagnostics")
         }
-        .overlay(alignment: .bottomLeading) {
-            Text(verbatim: "\(submissions)")
-                .foregroundStyle(.clear)
-                .accessibilityIdentifier("diagnostics-submission-count")
-                .allowsHitTesting(false)
-        }
-        .environment(\.themePalette, .dark)
-        .environment(\.colorScheme, .dark)
-        .environment(\.locale, Locale(identifier: "en_US"))
-        .preferredColorScheme(.dark)
     }
 }

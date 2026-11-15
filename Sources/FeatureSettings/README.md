@@ -311,9 +311,12 @@ asked once after this migration; reporting stays off until they choose to share.
 Either choice continues setup and survives relaunch and profile switching.
 Help & Diagnostics can change it later. Consent is not synced or transferred.
 The prompt and its primary Share Diagnostics and secondary Don't Share actions
-use the shared Settings card above a separate bottom privacy footer, with
+use the shared Settings card, with
 48-point content insets on tvOS and the standard card insets on mobile.
-Its GitHub-marked link opens the repository
+Its info button opens the shared diagnostic-sharing sheet with the detailed
+disclosures, optional-sharing explanation and Privacy Policy link; opening or
+dismissing it does not choose consent. The footer contains only the GitHub repo
+link, which opens the repository
 on mobile or a scannable QR sheet on Apple TV; opening it does not grant consent.
 
 Settings and the consent screen also expose **Privacy Policy**, opening the

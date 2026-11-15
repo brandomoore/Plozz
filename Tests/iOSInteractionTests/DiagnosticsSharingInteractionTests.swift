@@ -54,6 +54,47 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "1")
     }
 
+    func testOnboardingKeepsDisclosureInInformationWithoutChoosingConsent() {
+        for shares in [false, true] {
+            launch(arguments: ["--diagnostics-onboarding"])
+            let share = app.buttons["Share Diagnostics"]
+            let decline = app.buttons["Don't Share"]
+            XCTAssertTrue(share.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(share.isHittable)
+            XCTAssertTrue(decline.isHittable)
+            XCTAssertTrue(app.staticTexts["Help improve Plozz?"].exists)
+            XCTAssertTrue(app.staticTexts[
+                "Send diagnostics when something goes wrong to help improve reliability and performance."
+            ].exists)
+            let disclosures = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "through Sentry"))
+            XCTAssertEqual(disclosures.count, 0)
+            let repository = app.buttons["diagnostics-consent-repository"]
+            XCTAssertEqual(repository.label, "GitHub repo")
+            let info = app.buttons["About Diagnostic Sharing"]
+            XCTAssertTrue(info.isHittable)
+            XCTAssertGreaterThanOrEqual(info.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(info.frame.height, 44)
+            capture("onboarding-simple")
+            info.tap()
+            XCTAssertTrue(app.staticTexts["Automatic Reports"].waitForExistence(timeout: 5))
+            XCTAssertEqual(disclosures.count, 2)
+            XCTAssertTrue(app.staticTexts[
+                "Sharing is optional. Change anytime in Settings > Help & Diagnostics."
+            ].exists)
+            XCTAssertTrue(app.buttons["privacy-policy-link"].exists)
+            capture("onboarding-information")
+            app.buttons["Done"].tap()
+            XCTAssertTrue(share.waitForExistence(timeout: 5))
+            XCTAssertTrue(decline.exists, "Reading details must not choose consent.")
+            (shares ? share : decline).tap()
+            let toggle = app.switches["diagnostics-sharing-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+            XCTAssertEqual(toggle.value as? String, shares ? "1" : "0")
+            XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "0")
+            app.terminate()
+        }
+    }
+
     func testUnavailableBuildUsesNativeDisabledControlsAndExplainsWhy() {
         launch(arguments: ["--diagnostics-unavailable"])
         let send = app.buttons["diagnostics-submit"]
