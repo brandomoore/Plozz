@@ -10,6 +10,15 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
     @ViewBuilder var rows: Rows
 
     var body: some View {
+        if #available(iOS 26.0, *) {
+            scrollContent
+                .scrollEdgeEffectStyle(heroActive ? .soft : .automatic, for: .top)
+        } else {
+            scrollContent
+        }
+    }
+
+    private var scrollContent: some View {
         ScrollView {
             // Eager vertical sizing avoids estimated heights changing during scrolling.
             VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {

@@ -658,6 +658,55 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
+    func testHomeTopBlurFadesIntoArtworkAtRestAndAfterScrolling() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView:
+            MacNavigationBackgroundFixture(hidesRegularTabBackdrop: true, usesHomeScrollView: true)
+                .environment(\.colorScheme, .dark)
+        )
+        host.overrideUserInterfaceStyle = .dark
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKeyAndVisible()
+        }
+        try await waitForHostedLayout(window)
+        let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
+        let scroll = try XCTUnwrap(descendants(navigation.view).compactMap { $0 as? UIScrollView }
+            .first { $0.contentSize.height > $0.bounds.height })
+        let initialBar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+        for offset: CGFloat in [0, 400, 0] {
+            scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+            try await waitForHostedLayout(window)
+            XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
+            XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled)
+            let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+            XCTAssertEqual(bar, initialBar, "The blur style must not change header geometry.")
+            let image = snapshot(window, name: "home-soft-top-edge-scroll-\(offset)")
+            var previous = try pixel(image, at: CGPoint(x: 4, y: 0))
+            var largestStep = 0
+            for y in stride(from: CGFloat(2), through: 220, by: 2) {
+                let current = try pixel(image, at: CGPoint(x: 4, y: y))
+                for channel in 0..<3 {
+                    largestStep = max(largestStep, abs(Int(current[channel]) - Int(previous[channel])))
+                }
+                previous = current
+            }
+            XCTAssertLessThan(largestStep, 20,
+                              "The native blur must fade into artwork, not end at a hard toolbar boundary.")
+            if !UIAccessibility.isReduceTransparencyEnabled {
+                let top = try pixel(image, at: CGPoint(x: 4, y: 20))
+                XCTAssertGreaterThan(Int(previous[1]) - Int(top[1]), 20,
+                                     "Keep the native blur rather than hiding the top-edge treatment.")
+            }
+        }
+    }
+
     func testReducedTransparencyKeepsPhoneNavigationEdgesClearWithoutHidingControls() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         if let expected = ProcessInfo.processInfo.environment["PLOZZ_EXPECT_REDUCED_TRANSPARENCY"] {
@@ -1578,14 +1627,27 @@ private struct PushedDetailTransparencyFixture: View {
 @available(iOS 26.0, *)
 private struct MacNavigationBackgroundFixture: View {
     var hidesRegularTabBackdrop = false
+    var usesHomeScrollView = false
+
+    @ViewBuilder private var content: some View {
+        if usesHomeScrollView {
+            PlozziOSHomeScrollView(heroActive: true) {
+                Color(uiColor: .cyan).frame(height: 3_000)
+            } rows: {
+                EmptyView()
+            }
+        } else {
+            ScrollView {
+                Color(uiColor: .cyan).frame(height: 3_000)
+            }
+        }
+    }
 
     var body: some View {
         TabView {
             Tab("Home", systemImage: "house") {
                 NavigationStack {
-                    ScrollView {
-                        Color(uiColor: .cyan).frame(height: 3_000)
-                    }
+                    content
                     .ignoresSafeArea()
                     .navigationTitle("")
                     .navigationBarTitleDisplayMode(.inline)

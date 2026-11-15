@@ -234,7 +234,10 @@ registry.
   background is hidden for this item so it cannot merge or stretch the circle.
   No second glass button style is added. Photos, emoji, and symbols keep their
   original colors; reduced-transparency and pre-iOS 26 systems use the shared frosted surface.
-  Home keeps the native top scroll-edge blur behind the status bar while hiding
+  Home's hero explicitly uses the native soft top scroll-edge blur, fading into
+  the artwork rather than inheriting a hard toolbar boundary. This changes no
+  header geometry and leaves reduced-transparency and Mac behavior intact.
+  Home keeps that blur behind the status bar while hiding
   the regular-width tab-bar background so the hero stays visible behind that row.
   The individual native glass controls remain; other destinations and compact
   bottom-tab backgrounds retain their existing treatment. Search's collapsing
