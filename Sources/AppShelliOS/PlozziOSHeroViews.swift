@@ -899,11 +899,14 @@ private struct PlozziOSHeroPlaybackID: Equatable {
 /// one AVPlayerLayer at a time — so a hero playing a trailer fills the stage with
 /// it instead; see ``PlozziOSHeroBackdrop``.
 struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+
     /// How far the mirror is drawn up *behind* the picture's bottom edge, so the
     /// two overlap instead of meeting at a line that splits open the moment the
     /// hero is scaled by an overscroll pull. Same reasoning, and same value, as
     /// a Continue Watching card's seam overlap.
     private static var seamOverlap: CGFloat { 2 }
+    private static var topBlurLeadIn: CGFloat { 8 }
 
     let height: CGFloat
     @ViewBuilder let picture: (PlozziOSHeroPictureLayout) -> Picture
@@ -919,6 +922,12 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
             ZStack(alignment: .top) {
                 if topHeight > 0 {
                     topMirror(geometry, width: width, height: topHeight)
+                        .mask {
+                            LinearGradient(
+                                colors: [.white.opacity(0.82), .white],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        }
                         .environment(\.heroArtworkDisplayReporter, nil)
                 }
                 sizedPicture(geometry)
@@ -927,6 +936,14 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
                     mirror(geometry, width: width)
                         .environment(\.heroArtworkDisplayReporter, nil)
                         .offset(y: topHeight + geometry.pictureHeight - Self.seamOverlap)
+                }
+            }
+            .overlay(alignment: .top) {
+                if topHeight > 0, !reduceTransparency {
+                    topReflectionBlur(geometry, width: width, topHeight: topHeight,
+                                      radius: topHeight / 6, from: 0, to: 0.55)
+                    topReflectionBlur(geometry, width: width, topHeight: topHeight,
+                                      radius: topHeight / 2, from: 0.2, to: 1)
                 }
             }
             // Flatten the picture and its mirror into one layer before anyone
@@ -941,7 +958,7 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
             // where the outgoing slide is drawn at partial opacity. Grouping
             // makes the fade apply once, to the finished picture.
             .compositingGroup()
-            // ONE clip, on the outside. The picture is rendered wider than the
+            // The primary picture and mirrors share this outer clip. The picture is wider than the
             // stage whenever a side trim is in play, and the mirror overruns the
             // foot; both are cut here rather than each carrying its own
             // rasterisation boundary along the seam.
@@ -974,13 +991,35 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
                 sizedPicture(geometry)
                     .scaleEffect(x: 1, y: -1)
             }
+    }
+
+    private func topReflectionBlur(
+        _ geometry: ExtendedArtworkGeometry, width: CGFloat, topHeight: CGFloat,
+        radius: CGFloat, from start: CGFloat, to end: CGFloat
+    ) -> some View {
+        let halo = ceil(radius * 3)
+        return Color.clear
+            .frame(width: width, height: min(height, topHeight + Self.topBlurLeadIn))
+            .overlay(alignment: .top) {
+                ZStack(alignment: .top) {
+                    topMirror(geometry, width: width, height: topHeight)
+                    sizedPicture(geometry).offset(y: topHeight)
+                }
+            }
+            .environment(\.heroArtworkDisplayReporter, nil)
+            // Filter just the seam and reflected band, including the blur's sampling margin.
+            .padding(halo)
+            .clipped()
+            .blur(radius: radius)
+            .padding(-halo)
             .mask {
                 LinearGradient(
-                    colors: [.white.opacity(0.82), .white],
-                    startPoint: .top,
-                    endPoint: .bottom
+                    stops: ArtworkGradientRamp.stops(peak: 1, from: start, to: end),
+                    startPoint: .bottom, endPoint: .top
                 )
             }
+            // Keep the reflection's existing alpha instead of stacking extra opacity.
+            .blendMode(.sourceAtop)
     }
 
     /// The band under the picture: the same image flipped, so its top row is the

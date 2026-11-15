@@ -294,10 +294,19 @@ struct PlozziOSHomeView: View {
             visibility: appModel.settings.homeVisibility.visibility,
             upcoming: viewModel.upcoming.homeReleases
         )
+        let hasScrollingContent = switch displayState {
+        case .idle, .loading, .loaded: true
+        case .empty, .failed: false
+        }
+        let usesScrollingPageActions = hasScrollingContent
+            && horizontalSizeClass == .compact && !usesVerticalToolbar
         Group {
             switch displayState {
             case .idle, .loading, .loaded:
-                homeContent(displayState.value ?? viewModel.loadingPresentationContent)
+                homeContent(
+                    displayState.value ?? viewModel.loadingPresentationContent,
+                    usesScrollingPageActions: usesScrollingPageActions
+                )
             case .empty:
                 PlozziOSHomeEmptyState(
                     hasAccounts: true, onAddSource: onAddServer, isOfflineMode: appModel.isOfflineMode
@@ -401,7 +410,10 @@ struct PlozziOSHomeView: View {
         .navigationTitle(Text(verbatim: ""))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar(usesVerticalToolbar ? .visible : .automatic, for: .navigationBar)
+        .toolbar(
+            usesScrollingPageActions ? .hidden : (usesVerticalToolbar ? .visible : .automatic),
+            for: .navigationBar
+        )
         .toolbar {
             if trailerController.isPlaying && usesVerticalToolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -411,14 +423,16 @@ struct PlozziOSHomeView: View {
                     )
                 }
             }
-            PlozziOSSettingsToolbarItem(leadingActions: {
-                if trailerController.isPlaying && !usesVerticalToolbar {
-                    PlozziOSHeroAudioMuteToolbarButton(
-                        isMuted: trailerController.isMuted, onToggle: toggleTrailerMute
-                    )
-                    .plozziOSPageAction()
-                }
-            }, action: onShowSettings)
+            if !usesScrollingPageActions {
+                PlozziOSSettingsToolbarItem(leadingActions: {
+                    if trailerController.isPlaying && !usesVerticalToolbar {
+                        PlozziOSHeroAudioMuteToolbarButton(
+                            isMuted: trailerController.isMuted, onToggle: toggleTrailerMute
+                        )
+                        .plozziOSPageAction()
+                    }
+                }, action: onShowSettings)
+            }
         }
         .task(
             id: PlozziOSHomeLoadID(
@@ -584,7 +598,9 @@ struct PlozziOSHomeView: View {
         }
     }
 
-    private func homeContent(_ content: HomeViewModel.Content) -> some View {
+    private func homeContent(
+        _ content: HomeViewModel.Content, usesScrollingPageActions: Bool
+    ) -> some View {
         let visibility = appModel.settings.homeVisibility
         let settings = appModel.settings.hero.effectiveSettings
         let loadingRows = isPreparingHome ? Set(HomeRowKind.allCases) : viewModel.loadingRows
@@ -645,7 +661,9 @@ struct PlozziOSHomeView: View {
             containerHeight: heroContainerHeight,
             isRunningOnMac: isRunningOnMac
         ) / 2
-        let scroll = PlozziOSHomeScrollView(heroActive: heroSlotState != .hidden) {
+        let scroll = PlozziOSHomeScrollView(
+            heroActive: heroSlotState != .hidden, showsPageActions: usesScrollingPageActions
+        ) {
             // Retire a carousel the viewer's own settings just invalidated
             // WITHOUT waiting for the async re-curation, exactly as tvOS's
             // `HomeHeroDisplayResolver` does. Otherwise sources they just
@@ -779,6 +797,12 @@ struct PlozziOSHomeView: View {
                     )
                 })
             }
+        } pageActions: {
+            PlozziOSHomePageActions(
+                showsAudio: trailerController.isPlaying,
+                isMuted: trailerController.isMuted,
+                onToggleMute: toggleTrailerMute, onShowSettings: onShowSettings
+            )
         }
         return scroll
             .id(ObjectIdentifier(viewModel))
@@ -791,7 +815,7 @@ struct PlozziOSHomeView: View {
                 isScrolling: homeIsScrolling, isLoading: viewModel.isRefreshing
             )
             .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y > trailerPauseThreshold
+                geometry.contentOffset.y + geometry.contentInsets.top > trailerPauseThreshold
             } action: { _, isPastHalfHero in
                 trailerController.setPaused(isPastHalfHero, surfaceRole: .home)
                 heroPullModel.isVisible = !isPastHalfHero
