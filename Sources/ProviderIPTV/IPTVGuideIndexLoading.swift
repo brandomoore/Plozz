@@ -9,6 +9,7 @@ public protocol IPTVGuideIndexLoading: Sendable {
         download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
     ) async throws -> [ServerLiveTVProgramme]
     /// Listings from a fresh saved index, or `nil` when answering would need a download.
+    /// `catalog` reads the whole lineup; call it only once a saved index could answer.
     func cachedProgrammes(
         url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
         catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel]

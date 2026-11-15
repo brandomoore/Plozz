@@ -42,10 +42,9 @@ struct IPTVAccountGuideIndex: IPTVGuideIndexLoading {
         url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
         catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel]
     ) async throws -> [ServerLiveTVProgramme]? {
-        let allChannels = try await catalog()
-        return try await index.cachedPrograms(
-            from: url, catalog: allChannels.map(Self.channel), channels: channels.map(Self.channel),
-            range: DateInterval(start: from, end: to)
+        try await index.cachedPrograms(
+            from: url, channels: channels.map(Self.channel), range: DateInterval(start: from, end: to),
+            catalog: { try await catalog().map(Self.channel) }
         )?.map(Self.programme)
     }
 

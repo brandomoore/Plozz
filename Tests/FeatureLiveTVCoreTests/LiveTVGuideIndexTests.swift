@@ -327,34 +327,43 @@ final class LiveTVGuideIndexTests: XCTestCase {
         let clock = Mutex(now)
         let index = LiveTVGuideIndex(cache: fixture.cache, clock: { clock.withLock { $0 } })
         let channels = [channel("a"), channel("b", guideID: "sport", name: "Sport")]
-        let unsaved = try await index.cachedPrograms(from: url, catalog: channels, channels: channels, range: range)
+        let lineupReads = Mutex(0)
+        let unsaved = try await index.cachedPrograms(from: url, channels: channels, range: range) {
+            lineupReads.withLock { $0 += 1 }
+            return channels
+        }
         XCTAssertNil(unsaved, "Nothing is saved yet; only a loading source can answer.")
+        XCTAssertEqual(lineupReads.withLock { $0 }, 0, "A miss must not cost a read of the whole lineup.")
         let metadata = try httpMetadata()
         let initial = httpDocument(metadata)
         _ = try await index.programs(from: url, catalog: channels, channels: [channels[0]], range: range) { initial }
 
         let restored = LiveTVGuideIndex(cache: fixture.reopen(), clock: { clock.withLock { $0 } })
-        let saved = try await restored.cachedPrograms(
-            from: url, catalog: channels.reversed(), channels: [channels[1]], range: range
-        )
+        let saved = try await restored.cachedPrograms(from: url, channels: [channels[1]], range: range) {
+            channels.reversed()
+        }
         XCTAssertEqual(saved?.map(\.title), ["Match"], "Another batch reads the saved rows without a download.")
-        let otherLineup = try await restored.cachedPrograms(
-            from: url, catalog: [channels[0]], channels: [channels[0]], range: range
-        )
+        let otherLineup = try await restored.cachedPrograms(from: url, channels: [channels[0]], range: range) {
+            [channels[0]]
+        }
         XCTAssertNil(otherLineup, "Rows indexed for another lineup cannot answer.")
 
         clock.withLock { $0 = metadata.checkedAt.addingTimeInterval(43_200) }
-        let expired = try await restored.cachedPrograms(from: url, catalog: channels, channels: channels, range: range)
+        let expired = try await restored.cachedPrograms(from: url, channels: channels, range: range) {
+            lineupReads.withLock { $0 += 1 }
+            return channels
+        }
+        XCTAssertEqual(lineupReads.withLock { $0 }, 0, "An expired index is a miss too.")
         XCTAssertNil(expired, "An expired index must be revalidated by a loading request.")
 
         clock.withLock { $0 = now }
         await restored.invalidate()
-        let refreshed = try await restored.cachedPrograms(from: url, catalog: channels, channels: channels, range: range)
+        let refreshed = try await restored.cachedPrograms(from: url, channels: channels, range: range) { channels }
         XCTAssertNil(refreshed, "An explicit refresh must reach the provider before saved rows are trusted.")
         _ = try await restored.programs(from: url, catalog: channels, channels: channels, range: range) { _ in
             .document(initial)
         }
-        let validated = try await restored.cachedPrograms(from: url, catalog: channels, channels: channels, range: range)
+        let validated = try await restored.cachedPrograms(from: url, channels: channels, range: range) { channels }
         XCTAssertEqual(validated?.map(\.title).sorted(), ["Bulletin", "Match"])
     }
 
