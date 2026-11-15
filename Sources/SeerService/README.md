@@ -1,0 +1,56 @@
+# Seerr connections
+
+`SeerService` owns the active profile's saved connections, selected browsing
+server, request destination, and credential lifecycle. Both app shells use the
+same `SeerConnectionsView` and authentication implementation.
+
+## Sign-in
+
+- Existing authorized Jellyfin accounts can approve Seerr Quick Connect.
+  Existing authorized Plex identities can exchange their Plex account token.
+  `AppRuntime.SeerProfileAuthentication` checks profile membership, credential
+  revision, and the returned media-user identity.
+- Manual Plex linking, Jellyfin/Emby username and password, and local Seerr
+  email and password are offered according to the server's public capabilities.
+  Silo and other providers can use a supported Seerr login or an API key.
+- A compatible Jellyfin plugin can suggest the server address. Its administrator
+  key is never imported. Manual address entry and local discovery remain available.
+- Every login uses isolated cookies, same-origin redirects, and an authenticated
+  `/auth/me` check. Passwords are discarded. Sessions are stored in the device's
+  secure store; expiration requires sign-in, never fallback to an administrator key.
+  Uninitialized servers must be configured in Seerr itself.
+
+## Defaults and authorization
+
+The secure ledger is keyed by Plozz profile ID. Legacy API-key settings migrate
+once for profiles that already exist, preserving their server-bound request user.
+Later profiles do not inherit the household key. An unverified old user mapping
+remains blocked until explicitly relinked, including after replacing its API key.
+
+Only explicitly saved connections are choices, not users returned by Seerr's
+directory. One connection requests directly unless **Ask each time** is enabled.
+Multiple connections show a native destination choice, with the selected account
+first. **Use last account** remembers only a successful request. Removing a
+connection repairs the default; a network/authentication failure never selects
+another destination.
+
+Ordinary sessions always act as their authenticated user. Only explicitly
+authorized API-key connections expose **Requests as**. Kids restrictions and
+live identity are rechecked before a request is sent. Profile or credential
+changes invalidate pending authentication, selection, and request results.
+Results from another destination must not become availability overrides for
+the server currently being browsed.
+
+## Device transfer
+
+The additive `SyncSecretsBundle.seerrProfiles` field transfers profile-bound
+API-key connections through the existing approved secret-transfer paths.
+Imports are restricted to incoming/known profiles and never overwrite a locally
+configured profile, including an intentional disconnect. Cookie sessions are
+not transferred; sign in separately on another device. Legacy payloads can still
+be imported. Older peers cannot read the new profile-bound field and require
+manual Seerr setup; exporting a household-wide key would expand authorization.
+
+Core regressions live in `Tests/SeerServiceTests/SeerAccountConnectionsTests.swift`;
+mobile layout and presentation coverage lives in
+`Tests/iOSPresentationTests/ProfileSeerrSetupPresentationTests.swift`.

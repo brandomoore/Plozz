@@ -115,11 +115,17 @@ func makeHeroDiscoveryProvider(
 /// `actingName` is the mapped Seerr user, or `nil` when requesting as admin.
 func seerRequestResult(_ outcome: SeerRequestOutcome, actingName: String?) -> MediaRequestActionResult {
     switch outcome {
+    case let .successElsewhere(message):
+        return .init(confirmation: message)
     case let .success(status):
         return .success(status)
     case let .failure(reason):
         let who = actingName ?? "This account"
         switch reason {
+        case .cancelled:
+            return .init()
+        case .signInRequired:
+            return .failure(title: "Sign in again", message: .copy(reason.userMessage))
         case .noDefaults:
             return .failure(
                 title: "No Default Server",

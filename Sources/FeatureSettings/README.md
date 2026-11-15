@@ -1526,6 +1526,10 @@ watch history and planning-list behavior are documented in
   the column and stack at accessibility text sizes; long profile/user names
   wrap without widening the scroll content. TV retains its bounded settings
   layout with contained row focus.
+  The shared connections page offers account sign-in or an explicit API key.
+  It lists only this profile's saved connections, never the whole Seerr user
+  directory. Defaults, request choice, and migration rules are documented in
+  [SeerService](../SeerService/README.md).
 - **Mobile Settings is a presentation action.** The profile button is the default
   entry point. Its navigation shortcut starts hidden on iPhone and iPad, keeping
   the default navigation at Home, Downloads, and Search.

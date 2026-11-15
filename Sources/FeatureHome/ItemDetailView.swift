@@ -499,7 +499,9 @@ public struct ItemDetailView: View {
                 requestOverride = status
             } else {
                 requestOverride = nil
-                if let title = result.failureTitle {
+                if let message = result.confirmation {
+                    requestFailure = RequestFailureAlert(title: "Seerr", message: .copy(message))
+                } else if let title = result.failureTitle {
                     requestFailure = RequestFailureAlert(title: title, message: result.failureMessage)
                 }
             }
@@ -519,10 +521,12 @@ public struct ItemDetailView: View {
         Task {
             let result = await onRequestSeasons(item, selected)
             guard seasonRequestScope == scope else { return }
-            if result.isSuccess { seasonRequestState.accept(selected) }
+            if result.status != nil { seasonRequestState.accept(selected) }
             isSeasonRequestInFlight = false
             seasonRequestRetryToken += 1
-            if let title = result.failureTitle {
+            if let message = result.confirmation {
+                requestFailure = RequestFailureAlert(title: "Seerr", message: .copy(message))
+            } else if let title = result.failureTitle {
                 requestFailure = RequestFailureAlert(title: title, message: result.failureMessage)
             }
         }

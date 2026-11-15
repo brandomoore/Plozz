@@ -26,8 +26,13 @@ public struct SeerConnection: Codable, Equatable, Sendable {
 /// the service can be unit-tested with an in-memory double.
 public protocol SeerConnectionStoring: Sendable {
     func load() -> SeerConnection?
+    func read() throws -> SeerConnection?
     func save(_ connection: SeerConnection) throws
     func clear() throws
+}
+
+public extension SeerConnectionStoring {
+    func read() throws -> SeerConnection? { load() }
 }
 
 /// Household connection store backed by a ``CoreModels/SecureStoring`` — in
@@ -47,6 +52,11 @@ public final class HouseholdSeerConnectionStore: SeerConnectionStoring, @uncheck
         guard let json = secureStore.string(for: key),
               let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(SeerConnection.self, from: data)
+    }
+
+    public func read() throws -> SeerConnection? {
+        guard let json = try secureStore.readString(for: key) else { return nil }
+        return try JSONDecoder().decode(SeerConnection.self, from: Data(json.utf8))
     }
 
     public func save(_ connection: SeerConnection) throws {

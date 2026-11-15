@@ -11,36 +11,28 @@ import XCTest
 
 @MainActor
 final class ProfileSeerrSetupPresentationTests: XCTestCase {
-    func testConnectedSetupKeepsPageGuttersAndAlignedUserLabels() async throws {
+    func testConnectedSetupKeepsPageGuttersAndOnlyShowsSavedAccounts() async throws {
         for size in [CGSize(width: 390, height: 844), CGSize(width: 320, height: 568),
                      CGSize(width: 768, height: 1024), CGSize(width: 844, height: 390)] {
-            try await render(size: size) { window, scroll in
+            try await render(size: size) { window, scroll, _ in
                 let image = try self.capture(window)
                 self.attach(image, name: "Seerr connected \(Int(size.width))x\(Int(size.height))")
                 let text = try self.recognize(image, size: size)
-                let title = try XCTUnwrap(text.first { $0.text.contains("Requests as") })
+                let title = try XCTUnwrap(text.first { $0.text.localizedCaseInsensitiveContains("Connections") })
                 XCTAssertTrue(text.contains { $0.text.contains("Emby only") })
                 XCTAssertGreaterThanOrEqual(title.frame.minX, 20)
                 XCTAssertLessThanOrEqual(title.frame.maxX, size.width - 23)
                 XCTAssertFalse(title.text.contains("—"))
-                let explanation = try XCTUnwrap(text.first { $0.text.contains("Choose whose") })
-                XCTAssertEqual(title.frame.minX, explanation.frame.minX, accuracy: 3)
                 XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
-                let admin = try XCTUnwrap(text.first { $0.text.contains("unrestricted") })
-                try self.assertPanelGutters(image, rowY: admin.frame.midY)
-                if size.height > 700 {
-                    let alex = try XCTUnwrap(text.first { $0.text == "Alex" })
-                    let sam = try XCTUnwrap(text.first { $0.text == "Sam" })
-                    XCTAssertEqual(admin.frame.minX, alex.frame.minX, accuracy: 4)
-                    XCTAssertEqual(alex.frame.minX, sam.frame.minX, accuracy: 4)
-                    let footer = try XCTUnwrap(text.first { $0.text.hasPrefix("Admin is unrestricted.") })
-                    XCTAssertGreaterThanOrEqual(footer.frame.minX, title.frame.minX + 12)
-                }
+                XCTAssertTrue(text.contains { $0.text.contains("Alex") })
+                let account = try XCTUnwrap(text.first { $0.text.contains("Alex") })
+                try self.assertPanelGutters(image, rowY: account.frame.midY)
+                XCTAssertFalse(text.contains { $0.text == "Sam" })
+                XCTAssertFalse(text.contains { $0.text.contains("Choose whose") })
                 try await self.scrollToBottom(scroll, window: window)
                 let bottom = try self.capture(window)
                 self.attach(bottom, name: "Seerr actions \(Int(size.width))x\(Int(size.height))")
                 let bottomText = try self.recognize(bottom, size: size)
-                XCTAssertTrue(bottomText.contains { $0.text == "Not Now" })
                 XCTAssertTrue(bottomText.contains { $0.text == "Continue" })
                 for line in bottomText {
                     XCTAssertGreaterThanOrEqual(line.frame.minX, 20, line.text)
@@ -55,7 +47,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             try await render(
                 size: .init(width: 390, height: 844), typeSize: .accessibility3,
                 direction: direction, longNames: true
-            ) { window, scroll in
+            ) { window, scroll, _ in
                 XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height)
                 XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
                 self.attach(try self.capture(window), name: "Seerr large text top \(direction)")
@@ -64,7 +56,6 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 self.attach(image, name: "Seerr large text actions \(direction)")
                 let text = try self.recognize(image, size: window.bounds.size)
                 XCTAssertTrue(text.contains { $0.text == "Continue" })
-                XCTAssertTrue(text.contains { $0.text == "Not Now" })
                 XCTAssertFalse(text.contains { $0.text.contains("…") })
                 for line in text {
                     XCTAssertGreaterThanOrEqual(line.frame.minX, 23, line.text)
@@ -74,18 +65,17 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
-    func testConnectionEmptyAndFailedUserStatesRetainTheSameGutters() async throws {
-        for state in [SeerrSetupHTTP.State.unconfigured, .empty, .failed] {
-            try await render(size: .init(width: 390, height: 844), state: state) { window, scroll in
+    func testDisconnectedAndFailedConnectionsKeepAnExplicitRecoveryPath() async throws {
+        for state in [SeerrSetupHTTP.State.unconfigured, .differentProfile, .failed] {
+            try await render(size: .init(width: 390, height: 844), state: state) { window, scroll, _ in
                 let image = try self.capture(window)
                 self.attach(image, name: "Seerr \(state)")
                 let text = try self.recognize(image, size: window.bounds.size)
-                XCTAssertTrue(text.contains { $0.text.contains("Requests as") })
                 let expected: String
                 switch state {
-                case .unconfigured: expected = "Connect"
-                case .empty: expected = "No Seerr users found."
-                case .failed: expected = "Retry loading users"
+                case .unconfigured: expected = "Use API key"
+                case .differentProfile: expected = "Switch to this profile"
+                case .failed: expected = "Sign in again"
                 case .connected: expected = "Alex"
                 }
                 XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveContains(expected) })
@@ -98,22 +88,54 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
+    func testRequestAccountChoiceCanPresentAboveAnExistingDetailSheet() async throws {
+        try await render(size: .init(width: 390, height: 844)) { window, _, service in
+            let root = try XCTUnwrap(window.rootViewController)
+            let sheet = UIHostingController(rootView: Text("Title details"))
+            root.present(sheet, animated: false)
+            defer { sheet.dismiss(animated: false) }
+            try await Task.sleep(for: .milliseconds(150))
+            try service.updateSelection(defaultID: service.profileConnections.defaultID, rememberLastUsed: false, askEachTime: true)
+            let request = Task { await service.request(MediaItem(id: "seer:movie:17", title: "Fixture", kind: .movie)) }
+            defer { request.cancel(); service.chooseDestination(nil) }
+            let deadline = ContinuousClock.now + .seconds(3)
+            while sheet.presentedViewController == nil, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let choice = try XCTUnwrap(sheet.presentedViewController as? UIAlertController,
+                                      "Request choice must not be hidden behind the detail sheet")
+            XCTAssertEqual(choice.title, "Request as")
+            XCTAssertEqual(choice.actions.count, 2)
+            XCTAssertTrue(choice.actions.first?.title?.contains("Alex") == true)
+            service.chooseDestination(nil)
+            let outcome = await request.value
+            XCTAssertEqual(outcome, .failure(.cancelled))
+        }
+    }
+
     private func render(
         size: CGSize, typeSize: DynamicTypeSize = .large,
         direction: LayoutDirection = .leftToRight, longNames: Bool = false,
         state: SeerrSetupHTTP.State = .connected,
-        inspect: (UIWindow, UIScrollView) async throws -> Void
+        inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
         let http = SeerrSetupHTTP(state: state, longNames: longNames)
         let store = InMemorySeerConnectionStore(connection: state == .unconfigured ? nil : .init(
             baseURL: URL(string: "https://fixture.invalid")!, apiKey: "fixture"
         ))
         let service = SeerService(connectionStore: store, http: http)
+        var profile = Profile(id: "fixture", name: longNames ? "A household profile with a very long name" : "Emby only")
+        profile.seerrUserID = 2
+        profile.seerrUserName = longNames ? "Alex with an exceptionally long household display name" : "Alex"
+        profile.seerrServerIdentity = SeerServerIdentity(baseURL: URL(string: "https://fixture.invalid")!)
+        let current = state == .differentProfile ? Profile(id: "other", name: "Other") : profile
+        service.configureProfiles(store: InMemorySeerAccountConnectionStore(), profiles: [profile, current], current: { current })
         let view = ProfileSeerrSetupView(
             seer: service,
-            profile: Profile(id: "fixture", name: longNames ? "A household profile with a very long name" : "Emby only"),
+            profile: profile,
             onSelect: { _ in }, onContinue: {}
         )
+        .seerRequestDestination(service)
         .environment(\.themePalette, ThemePalette.dark)
         .environment(\.dynamicTypeSize, typeSize)
         .environment(\.layoutDirection, direction)
@@ -127,6 +149,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
         let host = UIHostingController(rootView: view)
+        host.overrideUserInterfaceStyle = .dark
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -135,14 +158,15 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         let ready = ContinuousClock.now + .seconds(5)
-        while !(await http.finished), state != .unconfigured, ContinuousClock.now < ready {
+        let expectsProbe = state == .connected || state == .failed
+        while !(await http.finished), expectsProbe, ContinuousClock.now < ready {
             try await Task.sleep(for: .milliseconds(20))
         }
-        if state != .unconfigured { let finished = await http.finished; XCTAssertTrue(finished) }
+        if expectsProbe { let finished = await http.finished; XCTAssertTrue(finished) }
         try await Task.sleep(for: .milliseconds(150))
         window.layoutIfNeeded()
         let scroll = try XCTUnwrap(scrollViews(in: host.view).first)
-        try await inspect(window, scroll)
+        try await inspect(window, scroll, service)
     }
 
     private func scrollViews(in view: UIView) -> [UIScrollView] {
@@ -193,6 +217,13 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
     }
 
     private func attach(_ image: UIImage, name: String) {
+        if let directory = ProcessInfo.processInfo.environment["PLOZZ_SEERR_CAPTURE_DIR"] {
+            do {
+                let data = try XCTUnwrap(image.pngData())
+                try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(name + ".png"))
+            } catch { XCTFail("Could not save Seerr presentation evidence: \(error)") }
+            return
+        }
         let attachment = XCTAttachment(image: image)
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -214,7 +245,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
 }
 
 private actor SeerrSetupHTTP: HTTPClient {
-    enum State { case connected, unconfigured, empty, failed }
+    enum State { case connected, unconfigured, differentProfile, failed }
     let state: State
     let longNames: Bool
     private(set) var finished = false
@@ -228,18 +259,10 @@ private actor SeerrSetupHTTP: HTTPClient {
         let json: String
         if endpoint.path.hasSuffix("/status") {
             json = #"{"version":"1.0"}"#
-        } else if endpoint.path.hasSuffix("/user") {
+        } else if endpoint.path.hasSuffix("/auth/me") {
             finished = true
             if state == .failed { throw AppError.serverUnreachable }
-            if state == .empty {
-                json = #"{"results":[]}"#
-            } else {
-                let name = longNames ? "Alex with an exceptionally long household display name" : "Alex"
-                json = """
-                {"results":[{"id":1,"displayName":"\(name)","email":"alex@example.invalid"},
-                            {"id":2,"displayName":"Sam","email":"sam@example.invalid"}]}
-                """
-            }
+            json = #"{"id":2,"displayName":"Alex","permissions":8}"#
         } else {
             throw AppError.invalidResponse
         }

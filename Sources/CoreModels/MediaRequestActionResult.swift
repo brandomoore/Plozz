@@ -373,8 +373,8 @@ public struct MediaRequestAvailability: Sendable, Equatable {
 /// `SeerRequestOutcome` onto this (translating failure reasons into user-facing
 /// copy, including the acting user's name where relevant).
 public struct MediaRequestActionResult: Sendable, Equatable {
-    /// The title's resulting availability on success (`.pending` = created,
-    /// awaiting approval). `nil` on failure.
+    /// The browsing destination's resulting availability. Absent for failures,
+    /// cancellation, and confirmations about another destination.
     public var status: MediaAvailabilityStatus?
     /// A short, user-facing failure title (e.g. "Request Limit Reached"). `nil`
     /// on success. Non-nil signals the UI to present a failure alert.
@@ -394,15 +394,17 @@ public struct MediaRequestActionResult: Sendable, Equatable {
     }
 
     public var failureMessage: FailureMessage?
+    public var confirmation: LocalizedStringResource?
 
-    public init(status: MediaAvailabilityStatus? = nil, failureTitle: LocalizedStringResource? = nil, failureMessage: FailureMessage? = nil) {
+    public init(status: MediaAvailabilityStatus? = nil, failureTitle: LocalizedStringResource? = nil, failureMessage: FailureMessage? = nil, confirmation: LocalizedStringResource? = nil) {
         self.status = status
         self.failureTitle = failureTitle
         self.failureMessage = failureMessage
+        self.confirmation = confirmation
     }
 
     /// Whether the request succeeded (a status is present and no failure title).
-    public var isSuccess: Bool { failureTitle == nil }
+    public var isSuccess: Bool { status != nil && failureTitle == nil }
 
     public static func success(_ status: MediaAvailabilityStatus) -> MediaRequestActionResult {
         MediaRequestActionResult(status: status)

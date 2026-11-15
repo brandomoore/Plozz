@@ -112,6 +112,7 @@ public struct PlozziOSRootView: View {
                     .task { consumeDeferredPairingURL() }
             }
         }
+        .seerRequestDestination(appModel.seerService)
         .signInSyncPermission(
             appModel.providerCredentialSync.publicationPermission,
             canPresent: setupPresentationReady && appModel.isActiveProfileAuthorized

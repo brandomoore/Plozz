@@ -175,6 +175,7 @@ struct HomeTab: View {
 
     @State private var path = NavigationPath()
     @State private var heroRequestFailure: SeerRequestFailure?
+    @State private var heroRequestConfirmation: LocalizedStringResource?
     /// Handles owned above the tab so tab re-hosting cannot destroy them.
     let runtime: HomeTabRuntime
     /// Detail view models, kept across `navigationDestination` re-evaluations.
@@ -427,16 +428,16 @@ struct HomeTab: View {
                 enabledServerCount: accounts.count
             )
             .alert(
-                "Request Failed",
+                heroRequestConfirmation == nil ? "Request Failed" : "Seerr",
                 isPresented: Binding(
-                    get: { heroRequestFailure != nil },
-                    set: { if !$0 { heroRequestFailure = nil } }
-                ),
-                presenting: heroRequestFailure
-            ) { _ in
+                    get: { heroRequestFailure != nil || heroRequestConfirmation != nil },
+                    set: { if !$0 { heroRequestFailure = nil; heroRequestConfirmation = nil } }
+                )
+            ) {
                 Button("OK", role: .cancel) {}
-            } message: { failure in
-                Text(failure.userMessage)
+            } message: {
+                if let confirmation = heroRequestConfirmation { Text(confirmation) }
+                else if let failure = heroRequestFailure { Text(failure.userMessage) }
             }
     }
 
@@ -446,6 +447,11 @@ struct HomeTab: View {
     ) async -> MediaAvailabilityStatus? {
         let outcome = await seer.request(item, seasons: seasons, identity: activeSeerrIdentity)
         switch outcome {
+        case let .successElsewhere(message):
+            heroRequestConfirmation = message
+            return nil
+        case .failure(.cancelled):
+            return nil
         case let .success(status):
             return status
         case let .failure(reason):

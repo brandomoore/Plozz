@@ -524,7 +524,7 @@ let package = Package(
         // Config and encrypted credential pairing, with secret-safe diagnostics.
         .target(
             name: "FeatureSyncSetup",
-            dependencies: ["CoreModels", "CoreNetworking"]
+            dependencies: ["CoreModels", "CoreNetworking", "SeerService"]
         ),
 
         // Non-secret config auto-sync over CloudKit (CKSyncEngine, private DB).

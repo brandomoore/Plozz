@@ -588,6 +588,7 @@ public struct RootView: View {
                     }
             }
         }
+        .seerRequestDestination(appState.seerService)
         .signInSyncPermission(
             appState.providerCredentialSync.publicationPermission,
             canPresent: startupPresentationReady && rootPresentation.active == nil
