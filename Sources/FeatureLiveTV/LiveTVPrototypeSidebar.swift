@@ -1,9 +1,11 @@
 import CoreUI
+import CoreModels
 import FeatureLiveTVCore
 import SwiftUI
 
 struct PrototypeBrowseSidebar: View {
     @Bindable var model: LiveTVPrototypeModel
+    let configuration: LiveTVSourcesConfiguration
     @Binding var active: Bool
     let focusRequest: Int
     var isSearching = false
@@ -11,6 +13,8 @@ struct PrototypeBrowseSidebar: View {
     var restoresCategoryFocus = false
     let search: () -> Void
     let enterGuide: () -> Void
+    let selectSource: (String?) -> Void
+    let addSource: () -> Void
     var selectCategory: ((String?) -> Void)?
     var multiviews: (() -> Void)?
     var manageChannels: (() -> Void)?
@@ -21,6 +25,7 @@ struct PrototypeBrowseSidebar: View {
     @Environment(\.layoutDirection) private var layoutDirection
 
     private enum Control: Hashable {
+        case source
         case search
         case multiviews
         case manageChannels
@@ -34,6 +39,16 @@ struct PrototypeBrowseSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PrototypeLayout.gap) {
             #if os(tvOS)
+            PrototypeBrowseSourceMenu(
+                configuration: configuration, selectedSourceID: model.configuredSourceID,
+                selectSource: selectSource, addSource: addSource
+            )
+            .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
+            .padding(PrototypeLayout.controlInset)
+            .background { PrototypeControlSurface() }
+            .focused($focused, equals: .source)
+            .disabled(isEnteringCategory)
+
             Button(action: search) {
                 Label(isSearching ? "Back to guide" : "Search", systemImage: isSearching ? "chevron.backward" : "magnifyingglass")
                     .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
@@ -172,7 +187,7 @@ struct PrototypeBrowseSidebar: View {
         )
         .background {
             NativeFocusRegionObserver(
-                isEnabled: restoresCategoryFocus,
+                isEnabled: restoresCategoryFocus, ignoresPresentedFocus: true,
                 onFocusExited: { completedCategoryFocusRequest = 0 },
                 onFocusEntered: {}
             )

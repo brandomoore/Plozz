@@ -205,7 +205,12 @@ filters, Multiviews, source management and the existing **Settings** destination
 are contextual actions in **More**; Live TV has no separate profile button.
 Other pages' profile shortcuts are unchanged. Category tiles use
 shorter minimum heights while retaining channel counts and Dynamic Type growth.
-Apple TV navigation is unchanged.
+On Apple TV, the categories sidebar places the same source menu above
+**Search**. It shows the current source, supports **All**, and opens the existing
+**Add Source** choices. Source filtering shares the mobile authorization and
+category-retention behavior without changing connected sources or active playback.
+Closing the menu returns focus to its button; entering the sidebar from the guide
+still lands on the selected category.
 
 On iOS/iPadOS 26 and later, the category directory and search results extend
 behind the transparent native navigation controls, retaining their resting

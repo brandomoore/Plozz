@@ -7,6 +7,107 @@ import UIKit
 @MainActor
 final class LiveTVCategorySearchInteractionTests: XCTestCase {
     #if os(tvOS)
+    func testSidebarSourceMenuFiltersTheGuideAndRestoresRemoteFocus() {
+        let app = launch(multipleSources: true)
+        defer { app.terminate() }
+        let source = app.buttons["live-tv-source"]
+        let search = app.buttons["live-tv-search"]
+        let allCategories = app.buttons["live-tv-sidebar-category-all"]
+        XCTAssertTrue(allCategories.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(source.isHittable)
+        XCTAssertLessThan(source.frame.maxY, search.frame.minY)
+        XCTAssertEqual(source.value as? String, "All")
+        focus(source, in: app)
+        capture("live-tv-tv-source-sidebar", in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(sourceMenuItem("Local TV", in: app).waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(sourceMenuItem("Paused TV", in: app).exists)
+        capture("live-tv-tv-source-menu", in: app)
+        activate(sourceMenuItem("Local TV", in: app), in: app)
+        waitForSourceFocus(in: app)
+        XCTAssertEqual(source.value as? String, "Local TV")
+        XCTAssertTrue(channel("Local Sport", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(channel("Arena One", in: app).exists)
+        XCTAssertFalse(app.buttons["live-tv-sidebar-category-News"].exists)
+        capture("live-tv-tv-source-local", in: app)
+
+        activate(app.buttons["live-tv-sidebar-category-Music"], in: app)
+        XCTAssertTrue(channel("Local Music", in: app).waitForExistence(timeout: 5))
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("Sample TV", in: app).waitForExistence(timeout: 5))
+        activate(sourceMenuItem("Sample TV", in: app), in: app)
+        waitForSourceFocus(in: app)
+        XCTAssertTrue(allCategories.isSelected, "An unavailable category must reset for the new provider.")
+        XCTAssertTrue(channel("Daily News", in: app).waitForExistence(timeout: 5))
+
+        let sports = app.buttons["live-tv-sidebar-category-Sports"]
+        activate(sports, in: app)
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("Local TV", in: app).waitForExistence(timeout: 5))
+        activate(sourceMenuItem("Local TV", in: app), in: app)
+        waitForSourceFocus(in: app)
+        XCTAssertTrue(sports.isSelected, "A category shared by both providers must be retained.")
+        XCTAssertTrue(channel("Local Sport", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(channel("Local Music", in: app).exists)
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("All", in: app).waitForExistence(timeout: 5))
+        activate(sourceMenuItem("All", in: app), in: app)
+        waitForSourceFocus(in: app)
+        XCTAssertTrue(channel("Arena One", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(channel("Local Sport", in: app).exists)
+
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("Local TV", in: app).waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        waitForSourceFocus(in: app)
+        XCTAssertEqual(source.value as? String, "All")
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(search.wait(for: \.hasFocus, toEqual: true, timeout: 5))
+        XCUIRemote.shared.press(.right)
+        let guideFocus = NSPredicate { _, _ in
+            self.containsFocus(self.channel("Arena One", in: app))
+                || self.containsFocus(app.buttons["Matchday Live"].firstMatch)
+        }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: guideFocus, object: nil)], timeout: 5
+        ), .completed, app.debugDescription)
+        capture("live-tv-tv-source-guide-focus", in: app)
+        if containsFocus(app.buttons["Matchday Live"].firstMatch) { XCUIRemote.shared.press(.left) }
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(sports.wait(for: \.hasFocus, toEqual: true, timeout: 5),
+                      "Returning from the guide must still enter the selected category, not the source menu.")
+    }
+
+    func testSidebarSourceMenuOpensExistingAddSourceChoices() {
+        let app = launch(multipleSources: true, managedSourceSetup: true)
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-tv-sidebar-category-all"].waitForExistence(timeout: 15))
+        activate(app.buttons["live-tv-source"], in: app)
+        let add = sourceMenuItem("live-tv-add-source", in: app)
+        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+        activate(add, in: app)
+        let playlist = app.buttons["live-tv-add-playlist"]
+        XCTAssertTrue(playlist.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["live-tv-add-server"].exists)
+        XCTAssertFalse(app.buttons["live-tv-import-playlist"].exists)
+        capture("live-tv-tv-add-source", in: app)
+        activate(playlist, in: app)
+        XCTAssertTrue(app.staticTexts["category-source-setup-request"].wait(
+            for: \.label, toEqual: "playlist", timeout: 5
+        ), app.debugDescription)
+    }
+
+    private func sourceMenuItem(_ name: String, in app: XCUIApplication) -> XCUIElement {
+        app.cells.containing(.other, identifier: name).firstMatch
+    }
+
+    private func waitForSourceFocus(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let focused = NSPredicate { _, _ in self.containsFocus(app.buttons["live-tv-source"]) }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: focused, object: nil)], timeout: 5
+        ), .completed, app.debugDescription, file: file, line: line)
+    }
+
     func testPinnedNavigationWaitsForCategoryEntryAndStillAcceptsBack() {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
