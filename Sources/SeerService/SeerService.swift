@@ -136,7 +136,8 @@ public final class SeerService {
 
     public var requestIdentity: SeerRequestIdentity {
         let userID = config.session?.userID ?? config.userId
-        return userID.map { .user(id: $0, server: serverIdentity) } ?? .admin
+        let server = profileConnections.selected?.requiresRelink == true ? nil : serverIdentity
+        return userID.map { .user(id: $0, server: server) } ?? .admin
     }
 
     public var requestAccountName: String? { profileConnections.selected?.accountName }
@@ -182,6 +183,7 @@ public final class SeerService {
         identity: SeerRequestIdentity, language: String
     ) async throws -> [MediaItem] {
         guard isConfigured else { return [] }
+        guard profileConnections.selected?.requiresRelink != true else { throw AppError.unauthorized }
         guard !identity.requiresRelink(to: serverIdentity) else { throw AppError.unauthorized }
         guard identity != .admin || !refusesAdminRequests() else { throw AppError.unauthorized }
         let revision = connectionRevision

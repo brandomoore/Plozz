@@ -185,14 +185,23 @@ extension PlozziOSAppModel {
             PlozzLog.auth.error("KeychainSync: Seerr connection in iCloud Keychain is undecodable")
             return
         }
-        guard Self.installSeerrSecretIfAbsent(secret) else {
-            PlozzLog.auth.info("KeychainSync: Seerr already configured locally — keeping this device's connection")
+        guard let url = URL(string: secret.baseURL) else {
+            PlozzLog.auth.error("KeychainSync: shared Seerr address is invalid")
+            return
+        }
+        do {
+            let legacyStore = Self.seerrConnectionStore()
+            guard try legacyStore.read() == nil else { return }
+            let connection = SeerConnection(baseURL: url, apiKey: secret.apiKey)
+            try Self.seerrAccountConnectionStore().importLegacyIfAbsent(
+                connection, profiles: profiles.profilesForSync
+            )
+            try legacyStore.save(connection)
+        } catch {
+            PlozzLog.auth.error("KeychainSync: legacy Seerr profile connections could not be restored")
             return
         }
         PlozzLog.auth.info("KeychainSync: adopted shared Seerr connection from iCloud Keychain")
-        // The service cached its config at init, BEFORE this ran, so without an
-        // explicit reload the freshly-installed connection stays invisible until
-        // the next launch.
         Task { await seerService.reloadConnection() }
     }
 

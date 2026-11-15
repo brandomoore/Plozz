@@ -138,6 +138,8 @@ live identity are rechecked before a request is sent. Profile or credential
 changes invalidate pending authentication, selection, and request results.
 Results from another destination must not become availability overrides for
 the server currently being browsed.
+Upcoming uses the selected connection's server-bound request identity for both
+loading and cache ownership, including after changing an API-key request user.
 
 ## Device transfer
 
@@ -146,7 +148,10 @@ API-key connections through the existing approved secret-transfer paths.
 Imports are restricted to incoming/known profiles and never overwrite a locally
 configured profile, including an intentional disconnect. Cookie sessions are
 not transferred; sign in separately on another device. Legacy payloads can still
-be imported. Older peers cannot read the new profile-bound field and require
+be imported. A legacy iCloud credential arriving after initial setup is imported
+into eligible existing profile ledgers before reloading the active service;
+configured profiles and intentional disconnects remain untouched.
+Older peers cannot read the new profile-bound field and require
 manual Seerr setup; exporting a household-wide key would expand authorization.
 
 Core regressions live in `Tests/SeerServiceTests/SeerAccountConnectionsTests.swift`;

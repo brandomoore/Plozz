@@ -301,7 +301,7 @@ struct HomeTab: View {
         let isCurrent: @MainActor @Sendable () -> Bool = {
             isProfileAuthorized() && profilesModel?.activeProfileID == profileID
                 && upcomingScopeKey == scope
-                && profilesModel?.activeProfile.seerrRequestIdentity == identity
+                && seer.requestIdentity == identity
         }
         await sharedHomeViewModel.upcoming.refresh(
             scope: scope, namespace: libraryPreferencesNamespace, cacheScope: cacheScope,
@@ -477,7 +477,7 @@ struct HomeTab: View {
                 enabledServerCount: accounts.count
             )
             .alert(
-                heroRequestConfirmation == nil ? "Request Failed" : "Seerr",
+                heroRequestConfirmation == nil ? Text("Request Failed") : Text(verbatim: "Seerr"),
                 isPresented: Binding(
                     get: { heroRequestFailure != nil || heroRequestConfirmation != nil },
                     set: { if !$0 { heroRequestFailure = nil; heroRequestConfirmation = nil } }

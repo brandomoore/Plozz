@@ -134,7 +134,7 @@ public struct ItemDetailView: View {
     /// A user-facing request failure, wrapped for `.alert(item:)`.
     private struct RequestFailureAlert: Identifiable {
         let id = UUID()
-        let title: LocalizedStringResource
+        let title: Text
         let message: MediaRequestActionResult.FailureMessage?
     }
 
@@ -410,7 +410,7 @@ public struct ItemDetailView: View {
         }
         .alert(item: $requestFailure) { failure in
             Alert(
-                title: Text(failure.title),
+                title: failure.title,
                 message: failure.message.map { detail in
                     switch detail {
                     case let .copy(resource): Text(resource)
@@ -500,9 +500,9 @@ public struct ItemDetailView: View {
             } else {
                 requestOverride = nil
                 if let message = result.confirmation {
-                    requestFailure = RequestFailureAlert(title: "Seerr", message: .copy(message))
+                    requestFailure = RequestFailureAlert(title: Text(verbatim: "Seerr"), message: .copy(message))
                 } else if let title = result.failureTitle {
-                    requestFailure = RequestFailureAlert(title: title, message: result.failureMessage)
+                    requestFailure = RequestFailureAlert(title: Text(title), message: result.failureMessage)
                 }
             }
         }
@@ -525,9 +525,9 @@ public struct ItemDetailView: View {
             isSeasonRequestInFlight = false
             seasonRequestRetryToken += 1
             if let message = result.confirmation {
-                requestFailure = RequestFailureAlert(title: "Seerr", message: .copy(message))
+                requestFailure = RequestFailureAlert(title: Text(verbatim: "Seerr"), message: .copy(message))
             } else if let title = result.failureTitle {
-                requestFailure = RequestFailureAlert(title: title, message: result.failureMessage)
+                requestFailure = RequestFailureAlert(title: Text(title), message: result.failureMessage)
             }
         }
     }

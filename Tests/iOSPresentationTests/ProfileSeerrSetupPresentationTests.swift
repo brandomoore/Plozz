@@ -90,27 +90,32 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
     }
 
     func testRequestAccountChoiceCanPresentAboveAnExistingDetailSheet() async throws {
-        try await render(size: .init(width: 390, height: 844)) { window, _, service in
-            let root = try XCTUnwrap(window.rootViewController)
-            let sheet = UIHostingController(rootView: Text("Title details"))
-            root.present(sheet, animated: false)
-            defer { sheet.dismiss(animated: false) }
-            try await Task.sleep(for: .milliseconds(150))
-            try service.updateSelection(defaultID: service.profileConnections.defaultID, rememberLastUsed: false, askEachTime: true)
-            let request = Task { await service.request(MediaItem(id: "seer:movie:17", title: "Fixture", kind: .movie)) }
-            defer { request.cancel(); service.chooseDestination(nil) }
-            let deadline = ContinuousClock.now + .seconds(3)
-            while sheet.presentedViewController == nil, ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(20))
+        for language in ["en", "fr"] {
+            let locale = Locale(identifier: language)
+            try await render(size: .init(width: 390, height: 844), locale: locale) { window, _, service in
+                let root = try XCTUnwrap(window.rootViewController)
+                let sheet = UIHostingController(rootView: Text("Title details"))
+                root.present(sheet, animated: false)
+                defer { sheet.dismiss(animated: false) }
+                try await Task.sleep(for: .milliseconds(150))
+                try service.updateSelection(defaultID: service.profileConnections.defaultID, rememberLastUsed: false, askEachTime: true)
+                let request = Task { await service.request(MediaItem(id: "seer:movie:17", title: "Fixture", kind: .movie)) }
+                defer { request.cancel(); service.chooseDestination(nil) }
+                let deadline = ContinuousClock.now + .seconds(3)
+                while sheet.presentedViewController == nil, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let choice = try XCTUnwrap(sheet.presentedViewController as? UIAlertController,
+                                          "Request choice must not be hidden behind the detail sheet")
+                XCTAssertEqual(choice.title, String(localized: LocalizedStringResource("Request as", locale: locale)))
+                XCTAssertEqual(choice.actions.last?.title, String(localized: LocalizedStringResource("Cancel", locale: locale)))
+                if language == "fr" { XCTAssertNotEqual(choice.title, "Request as") }
+                XCTAssertEqual(choice.actions.count, 2)
+                XCTAssertTrue(choice.actions.first?.title?.contains("Alex") == true)
+                service.chooseDestination(nil)
+                let outcome = await request.value
+                XCTAssertEqual(outcome, .failure(.cancelled))
             }
-            let choice = try XCTUnwrap(sheet.presentedViewController as? UIAlertController,
-                                      "Request choice must not be hidden behind the detail sheet")
-            XCTAssertEqual(choice.title, "Request as")
-            XCTAssertEqual(choice.actions.count, 2)
-            XCTAssertTrue(choice.actions.first?.title?.contains("Alex") == true)
-            service.chooseDestination(nil)
-            let outcome = await request.value
-            XCTAssertEqual(outcome, .failure(.cancelled))
         }
     }
 
@@ -572,6 +577,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         manualForm: Bool = false,
         inputMetrics: SignInInputMetrics? = nil,
         quickConnectAvailable: Bool = true,
+        locale: Locale = Locale(identifier: "en"),
         configure: (SeerService) async throws -> Void = { _ in },
         inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
@@ -614,7 +620,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         .environment(\.themePalette, ThemePalette.dark)
         .environment(\.dynamicTypeSize, typeSize)
         .environment(\.layoutDirection, direction)
-        .environment(\.locale, Locale(identifier: "en"))
+        .environment(\.locale, locale)
         let deadline = ContinuousClock.now + .seconds(5)
         while UIApplication.shared.connectedScenes.isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))

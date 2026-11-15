@@ -25,6 +25,37 @@ final class SeerAccountConnectionsTests: XCTestCase {
     }
 
     @MainActor
+    func testLateLegacyImportAfterEmptyMigrationReloadsOnlyEligibleProfiles() async throws {
+        let store = SeerAccountConnectionStore(secureStore: SeerFixtureSecureStore())
+        var profile = Profile(id: "waiting", name: "Waiting")
+        profile.seerrUserID = 42
+        profile.seerrServerIdentity = SeerServerIdentity(baseURL: url)
+        let disconnected = Profile(id: "disconnected", name: "Disconnected")
+        let configured = Profile(id: "configured", name: "Configured")
+        let profiles = [profile, disconnected, configured]
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore(), http: SeerRecordingHTTPClient())
+        service.configureProfiles(store: store, profiles: profiles, current: { profile })
+        var empty = SeerProfileConnections()
+        empty.configured = true
+        try store.save(empty, profileID: disconnected.id)
+        var existing = SeerProfileConnections()
+        existing.configured = true
+        existing.connections = [.init(id: UUID(), baseURL: url, name: "", credential: .session(credential(userID: 10)))]
+        existing.defaultID = existing.connections.first?.id
+        try store.save(existing, profileID: configured.id)
+
+        try store.importLegacyIfAbsent(.init(baseURL: url, apiKey: "fixture-api-key"), profiles: profiles)
+        await service.reloadConnection()
+
+        XCTAssertTrue(service.isConfigured)
+        XCTAssertEqual(service.requestIdentity, .user(id: 42, server: SeerServerIdentity(baseURL: url)))
+        XCTAssertTrue(try store.load(profileID: disconnected.id).connections.isEmpty)
+        XCTAssertEqual(try store.load(profileID: configured.id), existing)
+        try store.importLegacyIfAbsent(.init(baseURL: url, apiKey: "replacement"), profiles: profiles)
+        XCTAssertEqual(try store.load(profileID: profile.id).selected?.config.apiKey, "fixture-api-key")
+    }
+
+    @MainActor
     func testSetupServerSurvivesServiceRecreationWithoutConfiguringRequests() throws {
         let secure = SeerFixtureSecureStore()
         let profile = Profile(id: "first", name: "First")

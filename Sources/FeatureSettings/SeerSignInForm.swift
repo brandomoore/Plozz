@@ -142,7 +142,7 @@ struct SeerSignInForm: View {
         .defaultFocus($primaryFocused, true)
         #endif
         .sheet(isPresented: $choosingAccount) {
-            SeerAccountPage(title: "Choose existing account", dismissTitle: "Cancel") {
+            SeerAccountPage(title: Text("Choose existing account"), dismissTitle: "Cancel") {
                 SettingsSectionGroup {
                     ForEach(availableAccounts) { option in
                         Button { chooseExistingAccount(option.id) } label: {
@@ -779,7 +779,7 @@ private struct SeerDiscoveredServerRow: View {
     let address: URL
 
     var body: some View {
-        ServerDiscoveryRow(name: Text("Seerr"), address: address, showsDisclosure: false) {
+        ServerDiscoveryRow(name: Text(verbatim: "Seerr"), address: address, showsDisclosure: false) {
             Image("SeerrIcon")
                 .renderingMode(.template)
                 .resizable()

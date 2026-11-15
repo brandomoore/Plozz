@@ -52,6 +52,7 @@ public struct SeerConnectionsView: View {
 
 struct SeerConnectionsContent: View {
     let seer: SeerService
+    @Environment(\.locale) private var locale
     @State private var adding = false
     @State private var reconnectID: UUID?
     @State private var editing: SeerAccountConnection?
@@ -113,7 +114,8 @@ struct SeerConnectionsContent: View {
                             set: { value in update(defaultID: value) }
                         )) {
                             ForEach(seer.profileConnections.connections) { connection in
-                                Text(connection.choiceLabel(in: seer.profileConnections.connections)).tag(Optional(connection.id))
+                                Text(verbatim: connection.choiceLabel(in: seer.profileConnections.connections, locale: locale))
+                                    .tag(Optional(connection.id))
                             }
                         }
                     }
@@ -203,13 +205,13 @@ struct SeerConnectionDetail: View {
 }
 
 private extension SeerAccountConnection {
-    func choiceLabel(in connections: [SeerAccountConnection]) -> String {
+    func choiceLabel(in connections: [SeerAccountConnection], locale: Locale) -> String { // l10n:content - Native menu boundary, recomputed with the current environment locale.
         let sameUser = connections.filter { $0.accountName == accountName && $0.baseURL == baseURL }
         var label = accountName
         if sameUser.count > 1 {
             switch credential {
-            case .apiKey: label += " (\(String(localized: "API key")))"
-            case .session: label += " (\(String(localized: "Account")))"
+            case .apiKey: label = String(localized: LocalizedStringResource("\(accountName) (API key)", locale: locale)) // l10n:content - Current-language menu title; the account name is content.
+            case .session: label = String(localized: LocalizedStringResource("\(accountName) (Account)", locale: locale)) // l10n:content - Current-language menu title; the account name is content.
             }
         }
         if Set(connections.map(\.baseURL)).count > 1 {
@@ -249,7 +251,7 @@ private struct SeerConnectionLabel: View {
 
 struct SeerAccountPage<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
-    var title: LocalizedStringResource = "Seerr"
+    var title: Text = Text(verbatim: "Seerr")
     var dismissTitle: LocalizedStringResource = "Done"
     @ViewBuilder var content: Content
 
@@ -265,7 +267,7 @@ struct SeerAccountPage<Content: View>: View {
                 }
             }
             #if os(iOS)
-            .navigationTitle(Text(title))
+            .navigationTitle(title)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { Text(dismissTitle) } } }
             #else
             .onExitCommand { dismiss() }
@@ -290,10 +292,11 @@ private struct SeerDestinationPresenter: UIViewControllerRepresentable {
     let requestID: UUID?
 
     func makeUIViewController(context: Context) -> SeerDestinationController {
-        SeerDestinationController(seer: seer)
+        SeerDestinationController(seer: seer, locale: context.environment.locale)
     }
 
     func updateUIViewController(_ controller: SeerDestinationController, context: Context) {
+        controller.locale = context.environment.locale
         controller.update()
     }
 
@@ -306,11 +309,13 @@ private struct SeerDestinationPresenter: UIViewControllerRepresentable {
 /// controller instead of asking the already-covered root to open another modal.
 private final class SeerDestinationController: UIViewController {
     let seer: SeerService
+    var locale: Locale
     private var presentedRequestID: UUID?
     private weak var choice: UIAlertController?
 
-    init(seer: SeerService) {
+    init(seer: SeerService, locale: Locale) {
         self.seer = seer
+        self.locale = locale
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -348,18 +353,18 @@ private final class SeerDestinationController: UIViewController {
         let connections = seer.profileConnections.connections
         let servers = Set(connections.map(\.baseURL))
         let alert = UIAlertController(
-            title: String(localized: "Request as"),
+            title: String(localized: LocalizedStringResource("Request as", locale: locale)), // l10n:content - UIKit alert title resolved for the current profile language on presentation.
             message: servers.count == 1 ? servers.first?.absoluteString : nil, preferredStyle: style
         )
         let selected = seer.profileConnections.selected
         let ordered = selected.map { [$0] } ?? []
         for connection in ordered + seer.profileConnections.connections.filter({ $0.id != selected?.id }) {
-            alert.addAction(UIAlertAction(title: connection.choiceLabel(in: connections), style: .default) { [weak self] _ in
+            alert.addAction(UIAlertAction(title: connection.choiceLabel(in: connections, locale: locale), style: .default) { [weak self] _ in
                 guard let self, seer.pendingDestination == requestID else { return }
                 seer.chooseDestination(connection.id)
             })
         }
-        alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: String(localized: LocalizedStringResource("Cancel", locale: locale)), style: .cancel) { [weak self] _ in // l10n:content - UIKit action resolved for the current profile language on presentation.
             guard let self, seer.pendingDestination == requestID else { return }
             seer.chooseDestination(nil)
         })
