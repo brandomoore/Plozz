@@ -151,6 +151,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public var supportsActivePictureAnalysis: Bool { true }
+    public var activePictureSourceID: UUID? { outputLoadGeneration }
     #if DEBUG
     private var lastPictureTimeForTesting: Double?
     private(set) var pictureSampleCountForTesting = 0

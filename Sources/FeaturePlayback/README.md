@@ -1479,7 +1479,15 @@ The detected picture fits the full player bounds, not the safe area, preserving
 its aspect ratio without deliberately trimming picture content. Video may extend
 behind the Dynamic Island or other display cutouts; controls retain their safe-area
 placement. Aspect-ratio differences can still leave bars.
-Unknown, stale, unsupported or invalid measurements use Normal. Sparse detection
+Before the first confirmed measurement, Auto Crop uses Normal. Once confirmed,
+framing survives seeks, buffering and unavailable/expired detector evidence for
+the same source and display aspect ratio. Fresh confirmed measurements, including
+full-frame evidence, replace it without an intermediate Normal zoom. A separate
+source identity changes on loads/stops, not on seeks or analysis resets; source
+replacement, known display-aspect changes, unsupported/invalid measurements and
+presentation teardown clear retained framing. Engines without a source identity
+do not retain unavailable evidence. Missing or provisional dimensions during a
+seek keep the last confirmed display aspect until playback is ready. Sparse detection
 can miss changing edge content; fitting is best effort, not a guarantee against
 clipping tickers or burned-in captions. Dark or uninformative frames cannot
 establish a crop. Native quarter-turn rotation and mirroring map measurements
@@ -1511,14 +1519,16 @@ When a dark foreground hides the center but distinguishable content reaches
 all four sampled edges and covers at least a quarter of the frame, the detector
 can confirm full frame instead of losing confidence. This additional path can
 only preserve or expand to full frame; it never authorizes an inward crop.
-Unknown evidence still expires normally, and seeks/source changes still reset it.
+Detector evidence still expires normally, and seeks/source changes still reset it;
+the presentation's retained framing is not a fresh detector observation.
 
 The hosted active-picture regression uses original `testsrc2` fixtures at
 320x180/24 fps for 18 seconds: 28-pixel top/bottom bars before 8 seconds and
 from 14 seconds onward, with full-frame content between. The MP4 uses libx264,
 CRF 28 and yuv420p; its WebM counterpart uses libvpx-vp9, CRF 32. Tests require
-real native/software detection, forward/backward seeks, pause, and retained
-surface identity. The native case serves the MP4 stream-copied as finite loopback
+real native/software detection, continuous cropped presentation through forward/
+backward seeks, positive expansion to full frame, pause, and retained surface
+identity. The native case serves the MP4 stream-copied as finite loopback
 HLS, avoiding an assumption that the simulator supports hardware H.264 decoding.
 Checks seek to a known starting position after loading so startup latency cannot
 consume the short test clip. The performance lab uses the existing 1080p fixture

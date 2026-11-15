@@ -442,6 +442,114 @@ final class VideoZoomPresentationTests: XCTestCase {
         try await verifyActivePicture(fixture: "active-picture.m3u8", separateNative: true)
     }
 
+    func testConfirmedCropWaitsForPositiveEvidenceAcrossUnavailableSeekFrames() {
+        let source = UUID()
+        let crop = CGRect(x: 0, y: 0.15, width: 1, height: 0.7)
+        let size = CGSize(width: 320, height: 180)
+        var picture = VideoActivePicturePresentation()
+        picture.receive(.measured(normalizedRect: crop, displaySize: size),
+                        sourceID: source, aspectRatio: 16 / 9)
+        picture.reconcile(sourceID: source, aspectRatio: nil)
+        for ratio: Double? in [nil, 16 / 9, nil] {
+            picture.receive(.unavailable, sourceID: source, aspectRatio: ratio)
+            XCTAssertEqual(picture.normalizedRect, crop)
+            XCTAssertEqual(picture.displayAspectRatio, 16 / 9)
+        }
+        let full = CGRect(x: 0, y: 0, width: 1, height: 1)
+        picture.receive(.measured(normalizedRect: full, displaySize: size),
+                        sourceID: source, aspectRatio: 16 / 9)
+        XCTAssertEqual(picture.normalizedRect, full, "Real edge content must expand the retained crop.")
+        picture.receive(.measured(normalizedRect: crop, displaySize: size),
+                        sourceID: source, aspectRatio: 16 / 9)
+        XCTAssertEqual(picture.normalizedRect, crop, "Later confirmed bars can establish different framing.")
+    }
+
+    func testCropHostKeepsFramingWithoutSamplingWhileSeekDimensionsAreProvisional() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        let engine = CropSeekVideoEngine()
+        let view = VideoPresentationView(frame: CGRect(x: 0, y: 0, width: 1000, height: 400))
+        controller.view.addSubview(view)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            view.update(zoom: PlayerVideoZoom())
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        view.attach(engine)
+        view.update(zoom: PlayerVideoZoom(mode: .picture))
+        try await waitUntil { engine.output.transform.a > 1.1 }
+        let cropped = engine.output.transform
+        let samples = engine.samples
+        engine.isPlaybackPositionReady = false
+        engine.videoAspectRatio = 4 / 3
+        view.update(zoom: PlayerVideoZoom(mode: .picture))
+        try await Task.sleep(for: .milliseconds(650))
+        XCTAssertEqual(engine.samples, samples, "A seek must not admit analysis of transitional output.")
+        XCTAssertEqual(view.sourceAspectRatio, 16 / 9)
+        XCTAssertEqual(engine.output.transform, cropped)
+
+        engine.activePictureSourceID = UUID()
+        view.update(zoom: PlayerVideoZoom(mode: .picture))
+        XCTAssertEqual(view.activePictureRect, view.videoRect, "Even an unready new source must discard old framing.")
+        engine.videoAspectRatio = 16 / 9
+        engine.isPlaybackPositionReady = true
+        engine.result = .unavailable
+        view.update(zoom: PlayerVideoZoom(mode: .picture))
+        try await waitUntil { engine.samples > samples }
+        XCTAssertEqual(engine.output.transform, .identity)
+        engine.result = .measured(normalizedRect: CGRect(x: 0, y: 0.15, width: 1, height: 0.7),
+                                  displaySize: CGSize(width: 320, height: 180))
+        try await waitUntil { engine.output.transform == cropped }
+        view.update(zoom: PlayerVideoZoom())
+        let stoppedSamples = engine.samples
+        try await Task.sleep(for: .milliseconds(650))
+        XCTAssertEqual(engine.samples, stoppedSamples)
+        XCTAssertEqual(engine.output.transform, .identity)
+    }
+
+    func testRetainedCropCannotCrossSourcesOrKnownGeometryChanges() {
+        let source = UUID()
+        let crop = CGRect(x: 0, y: 0.15, width: 1, height: 0.7)
+        for (nextSource, ratio) in [(UUID(), Double?.none), (source, 4 / 3), (source, Double.nan)] {
+            var picture = VideoActivePicturePresentation()
+            picture.receive(.measured(normalizedRect: crop, displaySize: CGSize(width: 320, height: 180)),
+                            sourceID: source, aspectRatio: 16 / 9)
+            picture.reconcile(sourceID: nextSource, aspectRatio: ratio)
+            XCTAssertNil(picture.normalizedRect)
+            XCTAssertNil(picture.displayAspectRatio)
+            picture.receive(.unavailable, sourceID: nextSource, aspectRatio: ratio)
+            XCTAssertNil(picture.normalizedRect)
+        }
+
+    }
+
+    func testUnsupportedInvalidAndUnscopedPictureEvidenceCannotRetainACrop() {
+        let source = UUID()
+        let size = CGSize(width: 320, height: 180)
+        let crop = CGRect(x: 0, y: 0.15, width: 1, height: 0.7)
+        let cases: [(UUID?, VideoActivePictureState)] = [
+            (source, .unsupported),
+            (source, .measured(normalizedRect: .zero, displaySize: size)),
+            (source, .measured(normalizedRect: crop, displaySize: CGSize(width: 180, height: 320))),
+            (source, .measured(normalizedRect: crop, displaySize: .zero)),
+            (nil, .unavailable)
+        ]
+        for (sourceID, result) in cases {
+            var picture = VideoActivePicturePresentation()
+            picture.receive(.measured(normalizedRect: crop, displaySize: size),
+                            sourceID: sourceID, aspectRatio: 16 / 9)
+            picture.receive(result, sourceID: sourceID, aspectRatio: 16 / 9)
+            XCTAssertNil(picture.normalizedRect)
+            XCTAssertNil(picture.displayAspectRatio)
+        }
+    }
+
     private func verifyActivePicture(fixture: String, separateNative: Bool = false) async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -521,8 +629,14 @@ final class VideoZoomPresentationTests: XCTestCase {
         XCTAssertTrue(engine.nowPlayingPlayer?.currentItem === originalItem)
         XCTAssertTrue(engine.makeVideoOutputView() === surface)
 
+        try await assertCropSurvivesSeek(engine: engine, viewport: viewport, to: 3)
+        try await assertCropSurvivesSeek(engine: engine, viewport: viewport, to: 1)
         await engine.seek(to: 10)
         _ = try await waitForPicture(engine: engine, cropped: false)
+        try await waitUntil {
+            guard let picture = viewport.activePictureRect, let video = viewport.videoRect else { return false }
+            return picture.height > video.height * 0.98
+        }
         await engine.seek(to: 2)
         _ = try await waitForPicture(engine: engine, cropped: true)
         engine.pause()
@@ -536,6 +650,42 @@ final class VideoZoomPresentationTests: XCTestCase {
         controls.videoZoom.settings.mode = .fit
         subtitles.style.positionReference = .screen
         try await waitUntil { surface.transform == .identity }
+        let sourceID = try XCTUnwrap(engine.activePictureSourceID)
+        engine.stop()
+        XCTAssertNotEqual(engine.activePictureSourceID, sourceID, "Retiring the source invalidates retained framing.")
+    }
+
+    private func assertCropSurvivesSeek(
+        engine: any VideoEngine, viewport: VideoPresentationView, to time: TimeInterval
+    ) async throws {
+        let picture = try XCTUnwrap(viewport.activePictureRect)
+        let video = try XCTUnwrap(viewport.videoRect)
+        let expectedFraction = picture.height / video.height
+        let sourceID = try XCTUnwrap(engine.activePictureSourceID)
+        var observedFrames = 0
+        var uncroppedFrames = 0
+        let observer = Task { @MainActor in
+            while !Task.isCancelled {
+                observedFrames += 1
+                if let nextPicture = viewport.activePictureRect, let nextVideo = viewport.videoRect {
+                    if abs(nextPicture.height / nextVideo.height - expectedFraction) >= 0.01 {
+                        uncroppedFrames += 1
+                    }
+                } else {
+                    uncroppedFrames += 1
+                }
+                do { try await Task.sleep(for: .milliseconds(10)) }
+                catch { return }
+            }
+        }
+        defer { observer.cancel() }
+        await engine.seek(to: time)
+        try await Task.sleep(for: .seconds(2.2))
+        observer.cancel()
+        await observer.value
+        XCTAssertEqual(engine.activePictureSourceID, sourceID)
+        XCTAssertGreaterThan(observedFrames, 20)
+        XCTAssertEqual(uncroppedFrames, 0, "Seeking to \(time)s must keep the confirmed crop while analysis restarts.")
     }
 
     private func waitForPicture(engine: any VideoEngine, cropped: Bool) async throws -> CGRect {
@@ -1185,4 +1335,41 @@ final class VideoZoomPresentationTests: XCTestCase {
             throw CocoaError(.coderValueNotFound)
         }
     }
+}
+
+@MainActor
+private final class CropSeekVideoEngine: VideoEngine {
+    let output = UIView()
+    var videoAspectRatio: Double? = 16 / 9
+    var supportsActivePictureAnalysis: Bool { true }
+    var activePictureSourceID: UUID? = UUID()
+    var isPlaybackPositionReady = true
+    var samples = 0
+    var result = VideoActivePictureState.measured(
+        normalizedRect: CGRect(x: 0, y: 0.15, width: 1, height: 0.7),
+        displaySize: CGSize(width: 320, height: 180)
+    )
+    var status: VideoEngineStatus = .ready
+    var isPaused = true
+    var currentTime: TimeInterval = 10
+    var duration: TimeInterval = 100
+    var furthestObservedPosition: TimeInterval = 10
+    var audioTracks: [MediaTrack] = []
+    var subtitleTracks: [MediaTrack] = []
+    var onProgress: (@MainActor () -> Void)?
+    var onFailure: (@MainActor (AppError) -> Void)?
+    var onEnded: (@MainActor () -> Void)?
+    var onTracksChanged: (@MainActor () -> Void)?
+    var onProbedSourceFactsChanged: (@MainActor (EngineProbedSourceFacts) -> Void)?
+    var onSubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
+    var onSecondarySubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
+    func sampleActivePicture() async -> VideoActivePictureState { samples += 1; return result }
+    func load(request: PlaybackRequest, startPosition: TimeInterval) async {}
+    func play() {}
+    func pause() {}
+    func stop() {}
+    func seek(to seconds: TimeInterval) async {}
+    func selectAudioTrack(_ track: MediaTrack?) {}
+    func selectSubtitleTrack(_ track: MediaTrack?) {}
+    func makeVideoOutputView() -> UIView { output }
 }
