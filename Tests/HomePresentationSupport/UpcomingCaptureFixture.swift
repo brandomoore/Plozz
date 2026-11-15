@@ -1,7 +1,7 @@
 import AppRuntime
 import CoreModels
 import CoreUI
-import FeatureHomeCore
+@testable import FeatureHomeCore
 import FeatureAuth
 import MetadataKit
 import SwiftUI
@@ -396,6 +396,16 @@ struct UpcomingCaptureFixture: View {
                 let right = frame.maxX - (last - layout.metrics.posterCaptionHorizontalInset + layout.metrics.posterWidth)
                 precondition(abs(left - inset) < 3 && abs(right - inset) < 3,
                              "Poster edge insets must be equal: left=\(left), right=\(right), expected=\(inset)")
+                if let picker = datePicker() {
+                    let gap = picker.convert(picker.bounds, to: window).minX - (frame.maxX - right)
+                    precondition(abs(gap - left) < 3,
+                                 "The calendar gutter must match the page inset: gap=\(gap), left=\(left)")
+                }
+                guard let detent = agenda.delegate as? UpcomingScrollDetent, let todayOffset = detent.todayOffset else {
+                    preconditionFailure("Upcoming must attach its native Today detent")
+                }
+                precondition(abs(todayOffset - agenda.contentOffset.y) < 2,
+                             "The Today detent must match the initial native date position: \(todayOffset), \(agenda.contentOffset.y)")
                 guard let today = text.first(where: { $0.0 == "Today" })?.1 else {
                     preconditionFailure("Resizing must retain the visible Today heading")
                 }

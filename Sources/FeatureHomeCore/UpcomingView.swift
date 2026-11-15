@@ -18,6 +18,7 @@
             @State private var agendaSize = CGSize.zero
             @State private var calendarIsMinimized = false
             @State private var scrollDay: Date? = Calendar.current.startOfDay(for: Date())
+            @State private var todayDetent = UpcomingScrollDetent()
         #endif
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
@@ -47,6 +48,12 @@
                                 model: model, selectedDay: selectedDay,
                                 minimumSelectedHeight: agendaHeight, contentWidth: agendaContentWidth
                             )
+                            #if os(iOS)
+                            .environment(\.upcomingScrollDetent, todayDetent)
+                            .background {
+                                UpcomingScrollProbe(detent: todayDetent, role: .container, reduceMotion: reduceMotion)
+                            }
+                            #endif
                             .opacity(model.visibleReleases.isEmpty ? 0 : 1)
                             #if os(tvOS)
                             .padding(.vertical)
@@ -295,7 +302,11 @@
         var body: some View {
             let calendar = Calendar.current
             let groups = Dictionary(grouping: model.visibleReleases) { calendar.startOfDay(for: $0.date) }
-            let days = Set(groups.keys).union([selectedDay]).sorted()
+            #if os(iOS)
+                let days = Set(groups.keys).union([selectedDay, calendar.startOfDay(for: Date())]).sorted()
+            #else
+                let days = Set(groups.keys).union([selectedDay]).sorted()
+            #endif
             #if os(tvOS)
                 let visibleDays = days.filter { $0 >= selectedDay }
                 let spacing = metrics.cardSpacing
@@ -373,6 +384,13 @@
                             }
                         }
                     }
+                    #if os(iOS)
+                    .background {
+                        if Calendar.current.isDateInToday(day) {
+                            UpcomingTodayAnchor()
+                        }
+                    }
+                    #endif
                     .id(day)
                 }
             }
@@ -540,7 +558,8 @@
                 // A toolbar popover otherwise proposes the button's narrow width.
                 .frame(width: 320)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding()
+                .padding([.top, .bottom, .trailing], 16)
+                .padding(.leading, dismissesOnSelection ? 16 : 0)
                 .accessibilityIdentifier("upcoming.calendar.picker")
                 .onChange(of: selectedDay) { _, _ in
                     if dismissesOnSelection { dismiss() }

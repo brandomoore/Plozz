@@ -34,6 +34,16 @@ native date-target scroll positioning keeping Today in place when progressive
 results insert older dates. The selected date and following groups occupy at least
 the viewport height so a sparse agenda can align below the native toolbar without
 being clamped to the bottom of its history.
+On mobile, Today is a soft scroll detent. Pulling into history gradually changes
+from quarter-speed resistance to normal finger tracking over 120 points; a shorter
+pull into history settles at Today. A projected landing
+within 48 points of Today also settles there, using native scroll deceleration.
+Deliberate longer pulls, ordinary future scrolling, and calendar jumps remain
+available; a far fling is not captured merely for passing Today. Native outer-edge
+bounce is unchanged, and recycled date anchors cannot retain stale snap geometry.
+The page-scoped native adapter forwards the existing scroll delegate
+and restores it on removal; VoiceOver and Switch Control scrolling bypass it.
+Reduce Motion uses a nonanimated settle.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.
@@ -52,6 +62,8 @@ height, a native month calendar sits beside the agenda and stays fixed while it
 scrolls. Calendar in the toolbar minimizes or reopens it, returning the space to
 the poster grid; this is page-local presentation state, not a saved preference.
 Selecting a date scrolls the agenda without dismissing the side calendar.
+The inline picker has no additional leading padding, so the visible poster-to-calendar
+gutter matches the agenda's outer page inset rather than stacking both paddings.
 Phone and narrow iPad layouts use the same native picker in a content-sized
 popover anchored to Calendar; selecting a date closes that popover. Resizing
 preserves the selected date and manual minimization, and widening dismisses any
