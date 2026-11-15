@@ -135,14 +135,26 @@ struct PrototypeBrowseToolbar: View {
 struct PrototypeBrowseSourceMenu: View {
     let configuration: LiveTVSourcesConfiguration
     let selectedSourceID: String?
+    let includesLibraryChannels: Bool
     let selectSource: (String?) -> Void
     let addSource: () -> Void
     @Environment(\.horizontalSizeClass) private var sizeClass
 
+    var singleSourceID: String? {
+        guard !includesLibraryChannels else { return nil }
+        let ids = configuration.playlists.filter(\.isEnabled).map(\.id)
+            + configuration.servers.filter(\.isEnabled).map(\.id)
+        return ids.count == 1 ? ids.first : nil
+    }
+
+    private var displayedSourceID: String? { singleSourceID ?? selectedSourceID }
+
     var body: some View {
         Menu {
-            Picker("Source", selection: Binding(get: { selectedSourceID }, set: selectSource)) {
-                Text("All").tag(String?.none)
+            Picker("Source", selection: Binding(get: { displayedSourceID }, set: selectSource)) {
+                if singleSourceID == nil {
+                    Text("All").tag(String?.none)
+                }
                 ForEach(configuration.playlists.filter(\.isEnabled)) { source in
                     Text(verbatim: source.name).tag(Optional(source.id))
                 }
@@ -194,9 +206,9 @@ struct PrototypeBrowseSourceMenu: View {
     }
 
     private var sourceLabel: Text {
-        if let source = configuration.playlists.first(where: { $0.id == selectedSourceID }) {
+        if let source = configuration.playlists.first(where: { $0.id == displayedSourceID }) {
             Text(verbatim: source.name)
-        } else if let source = configuration.servers.first(where: { $0.id == selectedSourceID }) {
+        } else if let source = configuration.servers.first(where: { $0.id == displayedSourceID }) {
             Text(verbatim: source.name)
         } else {
             Text("All")
@@ -242,6 +254,7 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
             if (showsDirectory || hasSidebar) && !isSearching {
                 PrototypeBrowseSourceMenu(
                     configuration: configuration, selectedSourceID: model.configuredSourceID,
+                    includesLibraryChannels: model.channels.contains { $0.source == .plozz },
                     selectSource: selectSource, addSource: addSource
                 )
                 .disabled(isDisabled)

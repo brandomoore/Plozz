@@ -212,6 +212,12 @@ category-retention behavior without changing connected sources or active playbac
 Closing the menu returns focus to its button; entering the sidebar from the guide
 still lands on the selected category.
 
+On every platform, a single enabled source shows its name on the button and in
+the menu alongside **Add Source**, without a redundant **All** option. Disabled
+sources do not count. This is presentation-only: it does not rewrite the saved
+browse filter. **All** remains available for multiple enabled sources, or when
+Plozz library channels also contribute to the guide.
+
 On iOS/iPadOS 26 and later, the category directory and search results extend
 behind the transparent native navigation controls, retaining their resting
 clearance below the header. The system owns the toolbar appearance and

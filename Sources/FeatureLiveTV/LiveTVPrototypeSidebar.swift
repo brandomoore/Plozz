@@ -41,6 +41,7 @@ struct PrototypeBrowseSidebar: View {
             #if os(tvOS)
             PrototypeBrowseSourceMenu(
                 configuration: configuration, selectedSourceID: model.configuredSourceID,
+                includesLibraryChannels: model.channels.contains { $0.source == .plozz },
                 selectSource: selectSource, addSource: addSource
             )
             .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
