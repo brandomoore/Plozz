@@ -81,6 +81,10 @@ struct UpcomingCaptureFixture: View {
     @MainActor
     private func prepareCapture() async throws {
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--capture-elasticity") {
+            try await observeElasticGestures()
+            return
+        }
         let showsCalendar = arguments.contains("--capture-calendar") || arguments.contains("--capture-selection")
         let collapsesCalendar = arguments.contains("--capture-calendar-collapsed")
         let resizesCalendar = arguments.contains("--capture-calendar-resize")
@@ -500,6 +504,91 @@ struct UpcomingCaptureFixture: View {
         FileHandle.standardOutput.write(Data("Upcoming capture ready\n".utf8))
     }
 
+    @MainActor
+    private func observeElasticGestures() async throws {
+        struct Evidence: Encodable {
+            var pull: Double = 0
+            var held: Double = 0
+            var offset: Double = 0
+            var tensionCount = 0
+            var minimumTension: Double = 1
+            var maximumTension: Double = 0
+            var pops = 0
+            var catches = 0
+            var returnFrames = 0
+            var returnTravel: Double = 0
+            var returnModelDrift: Double = 0
+            var releaseFrames = 0
+        }
+        try await Task.sleep(for: .seconds(1))
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow) else {
+            preconditionFailure("Upcoming gesture fixture has no window")
+        }
+        func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+        guard let probe = descendants(window).compactMap({ $0 as? UpcomingScrollProbe.Probe })
+            .first(where: { $0.role == .container && $0.window != nil }),
+              let detent = probe.detent, let scroll = detent.scrollView else {
+            preconditionFailure("Upcoming gesture fixture has no attached agenda")
+        }
+        let alignmentDeadline = Date().addingTimeInterval(5)
+        while detent.todayOffset.map({ abs(scroll.contentOffset.y - $0) < 1 }) != true, Date() < alignmentDeadline {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        guard let today = detent.todayOffset else { preconditionFailure("The gesture fixture needs Today") }
+        precondition(today + scroll.adjustedContentInset.top > 400, "The gesture fixture needs real history")
+        precondition(abs(scroll.contentOffset.y - today) < 1,
+                     "The gesture fixture must start at Today: offset=\(scroll.contentOffset.y), today=\(today)")
+        scroll.accessibilityIdentifier = "upcoming-gesture-agenda"
+        let label = UILabel(frame: CGRect(x: 8, y: window.bounds.height - 24, width: 160, height: 20))
+        label.text = "Upcoming gestures"
+        label.font = .systemFont(ofSize: 10)
+        label.textColor = .white
+        label.accessibilityIdentifier = "upcoming-gesture-evidence"
+        window.addSubview(label)
+        var evidence = Evidence()
+        let feedback = detent.onFeedback
+        detent.onFeedback = { event in
+            switch event {
+            case let .tension(intensity):
+                evidence.tensionCount += 1
+                evidence.minimumTension = min(evidence.minimumTension, intensity)
+                evidence.maximumTension = max(evidence.maximumTension, intensity)
+            case .pop: evidence.pops += 1
+            case .selection: evidence.catches += 1
+            default: break
+            }
+            feedback(event)
+        }
+        defer {
+            detent.onFeedback = feedback
+            label.removeFromSuperview()
+            scroll.accessibilityIdentifier = nil
+        }
+        let deadline = Date().addingTimeInterval(90)
+        while Date() < deadline {
+            guard let today = detent.todayOffset else { preconditionFailure("The gesture fixture lost Today") }
+            evidence.offset = scroll.contentOffset.y - today
+            if detent.phase == .interacting {
+                evidence.pull = max(evidence.pull, scroll.panGestureRecognizer.translation(in: window).y)
+                if evidence.pops == 0 { evidence.held = max(evidence.held, -evidence.offset) }
+            }
+            if let animation = scroll.layer.animation(forKey: "plozz.upcoming.elasticity") as? CASpringAnimation,
+               let displacement = animation.fromValue as? NSNumber,
+               let presentation = scroll.layer.presentation() {
+                if displacement.doubleValue < 0 {
+                    evidence.returnFrames += 1
+                    evidence.returnTravel = max(evidence.returnTravel, abs(presentation.bounds.origin.y - today))
+                    evidence.returnModelDrift = max(evidence.returnModelDrift, abs(evidence.offset))
+                } else if detent.phase == .interacting {
+                    evidence.releaseFrames += 1
+                }
+            }
+            label.accessibilityValue = String(decoding: try JSONEncoder().encode(evidence), as: UTF8.self)
+            try await Task.sleep(for: .milliseconds(16))
+        }
+    }
+
     private func posterMetrics(viewport: CGFloat, inset: CGFloat, compact: Bool) -> PlozzMetrics {
         let metrics = PlozzMetrics.touch(density: .standard)
         guard compact else { return metrics }
@@ -793,7 +882,8 @@ private struct UpcomingCaptureProvider: MediaProvider {
                 )
             }
         }
-        if ProcessInfo.processInfo.arguments.contains("--capture-progressive") {
+        if ProcessInfo.processInfo.arguments.contains("--capture-progressive")
+            || ProcessInfo.processInfo.arguments.contains("--capture-elasticity") {
             let future = result
             for offset in [-30, -20, -10, -2] {
                 let date = Calendar.current.date(byAdding: .day, value: offset, to: today)!

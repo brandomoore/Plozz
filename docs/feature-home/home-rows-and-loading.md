@@ -34,22 +34,24 @@ native date-target scroll positioning keeping Today in place when progressive
 results insert older dates. The selected date and following groups occupy at least
 the viewport height so a sparse agenda can align below the native toolbar without
 being clamped to the bottom of its history.
-On mobile, Today holds entry into history until a deliberate 240-point pull.
-Resistance tightens as the pull grows, allowing at most 24 points of content
-movement before release. Seven distance milestones deliver increasingly strong
-soft haptics, followed by one distinct pop at the release threshold. Holding still
+On mobile, Today holds entry into history until a deliberate 360-point pull.
+A continuous rubber-band curve gives the agenda visible initial movement and
+progressively stronger resistance, reaching about 75 points before release.
+The entire agenda moves together; artwork, row spacing and date geometry are
+not distorted. Seven distance milestones deliver increasingly strong weighted
+haptics, followed by one distinct pop at the release threshold. Holding still
 or retreating within that pull does not repeat the milestones; returning fully
 to Today rearms the next pull. Feedback follows distance, not touch pressure.
-After the pop,
-finger tracking is 1:1 for the rest of the gesture, including reversals; neither
-resistance nor snapping reattaches mid-gesture. A shorter pull settles back at
-Today, and momentum cannot bypass the unreleased boundary from the future side.
+After the pop, a short spring releases another 24 points of stored tension while
+finger tracking continues 1:1, including reversals. Neither resistance nor
+snapping reattaches mid-gesture. A shorter pull springs back to Today, and
+momentum cannot bypass the unreleased boundary from the future side.
 Releasing within 48 points of Today also settles there unless it is a fast
 pass-through fling. `ScrollTargetBehavior`
 selects Today before native deceleration begins, using the actual release position
 even when its projected destination is farther away. A moderate approach whose
 projected destination is within the same range also catches Today. There is no
-second animation racing the scroll view's release. Native release velocity is
+second per-frame scroll driver racing the scroll view's release. Native release velocity is
 converted from points/ms to the policy's points/s.
 Deliberate released pulls, ordinary future scrolling, existing history scrolling,
 and calendar jumps remain available. Native outer-edge bounce is unchanged.
@@ -62,12 +64,22 @@ begins; an older date command must not move the viewport during the drag.
 The page-scoped adapter observes native content-offset changes without replacing
 SwiftUI's scroll delegate; VoiceOver and Switch Control scrolling bypass it.
 Target selection exchanges locked value snapshots with the native adapter rather
-than accessing UIKit from the nonisolated behavior. A single shared selection
-haptic fires when a selected snap actually arrives, not after a deliberate pop.
+than accessing UIKit from the nonisolated behavior. A held pull's return commits
+that native target once, stopping deceleration, and animates an equal-and-opposite
+additive bounds displacement back to zero. The compositor owns the spring,
+without per-frame SwiftUI updates or moving the layout's Today anchor. A new
+touch picks up the current presentation position; navigation, relayout, detach
+and app deactivation cancel the owned animation. Regrabbing a return preserves
+its unbroken hold. Gesture setup recovers the touch-down position from native
+translation when SwiftUI's interaction phase arrives after the first movement;
+those initial points must not incorrectly classify a Today pull as history.
+A single shared selection
+haptic fires when the return actually finishes, not when its model offset is
+committed and not after a deliberate pop.
 Positioning, calendar jumps, cancelled catches, and repeated layout callbacks do
 not emit feedback.
-Deceleration remains system-owned; explicit Today resets are nonanimated under
-Reduce Motion.
+Ordinary approach deceleration remains system-owned. Reduce Motion skips the
+elastic animations and makes explicit Today resets nonanimated.
 Reselecting Upcoming in native or opaque navigation returns its visible agenda
 to Today, including repeated taps after scrolling away. The shell resolves the
 visible scroll owner before invoking this page-local reset; detail pages and

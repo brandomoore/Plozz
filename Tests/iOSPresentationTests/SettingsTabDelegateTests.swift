@@ -117,6 +117,90 @@ final class SettingsTabDelegateTests: XCTestCase {
             if shouldCatch { expectedCatches += 1 }
             XCTAssertEqual(catches, expectedCatches, "Each completed catch emits feedback once")
         }
+        try await verifyUpcomingNativeSpring(detent: detent, scroll: scroll, today: initialToday)
+    }
+
+    private func verifyUpcomingNativeSpring(
+        detent: UpcomingScrollDetent, scroll: UIScrollView, today: CGFloat
+    ) async throws {
+        let animationKey = "plozz.upcoming.elasticity"
+        detent.reduceMotion = false
+        var events: [TouchFeedback.Event] = []
+        detent.onFeedback = { events.append($0) }
+        func beginPull() async throws {
+            detent.cancelInteraction()
+            scroll.contentOffset.y = today
+            scroll.delegate?.scrollViewWillBeginDragging?(scroll)
+            let deadline = Date().addingTimeInterval(3)
+            while detent.phase != .interacting, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(detent.phase, .interacting)
+        }
+        func returnHeldPull() async throws {
+            var target = CGPoint(x: scroll.contentOffset.x, y: today - 900)
+            scroll.delegate?.scrollViewWillEndDragging?(
+                scroll, withVelocity: CGPoint(x: 0, y: -2), targetContentOffset: &target
+            )
+            XCTAssertEqual(target.y, today, accuracy: 1)
+            scroll.delegate?.scrollViewDidEndDragging?(scroll, willDecelerate: false)
+            let deadline = Date().addingTimeInterval(3)
+            while scroll.layer.animation(forKey: animationKey) == nil, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            XCTAssertNotNil(scroll.layer.animation(forKey: animationKey))
+        }
+        func sampleMotion(at modelOffset: CGFloat) async throws -> [CGFloat] {
+            var samples: [CGFloat] = []
+            let deadline = Date().addingTimeInterval(3)
+            while scroll.layer.animation(forKey: animationKey) != nil, Date() < deadline {
+                samples.append(try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y)
+                XCTAssertEqual(scroll.contentOffset.y, modelOffset, accuracy: 0.5,
+                               "The spring must not compete with native scrolling frame by frame")
+                detent.updateAnchor()
+                XCTAssertEqual(try XCTUnwrap(detent.todayOffset), today, accuracy: 0.5)
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertNil(scroll.layer.animation(forKey: animationKey))
+            XCTAssertGreaterThan(samples.count, 3, "Observe rendered motion, not just animation configuration")
+            return samples
+        }
+
+        try await beginPull()
+        // Translation requires real touches. Exercise the native handoff here
+        // using the held position; the interaction suite drives the actual pan.
+        scroll.contentOffset.y = today - 54.247
+        try await returnHeldPull()
+        XCTAssertFalse(events.contains(.selection), "Committing the target is not visual arrival")
+        let returning = try await sampleMotion(at: today)
+        XCTAssertLessThan(try XCTUnwrap(returning.min()), today - 20)
+        XCTAssertGreaterThan(try XCTUnwrap(returning.max()), today + 0.1,
+                             "A return must have a damped spring response, not a linear reset")
+        XCTAssertLessThan(try XCTUnwrap(returning.max()), today + 3)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(events.filter { $0 == .selection }.count, 1)
+
+        events.removeAll()
+        try await beginPull()
+        scroll.contentOffset.y = today - 54.247
+        try await returnHeldPull()
+        try await Task.sleep(for: .milliseconds(30))
+        scroll.delegate?.scrollViewWillBeginDragging?(scroll)
+        let grabDeadline = Date().addingTimeInterval(3)
+        while detent.phase != .interacting, Date() < grabDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertNil(scroll.layer.animation(forKey: animationKey))
+        let grabbedOffset = scroll.contentOffset.y
+        XCTAssertLessThan(grabbedOffset, today - 5, "A new touch must grab the visible spring, not jump to its target")
+        var target = CGPoint(x: scroll.contentOffset.x, y: today - 900)
+        scroll.delegate?.scrollViewWillEndDragging?(
+            scroll, withVelocity: CGPoint(x: 0, y: -2), targetContentOffset: &target
+        )
+        XCTAssertEqual(target.y, today, accuracy: 0.5, "Regrabbing a return must retain the Today hold")
+        XCTAssertFalse(events.contains(.selection), "Interrupted returns cannot produce late arrival feedback")
+        detent.cancelInteraction()
+        scroll.delegate?.scrollViewDidEndDragging?(scroll, willDecelerate: false)
     }
 
     func testPageReselectionOverrideHandlesNativeLegacyAndOpaqueRequests() {

@@ -3,6 +3,67 @@ import XCTest
 
 @MainActor
 final class TouchFeedbackInteractionTests: XCTestCase {
+    func testUpcomingActualPullHoldsThenSpringsAndPops() throws {
+        let previousOrientation = XCUIDevice.shared.orientation
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--upcoming-capture-fixture", "--capture-elasticity"]
+        app.launch()
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = previousOrientation
+        }
+        let evidence = app.staticTexts["upcoming-gesture-evidence"]
+        XCTAssertTrue(evidence.waitForExistence(timeout: 15), app.debugDescription)
+        let agenda = app.scrollViews["upcoming-gesture-agenda"]
+        XCTAssertTrue(agenda.exists, app.debugDescription)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let start = origin.withOffset(CGVector(dx: agenda.frame.midX, dy: max(220, agenda.frame.minY + 180)))
+        func pull(_ distance: CGFloat) {
+            start.press(
+                forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)),
+                withVelocity: .slow, thenHoldForDuration: 0.3
+            )
+        }
+        func snapshot() throws -> [String: Double] {
+            let json = try XCTUnwrap(evidence.value as? String)
+            let attachment = XCTAttachment(string: json)
+            attachment.name = "Upcoming native gesture evidence"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return try JSONDecoder().decode([String: Double].self, from: Data(json.utf8))
+        }
+        pull(240)
+        let caught = expectation(
+            for: NSPredicate(format: "value CONTAINS %@", "\"catches\":1"), evaluatedWith: evidence
+        )
+        wait(for: [caught], timeout: 3)
+        let held = try snapshot()
+        XCTAssertGreaterThan(try XCTUnwrap(held["pull"]), 200, "The real recognizer must see a substantial pull")
+        XCTAssertGreaterThan(try XCTUnwrap(held["held"]), 45, "The agenda must visibly stretch, not remain pinned")
+        XCTAssertLessThan(try XCTUnwrap(held["held"]), 76)
+        XCTAssertEqual(try XCTUnwrap(held["pops"]), 0, "The former threshold must no longer unlock history")
+        XCTAssertEqual(try XCTUnwrap(held["catches"]), 1)
+        XCTAssertEqual(try XCTUnwrap(held["offset"]), 0, accuracy: 1)
+        XCTAssertGreaterThan(try XCTUnwrap(held["returnFrames"]), 3)
+        XCTAssertGreaterThan(try XCTUnwrap(held["returnTravel"]), 20)
+        XCTAssertLessThan(try XCTUnwrap(held["returnModelDrift"]), 1,
+                          "Actual native deceleration must not fight the return spring")
+        attachScrub(app, name: "Upcoming returns after a real resisted pull")
+
+        pull(420)
+        let released = try snapshot()
+        XCTAssertEqual(try XCTUnwrap(released["pops"]), 1)
+        XCTAssertEqual(try XCTUnwrap(released["catches"]), 1, "Released history must not be recaptured")
+        XCTAssertLessThan(try XCTUnwrap(released["offset"]), -95)
+        XCTAssertGreaterThan(try XCTUnwrap(released["tensionCount"]), 5)
+        XCTAssertGreaterThan(try XCTUnwrap(released["minimumTension"]), 0.4)
+        XCTAssertGreaterThan(try XCTUnwrap(released["maximumTension"]), 0.9)
+        XCTAssertGreaterThan(try XCTUnwrap(released["releaseFrames"]), 3,
+                             "The pop must visibly animate while the finger remains down")
+        attachScrub(app, name: "Upcoming history after a real release pop")
+    }
+
     func testHeroWatchlistAcknowledgesImmediatelyAndOnlyFailureAddsFeedback() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
         app.launchArguments = ["--watchlist-feedback-fixture"]

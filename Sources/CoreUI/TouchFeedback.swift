@@ -42,7 +42,7 @@ public final class TouchFeedback: NSObject {
         let impact = UIImpactFeedbackGenerator(style: .light)
         let selection = UISelectionFeedbackGenerator()
         let confirmation = UINotificationFeedbackGenerator()
-        let tension = UIImpactFeedbackGenerator(style: .soft)
+        let tension = UIImpactFeedbackGenerator(style: .heavy)
         let pop = UIImpactFeedbackGenerator(style: .rigid)
         #endif
         self.init(output: { event in
