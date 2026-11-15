@@ -131,6 +131,18 @@ final class SubtitleTrackControllerTests: XCTestCase {
         }
     }
 
+    func testManualAudioMemoryKeepsTitleWhenRenditionSwitchRetiresRequest() {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
+        engine.audioTracks = [audio(1, language: "eng"), audio(2, language: "fra")]
+        let item = MediaItem(id: "movie", title: "Film", kind: .movie)
+        host.request = .init(item: item, streamURL: URL(string: "https://fixture.invalid/master.m3u8")!)
+        host.audioSelectionHandler = { _ in host.request = nil; return true }
+        sut.selectAudioOption(id: 2)
+        XCTAssertEqual(host.recordedAudioLanguage, ["fra"])
+        XCTAssertEqual(host.recordedAudioItems.first??.id, item.id)
+        XCTAssertTrue(sut.viewerChangedAudioThisSession)
+    }
+
     func testServerBurnInKeepsSelectionWithoutClientRenderingOrTimingControls() {
         for kind in [PlaybackEngineKind.native, .plozzigen] {
             let (sut, host, engine) = makeSUT(engineKind: kind)
@@ -661,6 +673,7 @@ private final class SpyTrackHost: SubtitleTrackControllerHost, SubtitleOverlayLo
     var rule = SubtitlePolicy.Rule()
 
     private(set) var recordedAudioLanguage: [String?] = []
+    private(set) var recordedAudioItems: [MediaItem?] = []
     var audioSelectionHandler: ((MediaTrack) -> Bool)?
     private(set) var recordedSubtitle: [RememberedSubtitleSelection?] = []
     private(set) var refreshDelayCalls = 0
@@ -694,7 +707,10 @@ private final class SpyTrackHost: SubtitleTrackControllerHost, SubtitleOverlayLo
     }
     func trackRememberedSubtitle(for item: MediaItem) -> RememberedSubtitleSelection? { remembered }
     func trackEffectiveSubtitleRule(for item: MediaItem) -> SubtitlePolicy.Rule { rule }
-    func trackRecordAudioSelection(language: String?) { recordedAudioLanguage.append(language) }
+    func trackRecordAudioSelection(language: String?, request: PlaybackRequest?) {
+        recordedAudioLanguage.append(language)
+        recordedAudioItems.append(request?.item)
+    }
     func trackSelectAudioTrack(_ track: MediaTrack) -> Bool {
         if let audioSelectionHandler { return audioSelectionHandler(track) }
         engine.selectAudioTrack(track)

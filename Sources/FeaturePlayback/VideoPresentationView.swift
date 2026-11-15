@@ -155,7 +155,8 @@ final class VideoPresentationView: UIView {
     private var aspectRatio: Double?
     private var fitsInsideSafeArea = false
     private var needsPictureSubtitles = false
-    private var activePicture: CGRect?
+    private var picture = VideoActivePicturePresentation()
+    private var activePicture: CGRect? { picture.normalizedRect }
     private var pictureTask: Task<Void, Never>?
     private var pictureToken = UUID()
     private var pictureSuspended = false
@@ -326,9 +327,13 @@ final class VideoPresentationView: UIView {
 
     func update(zoom: PlayerVideoZoom, aspectRatio: Double? = nil, fitsInsideSafeArea: Bool = false,
                 needsPictureSubtitles: Bool = false) {
-        let ratio = aspectRatio ?? engine?.videoAspectRatio
+        let previousPicture = activePicture
+        let reportedRatio = aspectRatio ?? engine?.videoAspectRatio
+        picture.reconcile(sourceID: engine?.activePictureSourceID,
+                          aspectRatio: engine?.isPlaybackPositionReady == true ? reportedRatio : nil)
+        let ratio = picture.displayAspectRatio ?? reportedRatio
         let needsUpdate = self.fitsInsideSafeArea != fitsInsideSafeArea
-            || self.aspectRatio != ratio || self.zoom != zoom
+            || self.aspectRatio != ratio || self.zoom != zoom || previousPicture != activePicture
         self.zoom = zoom
         self.aspectRatio = ratio
         self.fitsInsideSafeArea = fitsInsideSafeArea
@@ -361,7 +366,6 @@ final class VideoPresentationView: UIView {
 
     private var shouldSamplePicture: Bool {
         guard window != nil, !pictureSuspended, let engine, engine.supportsActivePictureAnalysis,
-              engine.isPlaybackPositionReady,
               surface?.superview === surfaceHost, needsPictureSubtitles || zoom.mode == .picture
         else { return false }
         #if os(iOS)
@@ -389,23 +393,34 @@ final class VideoPresentationView: UIView {
 
     private func samplePicture(token: UUID) async -> Bool {
         guard shouldSamplePicture, let engine else { stopPictureSampling(); return false }
+        updatePicturePresentation()
+        // Keep the host and framing alive without sampling transitional seek/buffer output.
+        guard engine.isPlaybackPositionReady else { return true }
+        let sourceID = engine.activePictureSourceID
         let result = await engine.sampleActivePicture()
         guard !Task.isCancelled, pictureToken == token, self.engine === engine else { return false }
         guard shouldSamplePicture else { stopPictureSampling(); return false }
-        let next: CGRect?
-        if case let .measured(rect, size) = result, VideoActivePictureGeometry.isValid(rect),
-           size.width > 0, size.height > 0, let ratio = engine.videoAspectRatio,
-           abs(size.width / size.height - ratio) < 0.01 {
-            next = rect
-        } else {
-            next = nil
+        guard sourceID == engine.activePictureSourceID, engine.isPlaybackPositionReady else {
+            updatePicturePresentation()
+            return true
         }
-        if activePicture != next {
-            activePicture = next
+        updatePicturePresentation(result)
+        return true
+    }
+
+    private func updatePicturePresentation(_ result: VideoActivePictureState? = nil) {
+        let previous = activePicture
+        let sourceID = engine?.activePictureSourceID
+        let ratio = engine?.isPlaybackPositionReady == true ? engine?.videoAspectRatio : nil
+        if let result {
+            picture.receive(result, sourceID: sourceID, aspectRatio: ratio)
+        } else {
+            picture.reconcile(sourceID: sourceID, aspectRatio: ratio)
+        }
+        if activePicture != previous {
             setNeedsLayout()
             layoutIfNeeded()
         }
-        return true
     }
 
     private func stopPictureSampling() {
@@ -419,7 +434,7 @@ final class VideoPresentationView: UIView {
             engine.stopActivePictureAnalysis()
         }
         if activePicture != nil {
-            activePicture = nil
+            picture = VideoActivePicturePresentation()
             setNeedsLayout()
             subtitleViewport?.scheduleUpdate()
         }
@@ -481,7 +496,9 @@ final class VideoPresentationView: UIView {
         } else {
             pendingHandoffOutput = nil
         }
-        aspectRatio = engine?.videoAspectRatio
+        picture.reconcile(sourceID: engine?.activePictureSourceID,
+                          aspectRatio: engine?.isPlaybackPositionReady == true ? engine?.videoAspectRatio : nil)
+        aspectRatio = picture.displayAspectRatio ?? engine?.videoAspectRatio
         fitBounds = resolvedFitBounds
         #if os(iOS)
         reflection.videoSize = bounds.size

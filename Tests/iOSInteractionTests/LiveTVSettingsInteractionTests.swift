@@ -108,6 +108,29 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
         add(attachment)
     }
 
+    func testBrowsingDrillInRowsUseStandardPaddedTouchTargets() {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--source-settings", "--configured-sources"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-tv-add-source"].waitForExistence(timeout: 10))
+        for (identifier, title) in [
+            ("live-tv-guide-preferences", "Guide preferences"),
+            ("live-tv-channel-visibility", "Channel visibility")
+        ] {
+            let row = app.buttons[identifier]
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+            XCTAssertLessThanOrEqual(row.frame.height, 60, "Use standard settings row sizing.")
+            XCTAssertTrue(row.isHittable)
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
+                .withOffset(CGVector(dx: 0, dy: -2)).tap()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), app.debugDescription)
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.navigationBars["Live TV"].waitForExistence(timeout: 5))
+        }
+    }
+
     func testBrowsingChoicesChangeInlineAndSaveImmediately() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
         app.launchArguments = ["--source-settings", "--configured-sources"]
@@ -131,6 +154,31 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
             XCTAssertTrue(app.navigationBars["Live TV"].exists)
             XCTAssertFalse(app.navigationBars["Channel order"].exists)
         }
+    }
+
+    func testChannelNameCleanupUpdatesPreviewAndPersistsWithoutSourceRequests() {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--source-settings", "--configured-sources", "--channel-name-samples"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-tv-add-source"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["live-tv-channel-name-preview-2"].waitForExistence(timeout: 5))
+        let toggle = app.switches["live-tv-clean-channel-names"]
+        tapVisible(toggle, in: app)
+        let preview = app.staticTexts["live-tv-channel-name-preview"]
+        XCTAssertEqual(preview.label, "UK | NOW TV SPORT UHD 3840P")
+        XCTAssertEqual(app.staticTexts["live-tv-channel-name-preview-1"].label, "BBC One HD")
+        XCTAssertEqual(app.staticTexts["live-tv-channel-name-preview-2"].label, "FR | Canal+ FHD")
+        XCTAssertEqual(toggle.value as? String, "1")
+        tapVisible(app.buttons["live-tv-guide-preferences"], in: app)
+        XCTAssertTrue(app.navigationBars["Guide preferences"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        tapVisible(toggle, in: app)
+        XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertEqual(preview.label, "## UK|NOW TV SPORT U H D 3840P ##")
+        XCTAssertEqual(app.staticTexts["live-tv-channel-name-preview-1"].label, "** BBC One H D **")
+        XCTAssertEqual(app.staticTexts["live-tv-channel-name-preview-2"].label, "|FR| Canal+ F H D")
+        XCTAssertEqual(app.staticTexts["fixture-source-metrics"].label, "Sources 1 writes 0 requests 0")
     }
 
     func testRootAutomaticToggleAndFifthSourceStayIndependent() {

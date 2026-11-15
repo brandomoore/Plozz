@@ -1,37 +1,26 @@
 #if canImport(UIKit)
 import CoreGraphics
+import CoreModels
 import Foundation
 import Observation
 
-public struct PlayerVideoZoom: Equatable, Sendable {
-    public enum Mode: Int, CaseIterable, Sendable {
-        case fit, fill, stretch, custom, picture
+public typealias PlayerVideoZoom = VideoZoomPreference
 
-        public var title: LocalizedStringResource {
-            switch self {
-            case .fit: "Normal"
-            case .fill: "Crop"
-            case .stretch: "Stretch"
-            case .custom: "Custom"
-            case .picture: "Auto-crop black bars"
-            }
-        }
-
-        public var menuTitle: LocalizedStringResource {
-            self == .fit ? "Normal (Default)" : title
+public extension VideoZoomPreference.Mode {
+    var title: LocalizedStringResource {
+        switch self {
+        case .fit: "Normal"
+        case .fill: "Crop"
+        case .stretch: "Stretch"
+        case .custom: "Custom"
+        case .picture: "Auto-crop black bars"
         }
     }
 
-    public static let customPercentRange = 50...200
-    public var mode: Mode
-    public let customPercent: Int
+    var menuTitle: LocalizedStringResource { title }
+}
 
-    public init(mode: Mode = .fit, customPercent: Int = 100) {
-        self.mode = mode
-        self.customPercent = min(max(customPercent, Self.customPercentRange.lowerBound),
-                                 Self.customPercentRange.upperBound)
-    }
-
+extension VideoZoomPreference {
     /// `fitBounds` constrains Normal (including auto-crop's fallback) and Custom's base.
     /// Both rectangles use the presentation view's coordinate space.
     func scaleFactors(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
@@ -118,17 +107,37 @@ public struct PlayerVideoZoom: Equatable, Sendable {
     }
 }
 
-/// Playback-session presentation, never persisted as a profile/global preference.
+/// Playback-session presentation. The owning player persists explicit title choices.
 @MainActor
 @Observable
 public final class PlayerVideoZoomModel {
-    public var settings = PlayerVideoZoom()
+    public var settings = PlayerVideoZoom() {
+        didSet {
+            if !isRestoring { onUserChange?(settings) }
+        }
+    }
+    @ObservationIgnored var onUserChange: ((PlayerVideoZoom) -> Void)?
+    @ObservationIgnored private var isRestoring = false
     public var supportsActivePicture = false
     public var availableModes: [PlayerVideoZoom.Mode] {
         supportsActivePicture ? [.fit, .picture, .fill, .stretch, .custom] : [.fit, .fill, .stretch, .custom]
     }
 
     public init() {}
+
+    func restore(_ settings: PlayerVideoZoom) {
+        isRestoring = true
+        self.settings = settings
+        isRestoring = false
+    }
+
+    func restoreForPlayback(_ preference: PlayerVideoZoom?, automaticDefault: Bool,
+                            supportsActivePicture: Bool) {
+        self.supportsActivePicture = supportsActivePicture
+        var choice = preference ?? (automaticDefault ? .onDemandDefault : PlayerVideoZoom())
+        if choice.mode == .picture, !supportsActivePicture { choice.mode = .fit }
+        restore(choice)
+    }
 
     public func cycleMode(forward: Bool) {
         let modes = availableModes

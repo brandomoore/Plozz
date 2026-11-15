@@ -431,6 +431,14 @@ Transient `explicitVersionSelection` distinguishes a manual file choice from
 Source-only pins must not freeze a recommendation across inventory refreshes or
 the first-use mode choice.
 
+`SeriesTrackPreferenceStore` retains its existing profile-scoped storage key for
+compatibility, including profile transfer. It stores series audio/subtitles,
+movie audio, and explicit movie/series `VideoZoomPreference` choices. Zoom is a
+typed mode plus a clamped Custom percentage, never a detected picture rectangle.
+Missing zoom fields in older records leave track memory intact; automatic defaults
+and temporary capability fallbacks are not saved. Invalid stored data is logged
+and preserved rather than overwritten by a later preference write.
+
 ## Artwork and profile presentation
 
 `MediaItem.artworkReferences` supplies library artwork: server URLs and local

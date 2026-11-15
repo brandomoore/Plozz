@@ -14,6 +14,7 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
         let settings = LiveTVViewSettingsStore(defaults: makeDefaults()).load()
 
         XCTAssertFalse(settings.sortByName)
+        XCTAssertFalse(settings.cleanChannelNames)
         XCTAssertTrue(settings.autoPreview)
         XCTAssertFalse(settings.hasChosenAutoPreview)
         XCTAssertFalse(settings.allowsAutomaticPreview)
@@ -38,7 +39,8 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
             previewAfterWatching: false,
             showsRecentChannels: false,
             hasChosenAutoPreview: true,
-            startsWithCategories: false
+            startsWithCategories: false,
+            cleanChannelNames: true
         )
 
         LiveTVViewSettingsStore(defaults: defaults).save(settings)
@@ -60,8 +62,29 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
             XCTAssertEqual(reopened.autoPreview, enabled)
             XCTAssertEqual(reopened.allowsAutomaticPreview, enabled)
         }
+
         XCTAssertFalse(LiveTVViewSettingsStore(defaults: defaults).load().hasChosenAutoPreview)
         XCTAssertFalse(LiveTVViewSettingsStore(defaults: defaults).load().allowsAutomaticPreview)
+    }
+
+    func testNameCleanupIsOptInProfileScopedAndSurvivesOtherPreferenceChanges() {
+        let defaults = makeDefaults()
+        let primary = LiveTVViewSettingsStore(defaults: defaults)
+        let secondary = LiveTVViewSettingsStore(defaults: defaults, namespace: "secondary")
+        var settings = secondary.load()
+        settings.cleanChannelNames = true
+        secondary.save(settings)
+        XCTAssertFalse(primary.load().cleanChannelNames)
+        let reopened = LiveTVViewSettingsStore(defaults: defaults, namespace: "secondary")
+        XCTAssertTrue(reopened.load().cleanChannelNames)
+        settings = reopened.load()
+        settings.sortByName = true
+        reopened.save(settings)
+        XCTAssertTrue(secondary.load().cleanChannelNames)
+        settings.cleanChannelNames = false
+        reopened.save(settings)
+        XCTAssertFalse(secondary.load().cleanChannelNames)
+        XCTAssertTrue(secondary.load().sortByName)
     }
 
     func testCategoryEntryDefaultsApplyToExistingProfilesAndGuideChoiceIsIsolated() {

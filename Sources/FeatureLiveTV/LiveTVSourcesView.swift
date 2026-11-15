@@ -364,6 +364,7 @@ private struct LiveTVSourcesContent: View {
                     )
                 }
                 settingsPreferences
+                    .environment(\.liveTVChannelNamePreviewSamples, imports?.channelNamePreviewSamples ?? [])
             }
             if model.hasLoaded, !isAddingSource {
                 if browseSource != nil || (settingsPreferences == nil && createChannel != nil)

@@ -21,6 +21,11 @@ final class SeriesTrackMemoryTests: XCTestCase {
             p.subtitle = selection
             storage[key] = p.isEmpty ? nil : p
         }
+        func setVideoZoom(_ zoom: VideoZoomPreference?, forKey key: String) {
+            var p = storage[key] ?? SeriesTrackPreference()
+            p.videoZoom = zoom
+            storage[key] = p.isEmpty ? nil : p
+        }
     }
 
     private func memory(
@@ -48,11 +53,69 @@ final class SeriesTrackMemoryTests: XCTestCase {
 
     // MARK: Key derivation
 
-    func testMovieHasNoLocalKey() {
+    func testMovieKeysCannotShareSeriesOrOtherAccountFallbacks() {
         let m = memory(FakeStore())
         let movie = MediaItem(id: "m1", title: "Film", kind: .movie)
-        XCTAssertNil(m.localKey(for: movie))
+        XCTAssertNotNil(m.localKey(for: movie))
+        XCTAssertNotEqual(m.localKey(for: movie), m.localKey(for: episode(seriesID: "m1")))
+        XCTAssertNotEqual(m.localKey(for: movie), memory(FakeStore(), accountFallbackID: "acct-b").localKey(for: movie))
         XCTAssertTrue(m.crossServerKeys(for: movie).isEmpty)
+    }
+
+    func testMovieAudioTransfersAcrossProvidersWithoutEnablingSeriesOrMovieSubtitles() {
+        let store = FakeStore()
+        let m = memory(store, rememberAudio: false)
+        let movie = MediaItem(id: "plex-film", title: "Film", kind: .movie, providerIDs: ["IMDb": "tt123"])
+        let other = MediaItem(id: "jf-film", title: "Film", kind: .movie, providerIDs: ["imdb": "tt123"],
+                              sourceAccountID: "other")
+        m.recordAudioSelection(language: "fra", for: movie)
+        m.recordSubtitleSelection(.off, for: movie)
+        XCTAssertEqual(m.rememberedAudioLanguage(for: other), "fr")
+        XCTAssertNil(m.rememberedSubtitle(for: movie))
+        XCTAssertNil(m.rememberedAudioLanguage(for: episode(providerIDs: ["SeriesImdb": "tt123"])))
+        XCTAssertNil(m.rememberedAudioLanguage(for: MediaItem(id: "different", title: "Film", kind: .movie)))
+    }
+
+    func testManualZoomFollowsSeriesWithoutAffectingOtherTitlesOrDefaults() {
+        let store = FakeStore()
+        let m = memory(store)
+        let first = episode()
+        XCTAssertNil(m.rememberedVideoZoom(for: first))
+        XCTAssertTrue(store.storage.isEmpty)
+        m.recordVideoZoom(.init(mode: .custom, customPercent: 117), for: first)
+        XCTAssertEqual(m.rememberedVideoZoom(for: episode(id: "ep2")), .init(mode: .custom, customPercent: 117))
+        XCTAssertNil(m.rememberedVideoZoom(for: episode(seriesID: "other")))
+        m.recordVideoZoom(.init(mode: .fit), for: first)
+        XCTAssertEqual(m.rememberedVideoZoom(for: episode(id: "ep3"))?.mode, .fit)
+    }
+
+    func testLateSeriesIdentityImportsZoomButNeverReplacesAManualChoice() {
+        let store = FakeStore()
+        let m = memory(store)
+        let first = episode()
+        let enriched = episode(providerIDs: ["SeriesTvdb": "123"])
+        store.setVideoZoom(.init(mode: .custom, customPercent: 125), forKey: "show:tvdb:123")
+        let imported = m.reconcile(item: enriched, viewerChangedAudio: false, viewerChangedSubtitle: false)
+        XCTAssertEqual(imported.importedVideoZoom, .init(mode: .custom, customPercent: 125))
+        m.recordVideoZoom(.init(mode: .fit), for: first)
+        let manual = m.reconcile(item: enriched, viewerChangedAudio: false, viewerChangedSubtitle: false,
+                                 viewerChangedVideoZoom: true)
+        XCTAssertNil(manual.importedVideoZoom)
+        XCTAssertEqual(store.storage["show:tvdb:123"]?.videoZoom?.mode, .fit)
+    }
+
+    func testExtrasAndTrailersDoNotRememberTitleChoices() {
+        let store = FakeStore()
+        let m = memory(store)
+        for trailer in [true, false] {
+            var item = MediaItem(id: "film", title: "Bonus", kind: .movie)
+            item.isTrailer = trailer
+            item.isExtra = !trailer
+            m.recordAudioSelection(language: "fr", for: item)
+            m.recordVideoZoom(.init(mode: .custom, customPercent: 150), for: item)
+            XCTAssertFalse(m.supportsTitlePreferences(for: item))
+        }
+        XCTAssertTrue(store.storage.isEmpty)
     }
 
     func testEpisodeLocalKeyUsesAccountFallback() {

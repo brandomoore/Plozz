@@ -12,6 +12,15 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Live TV's **Clean channel names** switch is profile-scoped and off by default.
+The shared TV/mobile section previews up to three distinct original names from
+the authorized loaded IPTV catalog, preferring names affected by cleanup.
+It updates immediately without fetching a source or changing stream/guide identities.
+Hidden and manually renamed channels are excluded. With no eligible loaded names,
+the fallback is explicitly labeled Example. Custom names win;
+the formatting rules and retained metadata are documented in
+[Live TV](../../docs/live-tv-prototype.md#channel-name-presentation).
+
 On mobile, Appearance starts with the shared visual theme cards, Gradient
 Backgrounds and Liquid Glass. Cards, Artwork and Circadian Mode form a separate
 group below. Theme search results open Appearance directly.
@@ -79,6 +88,9 @@ Mobile disclosure and action rows share `settingsActionRow()` from CoreUI;
 composite controls retain separate minimum touch targets with
 `settingsControlTarget()`. Per-view customization menus respond across their
 whole title/value row, not only the value. Native toggles remain independent.
+Do not put `SettingsFormButtonStyle` inside `settingsActionRow()`: it overrides
+the mobile padding while the group omits its own insets. Grouped Live TV links
+inherit the TV form style from `SettingsSectionGroup` instead.
 
 TV label customization uses `ViewCustomizationRow` for Only show descriptions on focus,
 matching the neighboring controls' sizing and focus treatment. Its live episode

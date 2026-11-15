@@ -18,12 +18,45 @@ final class PlayerVideoZoomTests: XCTestCase {
         }.value
     }
 
-    func testZoomModeCopyUsesFamiliarNamesAndIdentifiesTheDefaultWithoutDescriptions() {
+    func testZoomModeCopyDoesNotClaimNormalIsEveryPlayersDefault() {
         XCTAssertEqual(PlayerVideoZoom().mode, .fit)
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.title) },
                        ["Normal", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.menuTitle) },
-                       ["Normal (Default)", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
+                       ["Normal", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
+    }
+
+    func testDefaultAndRestorationNeverWriteButExplicitChoicesDo() {
+        let model = PlayerVideoZoomModel()
+        var saved: [PlayerVideoZoom] = []
+        model.onUserChange = { saved.append($0) }
+        model.restoreForPlayback(nil, automaticDefault: true, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .picture)
+        XCTAssertTrue(saved.isEmpty)
+        model.settings.mode = .fit
+        model.setCustomPercent(117)
+        XCTAssertEqual(saved, [.init(mode: .fit), .init(mode: .custom, customPercent: 117)])
+        model.restoreForPlayback(saved.last, automaticDefault: true, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.customPercent, 117)
+        XCTAssertEqual(saved.count, 2)
+        model.restoreForPlayback(nil, automaticDefault: false, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .fit, "Live/preview defaults remain Normal.")
+        model.restoreForPlayback(nil, automaticDefault: true, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .picture, "A new title does not inherit Custom.")
+        XCTAssertEqual(saved.count, 2)
+    }
+
+    func testUnsupportedEngineDoesNotReplaceRememberedAutoCrop() {
+        let model = PlayerVideoZoomModel()
+        var remembered = PlayerVideoZoom(mode: .picture)
+        model.onUserChange = { remembered = $0 }
+        model.restoreForPlayback(remembered, automaticDefault: true, supportsActivePicture: false)
+        XCTAssertEqual(model.settings.mode, .fit)
+        XCTAssertEqual(remembered.mode, .picture)
+        model.restoreForPlayback(remembered, automaticDefault: true, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .picture)
+        model.restoreForPlayback(.init(mode: .fit), automaticDefault: true, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .fit)
     }
 
     func testPictureFitUsesFullBoundsWithUniformScaleAndAsymmetricTranslation() throws {
@@ -453,7 +486,7 @@ final class PlayerVideoZoomTests: XCTestCase {
         let frame = engine.output.frame
         retired.update(zoom: PlayerVideoZoom(mode: .custom, customPercent: 200))
         retired.layoutIfNeeded()
-        XCTAssertTrue(engine.output.superview === current)
+        XCTAssertTrue(engine.output.isDescendant(of: current))
         XCTAssertEqual(engine.output.frame, frame)
     }
 

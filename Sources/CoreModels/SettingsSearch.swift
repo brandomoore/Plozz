@@ -526,6 +526,8 @@ public enum SettingsSearchCatalog {
               keywords: "start live channel guide categories default screen"),
         .init("channel-order", page: .liveTV, title: "Channel order",
               keywords: "sort channels alphabetically name number order"),
+        .init("live-clean-channel-names", page: .liveTV, title: "Clean channel names",
+              keywords: "iptv names cleanup decorations spacing region quality labels"),
         .init("guide-preferences", page: .liveTV, title: "Guide preferences",
               keywords: "channel preview keep watching browsing recently watched guide"),
         .init("channel-visibility", page: .liveTV, title: "Channel visibility",

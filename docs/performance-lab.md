@@ -1047,13 +1047,34 @@ The `active-picture-hls` fixtures are generated with FFmpeg `-c copy -f hls
 `active-picture.mp4` and `glow-hd.mp4`; no video is re-encoded. Native SDR output
 materialization is included in the comparison, not bounded by the CPU sampler's
 2 Hz limit. Independent subtitle outputs are preserved when the video tap stops.
-Native analysis requests 320x180 output while retaining the original display
-canvas separately. This reduces the requested analysis surface, not necessarily
-AVFoundation's internal decode/render allocations. In an isolated tvOS simulator
-four-player pair, enabled analysis added approximately 16 MiB resident memory;
-CPU medians were 935 versus 952 ms per 2.3-second window, within the measured
-dispersion. These are one controlled SDR comparison, not a hardware or HDR
-performance guarantee.
+The native tap borrows the original format and size; a worker converts a private
+copy to at most 320x180. Applying that size/format requirement to AVPlayer itself
+can change displayed colors. The private buffer bound does not cap AVFoundation's
+internal decode/render allocations or the original frame retained during analysis.
+
+At `c8230507a` (engine `055860a`), Xcode 27.1 and an iOS 27.1 iPhone simulator
+measured the single-player pair below. Each case discarded one warmup and retained
+five 2.3-second windows. CPU figures are medians of app-process CPU milliseconds
+per elapsed second, not wall-clock processing delays.
+
+| Comparison | Analysis off | Analysis on | Extra CPU ms/s | Resident snapshot difference |
+| --- | ---: | ---: | ---: | ---: |
+| Off then on, same test process | 146.3 | 192.8 | 46.5 | +3.9 MiB |
+| Fresh processes, on then off | 93.0 | 115.3 | 22.3 | +8.5 MiB |
+
+Enabled windows completed four or five fresh samples each; disabled windows
+completed none, and both retained advancing playback. The observed CPU difference
+is about 2.2-4.6 percentage points of one core. Physical-footprint snapshot
+differences were much smaller (-0.42/+0.19 MiB); resident snapshots include shared
+and externally backed pages and are not allocation or peak-memory measurements.
+Host load was high and variable, so these two comparisons are not a precise
+device budget. They exclude startup, GPU/render-server cost, 4K/HDR conversion
+and physical-device energy. They also do not attribute CPU cost between native
+output materialization, private conversion and the bounded pixel scan.
+
+Evidence is in `.build/performance/runs/4473a06724cc4e77810db2b220a10cb2`
+(paired), `1553f84e12cf4fbbb5bbf43f105873d1` (isolated enabled), and
+`f16d4d272b694863b4d93c161594da37` (isolated disabled).
 
 The glow fixtures in `Tests/SubtitlePresentationSupport/Fixtures` are synthetic:
 `live-continuity-dim.mp4` is the first 30 seconds of `live-continuity.mp4`,
