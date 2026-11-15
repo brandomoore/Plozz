@@ -566,6 +566,9 @@ public struct SettingsIconLabelStyle: LabelStyle {
     public func makeBody(configuration: Configuration) -> some View {
         Label {
             configuration.title
+                #if os(iOS)
+                .anchorPreference(key: SettingsRowTitleAnchorKey.self, value: .bounds) { [$0] }
+                #endif
         } icon: {
             configuration.icon
                 .frame(width: iconColumnWidth)

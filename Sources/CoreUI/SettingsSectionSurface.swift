@@ -6,12 +6,53 @@ extension ContainerValues {
 }
 
 #if os(iOS)
+public enum MobileSettingsMetrics {
+    public static let pageInset: CGFloat = 16
+    public static let sectionSpacing: CGFloat = 28
+    public static let groupCornerRadius: CGFloat = 26
+    public static let rowInset: CGFloat = 16
+    public static let rowVerticalInset: CGFloat = 10
+    public static let controlVerticalInset: CGFloat = 4
+    public static let rowMinHeight: CGFloat = 52
+}
+
+struct SettingsRowTitleAnchorKey: PreferenceKey {
+    static var defaultValue: [Anchor<CGRect>] { [] }
+    static func reduce(value: inout [Anchor<CGRect>], nextValue: () -> [Anchor<CGRect>]) {
+        value += nextValue()
+    }
+}
+
+private struct SettingsRowSeparator: View {
+    @Environment(\.themePalette) private var palette
+    @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.displayScale) private var displayScale
+    let titles: [Anchor<CGRect>]
+
+    var body: some View {
+        GeometryReader { geometry in
+            let inset = titles.map { anchor in
+                let rect = geometry[anchor]
+                return layoutDirection == .leftToRight ? rect.minX : geometry.size.width - rect.maxX
+            }.min() ?? MobileSettingsMetrics.rowInset
+            Rectangle()
+                .fill(palette.separator)
+                .frame(height: 1 / displayScale)
+                .padding(.leading, max(MobileSettingsMetrics.rowInset, inset))
+                .frame(maxHeight: .infinity, alignment: .bottom)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct SettingsActionRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, MobileSettingsMetrics.rowInset)
+            .padding(.vertical, MobileSettingsMetrics.rowVerticalInset)
+            .frame(minHeight: MobileSettingsMetrics.rowMinHeight)
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
@@ -254,12 +295,19 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
         let cornerRadius = SettingsFormMetrics.groupCornerRadius
         let horizontalInset = SettingsFormMetrics.groupInset
         let verticalInset = SettingsFormMetrics.groupInset
+        let captionSpacing: CGFloat = 4
+        #elseif os(iOS)
+        let cornerRadius = MobileSettingsMetrics.groupCornerRadius
+        let horizontalInset = MobileSettingsMetrics.rowInset
+        let verticalInset = MobileSettingsMetrics.controlVerticalInset
+        let captionSpacing: CGFloat = 8
         #else
         let cornerRadius: CGFloat = 18
         let horizontalInset: CGFloat = 16
         let verticalInset: CGFloat = 12
+        let captionSpacing: CGFloat = 4
         #endif
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: captionSpacing) {
             if title != nil || accessory != nil {
                 HStack(alignment: .firstTextBaseline) {
                     if let title {
@@ -274,7 +322,11 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                             .font(.footnote.weight(.semibold))
                     }
                 }
+                #if os(iOS)
+                .padding(.horizontal, horizontalInset)
+                #else
                 .padding(.top, 8)
+                #endif
             }
 
             VStack(spacing: 0) {
@@ -284,6 +336,9 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, subview.containerValues.settingsActionOwnsInsets ? 0 : horizontalInset)
                             .padding(.vertical, subview.containerValues.settingsActionOwnsInsets ? 0 : verticalInset)
+                            #if os(iOS)
+                            .frame(minHeight: MobileSettingsMetrics.rowMinHeight)
+                            #endif
                             .contentShape(Rectangle())
                             #if os(iOS)
                             .modifier(SettingsSearchRowHighlight(
@@ -291,13 +346,21 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                                 isLast: subview.id == subviews.last?.id,
                                 cornerRadius: cornerRadius
                             ))
+                            .overlayPreferenceValue(SettingsRowTitleAnchorKey.self) { titles in
+                                if subview.id != subviews.last?.id {
+                                    SettingsRowSeparator(titles: titles)
+                                }
+                            }
+                            .transformPreference(SettingsRowTitleAnchorKey.self) { $0.removeAll() }
                             #endif
+                        #if !os(iOS)
                         if subview.id != subviews.last?.id {
                             Rectangle()
                                 .fill(palette.separator)
                                 .frame(height: 1)
                                 .padding(.horizontal, horizontalInset)
                         }
+                        #endif
                     }
                 }
             }
@@ -328,7 +391,9 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                 .plozzForeground(.secondary)
                 .padding(.horizontal, 16)
         }
+        #if !os(iOS)
         .padding(.top, 8)
+        #endif
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
         #if !os(tvOS)

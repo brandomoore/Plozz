@@ -46,6 +46,15 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 
 ## Responsibility
 
+Mobile Settings roots and detail pages share `MobileSettingsMetrics`: 16-point
+page/row insets, 28-point section gaps, 52-point minimum rows and 26-point
+continuous group corners. Rows grow with their content and Dynamic Type.
+`SettingsIconLabelStyle` supplies title anchors for one-pixel group separators:
+they start at the actual text column, mirror in RTL, and run to the trailing
+edge. Text-only rows use the standard inset. Groups consume their own anchors
+so nested groups cannot move a parent's separators. Native controls, theme
+surfaces and tvOS focus geometry remain unchanged.
+
 New tvOS Settings pages enter their first content control, not the header Back
 button. `settingsPageEntryFocus` requests that control only on first entry and
 leaves search targeting and retained-parent restoration alone. Until native
