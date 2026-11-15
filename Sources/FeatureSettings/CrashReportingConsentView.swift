@@ -22,6 +22,10 @@ public struct CrashReportingConsentView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .accessibilityIdentifier("diagnostics-consent-card")
+                    .overlay(alignment: .topTrailing) {
+                        DiagnosticsInfoButton()
+                            .padding(12)
+                    }
                     Spacer(minLength: 72)
                     CrashReportingConsentFooter()
                 }
@@ -65,9 +69,6 @@ private struct CrashReportingConsentPrompt: View {
                 .frame(width: 80, height: 80)
                 .accessibilityHidden(true)
                 .frame(maxWidth: .infinity)
-                .overlay(alignment: .topTrailing) {
-                    DiagnosticsInfoButton()
-                }
 
             VStack(spacing: 16) {
                 OnboardingHeader(Text("Help improve Plozz?"))

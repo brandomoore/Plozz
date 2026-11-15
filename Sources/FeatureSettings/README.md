@@ -316,8 +316,10 @@ use the shared Settings card, with
 Like other first-use prompts, it supplies the palette's neutral accent to native
 controls rather than inheriting the system-blue tint.
 Its circular info button uses the same native secondary action style as
-Don't Share (Liquid Glass where available) and opens the shared sheet with the detailed
-disclosures, optional-sharing explanation and Privacy Policy link; opening or
+Don't Share (Liquid Glass where available) and sits 12 points inside the card's
+top-trailing corner, independently of its content insets. It opens the shared
+sheet with detailed disclosures, the optional-sharing explanation and the Privacy
+Policy link; opening or
 dismissing it does not choose consent. The footer contains only the GitHub repo
 link, which opens the repository
 on mobile or a scannable QR sheet on Apple TV; opening it does not grant consent.
