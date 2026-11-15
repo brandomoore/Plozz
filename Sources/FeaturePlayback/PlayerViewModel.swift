@@ -464,6 +464,9 @@ public final class PlayerViewModel {
     /// store, fallback account id, and the profile toggles; a `nil` store disables
     /// the feature (tests, previews).
     private let seriesMemory: SeriesTrackMemory
+    #if canImport(UIKit)
+    @ObservationIgnored private var manuallySelectedVideoZoom: PlayerVideoZoom?
+    #endif
     /// Loads server-detected skip segments once playback is ready; cancelled on
     /// stop. Best-effort — a failure leaves the skip button simply unavailable.
     private var segmentsTask: Task<Void, Never>?
@@ -906,6 +909,14 @@ public final class PlayerViewModel {
             host: self, publisher: nowPlayingPublisher ?? NowPlayingSession()
         )
         configureEngineCallbacks()
+        #if canImport(UIKit)
+        controls.videoZoom.onUserChange = { [weak self] zoom in
+            guard let self, !self.didStop, let request = self.request,
+                  !request.usesUnidentifiedDiscTimeline else { return }
+            self.manuallySelectedVideoZoom = zoom
+            self.seriesMemory.recordVideoZoom(zoom, for: request.item)
+        }
+        #endif
         if let continuation {
             intendsPlayback = continuation.intendsPlayback
             controls.intendsPause = !continuation.intendsPlayback
@@ -1248,6 +1259,11 @@ public final class PlayerViewModel {
     private func enrichSeriesIDs() async {
         if let seriesIDResolver, var current = request,
            let raw = await seriesIDResolver(), !raw.isEmpty {
+            guard !didStop, let latest = request,
+                  latest.item.id == current.item.id,
+                  latest.item.sourceAccountID == current.item.sourceAccountID,
+                  latest.playSessionID == current.playSessionID else { return }
+            current = latest
             let map: [(ProviderIDNamespace, String)] = [
                 (.imdb, "SeriesImdb"), (.tmdb, "SeriesTmdb"), (.tvdb, "SeriesTvdb"),
                 (.myAnimeList, "SeriesMal"), (.aniList, "SeriesAniList"),
@@ -1963,9 +1979,9 @@ public final class PlayerViewModel {
         subtitlePolicy.effectiveRule(for: ContentClassifier.subtitleCategory(for: item))
     }
 
-    // MARK: - Per-series remembered track selections
+    // MARK: - Remembered title preferences
 
-    /// The remembered audio language for this item's series (gated on the toggle).
+    /// Remembered movie/series language; only series memory is gated by its toggle.
     private func rememberedAudioLanguage(for item: MediaItem) -> String? {
         seriesMemory.rememberedAudioLanguage(for: item)
     }
@@ -1973,13 +1989,6 @@ public final class PlayerViewModel {
     /// The remembered subtitle decision for this item's series (gated on the toggle).
     private func rememberedSubtitle(for item: MediaItem) -> RememberedSubtitleSelection? {
         seriesMemory.rememberedSubtitle(for: item)
-    }
-
-    /// Records the viewer's manual audio-language pick for the current series.
-    private func recordSeriesAudioSelection(language: String?) {
-        guard let request, !request.usesUnidentifiedDiscTimeline else { return }
-        let item = request.item
-        seriesMemory.recordAudioSelection(language: language, for: item)
     }
 
     /// Records the viewer's manual subtitle pick (a language, or Off) for the series.
@@ -1993,12 +2002,18 @@ public final class PlayerViewModel {
     /// the series' external ids onto the item, then applies any imported choice to
     /// live playback (the engine/subtitle side effects the memory can't do itself).
     private func reconcileSeriesMemoryAcrossServers() {
-        guard let request, !request.usesUnidentifiedDiscTimeline else { return }
+        guard !didStop, let request, !request.usesUnidentifiedDiscTimeline else { return }
         let item = request.item
+        #if canImport(UIKit)
+        let changedZoom = manuallySelectedVideoZoom != nil
+        #else
+        let changedZoom = false
+        #endif
         let outcome = seriesMemory.reconcile(
             item: item,
             viewerChangedAudio: subtitleController.viewerChangedAudioThisSession,
-            viewerChangedSubtitle: subtitleController.viewerChangedSubtitleThisSession
+            viewerChangedSubtitle: subtitleController.viewerChangedSubtitleThisSession,
+            viewerChangedVideoZoom: changedZoom
         )
         if let language = outcome.importedAudioLanguage {
             subtitleController.queueImportedAudio(language: language)
@@ -2009,7 +2024,27 @@ public final class PlayerViewModel {
             // Plozzigen (tracks arrive later → onTracksChanged re-applies).
             subtitleController.applyInitialSubtitleForNewLoad(for: request)
         }
+        #if canImport(UIKit)
+        if let zoom = outcome.importedVideoZoom {
+            controls.videoZoom.restoreForPlayback(
+                zoom, automaticDefault: true, supportsActivePicture: engine.supportsActivePictureAnalysis
+            )
+        }
+        #endif
     }
+
+    #if canImport(UIKit)
+    private func restoreTitleVideoZoom(for request: PlaybackRequest) {
+        let eligible = !request.usesUnidentifiedDiscTimeline
+            && seriesMemory.supportsTitlePreferences(for: request.item)
+        let remembered = eligible
+            ? manuallySelectedVideoZoom ?? seriesMemory.rememberedVideoZoom(for: request.item) : nil
+        controls.videoZoom.restoreForPlayback(
+            remembered, automaticDefault: eligible,
+            supportsActivePicture: engine.supportsActivePictureAnalysis
+        )
+    }
+    #endif
 
     /// Loads an already-resolved request on the routed engine and finishes the
     /// bring-up (ready state, start report, track menu). Shared by the initial
@@ -2053,6 +2088,9 @@ public final class PlayerViewModel {
             return
         }
         let actualEngineKind = engineHandoff.commitEngineForPlayback(engineKind)
+        #if canImport(UIKit)
+        restoreTitleVideoZoom(for: self.request ?? request)
+        #endif
         if request.usesUnidentifiedDiscTimeline && actualEngineKind != .plozzigen {
             phase = .failed(.unknown("This disc's menu format is not supported."))
             return
@@ -2981,10 +3019,10 @@ public final class PlayerViewModel {
 
     /// Selects an audio track from the menu. Owned by ``SubtitleTrackController``.
     public func selectAudioOption(id: Int) {
-        if streamingOptions != nil, request?.isTranscoding == true,
-           let track = request?.audioTracks.first(where: { $0.id == id }) {
-            recordSeriesAudioSelection(language: track.language)
-            trackSelectAudioTrack(track)
+        if streamingOptions != nil, let request, request.isTranscoding,
+           let track = request.audioTracks.first(where: { $0.id == id }) {
+            guard trackSelectAudioTrack(track) else { return }
+            subtitleController.recordManualAudioSelection(track, request: request)
             return
         }
         subtitleController.selectAudioOption(id: id)
@@ -3238,8 +3276,9 @@ extension PlayerViewModel: SubtitleTrackControllerHost {
         effectiveSubtitleRule(for: item)
     }
 
-    func trackRecordAudioSelection(language: String?) {
-        recordSeriesAudioSelection(language: language)
+    func trackRecordAudioSelection(language: String?, request: PlaybackRequest?) {
+        guard !didStop, let request, !request.usesUnidentifiedDiscTimeline else { return }
+        seriesMemory.recordAudioSelection(language: language, for: request.item)
     }
 
     @discardableResult

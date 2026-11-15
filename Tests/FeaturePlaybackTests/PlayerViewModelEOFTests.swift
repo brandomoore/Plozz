@@ -50,6 +50,48 @@ final class PlayerViewModelEOFTests: XCTestCase {
     }
 
     #if canImport(UIKit)
+    func testMovieLanguageAndZoomRestoreBeforeLoadAcrossProfilesAndProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let suite = "TitlePlayback-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let item = MediaItem(id: "movie", title: "Film", kind: .movie, providerIDs: ["Imdb": "tt123"])
+            let tracks = [
+                MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "eng", isDefault: true),
+                MediaTrack(id: 2, kind: .audio, displayTitle: "French", language: "fra")
+            ]
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mp4")!,
+                               audioTracks: tracks), kind: kind
+            )
+            for visit in 0..<3 {
+                let engine = SpyVideoEngine()
+                engine.supportsActivePictureAnalysis = true
+                engine.audioTracks = tracks
+                let store = SeriesTrackPreferenceStore(defaults: defaults, namespace: visit == 2 ? "other" : nil)
+                let model = PlayerViewModel(
+                    provider: provider, itemID: item.id,
+                    playbackSettings: .init(rememberAudioTrackPerSeries: false),
+                    seriesTrackStore: store, engineFactory: .init(makeNative: { _ in engine })
+                )
+                let expected = visit == 1 ? PlayerVideoZoom(mode: .custom, customPercent: 117) : .onDemandDefault
+                engine.onLoad = { [weak model] in
+                    XCTAssertEqual(model?.controls.videoZoom.settings, expected, "Restore before engine load.")
+                }
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.preferredAudioLanguages.contains("fr"), visit == 1)
+                if visit == 0 {
+                    XCTAssertNil(defaults.data(forKey: "com.plozz.seriesTrackPreferences"),
+                                 "The automatic default must not create title records.")
+                    model.selectAudioOption(id: 2)
+                    model.controls.videoZoom.setCustomPercent(117)
+                }
+                await model.stop()
+            }
+        }
+    }
+
     func testDiscPlaylistSelectionIsBoundToCatalogAndSuppressesLibraryProgress() async throws {
         let request = try discRequest()
         let item = request.item
@@ -3056,6 +3098,8 @@ private struct LocalPlaybackFixture: OfflinePlaybackResolving {
 
 @MainActor
 private final class SpyVideoEngine: VideoEngine {
+    var supportsActivePictureAnalysis = false
+    var onLoad: (() -> Void)?
     #if canImport(UIKit)
     var discVideoCatalog: [DiscVideo] = []
     func discVideos() async throws -> [DiscVideo] { discVideoCatalog }
@@ -3106,6 +3150,7 @@ private final class SpyVideoEngine: VideoEngine {
     var lastLoadedRequest: PlaybackRequest?
 
     func load(request: PlaybackRequest, startPosition: TimeInterval) async {
+        onLoad?()
         loadCount += 1
         lastLoadedRequest = request
         if let failureDuringLoad { status = .failed(failureDuringLoad) }

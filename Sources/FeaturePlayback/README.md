@@ -1466,10 +1466,18 @@ back to coded dimensions.
 Authored bitmap clearance maps the image, lower-region envelope, and protected
 artwork boundary through that same zoom/stretch geometry before moving a region.
 
-Zoom belongs to the current player session, not a global/profile preference.
-A new VOD player or a different live channel starts at Normal. PiP and AirPlay retain
+Movies and episodes default to Auto Crop when the engine supports analysis.
+An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
+per profile and movie/series using the existing title preference store. Only the
+mode and percentage are saved, never detected rectangles. Defaults and temporary
+unsupported-engine fallbacks do not write preferences. Series choices follow later
+episodes and shared external IDs across servers; movie keys use strong external
+IDs with an account-scoped fallback, never title matching. Existing series keys
+and profile-transfer storage remain compatible. Trailers, extras, unidentified
+disc timelines and Live TV retain their existing defaults; a different live
+channel still starts at Normal. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
-Both production playback engines offer opt-in **Auto-crop black bars**, with no
+Both production playback engines offer **Auto-crop black bars**, with no
 menu subtext. A shared, cancellable
 AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
 Dolby Vision output, using existing frames
@@ -1509,6 +1517,14 @@ removed, affecting HDR/Dolby Vision presentation. Private conversion runs at the
 buffer can remain full resolution. Its original display canvas is retained
 separately and size changes invalidate pending results. Disabling analysis
 releases only its owned tap.
+
+Manual movie audio selections now remember the normalized language per profile
+and movie, independently of the per-series audio-memory toggle. Returning playback
+re-matches that language against the current file's tracks, falling back to the
+provider default when unavailable. Audio memory captures the outgoing title before
+a server-rendition replacement clears its request. Series audio/subtitle toggles
+and series-only subtitle memory are unchanged. Storage is read during playback
+setup and written for manual choices, not during frame analysis or seeking.
 
 Dark picture content can establish a crop without reaching a bright-scene
 average: the detector also accepts a broadly supported center distinguishable

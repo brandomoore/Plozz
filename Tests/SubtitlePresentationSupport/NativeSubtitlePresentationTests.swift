@@ -1193,7 +1193,7 @@ private final class SidecarTrackHost: SubtitleTrackControllerHost, SubtitleOverl
     func trackApplySubtitleStyle(_ style: SubtitleStyle) { subtitles.style = style }
     func trackRememberedSubtitle(for item: MediaItem) -> RememberedSubtitleSelection? { .off }
     func trackEffectiveSubtitleRule(for item: MediaItem) -> SubtitlePolicy.Rule { .init() }
-    func trackRecordAudioSelection(language: String?) {}
+    func trackRecordAudioSelection(language: String?, request: PlaybackRequest?) {}
     func trackSelectAudioTrack(_ track: MediaTrack) -> Bool {
         engine.selectAudioTrack(track)
         return true
