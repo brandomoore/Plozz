@@ -260,9 +260,11 @@ let package = Package(
         // FEL curve folding is available for beta on-demand playback; engine-owned Now Playing stays off.
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
+        // 7.67.1 fixes FEL timestamp overflow, load-time track picks, software HDR10
+        // metadata and subtitle-seek publication. Existing fork corrections remain.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "055860a0accaaafa1852d1a65c4f7f505cb7e6ab",
+            revision: "69505ddb60d1456981271deb120b46e259cab355",
             traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision

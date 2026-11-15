@@ -850,12 +850,17 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/cc3cb49f4014a208f841bde8d1e0a5af0ff885e9)
-at commit `cc3cb49f4014a208f841bde8d1e0a5af0ff885e9`, integrating upstream
-**7.66.0** (`8e74bbb5cfde75287305c535c243c1ef9d96549c`).
-Playback diagnostics show `AetherEngine v7.66.0`, read from the linked engine
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/69505ddb60d1456981271deb120b46e259cab355)
+at commit `69505ddb60d1456981271deb120b46e259cab355`, integrating upstream
+**7.67.1** (`224821c312ee994bf51d7a569781e5d86482d986`).
+Playback diagnostics show `AetherEngine v7.67.1`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
 attributions because the upstream version does not identify Plozz's patches.
+The 7.67.1 integration fixes undated FEL timestamp overflow, track picks during
+loading, software HDR10 metadata, subtitle publication across seeks and scrub
+decoder memory admission. It retains Plozz's crop analysis, bounded off-main
+selection readers and video seam invalidation with upstream's per-stream
+timestamp folding. The new subtitle menu marker remains opt-in.
 Native audio readback and subtitle selection use bounded off-main media-selection
 reads, so an unresponsive media service does not block the UI actor. Plozz treats
 AVFoundation's media-services reset as one fresh same-engine recovery, not a
