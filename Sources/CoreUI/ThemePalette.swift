@@ -246,7 +246,7 @@ public extension ThemePalette {
     static let detailGradientSurfaceFillOpacity = 0.12
 
     /// Scale decorative backgrounds only, never artwork, controls or native materials.
-    var backgroundGradientIntensity: Double { self == .pureBlack ? 0.5 : 1 }
+    var backgroundGradientIntensity: Double { self == .pureBlack ? 0.75 : 1 }
 
     var gradientSurfaceTint: Color { isLight ? .black : .white }
 

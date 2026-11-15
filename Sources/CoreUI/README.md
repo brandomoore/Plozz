@@ -839,7 +839,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   24 artwork-identity-keyed palettes. Replaced/cancelled sources cannot publish
   stale colours or clear another source. Only the background leaf observes the
   colour array; no full-screen clock, blur, or per-frame page invalidation runs.
-  Reduce Motion disables the palette crossfade. Black halves the decorative
+  Reduce Motion disables the palette crossfade. Black retains 75% of the original decorative
   gradient contribution through `ThemePalette.backgroundGradientIntensity`,
   including stock and artwork-tinted page backgrounds, native sampled fills,
   and theme previews. Dark, Light, flat fills, artwork and foregrounds are unchanged.

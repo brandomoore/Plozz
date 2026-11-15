@@ -114,7 +114,7 @@ final class AmbientGradientTests: XCTestCase {
         }
     }
 
-    func testBlackHalvesStockAndArtworkGradientsWhileDarkStaysUnchanged() throws {
+    func testBlackRetainsThreeQuartersOfStockAndArtworkGradientsWhileDarkStaysUnchanged() throws {
         for tint: [Color]? in [nil, [], [.red, .green, .blue, .purple]] {
             let dark = AmbientGradientBackground.meshColors(tint: tint, palette: .dark).map(channels)
             let black = AmbientGradientBackground.meshColors(tint: tint, palette: .pureBlack).map(channels)
@@ -123,7 +123,7 @@ final class AmbientGradientTests: XCTestCase {
             for index in dark.indices {
                 for channel in 0..<3 {
                     let previousBlack = dark[index][channel] * (0.32 / 0.88)
-                    XCTAssertEqual(black[index][channel], previousBlack * 0.5, accuracy: 0.0001)
+                    XCTAssertEqual(black[index][channel], previousBlack * 0.75, accuracy: 0.0001)
                 }
             }
             let values = black.flatMap { $0 }
