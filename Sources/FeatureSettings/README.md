@@ -319,7 +319,7 @@ Its circular info button uses the same native secondary action style as Don't
 Share (Liquid Glass where available). On mobile, the glass circle is 44 points
 across and the GitHub action is 44 points tall at the default text size, scaling
 with Dynamic Type. Flexible native button sizing sets the glass height rather
-than enlarging the label vertically. The mobile GitHub label adds 8 points of
+than enlarging the label vertically. The mobile GitHub label adds 6 points of
 trailing padding while retaining the icon's native leading inset.
 Older mobile systems retain 44-point minimum
 targets, and tvOS keeps its native control sizing.
