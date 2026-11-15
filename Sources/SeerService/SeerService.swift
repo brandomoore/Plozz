@@ -707,7 +707,10 @@ public final class SeerService {
         )
 
         defer {
-            if activeRevision == connectionRevision { personalRequestsRevision &+= 1 }
+            if activeRevision == connectionRevision {
+                personalRequestsRevision &+= 1
+                NotificationCenter.default.post(name: .personalRequestsDidChange, object: nil)
+            }
         }
         do {
             let result = try await activeClient.createRequest(body, actingUserID: actingUserID)

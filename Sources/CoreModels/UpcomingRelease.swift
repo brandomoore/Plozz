@@ -49,21 +49,44 @@ public struct UpcomingRelease: Identifiable, Equatable, Codable, Sendable {
     public var subtitle: LocalizedStringResource? {
         guard kind == .episode else { return nil }
         if let season = episodes.first?.seasonNumber {
-            if episodes.count > 1 { return "Season \(season) · \(episodes.count) episodes" }
+            if episodes.count > 1 {
+                return LocalizedStringResource(
+                    "Season \(season) · \(episodes.count) episodes",
+                    comment: "Upcoming release subtitle. First number is the season index; second is the count of episodes released together. Pluralize the episode count, not the season index."
+                )
+            }
             if let number = episodes.first?.episodeNumber {
-                return "Season \(season) · Episode \(number)"
+                return LocalizedStringResource(
+                    "Season \(season) · Episode \(number)",
+                    comment: "Upcoming release subtitle identifying one episode. Both numbers are indices, not counts."
+                )
             }
             return "Season \(season)"
         }
-        if episodes.count > 1 { return "\(episodes.count) episodes" }
+        if episodes.count > 1 {
+            return LocalizedStringResource(
+                "\(episodes.count) episodes",
+                comment: "Count of episodes released together on one day in Upcoming."
+            )
+        }
         if let number = episodes.first?.absoluteEpisodeNumber { return "Episode \(number)" }
         return "New episode"
     }
 
     public var posterSubtitle: LocalizedStringResource? {
         guard kind == .episode, let season = episodes.first?.seasonNumber else { return subtitle }
-        if episodes.count > 1 { return "S\(season) · \(episodes.count) episodes" }
-        if let number = episodes.first?.episodeNumber { return "S\(season) · E\(number)" }
+        if episodes.count > 1 {
+            return LocalizedStringResource(
+                "S\(season) · \(episodes.count) episodes",
+                comment: "Compact Upcoming poster subtitle. S abbreviates Season; first number is its index. Second number counts episodes released together and needs plural forms."
+            )
+        }
+        if let number = episodes.first?.episodeNumber {
+            return LocalizedStringResource(
+                "S\(season) · E\(number)",
+                comment: "Compact Upcoming poster subtitle identifying one episode. S abbreviates Season and E abbreviates Episode; both numbers are indices, not counts."
+            )
+        }
         return subtitle
     }
 

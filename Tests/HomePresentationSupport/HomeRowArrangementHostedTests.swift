@@ -231,6 +231,49 @@ extension HomeRowArrangementHostedTests {
     }
 
     #if os(iOS)
+    func testUpcomingHomeCuesLocalizeEpisodeCountsAndKeepMovieDatesAsContent() async throws {
+        let date = Date(timeIntervalSince1970: 1_799_928_000)
+        let series = MediaItem(id: "localized-series", title: "Fixture Series", kind: .series)
+        let episodes = (1...5).map {
+            UpcomingEpisode(
+                seriesIdentity: .external(source: "tvmaze", value: "42"),
+                seasonNumber: 2, episodeNumber: $0, airDate: date,
+                datePrecision: .dateOnly, source: .tvmaze, refreshedAt: date
+            )
+        }
+        let episodeRelease = try XCTUnwrap(UpcomingReleaseBuilder.episodes(episodes, for: series).first)
+        let movieRelease = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: date, regionCode: "US")],
+            for: MediaItem(id: "localized-film", title: "Fixture Film", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        for (identifier, expectedSubtitle, visibleSeason) in [
+            ("en_US", "Season 2 · 5 episodes", "Season 2"),
+            ("de_DE", "Staffel 2 · 5 Folgen", "Staffel 2"),
+        ] {
+            let locale = Locale(identifier: identifier)
+            var subtitle = try XCTUnwrap(episodeRelease.subtitle)
+            subtitle.locale = locale
+            XCTAssertEqual(String(localized: subtitle), expectedSubtitle)
+            let expectedDate = date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+            try await withWindow(size: CGSize(width: 1024, height: 768)) {
+                UpcomingHomeRow(releases: [episodeRelease, movieRelease], onSeeAll: {})
+                    .environment(\.locale, locale)
+                    .environment(\.plozzMetrics, .touch(density: .standard))
+                    .environment(\.plozzCardStyle, .borderless)
+            } inspect: { window in
+                let lines = try await self.capture(window, name: "Upcoming localized cues \(identifier)", scale: 2)
+                let rendered = lines.map(\.0).joined(separator: " | ")
+                XCTAssertTrue(rendered.contains(visibleSeason), rendered)
+                XCTAssertTrue(rendered.contains(expectedDate), rendered)
+                XCTAssertFalse(rendered.contains("upcoming.release.status"), rendered)
+                if identifier == "de_DE" {
+                    XCTAssertFalse(rendered.contains("Season 2"), rendered)
+                }
+            }
+        }
+    }
+
     func testUpcomingHomeRowUsesStandardRailGeometry() async throws {
         let release = try XCTUnwrap(UpcomingReleaseBuilder.movies(
             [.init(kind: .digital, date: Date(), regionCode: "US")],
@@ -345,11 +388,10 @@ extension HomeRowArrangementHostedTests {
         }
         let metrics = PlozzMetrics.touch(density: .standard)
         for width: CGFloat in [390, 1194] {
-            let agendaWidth = width > 800 ? width - 352 : width
+            let agendaWidth = width > 800 ? width - 336 : width
+            let columns = width < 600 ? 3 : 5
             let pageInset = PlozziOSMediaRailLayout.pageInset(for: width > 600 ? .regular : .compact)
-            let inset = PlozziOSMediaRailLayout.artworkAlignedInset(pageInset, metrics: metrics, cardStyle: .borderless)
-            let layout = PlozziOSPosterGridLayout(contentWidth: agendaWidth - 2 * inset, metrics: metrics, cardStyle: .borderless)
-            let pitch = layout.metrics.cardSlotWidth(for: .poster, cardStyle: .borderless) + layout.spacing
+            let pitch = (agendaWidth - 2 * pageInset + PlozziOSMediaRailLayout.visibleSpacing) / CGFloat(columns)
             try await withWindow(size: CGSize(width: width, height: 1000)) {
                 UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
                     .environment(\.plozzMetrics, metrics)
@@ -362,10 +404,13 @@ extension HomeRowArrangementHostedTests {
                 }
                 XCTAssertEqual(frames[0].midY, frames[1].midY, accuracy: 0.005)
                 XCTAssertEqual((frames[1].minX - frames[0].minX) * width, pitch, accuracy: 3)
-                XCTAssertEqual(frames[0].minX * width, pageInset, accuracy: 3)
+                XCTAssertEqual(
+                    frames[0].minX * width, pageInset + metrics.posterCaptionHorizontalInset, accuracy: 3
+                )
                 if width < 600 {
-                    XCTAssertLessThan(frames[2].midY, frames[0].midY)
-                    XCTAssertEqual(frames[2].minX, frames[0].minX, accuracy: 0.005)
+                    XCTAssertEqual(frames[2].midY, frames[0].midY, accuracy: 0.005)
+                    XCTAssertLessThan(frames[3].midY, frames[0].midY)
+                    XCTAssertEqual(frames[3].minX, frames[0].minX, accuracy: 0.005)
                 } else {
                     XCTAssertEqual(frames[4].midY, frames[0].midY, accuracy: 0.005)
                 }

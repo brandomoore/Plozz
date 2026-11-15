@@ -130,7 +130,7 @@
                 .padding(.leading, navigationInset)
                 .padding(.top, topNavigationInsets.top)
                 #else
-                .navigationTitle("")
+                .navigationTitle(Text(verbatim: ""))
                 .toolbarTitleDisplayMode(.inlineLarge)
                 .toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
@@ -461,6 +461,7 @@
         private let onFocusChange: ((MediaItem?) -> Void)?
         private let onCardFocused: ((MediaItem) -> Void)?
         @Environment(\.mediaItemNavigator) private var navigate
+        @Environment(\.locale) private var locale
         #if os(iOS)
             @Environment(\.plozzCardStyle) private var cardStyle
             @Environment(\.mediaItemArtworkNavigator) private var navigateArtwork
@@ -526,12 +527,16 @@
             #endif
         }
 
-        private func statusCue(for release: UpcomingRelease) -> LocalizedStringResource {
-            let date = release.date.formatted(.dateTime.month(.abbreviated).day())
+        private func statusCue(for release: UpcomingRelease) -> Text {
+            let date = release.date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
             if let subtitle = release.subtitle {
-                return "\(date) · \(String(localized: subtitle))"
+                return Text(LocalizedStringResource(
+                    "upcoming.release.status",
+                    defaultValue: "\(date) · \(subtitle)",
+                    comment: "Coming Soon card cue. First placeholder is a locale-formatted release date; second is an already localized season/episode subtitle. Preserve both; their order and separator may be adapted."
+                ))
             }
-            return "\(date)"
+            return Text(verbatim: date)
         }
     }
 

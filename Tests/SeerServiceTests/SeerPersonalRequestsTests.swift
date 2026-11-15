@@ -114,4 +114,36 @@ final class SeerPersonalRequestsTests: XCTestCase {
             XCTAssertTrue(error is CancellationError)
         }
     }
+
+    func testRequestCompletionInvalidatesPersonalFeedsWithoutAMountedScreen() async throws {
+        let http = SeerRecordingHTTPClient()
+        let service = service(http)
+        let identity = SeerRequestIdentity.user(id: 7, server: SeerServerIdentity(baseURL: baseURL))
+        let item = MediaItem(id: "film", title: "Film", kind: .movie, providerIDs: ["Tmdb": "42"])
+        var changes = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: .personalRequestsDidChange, object: nil, queue: .main
+        ) { _ in MainActor.assumeIsolated { changes += 1 } }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        for status in [201, 500] {
+            http.stub(pathSuffix: "/request", json: #"{"id":42,"media":{"status":2}}"#, status: status)
+            let outcome = await service.request(item, identity: identity)
+            if status == 201 {
+                guard case .success = outcome else { return XCTFail("Expected a successful request") }
+            } else {
+                guard case .failure = outcome else { return XCTFail("Expected a failed request") }
+            }
+        }
+        XCTAssertEqual(changes, 2, "Both successful and uncertain request attempts invalidate the personal feed")
+
+        http.stub(pathSuffix: "/request", json: #"{"id":42,"media":{"status":2}}"#, status: 201)
+        http.suspend(pathSuffix: "/request", onRequestNumber: 3)
+        let pending = Task { await service.request(item, identity: identity) }
+        await http.waitUntilSuspended(pathSuffix: "/request")
+        service.disconnect()
+        http.resume(pathSuffix: "/request")
+        _ = await pending.value
+        XCTAssertEqual(changes, 2, "A late completion from a disconnected service must not invalidate the new identity")
+    }
 }

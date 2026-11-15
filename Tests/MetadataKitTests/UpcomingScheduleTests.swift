@@ -164,6 +164,52 @@ final class UpcomingScheduleTests: XCTestCase {
         }
     }
 
+    func testSingleNextSuccessCannotHideCalendarOutagesAndRetryRecovers() async throws {
+        for media in [#"{"id":42}"#, #"{"id":42,"nextAiringEpisode":{"airingAt":1900000000,"episode":1}}"#] {
+            for order: [MetadataSource] in [[.anilist, .tvdb, .tvmaze], [.tvdb, .anilist, .tvmaze]] {
+                let anilist = try CalendarListingFixture(mediaJSON: media)
+                let calendars = try CalendarListingFixture()
+                await calendars.setAvailable(false)
+                let providers: [any MetadataEnrichmentProvider] = [
+                    AniListEnrichmentProvider(client: anilist),
+                    TVDBEnrichmentProvider(client: calendars),
+                    TVmazeEnrichmentProvider(client: calendars),
+                ]
+                let resolver = SeriesScheduleResolver(pipeline: MetadataEnrichmentPipeline(
+                    providers: providers.map {
+                        ResilientEnrichmentProvider(
+                            base: $0, breaker: ProviderCircuitBreaker(), cache: ProviderResultCache()
+                        )
+                    },
+                    config: MetadataEnrichmentConfig(order: order, usesGlobalOrder: true)
+                ))
+                let interval = DateInterval(start: day, duration: 86_400)
+                do {
+                    _ = try await resolver.calendarEpisodes(for: calendarQuery, in: interval)
+                    XCTFail("A single-next response must not erase failed full-calendar evidence")
+                } catch {
+                    XCTAssertEqual(error as? AppError, .notFound)
+                }
+                await calendars.setAvailable(true)
+                let recovered = try await resolver.calendarEpisodes(for: calendarQuery, in: interval)
+                XCTAssertTrue(recovered.isEmpty, "The recovered complete calendar supersedes a partial next episode")
+            }
+        }
+    }
+
+    func testSingleNextEpisodeRemainsUsableWithoutAFullCalendarProvider() async throws {
+        let client = try CalendarListingFixture(
+            mediaJSON: #"{"id":42,"nextAiringEpisode":{"airingAt":1900000000,"episode":1}}"#
+        )
+        let resolver = SeriesScheduleResolver(pipeline: MetadataEnrichmentPipeline(
+            providers: [AniListEnrichmentProvider(client: client)]
+        ))
+        let result = try await resolver.calendarEpisodes(
+            for: calendarQuery, in: DateInterval(start: day, duration: 86_400)
+        )
+        XCTAssertEqual(result.map(\.absoluteEpisodeNumber), [1])
+    }
+
     func testUnmatchedTitleIsNotAnOutageButMalformedOrFailedRequestsRemainRetryable() async throws {
         let query = MetadataQuery(MediaItem(id: "unknown", title: "Unlisted show", kind: .series))
         for reply: PublicFeedDiscoveryTestTransport.Reply in [
@@ -261,8 +307,8 @@ private actor CalendarListingFixture: TVmazeEnriching, TVDBEnriching, AniListEnr
     private let media: AniListArtworkProvider.Media
     private(set) var calls = 0
 
-    init() throws {
-        media = try JSONDecoder().decode(AniListArtworkProvider.Media.self, from: Data(#"{"id":42}"#.utf8))
+    init(mediaJSON: String = #"{"id":42}"#) throws {
+        media = try JSONDecoder().decode(AniListArtworkProvider.Media.self, from: Data(mediaJSON.utf8))
     }
 
     func setAvailable(_ available: Bool) { self.available = available }

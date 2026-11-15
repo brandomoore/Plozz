@@ -278,6 +278,31 @@ final class UpcomingFeedTests: XCTestCase {
         XCTAssertEqual(model.failedSourceCount, 0)
     }
 
+    func testPersonalInterestChangesInvalidateTheRetainedFeedWithoutAMountedTab() async {
+        let model = UpcomingFeedModel()
+        let saved = Self.release("saved")
+        await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
+            .init(releases: [saved])
+        }
+        for notification in [
+            Notification.Name.universalWatchlistDidChange, .universalWatchlistCacheDidLoad,
+            .personalRequestsDidChange
+        ] {
+            await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
+                XCTFail("A revisit without a mutation should reuse the fresh feed")
+                return .init()
+            }
+            let revision = model.refreshRevision
+            NotificationCenter.default.post(name: notification, object: nil)
+            XCTAssertGreaterThan(model.refreshRevision, revision)
+            let updated = model.releases.isEmpty ? [saved] : []
+            await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
+                .init(releases: updated)
+            }
+            XCTAssertEqual(model.releases, updated)
+        }
+    }
+
     func testPartialRefreshRetainsOnlyFailedSourcesAndHideIsProfileScoped() async throws {
         let suite = "upcoming-tests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

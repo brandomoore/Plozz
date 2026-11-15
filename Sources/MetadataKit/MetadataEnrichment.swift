@@ -209,13 +209,21 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         // Schedule: first provider (in configured order) to report a next episode
         // wins, mirroring the priority-respecting merge used for fields above.
         if !present.contains(.nextAiringEpisode) {
-            if other.calendarScheduleAvailable == true { calendarScheduleAvailable = true }
-            if other.calendarScheduleAvailable == false, calendarScheduleAvailable != true {
+            // Only a complete listing can supersede another provider's failed calendar request.
+            if other.calendarScheduleAvailable == true,
+               calendarScheduleAvailable != false || other.calendarScheduleComplete == true {
+                calendarScheduleAvailable = true
+            }
+            if other.calendarScheduleAvailable == false, calendarScheduleComplete != true {
                 calendarScheduleAvailable = false
             }
-            if other.calendarScheduleComplete == true { calendarScheduleComplete = true }
             if other.calendarScheduleNotFound == true { calendarScheduleNotFound = true }
-            if !other.upcomingEpisodes.isEmpty, upcomingEpisodes.isEmpty {
+            if other.calendarScheduleComplete == true, calendarScheduleComplete != true {
+                calendarScheduleComplete = true
+                upcomingEpisodes = other.upcomingEpisodes
+                upcomingEpisode = other.upcomingEpisode
+                cadence = other.cadence
+            } else if !other.upcomingEpisodes.isEmpty, upcomingEpisodes.isEmpty {
                 // A provider that lists the whole run supersedes one that reported
                 // only the next episode. Its singular is taken too: the list and the
                 // next episode must describe the same source, or a per-season run

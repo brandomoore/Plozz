@@ -623,7 +623,7 @@ final class HomeMetadataPerformanceTests: XCTestCase {
         var cardInputs = 0
         var observedTailBiography: String?
         var presentedItems: [String: MediaItem] = [:]
-        lazy var statusCue: (MediaItem) -> LocalizedStringResource? = { [weak self] item in
+        lazy var statusCue: (MediaItem) -> Text? = { [weak self] item in
             self?.cardInputs += 1
             self?.presentedItems[item.stablePresentationID] = item
             return nil

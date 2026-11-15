@@ -3,6 +3,9 @@
 `PosterCardView.captionSubtitle` supplies localized, caller-owned context in the
 normal caption and accessibility value without mutating media metadata. Omitting
 it preserves the standard provider subtitle and runtime.
+`PosterCardView.statusCue` and `MediaRowView.statusCue` accept `Text` so callers
+can distinguish localized labels from preformatted content such as release dates.
+Combined release cues keep their localized subtitle deferred until rendering.
 On iOS, `PosterCardView` supplies the card visuals, not a tap handler. Callers
 must wrap it in a native button or navigation link; `MediaArtworkZoomButton`
 supports closure-driven selection with the shared artwork transition. tvOS

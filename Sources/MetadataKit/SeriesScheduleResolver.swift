@@ -61,7 +61,8 @@ public actor SeriesScheduleResolver {
            enrichment.calendarScheduleAvailable != false, episodes.isEmpty {
             return []
         }
-        guard enrichment.calendarScheduleAvailable == true || !episodes.isEmpty else {
+        guard enrichment.calendarScheduleAvailable != false,
+              enrichment.calendarScheduleAvailable == true || !episodes.isEmpty else {
             throw AppError.notFound
         }
         return episodes.filter { $0.airDate >= interval.start && $0.airDate < interval.end }

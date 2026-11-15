@@ -41,6 +41,7 @@ public final class UpcomingFeedModel {
     @ObservationIgnored private var hiddenKey: String?
     @ObservationIgnored private var refreshedAt: Date?
     @ObservationIgnored private nonisolated(unsafe) var task: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var interestObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let cache: UpcomingFeedCache?
@@ -48,9 +49,20 @@ public final class UpcomingFeedModel {
     public init(defaults: UserDefaults = .standard, cache: UpcomingFeedCache? = nil) {
         self.defaults = defaults
         self.cache = cache
+        interestObservers = [
+            Notification.Name.universalWatchlistDidChange, .universalWatchlistCacheDidLoad,
+            .personalRequestsDidChange
+        ].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshRevision += 1 }
+            }
+        }
     }
 
-    deinit { task?.cancel() }
+    deinit {
+        task?.cancel()
+        for observer in interestObservers { NotificationCenter.default.removeObserver(observer) }
+    }
 
     public var visibleReleases: [UpcomingRelease] {
         releases.filter { !hiddenTitles.contains($0.titleKey) && filters.includes($0) }

@@ -181,7 +181,10 @@ this checks wide layout, not device rotation. That render is saved to
 `HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
 request-connection changes invalidate in-flight results. Viewing/watchlist
 mutations and request attempts refresh the feed; foreground entry checks freshness
-instead of invalidating a fresh result. Opening
+instead of invalidating a fresh result. The retained feed model observes watchlist
+changes, cache restoration and request completion even when its tab is absent.
+Request completion from a disconnected service is ignored. tvOS gates network
+refreshes, not invalidation, on tab visibility. Opening
 Upcoming reuses Home's existing work and data, checking freshness rather than
 unconditionally restarting it.
 An off-main, bounded disk snapshot restores releases across model recreation and
@@ -209,7 +212,9 @@ previous same-scope entries remain available rather than turning an outage into
 a successful empty agenda.
 Successful empty full-calendar listings retain their completeness in the provider
 cache and stop unnecessary fallback; a single-next-episode source still permits
-full-calendar fallback. TVmaze reuses a known show ID and does not fetch unused
+full-calendar fallback. A successful single-next response cannot mask a failed
+full-calendar request; complete listings, including empty ones, replace partial
+next-episode answers. TVmaze reuses a known show ID and does not fetch unused
 cadence metadata for calendar requests. An authoritative unmatched title means
 no announced dates, not a source outage. Transport, decoding, listing, and
 fallback failures remain distinguishable from that result.

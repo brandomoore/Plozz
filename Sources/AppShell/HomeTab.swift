@@ -640,17 +640,8 @@ struct HomeTab: View {
                 guard isActiveTab else { return }
                 await refreshUpcoming()
             }
-            .onChange(of: seer.personalRequestsRevision) { _, _ in
-                if isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
-            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active, isActiveTab { sharedHomeViewModel.upcoming.refreshIfStale() }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistDidChange)) { _ in
-                if isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistCacheDidLoad)) { _ in
-                if isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
             }
             .youTubeTrailerOpeningFailures(trailerOpening)
             .externalMediaOpeningFailures(externalOpening)

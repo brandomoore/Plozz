@@ -42,7 +42,7 @@ struct RelatedRowView: View {
                     leadingInset: leadingInset,
                     onFocusEntered: onFocusEntered,
                     statusCue: { item in
-                        continuationItemIDs.contains(item.id) ? "Continues" : nil
+                        continuationItemIDs.contains(item.id) ? Text("Continues") : nil
                     },
                     onSelect: onSelect
                 )

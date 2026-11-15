@@ -252,10 +252,10 @@ public struct MediaRowView: View {
     private let onCardFocused: ((MediaItem) -> Void)?
     private let onItemExposed: ((MediaItem) -> Void)?
     private let isExposureActive: Bool
-    /// Optional localized cue drawn on selected card kinds (e.g. a Related row
+    /// Optional cue drawn on selected card kinds (e.g. a Related row
     /// marks sequels/spin-offs as "Continues"). The row owns card construction,
     /// so callers need this seam rather than rebuilding the whole rail.
-    private let statusCue: ((MediaItem) -> LocalizedStringResource?)?
+    private let statusCue: ((MediaItem) -> Text?)?
     /// Cards retained by a stale Watchlist row after their removal was accepted.
     private let pendingRemovalIDs: Set<String>
     /// Stable lookup tables so focus/prefetch hot paths avoid repeated linear scans.
@@ -310,7 +310,7 @@ public struct MediaRowView: View {
         onCardFocused: ((MediaItem) -> Void)? = nil,
         onItemExposed: ((MediaItem) -> Void)? = nil,
         isExposureActive: Bool = true,
-        statusCue: ((MediaItem) -> LocalizedStringResource?)? = nil,
+        statusCue: ((MediaItem) -> Text?)? = nil,
         pendingRemovalIDs: Set<String> = [],
         loadingPlaceholderCount: Int = 0,
         reservesLoadingFocus: Bool = false,
@@ -376,7 +376,7 @@ public struct MediaRowView: View {
         onCardFocused: ((MediaItem) -> Void)? = nil,
         onItemExposed: ((MediaItem) -> Void)? = nil,
         isExposureActive: Bool = true,
-        statusCue: ((MediaItem) -> LocalizedStringResource?)? = nil,
+        statusCue: ((MediaItem) -> Text?)? = nil,
         pendingRemovalIDs: Set<String> = [],
         loadingPlaceholderCount: Int = 0,
         reservesLoadingFocus: Bool = false,

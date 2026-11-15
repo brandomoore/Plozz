@@ -1595,9 +1595,6 @@ struct PlozziOSTabShell: View {
         .task(id: "\(upcomingScopeKey)|\(sharedHomeViewModel.upcoming.refreshRevision)|\(appModel.isLiveTVProfileAuthorized)") {
             await refreshUpcoming()
         }
-        .onChange(of: appModel.seerService.personalRequestsRevision) { _, _ in
-            sharedHomeViewModel.upcoming.refreshRevision += 1
-        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { sharedHomeViewModel.upcoming.refreshIfStale() }
         }
@@ -1610,11 +1607,9 @@ struct PlozziOSTabShell: View {
         .onAppear { refreshWatchlistNavigation() }
         .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistDidChange)) { _ in
             refreshWatchlistNavigation()
-            sharedHomeViewModel.upcoming.refreshRevision += 1
         }
         .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistCacheDidLoad)) { _ in
             refreshWatchlistNavigation()
-            sharedHomeViewModel.upcoming.refreshRevision += 1
         }
         .onChange(of: NavigationDestinationDefaults.iOS(
             visibleLibraries: appModel.visibleNavigationLibraries,
