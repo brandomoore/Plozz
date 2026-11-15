@@ -16,6 +16,63 @@ private extension LiveTVPrototypeImportModel {
 
 @MainActor
 final class LiveTVPrototypeImportModelTests: XCTestCase {
+    func testChannelNamePreviewUsesAuthorizedOriginalIPTVNamesAndExcludesOverridesAndHiddenChannels() async throws {
+        var authorized = true
+        let channels = ["## News H D ##", "|UK| Sport U H D", "** Films F H D **", "## Plex H D ##"]
+            .enumerated().map { index, name in
+                LiveTVPrototypeChannel(
+                    id: "preview-\(index)", number: index + 1, name: name, category: "Test",
+                    symbol: "tv", accent: 0, source: index == 3 ? .plex : .iptv, tagline: ""
+                )
+            }
+        let source = LiveTVPlaylistSource(
+            id: "preview", name: "Preview provider", playlistURL: URL(string: "https://example.test/list.m3u")!
+        )
+        let loader = ImportLoaderStub(channels: channels)
+        let imports = LiveTVPrototypeImportModel(
+            configuration: .init(playlists: [source]), loader: loader, catalogIsAuthorized: { authorized }
+        )
+        let model = LiveTVPrototypeModel(channels: [])
+        XCTAssertTrue(imports.channelNamePreviewSamples.isEmpty)
+        await imports.reload(into: model)
+        let originals = Array(channels.prefix(3).map(\.name))
+        XCTAssertEqual(imports.channelNamePreviewSamples, originals)
+        model.cleanChannelNames = true
+        XCTAssertEqual(imports.channelNamePreviewSamples, originals)
+        let custom = try XCTUnwrap(model.channels.first { $0.name == "News HD" })
+        XCTAssertTrue(model.setMetadataOverride(.init(name: "My news"), channelID: custom.id))
+        let hidden = try XCTUnwrap(model.channels.first { $0.name == "UK | Sport UHD" })
+        XCTAssertTrue(model.hideChannel(hidden))
+        XCTAssertEqual(imports.channelNamePreviewSamples, ["** Films F H D **"])
+        authorized = false
+        XCTAssertTrue(imports.channelNamePreviewSamples.isEmpty, "Revocation hides samples before the next reload.")
+        authorized = true
+        try imports.applyConfiguration(.empty, into: model)
+        XCTAssertTrue(imports.channelNamePreviewSamples.isEmpty)
+        let guideLoads = await loader.guideLoads
+        XCTAssertEqual(guideLoads, 0)
+    }
+
+    func testNameCleanupNeverChangesNamesSubmittedForGuideMatching() async {
+        let channel = LiveTVPrototypeChannel(
+            id: "decorated", number: 1, name: "## UK|BBC One H D ##",
+            category: "News", symbol: "tv", accent: 0, source: .iptv, tagline: "",
+            guideID: "original-guide-id", guideName: "Original guide name"
+        )
+        let loader = ImportLoaderStub(channels: [channel])
+        let imports = LiveTVPrototypeImportModel(sources: [.us2], loader: loader)
+        let model = LiveTVPrototypeModel(channels: [])
+        model.cleanChannelNames = true
+        await imports.reload(into: model)
+        let submitted = await loader.submittedChannels
+        XCTAssertEqual(submitted, [channel])
+        XCTAssertEqual(model.channel(id: channel.id)?.name, "UK | BBC One HD")
+        model.cleanChannelNames = false
+        XCTAssertEqual(model.channel(id: channel.id), channel)
+        let loads = await loader.guideLoads
+        XCTAssertEqual(loads, 1, "A presentation change must not reload a guide")
+    }
+
     func testSuppliedGuideIDsRemainConfiguredAcrossPlaylistDiscovery() async {
         let sources = testSources()
         let loader = ImportLoaderStub(channels: [LiveTVPrototypeCatalog.channels[0]])
@@ -554,6 +611,7 @@ private actor ImportLoaderStub: LiveTVSourceLoading {
     private var cancellation: Boundary?
     private(set) var guideLoads = 0
     private(set) var submittedChannelCount = 0
+    private(set) var submittedChannels: [LiveTVPrototypeChannel] = []
     private(set) var submittedGuideDate: Date?
 
     init(
@@ -587,6 +645,7 @@ private actor ImportLoaderStub: LiveTVSourceLoading {
     ) async throws -> LiveTVGuideImport {
         guideLoads += 1
         submittedChannelCount = channels.count
+        submittedChannels = channels
         submittedGuideDate = now
         await beforeGuide()
         try throwRequestedCancellation(.guide)

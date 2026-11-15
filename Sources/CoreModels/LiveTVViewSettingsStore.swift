@@ -4,6 +4,7 @@ import Foundation
 public struct LiveTVViewSettings: Equatable, Sendable {
     public var startsWithCategories: Bool
     public var sortByName: Bool
+    public var cleanChannelNames: Bool
     public var autoPreview: Bool
     public var hasChosenAutoPreview: Bool
     public var keepWatchingWhileBrowsing: Bool
@@ -25,10 +26,12 @@ public struct LiveTVViewSettings: Equatable, Sendable {
         previewAfterWatching: Bool = true,
         showsRecentChannels: Bool = true,
         hasChosenAutoPreview: Bool = false,
-        startsWithCategories: Bool = true
+        startsWithCategories: Bool = true,
+        cleanChannelNames: Bool = false
     ) {
         self.startsWithCategories = startsWithCategories
         self.sortByName = sortByName
+        self.cleanChannelNames = cleanChannelNames
         self.autoPreview = autoPreview
         self.hasChosenAutoPreview = hasChosenAutoPreview
         self.keepWatchingWhileBrowsing = keepWatchingWhileBrowsing
@@ -59,6 +62,7 @@ public protocol LiveTVViewSettingsStoring: Sendable {
 public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecked Sendable {
     public static let didChange = Notification.Name("com.plozz.liveTV.view.didChange")
     static let sortByNameKey = "com.plozz.liveTV.view.sortByName"
+    static let cleanChannelNamesKey = "com.plozz.liveTV.view.cleanChannelNames"
     static let autoPreviewKey = "com.plozz.liveTV.view.autoPreview"
     static let hasChosenAutoPreviewKey = "com.plozz.liveTV.view.hasChosenAutoPreview"
     static let keepWatchingWhileBrowsingKey = "com.plozz.liveTV.view.keepWatchingWhileBrowsing"
@@ -71,6 +75,7 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
 
     private let defaults: UserDefaults
     private let sortByNameKey: String
+    private let cleanChannelNamesKey: String
     private let autoPreviewKey: String
     private let hasChosenAutoPreviewKey: String
     private let keepWatchingWhileBrowsingKey: String
@@ -86,6 +91,7 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
     public init(defaults: UserDefaults = .standard, namespace: String? = nil) {
         self.defaults = defaults
         self.sortByNameKey = SettingsKey.scoped(Self.sortByNameKey, namespace: namespace)
+        self.cleanChannelNamesKey = SettingsKey.scoped(Self.cleanChannelNamesKey, namespace: namespace)
         self.autoPreviewKey = SettingsKey.scoped(Self.autoPreviewKey, namespace: namespace)
         self.hasChosenAutoPreviewKey = SettingsKey.scoped(Self.hasChosenAutoPreviewKey, namespace: namespace)
         self.keepWatchingWhileBrowsingKey = SettingsKey.scoped(
@@ -113,12 +119,14 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
             previewAfterWatching: value(forKey: previewAfterWatchingKey, default: fallback.previewAfterWatching),
             showsRecentChannels: value(forKey: showsRecentChannelsKey, default: fallback.showsRecentChannels),
             hasChosenAutoPreview: value(forKey: hasChosenAutoPreviewKey, default: fallback.hasChosenAutoPreview),
-            startsWithCategories: value(forKey: startsWithCategoriesKey, default: fallback.startsWithCategories)
+            startsWithCategories: value(forKey: startsWithCategoriesKey, default: fallback.startsWithCategories),
+            cleanChannelNames: value(forKey: cleanChannelNamesKey, default: fallback.cleanChannelNames)
         )
     }
 
     public func save(_ settings: LiveTVViewSettings) {
         defaults.set(settings.sortByName, forKey: sortByNameKey)
+        defaults.set(settings.cleanChannelNames, forKey: cleanChannelNamesKey)
         defaults.set(settings.autoPreview, forKey: autoPreviewKey)
         defaults.set(settings.hasChosenAutoPreview, forKey: hasChosenAutoPreviewKey)
         defaults.set(settings.keepWatchingWhileBrowsing, forKey: keepWatchingWhileBrowsingKey)

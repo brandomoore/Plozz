@@ -8,13 +8,84 @@ import Vision
 import XCTest
 
 @MainActor
+@Observable
+private final class ChannelNamePreviewSettings {
+    var value = LiveTVViewSettings()
+}
+
+private struct ChannelNamePreviewFixture: View {
+    @Bindable var settings: ChannelNamePreviewSettings
+
+    var body: some View {
+        LiveTVChannelNameSettings(settings: $settings.value)
+            .environment(\.liveTVChannelNamePreviewSamples, [
+                "## UK|NOW TV SPORT U H D 3840P ##", "** BBC One H D **", "|FR| Canal+ F H D"
+            ])
+    }
+}
+
+@MainActor
 final class SettingsControlRowsHostedTests: XCTestCase {
+    func testChannelNamePreviewUpdatesWithoutLosingNativeToggleFocus() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let settings = ChannelNamePreviewSettings()
+        let host = SettingsSurfaceFocusHost(rootView: AnyView(
+            ChannelNamePreviewFixture(settings: settings)
+                .frame(width: 1100)
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+        ))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let focusDeadline = ContinuousClock.now + .seconds(5)
+        while focusItems(in: host.view).isEmpty, ContinuousClock.now < focusDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let item = try XCTUnwrap(focusItems(in: host.view).first)
+        let system = try XCTUnwrap(UIFocusSystem(for: window))
+        host.target = item
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        host.target = nil
+        for enabled in [false, true, false] {
+            settings.value.cleanChannelNames = enabled
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(250))
+            XCTAssertTrue(system.focusedItem === item, "Changing the preview must retain the native toggle's focus")
+            let image = DetailTransitionSnapshot.image(of: window)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            XCTAssertTrue(text.contains("Clean channel names"), text)
+            XCTAssertTrue(text.contains(enabled ? "SPORT UHD 3840P" : "SPORT U H D 3840P"), text)
+            XCTAssertTrue(text.contains(enabled ? "BBC One HD" : "BBC One H D"), text)
+            XCTAssertTrue(text.contains(enabled ? "Canal+ FHD" : "Canal+ F H D"), text)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Channel names enabled=\(enabled)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testNavigationLinksAndControlsKeepTheirFocusFillAcrossBackgroundPreferences() async throws {
         let sceneDeadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < sceneDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
+
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)

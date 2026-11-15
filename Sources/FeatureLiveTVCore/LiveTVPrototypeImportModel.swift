@@ -131,6 +131,15 @@ public final class LiveTVPrototypeImportModel {
     public private(set) var guideDiscoveryFailures: [String: LiveTVSourceImportError] = [:]
     public private(set) var cacheFailure: LiveTVSourceImportError?
     public private(set) var catalogRevision = 0
+    public var channelNamePreviewSamples: [String] {
+        _ = catalogRevision
+        guard catalogIsAuthorized(), let model = publishedModel else { return [] }
+        let hidden = model.effectiveHiddenChannelIDs
+        let overrides = model.channelOverrides
+        return IPTVChannelName.previewSamples(from: sourceChannels.lazy.filter {
+            $0.source == .iptv && !hidden.contains($0.id) && overrides[$0.id]?.name == nil
+        }.map(\.name))
+    }
     public private(set) var mappingOverrides: [String: LiveTVGuideMappingOverride] = [:]
     public var supportsDurableCatalog: Bool { cache != nil }
     public var portableGuideMappings: [String: LiveTVPortableGuideMapping] {

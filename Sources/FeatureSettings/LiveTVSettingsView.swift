@@ -95,7 +95,6 @@ private struct LiveTVBrowsingSettingsSections: View {
             } label: {
                 SettingsDisclosureLabel { Label("Guide preferences", systemImage: "calendar") }
             }
-            .buttonStyle(SettingsFormButtonStyle())
             .settingsActionRow()
             .accessibilityIdentifier("live-tv-guide-preferences")
             .settingsSearchAnchor("guide-preferences")
@@ -106,11 +105,11 @@ private struct LiveTVBrowsingSettingsSections: View {
             } label: {
                 SettingsDisclosureLabel { Label("Channel visibility", systemImage: "eye") }
             }
-            .buttonStyle(SettingsFormButtonStyle())
             .settingsActionRow()
             .accessibilityIdentifier("live-tv-channel-visibility")
             .settingsSearchAnchor("channel-visibility")
         }
+        LiveTVChannelNameSettings(settings: $settings)
         #if os(iOS)
         SettingsSectionGroup("Playback") {
             Toggle("Stop without Wi-Fi or Ethernet", isOn: $settings.wifiOnly).settingsSearchAnchor("live-network")
@@ -118,6 +117,35 @@ private struct LiveTVBrowsingSettingsSections: View {
             Text("Stops Live TV after detecting a change away from Wi-Fi or Ethernet. Brief cellular data use may occur during the change. Cellular playback is allowed when this setting is off.")
         }
         #endif
+    }
+}
+
+struct LiveTVChannelNameSettings: View {
+    @Binding var settings: LiveTVViewSettings
+    @Environment(\.liveTVChannelNamePreviewSamples) private var samples
+    private let example = "## UK|NOW TV SPORT U H D 3840P ##"
+
+    var body: some View {
+        SettingsSectionGroup("Channel names") {
+            Toggle("Clean channel names", isOn: $settings.cleanChannelNames)
+                .accessibilityIdentifier("live-tv-clean-channel-names")
+                .settingsSearchAnchor("live-clean-channel-names")
+            VStack(alignment: .leading, spacing: 8) {
+                Text(samples.isEmpty ? LocalizedStringResource("Example") : "Preview")
+                    .font(.caption).settingsRowSecondary()
+                ForEach(Array((samples.isEmpty ? [example] : samples).enumerated()), id: \.offset) { index, name in
+                    Text(verbatim: settings.cleanChannelNames ? IPTVChannelName.cleaned(name) : name)
+                        .lineLimit(1)
+                        .accessibilityIdentifier(index == 0
+                            ? "live-tv-channel-name-preview" : "live-tv-channel-name-preview-\(index)")
+                }
+            }
+        } footer: {
+            Text(
+                "Cleans up extra symbols and spacing. Names you've edited stay the same.",
+                comment: "IPTV channel-name formatting footer. User-renamed channels are not changed."
+            )
+        }
     }
 }
 

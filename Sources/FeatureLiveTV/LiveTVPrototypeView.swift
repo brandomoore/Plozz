@@ -2373,6 +2373,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             if settings.startsWithCategories { model.category = nil }
         }
         model.sort = settings.sortByName ? .name : .channelNumber
+        model.cleanChannelNames = settings.cleanChannelNames
         model.favoritesOnly = settings.favoritesOnly
         model.guideOnly = settings.guideOnly
         model.showsRecentChannels = settings.showsRecentChannels
