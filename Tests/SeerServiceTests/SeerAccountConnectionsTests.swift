@@ -138,6 +138,21 @@ final class SeerAccountConnectionsTests: XCTestCase {
         XCTAssertEqual(http.lastSent(pathSuffix: "/settings/public")?.headers["Cookie"], "")
     }
 
+    func testMissingQuickConnectRouteRequestsPasswordWithoutApprovingACode() async throws {
+        let http = SeerRecordingHTTPClient()
+        http.stub(pathSuffix: "/settings/public", json: #"{"initialized":true,"mediaServerType":2,"mediaServerLogin":true}"#)
+        http.stub(pathSuffix: "/quickconnect/initiate", json: "{}", status: 404)
+        do {
+            _ = try await SeerAuthentication(baseURL: url, http: http).jellyfin { _ in
+                XCTFail("An unavailable Quick Connect route must not authorize a media login")
+            }
+            XCTFail("An older server must require explicit password entry")
+        } catch {
+            XCTAssertEqual(error as? SeerAuthentication.Failure, .quickConnectUnavailable)
+        }
+        XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/quickconnect/authenticate") })
+    }
+
     @MainActor
     func testExpiredSessionNeverFallsBackToHouseholdKey() async throws {
         let profile = Profile(id: "first", name: "First")

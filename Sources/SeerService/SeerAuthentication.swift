@@ -18,6 +18,10 @@ public struct SeerAuthenticatedAccount: Sendable {
 
 /// A fresh, cookie-isolated login transaction. Passwords are never persisted.
 public actor SeerAuthentication {
+    public enum Failure: Error, Equatable {
+        case quickConnectUnavailable
+    }
+
     private let baseURL: URL
     private let http: HTTPClient
     private var cookies: [String: String] = [:]
@@ -70,7 +74,12 @@ public actor SeerAuthentication {
         let methods = try await methods()
         guard methods.mediaServerLogin == true, methods.mediaServerType == 2 else { throw AppError.unauthorized }
         struct Challenge: Decodable { let code: String; let secret: String }
-        let challenge = try await decoded(Challenge.self, endpoint: Endpoint(method: .post, path: "/api/v1/auth/jellyfin/quickconnect/initiate"))
+        let challenge: Challenge
+        do {
+            challenge = try await decoded(Challenge.self, endpoint: Endpoint(method: .post, path: "/api/v1/auth/jellyfin/quickconnect/initiate"))
+        } catch AppError.notFound {
+            throw Failure.quickConnectUnavailable
+        }
         try Task.checkCancellation()
         try await approve(challenge.code)
         try Task.checkCancellation()

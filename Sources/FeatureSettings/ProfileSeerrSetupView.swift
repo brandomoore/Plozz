@@ -66,6 +66,7 @@ public struct ProfileSeerrSetupView: View {
                             replacing: changingAccount ? seer.profileConnections.selected?.id : nil,
                             onConnected: onContinue
                         )
+                        Divider()
                         Button {
                             if changingAccount { changingAccount = false }
                             else { onContinue() }

@@ -69,7 +69,7 @@ struct SeerSignInForm: View {
             } else {
                 addressSection
                 if mode == .media || mode == .local {
-                    SettingsSectionGroup("Sign in") {
+                    SettingsSectionGroup(passwordTitle) {
                         SettingsInputRow(mode == .local ? "Email" : "Username") {
                             TextField(mode == .local ? "Email" : "Username", text: $username)
                                 .textContentType(mode == .local ? .emailAddress : .username)
@@ -178,7 +178,7 @@ struct SeerSignInForm: View {
         case .local, .media: return "Sign in"
         case .apiKey: return "Connect"
         case .options:
-            if let account = availableAccounts.first { return "Continue as \(account.name)" }
+            if let account = availableAccounts.first { return "Sign in as \(account.name)" }
             if methods?.mediaServerLogin == true, methods?.mediaServerType == 1 { return "Sign in with Plex" }
             return "Continue"
         }
@@ -187,10 +187,16 @@ struct SeerSignInForm: View {
     private var canSubmit: Bool {
         guard normalizedURL != nil, operation == nil, profileID == seer.activeProfileID else { return false }
         switch mode {
-        case .local, .media: return !username.isEmpty && !password.isEmpty
+        case .local: return !username.isEmpty && !password.isEmpty
+        case .media: return !username.isEmpty
         case .apiKey: return !key.isEmpty && !seer.refusesAdminRequests()
         case .options: return true
         }
+    }
+
+    private var passwordTitle: LocalizedStringResource {
+        if mode == .local { return "Seerr account" }
+        return methods?.mediaServerType == 3 ? "Emby account" : "Jellyfin account"
     }
 
     private func continueSignIn() {
@@ -208,38 +214,57 @@ struct SeerSignInForm: View {
     }
 
     private var alternatives: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let accounts = availableAccounts
+        return VStack(spacing: 12) {
             if let methods, methods.mediaServerLogin == true || methods.localLogin == true {
-                Menu {
-                    ForEach(availableAccounts) { option in
-                        Button("Continue as \(option.name)") { mode = .options; start(.existing(option)) }
+                ForEach(accounts.filter { mode != .options || $0.id != accounts.first?.id }) { option in
+                    Button {
+                        selectMode(.options)
+                        start(.existing(option))
+                    } label: {
+                        Text("Sign in as \(option.name)")
+                            .frame(maxWidth: .infinity).plozzPageActionLabel()
                     }
-                    if methods.mediaServerLogin == true {
-                        if methods.mediaServerType == 1 {
-                            Button("Sign in with Plex") { start(.plex) }
-                        } else if methods.mediaServerType == 2 || methods.mediaServerType == 3 {
-                            Button("Another \(methods.mediaServerType == 2 ? "Jellyfin" : "Emby") account") { selectMode(.media) }
+                }
+                if methods.mediaServerLogin == true {
+                    if methods.mediaServerType == 1, mode != .options || !accounts.isEmpty {
+                        Button {
+                            selectMode(.options)
+                            start(.plex)
+                        } label: {
+                            Text(accounts.isEmpty ? "Sign in with Plex" : "Use another Plex account")
+                                .frame(maxWidth: .infinity).plozzPageActionLabel()
+                        }
+                    } else if [2, 3].contains(methods.mediaServerType ?? 0), mode != .media {
+                        let title: LocalizedStringResource = methods.mediaServerType == 2
+                            ? (accounts.isEmpty ? "Sign in with Jellyfin" : "Use another Jellyfin account")
+                            : "Sign in with Emby"
+                        Button { selectMode(.media) } label: {
+                            Text(title).frame(maxWidth: .infinity).plozzPageActionLabel()
                         }
                     }
-                    if methods.localLogin == true {
-                        Button("Seerr account") { selectMode(.local) }
-                    }
-                } label: {
-                    Text("Other sign-in options")
                 }
-                .plozzPageActionButton(role: .secondary)
-                .disabled(operation != nil)
-            } else if mode != .options {
-                Button("Other sign-in options") { selectMode(.options); if normalizedURL != nil { start(.check) } }
-                    .plozzPageActionButton(role: .secondary)
-                    .disabled(operation != nil)
+                if methods.localLogin == true, mode != .local {
+                    Button { selectMode(.local) } label: {
+                        Text("Seerr account").frame(maxWidth: .infinity).plozzPageActionLabel()
+                    }
+                }
+            } else if methods == nil, mode != .options {
+                Button {
+                    selectMode(.options)
+                    if normalizedURL != nil { start(.check) }
+                } label: {
+                    Text("Use an account").frame(maxWidth: .infinity).plozzPageActionLabel()
+                }
             }
             if mode != .apiKey {
-                Button("Use API key") { selectMode(.apiKey) }
-                    .plozzPageActionButton(role: .secondary)
-                    .disabled(operation != nil)
+                Button { selectMode(.apiKey) } label: {
+                    Text("Use API key").frame(maxWidth: .infinity).plozzPageActionLabel()
+                }
             }
         }
+        .plozzPageActionButton(role: .secondary)
+        .disabled(operation != nil)
     }
 
     private func selectMode(_ mode: Mode) {
@@ -345,7 +370,12 @@ struct SeerSignInForm: View {
             return
         } catch {
             guard self.operation?.id == operation.id, seer.activeProfileID == profileID else { return }
-            if case .check = operation.action {
+            if error as? SeerAuthentication.Failure == .quickConnectUnavailable,
+               case let .existing(option) = operation.action, option.mediaServerType == 2 {
+                selectMode(.media)
+                username = option.name
+                self.error = "Enter your Jellyfin password to continue."
+            } else if case .check = operation.action {
                 self.error = "Couldn’t reach Seerr. Check the address and try again."
             } else {
                 self.error = "Couldn’t sign in. Check your details and try again."

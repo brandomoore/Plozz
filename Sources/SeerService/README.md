@@ -8,19 +8,30 @@ same `SeerConnectionsView` and authentication implementation.
 
 - Existing authorized Jellyfin accounts can approve Seerr Quick Connect.
   Existing authorized Plex identities can exchange their Plex account token.
+  Seerr 3.5.2 rejects Plex managed Home users without an email address; these
+  identities must use another supported sign-in method. Never substitute the
+  household owner's token to get around that server limitation.
   `AppRuntime.SeerProfileAuthentication` checks profile membership, credential
   revision, and the returned media-user identity.
+  Jellyfin requests use the current `Authorization` header, including discovery
+  and Quick Connect approval. If an older Seerr lacks Quick Connect, setup asks
+  for the selected Jellyfin user's password instead of repeating a broken login.
 - Manual Plex linking, Jellyfin/Emby username and password, and local Seerr
   email and password are offered according to the server's public capabilities.
+  Media-server password fields allow an empty value for passwordless accounts;
+  the server still validates the submitted credentials.
   Silo and other providers can use a supported Seerr login or an API key.
 - Setup automatically checks a compatible Jellyfin plugin for an address, then
   runs bounded local discovery if none is supplied. Its administrator key is never
   imported. A single result fills the address; multiple results remain explicit
   choices. Late discovery never replaces user input or crosses profiles.
 - Sign-in has one primary action, favoring the profile's authorized media account.
-  Other methods are secondary; API-key entry stays directly available. Finding a
-  server never authenticates or saves an account. The authenticated identity is
-  shown for confirmation before saving.
+  **Sign in as [name]** reuses that identity; **Use another Jellyfin/Plex account**
+  starts a separate sign-in rather than competing with the saved-account action.
+  Supported alternatives, including API-key entry, appear directly as full-width
+  secondary buttons rather than in a menu. Password forms name the account type.
+  Finding a server never authenticates or saves an account. The authenticated
+  identity is shown for confirmation before saving.
 - First-run and new-profile setup use a focused, optional onboarding page, not
   the saved-account Settings page. Saving the confirmed account advances setup;
   existing connections keep their request identity and show a simple Continue.

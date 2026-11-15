@@ -128,7 +128,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }) { window, _, service in
             XCTAssertEqual(scans, 1)
             let text = try self.recognize(self.capture(window), size: window.bounds.size)
-            XCTAssertTrue(text.contains { $0.text.contains("Continue as Alex") })
+            XCTAssertTrue(text.contains { $0.text.contains("Sign in as Alex") })
             XCTAssertFalse(text.contains { $0.text.contains("Find on local network") })
             XCTAssertTrue(text.contains { $0.text.contains("Use API key") })
             XCTAssertFalse(service.isConfigured, "Finding a server must not authenticate or save an account")
@@ -176,7 +176,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             }
         }) { window, _, service in
             let text = try self.recognize(self.capture(window), size: window.bounds.size)
-            XCTAssertTrue(text.contains { $0.text.contains("Continue as Alex") })
+            XCTAssertTrue(text.contains { $0.text.contains("Sign in as Alex") })
             XCTAssertFalse(service.isConfigured)
         }
     }
@@ -185,14 +185,54 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         ((view as? UITextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields)
     }
 
+    func testPasswordlessMediaAccountCanSubmit() async throws {
+        try await render(size: .init(width: 768, height: 1024), state: .unconfigured, serverType: 3, configure: { service in
+            service.suggestedAddresses = { [URL(string: "https://suggested.example")!] }
+        }) { window, _, _ in
+            let fields = self.textFields(in: window)
+            let username = try XCTUnwrap(fields.first { !$0.isSecureTextEntry })
+            let password = try XCTUnwrap(fields.first { $0.isSecureTextEntry })
+            username.text = "Passwordless"
+            username.sendActions(for: .editingChanged)
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertTrue(password.text?.isEmpty != false)
+            password.sendActions(for: .primaryActionTriggered)
+            try await Task.sleep(for: .milliseconds(150))
+            let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+            XCTAssertTrue(text.contains("Use this account"), "An empty media password must reach server authentication")
+        }
+    }
+
+    func testSupportedSignInMethodsAreVisibleWithoutOpeningAMenu() async throws {
+        for (serverType, expected) in [(1, "Use another Plex account"), (2, "Use another Jellyfin account"), (3, "Emby account")] {
+            try await render(size: .init(width: 768, height: 1024), state: .unconfigured, serverType: serverType, configure: { service in
+                service.suggestedAddresses = { [URL(string: "https://suggested.example")!] }
+                service.loginOptions = {
+                    guard serverType != 3 else { return [] }
+                    return [.init(id: "alex", name: "Alex", mediaServerType: serverType, authenticate: { _ in throw AppError.unauthorized })]
+                }
+            }) { window, _, service in
+                let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+                XCTAssertEqual(text.contains("Sign in as Alex"), serverType != 3)
+                XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare(expected) == .orderedSame })
+                XCTAssertTrue(text.contains("Seerr account"))
+                XCTAssertTrue(text.contains("Use API key"))
+                XCTAssertTrue(text.contains("Not now"))
+                XCTAssertFalse(text.contains("Other sign-in options"))
+                XCTAssertFalse(service.isConfigured)
+            }
+        }
+    }
+
     private func render(
         size: CGSize, typeSize: DynamicTypeSize = .large,
         direction: LayoutDirection = .leftToRight, longNames: Bool = false,
         state: SeerrSetupHTTP.State = .connected,
+        serverType: Int = 2,
         configure: (SeerService) -> Void = { _ in },
         inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
-        let http = SeerrSetupHTTP(state: state, longNames: longNames)
+        let http = SeerrSetupHTTP(state: state, longNames: longNames, serverType: serverType)
         let store = InMemorySeerConnectionStore(connection: state == .unconfigured ? nil : .init(
             baseURL: URL(string: "https://fixture.invalid")!, apiKey: "fixture"
         ))
@@ -324,23 +364,33 @@ private actor SeerrSetupHTTP: HTTPClient {
     enum State { case connected, unconfigured, differentProfile, failed }
     let state: State
     let longNames: Bool
+    let serverType: Int
     private(set) var finished = false
 
-    init(state: State, longNames: Bool) {
+    init(state: State, longNames: Bool, serverType: Int) {
         self.state = state
         self.longNames = longNames
+        self.serverType = serverType
     }
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         let json: String
         if endpoint.path.hasSuffix("/settings/public") {
-            json = #"{"initialized":true,"mediaServerType":2,"mediaServerLogin":true,"localLogin":true}"#
+            json = #"{"initialized":true,"mediaServerType":\#(serverType),"mediaServerLogin":true,"localLogin":true}"#
         } else if endpoint.path.hasSuffix("/status") {
             json = #"{"version":"1.0"}"#
         } else if endpoint.path.hasSuffix("/auth/me") {
             finished = true
             if state == .failed { throw AppError.serverUnreachable }
             json = #"{"id":2,"displayName":"Alex","permissions":8}"#
+        } else if endpoint.path.hasSuffix("/auth/jellyfin") {
+            let body = try JSONSerialization.jsonObject(with: XCTUnwrap(endpoint.body)) as? [String: String]
+            XCTAssertEqual(body?["username"], "Passwordless")
+            XCTAssertEqual(body?["password"], "")
+            return (Data("{}".utf8), HTTPURLResponse(
+                url: baseURL, statusCode: 200, httpVersion: nil,
+                headerFields: ["Set-Cookie": "connect.sid=fixture; Path=/; HttpOnly"]
+            )!)
         } else {
             throw AppError.invalidResponse
         }

@@ -2,6 +2,7 @@ import CoreModels
 import CoreNetworking
 import FeatureAuthCore
 import Foundation
+import ProviderJellyfin
 import SeerService
 
 @MainActor
@@ -63,12 +64,14 @@ public enum SeerProfileAuthentication {
                     } else {
                         guard let token = accounts.accountStore.token(for: account.id) else { throw AppError.unauthorized }
                         expectedID = account.userID
+                        let authorization = JellyfinDeviceProfile(deviceID: accounts.deviceID)
+                            .authorizationHeaderValue(token: token)
                         result = try await auth.jellyfin { code in
                             try await MainActor.run { try requireCurrent() }
                             let endpoint = Endpoint(
                                 method: .post, path: "/QuickConnect/Authorize",
                                 queryItems: [URLQueryItem(name: "code", value: code)],
-                                headers: ["X-Emby-Token": token], redirectPolicy: .sameOrigin,
+                                headers: ["Authorization": authorization], redirectPolicy: .sameOrigin,
                                 allowsAutomaticAddressRetry: false
                             )
                             let approved = try await SeerAuthentication.makeHTTPClient().decode(
@@ -92,8 +95,10 @@ public enum SeerProfileAuthentication {
             var urls: [URL] = []
             for account in accounts.accounts where allowed.contains(account.id) && account.server.provider == .jellyfin {
                 guard let token = accounts.accountStore.token(for: account.id) else { continue }
+                let authorization = JellyfinDeviceProfile(deviceID: accounts.deviceID)
+                    .authorizationHeaderValue(token: token)
                 let endpoint = Endpoint(
-                    path: "/Streamyfin/config", headers: ["X-Emby-Token": token],
+                    path: "/Streamyfin/config", headers: ["Authorization": authorization],
                     redirectPolicy: .sameOrigin, allowsAutomaticAddressRetry: false
                 )
                 let (data, response) = try await SeerAuthentication.makeHTTPClient().sendRaw(endpoint, baseURL: account.server.baseURL)
