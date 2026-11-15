@@ -247,8 +247,9 @@ private struct SeerConnectionLabel: View {
     }
 }
 
-private struct SeerAccountPage<Content: View>: View {
+struct SeerAccountPage<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
+    var title: LocalizedStringResource = "Seerr"
     var dismissTitle: LocalizedStringResource = "Done"
     @ViewBuilder var content: Content
 
@@ -257,14 +258,14 @@ private struct SeerAccountPage<Content: View>: View {
             SeerSettingsPage {
                 VStack(alignment: .leading, spacing: 24) {
                     #if os(tvOS)
-                    SettingsPageHeader(verbatim: "Seerr")
+                    SettingsPageHeader(title)
                         .environment(\.settingsPageBackButton, AnyView(SettingsBackButton { dismiss() }))
                     #endif
                     content
                 }
             }
             #if os(iOS)
-            .navigationTitle(Text(verbatim: "Seerr"))
+            .navigationTitle(Text(title))
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { Text(dismissTitle) } } }
             #else
             .onExitCommand { dismiss() }

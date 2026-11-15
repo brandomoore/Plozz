@@ -64,7 +64,10 @@ public enum SeerProfileAuthentication {
                    !plex.hasResolvedWatchMutationIdentity(forAccountID: account.id) { return nil }
                 let revision = accounts.credentialRevision(account)
                 let name = profile.homeUserBinding(forPlexAccount: account.id)?.name ?? account.userName
-                return SeerLoginOption(id: account.id, name: name, mediaServerType: account.server.provider == .plex ? 1 : 2) { url in
+                return SeerLoginOption(
+                    id: account.id, name: name, mediaServerType: account.server.provider == .plex ? 1 : 2,
+                    serverName: account.server.name, serverURL: account.server.baseURL
+                ) { url in
                     @MainActor @Sendable func requireCurrent() throws {
                         guard profiles.activeProfileID == profile.id,
                               Set(accounts.activeAccountIDs(forProfile: profile.id)).contains(account.id),

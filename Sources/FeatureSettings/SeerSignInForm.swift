@@ -30,6 +30,7 @@ struct SeerSignInForm: View {
     @State private var rescan = false
     @State private var addressEdited = false
     @State private var detectedServer = false
+    @State private var choosingAccount = false
     @FocusState private var primaryFocused: Bool
     private enum Action { case check, existing(SeerLoginOption), password, apiKey, plex }
     private struct Operation: Identifiable {
@@ -59,6 +60,7 @@ struct SeerSignInForm: View {
                     address: address,
                     detectedServer: detectedServer,
                     accountName: suggestedAccountName,
+                    provider: mediaProvider,
                     signInTitle: suggestedSignInTitle,
                     canContinue: methods != nil,
                     discovering: discovering,
@@ -81,6 +83,7 @@ struct SeerSignInForm: View {
                     )
                 }
                 addressSection
+                if mode == .options { mediaProviderHeading }
                 if mode == .media || mode == .local {
                     SettingsSectionGroup(passwordTitle) {
                         SettingsInputRow(mode == .local ? "Email" : "Username") {
@@ -119,6 +122,7 @@ struct SeerSignInForm: View {
                 .plozzPageActionButton()
                 .disabled(!canSubmit)
                 .focused($primaryFocused)
+                .accessibilityIdentifier("seerr-sign-in-continue")
                 alternatives
             }
             if authenticatedAccount != nil, let message = error {
@@ -128,6 +132,29 @@ struct SeerSignInForm: View {
         #if os(tvOS)
         .defaultFocus($primaryFocused, true)
         #endif
+        .sheet(isPresented: $choosingAccount) {
+            SeerAccountPage(title: "Choose existing account", dismissTitle: "Cancel") {
+                SettingsSectionGroup {
+                    ForEach(availableAccounts) { option in
+                        Button { chooseExistingAccount(option.id) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(verbatim: option.name).font(.headline).plozzForeground(.primary)
+                                if let name = option.serverName, !name.isEmpty {
+                                    Text(verbatim: name).plozzForeground(.secondary)
+                                }
+                                if let url = option.serverURL {
+                                    Text(verbatim: url.absoluteString)
+                                        .font(.caption).plozzForeground(.secondary)
+                                }
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .settingsActionRow()
+                        .accessibilityIdentifier("seerr-existing-account-\(option.id)")
+                    }
+                }
+            }
+        }
         .task(id: addressEdited ? nil : discoveryRevision) { if !addressEdited { await findAddress() } }
         .onChange(of: seer.setupDiscoveryScope) {
             guard !addressEdited else { return }
@@ -149,6 +176,7 @@ struct SeerSignInForm: View {
             seer.setupDiscovery.cancel()
         }
         .onChange(of: seer.activeProfileID) {
+            choosingAccount = false
             addressEdited = true
             operation = nil
             authenticatedAccount = nil
@@ -159,28 +187,61 @@ struct SeerSignInForm: View {
     }
 
     private var addressSection: some View {
-        SettingsSectionGroup(methods == nil ? "Server address" : "Server") {
-            if methods != nil, mode != .apiKey {
-                HStack {
-                    Text(address).font(.subheadline).fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Button("Change") { methods = nil; mode = .options; error = nil }
-                        .plozzActionButton(role: .secondary)
-                        .disabled(operation != nil)
-                }
-            } else {
-                TextField("Server address", text: Binding(
-                    get: { address },
-                    set: { address = $0; addressEdited = true; suggestions = []; methods = nil; error = nil }
-                ), prompt: Text(verbatim: "https://requests.example.com"))
-                    .textContentType(.URL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .settingsWorkspaceEntry()
-                    .disabled(operation != nil)
-                    .onSubmit { if canSubmit { continueSignIn() } }
+        SettingsSectionGroup("Server address") {
+            TextField("Server address", text: Binding(get: { address }, set: editAddress),
+                      prompt: Text(verbatim: "https://requests.example.com"))
+                .textContentType(.URL)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .settingsWorkspaceEntry()
+                .disabled(operation != nil)
+                .accessibilityIdentifier("seerr-server-address")
+                .onSubmit { if canSubmit { continueSignIn() } }
+        }
+    }
+
+    private func editAddress(_ value: String) {
+        guard address != value else { return }
+        address = value
+        addressEdited = true
+        detectedServer = false
+        suggestions = []
+        discovering = false
+        choosingAccount = false
+        seer.setupDiscovery.cancel()
+        methods = nil
+        operation = nil
+        authenticatedAccount = nil
+        authenticationRevision = nil
+        username = ""
+        password = ""
+        key = ""
+        if mode != .apiKey { mode = .options }
+        error = nil
+    }
+
+    private var mediaProvider: ProviderKind? {
+        guard methods?.mediaServerLogin == true else { return nil }
+        switch methods?.mediaServerType {
+        case 1: return .plex
+        case 2: return .jellyfin
+        case 3: return .emby
+        default: return nil
+        }
+    }
+
+    @ViewBuilder private var mediaProviderHeading: some View {
+        if let provider = mediaProvider {
+            Label {
+                Text(verbatim: provider.displayName).plozzForeground(.primary)
+            } icon: {
+                ProviderBrandMark(provider: provider, size: 24, showsBackground: false)
+                    .accessibilityHidden(true)
             }
+            .font(.headline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
         }
     }
 
@@ -203,7 +264,7 @@ struct SeerSignInForm: View {
     }
 
     private var suggestedSignInTitle: LocalizedStringResource {
-        if availableAccounts.count > 1 { return "Choose account" }
+        if availableAccounts.count > 1 { return "Choose existing account" }
         guard let methods else { return "Continue" }
         if methods.mediaServerLogin == true {
             switch methods.mediaServerType {
@@ -218,8 +279,8 @@ struct SeerSignInForm: View {
 
     private func continueSuggestedSignIn() {
         guard !discovering, operation == nil, profileID == seer.activeProfileID else { return }
-        if availableAccounts.count == 1, let account = availableAccounts.first {
-            start(.existing(account))
+        if !availableAccounts.isEmpty {
+            continueExistingAccount()
         } else if methods != nil, let url = normalizedURL, let profileID {
             do { try seer.rememberSetupServer(url, expectedProfileID: profileID) }
             catch is CancellationError { return }
@@ -233,6 +294,41 @@ struct SeerSignInForm: View {
                 }
             }
         }
+    }
+
+    private var existingAccountTitle: LocalizedStringResource {
+        if availableAccounts.count == 1, let account = availableAccounts.first {
+            return "Continue as \(account.name)"
+        }
+        return "Choose existing account"
+    }
+
+    private func continueExistingAccount() {
+        seer.synchronizeProfile()
+        let accounts = availableAccounts
+        guard profileID == seer.activeProfileID, operation == nil, !accounts.isEmpty else {
+            error = "This account is no longer available. Choose another account."
+            return
+        }
+        if accounts.count == 1, let account = accounts.first {
+            selectMode(.options)
+            start(.existing(account))
+        } else {
+            choosingAccount = true
+        }
+    }
+
+    private func chooseExistingAccount(_ id: String) {
+        guard choosingAccount else { return }
+        choosingAccount = false
+        seer.synchronizeProfile()
+        guard profileID == seer.activeProfileID, operation == nil,
+              let account = availableAccounts.first(where: { $0.id == id }) else {
+            error = "This account is no longer available. Choose another account."
+            return
+        }
+        selectMode(.options)
+        start(.existing(account))
     }
 
     private func openManualSetup() {
@@ -259,7 +355,7 @@ struct SeerSignInForm: View {
         case .local, .media: return "Sign in"
         case .apiKey: return "Connect"
         case .options:
-            if let account = availableAccounts.first { return "Sign in as \(account.name)" }
+            if !availableAccounts.isEmpty { return existingAccountTitle }
             if methods?.mediaServerLogin == true, methods?.mediaServerType == 1 { return "Sign in with Plex" }
             return "Continue"
         }
@@ -285,7 +381,7 @@ struct SeerSignInForm: View {
         case .local, .media: start(.password)
         case .apiKey: start(.apiKey)
         case .options:
-            if let account = availableAccounts.first { start(.existing(account)) }
+            if !availableAccounts.isEmpty { continueExistingAccount() }
             else if methods?.mediaServerLogin == true, methods?.mediaServerType == 1 { start(.plex) }
             else if methods?.mediaServerLogin == true, [2, 3].contains(methods?.mediaServerType ?? 0) { mode = .media }
             else if methods?.localLogin == true { mode = .local }
@@ -298,12 +394,10 @@ struct SeerSignInForm: View {
         let accounts = availableAccounts
         return VStack(spacing: 12) {
             if let methods, methods.mediaServerLogin == true || methods.localLogin == true {
-                ForEach(accounts.filter { mode != .options || $0.id != accounts.first?.id }) { option in
-                    Button {
-                        selectMode(.options)
-                        start(.existing(option))
-                    } label: {
-                        Text("Sign in as \(option.name)")
+                if mode != .options, mode != .media { mediaProviderHeading }
+                if !accounts.isEmpty, mode != .options {
+                    Button(action: continueExistingAccount) {
+                        Text(existingAccountTitle)
                             .frame(maxWidth: .infinity).plozzPageActionLabel()
                     }
                 }
@@ -317,11 +411,8 @@ struct SeerSignInForm: View {
                                 .frame(maxWidth: .infinity).plozzPageActionLabel()
                         }
                     } else if [2, 3].contains(methods.mediaServerType ?? 0), mode != .media {
-                        let title: LocalizedStringResource = methods.mediaServerType == 2
-                            ? (accounts.isEmpty ? "Sign in with Jellyfin" : "Use another Jellyfin account")
-                            : "Sign in with Emby"
                         Button { selectMode(.media) } label: {
-                            Text(title).frame(maxWidth: .infinity).plozzPageActionLabel()
+                            Text("Enter username and password").frame(maxWidth: .infinity).plozzPageActionLabel()
                         }
                     }
                 }
@@ -491,6 +582,7 @@ struct SeerSuggestedSetupView: View {
     let address: String
     let detectedServer: Bool
     let accountName: String?
+    let provider: ProviderKind?
     let signInTitle: LocalizedStringResource
     let canContinue: Bool
     let discovering: Bool
@@ -535,7 +627,14 @@ struct SeerSuggestedSetupView: View {
                 .accessibilityIdentifier("seerr-suggested-server")
             }
             Button(action: onContinue) {
-                Text(primaryTitle).frame(maxWidth: .infinity).plozzPageActionLabel()
+                HStack {
+                    if let provider {
+                        ProviderBrandMark(provider: provider, size: 24, showsBackground: false)
+                            .accessibilityLabel(Text(verbatim: provider.displayName))
+                    }
+                    Text(primaryTitle)
+                }
+                .frame(maxWidth: .infinity).plozzPageActionLabel()
             }
             .plozzPageActionButton()
             .disabled(discovering || signingIn || !canContinue || address.isEmpty)

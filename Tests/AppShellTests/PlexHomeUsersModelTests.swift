@@ -131,6 +131,30 @@ final class PlexHomeUsersModelTests: XCTestCase {
         await fulfillment(of: [refreshed], timeout: 1)
     }
 
+    func testSeerrExistingJellyfinChoicesIdentifyServersWithinTheActiveProfile() throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["plex"])
+        for id in ["first", "second", "excluded"] {
+            try hub.accountStore.add(Account(
+                id: id, server: MediaServer(
+                    id: id, name: "Server \(id)", baseURL: URL(string: "https://\(id).example")!, provider: .jellyfin
+                ), userID: id, userName: "Alex", deviceID: "device"
+            ), token: "fixture-\(id)")
+        }
+        hub.reloadAccounts()
+        profiles.setActiveAccountIDs(["first", "second"], for: profiles.activeProfileID)
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore())
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        let choices = service.loginOptions()
+        XCTAssertEqual(Set(choices.map(\.id)), ["first", "second"])
+        for choice in choices {
+            XCTAssertEqual(choice.name, "Alex")
+            XCTAssertEqual(choice.serverName, "Server \(choice.id)")
+            XCTAssertEqual(choice.serverURL, URL(string: "https://\(choice.id).example")!)
+        }
+        profiles.setActiveAccountIDs(["second"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.loginOptions().map(\.id), ["second"])
+    }
+
     func testOnePINAuthenticatesTheSameHomeUserAcrossServersWithDistinctServerTokens() async throws {
         for usesProfilePIN in [false, true] {
             let (model, hub, profiles) = try makeModel(accountIDs: ["a", "b", "c"], samePlexLogin: true)

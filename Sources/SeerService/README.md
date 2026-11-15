@@ -48,8 +48,8 @@ same `SeerConnectionsView` and authentication implementation.
   The shared `ServerDiscoveryRow` and bundled Seerr logo present the detected
   server in both suggested and manual setup, without a navigation chevron.
   Discovery labels use **Detected server** for one displayed result and
-  **Detected servers** for several. Restored or manually entered addresses
-  remain **Server**; an empty search remains **Servers**.
+  **Detected servers** for several. Restored address summaries remain **Server**;
+  an empty search remains **Servers**. Editable fields use **Server address**.
   Scan progress uses the standard section-header indicator, not a second
   account panel or button spinner. The stable setup offers
   **Continue as [name]** for one matching profile account, and otherwise names
@@ -78,11 +78,18 @@ same `SeerConnectionsView` and authentication implementation.
   Explicit Plex browser sign-in opens directly on iPhone/iPad, with a button to
   reopen it if needed. Only Apple TV shows a QR code and asks the user to scan
   with another device.
-- Sign-in has one primary action, favoring the profile's authorized media account.
-  **Sign in as [name]** reuses that identity; **Use another Jellyfin/Plex account**
-  starts a separate sign-in rather than competing with the saved-account action.
+- Sign-in offers **Continue as [name]** for one authorized media account or
+  **Choose existing account** for several, never an arbitrary first account.
+  The native chooser shows usernames with their media-server names and addresses
+  and resolves the selected ID against the current profile's available accounts.
+  Manual options name the provider with its shared logo. Jellyfin's secondary
+  action is **Enter username and password**; Plex retains its separate browser flow.
   Supported alternatives, including API-key entry, appear directly as full-width
   secondary buttons rather than in a menu. Password forms name the account type.
+  The server address remains a native editable URL field, without a Change button.
+  Editing cancels discovery and discards old capabilities, credentials and account
+  choices. It never probes or authenticates until an explicit submit; password
+  sign-in returns to checking the new server, while API-key entry clears its key.
   Finding a server never authenticates or saves an account. Manual sign-ins
   show the authenticated identity for confirmation before saving.
 - First-run and new-profile setup use a focused, optional onboarding page, not
