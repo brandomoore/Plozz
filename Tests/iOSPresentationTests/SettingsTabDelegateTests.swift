@@ -2,6 +2,7 @@
 import UIKit
 import XCTest
 import SwiftUI
+import Vision
 import CoreModels
 import CoreUI
 @testable import FeatureHomeCore
@@ -20,11 +21,15 @@ final class SettingsTabDelegateTests: XCTestCase {
     private func verifyUpcomingTodayAnchor(size: CGSize, hasTodayRelease: Bool) async throws {
         let today = Calendar.current.startOfDay(for: Date())
         let model = UpcomingFeedModel(defaults: UserDefaults(suiteName: UUID().uuidString)!)
-        let releases = (-30...30).flatMap { day in
-            (0..<(day == 0 ? (hasTodayRelease ? 1 : 0) : 1 + abs(day) % 7)).map { index in
+        let releases: [UpcomingRelease] = (-30...30).flatMap { day -> [UpcomingRelease] in
+            let count = day == 0 ? (hasTodayRelease ? 1 : 0) : 1 + abs(day) % 7
+            return (0..<count).map { index -> UpcomingRelease in
                 UpcomingRelease(
                     id: "\(day)-\(index)", titleKey: "\(day)-\(index)",
-                    item: MediaItem(id: "\(day)-\(index)", title: "Series \(day) \(index)", kind: .series),
+                    item: MediaItem(
+                        id: "\(day)-\(index)", title: "Series \(day) \(index)", kind: .series,
+                        allowsTitleBasedMetadataMatching: false
+                    ),
                     date: Calendar.current.date(byAdding: .day, value: day, to: today)!,
                     datePrecision: .dateOnly, kind: .episode, interests: [.watching]
                 )
@@ -34,9 +39,11 @@ final class SettingsTabDelegateTests: XCTestCase {
             UpcomingFeedSnapshot(releases: releases)
         }
         let host = UIHostingController(rootView:
-            UpcomingView(model: model, interval: DateInterval(
-                start: today.addingTimeInterval(-30 * 86_400), duration: 120 * 86_400
-            ))
+            NavigationStack {
+                UpcomingView(model: model, interval: DateInterval(
+                    start: today.addingTimeInterval(-30 * 86_400), duration: 120 * 86_400
+                ))
+            }
                 .environment(\.plozzMetrics, .touch(density: .standard))
                 .environment(\.horizontalSizeClass, size.width < 800 ? .compact : .regular)
         )
@@ -77,7 +84,7 @@ final class SettingsTabDelegateTests: XCTestCase {
             detent.reduceMotion = true
             XCTAssertTrue(UpcomingView.scrollToToday(in: scroll))
             let deadline = Date().addingTimeInterval(3)
-            while abs(scroll.contentOffset.y - initialToday) > 1, Date() < deadline {
+            while (abs(scroll.contentOffset.y - initialToday) > 1 || detent.phase != .idle), Date() < deadline {
                 try await Task.sleep(for: .milliseconds(25))
             }
             XCTAssertEqual(scroll.contentOffset.y, initialToday, accuracy: 1, "Each navigation tap returns to Today")
@@ -125,12 +132,138 @@ final class SettingsTabDelegateTests: XCTestCase {
             for days in [-5, 5] {
                 calendar.date = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: days, to: today))
                 calendar.sendActions(for: .valueChanged)
-                try await Task.sleep(for: .milliseconds(300))
+                let deadline = Date().addingTimeInterval(3)
+                while (abs(scroll.contentOffset.y - (detent.todayOffset ?? scroll.contentOffset.y)) <= 300
+                    || detent.phase != .idle), Date() < deadline {
+                    try await Task.sleep(for: .milliseconds(10))
+                }
                 XCTAssertGreaterThan(abs(scroll.contentOffset.y - (try XCTUnwrap(detent.todayOffset))), 300)
                 try await verifyUpcomingAnimatedReset(detent: detent, scroll: scroll)
             }
         }
-        try await verifyUpcomingNativeSpring(detent: detent, scroll: scroll, today: initialToday)
+        try await verifyUpcomingCalendarScrolling(window: window, detent: detent, scroll: scroll, today: today)
+        try await verifyUpcomingNativeSpring(detent: detent, scroll: scroll, today: XCTUnwrap(detent.todayOffset))
+    }
+
+    private func verifyUpcomingCalendarScrolling(
+        window: UIWindow, detent: UpcomingScrollDetent, scroll: UIScrollView, today: Date
+    ) async throws {
+        func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+        func picker() async throws -> UIDatePicker {
+            if let picker = descendants(window).compactMap({ $0 as? UIDatePicker }).first { return picker }
+            let bars = descendants(window).compactMap { $0 as? UINavigationBar }
+            let items: [UIBarButtonItem] = bars.compactMap(\.topItem).flatMap {
+                ($0.rightBarButtonItems ?? []) + $0.trailingItemGroups.flatMap(\.barButtonItems)
+            }
+            let item = try XCTUnwrap(items.first { $0.title == "Calendar" })
+            XCTAssertTrue(UIApplication.shared.sendAction(
+                try XCTUnwrap(item.action), to: item.target, from: item, for: nil
+            ))
+            let deadline = Date().addingTimeInterval(3)
+            while Date() < deadline {
+                if let picker = descendants(window).compactMap({ $0 as? UIDatePicker }).first {
+                    try await Task.sleep(for: .milliseconds(350))
+                    return picker
+                }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            throw NSError(domain: "Upcoming calendar did not open", code: 1)
+        }
+        func select(_ day: Int) async throws {
+            let calendar = try await picker()
+            calendar.date = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: day, to: today))
+            calendar.sendActions(for: .valueChanged)
+        }
+        func settle() async throws {
+            try await Task.sleep(for: .milliseconds(100))
+            let deadline = Date().addingTimeInterval(3)
+            while detent.phase != .idle, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(detent.phase, .idle)
+            if window.bounds.width < 800 {
+                let dismissalDeadline = Date().addingTimeInterval(3)
+                while descendants(window).contains(where: { $0 is UIDatePicker }), Date() < dismissalDeadline {
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                XCTAssertFalse(descendants(window).contains(where: { $0 is UIDatePicker }),
+                               "Date selection must finish dismissing the compact calendar")
+            }
+        }
+        var targets: [Int: CGFloat] = [:]
+        func verifyHeading(_ day: Int) throws {
+            let date = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: day, to: today))
+            let heading = date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let request = VNRecognizeTextRequest()
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let match = try XCTUnwrap(request.results?.first {
+                $0.topCandidates(1).first?.string.filter { $0.isLetter || $0.isNumber }
+                    == heading.filter { $0.isLetter || $0.isNumber }
+            }, "The selected date must be rendered: \(heading)")
+            let top = (1 - match.boundingBox.maxY) * window.bounds.height
+            let visibleTop = scroll.convert(scroll.bounds, to: window).minY + scroll.adjustedContentInset.top
+            XCTAssertEqual(top, visibleTop + 5, accuracy: 10,
+                           "The selected date heading, not an estimated lazy-grid offset, must align at the top")
+        }
+        for day in [-5, 5, 35] {
+            detent.reduceMotion = true
+            try await select(day)
+            try await settle()
+            targets[day] = scroll.contentOffset.y
+            try verifyHeading(day)
+        }
+        for day in [-5, 5, 35] {
+            detent.reduceMotion = false
+            let start = try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y
+            let target = try XCTUnwrap(targets[day])
+            try await select(day)
+            var offsets = [start]
+            let deadline = Date().addingTimeInterval(3)
+            repeat {
+                try await Task.sleep(for: .milliseconds(10))
+                offsets.append(try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y)
+            } while (offsets.count < 4 || detent.phase != .idle) && Date() < deadline
+            let distance = abs(start - target)
+            XCTAssertGreaterThan(distance, 300)
+            let intermediate = offsets.filter { abs($0 - start) > 2 && abs($0 - target) > 2 }
+            XCTAssertGreaterThan(intermediate.count, 3, "Calendar must visibly animate, not teleport")
+            XCTAssertGreaterThan((intermediate.max() ?? 0) - (intermediate.min() ?? 0), distance * 0.5)
+            XCTAssertLessThan(zip(offsets, offsets.dropFirst()).map { abs($0 - $1) }.max() ?? 0, distance * 0.5)
+            try await settle()
+            try verifyHeading(day)
+        }
+        // A selection must replace motion already in progress, even when it repeats
+        // the calendar's current date after the user scrolled elsewhere.
+        for day in [35, -5, 5] {
+            let calendar = try await picker()
+            scroll.contentOffset.y = try XCTUnwrap(detent.todayOffset) + 600
+            scroll.delegate?.scrollViewWillBeginDragging?(scroll)
+            try await Task.sleep(for: .milliseconds(30))
+            scroll.delegate?.scrollViewDidEndDragging?(scroll, willDecelerate: true)
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: scroll.contentOffset.y + 2_000), animated: true)
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertEqual(detent.phase, .animating, "The selection must interrupt real native scrolling")
+            calendar.date = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: day, to: today))
+            calendar.sendActions(for: .valueChanged)
+            try await settle()
+            try verifyHeading(day)
+        }
+        if window.bounds.width >= 800 {
+            let calendar = try await picker()
+            for day in [-5, 5, 35] {
+                calendar.date = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: day, to: today))
+                calendar.sendActions(for: .valueChanged)
+                try await Task.sleep(for: .milliseconds(70))
+            }
+            try await settle()
+            try verifyHeading(35)
+        }
+        detent.reduceMotion = true
+        XCTAssertTrue(UpcomingView.scrollToToday(in: scroll))
+        try await settle()
     }
 
     private func verifyUpcomingAnimatedReselection(
@@ -217,6 +350,12 @@ final class SettingsTabDelegateTests: XCTestCase {
         func sampleMotion(at modelOffset: CGFloat) async throws -> [CGFloat] {
             var samples: [CGFloat] = []
             let deadline = Date().addingTimeInterval(3)
+            // Adding the animation does not mean its atomic offset/translation
+            // transaction has reached the compositor yet.
+            while abs((scroll.layer.presentation()?.bounds.origin.y ?? .infinity) - modelOffset) > 0.5,
+                  contentLayer.animation(forKey: animationKey) != nil, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
             while contentLayer.animation(forKey: animationKey) != nil, Date() < deadline {
                 let translation = try XCTUnwrap(contentLayer.presentation()).transform.m42 - contentLayer.transform.m42
                 samples.append(scroll.contentOffset.y - translation)

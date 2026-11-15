@@ -206,6 +206,12 @@ extension HomeRowArrangementHostedTests {
                 picker.setDate(selected, animated: false)
                 picker.sendActions(for: .valueChanged)
                 _ = try await self.snapshot(window, name: "Upcoming selected date")
+                if inlinePicker == nil {
+                    let deadline = ContinuousClock.now + .seconds(3)
+                    while picker.window != nil, ContinuousClock.now < deadline {
+                        try await Task.sleep(for: .milliseconds(10))
+                    }
+                }
                 XCTAssertEqual(picker.window != nil, inlinePicker != nil)
                 if inlinePicker != nil {
                     let expandedWidth = scroll.bounds.width

@@ -203,7 +203,7 @@ final class UpcomingScrollDetentTests: XCTestCase {
             XCTAssertEqual(events.count, 8, "Released motion must not emit a second catch")
             scroll.contentOffset.y = 300
             detent.reduceMotion = true
-            detent.scrollToToday { scroll.contentOffset.y = 1_000 }
+            detent.scrollToDate { scroll.contentOffset.y = 1_000 }
             XCTAssertEqual(events.count, 8, "Programmatic positioning must stay silent")
         }
     }
@@ -345,7 +345,7 @@ final class UpcomingScrollDetentTests: XCTestCase {
             XCTAssertEqual(catches, 1, "Repeated layout queries and offset updates cannot rearm feedback")
             scroll.contentOffset.y = 300
             detent.reduceMotion = true
-            detent.scrollToToday { scroll.contentOffset.y = 1_000 }
+            detent.scrollToDate { scroll.contentOffset.y = 1_000 }
             XCTAssertEqual(scroll.contentOffset.y, 1_000)
             XCTAssertEqual(catches, 1, "Navigation to Today remains silent")
         }
@@ -402,7 +402,7 @@ final class UpcomingScrollDetentTests: XCTestCase {
     func testCancellingElasticReturnRemovesMotionAndPendingFeedback() {
         let cancellations: [(UpcomingScrollDetent, UIView) -> Void] = [
             { detent, _ in detent.cancelInteraction() },
-            { detent, _ in detent.scrollToToday { detent.scrollView?.contentOffset.y = 1_000 } },
+            { detent, _ in detent.scrollToDate { detent.scrollView?.contentOffset.y = 1_000 } },
             { detent, _ in detent.detach() },
             { detent, anchor in
                 anchor.frame.origin.y += 10
