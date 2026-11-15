@@ -3,7 +3,7 @@
     import CoreModels
     import CoreUI
 
-    public struct UpcomingView: View {
+    public struct UpcomingView<TrailingToolbar: ToolbarContent>: View {
         @Bindable private var model: UpcomingFeedModel
         @Environment(\.themePalette) private var palette
         #if os(tvOS)
@@ -28,10 +28,23 @@
         @State private var showingCalendar = false
         @State private var didScrollInitially = false
         private let interval: DateInterval
+        private let trailingToolbar: TrailingToolbar
 
-        public init(model: UpcomingFeedModel, interval: DateInterval) {
+        public init(
+            model: UpcomingFeedModel, interval: DateInterval,
+            @ToolbarContentBuilder trailingToolbar: () -> TrailingToolbar
+        ) {
             self.model = model
             self.interval = interval
+            self.trailingToolbar = trailingToolbar()
+        }
+
+        public init(model: UpcomingFeedModel, interval: DateInterval)
+        where TrailingToolbar == ToolbarItemGroup<EmptyView> {
+            self.model = model
+            self.interval = interval
+            // EmptyView itself only conforms to ToolbarContent on OS 27 and later.
+            self.trailingToolbar = ToolbarItemGroup(placement: .topBarTrailing) { EmptyView() }
         }
 
         public var body: some View {
@@ -145,6 +158,7 @@
                         calendarButton
                         UpcomingFilterMenu(model: model)
                     }
+                    trailingToolbar
                 }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { availableSize = $0 }
                 .onChange(of: supportsInlineCalendar) { _, supported in

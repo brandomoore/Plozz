@@ -337,8 +337,10 @@ struct PlozziOSHomeView: View {
         .onAppear { homeHasAppeared = true }
         .environment(\.plozzCardCaptionView, .home)
         .onDisappear { homeHasAppeared = false }
-        .navigationDestination(isPresented: $showingUpcoming) { [appModel, viewModel] in
-            UpcomingView(model: viewModel.upcoming, interval: UpcomingFeedLoader.window())
+        .navigationDestination(isPresented: $showingUpcoming) { [appModel, viewModel, onShowSettings] in
+            UpcomingView(model: viewModel.upcoming, interval: UpcomingFeedLoader.window()) {
+                PlozziOSSettingsToolbarItem(action: onShowSettings)
+            }
                 .plozziOSItemNavigation(appModel: appModel)
         }
         .navigationDestination(item: $editingHomeRow) { [appModel] route in

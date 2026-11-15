@@ -4,7 +4,7 @@ import UIKit
 import CoreUI
 import os
 
-extension UpcomingView {
+extension UpcomingView where TrailingToolbar == ToolbarItemGroup<EmptyView> {
     /// A navigation reselection resets only the visible Upcoming agenda.
     @MainActor
     public static func scrollToToday(in scrollView: UIScrollView) -> Bool {

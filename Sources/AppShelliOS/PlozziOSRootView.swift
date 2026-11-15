@@ -1375,7 +1375,9 @@ struct PlozziOSTabShell: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
         case .upcoming:
-            UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
+            UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window()) {
+                PlozziOSSettingsToolbarItem(action: showSettings)
+            }
                 .plozziOSItemNavigation(appModel: appModel)
                 .toolbarBackground(.automatic, for: .navigationBar)
                 .background { AppBackground(palette: palette) }

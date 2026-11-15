@@ -149,7 +149,21 @@ extension HomeRowArrangementHostedTests {
                     navigationBar.convert(navigationBar.bounds, to: window).maxY,
                     window.safeAreaInsets.top + 64
                 )
-                let controls = [navigationBar]
+                let profile = try XCTUnwrap(descendants(navigationBar).first {
+                    String(describing: type(of: $0)).hasPrefix("UIKitBarItemHost<")
+                }, "Upcoming must use the shared profile toolbar control")
+                let pageActions = descendants(navigationBar).compactMap { $0 as? UIButton }.filter {
+                    !$0.isDescendant(of: profile) && !$0.isHidden && $0.bounds.width > 0
+                }
+                let filter = try XCTUnwrap(pageActions.max {
+                    $0.convert($0.bounds, to: window).maxX < $1.convert($1.bounds, to: window).maxX
+                }, "The native page actions must remain alongside the profile")
+                let profileFrame = profile.convert(profile.bounds, to: window)
+                let filterFrame = filter.convert(filter.bounds, to: window)
+                XCTAssertGreaterThanOrEqual(profileFrame.minX - filterFrame.maxX, 8,
+                                            "Profile belongs in a separate group to the right of the page actions")
+                XCTAssertEqual(profileFrame.midY, filterFrame.midY, accuracy: 2)
+                let controls: [UIView] = [navigationBar, profile]
                 #else
                 XCTAssertNil(descendants(window).first { $0.accessibilityIdentifier == "upcoming.today" })
                 let controls = try ["upcoming.calendar", "upcoming.filters"].map { id in

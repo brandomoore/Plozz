@@ -205,8 +205,14 @@ final class SettingsTabDelegateTests: XCTestCase {
             }, "The selected date must be rendered: \(heading)")
             let top = (1 - match.boundingBox.maxY) * window.bounds.height
             let visibleTop = scroll.convert(scroll.bounds, to: window).minY + scroll.adjustedContentInset.top
+            if abs(top - visibleTop - 5) > 10 {
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Misaligned calendar heading \(heading)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
             XCTAssertEqual(top, visibleTop + 5, accuracy: 10,
-                           "The selected date heading, not an estimated lazy-grid offset, must align at the top")
+                           "\(heading) must align at the top; phase=\(detent.phase), reducedMotion=\(detent.reduceMotion)")
         }
         for day in [-5, 5, 35] {
             detent.reduceMotion = true
