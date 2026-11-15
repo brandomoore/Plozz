@@ -749,13 +749,24 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             content: content.fixedSize(horizontal: false, vertical: true)
                 .safeAreaPadding(.leading, FocusHeroLayout.maskHorizontalOverhang),
             motion: model.motion, kind: .row(row.id),
-            entrySourceRowIDs: Set([index - 1, index + 1].compactMap {
-                rows.indices.contains($0) ? rows[$0].id : nil
-            })
+            entrySourceRowIDs: entrySourceRowIDs(at: index)
         )
         .padding(.leading, -FocusHeroLayout.maskHorizontalOverhang)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
+    }
+
+    private func entrySourceRowIDs(at index: Int) -> Set<String> {
+        func hasEntryTarget(_ index: Int) -> Bool {
+            let row = rows[index]
+            // Only the first row reserves loading focus. Partially loaded rows
+            // and non-media rows (such as notices) can still contain controls.
+            return index == 0 || !row.isPlaceholder || !row.itemIDs.isEmpty || !row.liveChannels.isEmpty
+        }
+        guard hasEntryTarget(index) else { return [] }
+        let previous = rows.indices.prefix(index).last(where: hasEntryTarget)
+        let next = rows.indices.dropFirst(index + 1).first(where: hasEntryTarget)
+        return Set([previous, next].compactMap { $0.map { rows[$0].id } })
     }
 
     private func reporter(for row: FocusHeroRow) -> FocusHeroRowReporter {

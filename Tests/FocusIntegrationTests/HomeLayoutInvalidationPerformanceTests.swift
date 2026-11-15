@@ -36,6 +36,25 @@ final class HomeLayoutInvalidationPerformanceTests: XCTestCase {
             return scannedRows == ["row-4"]
         }
         XCTAssertEqual((fixture.focusSystem.focusedItem as? UIView)?.accessibilityLabel, "Layout 0-1")
+        let loaded = fixture.state.rows[1]
+        fixture.state.rows[1] = FocusHeroRow(id: loaded.id, itemIDs: [], leadItem: nil, isPlaceholder: true)
+        try await Fixture.waitUntil {
+            fixture.window.layoutIfNeeded()
+            scannedRows.removeAll()
+            NotificationCenter.default.post(name: UIFocusSystem.didUpdateNotification, object: fixture.focusSystem)
+            return scannedRows == ["row-2"]
+        }
+        fixture.state.rows[1] = FocusHeroRow(
+            id: loaded.id, itemIDs: loaded.itemIDs, leadItem: loaded.leadItem,
+            items: loaded.items, isPlaceholder: true
+        )
+        try await Fixture.waitUntil {
+            fixture.window.layoutIfNeeded()
+            scannedRows.removeAll()
+            NotificationCenter.default.post(name: UIFocusSystem.didUpdateNotification, object: fixture.focusSystem)
+            return scannedRows == ["row-4"]
+        }
+        XCTAssertEqual((fixture.focusSystem.focusedItem as? UIView)?.accessibilityLabel, "Layout 0-1")
     }
 
     func testPerformanceShowcaseFocusDiscovery() async throws {
@@ -270,6 +289,8 @@ final class HomeLayoutInvalidationPerformanceTests: XCTestCase {
                         onFocusChange: { if let item = $0 { reporter.focusedItem(item) } },
                         onCardFocused: reporter.cardFocused,
                         statusCue: { _ in probe.counts.cardInputs += 1; return nil },
+                        loadingPlaceholderCount: row.isPlaceholder ? 5 : 0,
+                        reservesLoadingFocus: row.id == state.rows.first?.id,
                         onSelect: { _ in }
                     )
                     .background(EnvironmentCapture(probe: probe, rowID: row.id))
