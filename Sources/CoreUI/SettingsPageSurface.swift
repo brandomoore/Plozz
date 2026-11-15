@@ -30,7 +30,7 @@ public struct SettingsPageScroll<Content: View>: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: MobileSettingsMetrics.sectionSpacing) {
                 content
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -44,7 +44,10 @@ public struct SettingsPageSurface: ViewModifier {
     private let titleDisplayMode: ToolbarTitleDisplayMode
     private let horizontalInset: CGFloat
 
-    public init(titleDisplayMode: ToolbarTitleDisplayMode = .inline, horizontalInset: CGFloat = 24) {
+    public init(
+        titleDisplayMode: ToolbarTitleDisplayMode = .inline,
+        horizontalInset: CGFloat = MobileSettingsMetrics.pageInset
+    ) {
         self.titleDisplayMode = titleDisplayMode
         self.horizontalInset = horizontalInset
     }
@@ -54,6 +57,7 @@ public struct SettingsPageSurface: ViewModifier {
             .tint(palette.primaryText)
             .toggleStyle(SettingsSwitchToggleStyle())
             .listStyle(.plain)
+            .listRowSpacing(MobileSettingsMetrics.sectionSpacing)
             .scrollContentBackground(.hidden)
             .contentMargins(.vertical, 24, for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -67,7 +71,8 @@ public struct SettingsPageSurface: ViewModifier {
 
 public extension View {
     func settingsPageSurface(
-        titleDisplayMode: ToolbarTitleDisplayMode = .inline, horizontalInset: CGFloat = 24
+        titleDisplayMode: ToolbarTitleDisplayMode = .inline,
+        horizontalInset: CGFloat = MobileSettingsMetrics.pageInset
     ) -> some View {
         modifier(SettingsPageSurface(
             titleDisplayMode: titleDisplayMode, horizontalInset: horizontalInset))

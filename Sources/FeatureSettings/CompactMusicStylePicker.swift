@@ -24,6 +24,8 @@ public struct CompactMusicStylePicker<Preview: View>: View {
                 accent: palette.accent, compact: true, swatchAspectRatio: 1.6,
                 titleLineLimit: nil,
                 titleSizeGroup: row.map(\.displayName),
+                cornerRadius: MobileSettingsMetrics.previewCardCornerRadius,
+                contentInset: MobileSettingsMetrics.previewCardInset,
                 action: { selection = appearance }
             ) {
                 preview(appearance)

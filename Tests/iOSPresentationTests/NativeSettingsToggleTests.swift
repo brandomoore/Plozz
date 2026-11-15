@@ -12,6 +12,199 @@ import XCTest
 
 @MainActor
 final class NativeSettingsToggleTests: XCTestCase {
+    func testSettingsIconsMatchPrimaryTitlesInLightAndDarkThemes() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let renderer = ImageRenderer(content:
+                SettingsSectionGroup {
+                    Button {} label: {
+                        Label("Appearance", systemImage: "paintpalette.fill")
+                    }
+                    .settingsActionRow()
+                    Button {} label: {
+                        Label("Profiles", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    .settingsActionRow()
+                }
+                .frame(width: 358)
+                .environment(\.themePalette, scheme == .dark ? .dark : .light)
+                .environment(\.colorScheme, scheme)
+                .environment(\.dynamicTypeSize, .large)
+                .environment(\.gradientBackgroundsEnabled, false)
+            )
+            renderer.scale = 3
+            let image = try XCTUnwrap(renderer.uiImage)
+            let cgImage = try XCTUnwrap(image.cgImage)
+            let width = cgImage.width
+            let height = cgImage.height
+            var bytes = [UInt8](repeating: 0, count: width * height * 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            func strongestInk(in columns: Range<Int>) -> Int {
+                let values = (12 * 3..<40 * 3).flatMap { y in
+                    columns.map { x in Int(bytes[(y * width + x) * 4]) }
+                }
+                return scheme == .dark ? values.max()! : values.min()!
+            }
+            XCTAssertEqual(
+                strongestInk(in: 16 * 3..<46 * 3),
+                strongestInk(in: 70 * 3..<150 * 3),
+                accuracy: 3,
+                "Leading icons should have the same foreground strength as titles."
+            )
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Settings monochrome icons \(scheme)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testSettingsListAndScrollShareMarginsAndSectionSpacing() async throws {
+        final class Frames {
+            var first = CGRect.zero
+            var second = CGRect.zero
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width: CGFloat in [390, 834] {
+            for scroll in [false, true] {
+                for size in [DynamicTypeSize.large, .accessibility3] {
+                    let frames = Frames()
+                    let groups = Group {
+                        SettingsSectionGroup {
+                            Button {} label: { Label("Appearance", systemImage: "paintpalette") }
+                                .settingsActionRow()
+                            Button {} label: { Label("Language", systemImage: "globe") }
+                                .settingsActionRow()
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.first = $0 }
+                        // Geometry instrumentation wraps the row; retain the group's List traits.
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        SettingsSectionGroup {
+                            Toggle("Auto switch", isOn: .constant(true))
+                            SettingsControlMenu {
+                                Button("System") {}
+                            } label: {
+                                SettingsMenuLabel("Appearance", value: "System")
+                            }
+                        } footer: {
+                            Text("Shared settings stay consistent.")
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.second = $0 }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
+                    window.frame = CGRect(x: 0, y: 0, width: width, height: 1000)
+                    window.rootViewController = UIHostingController(rootView:
+                        Group {
+                            if scroll {
+                                SettingsPageScroll { groups }
+                            } else {
+                                SettingsPageList { groups }
+                            }
+                        }
+                        .environment(\.themePalette, .dark)
+                        .environment(\.colorScheme, .dark)
+                        .environment(\.dynamicTypeSize, size)
+                        .environment(\.gradientBackgroundsEnabled, false)
+                    )
+                    window.makeKeyAndVisible()
+                    try await settle(window)
+                    XCTAssertEqual(frames.first.minX, 16, accuracy: 1)
+                    XCTAssertEqual(frames.first.width, width - 32, accuracy: 1)
+                    XCTAssertEqual(frames.second.minX, frames.first.minX, accuracy: 1)
+                    XCTAssertEqual(frames.second.minY - frames.first.maxY, 28, accuracy: 1)
+                    XCTAssertGreaterThanOrEqual(frames.first.height, 104)
+                    if size == .large {
+                        let nativeSwitch = try XCTUnwrap(switches(in: window).first)
+                        let frame = nativeSwitch.convert(nativeSwitch.bounds, to: window)
+                        XCTAssertEqual(frame.midY - frames.second.minY, 26, accuracy: 1)
+                    }
+                    let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    })
+                    attachment.name = "Settings-layout-\(Int(width))-scroll-\(scroll)-\(size)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
+    }
+
+    func testSettingsSeparatorsFollowLabelsAndMirrorWithoutCrossingIcons() throws {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            for hasIcon in [true, false] {
+                let renderer = ImageRenderer(content:
+                    SettingsSectionGroup {
+                        ForEach(0..<2) { _ in
+                            Button {} label: {
+                                if hasIcon {
+                                    Label("Appearance", systemImage: "paintpalette")
+                                } else {
+                                    Text("Appearance")
+                                }
+                            }
+                            .settingsActionRow()
+                        }
+                    }
+                    .frame(width: 358)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.layoutDirection, direction)
+                    .environment(\.dynamicTypeSize, .large)
+                    .environment(\.displayScale, 3)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .background(Color.black)
+                )
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.uiImage)
+                let cgImage = try XCTUnwrap(image.cgImage)
+                XCTAssertEqual(image.size.height, 104, accuracy: 1)
+                let width = cgImage.width
+                let height = cgImage.height
+                var bytes = [UInt8](repeating: 0, count: width * height * 4)
+                let context = try XCTUnwrap(CGContext(
+                    data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                    bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+                func dividerContrast(atLeading x: CGFloat) -> Int {
+                    let column = Int((direction == .leftToRight ? x : 358 - x) * 3)
+                    let background = Int(bytes[((height / 2 - 8) * width + column) * 4])
+                    return (-2...2).map { offset in
+                        abs(Int(bytes[((height / 2 + offset) * width + column) * 4]) - background)
+                    }.max() ?? 0
+                }
+                XCTAssertLessThan(dividerContrast(atLeading: 8), 3)
+                if hasIcon {
+                    XCTAssertLessThan(dividerContrast(atLeading: 32), 3, "Do not draw under the icon.")
+                } else {
+                    XCTAssertGreaterThan(dividerContrast(atLeading: 32), 3, "Text-only rows start at the text inset.")
+                }
+                XCTAssertGreaterThan(dividerContrast(atLeading: 120), 3)
+                XCTAssertGreaterThan(dividerContrast(atLeading: 340), 3, "Continue to the trailing group edge.")
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Settings group icons=\(hasIcon) direction=\(direction)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     func testPlayerTabsUseFiveIndependentNativeSwitchesAtPhoneAndTabletWidths() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

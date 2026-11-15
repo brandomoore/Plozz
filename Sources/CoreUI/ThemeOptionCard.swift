@@ -295,6 +295,8 @@ public struct PreviewCard<Swatch: View>: View {
     private let swatchAspectRatio: CGFloat?
     private let titleLineLimit: Int?
     private let titleSizeGroup: [LocalizedStringResource]
+    private let cornerRadius: CGFloat
+    private let contentInset: CGFloat
     private let action: () -> Void
     private let swatch: () -> Swatch
 
@@ -308,6 +310,8 @@ public struct PreviewCard<Swatch: View>: View {
         swatchAspectRatio: CGFloat? = nil,
         titleLineLimit: Int? = 1,
         titleSizeGroup: [LocalizedStringResource] = [],
+        cornerRadius: CGFloat = PlozzTheme.Metrics.Radius.panel,
+        contentInset: CGFloat = PlozzTheme.Metrics.Radius.inset,
         action: @escaping () -> Void,
         @ViewBuilder swatch: @escaping () -> Swatch
     ) {
@@ -320,6 +324,8 @@ public struct PreviewCard<Swatch: View>: View {
         self.swatchAspectRatio = swatchAspectRatio
         self.titleLineLimit = titleLineLimit
         self.titleSizeGroup = titleSizeGroup
+        self.cornerRadius = cornerRadius
+        self.contentInset = contentInset
         self.action = action
         self.swatch = swatch
     }
@@ -365,12 +371,12 @@ public struct PreviewCard<Swatch: View>: View {
             }
             .frame(maxWidth: compact ? .infinity : nil)
             .frame(width: compact ? nil : 320)
-            .padding(PlozzTheme.Metrics.Radius.inset)
+            .padding(contentInset)
         }
         .buttonStyle(ThemeCardButtonStyle(
             accent: accent,
             isSelected: isSelected,
-            cornerRadius: PlozzTheme.Metrics.Radius.panel
+            cornerRadius: cornerRadius
         ))
         .focusEffectDisabled()
     }

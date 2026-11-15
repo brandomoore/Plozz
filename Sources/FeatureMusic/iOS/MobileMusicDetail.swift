@@ -235,9 +235,13 @@ private struct MobileMusicDetailScaffold<Actions: View, Content: View>: View {
     @State private var colors = MusicDetailColors.neutral
 
     private var flatBackground: Color { theme == .pureBlack ? .black : theme.backgroundBase }
-    private var heroColor: Color { gradientEnabled ? colors.hero : flatBackground }
-    private var deepColor: Color { gradientEnabled ? colors.deep : flatBackground }
+    private var heroColor: Color { gradientEnabled ? gradientColor(colors.hero) : flatBackground }
+    private var deepColor: Color { gradientEnabled ? gradientColor(colors.deep) : flatBackground }
     private var pagePalette: ThemePalette { gradientEnabled ? .dark : theme }
+
+    private func gradientColor(_ color: Color) -> Color {
+        color.mix(with: .black, by: 1 - theme.backgroundGradientIntensity, in: .device)
+    }
 
     var body: some View {
         GeometryReader { geometry in
