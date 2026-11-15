@@ -43,10 +43,17 @@ events trigger the settle; momentum stops before the native animated scroll begi
 Deceleration that naturally stops within the same range also settles at Today.
 Deliberate longer pulls, ordinary future scrolling, and calendar jumps remain
 available; a far fling is not captured merely for passing Today. Native outer-edge
-bounce is unchanged, and recycled date anchors cannot retain stale snap geometry.
+bounce is unchanged. Mobile date sections keep their headers mounted, including
+an empty Today, so lazy recycling cannot remove the detent while scrolling
+through history or future dates. Poster grids remain lazy. Initial alignment
+uses the selected date rather than an interim scroll-position report from layout.
 The page-scoped adapter observes native content-offset changes without replacing
 SwiftUI's scroll delegate; VoiceOver and Switch Control scrolling bypass it.
 Reduce Motion uses a nonanimated settle.
+Reselecting Upcoming in native or opaque navigation returns its visible agenda
+to Today, including repeated taps after scrolling away. The shell resolves the
+visible scroll owner before invoking this page-local reset; detail pages and
+other tabs retain their usual scroll-to-top behavior.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.

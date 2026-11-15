@@ -18,6 +18,7 @@
             @State private var agendaSize = CGSize.zero
             @State private var calendarIsMinimized = false
             @State private var scrollDay: Date? = Calendar.current.startOfDay(for: Date())
+            @State private var hasScrolledAgenda = false
             @State private var todayDetent = UpcomingScrollDetent()
         #endif
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
@@ -52,7 +53,15 @@
                             .environment(\.plozzMetrics, agendaMetrics)
                             .environment(\.upcomingScrollDetent, todayDetent)
                             .background {
-                                UpcomingScrollProbe(detent: todayDetent, role: .container, reduceMotion: reduceMotion)
+                                UpcomingScrollProbe(
+                                    detent: todayDetent, role: .container, reduceMotion: reduceMotion,
+                                    onScrollToToday: {
+                                        let today = Calendar.current.startOfDay(for: Date())
+                                        selectedDay = today
+                                        scrollDay = today
+                                        hasScrolledAgenda = false
+                                    }
+                                )
                             }
                             #endif
                             .opacity(model.visibleReleases.isEmpty ? 0 : 1)
@@ -74,17 +83,21 @@
                         .contentMargins(.vertical, 16, for: .scrollContent)
                         .scrollPosition(id: $scrollDay, anchor: .top)
                         .onScrollPhaseChange { oldPhase, newPhase, context in
+                            if newPhase == .interacting { hasScrolledAgenda = true }
                             todayDetent.phaseChanged(from: oldPhase, to: newPhase, velocity: context.velocity?.dy ?? 0)
                         }
                         .modifier(UpcomingScrollEdge())
                         .task(id: agendaSize.width) {
                             guard agendaSize.width > 0 else { return }
+                            let day = hasScrolledAgenda ? scrollDay ?? selectedDay : selectedDay
                             await Task.yield()
                             guard !Task.isCancelled else { return }
-                            proxy.scrollTo(scrollDay ?? selectedDay, anchor: .top)
+                            scrollDay = day
+                            proxy.scrollTo(day, anchor: .top)
                         }
                         .onChange(of: selectedDay) { _, day in
                             todayDetent.cancelInteraction()
+                            hasScrolledAgenda = false
                             scrollDay = day
                         }
                         #else
@@ -368,49 +381,63 @@
             }
         }
 
+        @ViewBuilder
         private func dateGroups(
             _ days: [Date], groups: [Date: [UpcomingRelease]],
             columns: [GridItem], metrics: PlozzMetrics, width: CGFloat
         ) -> some View {
-            LazyVStack(alignment: .leading, spacing: 28) {
-                ForEach(days, id: \.self) { day in
-                    VStack(alignment: .leading, spacing: 12) {
-                        Group {
-                            if Calendar.current.isDateInToday(day) {
-                                Text("Today")
-                            } else {
-                                Text(day, format: .dateTime.weekday(.wide).month(.abbreviated).day())
-                            }
-                        }
-                        #if os(tvOS)
-                        .font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
-                        #else
-                        .font(PlozziOSMediaRailLayout.headingFont)
-                        .padding(.horizontal, cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
-                        #endif
-                        .accessibilityAddTraits(.isHeader)
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.gridSpacing) {
-                            ForEach(groups[day] ?? []) { release in
-                                UpcomingReleaseCard(release: release)
-                                    .environment(\.plozzMetrics, metrics)
-                                    .frame(width: width)
-                                    .contextMenu { Button("Hide title") { model.hide(release) } }
-                            }
-                        }
-                    }
-                    #if os(iOS)
-                    .background {
-                        if Calendar.current.isDateInToday(day) {
-                            UpcomingTodayAnchor()
-                        }
-                    }
-                    #endif
-                    .id(day)
-                }
-            }
             #if os(iOS)
+            // Date targets must stay mounted when scrolling through history.
+            // The poster grids still create their rows lazily.
+            VStack(alignment: .leading, spacing: 28) {
+                dateGroupContent(days, groups: groups, columns: columns, metrics: metrics, width: width)
+            }
             .scrollTargetLayout()
+            #else
+            LazyVStack(alignment: .leading, spacing: 28) {
+                dateGroupContent(days, groups: groups, columns: columns, metrics: metrics, width: width)
+            }
             #endif
+        }
+
+        private func dateGroupContent(
+            _ days: [Date], groups: [Date: [UpcomingRelease]],
+            columns: [GridItem], metrics: PlozzMetrics, width: CGFloat
+        ) -> some View {
+            ForEach(days, id: \.self) { day in
+                VStack(alignment: .leading, spacing: 12) {
+                    Group {
+                        if Calendar.current.isDateInToday(day) {
+                            Text("Today")
+                        } else {
+                            Text(day, format: .dateTime.weekday(.wide).month(.abbreviated).day())
+                        }
+                    }
+                    #if os(tvOS)
+                    .font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
+                    #else
+                    .font(PlozziOSMediaRailLayout.headingFont)
+                    .padding(.horizontal, cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
+                    #endif
+                    .accessibilityAddTraits(.isHeader)
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.gridSpacing) {
+                        ForEach(groups[day] ?? []) { release in
+                            UpcomingReleaseCard(release: release)
+                                .environment(\.plozzMetrics, metrics)
+                                .frame(width: width)
+                                .contextMenu { Button("Hide title") { model.hide(release) } }
+                        }
+                    }
+                }
+                #if os(iOS)
+                .background {
+                    if Calendar.current.isDateInToday(day) {
+                        UpcomingTodayAnchor()
+                    }
+                }
+                #endif
+                .id(day)
+            }
         }
     }
 

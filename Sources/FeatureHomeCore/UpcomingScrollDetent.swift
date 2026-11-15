@@ -2,6 +2,25 @@
 import SwiftUI
 import UIKit
 
+extension UpcomingView {
+    /// A navigation reselection resets only the visible Upcoming agenda.
+    @MainActor
+    public static func scrollToToday(in scrollView: UIScrollView) -> Bool {
+        func findProbe(in view: UIView) -> UpcomingScrollProbe.Probe? {
+            guard !view.isHidden, view.alpha > 0.01 else { return nil }
+            if let probe = view as? UpcomingScrollProbe.Probe,
+               probe.role == .container, probe.detent?.scrollView === scrollView {
+                return probe
+            }
+            return view.subviews.lazy.compactMap { findProbe(in: $0) }.first
+        }
+        guard let probe = findProbe(in: scrollView), let action = probe.onScrollToToday else { return false }
+        action()
+        probe.detent?.scrollToToday()
+        return true
+    }
+}
+
 private struct UpcomingScrollDetentKey: EnvironmentKey {
     static let defaultValue: UpcomingScrollDetent? = nil
 }
@@ -92,6 +111,15 @@ final class UpcomingScrollDetent {
         settleTask = nil
         drag = nil
         hasResisted = false
+    }
+
+    func scrollToToday() {
+        cancelInteraction()
+        updateAnchor()
+        guard let scrollView, let todayOffset else { return }
+        scrollView.setContentOffset(
+            CGPoint(x: scrollView.contentOffset.x, y: todayOffset), animated: !reduceMotion
+        )
     }
 
     func setAnchor(_ view: UIView) {
@@ -201,21 +229,27 @@ struct UpcomingScrollProbe: UIViewRepresentable {
     let detent: UpcomingScrollDetent
     let role: Role
     var reduceMotion = false
+    var onScrollToToday: (() -> Void)?
 
     func makeUIView(context: Context) -> Probe { Probe() }
 
     func updateUIView(_ view: Probe, context: Context) {
         view.detent = detent
         view.role = role
+        view.onScrollToToday = onScrollToToday
         if role == .container { detent.reduceMotion = reduceMotion }
         view.connect()
     }
 
-    static func dismantleUIView(_ view: Probe, coordinator: ()) { view.disconnect() }
+    static func dismantleUIView(_ view: Probe, coordinator: ()) {
+        view.onScrollToToday = nil
+        view.disconnect()
+    }
 
     final class Probe: UIView {
         weak var detent: UpcomingScrollDetent?
         var role = Role.container
+        var onScrollToToday: (() -> Void)?
 
         override init(frame: CGRect) {
             super.init(frame: frame)

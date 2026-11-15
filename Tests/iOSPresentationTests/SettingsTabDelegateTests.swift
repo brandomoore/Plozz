@@ -1,10 +1,130 @@
 #if os(iOS)
 import UIKit
 import XCTest
+import SwiftUI
+import CoreModels
+import CoreUI
+@testable import FeatureHomeCore
 @testable import AppShelliOS
 
 @MainActor
 final class SettingsTabDelegateTests: XCTestCase {
+    func testUpcomingTodayAnchorSurvivesScrollingThroughSparseDates() async throws {
+        try await verifyUpcomingTodayAnchor(size: CGSize(width: 390, height: 844), hasTodayRelease: true)
+    }
+
+    func testUpcomingEmptyTodayAnchorSurvivesTabletScrolling() async throws {
+        try await verifyUpcomingTodayAnchor(size: CGSize(width: 1024, height: 1366), hasTodayRelease: false)
+    }
+
+    private func verifyUpcomingTodayAnchor(size: CGSize, hasTodayRelease: Bool) async throws {
+        let today = Calendar.current.startOfDay(for: Date())
+        let model = UpcomingFeedModel(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let releases = (-30...30).flatMap { day in
+            (0..<(day == 0 ? (hasTodayRelease ? 1 : 0) : 1 + abs(day) % 7)).map { index in
+                UpcomingRelease(
+                    id: "\(day)-\(index)", titleKey: "\(day)-\(index)",
+                    item: MediaItem(id: "\(day)-\(index)", title: "Series \(day) \(index)", kind: .series),
+                    date: Calendar.current.date(byAdding: .day, value: day, to: today)!,
+                    datePrecision: .dateOnly, kind: .episode, interests: [.watching]
+                )
+            }
+        }
+        await model.refresh(scope: "scroll-test", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        let host = UIHostingController(rootView:
+            UpcomingView(model: model, interval: DateInterval(start: today, duration: 90 * 86_400))
+                .environment(\.plozzMetrics, .touch(density: .standard))
+                .environment(\.horizontalSizeClass, size.width < 800 ? .compact : .regular)
+        )
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        try await Task.sleep(for: .milliseconds(500))
+        func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+        let probe = try XCTUnwrap(descendants(host.view).compactMap { $0 as? UpcomingScrollProbe.Probe }
+            .first(where: { $0.role == .container }))
+        let detent = try XCTUnwrap(probe.detent)
+        let scroll = try XCTUnwrap(detent.scrollView)
+        let initialToday = try XCTUnwrap(detent.todayOffset)
+        let initialDeadline = Date().addingTimeInterval(3)
+        while abs(scroll.contentOffset.y - initialToday) > 1, Date() < initialDeadline {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertEqual(scroll.contentOffset.y, initialToday, accuracy: 1)
+        for displacement in [1_500.0, 3_000.0, 1_500.0, 0.0, -300.0, 0.0] {
+            scroll.setContentOffset(
+                CGPoint(x: scroll.contentOffset.x, y: initialToday + displacement), animated: false
+            )
+            try await Task.sleep(for: .milliseconds(100))
+            detent.updateAnchor()
+            XCTAssertEqual(
+                try XCTUnwrap(detent.todayOffset), initialToday, accuracy: 1,
+                "Scrolling away must not remove or shift the Today detent"
+            )
+        }
+        for _ in 1...2 {
+            scroll.contentOffset.y = initialToday + 1_500
+            try await Task.sleep(for: .milliseconds(100))
+            detent.reduceMotion = true
+            XCTAssertTrue(UpcomingView.scrollToToday(in: scroll))
+            let deadline = Date().addingTimeInterval(3)
+            while abs(scroll.contentOffset.y - initialToday) > 1, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            XCTAssertEqual(scroll.contentOffset.y, initialToday, accuracy: 1, "Each navigation tap returns to Today")
+        }
+        for displacement in [-30.0, 30.0] {
+            detent.cancelInteraction()
+            scroll.contentOffset.y = initialToday + displacement
+            detent.reduceMotion = true
+            detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
+            detent.phaseChanged(from: .interacting, to: .idle, velocity: 0)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(scroll.contentOffset.y, initialToday, accuracy: 1, "The retained target supports both approaches")
+        }
+    }
+
+    func testPageReselectionOverrideHandlesNativeLegacyAndOpaqueRequests() {
+        for native in [false, true] {
+            let root = UIViewController()
+            let tabs = UITabBarController()
+            let page = UIViewController()
+            let scroll = pageScroll(in: page)
+            if native {
+                tabs.tabs = [UITab(title: "Upcoming", image: nil, identifier: "upcoming") { _ in page }]
+            } else {
+                tabs.viewControllers = [page]
+            }
+            root.addChild(tabs)
+            let controller = bridge(in: root)
+            defer { controller.restore() }
+            var resets = 0
+            controller.onPageReselection = { selected in
+                XCTAssertTrue(selected === scroll)
+                resets += 1
+                return true
+            }
+            controller.install()
+            if native {
+                XCTAssertTrue(controller.tabBarController(tabs, shouldSelectTab: tabs.tabs[0]))
+            } else {
+                XCTAssertTrue(controller.tabBarController(tabs, shouldSelect: page))
+            }
+            controller.receiveScrollToTopRequest(0)
+            controller.receiveScrollToTopRequest(1)
+            controller.receiveScrollToTopRequest(1)
+            XCTAssertEqual(resets, 2)
+            XCTAssertEqual(scroll.contentOffset.y, 250, "A date-based reset must not also scroll to the start of history")
+
+            controller.onPageReselection = UpcomingView.scrollToToday
+            controller.receiveScrollToTopRequest(2)
+            XCTAssertEqual(scroll.contentOffset.y, -scroll.adjustedContentInset.top)
+        }
+    }
+
     func testReselectionScrollsOnlyTheCurrentPageForNativeAndLegacyTabs() {
         for native in [false, true] {
             let root = UIViewController()

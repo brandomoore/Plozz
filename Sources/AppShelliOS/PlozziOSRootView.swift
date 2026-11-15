@@ -1586,7 +1586,8 @@ struct PlozziOSTabShell: View {
                 musicDockUsesBottomBar: !usesVerticalToolbar,
                 hasOpaqueBottomBar: usesOpaqueBottomBar,
                 overflowNavigation: overflowNavigation,
-                scrollToTopRequest: scrollToTopRequest
+                scrollToTopRequest: scrollToTopRequest,
+                onPageReselection: UpcomingView.scrollToToday
             )
             .frame(width: 0, height: 0)
         }
@@ -2002,6 +2003,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
     var hasOpaqueBottomBar = false
     var overflowNavigation: PlozziOSOverflowNavigation?
     var scrollToTopRequest = 0
+    var onPageReselection: ((UIScrollView) -> Bool)?
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
 
@@ -2015,6 +2017,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.musicDockUsesBottomBar = musicDockUsesBottomBar
         controller.hasOpaqueBottomBar = hasOpaqueBottomBar
         controller.overflowNavigation = overflowNavigation
+        controller.onPageReselection = onPageReselection
         controller.install()
         controller.receiveScrollToTopRequest(scrollToTopRequest)
     }
@@ -2026,6 +2029,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.onSettingsVisibilityChange = nil
         controller.onBottomBarVisibilityChange = nil
         controller.overflowNavigation = nil
+        controller.onPageReselection = nil
     }
 
     final class Controller: UIViewController, UITabBarControllerDelegate, UITableViewDelegate, UINavigationControllerDelegate {
@@ -2037,6 +2041,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         var reservesMusicDockSpace = false
         var musicDockUsesBottomBar = true
         var hasOpaqueBottomBar = false
+        var onPageReselection: ((UIScrollView) -> Bool)?
         private final class MusicInset {
             weak var controller: UIViewController?
             var amount: CGFloat = 0
@@ -2450,6 +2455,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                 return view.subviews.lazy.compactMap { pageScroll(in: $0) }.first
             }
             guard let scroll = pageScroll(in: root) else { return }
+            if onPageReselection?(scroll) == true { return }
             let top = -scroll.adjustedContentInset.top
             guard scroll.contentOffset.y > top else { return }
             scroll.setContentOffset(
