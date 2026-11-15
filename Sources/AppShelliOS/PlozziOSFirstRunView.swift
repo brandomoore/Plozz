@@ -50,6 +50,7 @@ struct PlozziOSFirstRunView: View {
                 )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .prepareSeerrSetup(appModel.seerService)
         .onChange(of: step) { _, newStep in
             // nil means the flow finished; keep the current screen rendered so
             // the cover slides away over it rather than over an empty view.

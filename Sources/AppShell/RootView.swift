@@ -1325,6 +1325,7 @@ struct OnboardingFlowView: View {
         .onChange(of: currentPage) { _, newPage in
             enqueue(newPage)
         }
+        .prepareSeerrSetup(appState.seerService)
     }
 
     private var currentPage: OnboardingPage {
@@ -1658,6 +1659,7 @@ private struct ProfileSetupFlowView: View {
         }
         // Explicitly disable implicit fades between stage enum values.
         .transaction { $0.animation = nil }
+        .prepareSeerrSetup(appState.seerService)
     }
 
     private var showsDetour: Bool {

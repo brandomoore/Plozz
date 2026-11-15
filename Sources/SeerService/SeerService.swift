@@ -55,9 +55,16 @@ public final class SeerService {
     @ObservationIgnored public var loginOptions: () -> [SeerLoginOption] = { [] }
     @ObservationIgnored public var embyUsernames: () -> [String] = { [] }
     @ObservationIgnored public var suggestedAddresses: () async throws -> [URL] = { [] }
-    @ObservationIgnored public var localDiscoveryHosts: () -> [String] = { [] }
-    @ObservationIgnored public var discoverServers: ([String]) -> AsyncStream<DiscoveredSeerServer> = {
-        SeerDiscovery().discover(hostHints: $0)
+    public let setupDiscovery = SeerSetupDiscovery()
+    @ObservationIgnored public var setupSources: () -> [SeerSetupDiscovery.Source] = { [] }
+    @ObservationIgnored public var discoverServers: (SeerDiscovery.Request) -> AsyncStream<DiscoveredSeerServer> = {
+        SeerDiscovery(http: SeerAuthentication.makeHTTPClient(timeout: 3)).discover(
+            hostHints: $0.hostHints, urlHints: $0.urls,
+            includesSubnet: $0.includesSubnet, inspectMethods: true
+        )
+    }
+    @ObservationIgnored public var discoveryMethods: (URL) async throws -> SeerLoginMethods = {
+        try await SeerAuthentication(baseURL: $0, http: SeerAuthentication.makeHTTPClient(timeout: 3)).methods()
     }
     @ObservationIgnored public var authentication: (URL) -> SeerAuthentication = { SeerAuthentication(baseURL: $0) }
     @ObservationIgnored public var plexSignIn: ((URL, @escaping @MainActor (URL) -> Void) async throws -> SeerAuthenticatedAccount)?
@@ -219,6 +226,7 @@ public final class SeerService {
 
     public func synchronizeProfile() {
         guard let profile = profileSource?(), profile.id != activeProfileID else { return }
+        setupDiscovery.reset()
         chooseDestination(nil)
         _ = beginConnectionIntent()
         activeProfileID = profile.id
@@ -233,6 +241,26 @@ public final class SeerService {
             storageFailure = "Couldn’t read the saved Seerr connections."
             phase = .failed("Couldn’t read the saved Seerr connections.")
         }
+    }
+
+    public var setupDiscoveryScope: SeerSetupDiscovery.Scope {
+        let sources = setupSources()
+        let preferred = profileConnections.setupServer?.canonicalURL ?? savedBaseURLString
+        return .init(
+            profileID: profileSource?().id ?? activeProfileID, sources: sources,
+            preferredURL: preferred.flatMap(URL.init(string:)),
+            mediaServerTypes: Set(sources.map(\.mediaServerType) + loginOptions().map(\.mediaServerType))
+        )
+    }
+
+    public func prepareSetup(force: Bool = false, resolvingAllServers: Bool = false) {
+        synchronizeProfile()
+        let scope = setupDiscoveryScope
+        setupDiscovery.prepare(
+            scope: scope, force: force, stopAfterMatch: !resolvingAllServers, discover: discoverServers,
+            suggested: suggestedAddresses, methods: discoveryMethods,
+            isCurrent: { [weak self] in self?.setupDiscoveryScope == scope }
+        )
     }
 
     public func rememberSetupServer(_ url: URL, expectedProfileID: String) throws {

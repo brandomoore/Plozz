@@ -19,7 +19,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 self.attach(image, name: "Seerr connected \(Int(size.width))x\(Int(size.height))")
                 let text = try self.recognize(image, size: size)
                 let title = try XCTUnwrap(text.first { $0.text.localizedCaseInsensitiveContains("Seerr") })
-                XCTAssertTrue(text.contains { $0.text.contains("Emby only") })
+                XCTAssertTrue(text.contains { $0.text == "Home" })
                 XCTAssertGreaterThanOrEqual(title.frame.minX, 20)
                 XCTAssertLessThanOrEqual(title.frame.maxX, size.width - 23)
                 XCTAssertFalse(title.text.contains("—"))
@@ -129,20 +129,26 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }) { window, _, service in
             defer { continuation?.finish() }
             XCTAssertEqual(scans, 1)
+            XCTAssertNotNil(UIImage(named: "SeerrIcon"), "The shared server logo must be bundled on iOS too")
             let before = try self.recognize(self.capture(window), size: window.bounds.size)
             self.attach(try self.capture(window), name: "Seerr detecting server")
             let continueBefore = try XCTUnwrap(before.first { $0.text == "Continue" })
+            XCTAssertEqual(self.activityIndicators(in: window).filter(\.isAnimating).count, 1)
+            XCTAssertFalse(before.contains { $0.text.contains("Checking sign-in options") })
             XCTAssertTrue(before.contains { $0.text == "Set up manually" })
             continuation?.yield(.init(baseURL: discovered, version: "1"))
-            continuation?.finish()
             try await Task.sleep(for: .milliseconds(150))
             window.layoutIfNeeded()
             let text = try self.recognize(self.capture(window), size: window.bounds.size)
             self.attach(try self.capture(window), name: "Seerr suggested account")
-            let continueAfter = try XCTUnwrap(text.first { $0.text == "Continue as Alex" })
+            let continueAfter = try XCTUnwrap(text.first { $0.text == "Continue as Alex" },
+                                            "A usable server must be ready while the remaining scan is still suspended")
             XCTAssertEqual(continueBefore.frame.minY, continueAfter.frame.minY, accuracy: 2)
             XCTAssertTrue(text.contains { $0.text.contains("nearby.example") })
+            XCTAssertGreaterThanOrEqual(text.filter { $0.text == "Seerr" }.count, 2,
+                                       "The detected server must retain the shared named server row")
             XCTAssertTrue(self.textFields(in: window).isEmpty)
+            XCTAssertEqual(self.activityIndicators(in: window).filter(\.isAnimating).count, 0)
             XCTAssertNil(service.profileConnections.setupServer)
             XCTAssertFalse(text.contains { $0.text.contains("Find on local network") })
             XCTAssertTrue(text.contains { $0.text == "Set up manually" })
@@ -214,6 +220,12 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             service.loginOptions = {
                 [.init(id: "alex", name: "Alex", mediaServerType: 2, authenticate: { _ in throw AppError.unauthorized })]
             }
+            service.prepareSetup()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while service.setupDiscovery.isSearching, ContinuousClock.now < deadline { await Task.yield() }
+            XCTAssertNotNil(service.setupDiscovery.selected, "Prepare before the Seerr page mounts")
+            service.suggestedAddresses = { XCTFail("Page entry must reuse preparation"); return [] }
+            service.discoveryMethods = { _ in XCTFail("Page entry must reuse capabilities"); throw AppError.invalidResponse }
         }) { window, _, service in
             let text = try self.recognize(self.capture(window), size: window.bounds.size)
             XCTAssertTrue(text.contains { $0.text.contains("suggested.example") })
@@ -250,6 +262,10 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         ((view as? UITextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields)
     }
 
+    private func activityIndicators(in view: UIView) -> [UIActivityIndicatorView] {
+        ((view as? UIActivityIndicatorView).map { [$0] } ?? []) + view.subviews.flatMap(activityIndicators)
+    }
+
     func testIncompatibleServerDoesNotOfferTheExistingPlexAccount() async throws {
         try await render(size: .init(width: 390, height: 844), state: .unconfigured, serverType: 2, configure: { service in
             service.suggestedAddresses = { [URL(string: "https://jellyfin-seerr.example")!] }
@@ -261,6 +277,8 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }) { window, _, service in
             let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
             XCTAssertFalse(text.contains("Continue as Alex"))
+            XCTAssertTrue(text.contains("Sign in with Jellyfin"))
+            XCTAssertFalse(text.contains { $0.contains("Choose a sign-in method") })
             XCTAssertTrue(text.contains("Set up manually"))
             XCTAssertTrue(self.textFields(in: window).isEmpty)
             XCTAssertFalse(service.isConfigured)
@@ -364,7 +382,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         state: SeerrSetupHTTP.State = .connected,
         serverType: Int = 2,
         manualForm: Bool = false,
-        configure: (SeerService) throws -> Void = { _ in },
+        configure: (SeerService) async throws -> Void = { _ in },
         inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
         let http = SeerrSetupHTTP(state: state, longNames: longNames, serverType: serverType)
@@ -374,13 +392,14 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         let service = SeerService(connectionStore: store, http: http)
         service.discoverServers = { _ in AsyncStream { $0.finish() } }
         service.authentication = { SeerAuthentication(baseURL: $0, http: http) }
-        var profile = Profile(id: "fixture", name: longNames ? "A household profile with a very long name" : "Emby only")
+        service.discoveryMethods = { try await SeerAuthentication(baseURL: $0, http: http).methods() }
+        var profile = Profile(id: "fixture", name: longNames ? "A household profile with a very long name" : "Home")
         profile.seerrUserID = 2
         profile.seerrUserName = longNames ? "Alex with an exceptionally long household display name" : "Alex"
         profile.seerrServerIdentity = SeerServerIdentity(baseURL: URL(string: "https://fixture.invalid")!)
         let current = state == .differentProfile ? Profile(id: "other", name: "Other") : profile
         service.configureProfiles(store: InMemorySeerAccountConnectionStore(), profiles: [profile, current], current: { current })
-        try configure(service)
+        try await configure(service)
         let view = Group {
             if manualForm {
                 ScrollView {

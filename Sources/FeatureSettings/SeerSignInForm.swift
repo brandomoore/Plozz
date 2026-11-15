@@ -27,6 +27,7 @@ struct SeerSignInForm: View {
     private enum Mode { case options, local, media, apiKey }
     @State private var discovering = false
     @State private var discoveryRevision = UUID()
+    @State private var rescan = false
     @State private var addressEdited = false
     @FocusState private var primaryFocused: Bool
     private enum Action { case check, existing(SeerLoginOption), password, apiKey, plex }
@@ -56,6 +57,8 @@ struct SeerSignInForm: View {
                 SeerSuggestedSetupView(
                     address: address,
                     accountName: suggestedAccountName,
+                    signInTitle: suggestedSignInTitle,
+                    canContinue: methods != nil,
                     discovering: discovering,
                     signingIn: operation != nil,
                     multipleServers: suggestions.count > 1,
@@ -67,7 +70,7 @@ struct SeerSignInForm: View {
                 if methods == nil, mode == .options, !addressEdited || !suggestions.isEmpty {
                     SeerServerDiscoverySection(
                         suggestions: suggestions, discovering: discovering,
-                        onScan: { suggestions = []; addressEdited = false; discoveryRevision = UUID() },
+                        onScan: { suggestions = []; addressEdited = false; rescan = true; discoveryRevision = UUID() },
                         onSelect: { url in
                             address = url.absoluteString
                             suggestions = []
@@ -124,11 +127,24 @@ struct SeerSignInForm: View {
         .defaultFocus($primaryFocused, true)
         #endif
         .task(id: addressEdited ? nil : discoveryRevision) { if !addressEdited { await findAddress() } }
+        .onChange(of: seer.setupDiscoveryScope) {
+            guard !addressEdited else { return }
+            methods = nil
+            address = ""
+            seer.prepareSetup()
+            applyPreparedSetup()
+        }
+        .onChange(of: seer.setupDiscovery.selected) { applyPreparedSetup() }
+        .onChange(of: seer.setupDiscovery.servers) { applyPreparedSetup() }
+        .onChange(of: seer.setupDiscovery.isSearching) { applyPreparedSetup() }
         .task(id: operation?.id) { [operation] in
             guard let operation else { return }
             await perform(operation)
         }
-        .onDisappear { password = ""; key = ""; operation = nil; plexURL = nil }
+        .onDisappear {
+            password = ""; key = ""; operation = nil; plexURL = nil
+            seer.setupDiscovery.cancel()
+        }
         .onChange(of: seer.activeProfileID) {
             addressEdited = true
             operation = nil
@@ -183,15 +199,36 @@ struct SeerSignInForm: View {
         return accounts.count == 1 ? accounts.first?.name : suggestedEmbyUsername
     }
 
+    private var suggestedSignInTitle: LocalizedStringResource {
+        if availableAccounts.count > 1 { return "Choose account" }
+        guard let methods else { return "Continue" }
+        if methods.mediaServerLogin == true {
+            switch methods.mediaServerType {
+            case 1: return "Sign in with Plex"
+            case 2: return "Sign in with Jellyfin"
+            case 3: return "Sign in with Emby"
+            default: break
+            }
+        }
+        return "Continue"
+    }
+
     private func continueSuggestedSignIn() {
         guard !discovering, operation == nil, profileID == seer.activeProfileID else { return }
         if availableAccounts.count == 1, let account = availableAccounts.first {
             start(.existing(account))
-        } else if suggestedEmbyUsername != nil, let url = normalizedURL, let profileID {
+        } else if methods != nil, let url = normalizedURL, let profileID {
             do { try seer.rememberSetupServer(url, expectedProfileID: profileID) }
             catch is CancellationError { return }
             catch { self.error = "Couldn’t save the server address. Try again."; return }
-            openManualSetup()
+            if methods?.mediaServerLogin == true, methods?.mediaServerType == 1, availableAccounts.isEmpty {
+                start(.plex)
+            } else {
+                openManualSetup()
+                if methods?.mediaServerLogin != true {
+                    mode = methods?.localLogin == true ? .local : .apiKey
+                }
+            }
         }
     }
 
@@ -200,6 +237,8 @@ struct SeerSignInForm: View {
         guard profileID == nil || profileID == seer.activeProfileID else { return }
         profileID = seer.activeProfileID
         let embyUsername = suggestedEmbyUsername
+        seer.setupDiscovery.cancel()
+        discovering = false
         addressEdited = true
         manualSetup = true
         error = nil
@@ -318,47 +357,27 @@ struct SeerSignInForm: View {
     private func findAddress() async {
         seer.synchronizeProfile()
         profileID = seer.activeProfileID
-        discovering = true
-        defer { discovering = false }
         address = seer.profileConnections.connections.first(where: { $0.id == replacing })?.baseURL.absoluteString
             ?? seer.profileConnections.setupServer?.canonicalURL
             ?? seer.savedBaseURLString ?? ""
-        if !address.isEmpty {
-            if showsSuggestedSetup, let url = normalizedURL { await checkSuggestedServer(url) }
-            else { start(.check) }
+        if !address.isEmpty, !showsSuggestedSetup {
+            start(.check)
             return
         }
-        do {
-            let urls = try await seer.suggestedAddresses()
-            guard discoveryIsCurrent else { return }
-            suggestions = urls
-        } catch is CancellationError { return }
-        catch {
-            guard discoveryIsCurrent else { return }
-            self.error = "Couldn’t look up the server address. Enter it above."
-        }
-        if suggestions.isEmpty {
-            for await server in seer.discoverServers(seer.localDiscoveryHosts()) {
-                guard discoveryIsCurrent else { return }
-                if !suggestions.contains(server.baseURL) { suggestions.append(server.baseURL) }
-            }
-        }
-        guard discoveryIsCurrent, showsSuggestedSetup, suggestions.count == 1,
-              let url = suggestions.first else { return }
-        await checkSuggestedServer(url)
+        seer.prepareSetup(force: rescan, resolvingAllServers: !showsSuggestedSetup)
+        rescan = false
+        applyPreparedSetup()
     }
 
-    private func checkSuggestedServer(_ url: URL) async {
-        do {
-            let result = try await seer.authentication(url).methods()
-            seer.synchronizeProfile()
-            guard discoveryIsCurrent else { return }
-            address = url.absoluteString
-            methods = result
-        } catch is CancellationError { return }
-        catch {
-            guard discoveryIsCurrent else { return }
-            self.error = "Couldn’t check this server. Set up manually to try another address."
+    private func applyPreparedSetup() {
+        guard discoveryIsCurrent, seer.setupDiscovery.scope == seer.setupDiscoveryScope else { return }
+        let preparation = seer.setupDiscovery
+        discovering = preparation.isSearching
+        suggestions = preparation.servers.map(\.baseURL)
+        error = preparation.error
+        if showsSuggestedSetup, let selected = preparation.selected {
+            address = selected.baseURL.absoluteString
+            methods = selected.loginMethods
         }
     }
 
@@ -466,6 +485,8 @@ struct SeerSignInForm: View {
 struct SeerSuggestedSetupView: View {
     let address: String
     let accountName: String?
+    let signInTitle: LocalizedStringResource
+    let canContinue: Bool
     let discovering: Bool
     let signingIn: Bool
     let multipleServers: Bool
@@ -477,43 +498,40 @@ struct SeerSuggestedSetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             SettingsSectionGroup("Server") {
-                Group {
-                    if !address.isEmpty {
-                        Text(verbatim: address)
-                    } else if discovering {
-                        Text("Looking for Seerr…")
-                    } else if multipleServers {
-                        Text("Choose a server in manual setup.")
-                    } else {
-                        Text("No server found. Enter its address manually.")
+                ZStack {
+                    if discovering || signingIn {
+                        ProgressView().controlSize(.small)
+                            .accessibilityLabel(Text(signingIn ? "Signing in…" : "Looking for Seerr…"))
+                            .accessibilityIdentifier("seerr-setup-progress")
                     }
                 }
-                .font(.subheadline)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .frame(width: 20, height: 20)
+            } content: {
+                Group {
+                    if let url = URL(string: address), SeerServerIdentity(baseURL: url) != nil {
+                        SeerDiscoveredServerRow(address: url)
+                    } else {
+                        Group {
+                            if discovering {
+                                Text("Looking for Seerr…")
+                            } else if multipleServers {
+                                Text("Choose a server in manual setup.")
+                            } else {
+                                Text("No server found. Enter its address manually.")
+                            }
+                        }
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                }
                 .accessibilityIdentifier("seerr-suggested-server")
             }
-            SettingsSectionGroup("Account") {
-                Group {
-                    if let accountName {
-                        Text(verbatim: accountName)
-                    } else if discovering {
-                        Text("Checking sign-in options…")
-                    } else {
-                        Text("Choose a sign-in method in manual setup.")
-                    }
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }
             Button(action: onContinue) {
-                HStack {
-                    if discovering || signingIn { ProgressView() }
-                    Text(primaryTitle)
-                }
-                .frame(maxWidth: .infinity).plozzPageActionLabel()
+                Text(primaryTitle).frame(maxWidth: .infinity).plozzPageActionLabel()
             }
             .plozzPageActionButton()
-            .disabled(discovering || signingIn || accountName == nil || address.isEmpty)
+            .disabled(discovering || signingIn || !canContinue || address.isEmpty)
             .focused($primaryFocused)
             .accessibilityIdentifier("seerr-suggested-continue")
             Button(action: onManual) {
@@ -531,7 +549,7 @@ struct SeerSuggestedSetupView: View {
 
     private var primaryTitle: LocalizedStringResource {
         if let accountName { return "Continue as \(accountName)" }
-        return "Continue"
+        return signInTitle
     }
 }
 
@@ -598,15 +616,27 @@ private struct SeerServerDiscoverySection: View {
             }
             ForEach(suggestions, id: \.absoluteString) { url in
                 Button { onSelect(url) } label: {
-                    ServerDiscoveryRow(name: Text("Seerr"), address: url, showsDisclosure: false) {
-                        Image(systemName: "server.rack")
-                            .font(.title2).frame(width: 32)
-                    }
+                    SeerDiscoveredServerRow(address: url)
                 }
                 .settingsActionRow()
                 .accessibilityHint("Select server")
                 .accessibilityIdentifier("seerr-discovered-server-\(url.absoluteString)")
             }
+        }
+    }
+}
+
+private struct SeerDiscoveredServerRow: View {
+    let address: URL
+
+    var body: some View {
+        ServerDiscoveryRow(name: Text("Seerr"), address: address, showsDisclosure: false) {
+            Image("SeerrIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .settingsRowIcon()
         }
     }
 }

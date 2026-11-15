@@ -21,14 +21,40 @@ same `SeerConnectionsView` and authentication implementation.
   Media-server password fields allow an empty value for passwordless accounts;
   the server still validates the submitted credentials.
   Silo and other providers can use a supported Seerr login or an API key.
-- Setup automatically checks a compatible Jellyfin plugin for an address, then
-  runs bounded local discovery if none is supplied. Its administrator key is never
-  imported. Onboarding preselects a single discovered or suggested server and
-  checks its public sign-in capabilities without changing pages or opening a
-  password form. Its stable server/account summary offers **Continue as [name]**
-  only for one matching profile account; **Set up manually** remains available.
-  Multiple servers/accounts require an explicit choice. Late discovery never
-  replaces user input or crosses profiles.
+- `SeerSetupDiscovery`, owned by `SeerService`, prepares public server capabilities
+  during the preceding first-run/new-profile onboarding steps on both platforms.
+  The flow-level `prepareSeerrSetup` adapter observes approved account routes and
+  profile identity, not a particular page transition. A five-minute in-memory
+  successful result is reused on Seerr page entry; failed/empty preparation is
+  retried, and explicit rescanning bypasses the cache. Reordering unchanged
+  approved routes does not restart preparation.
+  Known routes and the compatible Jellyfin plugin are checked concurrently.
+  The first compatible ready response is usable immediately and cancels remaining
+  discovery. A slow plugin or unfinished subnet scan does not block Continue.
+  If no suitable known endpoint responds, discovery uses a bounded local sweep.
+  Plugin lookups import only the URL, never an administrator key.
+  Checks retain HTTPS, custom ports and base paths on known URLs, also trying
+  their origin (including the standard web port) and the conventional `/seerr`,
+  `/jellyseerr` and `/overseerr` paths.
+  The conventional co-hosted port is 5055; local hosts can use HTTP on that
+  separate endpoint, while public HTTPS hosts keep HTTPS. No arbitrary remote
+  port scan or sibling-domain guessing occurs. Unknown custom addresses still
+  need manual entry or a plugin-supplied URL. Discovery sends no media credentials
+  to candidate servers, does not follow cross-origin redirects, and does not
+  downgrade an HTTPS request. Only the existing Jellyfin plugin lookup uses
+  that account's credentials against its own authorized media-server origin.
+  Status and capabilities are checked within each concurrent probe. Discovery
+  requests have a three-second resource budget, separate from interactive login.
+  The shared `ServerDiscoveryRow` and bundled Seerr logo present the detected
+  server in both suggested and manual setup, without a navigation chevron.
+  Scan progress uses the standard section-header indicator, not a second
+  account panel or button spinner. The stable setup offers
+  **Continue as [name]** for one matching profile account, and otherwise names
+  the supported sign-in method. **Set up manually** and **Not now** remain available.
+  Background discovery never opens forms. Manual scans retain all discovered
+  choices; multiple matching accounts still require an explicit account action.
+  Late results cannot replace user input or cross profile/account-route scopes.
+  Leaving onboarding cancels unfinished work; cached data never grants sign-in.
   Generated local probes normalize Plex's IPv4 certificate hostname to its
   embedded address before deduplicating against the subnet sweep, so that one
   host appears once. Other hostnames and configured server URLs are unchanged.

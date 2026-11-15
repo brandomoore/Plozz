@@ -2,23 +2,25 @@ import Foundation
 import CoreModels
 import CoreNetworking
 
-/// A Seerr (Overseerr / Jellyseerr) instance found on the local network.
+/// A Seerr instance found at a known URL or on the local network.
 public struct DiscoveredSeerServer: Sendable, Hashable, Identifiable {
-    /// Bare origin, e.g. `http://192.168.1.42:5055` — ready to hand straight
+    /// Validated base URL, including any reverse-proxy path — ready to hand straight
     /// to ``SeerConfig/init(baseURL:apiKey:userId:)``.
     public let baseURL: URL
     /// Seerr's reported version (from `/api/v1/status`), for display only.
     public let version: String?
+    public let loginMethods: SeerLoginMethods?
 
-    public init(baseURL: URL, version: String?) {
+    public init(baseURL: URL, version: String?, loginMethods: SeerLoginMethods? = nil) {
         self.baseURL = baseURL
         self.version = version
+        self.loginMethods = loginMethods
     }
 
     public var id: String { baseURL.absoluteString }
 }
 
-/// Finds Seerr servers on the local network.
+/// Finds Seerr servers at known URLs and, optionally, on the local network.
 ///
 /// Unlike Jellyfin (a UDP broadcast responder, see `UDPServerDiscovery`) or
 /// SMB shares (Bonjour's `_smb._tcp`), Overseerr/Jellyseerr has **no announce
@@ -35,6 +37,18 @@ public struct DiscoveredSeerServer: Sendable, Hashable, Identifiable {
 /// Each candidate is confirmed by its unauthenticated `GET /api/v1/status` —
 /// no API key needed to *find* a server, only to connect to one.
 public final class SeerDiscovery: Sendable {
+    public struct Request: Sendable {
+        public var urls: [URL] = []
+        public var hostHints: [String] = []
+        public var includesSubnet = true
+
+        public init(urls: [URL] = [], hostHints: [String] = [], includesSubnet: Bool = true) {
+            self.urls = urls
+            self.hostHints = hostHints
+            self.includesSubnet = includesSubnet
+        }
+    }
+
     private let http: HTTPClient
     private let port: Int
     private let concurrency: Int
@@ -57,7 +71,7 @@ public final class SeerDiscovery: Sendable {
     ) {
         self.http = http
         self.port = port
-        self.concurrency = concurrency
+        self.concurrency = max(1, concurrency)
         self.subnetHosts = subnetHosts
     }
 
@@ -72,12 +86,16 @@ public final class SeerDiscovery: Sendable {
     /// batches of `concurrency` probes are needed to cover every candidate.
     /// A fixed default (e.g. 8s) would cut off most of a /24 sweep: at
     /// concurrency 48 that's ~6 waves × up to 3s each, well past 8s.
-    public func discover(hostHints: [String] = [], timeout: TimeInterval? = nil) -> AsyncStream<DiscoveredSeerServer> {
+    public func discover(
+        hostHints: [String] = [], urlHints: [URL] = [], includesSubnet: Bool = true,
+        inspectMethods: Bool = false, timeout: TimeInterval? = nil
+    ) -> AsyncStream<DiscoveredSeerServer> {
         AsyncStream { continuation in
             var seen = Set<String>()
-            let hints = hostHints.map(Self.discoveryHost).filter { seen.insert($0).inserted }
-            let swept = subnetHosts().filter { seen.insert($0).inserted }
-            let candidates = hints + swept
+            let hosts = hostHints + (includesSubnet ? subnetHosts() : [])
+            let candidates = (urlHints + hosts.compactMap { Self.hostURL($0, port: port) })
+                .compactMap { SeerServerIdentity(baseURL: $0).flatMap { URL(string: $0.canonicalURL) } }
+                .filter { seen.insert($0.absoluteString).inserted }
 
             guard !candidates.isEmpty else {
                 continuation.finish()
@@ -85,9 +103,9 @@ public final class SeerDiscovery: Sendable {
             }
 
             let waves = (candidates.count + concurrency - 1) / concurrency
-            let resolvedTimeout = timeout ?? (Double(waves) * Self.perProbeTimeout + 2)
+            let resolvedTimeout = timeout ?? (Double(waves) * Self.perProbeTimeout * (inspectMethods ? 2 : 1) + 2)
 
-            let work = Task { [http, port, concurrency] in
+            let work = Task { [http, concurrency] in
                 await withTaskGroup(of: DiscoveredSeerServer?.self) { group in
                     var nextIndex = 0
                     func dispatchNext() {
@@ -97,9 +115,9 @@ public final class SeerDiscovery: Sendable {
                         // burning through all of them just to have each
                         // immediately no-op on `Task.isCancelled`.
                         guard !Task.isCancelled, nextIndex < candidates.count else { return }
-                        let host = candidates[nextIndex]
+                        let url = candidates[nextIndex]
                         nextIndex += 1
-                        group.addTask { await Self.probe(host: host, port: port, http: http) }
+                        group.addTask { await Self.probe(url: url, http: http, inspectMethods: inspectMethods) }
                     }
 
                     while nextIndex < min(concurrency, candidates.count) {
@@ -127,6 +145,47 @@ public final class SeerDiscovery: Sendable {
         }
     }
 
+    /// Bounded checks on approved media-server routes, not arbitrary ports or sibling domains.
+    public static func setupCandidates(mediaURLs: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        var result: [URL] = []
+        func append(_ url: URL?) {
+            guard let url, let valid = SeerServerIdentity(baseURL: url).flatMap({ URL(string: $0.canonicalURL) }),
+                  seen.insert(valid).inserted else { return }
+            result.append(valid)
+        }
+        for url in mediaURLs {
+            guard SeerServerIdentity(baseURL: url) != nil,
+                  var origin = URLComponents(url: url, resolvingAgainstBaseURL: false) else { continue }
+            if SourceLocalityClassifier.classify(url: url) == .local, let host = url.host {
+                append(hostURL(host, port: 5055))
+            }
+            append(url)
+            origin.path = ""
+            let ports: [Int?] = origin.port == nil ? [nil] : [origin.port, nil]
+            for port in ports {
+                var webOrigin = origin
+                webOrigin.port = port
+                append(webOrigin.url)
+                for path in ["/seerr", "/jellyseerr", "/overseerr"] {
+                    var pathURL = webOrigin
+                    pathURL.path = path
+                    append(pathURL.url)
+                }
+            }
+            // A public hostname keeps HTTPS, even on the conventional Seerr port.
+            origin.port = 5055
+            append(origin.url)
+        }
+        return result
+    }
+
+    private static func hostURL(_ rawHost: String, port: Int) -> URL? {
+        let host = discoveryHost(rawHost)
+        let hostComponent = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        return URL(string: "http://\(hostComponent):\(port)")
+    }
+
     private static func discoveryHost(_ host: String) -> String {
         let host = host.lowercased()
         // Plex's certificate hostname and its LAN address are one discovery target.
@@ -139,19 +198,26 @@ public final class SeerDiscovery: Sendable {
     /// Probes one host:port for an unauthenticated `/api/v1/status`. Rejects
     /// anything that isn't shaped like a Seerr response (guards against some
     /// unrelated device answering 200 with arbitrary JSON on this port).
-    private static func probe(host: String, port: Int, http: HTTPClient) async -> DiscoveredSeerServer? {
+    private static func probe(url baseURL: URL, http: HTTPClient, inspectMethods: Bool) async -> DiscoveredSeerServer? {
         guard !Task.isCancelled else { return nil }
-        // Bare IPv6 addresses (e.g. from a known server's `URL.host`, which
-        // strips brackets) must be re-bracketed before a port can follow —
-        // "http://fd00::1:5055" is not a valid URL, but "http://[fd00::1]:5055" is.
-        let hostComponent = host.contains(":") ? "[\(host)]" : host
-        guard let baseURL = URL(string: "http://\(hostComponent):\(port)") else { return nil }
-        let endpoint = Endpoint(method: .get, path: "/api/v1/status")
+        let endpoint = Endpoint(
+            method: .get, path: "/api/v1/status", redirectPolicy: .sameOrigin,
+            allowsAutomaticAddressRetry: false
+        )
         do {
             let status = try await http.decode(SeerStatus.self, from: endpoint, baseURL: baseURL)
             guard let version = status.version, !version.isEmpty else { return nil }
-            return DiscoveredSeerServer(baseURL: baseURL, version: version)
+            var methods: SeerLoginMethods?
+            if inspectMethods {
+                methods = try await http.decode(SeerLoginMethods.self, from: Endpoint(
+                    path: "/api/v1/settings/public", redirectPolicy: .sameOrigin,
+                    allowsAutomaticAddressRetry: false
+                ), baseURL: baseURL)
+                guard methods?.initialized == true else { return nil }
+            }
+            return DiscoveredSeerServer(baseURL: baseURL, version: version, loginMethods: methods)
         } catch {
+            if !Task.isCancelled { PlozzLog.networking.debug("Seerr discovery candidate did not respond with a ready server") }
             return nil
         }
     }

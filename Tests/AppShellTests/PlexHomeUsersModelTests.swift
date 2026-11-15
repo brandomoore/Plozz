@@ -88,10 +88,14 @@ final class PlexHomeUsersModelTests: XCTestCase {
         SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
         profiles.setActiveAccountIDs(["first", "plex"], for: profiles.activeProfileID)
         XCTAssertEqual(service.embyUsernames(), ["Emby first"])
+        XCTAssertEqual(Set(service.setupSources().map(\.mediaServerType)), [1, 3])
         profiles.setActiveAccountIDs(["second"], for: profiles.activeProfileID)
         XCTAssertEqual(service.embyUsernames(), ["Emby second"])
+        XCTAssertEqual(service.setupSources().flatMap(\.urls), [URL(string: "https://second.example")!])
+        XCTAssertEqual(service.setupSources().map(\.mediaServerType), [3])
         profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
         XCTAssertTrue(service.embyUsernames().isEmpty)
+        XCTAssertTrue(service.setupSources().isEmpty)
     }
 
     func testSeerrOffersTheExistingAccountWhenPlexAuthorizationFinishes() async throws {

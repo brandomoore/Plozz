@@ -11,10 +11,24 @@ public enum SeerProfileAuthentication {
         service: SeerService, profiles: ProfilesModel,
         accounts: AccountsProvidersModel, plex: PlexHomeUsersModel
     ) {
-        service.localDiscoveryHosts = { [weak accounts, weak profiles] in
+        service.setupSources = { [weak accounts, weak profiles] in
             guard let accounts, let profiles else { return [] }
             let allowed = Set(accounts.activeAccountIDs(forProfile: profiles.activeProfileID))
-            return accounts.accounts.filter { allowed.contains($0.id) }.compactMap(\.server.baseURL.host)
+            return accounts.accounts.compactMap { account in
+                guard allowed.contains(account.id) else { return nil }
+                let type: Int
+                switch account.server.provider {
+                case .plex: type = 1
+                case .jellyfin: type = 2
+                case .emby: type = 3
+                default: return nil
+                }
+                return .init(
+                    scopeID: account.connectionScopeKey,
+                    urls: [account.server.baseURL] + (account.server.alternateConnectionURLs ?? []),
+                    mediaServerType: type
+                )
+            }
         }
         service.plexSignIn = { [weak profiles, weak accounts] url, showURL in
             guard let profiles, let accounts else { throw CancellationError() }
@@ -101,32 +115,53 @@ public enum SeerProfileAuthentication {
             guard let profiles, let accounts else { throw CancellationError() }
             let profileID = profiles.activeProfileID
             let allowed = Set(accounts.activeAccountIDs(forProfile: profileID))
-            var urls: [URL] = []
-            for account in accounts.accounts where allowed.contains(account.id) && account.server.provider == .jellyfin {
-                guard let token = accounts.accountStore.token(for: account.id) else { continue }
-                let authorization = JellyfinDeviceProfile(deviceID: accounts.deviceID)
-                    .authorizationHeaderValue(token: token)
-                let endpoint = Endpoint(
-                    path: "/Streamyfin/config", headers: ["Authorization": authorization],
-                    redirectPolicy: .sameOrigin, allowsAutomaticAddressRetry: false
-                )
-                let (data, response) = try await SeerAuthentication.makeHTTPClient().sendRaw(endpoint, baseURL: account.server.baseURL)
-                guard profiles.activeProfileID == profileID else { throw CancellationError() }
-                if response.statusCode == 404 { continue }
-                guard response.statusCode == 200 else { throw AppError.invalidResponse }
-                struct Plugin: Decodable {
-                    struct Settings: Decodable {
-                        struct Value: Decodable { var value: String? }
-                        var seerrServerUrl: Value?
+            return await withTaskGroup(of: URL?.self) { group in
+                for account in accounts.accounts where allowed.contains(account.id) && account.server.provider == .jellyfin {
+                    group.addTask { @MainActor in
+                        guard !Task.isCancelled, profiles.activeProfileID == profileID,
+                              Set(accounts.activeAccountIDs(forProfile: profileID)).contains(account.id),
+                              accounts.accounts.first(where: { $0.id == account.id })?.connectionScopeKey == account.connectionScopeKey,
+                              let token = accounts.accountStore.token(for: account.id) else { return nil }
+                        let revision = accounts.credentialRevision(account)
+                        let authorization = JellyfinDeviceProfile(deviceID: accounts.deviceID)
+                            .authorizationHeaderValue(token: token)
+                        let endpoint = Endpoint(
+                            path: "/Streamyfin/config", headers: ["Authorization": authorization],
+                            redirectPolicy: .sameOrigin, allowsAutomaticAddressRetry: false
+                        )
+                        do {
+                            let (data, response) = try await SeerAuthentication.makeHTTPClient(timeout: 3)
+                                .sendRaw(endpoint, baseURL: account.server.baseURL)
+                            guard !Task.isCancelled, profiles.activeProfileID == profileID,
+                                  Set(accounts.activeAccountIDs(forProfile: profileID)).contains(account.id),
+                                  let current = accounts.accounts.first(where: { $0.id == account.id }),
+                                  current.connectionScopeKey == account.connectionScopeKey,
+                                  accounts.credentialRevision(current) == revision else { return nil }
+                            if response.statusCode == 404 { return nil }
+                            guard response.statusCode == 200 else { throw AppError.invalidResponse }
+                            struct Plugin: Decodable {
+                                struct Settings: Decodable {
+                                    struct Value: Decodable { var value: String? }
+                                    var seerrServerUrl: Value?
+                                }
+                                var settings: Settings?
+                            }
+                            let plugin = try JSONDecoder().decode(Plugin.self, from: data)
+                            guard let raw = plugin.settings?.seerrServerUrl?.value,
+                                  let url = SeerConfig.normalizedBaseURL(from: raw),
+                                  SeerServerIdentity(baseURL: url) != nil else { return nil }
+                            return url
+                        } catch {
+                            if !Task.isCancelled { PlozzLog.networking.debug("Seerr plugin address lookup did not respond") }
+                            return nil
+                        }
                     }
-                    var settings: Settings?
                 }
-                let plugin = try JSONDecoder().decode(Plugin.self, from: data)
-                if let raw = plugin.settings?.seerrServerUrl?.value,
-                   let url = SeerConfig.normalizedBaseURL(from: raw),
-                   SeerServerIdentity(baseURL: url) != nil, !urls.contains(url) { urls.append(url) }
+                for await url in group {
+                    if let url { group.cancelAll(); return [url] }
+                }
+                return []
             }
-            return urls
         }
     }
 }

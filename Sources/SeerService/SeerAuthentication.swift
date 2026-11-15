@@ -2,7 +2,7 @@ import CoreModels
 import CoreNetworking
 import Foundation
 
-public struct SeerLoginMethods: Decodable, Sendable {
+public struct SeerLoginMethods: Decodable, Sendable, Hashable {
     public var initialized: Bool?
     public var mediaServerType: Int?
     public var mediaServerLogin: Bool?
@@ -32,13 +32,13 @@ public actor SeerAuthentication {
         self.http = http
     }
 
-    public nonisolated static func makeHTTPClient() -> HTTPClient {
+    public nonisolated static func makeHTTPClient(timeout: TimeInterval = 30) -> HTTPClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCache = nil
-        configuration.timeoutIntervalForRequest = 20
-        configuration.timeoutIntervalForResource = 30
+        configuration.timeoutIntervalForRequest = min(20, timeout)
+        configuration.timeoutIntervalForResource = timeout
         return URLSessionHTTPClient(session: URLSession(configuration: configuration))
     }
 
