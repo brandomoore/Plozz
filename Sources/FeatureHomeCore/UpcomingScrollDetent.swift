@@ -43,34 +43,49 @@ struct UpcomingTodayAnchor: View {
 }
 
 struct UpcomingScrollDetentDrag: Sendable {
-    static let releaseDistance: CGFloat = 360
-    static var heldDistance: CGFloat { stretch(releaseDistance) }
+    static let fullReleaseDistance: CGFloat = 900
     static let snapDistance: CGFloat = 48
     static let maximumSnapVelocity: CGFloat = 1_200
     let start: CGFloat
     let translation: CGFloat
     let today: CGFloat
+    let releaseDistance: CGFloat
+    var heldDistance: CGFloat { Self.stretch(releaseDistance) }
+    var approachesFromFuture: Bool { start > today + 2 }
     private(set) var hasReleased = false
+    private(set) var hasArrived = false
+    private var stoppedDisplacement: CGFloat = 0
     private var feedbackStep = 0
 
-    init(start: CGFloat, translation: CGFloat, today: CGFloat) {
+    init(start: CGFloat, translation: CGFloat, today: CGFloat,
+         releaseDistance: CGFloat = Self.fullReleaseDistance) {
         self.start = start
         self.translation = translation
         self.today = today
+        self.releaseDistance = releaseDistance
     }
 
     mutating func advance(translation: CGFloat) -> TouchFeedback.Event? {
         guard start >= today - 2, !hasReleased else { return nil }
         let pull = today - (start - (translation - self.translation))
+        if approachesFromFuture {
+            guard pull >= stoppedDisplacement else { return nil }
+            // Discard travel against the stop so reversing immediately tracks
+            // the finger, rather than requiring it to undo the overshoot.
+            stoppedDisplacement = pull
+            guard !hasArrived else { return nil }
+            hasArrived = true
+            return .selection
+        }
         if pull <= 0 {
             feedbackStep = 0
             return nil
         }
-        if pull >= Self.releaseDistance {
+        if pull >= releaseDistance {
             hasReleased = true
             return .pop
         }
-        let step = Int(pull / Self.releaseDistance * 8)
+        let step = Int(pull / releaseDistance * 8)
         guard step > feedbackStep else { return nil }
         feedbackStep = step
         return .tension(intensity: 0.35 + 0.65 * Double(step) / 8)
@@ -80,24 +95,30 @@ struct UpcomingScrollDetentDrag: Sendable {
         let proposed = start - (translation - self.translation)
         // Once the seal breaks, keep a fixed displacement for the rest of the
         // gesture so reversing direction cannot jump or reattach the content.
-        if hasReleased { return proposed + Self.releaseDistance - Self.heldDistance }
+        if hasReleased { return proposed + releaseDistance - heldDistance }
+        if approachesFromFuture { return max(today, proposed + stoppedDisplacement) }
         guard start >= today - 2, proposed < today else { return proposed }
         return today - Self.stretch(today - proposed)
     }
 
     private static func stretch(_ pull: CGFloat) -> CGFloat {
         let dimension: CGFloat = 120
-        return dimension * 0.55 * pull / (dimension + 0.55 * pull)
+        let elasticity: CGFloat = 0.55 / 2.5
+        return dimension * elasticity * pull / (dimension + elasticity * pull)
     }
 
-    static func pull(forStretch distance: CGFloat) -> CGFloat {
-        let distance = min(heldDistance, max(0, distance))
+    static func pull(forStretch distance: CGFloat, releaseDistance: CGFloat = fullReleaseDistance) -> CGFloat {
+        let distance = min(stretch(releaseDistance), max(0, distance))
         // Regrabbing a pixel-rounded return must not pop the hold by itself.
-        return min(releaseDistance - 1, 120 * distance / (0.55 * (120 - distance)))
+        return min(releaseDistance - 1, 120 * distance / ((0.55 / 2.5) * (120 - distance)))
     }
 
     func shouldSnap(offset: CGFloat, translation: CGFloat, velocity: CGFloat) -> Bool {
         guard !hasReleased else { return false }
+        if approachesFromFuture {
+            return offset <= today + 0.5
+                || (abs(offset - today) <= Self.snapDistance && abs(velocity) < Self.maximumSnapVelocity)
+        }
         let raw = start - (translation - self.translation)
         if start >= today - 2, raw < today {
             return true
@@ -179,7 +200,7 @@ final class UpcomingScrollTargetState: Sendable {
                 && projected - $0.inset < today
             guard crossesUnreleasedToday || nearbyRelease || nearbyDestination else { return nil }
             $0.target = today + $0.inset
-            $0.feedbackPending = abs($0.offset - today) > 0.5
+            $0.feedbackPending = $0.drag?.hasArrived != true && abs($0.offset - today) > 0.5
             return $0.target
         }
     }
@@ -216,6 +237,7 @@ final class UpcomingScrollDetent {
     private var hasResisted = false
     private var releaseShift: CGFloat = 0
     private var motion: UpcomingScrollMotion?
+    private var touchOrigin: (offset: CGFloat, holdingToday: Bool)?
     // Mutated on the main actor; deinit removes the token after the last owner releases it.
     private nonisolated(unsafe) var inactivityObserver: NSObjectProtocol?
     var reduceMotion = false
@@ -260,6 +282,7 @@ final class UpcomingScrollDetent {
         stopMotion(preservingPosition: false)
         targetState.cancel()
         drag = nil
+        touchOrigin = nil
         hasResisted = false
         releaseShift = 0
     }
@@ -304,12 +327,13 @@ final class UpcomingScrollDetent {
             let holdingToday = motion?.returning == true
             stopMotion(preservingPosition: true)
             cancelInteraction()
-            beginInteraction(holdingToday: holdingToday)
-        } else if newPhase == .interacting, drag == nil || motion != nil {
-            let holdingToday = motion?.returning == true
+            if let scrollView { touchOrigin = (scrollView.contentOffset.y, holdingToday) }
+        } else if newPhase == .interacting, previousPhase != .interacting {
+            let origin = touchOrigin
+            let holdingToday = origin?.holdingToday ?? (motion?.returning == true)
             stopMotion(preservingPosition: true)
             cancelInteraction()
-            beginInteraction(holdingToday: holdingToday)
+            beginInteraction(start: origin?.offset, holdingToday: holdingToday)
         }
         if previousPhase == .interacting, newPhase == .decelerating || newPhase == .idle,
            !reduceMotion, !usesAssistiveScrolling, let scrollView,
@@ -317,34 +341,51 @@ final class UpcomingScrollDetent {
             animateOffset(to: target, displacement: scrollView.contentOffset.y - target, returning: true)
         }
         if newPhase == .idle {
+            if touchOrigin?.holdingToday == true, !usesAssistiveScrolling,
+               let scrollView, let todayOffset, scrollView.contentOffset.y < todayOffset {
+                let displacement = scrollView.contentOffset.y - todayOffset
+                cancelInteraction()
+                if reduceMotion {
+                    scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: todayOffset), animated: false)
+                } else {
+                    animateOffset(to: todayOffset, displacement: displacement, returning: true)
+                }
+            }
             completeCatch()
             if motion == nil { cancelInteraction() }
         }
     }
 
-    private func beginInteraction(holdingToday: Bool = false) {
+    private func beginInteraction(start: CGFloat?, holdingToday: Bool) {
         updateAnchor()
         guard !usesAssistiveScrolling, let scrollView, let todayOffset else { return }
         hasResisted = false
         releaseShift = 0
         let pan = scrollView.panGestureRecognizer
         let translation = pan.translation(in: scrollView.window).y
-        if holdingToday, scrollView.contentOffset.y < todayOffset {
-            let pull = UpcomingScrollDetentDrag.pull(forStretch: todayOffset - scrollView.contentOffset.y)
-            drag = UpcomingScrollDetentDrag(start: todayOffset, translation: translation - pull, today: todayOffset)
-            _ = drag?.advance(translation: translation)
+        let viewport = scrollView.bounds.height - scrollView.adjustedContentInset.top
+            - scrollView.adjustedContentInset.bottom
+        let releaseDistance = min(UpcomingScrollDetentDrag.fullReleaseDistance, viewport * 0.85)
+        // Tracking can still expose the previous pan's translation. Only an
+        // interacting recognizer owns a new translation, including its first movement.
+        let movedBeforePhase = pan.state == .began || pan.state == .changed
+        let origin = start ?? (scrollView.contentOffset.y + (movedBeforePhase ? translation : 0))
+        if holdingToday, origin < todayOffset {
+            let pull = UpcomingScrollDetentDrag.pull(
+                forStretch: todayOffset - origin, releaseDistance: releaseDistance
+            )
+            drag = UpcomingScrollDetentDrag(
+                start: todayOffset, translation: -pull, today: todayOffset, releaseDistance: releaseDistance
+            )
             hasResisted = true
         } else {
-            // SwiftUI can deliver .interacting after UIKit's first movement.
-            // Recover the touch-down origin instead of treating that movement as history.
-            let movedBeforePhase = phase == .interacting && (pan.state == .began || pan.state == .changed)
             drag = UpcomingScrollDetentDrag(
-                start: scrollView.contentOffset.y + (movedBeforePhase ? translation : 0),
-                translation: movedBeforePhase ? 0 : translation, today: todayOffset
+                start: origin, translation: 0, today: todayOffset, releaseDistance: releaseDistance
             )
         }
         updateTargetState()
         targetState.begin()
+        offsetChanged()
     }
 
     private func offsetChanged() {

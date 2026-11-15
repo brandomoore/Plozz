@@ -201,6 +201,19 @@ final class SettingsTabDelegateTests: XCTestCase {
         XCTAssertFalse(events.contains(.selection), "Interrupted returns cannot produce late arrival feedback")
         detent.cancelInteraction()
         scroll.delegate?.scrollViewDidEndDragging?(scroll, willDecelerate: false)
+        try await Task.sleep(for: .milliseconds(30))
+
+        try await beginPull()
+        scroll.contentOffset.y = today - 54.247
+        try await returnHeldPull()
+        try await Task.sleep(for: .milliseconds(30))
+        detent.phaseChanged(to: .tracking)
+        XCTAssertLessThan(scroll.contentOffset.y, today - 5)
+        detent.phaseChanged(to: .idle)
+        let afterTap = try await sampleMotion(at: today)
+        XCTAssertLessThan(try XCTUnwrap(afterTap.min()), today - 5,
+                          "A touch without a drag must resume the interrupted return, not strand the held offset")
+        XCTAssertFalse(events.contains(.selection), "Cancelling a return with a tap must not replay feedback")
     }
 
     func testPageReselectionOverrideHandlesNativeLegacyAndOpaqueRequests() {

@@ -519,6 +519,11 @@ struct UpcomingCaptureFixture: View {
             var returnTravel: Double = 0
             var returnModelDrift: Double = 0
             var releaseFrames = 0
+            var viewport: Double = 0
+            var viewportTop: Double = 0
+            var futureFrames = 0
+            var futureMinimumOffset: Double = 1_000_000
+            var activeRetouches = 0
         }
         try await Task.sleep(for: .seconds(1))
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
@@ -566,9 +571,33 @@ struct UpcomingCaptureFixture: View {
             scroll.accessibilityIdentifier = nil
         }
         let deadline = Date().addingTimeInterval(90)
+        var previousPhase = detent.phase
+        var previousOffset = scroll.contentOffset.y - today
+        var interruptedMotion = false
+        var gestureOrigin: CGFloat = 0
         while Date() < deadline {
             guard let today = detent.todayOffset else { preconditionFailure("The gesture fixture lost Today") }
             evidence.offset = scroll.contentOffset.y - today
+            evidence.viewport = scroll.bounds.height - scroll.adjustedContentInset.top
+                - scroll.adjustedContentInset.bottom
+            evidence.viewportTop = scroll.convert(
+                CGPoint(x: 0, y: scroll.bounds.minY + scroll.adjustedContentInset.top), to: window
+            ).y
+            if detent.phase == .tracking, previousPhase != .tracking {
+                interruptedMotion = previousPhase == .decelerating
+                    || scroll.layer.animation(forKey: "plozz.upcoming.elasticity") != nil
+            }
+            if detent.phase == .interacting, previousPhase != .interacting {
+                gestureOrigin = previousOffset
+                if interruptedMotion || previousPhase == .decelerating { evidence.activeRetouches += 1 }
+                interruptedMotion = false
+            }
+            if gestureOrigin > 2, detent.phase == .interacting || detent.phase == .decelerating {
+                evidence.futureFrames += 1
+                evidence.futureMinimumOffset = min(evidence.futureMinimumOffset, evidence.offset)
+            }
+            previousPhase = detent.phase
+            previousOffset = evidence.offset
             if detent.phase == .interacting {
                 evidence.pull = max(evidence.pull, scroll.panGestureRecognizer.translation(in: window).y)
                 if evidence.pops == 0 { evidence.held = max(evidence.held, -evidence.offset) }
@@ -885,7 +914,9 @@ private struct UpcomingCaptureProvider: MediaProvider {
         if ProcessInfo.processInfo.arguments.contains("--capture-progressive")
             || ProcessInfo.processInfo.arguments.contains("--capture-elasticity") {
             let future = result
-            for offset in [-30, -20, -10, -2] {
+            let offsets = ProcessInfo.processInfo.arguments.contains("--capture-elasticity")
+                ? [-30, -20, -10, -2, 3, 5, 10, 20] : [-30, -20, -10, -2]
+            for offset in offsets {
                 let date = Calendar.current.date(byAdding: .day, value: offset, to: today)!
                 result += future.prefix(3).map { release in
                     UpcomingRelease(

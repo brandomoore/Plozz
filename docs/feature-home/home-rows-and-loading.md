@@ -34,9 +34,12 @@ native date-target scroll positioning keeping Today in place when progressive
 results insert older dates. The selected date and following groups occupy at least
 the viewport height so a sparse agenda can align below the native toolbar without
 being clamped to the bottom of its history.
-On mobile, Today holds entry into history until a deliberate 360-point pull.
+On mobile, Today holds entry into history until a deliberate 900-point pull,
+capped at 85% of the usable scroll viewport height so release stays reachable
+on phones and smaller windows. The elastic curve requires 2.5 times the former
+finger travel for the same deflection.
 A continuous rubber-band curve gives the agenda visible initial movement and
-progressively stronger resistance, reaching about 75 points before release.
+progressively stronger resistance, reaching up to about 75 points before release.
 The entire agenda moves together; artwork, row spacing and date geometry are
 not distorted. Seven distance milestones deliver increasingly strong weighted
 haptics, followed by one distinct pop at the release threshold. Holding still
@@ -46,6 +49,11 @@ After the pop, a short spring releases another 24 points of stored tension while
 finger tracking continues 1:1, including reversals. Neither resistance nor
 snapping reattaches mid-gesture. A shorter pull springs back to Today, and
 momentum cannot bypass the unreleased boundary from the future side.
+An approach from later dates stops at Today, including while the finger remains
+down and during fast momentum. That gesture cannot unlock history: lift and
+start a new deliberate pull from Today. Further travel against the stop is
+discarded so reversing back toward later dates responds immediately. Arrival
+feedback fires once, without repeating when the native target later settles.
 Releasing within 48 points of Today also settles there unless it is a fast
 pass-through fling. `ScrollTargetBehavior`
 selects Today before native deceleration begins, using the actual release position
@@ -73,6 +81,11 @@ and app deactivation cancel the owned animation. Regrabbing a return preserves
 its unbroken hold. Gesture setup recovers the touch-down position from native
 translation when SwiftUI's interaction phase arrives after the first movement;
 those initial points must not incorrectly classify a Today pull as history.
+Lifting a re-touch without dragging resumes the interrupted return silently.
+Every new interacting phase owns a fresh gesture, even when a touch interrupts
+deceleration without a tracking callback. Tracking saves the visible origin,
+not the recognizer's still-stale translation from the previous gesture. Released
+displacements and targets never carry into the next touch.
 A single shared selection
 haptic fires when the return actually finishes, not when its model offset is
 committed and not after a deliberate pop.
