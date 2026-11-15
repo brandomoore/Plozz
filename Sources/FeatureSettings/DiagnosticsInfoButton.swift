@@ -11,16 +11,13 @@ public struct DiagnosticsInfoButton: View {
         Button {
             showsInformation = true
         } label: {
-            Label("About Diagnostic Sharing", systemImage: "info.circle")
+            Label("About Diagnostic Sharing", systemImage: "info")
                 .labelStyle(.iconOnly)
                 .font(.body)
                 .frame(minWidth: 44, minHeight: 44)
         }
-        #if os(tvOS)
-        .buttonStyle(.bordered)
-        #else
-        .buttonStyle(.borderless)
-        #endif
+        .plozzActionButton(role: .secondary)
+        .buttonBorderShape(.circle)
         .accessibilityIdentifier("diagnostics-information-button")
         .plozzSheet(isPresented: $showsInformation) {
             DiagnosticsInformationView()

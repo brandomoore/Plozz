@@ -315,7 +315,8 @@ use the shared Settings card, with
 48-point content insets on tvOS and the standard card insets on mobile.
 Like other first-use prompts, it supplies the palette's neutral accent to native
 controls rather than inheriting the system-blue tint.
-Its info button opens the shared diagnostic-sharing sheet with the detailed
+Its circular info button uses the same native secondary action style as
+Don't Share (Liquid Glass where available) and opens the shared sheet with the detailed
 disclosures, optional-sharing explanation and Privacy Policy link; opening or
 dismissing it does not choose consent. The footer contains only the GitHub repo
 link, which opens the repository
