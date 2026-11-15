@@ -12,6 +12,56 @@ import XCTest
 
 @MainActor
 final class NativeSettingsToggleTests: XCTestCase {
+    func testSettingsIconsMatchPrimaryTitlesInLightAndDarkThemes() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let renderer = ImageRenderer(content:
+                SettingsSectionGroup {
+                    Button {} label: {
+                        Label("Appearance", systemImage: "paintpalette.fill")
+                    }
+                    .settingsActionRow()
+                    Button {} label: {
+                        Label("Profiles", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    .settingsActionRow()
+                }
+                .frame(width: 358)
+                .environment(\.themePalette, scheme == .dark ? .dark : .light)
+                .environment(\.colorScheme, scheme)
+                .environment(\.dynamicTypeSize, .large)
+                .environment(\.gradientBackgroundsEnabled, false)
+            )
+            renderer.scale = 3
+            let image = try XCTUnwrap(renderer.uiImage)
+            let cgImage = try XCTUnwrap(image.cgImage)
+            let width = cgImage.width
+            let height = cgImage.height
+            var bytes = [UInt8](repeating: 0, count: width * height * 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            func strongestInk(in columns: Range<Int>) -> Int {
+                let values = (12 * 3..<40 * 3).flatMap { y in
+                    columns.map { x in Int(bytes[(y * width + x) * 4]) }
+                }
+                return scheme == .dark ? values.max()! : values.min()!
+            }
+            XCTAssertEqual(
+                strongestInk(in: 16 * 3..<46 * 3),
+                strongestInk(in: 70 * 3..<150 * 3),
+                accuracy: 3,
+                "Leading icons should have the same foreground strength as titles."
+            )
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Settings monochrome icons \(scheme)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testSettingsListAndScrollShareMarginsAndSectionSpacing() async throws {
         final class Frames {
             var first = CGRect.zero

@@ -54,6 +54,9 @@ they start at the actual text column, mirror in RTL, and run to the trailing
 edge. Text-only rows use the standard inset. Groups consume their own anchors
 so nested groups cannot move a parent's separators. Native controls, theme
 surfaces and tvOS focus geometry remain unchanged.
+Mobile leading icons use medium-weight monochrome symbols in the same primary
+text color as their titles. Supporting text and chevrons retain secondary
+emphasis; tvOS keeps its existing icon and focus treatment.
 
 New tvOS Settings pages enter their first content control, not the header Back
 button. `settingsPageEntryFocus` requests that control only on first entry and
