@@ -334,6 +334,41 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
+    func testSharedSignInInputsUsePlaceholdersAndComfortableInsets() async throws {
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 768, height: 1024)] {
+            let metrics = SignInInputMetrics()
+            try await render(size: size, state: .unconfigured, inputMetrics: metrics) { window, scroll, _ in
+                let image = try self.capture(window)
+                self.attach(image, name: "Shared sign-in fields \(Int(size.width))")
+                let lines = try self.recognize(image, size: size)
+                XCTAssertEqual(lines.filter { $0.text == "Email" }.count, 1)
+                XCTAssertEqual(lines.filter { $0.text == "Password" }.count, 1)
+                XCTAssertTrue(lines.contains { $0.text == "Library name" },
+                              "Ordinary settings must retain their visible labels")
+                let fields = self.textFields(in: window)
+                let email = try XCTUnwrap(fields.first { $0.textContentType == .emailAddress })
+                let password = try XCTUnwrap(fields.first { $0.isSecureTextEntry })
+                for (field, frame) in [(email, metrics.email), (password, metrics.password)] {
+                    XCTAssertGreaterThanOrEqual(frame.height, 44)
+                    let text = try XCTUnwrap(lines.first { $0.text == field.placeholder })
+                    XCTAssertGreaterThanOrEqual(text.frame.minY - frame.minY, 8,
+                                                "Text must not crowd the rounded row's top edge")
+                    XCTAssertGreaterThanOrEqual(frame.maxY - text.frame.maxY, 8,
+                                                "Text must not crowd the rounded row's bottom edge")
+                }
+                email.text = "alex@example.com"
+                email.sendActions(for: .editingChanged)
+                password.text = "fixture-password"
+                password.sendActions(for: .editingChanged)
+                try await Task.sleep(for: .milliseconds(50))
+                XCTAssertEqual(email.text, "alex@example.com")
+                XCTAssertEqual(password.text, "fixture-password")
+                XCTAssertTrue(password.isSecureTextEntry)
+                XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+            }
+        }
+    }
+
     func testSupportedSignInMethodsAreVisibleWithoutOpeningAMenu() async throws {
         for (serverType, expected) in [(1, "Use another Plex account"), (2, "Enter username and password"), (3, "Emby account")] {
             let size = serverType == 2 ? CGSize(width: 390, height: 844) : CGSize(width: 768, height: 1024)
@@ -499,6 +534,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         state: SeerrSetupHTTP.State = .connected,
         serverType: Int = 2,
         manualForm: Bool = false,
+        inputMetrics: SignInInputMetrics? = nil,
         configure: (SeerService) async throws -> Void = { _ in },
         inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
@@ -518,7 +554,9 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         service.configureProfiles(store: InMemorySeerAccountConnectionStore(), profiles: [profile, current], current: { current })
         try await configure(service)
         let view = Group {
-            if manualForm {
+            if let inputMetrics {
+                SignInInputsPreview(metrics: inputMetrics)
+            } else if manualForm {
                 ScrollView {
                     VStack(spacing: 24) {
                         Text(verbatim: "Seerr")
@@ -639,6 +677,44 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             let box = $0.boundingBox
             return (text, CGRect(x: box.minX * size.width, y: (1 - box.maxY) * size.height,
                                  width: box.width * size.width, height: box.height * size.height))
+        }
+    }
+}
+
+@MainActor private final class SignInInputMetrics {
+    var email: CGRect = .zero
+    var password: CGRect = .zero
+}
+
+private struct SignInInputsPreview: View {
+    let metrics: SignInInputMetrics
+    @State private var email = ""
+    @State private var password = ""
+    @State private var libraryName = "Movies"
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                SettingsSectionGroup("Seerr account") {
+                    SettingsInputRow("Email") {
+                        TextField("Email", text: $email)
+                            .textContentType(.emailAddress)
+                            .keyboardType(.emailAddress)
+                    }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { metrics.email = $0 }
+                    SettingsInputRow("Password") {
+                        SecureField("Password", text: $password).textContentType(.password)
+                    }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { metrics.password = $0 }
+                }
+                .settingsSignInFields()
+                SettingsSectionGroup {
+                    SettingsInputRow("Library name") {
+                        TextField("Library name", text: $libraryName)
+                    }
+                }
+            }
+            .padding(24)
         }
     }
 }

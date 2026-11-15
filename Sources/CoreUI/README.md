@@ -221,6 +221,12 @@ An optional secondary-sized status shares the label's baseline in the stacked
 layout or sits below the trailing input in the inline layout, without hiding its
 accessibility text. Autosaving editors own that status and its announcement; the
 input row does not imply persistence or add a focus target.
+Simple iPhone/iPad sign-in forms opt into `settingsSignInFields()`. Native
+placeholders replace the duplicate small labels, while `SettingsInputRow` keeps
+its accessible name after entry. The shared plain field style supplies a minimum
+44-point input and vertical breathing room inside the existing group insets.
+Keep account/server section context, content types, focus, and submit behavior.
+Ordinary settings retain persistent visible labels; tvOS presentation is unchanged.
 The row owns no background or outer insets; do not nest settings surfaces around
 it. Search, code-entry, and message-composition controls are intentional exceptions.
 Composite rows use `settingsControlTarget()` inside each control label for separate,

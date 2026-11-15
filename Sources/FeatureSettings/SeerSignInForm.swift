@@ -132,6 +132,7 @@ struct SeerSignInForm: View {
                 Text(message).foregroundStyle(.red)
             }
         }
+        .settingsSignInFields()
         #if os(tvOS)
         .defaultFocus($primaryFocused, true)
         #endif

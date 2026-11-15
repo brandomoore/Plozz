@@ -29,6 +29,7 @@ struct ServerOnboardingPage<Content: View>: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .settingsPageSurface(horizontalInset: 20)
+        .settingsSignInFields()
     }
 }
 

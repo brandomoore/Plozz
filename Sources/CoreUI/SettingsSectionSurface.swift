@@ -6,6 +6,19 @@ extension ContainerValues {
 }
 
 #if os(iOS)
+private extension EnvironmentValues {
+    @Entry var settingsUsesSignInFields = false
+}
+
+private struct SettingsSignInTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .textFieldStyle(.plain)
+            .frame(minHeight: 44)
+            .padding(.vertical, MobileSettingsMetrics.rowVerticalInset - MobileSettingsMetrics.controlVerticalInset)
+    }
+}
+
 public enum MobileSettingsMetrics {
     public static let pageInset: CGFloat = 16
     public static let sectionSpacing: CGFloat = 28
@@ -64,6 +77,16 @@ private struct SettingsActionRowStyle: ButtonStyle {
 #endif
 
 public extension View {
+    /// Simple credential forms keep native placeholders and persistent accessible names.
+    @ViewBuilder func settingsSignInFields() -> some View {
+        #if os(iOS)
+        environment(\.settingsUsesSignInFields, true)
+            .textFieldStyle(SettingsSignInTextFieldStyle())
+        #else
+        self
+        #endif
+    }
+
     /// A single action owns its padded hit area; the containing group adds no second inset.
     @ViewBuilder func settingsActionRow() -> some View {
         #if os(iOS)
@@ -139,6 +162,9 @@ public struct SettingsInputRow<Input: View>: View {
     private let axis: Axis
     private let input: Input
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(iOS)
+    @Environment(\.settingsUsesSignInFields) private var usesSignInFields
+    #endif
 
     public init(
         _ title: LocalizedStringResource, status: Text? = nil, axis: Axis = .vertical,
@@ -151,6 +177,23 @@ public struct SettingsInputRow<Input: View>: View {
     }
 
     public var body: some View {
+        #if os(iOS)
+        if usesSignInFields {
+            VStack(alignment: .leading, spacing: 4) {
+                input
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(Text(title))
+                if let status { status.font(SettingsRowMetrics.descriptionFont) }
+            }
+        } else {
+            labeledInput
+        }
+        #else
+        labeledInput
+        #endif
+    }
+
+    @ViewBuilder private var labeledInput: some View {
         if axis == .horizontal && !dynamicTypeSize.isAccessibilitySize {
             LabeledContent {
                 VStack(alignment: .trailing, spacing: 4) {

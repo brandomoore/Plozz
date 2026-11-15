@@ -89,6 +89,8 @@ same `SeerConnectionsView` and authentication implementation.
   action is **Enter username and password**; Plex retains its separate browser flow.
   Supported alternatives, including API-key entry, appear directly as full-width
   secondary buttons rather than in a menu. Password forms name the account type.
+  On iPhone/iPad, credential rows use the shared sign-in field style: native
+  placeholders, persistent accessible names, and no duplicate small top labels.
   The server address remains a native editable URL field, without a Change button.
   Editing cancels discovery and discards old capabilities, credentials and account
   choices. It never probes or authenticates until an explicit submit; password
