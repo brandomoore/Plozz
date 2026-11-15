@@ -278,7 +278,7 @@ final class IPTVGuideDiagnosticsTests: XCTestCase {
                 .queryItems?.first { $0.name == "action" }?.value
             let body: String
             if action == nil { body = #"{"user_info":{"auth":1,"status":"Active"}}"# }
-            else if action == "get_live_streams" { body = #"[{"stream_id":10,"name":"Private channel"}]"# }
+            else if action == "get_live_streams" { body = #"[{"stream_id":10,"name":"Private channel","epg_channel_id":"private-guide"}]"# }
             else { body = "[]" }
             return (200, ["Content-Type": "application/json"], Data(body.utf8))
         }

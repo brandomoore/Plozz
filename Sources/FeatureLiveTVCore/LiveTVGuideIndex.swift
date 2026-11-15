@@ -140,6 +140,39 @@ public actor LiveTVGuideIndex {
         }
     }
 
+    /// Answers from a fresh saved index without starting or joining a download.
+    /// `nil` means only a source that can load the guide can answer.
+    public func cachedPrograms(
+        from url: URL, catalog: [LiveTVPrototypeChannel], channels: [LiveTVPrototypeChannel], range: DateInterval
+    ) async throws -> [LiveTVPrototypeProgram]? {
+        guard range.duration > 0, range.duration <= 172_800,
+              range.start.timeIntervalSince1970.isFinite, range.end.timeIntervalSince1970.isFinite,
+              channels.count <= 2_000, catalog.count <= 100_000 else { throw LiveTVCacheError.invalidRange }
+        try Task.checkCancellation()
+        guard !closed, !invalidating else { throw CancellationError() }
+        // An explicit refresh must reach the provider before saved rows are trusted again.
+        guard !requiresValidation || validated[url] == epoch else { return nil }
+        let requestEpoch = epoch
+        let projection = try Self.projection(catalog, language: language)
+        let sourceID = Self.sourceID(url)
+        let now = clock()
+        let saved = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)
+        var result: [LiveTVPrototypeProgram]?
+        if let state = saved, state.projection == projection, state.contains(range), state.expiresAt > now,
+           state.cacheMetadata?.isFresh(at: now) ?? true {
+            do {
+                result = try await cache.indexedAccountPrograms(
+                    sourceID: sourceID, sourceURL: url, generation: state.generation,
+                    channels: channels, range: range
+                )
+            } catch LiveTVGuideIndexError.generationChanged { result = nil }
+        }
+        // A miss is still an answer: it must not outlive cancellation or an invalidation.
+        try Task.checkCancellation()
+        guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
+        return result
+    }
+
     public func invalidate() async {
         epoch = UUID()
         requiresValidation = true

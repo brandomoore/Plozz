@@ -435,7 +435,14 @@ need reimporting to recover previously discarded metadata.
 Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
 Xtream otherwise uses its native guide API, falling back to its `xmltv.php`
 for channels with empty, malformed or unsupported API listings. Successful
-native listings are retained. Working explicit guides remain preferred. If an
+native listings are retained. A fresh saved `xmltv.php` index is consulted
+first: channels it covers need no provider request, and only channels it does
+not cover are asked of the native API. The index is never downloaded for that
+check, so native listings do not wait for a whole-guide transfer, and channels
+it leaves uncovered are not sent to XMLTV a second time. A channel with no
+guide identity (`epg_channel_id`) is not requested from the native API, which
+resolves listings through that identity; it uses XMLTV matching only.
+Working explicit guides remain preferred. If an
 explicit Xtream guide returns HTTP 404, other configured guides are tried in
 order before one attempt at the account's standard `xmltv.php` for uncovered
 channels. A default URL already in the configured list is not requested again.
@@ -446,7 +453,10 @@ apply to playlist/file accounts, and does not replace a working but empty guide.
 An unavailable endpoint is not retried once per remaining channel in the batch.
 Authentication failures, rate limits, transport failures and ordinary server
 errors remain visible rather than triggering another request path; a failed
-XMLTV fallback also remains an error. Playlist-declared HTTP(S) guide URLs load
+XMLTV fallback also remains an error. After such a native failure the remaining
+channels in the batch are not requested. Listings already retrieved are returned
+with the failure, and unanswered channels stay pending for the next on-demand
+request. Playlist-declared HTTP(S) guide URLs load
 automatically, including guides hosted on another server, scheme, or port.
 Each guide is requested at its declared address without copying the playlist's
 query credentials. Account headers stay scoped to their configured origin;
@@ -465,7 +475,7 @@ ten seconds are returned as failures rather than retried ahead of the server's
 deadline. Cancellation, authentication, certificates, blocked redirects, missing
 endpoints, size limits and XML parse errors are not retried. Failed body transfers
 restart from byte zero; incomplete responses are never cached. Native Xtream
-API fallback selection is unchanged.
+API requests are not retried.
 Confirmed XMLTV 404s, malformed guides and transport byte-limit failures are reused
 only within the current provider's refresh,
 across its channel/window batches. Every new refresh can retry immediately;
@@ -2301,8 +2311,10 @@ the Release model is empty; imported listings never receive synthetic gap filler
 
 Account-backed IPTV guide batches write `IPTV_GUIDE` events to Recent Activity
 on both platforms. A random batch ID links the source mode, requested channel
-count, Xtream-to-XMLTV fallback counts (empty, malformed, or unavailable), and
-completion outcome. Up to six operation samples retain the first four, first
+count, Xtream-to-XMLTV fallback counts (empty, malformed, or unavailable),
+channels answered by the saved index (`indexed`), channels not requested from
+the native API for lack of a guide identity (`nativeSkipped`), and completion
+outcome. Up to six operation samples retain the first four, first
 failure, and last operation, with the omitted count reported explicitly.
 Samples identify `get_simple_data_table` or XMLTV, lookup/request/download/parse
 stage, observed HTTP status and allowlisted response type, bytes, cache use,

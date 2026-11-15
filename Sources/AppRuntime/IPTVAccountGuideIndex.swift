@@ -35,13 +35,26 @@ struct IPTVAccountGuideIndex: IPTVGuideIndexLoading {
             from: url, catalog: allChannels.map(Self.channel), channels: channels.map(Self.channel),
             range: DateInterval(start: from, end: to), revalidate: download
         )
-        return programs.map {
-            ServerLiveTVProgramme(
-                id: $0.id, channelID: $0.channelID, title: $0.title, subtitle: $0.subtitle,
-                overview: $0.details?.description, startDate: $0.start, endDate: $0.end,
-                imageURL: $0.details?.artworkURL, categories: $0.details?.categories ?? []
-            )
-        }
+        return programs.map(Self.programme)
+    }
+
+    func cachedProgrammes(
+        url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
+        catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel]
+    ) async throws -> [ServerLiveTVProgramme]? {
+        let allChannels = try await catalog()
+        return try await index.cachedPrograms(
+            from: url, catalog: allChannels.map(Self.channel), channels: channels.map(Self.channel),
+            range: DateInterval(start: from, end: to)
+        )?.map(Self.programme)
+    }
+
+    private static func programme(_ program: LiveTVPrototypeProgram) -> ServerLiveTVProgramme {
+        ServerLiveTVProgramme(
+            id: program.id, channelID: program.channelID, title: program.title, subtitle: program.subtitle,
+            overview: program.details?.description, startDate: program.start, endDate: program.end,
+            imageURL: program.details?.artworkURL, categories: program.details?.categories ?? []
+        )
     }
 
     func invalidate() async { await index.invalidate() }
