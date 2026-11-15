@@ -55,6 +55,10 @@ public final class SeerService {
     @ObservationIgnored public var loginOptions: () -> [SeerLoginOption] = { [] }
     @ObservationIgnored public var suggestedAddresses: () async throws -> [URL] = { [] }
     @ObservationIgnored public var localDiscoveryHosts: () -> [String] = { [] }
+    @ObservationIgnored public var discoverServers: ([String]) -> AsyncStream<DiscoveredSeerServer> = {
+        SeerDiscovery().discover(hostHints: $0)
+    }
+    @ObservationIgnored public var authentication: (URL) -> SeerAuthentication = { SeerAuthentication(baseURL: $0) }
     @ObservationIgnored public var plexSignIn: ((URL, @escaping @MainActor (URL) -> Void) async throws -> SeerAuthenticatedAccount)?
     /// Retained only for migration and legacy callers. Profile-aware app code
     /// uses `accountConnectionStore`; new profiles never inherit this key.
@@ -518,6 +522,9 @@ public final class SeerService {
     }
 
     private static func message(for error: Error) -> LocalizedStringResource {
+        if let appError = error as? AppError, appError == .serverUnreachable {
+            return "Can’t reach Seerr. Check the address and your connection."
+        }
         if let appError = error as? AppError { return appError.userMessage }
         return AppError.unknown("").userMessage
     }

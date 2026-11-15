@@ -689,6 +689,7 @@ final class PlozziOSAppModel {
         appAdmissionStore: any AppAdmissionStoring = AppAdmissionStore(),
         accountStore suppliedAccountStore: AccountStore? = nil,
         profileStore: (any ProfilePersisting)? = nil,
+        seerService suppliedSeerService: SeerService? = nil,
         appLanguage: AppLanguageSettingsModel? = nil,
         runtimeFeatureFlags: RuntimeFeatureFlags = .buildDefault
     ) {
@@ -757,7 +758,7 @@ final class PlozziOSAppModel {
         )
         if offline { accountsProviders.localProviders = [:] }
         let shareScanStatus = ShareScanStatusModel()
-        let seerService = SeerServiceFactory.make(
+        let seerService = suppliedSeerService ?? SeerServiceFactory.make(
             connectionStore: HouseholdSeerConnectionStore(
                 secureStore: KeychainStore(service: "com.plozz.app.household")
             )
@@ -1003,7 +1004,7 @@ final class PlozziOSAppModel {
         }
         applyCrashReportingPreference()
         seerService.configureProfiles(
-            store: Self.isRunningUnitTests
+            store: suppliedSeerService != nil || Self.isRunningUnitTests
                 ? InMemorySeerAccountConnectionStore()
                 : SeerAccountConnectionStore(secureStore: KeychainStore(service: "com.plozz.app.household")),
             profiles: profiles.profilesForSync,

@@ -56,6 +56,7 @@ struct SeerConnectionsContent: View {
     @State private var reconnectID: UUID?
     @State private var editing: SeerAccountConnection?
     @State private var error: LocalizedStringResource?
+    @State private var statusRetryID = UUID()
 
     var body: some View {
         if let message = seer.storageFailure {
@@ -63,17 +64,22 @@ struct SeerConnectionsContent: View {
         }
         if seer.profileConnections.connections.isEmpty {
             SeerSignInForm(seer: seer)
+                #if os(iOS)
+                .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                #endif
         } else {
-            SettingsSectionGroup("Connections") {
+            SettingsSectionGroup("Accounts") {
                 ForEach(seer.profileConnections.connections) { connection in
                     Button {
                         editing = connection
                     } label: {
                         HStack {
-                            Text(connection.label).fixedSize(horizontal: false, vertical: true)
+                            SeerConnectionLabel(connection: connection)
                             Spacer()
                             if seer.profileConnections.selected?.id == connection.id {
-                                Image(systemName: "checkmark").accessibilityLabel(Text("Default"))
+                                Image(systemName: "checkmark").accessibilityLabel(Text("Selected"))
                             }
                             Image(systemName: "chevron.right").accessibilityHidden(true)
                         }
@@ -82,7 +88,9 @@ struct SeerConnectionsContent: View {
                 }
                 if case let .failed(message) = seer.phase {
                     Text(message).foregroundStyle(.red)
-                    Button("Sign in again") { reconnectID = seer.profileConnections.selected?.id; adding = true }
+                    Button("Try again") { statusRetryID = UUID() }
+                        .settingsActionRow()
+                    Button("Edit connection") { reconnectID = seer.profileConnections.selected?.id; adding = true }
                         .settingsActionRow()
                 }
                 Button("Add account") { reconnectID = nil; adding = true }.settingsActionRow()
@@ -94,26 +102,33 @@ struct SeerConnectionsContent: View {
                 SeerConnectionDetail(seer: seer, connectionID: connection.id)
             }
             .onChange(of: seer.activeProfileID) { adding = false; editing = nil }
-            .task(id: seer.connectionRevision) { await seer.refreshStatus() }
+            .task(id: [seer.connectionRevision, statusRetryID]) { await seer.refreshStatus() }
             SettingsSectionGroup("Requests") {
                 if seer.profileConnections.connections.count > 1 {
-                    Picker("Default", selection: Binding(
-                        get: { seer.profileConnections.defaultID },
-                        set: { value in update(defaultID: value) }
+                    SettingsMenuRow(title: "Default account", value: Text(
+                        seer.profileConnections.connections.first { $0.id == seer.profileConnections.defaultID }?.accountName ?? ""
                     )) {
-                        ForEach(seer.profileConnections.connections) { connection in
-                            Text(connection.label).tag(Optional(connection.id))
+                        Picker("Default account", selection: Binding(
+                            get: { seer.profileConnections.defaultID },
+                            set: { value in update(defaultID: value) }
+                        )) {
+                            ForEach(seer.profileConnections.connections) { connection in
+                                Text(connection.choiceLabel(in: seer.profileConnections.connections)).tag(Optional(connection.id))
+                            }
                         }
                     }
                     Toggle("Use last account", isOn: Binding(
                         get: { seer.profileConnections.rememberLastUsed },
                         set: { update(rememberLastUsed: $0) }
                     ))
+                    Text("You’ll choose an account when requesting.")
+                        .font(.footnote).plozzForeground(.secondary)
+                } else {
+                    Toggle("Ask each time", isOn: Binding(
+                        get: { seer.profileConnections.askEachTime },
+                        set: { update(askEachTime: $0) }
+                    ))
                 }
-                Toggle("Ask each time", isOn: Binding(
-                    get: { seer.profileConnections.askEachTime },
-                    set: { update(askEachTime: $0) }
-                ))
                 if let error { Text(error).foregroundStyle(.red) }
             }
         }
@@ -131,7 +146,7 @@ struct SeerConnectionsContent: View {
     }
 }
 
-private struct SeerConnectionDetail: View {
+struct SeerConnectionDetail: View {
     let seer: SeerService
     let connectionID: UUID
     @Environment(\.dismiss) private var dismiss
@@ -140,59 +155,69 @@ private struct SeerConnectionDetail: View {
     @State private var reconnect = false
 
     var body: some View {
-        NavigationStack {
-            SeerSettingsPage {
-                if let connection = seer.profileConnections.connections.first(where: { $0.id == connectionID }) {
-                    VStack(alignment: .leading, spacing: 24) {
-                        SettingsSectionGroup("Connection") {
-                            Text(connection.label)
-                            Text(connection.baseURL.absoluteString).font(.footnote).plozzForeground(.secondary)
-                            if connection.requiresRelink {
-                                Text("Choose the request account again.").foregroundStyle(.red)
-                            }
-                            if case .apiKey = connection.credential {
-                                Picker("Requests as", selection: Binding(
-                                    get: { connection.configuredUserID },
-                                    set: { value in
-                                        do {
-                                            if let value, !users.contains(where: { $0.id == value }) { throw AppError.notFound }
-                                            try seer.setRequestUser(users.first { $0.id == value }, connectionID: connectionID)
-                                        } catch { self.error = "Couldn’t change the request account." }
-                                    }
-                                )) {
-                                    if !seer.refusesAdminRequests() { Text("Admin").tag(Optional<Int>.none) }
-                                    ForEach(users) { Text($0.name).tag(Optional($0.id)) }
-                                }
-                                .disabled(users.isEmpty)
-                            }
-                            Button("Sign in again") { reconnect = true }.settingsActionRow()
-                            Button("Remove connection", role: .destructive) {
-                                do { try seer.removeConnection(connectionID); dismiss() }
-                                catch { self.error = "Couldn’t remove the Seerr connection." }
-                            }
-                            .settingsActionRow()
-                            if let error { Text(error).foregroundStyle(.red) }
-                        }
+        SeerAccountPage {
+            if let connection = seer.profileConnections.connections.first(where: { $0.id == connectionID }) {
+                SettingsSectionGroup("Connection") {
+                    SeerConnectionLabel(connection: connection)
+                    if connection.requiresRelink {
+                        Text("Choose the request account again.").foregroundStyle(.red)
                     }
+                    if case .apiKey = connection.credential {
+                        SettingsMenuRow(title: "Request as", value: Text(connection.accountName)) {
+                            Picker("Request as", selection: Binding(
+                                get: { connection.configuredUserID },
+                                set: { value in
+                                    do {
+                                        if let value, !users.contains(where: { $0.id == value }) { throw AppError.notFound }
+                                        try seer.setRequestUser(users.first { $0.id == value }, connectionID: connectionID)
+                                    } catch { self.error = "Couldn’t change the request account." }
+                                }
+                            )) {
+                                if !seer.refusesAdminRequests() { Text("Admin").tag(Optional<Int>.none) }
+                                ForEach(users) { Text($0.name).tag(Optional($0.id)) }
+                            }
+                        }
+                        .disabled(users.isEmpty)
+                    }
+                    Button("Sign in again") { reconnect = true }.settingsActionRow()
+                    Button("Remove connection", role: .destructive) {
+                        do { try seer.removeConnection(connectionID); dismiss() }
+                        catch { self.error = "Couldn’t remove the Seerr connection." }
+                    }
+                    .settingsActionRow()
+                    if let error { Text(error).foregroundStyle(.red) }
                 }
             }
-            .navigationTitle(Text(verbatim: "Seerr"))
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
-            .sheet(isPresented: $reconnect) {
-                SeerAccountEditor(seer: seer, replacing: connectionID)
-            }
-            .task(id: connectionID) {
-                guard let connection = seer.profileConnections.connections.first(where: { $0.id == connectionID }),
-                      case .apiKey = connection.credential else { return }
-                do { users = try await seer.users(for: connectionID) }
-                catch is CancellationError { return }
-                catch { self.error = "Couldn’t load Seerr users." }
-            }
+        }
+        .sheet(isPresented: $reconnect) {
+            SeerAccountEditor(seer: seer, replacing: connectionID)
+        }
+        .task(id: connectionID) {
+            guard let connection = seer.profileConnections.connections.first(where: { $0.id == connectionID }),
+                  case .apiKey = connection.credential else { return }
+            do { users = try await seer.users(for: connectionID) }
+            catch is CancellationError { return }
+            catch { self.error = "Couldn’t load Seerr users." }
         }
     }
 }
 
 private extension SeerAccountConnection {
+    func choiceLabel(in connections: [SeerAccountConnection]) -> String {
+        let sameUser = connections.filter { $0.accountName == accountName && $0.baseURL == baseURL }
+        var label = accountName
+        if sameUser.count > 1 {
+            switch credential {
+            case .apiKey: label += " (\(String(localized: "API key")))"
+            case .session: label += " (\(String(localized: "Account")))"
+            }
+        }
+        if Set(connections.map(\.baseURL)).count > 1 {
+            label += "\n\(name.isEmpty ? baseURL.absoluteString : name)"
+        }
+        return label
+    }
+
     var configuredUserID: Int? {
         if case let .apiKey(_, id, _) = credential { return id }
         return nil
@@ -204,12 +229,47 @@ private struct SeerAccountEditor: View {
     var replacing: UUID?
     @Environment(\.dismiss) private var dismiss
     var body: some View {
+        SeerAccountPage(dismissTitle: "Cancel") {
+            SeerSignInForm(seer: seer, replacing: replacing) { dismiss() }
+        }
+    }
+}
+
+private struct SeerConnectionLabel: View {
+    let connection: SeerAccountConnection
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(connection.accountName)
+            Text(connection.name.isEmpty ? connection.baseURL.absoluteString : connection.name)
+                .font(.footnote).plozzForeground(.secondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct SeerAccountPage<Content: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    var dismissTitle: LocalizedStringResource = "Done"
+    @ViewBuilder var content: Content
+
+    var body: some View {
         NavigationStack {
             SeerSettingsPage {
-                SeerSignInForm(seer: seer, replacing: replacing) { dismiss() }
+                VStack(alignment: .leading, spacing: 24) {
+                    #if os(tvOS)
+                    SettingsPageHeader(verbatim: "Seerr")
+                        .environment(\.settingsPageBackButton, AnyView(SettingsBackButton { dismiss() }))
+                    #endif
+                    content
+                }
             }
+            #if os(iOS)
             .navigationTitle(Text(verbatim: "Seerr"))
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { Text(dismissTitle) } } }
+            #else
+            .onExitCommand { dismiss() }
+            #endif
+            .background { SettingsPageBackground() }
         }
     }
 }
@@ -284,11 +344,16 @@ private final class SeerDestinationController: UIViewController {
         #else
         let style: UIAlertController.Style = .actionSheet
         #endif
-        let alert = UIAlertController(title: String(localized: "Request as"), message: nil, preferredStyle: style)
+        let connections = seer.profileConnections.connections
+        let servers = Set(connections.map(\.baseURL))
+        let alert = UIAlertController(
+            title: String(localized: "Request as"),
+            message: servers.count == 1 ? servers.first?.absoluteString : nil, preferredStyle: style
+        )
         let selected = seer.profileConnections.selected
         let ordered = selected.map { [$0] } ?? []
         for connection in ordered + seer.profileConnections.connections.filter({ $0.id != selected?.id }) {
-            alert.addAction(UIAlertAction(title: connection.label, style: .default) { [weak self] _ in
+            alert.addAction(UIAlertAction(title: connection.choiceLabel(in: connections), style: .default) { [weak self] _ in
                 guard let self, seer.pendingDestination == requestID else { return }
                 seer.chooseDestination(connection.id)
             })
@@ -314,4 +379,5 @@ private final class SeerDestinationController: UIViewController {
         if let presentedRequestID, seer.pendingDestination == presentedRequestID { seer.chooseDestination(nil) }
     }
 }
+
 #endif

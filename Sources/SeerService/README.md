@@ -13,8 +13,18 @@ same `SeerConnectionsView` and authentication implementation.
 - Manual Plex linking, Jellyfin/Emby username and password, and local Seerr
   email and password are offered according to the server's public capabilities.
   Silo and other providers can use a supported Seerr login or an API key.
-- A compatible Jellyfin plugin can suggest the server address. Its administrator
-  key is never imported. Manual address entry and local discovery remain available.
+- Setup automatically checks a compatible Jellyfin plugin for an address, then
+  runs bounded local discovery if none is supplied. Its administrator key is never
+  imported. A single result fills the address; multiple results remain explicit
+  choices. Late discovery never replaces user input or crosses profiles.
+- Sign-in has one primary action, favoring the profile's authorized media account.
+  Other methods are secondary; API-key entry stays directly available. Finding a
+  server never authenticates or saves an account. The authenticated identity is
+  shown for confirmation before saving.
+- First-run and new-profile setup use a focused, optional onboarding page, not
+  the saved-account Settings page. Saving the confirmed account advances setup;
+  existing connections keep their request identity and show a simple Continue.
+  Account lists and request-choice preferences remain in Settings.
 - Every login uses isolated cookies, same-origin redirects, and an authenticated
   `/auth/me` check. Passwords are discarded. Sessions are stored in the device's
   secure store; expiration requires sign-in, never fallback to an administrator key.
@@ -35,7 +45,7 @@ connection repairs the default; a network/authentication failure never selects
 another destination.
 
 Ordinary sessions always act as their authenticated user. Only explicitly
-authorized API-key connections expose **Requests as**. Kids restrictions and
+authorized API-key connections expose **Request as**. Kids restrictions and
 live identity are rechecked before a request is sent. Profile or credential
 changes invalidate pending authentication, selection, and request results.
 Results from another destination must not become availability overrides for

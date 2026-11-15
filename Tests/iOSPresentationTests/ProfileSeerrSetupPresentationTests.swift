@@ -18,7 +18,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 let image = try self.capture(window)
                 self.attach(image, name: "Seerr connected \(Int(size.width))x\(Int(size.height))")
                 let text = try self.recognize(image, size: size)
-                let title = try XCTUnwrap(text.first { $0.text.localizedCaseInsensitiveContains("Connections") })
+                let title = try XCTUnwrap(text.first { $0.text.localizedCaseInsensitiveContains("Seerr") })
                 XCTAssertTrue(text.contains { $0.text.contains("Emby only") })
                 XCTAssertGreaterThanOrEqual(title.frame.minX, 20)
                 XCTAssertLessThanOrEqual(title.frame.maxX, size.width - 23)
@@ -29,6 +29,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 try self.assertPanelGutters(image, rowY: account.frame.midY)
                 XCTAssertFalse(text.contains { $0.text == "Sam" })
                 XCTAssertFalse(text.contains { $0.text.contains("Choose whose") })
+                XCTAssertFalse(text.contains { $0.text == "Add account" || $0.text == "Ask each time" })
                 try await self.scrollToBottom(scroll, window: window)
                 let bottom = try self.capture(window)
                 self.attach(bottom, name: "Seerr actions \(Int(size.width))x\(Int(size.height))")
@@ -75,7 +76,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 switch state {
                 case .unconfigured: expected = "Use API key"
                 case .differentProfile: expected = "Switch to this profile"
-                case .failed: expected = "Sign in again"
+                case .failed: expected = "Try again"
                 case .connected: expected = "Alex"
                 }
                 XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveContains(expected) })
@@ -113,10 +114,82 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
+    func testDiscoveryStartsAutomaticallyAndOffersTheAuthorizedAccount() async throws {
+        var scans = 0
+        let discovered = URL(string: "https://nearby.example")!
+        try await render(size: .init(width: 390, height: 844), state: .unconfigured, configure: { service in
+            service.discoverServers = { _ in
+                scans += 1
+                return AsyncStream { $0.yield(.init(baseURL: discovered, version: "1")); $0.finish() }
+            }
+            service.loginOptions = {
+                [.init(id: "alex", name: "Alex", mediaServerType: 2, authenticate: { _ in throw AppError.unauthorized })]
+            }
+        }) { window, _, service in
+            XCTAssertEqual(scans, 1)
+            let text = try self.recognize(self.capture(window), size: window.bounds.size)
+            XCTAssertTrue(text.contains { $0.text.contains("Continue as Alex") })
+            XCTAssertFalse(text.contains { $0.text.contains("Find on local network") })
+            XCTAssertTrue(text.contains { $0.text.contains("Use API key") })
+            XCTAssertFalse(service.isConfigured, "Finding a server must not authenticate or save an account")
+        }
+    }
+
+    func testLateDiscoveryCannotReplaceTypedAddressOrCrossProfiles() async throws {
+        for switchProfile in [false, true] {
+            var continuation: AsyncStream<DiscoveredSeerServer>.Continuation?
+            try await render(size: .init(width: 390, height: 844), state: .unconfigured, configure: { service in
+                service.discoverServers = { _ in
+                    AsyncStream { continuation = $0 }
+                }
+            }) { window, _, service in
+                defer { continuation?.finish() }
+                let field = try XCTUnwrap(self.textFields(in: window).first)
+                if switchProfile {
+                    let other = Profile(id: "replacement", name: "Replacement")
+                    service.configureProfiles(store: InMemorySeerAccountConnectionStore(), profiles: [other], current: { other })
+                } else {
+                    field.text = "https://typed.example"
+                    field.sendActions(for: .editingChanged)
+                }
+                try await Task.sleep(for: .milliseconds(50))
+                continuation?.yield(.init(baseURL: URL(string: "https://late.example")!, version: "1"))
+                continuation?.finish()
+                try await Task.sleep(for: .milliseconds(100))
+                if !switchProfile { XCTAssertEqual(field.text, "https://typed.example") }
+                let text = try self.recognize(self.capture(window), size: window.bounds.size)
+                XCTAssertFalse(text.contains { $0.text.contains("late.example") })
+                XCTAssertFalse(service.isConfigured)
+            }
+        }
+    }
+
+    func testImmediateSuggestedAddressChecksSignInWithoutAnotherContinue() async throws {
+        try await render(size: .init(width: 390, height: 844), state: .unconfigured, configure: { service in
+            service.suggestedAddresses = { [URL(string: "https://suggested.example")!] }
+            service.discoverServers = { _ in
+                XCTFail("A supplied address should not start a subnet scan")
+                return AsyncStream { $0.finish() }
+            }
+            service.loginOptions = {
+                [.init(id: "alex", name: "Alex", mediaServerType: 2, authenticate: { _ in throw AppError.unauthorized })]
+            }
+        }) { window, _, service in
+            let text = try self.recognize(self.capture(window), size: window.bounds.size)
+            XCTAssertTrue(text.contains { $0.text.contains("Continue as Alex") })
+            XCTAssertFalse(service.isConfigured)
+        }
+    }
+
+    private func textFields(in view: UIView) -> [UITextField] {
+        ((view as? UITextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields)
+    }
+
     private func render(
         size: CGSize, typeSize: DynamicTypeSize = .large,
         direction: LayoutDirection = .leftToRight, longNames: Bool = false,
         state: SeerrSetupHTTP.State = .connected,
+        configure: (SeerService) -> Void = { _ in },
         inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
         let http = SeerrSetupHTTP(state: state, longNames: longNames)
@@ -124,12 +197,15 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             baseURL: URL(string: "https://fixture.invalid")!, apiKey: "fixture"
         ))
         let service = SeerService(connectionStore: store, http: http)
+        service.discoverServers = { _ in AsyncStream { $0.finish() } }
+        service.authentication = { SeerAuthentication(baseURL: $0, http: http) }
         var profile = Profile(id: "fixture", name: longNames ? "A household profile with a very long name" : "Emby only")
         profile.seerrUserID = 2
         profile.seerrUserName = longNames ? "Alex with an exceptionally long household display name" : "Alex"
         profile.seerrServerIdentity = SeerServerIdentity(baseURL: URL(string: "https://fixture.invalid")!)
         let current = state == .differentProfile ? Profile(id: "other", name: "Other") : profile
         service.configureProfiles(store: InMemorySeerAccountConnectionStore(), profiles: [profile, current], current: { current })
+        configure(service)
         let view = ProfileSeerrSetupView(
             seer: service,
             profile: profile,
@@ -257,7 +333,9 @@ private actor SeerrSetupHTTP: HTTPClient {
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         let json: String
-        if endpoint.path.hasSuffix("/status") {
+        if endpoint.path.hasSuffix("/settings/public") {
+            json = #"{"initialized":true,"mediaServerType":2,"mediaServerLogin":true,"localLogin":true}"#
+        } else if endpoint.path.hasSuffix("/status") {
             json = #"{"version":"1.0"}"#
         } else if endpoint.path.hasSuffix("/auth/me") {
             finished = true

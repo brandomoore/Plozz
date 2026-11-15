@@ -1272,7 +1272,7 @@ private enum OnboardingPage: Equatable {
     }
 }
 
-private struct OnboardingFlowView: View {
+struct OnboardingFlowView: View {
     let appState: AppState
     let step: OnboardingStep
     let canReturnToApp: Bool
