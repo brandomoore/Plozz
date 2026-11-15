@@ -2,7 +2,7 @@
 import SwiftUI
 
 extension ContainerValues {
-    @Entry var settingsActionOwnsInsets = false
+    @Entry var settingsContentOwnsInsets = false
 }
 
 #if os(iOS)
@@ -14,8 +14,9 @@ public enum MobileSettingsMetrics {
     public static let rowVerticalInset: CGFloat = 10
     public static let controlVerticalInset: CGFloat = 4
     public static let rowMinHeight: CGFloat = 52
+    public static let previewGridInset: CGFloat = 8
     public static let previewCardInset: CGFloat = 8
-    public static let previewCardCornerRadius = groupCornerRadius - rowInset
+    public static let previewCardCornerRadius = groupCornerRadius - previewGridInset
     public static let previewContentCornerRadius = previewCardCornerRadius - previewCardInset
 }
 
@@ -67,7 +68,16 @@ public extension View {
     @ViewBuilder func settingsActionRow() -> some View {
         #if os(iOS)
         buttonStyle(SettingsActionRowStyle())
-            .containerValue(\.settingsActionOwnsInsets, true)
+            .containerValue(\.settingsContentOwnsInsets, true)
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder func settingsPreviewRow() -> some View {
+        #if os(iOS)
+        padding(MobileSettingsMetrics.previewGridInset)
+            .containerValue(\.settingsContentOwnsInsets, true)
         #else
         self
         #endif
@@ -337,8 +347,8 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                     ForEach(subviews) { subview in
                         subview
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, subview.containerValues.settingsActionOwnsInsets ? 0 : horizontalInset)
-                            .padding(.vertical, subview.containerValues.settingsActionOwnsInsets ? 0 : verticalInset)
+                            .padding(.horizontal, subview.containerValues.settingsContentOwnsInsets ? 0 : horizontalInset)
+                            .padding(.vertical, subview.containerValues.settingsContentOwnsInsets ? 0 : verticalInset)
                             #if os(iOS)
                             .frame(minHeight: MobileSettingsMetrics.rowMinHeight)
                             #endif

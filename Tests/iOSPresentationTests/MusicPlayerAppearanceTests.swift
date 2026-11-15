@@ -53,19 +53,19 @@ final class MusicPlayerAppearanceTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(350))
                 window.layoutIfNeeded()
                 let first = try XCTUnwrap(frames.previews[.matchTheme])
-                XCTAssertEqual(first.minY - frames.group.minY, 24, accuracy: 1,
-                               "The 16-point group inset plus 8-point card inset must match on both axes.")
+                XCTAssertEqual(first.minY - frames.group.minY, 16, accuracy: 1,
+                               "Two 8-point nested insets must match on both axes.")
                 if width == 358 || size.isAccessibilitySize {
-                    XCTAssertEqual(first.minX - frames.group.minX, 24, accuracy: 1)
+                    XCTAssertEqual(first.minX - frames.group.minX, 16, accuracy: 1)
                 }
                 let next = try XCTUnwrap(frames.previews[.artwork])
                 if !size.isAccessibilitySize {
                     XCTAssertEqual(next.minY, first.minY, accuracy: 1)
-                    XCTAssertEqual(next.minX - first.maxX, 32, accuracy: 1,
-                                   "Adjacent previews have two 8-point card insets and a 16-point gap.")
+                    XCTAssertEqual(next.minX - first.maxX, 24, accuracy: 1,
+                                   "Adjacent previews have two 8-point card insets and an 8-point gap.")
                 } else {
                     XCTAssertEqual(next.minX, first.minX, accuracy: 1)
-                    XCTAssertEqual(first.maxX, frames.group.maxX - 24, accuracy: 1)
+                    XCTAssertEqual(first.maxX, frames.group.maxX - 16, accuracy: 1)
                 }
                 let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                     window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
@@ -386,11 +386,19 @@ final class MusicPlayerAppearanceTests: XCTestCase {
             try image.pngData()?.write(to: URL(fileURLWithPath: directory)
                 .appendingPathComponent("music-appearance-\(Int(window.bounds.width)).png"))
         }
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["en-US"]
-        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
-        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        // Vision can miss short labels at either scale in the five-column layout.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let logicalImage = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+        return try [image, logicalImage].flatMap { candidate in
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(candidate.cgImage)).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        }.joined(separator: "\n")
     }
 }
 

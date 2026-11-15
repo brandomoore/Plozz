@@ -127,7 +127,7 @@ public struct SettingsCheckableRow: View {
         .disabled(!isEnabled)
         .padding(.leading, !usesGroupInsets && flushLeading && groupFlushLeading ? -labelInset : 0)
         .accessibilityAddTraits(isChecked ? .isSelected : [])
-        .containerValue(\.settingsActionOwnsInsets, ownsGroupInsets)
+        .containerValue(\.settingsContentOwnsInsets, ownsGroupInsets)
     }
 }
 

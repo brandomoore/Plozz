@@ -37,9 +37,11 @@ explicit choices stay independent. The picker updates the active player's
 settings model directly, without changing the app theme or music browsing pages.
 Preview-card title heights match only within each visible row; wrapped labels
 do not add empty space to other rows or single-column accessibility layouts.
-Both mobile grids use 16-point outer insets and gaps. Their 10-point card corners
-nest inside the 26-point settings group; the 8-point preview inset leaves
-2-point swatch corners. Onboarding and TV retain their standalone card geometry.
+Both mobile grids own even 8-point outer insets and gaps through
+`settingsPreviewRow()`, without a second row inset from the group. Their 18-point
+card corners nest inside the 26-point settings group; the 8-point preview inset
+leaves 10-point swatch corners. Ordinary rows keep their 16-point insets.
+Onboarding and TV retain their standalone card geometry.
 Settings search reaches the same
 control; production mobile builds hide the page and its search entry. The TV-only track
 details toggle is not offered on mobile.

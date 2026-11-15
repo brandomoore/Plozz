@@ -66,20 +66,20 @@ struct AppearancePreviewLayout<Option: Identifiable, Content: View>: View {
 
     var body: some View {
         layout
-            .padding(.vertical, MobileSettingsMetrics.rowInset - MobileSettingsMetrics.controlVerticalInset)
+            .settingsPreviewRow()
     }
 
     @ViewBuilder private var layout: some View {
         if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: MobileSettingsMetrics.rowInset) {
+            VStack(spacing: MobileSettingsMetrics.previewGridInset) {
                 ForEach(options) { content($0, [$0]) }
             }
         } else {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: MobileSettingsMetrics.rowInset) {
+                HStack(spacing: MobileSettingsMetrics.previewGridInset) {
                     ForEach(options) { content($0, options).frame(width: 144) }
                 }
-                Grid(horizontalSpacing: MobileSettingsMetrics.rowInset, verticalSpacing: MobileSettingsMetrics.rowInset) {
+                Grid(horizontalSpacing: MobileSettingsMetrics.previewGridInset, verticalSpacing: MobileSettingsMetrics.previewGridInset) {
                     ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { index in
                         let row = Array(options[index..<min(index + 2, options.count)])
                         GridRow {
