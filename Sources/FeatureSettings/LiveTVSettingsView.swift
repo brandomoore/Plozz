@@ -111,6 +111,7 @@ private struct LiveTVBrowsingSettingsSections: View {
             .accessibilityIdentifier("live-tv-channel-visibility")
             .settingsSearchAnchor("channel-visibility")
         }
+        LiveTVChannelNameSettings(settings: $settings)
         #if os(iOS)
         SettingsSectionGroup("Playback") {
             Toggle("Stop without Wi-Fi or Ethernet", isOn: $settings.wifiOnly).settingsSearchAnchor("live-network")
@@ -118,6 +119,26 @@ private struct LiveTVBrowsingSettingsSections: View {
             Text("Stops Live TV after detecting a change away from Wi-Fi or Ethernet. Brief cellular data use may occur during the change. Cellular playback is allowed when this setting is off.")
         }
         #endif
+    }
+}
+
+struct LiveTVChannelNameSettings: View {
+    @Binding var settings: LiveTVViewSettings
+    private let example = "## UK|NOW TV SPORT U H D 3840P ##"
+
+    var body: some View {
+        SettingsSectionGroup("Channel names") {
+            Toggle("Clean channel names", isOn: $settings.cleanChannelNames)
+                .accessibilityIdentifier("live-tv-clean-channel-names")
+                .settingsSearchAnchor("live-clean-channel-names")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Preview").font(.caption).settingsRowSecondary()
+                Text(verbatim: settings.cleanChannelNames ? IPTVChannelName.cleaned(example) : example)
+                    .accessibilityIdentifier("live-tv-channel-name-preview")
+            }
+        } footer: {
+            Text("Tidies IPTV names while keeping region and quality labels. Custom names stay unchanged.")
+        }
     }
 }
 

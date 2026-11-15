@@ -53,6 +53,33 @@ For past failures, attempted repairs and related tests, see the short
 [IPTV troubleshooting history](iptv-history.md). It is historical context,
 not a specification.
 
+## Channel-name presentation
+
+Settings > Live TV > **Clean channel names** is off by default and scoped to
+the active profile. Its live preview uses the same formatter as the guide.
+It tidies IPTV display names only: whitespace, paired `##` / `**` wrappers,
+pipe separators, and recognized trailing spaced or superscript quality labels.
+Country/provider tags, regional names, channel numbers, `+1`, quality labels,
+and unknown text remain visible. `3840P`, for example, is retained as provider
+text, not interpreted as a verified resolution.
+
+Original imported names remain in the source catalog. Turning cleanup off restores
+them; explicit custom names always win. Plex, Jellyfin, Emby, and scheduled
+library channel names are unchanged. Guide matching, stream URLs/headers,
+channel IDs, favorites, and provider boundaries do not use the cleaned name.
+Equivalent-looking names still produce separate rows; this is not deduplication.
+
+The approach borrows separation and conservative token-boundary principles,
+not source code, from [IPTVnator's optional display cleanup][name-iptvnator]
+and [Lume's quality parsing][name-lume]. It deliberately avoids IPTVnator's
+broad prefix removal (`BBC: News` must not become `News`) and any interpretation
+of hash-wrapped names as non-playable headers. Naming conventions are heuristics,
+not a shared provider standard. Regression examples include decorations,
+regional feeds, numbers, timeshifts, ambiguous acronyms, and untouched custom names.
+
+[name-iptvnator]: https://github.com/4gray/iptvnator/blob/ff90ccb9402cfd53fdc4cbd2dfbbc6d0ede356de/libs/shared/m3u-utils/src/lib/strip-country-prefix.util.ts
+[name-lume]: https://github.com/bilipp/Lume/blob/7b1d324b0ae339a0a77099e9a7b4a54831affb63/Lume/Services/Player/ChannelQuality.swift
+
 For the reliability-first hardening priorities and explicitly deferred feature
 gaps, see [Live TV reliability](live-tv-reliability.md). It records finite
 provider cooldowns, safe connection-limit errors, controlled rolling-playback

@@ -12,6 +12,12 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Live TV's **Clean channel names** switch is profile-scoped and off by default.
+The shared TV/mobile section previews the production IPTV formatter immediately,
+without fetching a source or changing stream/guide identities. Custom names win;
+the formatting rules and retained metadata are documented in
+[Live TV](../../docs/live-tv-prototype.md#channel-name-presentation).
+
 On mobile, Appearance starts with the shared visual theme cards, Gradient
 Backgrounds and Liquid Glass. Cards, Artwork and Circadian Mode form a separate
 group below. Theme search results open Appearance directly.

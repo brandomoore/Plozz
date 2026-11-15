@@ -133,6 +133,26 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
         }
     }
 
+    func testChannelNameCleanupUpdatesPreviewAndPersistsWithoutSourceRequests() {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--source-settings", "--configured-sources"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-tv-add-source"].waitForExistence(timeout: 10))
+        let toggle = app.switches["live-tv-clean-channel-names"]
+        tapVisible(toggle, in: app)
+        let preview = app.staticTexts["live-tv-channel-name-preview"]
+        XCTAssertEqual(preview.label, "UK | NOW TV SPORT UHD 3840P")
+        XCTAssertEqual(toggle.value as? String, "1")
+        tapVisible(app.buttons["live-tv-guide-preferences"], in: app)
+        XCTAssertTrue(app.navigationBars["Guide preferences"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        tapVisible(toggle, in: app)
+        XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertEqual(preview.label, "## UK|NOW TV SPORT U H D 3840P ##")
+        XCTAssertEqual(app.staticTexts["fixture-source-metrics"].label, "Sources 1 writes 0 requests 0")
+    }
+
     func testRootAutomaticToggleAndFifthSourceStayIndependent() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
         app.launchArguments = ["--source-settings", "--configured-sources", "--many-sources", "--automatic-channels"]

@@ -16,6 +16,26 @@ private extension LiveTVPrototypeImportModel {
 
 @MainActor
 final class LiveTVPrototypeImportModelTests: XCTestCase {
+    func testNameCleanupNeverChangesNamesSubmittedForGuideMatching() async {
+        let channel = LiveTVPrototypeChannel(
+            id: "decorated", number: 1, name: "## UK|BBC One H D ##",
+            category: "News", symbol: "tv", accent: 0, source: .iptv, tagline: "",
+            guideID: "original-guide-id", guideName: "Original guide name"
+        )
+        let loader = ImportLoaderStub(channels: [channel])
+        let imports = LiveTVPrototypeImportModel(sources: [.us2], loader: loader)
+        let model = LiveTVPrototypeModel(channels: [])
+        model.cleanChannelNames = true
+        await imports.reload(into: model)
+        let submitted = await loader.submittedChannels
+        XCTAssertEqual(submitted, [channel])
+        XCTAssertEqual(model.channel(id: channel.id)?.name, "UK | BBC One HD")
+        model.cleanChannelNames = false
+        XCTAssertEqual(model.channel(id: channel.id), channel)
+        let loads = await loader.guideLoads
+        XCTAssertEqual(loads, 1, "A presentation change must not reload a guide")
+    }
+
     func testSuppliedGuideIDsRemainConfiguredAcrossPlaylistDiscovery() async {
         let sources = testSources()
         let loader = ImportLoaderStub(channels: [LiveTVPrototypeCatalog.channels[0]])
@@ -554,6 +574,7 @@ private actor ImportLoaderStub: LiveTVSourceLoading {
     private var cancellation: Boundary?
     private(set) var guideLoads = 0
     private(set) var submittedChannelCount = 0
+    private(set) var submittedChannels: [LiveTVPrototypeChannel] = []
     private(set) var submittedGuideDate: Date?
 
     init(
@@ -587,6 +608,7 @@ private actor ImportLoaderStub: LiveTVSourceLoading {
     ) async throws -> LiveTVGuideImport {
         guideLoads += 1
         submittedChannelCount = channels.count
+        submittedChannels = channels
         submittedGuideDate = now
         await beforeGuide()
         try throwRequestedCancellation(.guide)
