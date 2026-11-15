@@ -309,6 +309,107 @@ final class UpcomingFeedTests: XCTestCase {
         item.sourceAccountID = accountID
         return UpcomingReleaseBuilder.episodes([episode()], for: item)[0]
     }
+
+    func testRecreatedModelRestoresScopedCacheWithoutNetworkAndWithoutPersistingCredentials() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = UpcomingFeedCache(directory: directory)
+        var release = Self.release("cached", accountID: "account")
+        release.item.posterURL = URL(string: "https://example.invalid/art?api_key=secret-fixture")
+        let saved = release
+        let original = UpcomingFeedModel(cache: cache)
+        await original.refresh(scope: "runtime-1", namespace: "alice", cacheScope: "alice-account", isCurrent: { true }) {
+            .init(releases: [saved])
+        }
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        XCTAssertEqual(files.count, 1)
+        let data = try Data(contentsOf: XCTUnwrap(files.first))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("secret-fixture"))
+
+        let restored = UpcomingFeedModel(cache: UpcomingFeedCache(directory: directory))
+        await restored.refresh(
+            scope: "runtime-2", namespace: "alice", cacheScope: "alice-account",
+            rehydrate: { items in
+                items.map { item in
+                    var item = item
+                    item.posterURL = URL(string: "https://example.invalid/art?api_key=current-fixture")
+                    return item
+                }
+            },
+            isCurrent: { true }
+        ) {
+            XCTFail("A fresh disk snapshot must not repeat the server scan")
+            return .init()
+        }
+        XCTAssertEqual(restored.releases.map(\.item.id), ["cached"])
+        XCTAssertTrue(try XCTUnwrap(restored.releases.first?.item.posterURL?.absoluteString).contains("current-fixture"))
+        restored.refreshIfStale()
+        XCTAssertEqual(restored.refreshRevision, 0, "Foreground must retain a fresh cache")
+        restored.refreshIfStale(now: Date().addingTimeInterval(7 * 60 * 60))
+        XCTAssertEqual(restored.refreshRevision, 1)
+
+        let unauthorized = UpcomingFeedModel(cache: cache)
+        await unauthorized.refresh(
+            scope: "runtime-3", namespace: "alice", cacheScope: "alice-account", isCurrent: { false }
+        ) {
+            XCTFail("Locked profiles must neither hydrate nor load")
+            return .init()
+        }
+        XCTAssertTrue(unauthorized.releases.isEmpty)
+        let otherScope = await cache.load(scope: "alice-other-account", namespace: "alice")
+        let otherProfile = await cache.load(scope: "alice-account", namespace: "bob")
+        XCTAssertNil(otherScope)
+        XCTAssertNil(otherProfile)
+    }
+
+    func testStaleCachePublishesBeforeRefreshAndSuccessfulEmptyReplacesIt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = UpcomingFeedCache(directory: directory)
+        await cache.save(
+            releases: [Self.release("cached")], failedSourceCount: 0, scope: "scope", namespace: nil,
+            savedAt: Date().addingTimeInterval(-7 * 60 * 60)
+        )
+        let model = UpcomingFeedModel(cache: cache)
+        let gate = UpcomingTestGate()
+        let entered = expectation(description: "Stale snapshot rendered before network")
+        let refresh = Task {
+            await model.refresh(scope: "runtime", namespace: nil, cacheScope: "scope", isCurrent: { true }) {
+                entered.fulfill()
+                await gate.wait()
+                return .init()
+            }
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        XCTAssertEqual(model.releases.map(\.item.id), ["cached"])
+        XCTAssertTrue(model.isLoading)
+        await gate.open()
+        await refresh.value
+        XCTAssertTrue(model.releases.isEmpty)
+        let restored = UpcomingFeedModel(cache: cache)
+        await restored.refresh(scope: "runtime", namespace: nil, cacheScope: "scope", isCurrent: { true }) {
+            XCTFail("A completed empty result must replace the old cache")
+            return .init()
+        }
+        XCTAssertTrue(restored.releases.isEmpty)
+    }
+
+    func testExplicitInvalidationCannotBeSatisfiedByFreshDiskCache() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = UpcomingFeedCache(directory: directory)
+        await cache.save(
+            releases: [Self.release("old")], failedSourceCount: 0,
+            scope: "scope", namespace: nil, savedAt: Date()
+        )
+        let model = UpcomingFeedModel(cache: cache)
+        model.refreshRevision += 1
+        let fresh = Self.release("fresh")
+        await model.refresh(scope: "runtime", namespace: nil, cacheScope: "scope", isCurrent: { true }) {
+            .init(releases: [fresh])
+        }
+        XCTAssertEqual(model.releases.map(\.item.id), ["fresh"])
+    }
 }
 
 private actor UpcomingTestGate {

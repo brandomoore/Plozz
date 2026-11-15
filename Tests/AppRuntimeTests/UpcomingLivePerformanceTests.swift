@@ -50,7 +50,10 @@ final class UpcomingLivePerformanceTests: XCTestCase {
                 pipeline: ProductionMetadataProviders.makePipeline(providerConfig: metadata, tvdbConfig: tvdb)
             )
             let movies = ExternalTitleMetadataResolver(providerConfig: metadata, tvdbConfig: tvdb)
-            let model = UpcomingFeedModel()
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let cache = UpcomingFeedCache(directory: directory)
+            let model = UpcomingFeedModel(cache: cache)
             let interval = UpcomingFeedLoader.window()
             let counter = UpcomingLiveScheduleCounter()
             let clock = UpcomingLiveClock()
@@ -67,14 +70,20 @@ final class UpcomingLivePerformanceTests: XCTestCase {
                         },
                         schedule: { item, interval in
                             await counter.began()
-                            return try await schedules.calendarEpisodes(for: MetadataQuery(item), in: interval)
+                            do {
+                                return try await schedules.calendarEpisodes(for: MetadataQuery(item), in: interval)
+                            } catch {
+                                print("UpcomingLive unavailable type=\(MetadataQuery(item).contentType.rawValue) status=\(item.seriesStatus?.rawValue ?? "unknown") idNamespaces=\(item.providerIDs.keys.sorted())")
+                                throw error
+                            }
                         },
                         movieAvailability: { item, region in await movies.availability(for: item, regionCode: region) }
                     )
                 }
             let started = ContinuousClock.now
             await model.refresh(
-                scope: "internal-\(connection.provider)", namespace: nil, isCurrent: { true }, load: load)
+                scope: "internal-\(connection.provider)", namespace: nil,
+                cacheScope: "internal-\(connection.provider)", isCurrent: { true }, load: load)
             let cold = Self.milliseconds(started.duration(to: .now))
             let coldRequests = await http.requests
             let releaseCount = model.releases.count
@@ -83,6 +92,13 @@ final class UpcomingLivePerformanceTests: XCTestCase {
             await model.refresh(
                 scope: "internal-\(connection.provider)", namespace: nil, isCurrent: { true }, load: load)
             let repeated = Self.milliseconds(repeatStarted.duration(to: .now))
+            let recreated = UpcomingFeedModel(cache: UpcomingFeedCache(directory: directory))
+            let restoredStarted = ContinuousClock.now
+            await recreated.refresh(
+                scope: "recreated-\(connection.provider)", namespace: nil,
+                cacheScope: "internal-\(connection.provider)", isCurrent: { true }, load: load
+            )
+            let restored = Self.milliseconds(restoredStarted.duration(to: .now))
             let requests = await http.requests
             let bytes = await http.bytes
             let titles = await counter.titles
@@ -93,11 +109,12 @@ final class UpcomingLivePerformanceTests: XCTestCase {
             )
             XCTAssertGreaterThan(releaseCount, 0)
             XCTAssertEqual(model.releases.count, releaseCount)
+            XCTAssertEqual(recreated.releases.count, releaseCount)
             XCTAssertEqual(
                 requests, coldRequests, "A repeat visit must reuse the shared feed, even with a partial failure")
             XCTAssertFalse(model.isLoading)
             print(
-                "UpcomingLive provider=\(connection.provider.rawValue) firstContentMs=\(clock.firstContentMilliseconds ?? -1) firstUpcomingMs=\(clock.firstUpcomingMilliseconds ?? -1) coldMs=\(cold) repeatMs=\(repeated) coldRequests=\(coldRequests) repeatRequests=\(requests - coldRequests) serverBytes=\(bytes) watchedTitles=\(titles) releases=\(releaseCount) failures=\(failureCount)"
+                "UpcomingLive provider=\(connection.provider.rawValue) firstContentMs=\(clock.firstContentMilliseconds ?? -1) firstUpcomingMs=\(clock.firstUpcomingMilliseconds ?? -1) coldMs=\(cold) repeatMs=\(repeated) restoredMs=\(restored) coldRequests=\(coldRequests) repeatRequests=\(requests - coldRequests) serverBytes=\(bytes) watchedTitles=\(titles) releases=\(releaseCount) failures=\(failureCount)"
             )
         }
     }

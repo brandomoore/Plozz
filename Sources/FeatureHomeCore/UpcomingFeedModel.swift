@@ -43,9 +43,11 @@ public final class UpcomingFeedModel {
     @ObservationIgnored private nonisolated(unsafe) var task: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let cache: UpcomingFeedCache?
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard, cache: UpcomingFeedCache? = nil) {
         self.defaults = defaults
+        self.cache = cache
     }
 
     deinit { task?.cancel() }
@@ -82,6 +84,18 @@ public final class UpcomingFeedModel {
         defaults.set(hiddenTitles.sorted(), forKey: hiddenKey)
     }
 
+    public func refreshIfStale(now: Date = Date()) {
+        guard task == nil, needsRefresh(now: now) else { return }
+        refreshRevision += 1
+    }
+
+    private func needsRefresh(now: Date = Date()) -> Bool {
+        guard let refreshedAt else { return true }
+        let freshness: TimeInterval = failedSourceCount == 0 ? 6 * 60 * 60 : 60
+        return !Calendar.current.isDate(refreshedAt, inSameDayAs: now)
+            || now.timeIntervalSince(refreshedAt) >= freshness
+    }
+
     public func invalidate() {
         generation = UUID()
         task?.cancel()
@@ -99,16 +113,23 @@ public final class UpcomingFeedModel {
 
     public func refresh(
         scope: String, namespace: String?, force: Bool = false,
+        cacheScope: String? = nil,
+        rehydrate: @escaping @MainActor ([MediaItem]) -> [MediaItem] = { $0 },
         isCurrent: @escaping @MainActor () -> Bool,
         load: @escaping @Sendable () async throws -> UpcomingFeedSnapshot
     ) async {
-        await refresh(scope: scope, namespace: namespace, force: force, isCurrent: isCurrent) { _ in
+        await refresh(
+            scope: scope, namespace: namespace, force: force, cacheScope: cacheScope,
+            rehydrate: rehydrate, isCurrent: isCurrent
+        ) { _ in
             try await load()
         }
     }
 
     public func refresh(
         scope: String, namespace: String?, force: Bool = false,
+        cacheScope: String? = nil,
+        rehydrate: @escaping @MainActor ([MediaItem]) -> [MediaItem] = { $0 },
         isCurrent: @escaping @MainActor () -> Bool,
         load:
             @escaping @Sendable (
@@ -116,6 +137,7 @@ public final class UpcomingFeedModel {
             ) async throws -> UpcomingFeedSnapshot
     ) async {
         guard !Task.isCancelled else { return }
+        let changedScope = scopeKey != scope
         if scopeKey != scope {
             invalidate()
             scopeKey = scope
@@ -131,12 +153,14 @@ public final class UpcomingFeedModel {
             await task.value
             guard !Task.isCancelled, scopeKey == scope, isCurrent() else { return }
             if refreshedAt == nil {
-                await refresh(scope: scope, namespace: namespace, force: force, isCurrent: isCurrent, load: load)
+                await refresh(
+                    scope: scope, namespace: namespace, force: force, cacheScope: cacheScope,
+                    rehydrate: rehydrate, isCurrent: isCurrent, load: load
+                )
             }
             return
         }
-        let freshness: TimeInterval = failedSourceCount == 0 ? 6 * 60 * 60 : 60
-        if !force, let refreshedAt, Date().timeIntervalSince(refreshedAt) < freshness { return }
+        if !force, !needsRefresh() { return }
         isLoading = true
         let generation = generation
         let revision = refreshRevision
@@ -148,6 +172,26 @@ public final class UpcomingFeedModel {
                 }
             }
             do {
+                if changedScope, let self, let cacheScope, let cache = self.cache,
+                   let cached = await cache.load(scope: cacheScope, namespace: namespace) {
+                    try Task.checkCancellation()
+                    guard self.generation == generation, isCurrent() else { return }
+                    let items = rehydrate(cached.releases.map(\.item))
+                    if items.count == cached.releases.count {
+                        self.releases = zip(cached.releases, items).map { release, item in
+                            var release = release
+                            release.item = item
+                            return release
+                        }
+                        self.failedSourceCount = cached.failedSourceCount
+                        if self.refreshRevision == revision, revision == 0, !force {
+                            self.refreshedAt = cached.savedAt
+                            if !self.needsRefresh() { return }
+                        }
+                    } else {
+                        PlozzLog.networking.error("Upcoming cached artwork could not be restored; refreshing releases")
+                    }
+                }
                 let snapshot = try await load { [weak self] releases in
                     guard let self, self.generation == generation, isCurrent() else { return }
                     self.releases = UpcomingReleaseBuilder.merging(releases + self.releases)
@@ -180,6 +224,12 @@ public final class UpcomingFeedModel {
                     }
                 self.failedSourceCount = snapshot.failedSourceCount
                 self.refreshedAt = self.refreshRevision == revision ? Date() : nil
+                if self.refreshRevision == revision, let cacheScope, let cache = self.cache {
+                    await cache.save(
+                        releases: self.releases, failedSourceCount: self.failedSourceCount,
+                        scope: cacheScope, namespace: namespace, savedAt: Date()
+                    )
+                }
             } catch is CancellationError {
                 // Scope invalidation owns clearing the previous identity's data.
             } catch {

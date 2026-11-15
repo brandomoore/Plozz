@@ -78,11 +78,13 @@ public actor ProviderResultCache {
         source: MetadataSource,
         version: Int,
         requestKey: String,
-        credential: String? = nil
+        credential: String? = nil,
+        maximumAge: TimeInterval? = nil
     ) {
         let key = Self.key(source: source, version: version, requestKey: requestKey, credential: credential)
         let isNegative = enrichment == nil
-        let ttl = isNegative ? negativeTTL : positiveTTL
+        let defaultTTL = isNegative ? negativeTTL : positiveTTL
+        let ttl = min(defaultTTL, maximumAge ?? defaultTTL)
         entries[key] = Entry(
             enrichment: enrichment,
             expires: now().addingTimeInterval(ttl),
@@ -175,9 +177,14 @@ public struct CachedEnrichmentProvider: MetadataEnrichmentProvider {
             source: base.id,
             version: base.policy.version,
             requestKey: requestKey,
-            credential: credentialID
+            credential: credentialID,
+            maximumAge: Self.maximumAge(for: query)
         )
         return result
+    }
+
+    static func maximumAge(for query: MetadataQuery) -> TimeInterval? {
+        query.scheduleStartDate == nil ? nil : 6 * 60 * 60
     }
 
     static func requestKey(query: MetadataQuery, missing: Set<MetadataField>) -> String {

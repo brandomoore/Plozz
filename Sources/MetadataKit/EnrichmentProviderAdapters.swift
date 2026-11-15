@@ -186,6 +186,7 @@ public struct TVDBEnrichmentProvider: MetadataEnrichmentProvider {
             if let start = query.scheduleStartDate {
                 schedule = await client.scheduledEpisodes(byTVDBID: tvdbID, from: start, limit: .max)
                 out.calendarScheduleAvailable = schedule != nil
+                out.calendarScheduleComplete = schedule != nil
             } else {
                 schedule = await client.upcomingEpisodes(byTVDBID: tvdbID, limit: 24)
             }

@@ -1073,11 +1073,19 @@ struct PlozziOSTabShell: View {
         let language = locale.identifier
         let identity = appModel.profiles.activeProfile.seerrRequestIdentity
         let seer = appModel.seerService
+        let cacheScope = UpcomingFeedLoader.scopeKey(
+            profileID: appModel.profiles.activeProfileID, accounts: accounts,
+            requestIdentity: identity, connectionRevision: nil, language: language,
+            regionCode: region, requestServerURL: seer.savedBaseURLString
+        )
         let isCurrent: @MainActor @Sendable () -> Bool = {
             appModel.isLiveTVProfileAuthorized && upcomingScopeKey == scope
         }
         await sharedHomeViewModel.upcoming.refresh(
-            scope: scope, namespace: appModel.profiles.activeNamespace, isCurrent: isCurrent
+            scope: scope, namespace: appModel.profiles.activeNamespace,
+            cacheScope: upcomingFeedLoader == nil ? cacheScope : nil,
+            rehydrate: appModel.mediaItemActionHandler.rehydratePersistedArtwork,
+            isCurrent: isCurrent
         ) { progress in
             if let upcomingFeedLoader {
                 return try await upcomingFeedLoader(progress)
@@ -1569,7 +1577,7 @@ struct PlozziOSTabShell: View {
             sharedHomeViewModel.upcoming.refreshRevision += 1
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { sharedHomeViewModel.upcoming.refreshRevision += 1 }
+            if phase == .active { sharedHomeViewModel.upcoming.refreshIfStale() }
         }
         .environment(\.homeContentSnapshot, sharedHomeViewModel)
         .onChange(of: appModel.allowsHomeContentLoading, initial: true) { _, allowed in

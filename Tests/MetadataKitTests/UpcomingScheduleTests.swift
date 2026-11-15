@@ -139,11 +139,84 @@ final class UpcomingScheduleTests: XCTestCase {
             } catch {
                 XCTAssertEqual(error as? AppError, .notFound)
             }
+
             await client.setAvailable(true)
             let recovered = try await resolver.calendarEpisodes(for: calendarQuery, in: interval)
             XCTAssertTrue(recovered.isEmpty, "\(provider.id)")
             let callsAfter = await client.calls
             XCTAssertEqual(callsAfter, callsBefore + 2, "\(provider.id) must retry after an unavailable listing")
+        }
+    }
+
+    func testCompleteEmptyCalendarStopsFallbackButSingleEpisodeSourceDoesNot() async throws {
+        for order: [MetadataSource] in [[.tvmaze, .tvdb], [.anilist, .tvmaze, .tvdb]] {
+            let client = try CalendarListingFixture()
+            let resolver = SeriesScheduleResolver(pipeline: MetadataEnrichmentPipeline(
+                providers: calendarProviders(client),
+                config: MetadataEnrichmentConfig(order: order, usesGlobalOrder: true)
+            ))
+            let result = try await resolver.calendarEpisodes(
+                for: calendarQuery, in: DateInterval(start: day, duration: 86_400)
+            )
+            XCTAssertTrue(result.isEmpty)
+            let calls = await client.calls
+            XCTAssertEqual(calls, order.first == .anilist ? 2 : 1)
+        }
+    }
+
+    func testUnmatchedTitleIsNotAnOutageButMalformedOrFailedRequestsRemainRetryable() async throws {
+        let query = MetadataQuery(MediaItem(id: "unknown", title: "Unlisted show", kind: .series))
+        for reply: PublicFeedDiscoveryTestTransport.Reply in [
+            .response("", 404, [:]), .response("", 503, [:]), .response("", 429, [:]),
+            .json("not a show"), .networkFailure
+        ] {
+            let fixture = PublicFeedDiscoveryTestTransport([reply])
+            let resolver = SeriesScheduleResolver(pipeline: MetadataEnrichmentPipeline(providers: [
+                TVmazeEnrichmentProvider(client: TVmazeClient(http: fixture.http))
+            ]))
+            do {
+                let result = try await resolver.calendarEpisodes(for: query, in: DateInterval(start: day, duration: 86_400))
+                XCTAssertTrue(result.isEmpty)
+                guard case .response(_, 404, _) = reply else {
+                    return XCTFail("Only an authoritative unmatched title is a successful empty lookup")
+                }
+            } catch {
+                if case .response(_, 404, _) = reply { XCTFail("An unlisted title is not a source outage") }
+            }
+        }
+    }
+
+    func testKnownTVmazeIdentityOnlyFetchesTheCalendarListing() async throws {
+        let fixture = PublicFeedDiscoveryTestTransport([.json("[]")])
+        let resolver = SeriesScheduleResolver(pipeline: MetadataEnrichmentPipeline(providers: [
+            TVmazeEnrichmentProvider(client: TVmazeClient(http: fixture.http))
+        ]))
+        let result = try await resolver.calendarEpisodes(for: calendarQuery, in: DateInterval(start: day, duration: 86_400))
+        XCTAssertTrue(result.isEmpty)
+        let requests = await fixture.requests
+        XCTAssertEqual(requests.compactMap { $0.url?.path }, ["/shows/42/episodes"])
+    }
+
+    func testUnmatchedProviderCannotHideFallbackOutage() async throws {
+        let fixture = PublicFeedDiscoveryTestTransport([.response("", 404, [:]), .response("", 404, [:])])
+        let unavailable = try CalendarListingFixture()
+        await unavailable.setAvailable(false)
+        let resolver = SeriesScheduleResolver(pipeline: MetadataEnrichmentPipeline(
+            providers: [
+                TVmazeEnrichmentProvider(client: TVmazeClient(http: fixture.http)),
+                ResilientEnrichmentProvider(
+                    base: TVDBEnrichmentProvider(client: unavailable),
+                    breaker: ProviderCircuitBreaker(), cache: ProviderResultCache()
+                )
+            ],
+            config: MetadataEnrichmentConfig(order: [.tvmaze, .tvdb], usesGlobalOrder: true)
+        ))
+        let query = MetadataQuery(MediaItem(id: "show", title: "Unlisted show", kind: .series, providerIDs: ["Tvdb": "42"]))
+        do {
+            _ = try await resolver.calendarEpisodes(for: query, in: DateInterval(start: day, duration: 86_400))
+            XCTFail("A fallback outage must not be hidden by an unmatched primary lookup")
+        } catch {
+            XCTAssertEqual(error as? AppError, .notFound)
         }
     }
 

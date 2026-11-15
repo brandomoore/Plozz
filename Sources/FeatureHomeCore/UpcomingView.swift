@@ -12,8 +12,12 @@
         #elseif os(iOS)
             @Environment(\.horizontalSizeClass) private var sizeClass
             @Environment(\.accessibilityReduceMotion) private var reduceMotion
+            @Environment(\.plozzMetrics) private var metrics
+            @Environment(\.plozzCardStyle) private var cardStyle
             @State private var availableSize = CGSize.zero
+            @State private var agendaSize = CGSize.zero
             @State private var calendarIsMinimized = false
+            @State private var scrollDay: Date? = Calendar.current.startOfDay(for: Date())
         #endif
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
@@ -39,21 +43,39 @@
                     #endif
                     HStack(alignment: .top, spacing: 0) {
                         ScrollView {
-                            VStack(spacing: 0) {
-                                UpcomingFeedStatus(model: model)
-                                UpcomingAgenda(
-                                    releases: model.visibleReleases, selectedDay: selectedDay,
-                                    hide: model.hide
-                                )
-                                .padding(.vertical)
-                            }
-                            #if os(iOS)
-                            .padding(.horizontal)
+                            UpcomingAgenda(
+                                model: model, selectedDay: selectedDay,
+                                minimumSelectedHeight: agendaHeight, contentWidth: agendaContentWidth
+                            )
+                            .opacity(model.visibleReleases.isEmpty ? 0 : 1)
+                            #if os(tvOS)
+                            .padding(.vertical)
                             #endif
                         }
+                        .overlay {
+                            if model.visibleReleases.isEmpty {
+                                UpcomingFeedStatus(model: model)
+                                    .padding()
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
                         #if os(iOS)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { agendaSize = $0 }
+                        .contentMargins(.horizontal, agendaInset, for: .scrollContent)
+                        .contentMargins(.vertical, 16, for: .scrollContent)
+                        .scrollPosition(id: $scrollDay, anchor: .top)
                         .modifier(UpcomingScrollEdge())
-                        #endif
+                        .task(id: agendaSize.width) {
+                            guard agendaSize.width > 0 else { return }
+                            await Task.yield()
+                            guard !Task.isCancelled else { return }
+                            proxy.scrollTo(scrollDay ?? selectedDay, anchor: .top)
+                        }
+                        .onChange(of: selectedDay) { _, day in
+                            scrollDay = day
+                        }
+                        #else
                         .onChange(of: selectedDay) { _, day in
                             proxy.scrollTo(day, anchor: .top)
                         }
@@ -65,6 +87,7 @@
                                 proxy.scrollTo(selectedDay, anchor: .top)
                             }
                         }
+                        #endif
                         #if os(iOS)
                         if showsInlineCalendar {
                             UpcomingCalendar(
@@ -97,6 +120,7 @@
                 }
                 #endif
                 .tint(palette.primaryText)
+                .onAppear { model.refreshIfStale() }
                 #if os(tvOS)
                 .sheet(isPresented: $showingCalendar) {
                     UpcomingCalendar(selectedDay: $selectedDay, interval: interval)
@@ -132,6 +156,31 @@
             }
             #endif
         }
+
+        private var agendaHeight: CGFloat {
+            #if os(iOS)
+            max(0, agendaSize.height - 32)
+            #else
+            0
+            #endif
+        }
+
+        private var agendaContentWidth: CGFloat {
+            #if os(iOS)
+            max(0, agendaSize.width - 2 * agendaInset)
+            #else
+            0
+            #endif
+        }
+
+        #if os(iOS)
+        private var agendaInset: CGFloat {
+            PlozziOSMediaRailLayout.artworkAlignedInset(
+                PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
+                metrics: metrics, cardStyle: cardStyle
+            )
+        }
+        #endif
 
         private var calendarActionTitle: Text {
             #if os(iOS)
@@ -236,30 +285,73 @@
     }
 
     private struct UpcomingAgenda: View {
-        let releases: [UpcomingRelease]
+        let model: UpcomingFeedModel
         let selectedDay: Date
-        let hide: (UpcomingRelease) -> Void
+        let minimumSelectedHeight: CGFloat
+        let contentWidth: CGFloat
         @Environment(\.plozzMetrics) private var metrics
         @Environment(\.plozzCardStyle) private var cardStyle
 
         var body: some View {
             let calendar = Calendar.current
-            let groups = Dictionary(grouping: releases) { calendar.startOfDay(for: $0.date) }
+            let groups = Dictionary(grouping: model.visibleReleases) { calendar.startOfDay(for: $0.date) }
             let days = Set(groups.keys).union([selectedDay]).sorted()
             #if os(tvOS)
                 let visibleDays = days.filter { $0 >= selectedDay }
                 let spacing = metrics.cardSpacing
+                let gridMetrics = metrics
+                let width = metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle)
+                let columns = [GridItem(.adaptive(minimum: width, maximum: width), spacing: spacing, alignment: .topLeading)]
             #else
                 let visibleDays = days
-                let spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+                let layout = PlozziOSPosterGridLayout(contentWidth: contentWidth, metrics: metrics, cardStyle: cardStyle)
+                let gridMetrics = layout.metrics
+                let width = gridMetrics.cardSlotWidth(for: .poster, cardStyle: cardStyle)
+                let columns = Array(
+                    repeating: GridItem(.fixed(width), spacing: layout.spacing, alignment: .topLeading),
+                    count: layout.columns
+                )
             #endif
-            let width = metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle)
-            let columns = [GridItem(.adaptive(minimum: width, maximum: width), spacing: spacing, alignment: .topLeading)]
+            #if os(iOS)
+            VStack(alignment: .leading, spacing: 28) {
+                let history = visibleDays.filter { $0 < selectedDay }
+                if !history.isEmpty {
+                    dateGroups(history, groups: groups, columns: columns, metrics: gridMetrics, width: width)
+                }
+                VStack(alignment: .leading, spacing: 20) {
+                    dateGroups(
+                        visibleDays.filter { $0 >= selectedDay }, groups: groups,
+                        columns: columns, metrics: gridMetrics, width: width
+                    )
+                    refreshError
+                }
+                .frame(minHeight: minimumSelectedHeight, alignment: .top)
+            }
+            .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
+            #else
+            VStack(alignment: .leading, spacing: 20) {
+                dateGroups(visibleDays, groups: groups, columns: columns, metrics: gridMetrics, width: width)
+                refreshError
+            }
+            #endif
+        }
+
+        @ViewBuilder
+        private var refreshError: some View {
+            if !model.isLoading, model.failedSourceCount > 0 {
+                UpcomingFeedStatus(model: model).frame(maxWidth: .infinity)
+            }
+        }
+
+        private func dateGroups(
+            _ days: [Date], groups: [Date: [UpcomingRelease]],
+            columns: [GridItem], metrics: PlozzMetrics, width: CGFloat
+        ) -> some View {
             LazyVStack(alignment: .leading, spacing: 28) {
-                ForEach(visibleDays, id: \.self) { day in
+                ForEach(days, id: \.self) { day in
                     VStack(alignment: .leading, spacing: 12) {
                         Group {
-                            if calendar.isDateInToday(day) {
+                            if Calendar.current.isDateInToday(day) {
                                 Text("Today")
                             } else {
                                 Text(day, format: .dateTime.weekday(.wide).month(.abbreviated).day())
@@ -269,19 +361,24 @@
                         .font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
                         #else
                         .font(PlozziOSMediaRailLayout.headingFont)
+                        .padding(.horizontal, cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
                         #endif
                         .accessibilityAddTraits(.isHeader)
                         LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.gridSpacing) {
                             ForEach(groups[day] ?? []) { release in
                                 UpcomingReleaseCard(release: release)
+                                    .environment(\.plozzMetrics, metrics)
                                     .frame(width: width)
-                                    .contextMenu { Button("Hide title") { hide(release) } }
+                                    .contextMenu { Button("Hide title") { model.hide(release) } }
                             }
                         }
                     }
                     .id(day)
                 }
             }
+            #if os(iOS)
+            .scrollTargetLayout()
+            #endif
         }
     }
 

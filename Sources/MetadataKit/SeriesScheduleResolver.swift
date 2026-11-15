@@ -57,6 +57,10 @@ public actor SeriesScheduleResolver {
             ? enrichment.upcomingEpisode.map { [$0] } ?? []
             : enrichment.upcomingEpisodes
         try Task.checkCancellation()
+        if enrichment.calendarScheduleNotFound == true,
+           enrichment.calendarScheduleAvailable != false, episodes.isEmpty {
+            return []
+        }
         guard enrichment.calendarScheduleAvailable == true || !episodes.isEmpty else {
             throw AppError.notFound
         }

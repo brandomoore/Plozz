@@ -18,7 +18,7 @@ public enum UpcomingReleaseKind: String, CaseIterable, Codable, Hashable, Sendab
 
 /// An announced release, not a promise that the media is in a server library.
 /// `item` is always the real title used by the existing detail navigation.
-public struct UpcomingRelease: Identifiable, Equatable, Sendable {
+public struct UpcomingRelease: Identifiable, Equatable, Codable, Sendable {
     public let id: String
     public let titleKey: String
     public var item: MediaItem

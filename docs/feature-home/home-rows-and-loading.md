@@ -29,7 +29,11 @@ movie-release labels; episode cards retain season/episode information.
 
 The current window is 30 days back through 90 days ahead. TV starts at Today;
 earlier days are selected through the calendar, keeping Up from the first card
-available to reach the toolbar. Phone and tablet retain scrollable history.
+available to reach the toolbar. Phone and tablet retain scrollable history, with
+native date-target scroll positioning keeping Today in place when progressive
+results insert older dates. The selected date and following groups occupy at least
+the viewport height so a sparse agenda can align below the native toolbar without
+being clamped to the bottom of its history.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.
@@ -54,9 +58,11 @@ preserves the selected date and manual minimization, and widening dismisses any
 open popover. TV uses native secondary glass controls
 below the selected navigation chrome.
 Upcoming date headings use the shared rail typography. Each date uses standard
-poster cards with shared sizing, captions, artwork, and focus behavior. Fixed-width
-adaptive columns keep sparse dates left-aligned with normal card gaps and wrap
-busy dates rather than stretching compact entries across the page. Episode numbers
+poster cards with shared captions, artwork, and focus behavior. Mobile fits whole
+columns to the actual agenda width after the calendar and shared page insets,
+resizing the artwork itself while retaining the normal visible card gaps.
+Every date uses the same column widths, including sparse dates and partial final
+rows. TV retains its standard adaptive poster slots. Episode numbers
 or grouped episode counts appear in the poster's subtitle, without extra containers
 or changes to the underlying detail-navigation item. Coming Soon uses full-size landscape
 media cards on both platforms, with the shared Home headings, spacing, captions
@@ -70,6 +76,10 @@ Mobile previews mount the production `PlozziOSTabShell`, including its navigatio
 and appearance bridges, with a seeded feed loader rather than live release lookup.
 `--capture-dense` puts five shows on one date and checks rendered poster spacing,
 phone wrapping, and single/grouped episode captions.
+`--capture-progressive` exercises centered initial loading, first publication,
+and subsequent insertion of thirty days of history; Today must remain immediately
+below the toolbar. Explicit phase gates separate loading, first-publication, and
+completed renders, including when a shell refresh coalesces.
 `--capture-thirty` instead places thirty uniquely numbered sample cards on Today,
 reusing the fixture artwork. Its scrolled capture reaches the last card and the
 following date; its minimized capture retains Today to compare the same grid.
@@ -93,19 +103,40 @@ this checks wide layout, not device rotation. That render is saved to
 
 `HomeViewModel.upcoming` owns the shared feed. Profile, account, credential and
 request-connection changes invalidate in-flight results. Viewing/watchlist
-mutations, request attempts and foreground entry refresh the feed. Opening
-Upcoming reuses Home's existing work and data rather than restarting it.
+mutations and request attempts refresh the feed; foreground entry checks freshness
+instead of invalidating a fresh result. Opening
+Upcoming reuses Home's existing work and data, checking freshness rather than
+unconditionally restarting it.
+An off-main, bounded disk snapshot restores releases across model recreation and
+app relaunch before network work. Cache identity includes the profile, accounts,
+credential revisions, server users, request identity/server, language and region;
+process-local request-connection revisions remain runtime fences, not disk keys.
+Authorization is checked before and after hydration. Artwork credentials are
+removed before persistence and rebuilt through the current action handler.
+Snapshots older than seven days are ignored; stale usable data remains visible
+while refreshing, and successful empty responses replace prior records.
+Initial loading is centered in the agenda viewport. Once cards are available,
+refreshing does not add a spinner; recoverable source errors follow the cards
+rather than displacing the first date.
 Episode calendars and personal-movie loading run independently, publishing each
 completed title while the rest continue. Calendar concurrency remains bounded;
 returning and recently watched series are checked first without omitting older
 or ended series. Same-scope changes finish useful in-flight work and coalesce
 into a follow-up refresh using the latest inputs. Successful unchanged feeds
 remain fresh for six hours; partial/error results have a one-minute automatic-retry
-cooldown, while explicit Retry bypasses it. A failed source is reported and its
+cooldown, with a new local day also requiring refresh, while explicit Retry bypasses it.
+Calendar provider results also expire within six hours, rather than retaining the
+longer artwork/text cache lifetime.
+A failed source is reported and its
 previous same-scope entries remain available rather than turning an outage into
 a successful empty agenda.
-Successful empty calendar listings retain their completeness in the provider
-cache. Unavailable listings are not cached as authoritative negatives, so Retry
+Successful empty full-calendar listings retain their completeness in the provider
+cache and stop unnecessary fallback; a single-next-episode source still permits
+full-calendar fallback. TVmaze reuses a known show ID and does not fetch unused
+cadence metadata for calendar requests. An authoritative unmatched title means
+no announced dates, not a source outage. Transport, decoding, listing, and
+fallback failures remain distinguishable from that result.
+Unavailable listings are not cached as authoritative negatives, so Retry
 can recover subject to the provider's existing outage cooldown.
 
 Coming Soon is an ordinary Home row, enabled by default while respecting explicit
@@ -123,7 +154,7 @@ The deterministic runtime tests separately cover provider paging, first-episode
 history, personal interests, progressive publication, scope cancellation,
 coalesced refreshes and partial-source retention. `UpcomingLivePerformanceTests`
 uses an explicitly authorized ephemeral internal-server broker to measure first
-content, first upcoming content, full completion, repeat visits and real request
+content, first upcoming content, full completion, repeat visits, disk restoration and real request
 counts against production Jellyfin/Plex providers and metadata. These are
 data-publication timings, not rendered-frame or physical-device measurements.
 Both dedicated identities must have watched returning shows with announced

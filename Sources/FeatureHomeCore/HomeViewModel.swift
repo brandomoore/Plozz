@@ -323,7 +323,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         )
     }
 
-    public let upcoming = UpcomingFeedModel()
+    public let upcoming = UpcomingFeedModel(cache: .shared)
 
     public private(set) var state: LoadState<Content> = .idle {
         didSet { stateRevision &+= 1 }

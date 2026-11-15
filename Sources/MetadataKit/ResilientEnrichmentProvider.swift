@@ -77,11 +77,12 @@ public struct ResilientEnrichmentProvider: MetadataEnrichmentProvider {
 
         // 3. Cache only authoritative outcomes.
         if let cache {
+            let maximumAge = CachedEnrichmentProvider.maximumAge(for: query)
             switch response.health {
             case .ok:
-                await cache.store(response.enrichment, source: base.id, version: version, requestKey: requestKey, credential: credentialID)
+                await cache.store(response.enrichment, source: base.id, version: version, requestKey: requestKey, credential: credentialID, maximumAge: maximumAge)
             case .empty:
-                await cache.store(nil, source: base.id, version: version, requestKey: requestKey, credential: credentialID)
+                await cache.store(nil, source: base.id, version: version, requestKey: requestKey, credential: credentialID, maximumAge: maximumAge)
             case .failure:
                 break
             }

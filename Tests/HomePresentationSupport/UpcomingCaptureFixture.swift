@@ -86,9 +86,10 @@ struct UpcomingCaptureFixture: View {
         let resizesCalendar = arguments.contains("--capture-calendar-resize")
         let narrow = arguments.contains("--capture-narrow")
         let thirty = arguments.contains("--capture-thirty")
+        let progressive = arguments.contains("--capture-progressive")
         guard arguments.contains("--capture-scrolled") || arguments.contains("--capture-landscape")
             || arguments.contains("--capture-dense") || showsCalendar || collapsesCalendar
-            || resizesCalendar || narrow || thirty else { return }
+            || resizesCalendar || narrow || thirty || progressive else { return }
         try await Task.sleep(for: .seconds(1))
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows).first(where: \.isKeyWindow) else {
@@ -104,13 +105,29 @@ struct UpcomingCaptureFixture: View {
         func descendants(_ view: UIView) -> [UIView] {
             [view] + view.subviews.flatMap(descendants)
         }
+        func agendaScrollView() -> UIScrollView? {
+            let candidates = descendants(window).compactMap { $0 as? UIScrollView }.filter { candidate in
+                guard candidate.bounds.height > 450, candidate.bounds.width > 200 else { return false }
+                var ancestor: UIView? = candidate
+                while let view = ancestor {
+                    if view.isHidden || view.alpha < 0.01 { return false }
+                    ancestor = view.superview
+                }
+                return true
+            }
+            precondition(candidates.count <= 1, "Upcoming capture must identify one visible agenda")
+            return candidates.first
+        }
         func controllers(_ controller: UIViewController) -> [UIViewController] {
             [controller] + controller.children.flatMap(controllers)
         }
-        if arguments.contains("--capture-landscape") || narrow || thirty {
+        func hideSidebar() {
             for controller in window.rootViewController.map(controllers) ?? [] {
                 (controller as? UITabBarController)?.sidebar.isHidden = true
             }
+        }
+        if arguments.contains("--capture-landscape") || narrow || thirty {
+            hideSidebar()
             try await Task.sleep(for: .milliseconds(500))
         }
         var barItems: [UIBarButtonItem] = []
@@ -169,6 +186,48 @@ struct UpcomingCaptureFixture: View {
                 observation.topCandidates(1).first.map { ($0.string, observation.boundingBox) }
             }
         }
+        if progressive {
+            func save(_ name: String) throws {
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    precondition(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                }
+                try image.pngData()!.write(to: FileManager.default.temporaryDirectory.appendingPathComponent(name))
+            }
+            precondition(fixture.home.upcoming.isLoading, "The initial loading state must be exercised")
+            let loading = try renderedText()
+            guard let label = loading.first(where: { $0.0 == "Updating releases" })?.1 else {
+                preconditionFailure("The loading indicator must be visible")
+            }
+            precondition((1 - label.maxY) * window.bounds.height > before.maxY + 80,
+                         "The loading indicator must not overlap the navigation bar")
+            try save("upcoming-progressive-loading.png")
+            await fixture.phases.advance(to: 1)
+            for _ in 0..<100 where fixture.home.upcoming.releases.count != 1 {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            precondition(fixture.home.upcoming.releases.count == 1, "Capture must exercise the first publication alone")
+            try await Task.sleep(for: .milliseconds(250))
+            func assertTodayVisible() throws {
+                let text = try renderedText()
+                guard let today = text.first(where: { $0.0 == "Today" })?.1 else {
+                    preconditionFailure("Upcoming must remain at Today as earlier dates arrive")
+                }
+                let top = (1 - today.maxY) * window.bounds.height
+                precondition(top >= before.maxY + 8 && top <= before.maxY + 36,
+                             "The first date must begin below the navigation bar")
+            }
+            try save("upcoming-progressive-first.png")
+            try assertTodayVisible()
+            await fixture.phases.advance(to: 2)
+            for _ in 0..<100 where fixture.home.upcoming.isLoading || fixture.home.upcoming.releases.count != fixture.releases.count {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            precondition(!fixture.home.upcoming.isLoading && fixture.home.upcoming.releases.count == fixture.releases.count,
+                         "Capture must finish loading the historical feed")
+            try await Task.sleep(for: .milliseconds(250))
+            try save("upcoming-progressive-complete.png")
+            try assertTodayVisible()
+        }
         if arguments.contains("--capture-dense") {
             let text = try renderedText()
             let frames = ["The Simpsons", "Severance", "Silo"].map { title in
@@ -178,8 +237,15 @@ struct UpcomingCaptureFixture: View {
                 return frame
             }
             let metrics = PlozzMetrics.touch(density: .standard)
-            let pitch = metrics.cardSlotWidth(for: .poster, cardStyle: .borderless)
-                + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: .borderless)
+            let agenda = agendaScrollView()!
+            let pageInset = PlozziOSMediaRailLayout.pageInset(
+                for: window.traitCollection.horizontalSizeClass == .regular ? .regular : .compact
+            )
+            let inset = PlozziOSMediaRailLayout.artworkAlignedInset(pageInset, metrics: metrics, cardStyle: .borderless)
+            let layout = PlozziOSPosterGridLayout(
+                contentWidth: agenda.bounds.width - 2 * inset, metrics: metrics, cardStyle: .borderless
+            )
+            let pitch = layout.metrics.cardSlotWidth(for: .poster, cardStyle: .borderless) + layout.spacing
             let actualPitch = (frames[1].minX - frames[0].minX) * window.bounds.width
             precondition(abs(frames[1].midY - frames[0].midY) < 0.006, "Adjacent posters must share a row")
             precondition(abs(actualPitch - pitch) < 3, "Poster spacing \(actualPitch) differs from shared spacing \(pitch)")
@@ -193,9 +259,7 @@ struct UpcomingCaptureFixture: View {
             precondition(text.contains { $0.0.contains("3 episodes") }, "Missing grouped episode count")
         }
         if arguments.contains("--capture-scrolled") {
-            guard let scroll = descendants(window).compactMap({ $0 as? UIScrollView }).first(where: {
-                $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height + 250
-            }) else {
+            guard let scroll = agendaScrollView(), scroll.contentSize.height > scroll.bounds.height + 250 else {
                 preconditionFailure("Upcoming capture requires a scrollable agenda")
             }
             let offset = thirty ? scroll.contentSize.height - scroll.bounds.height : scroll.contentOffset.y + 250
@@ -245,9 +309,7 @@ struct UpcomingCaptureFixture: View {
             let frame = picker.convert(picker.bounds, to: window)
             precondition(window.bounds.contains(frame), "Calendar extends outside the window")
             if arguments.contains("--capture-selection") {
-                guard let agenda = descendants(window).compactMap({ $0 as? UIScrollView }).first(where: {
-                    $0.bounds.height > 450 && $0.contentSize.height > $0.bounds.height + 250
-                }) else {
+                guard let agenda = agendaScrollView(), agenda.contentSize.height > agenda.bounds.height + 250 else {
                     preconditionFailure("Calendar selection capture requires a scrollable agenda")
                 }
                 let previousOffset = agenda.contentOffset.y
@@ -261,8 +323,8 @@ struct UpcomingCaptureFixture: View {
             }
         }
         if collapsesCalendar || resizesCalendar {
-            guard let inlinePicker, let agenda = descendants(window).compactMap({ $0 as? UIScrollView })
-                .first(where: { $0.bounds.height > 450 && $0.contentSize.height > $0.bounds.height + 250 }) else {
+            guard let inlinePicker, let agenda = agendaScrollView(),
+                  agenda.contentSize.height > agenda.bounds.height + 250 else {
                 preconditionFailure("Calendar toggle capture requires an inline picker and scrollable agenda")
             }
             let expandedWidth = agenda.bounds.width
@@ -276,7 +338,8 @@ struct UpcomingCaptureFixture: View {
                 precondition((datePicker() != nil) == expanded, "Toolbar must hide and reopen the side calendar")
                 if let picker = datePicker() {
                     precondition(Calendar.current.isDate(picker.date, inSameDayAs: selected), "Reopening lost the selected date")
-                    precondition(abs(agenda.bounds.width - expandedWidth) < 2, "Reopening must restore the agenda width")
+                    precondition(abs(agenda.bounds.width - expandedWidth) < 2,
+                                 "Reopening must restore agenda width \(expandedWidth), not \(agenda.bounds.width)")
                 } else {
                     precondition(agenda.bounds.width > expandedWidth + 300, "Minimizing must return space to the agenda")
                 }
@@ -293,6 +356,8 @@ struct UpcomingCaptureFixture: View {
                 }
                 precondition(Calendar.current.isDate(popoverPicker.date, inSameDayAs: selected), "Resizing lost the selected date")
                 window.frame = originalFrame
+                try await Task.sleep(for: .milliseconds(500))
+                hideSidebar()
                 try await Task.sleep(for: .seconds(1))
                 precondition(datePicker() == nil, "Widening must dismiss the popover without undoing manual minimization")
                 activateCalendar()
@@ -312,6 +377,32 @@ struct UpcomingCaptureFixture: View {
             let text = try renderedText()
             let expected = arguments.contains("--capture-scrolled") ? "30. Foundation" : "01. The Simpsons"
             precondition(text.contains { $0.0 == expected }, "Busy-day preview did not render \(expected)")
+            if !arguments.contains("--capture-scrolled") {
+                let agenda = agendaScrollView()!
+                let frame = agenda.convert(agenda.bounds, to: window)
+                let metrics = PlozzMetrics.touch(density: .standard)
+                let inset = PlozziOSMediaRailLayout.pageInset(
+                    for: window.traitCollection.horizontalSizeClass == .regular ? .regular : .compact
+                )
+                let layout = PlozziOSPosterGridLayout(
+                    contentWidth: frame.width - 2 * PlozziOSMediaRailLayout.artworkAlignedInset(
+                        inset, metrics: metrics, cardStyle: .borderless
+                    ), metrics: metrics, cardStyle: .borderless
+                )
+                let first = text.first { $0.0.hasPrefix("01.") }!.1.minX * window.bounds.width
+                let lastPrefix = String(format: "%02d.", layout.columns)
+                let last = text.first { $0.0.hasPrefix(lastPrefix) }!.1.minX * window.bounds.width
+                let left = first - layout.metrics.posterCaptionHorizontalInset - frame.minX
+                let right = frame.maxX - (last - layout.metrics.posterCaptionHorizontalInset + layout.metrics.posterWidth)
+                precondition(abs(left - inset) < 3 && abs(right - inset) < 3,
+                             "Poster edge insets must be equal: left=\(left), right=\(right), expected=\(inset)")
+                guard let today = text.first(where: { $0.0 == "Today" })?.1 else {
+                    preconditionFailure("Resizing must retain the visible Today heading")
+                }
+                let top = (1 - today.maxY) * window.bounds.height
+                precondition(top >= before.maxY + 8 && top <= before.maxY + 36,
+                             "Resizing must keep Today below the toolbar")
+            }
             if arguments.contains("--capture-scrolled") {
                 precondition(text.contains { $0.0 == "A saved movie" }, "The following date must remain reachable")
             }
@@ -371,6 +462,7 @@ struct UpcomingCaptureFixture: View {
 final class UpcomingCaptureState {
     let home: HomeViewModel
     let releases: [UpcomingRelease]
+    fileprivate let phases: UpcomingCapturePhases
     let visibility: HomeLibraryVisibilityModel
     let hero = HeroSettingsModel(store: InMemoryHeroSettingsStore())
     let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
@@ -384,6 +476,8 @@ final class UpcomingCaptureState {
     #endif
 
     init(releases: [UpcomingRelease]? = nil) {
+        let phases = UpcomingCapturePhases()
+        self.phases = phases
         let releases = releases ?? UpcomingCaptureProvider.releases
         self.releases = releases
         let provider = UpcomingCaptureProvider()
@@ -451,7 +545,14 @@ final class UpcomingCaptureState {
             showingSettings: .constant(false), showingProfileSwitcher: .constant(false),
             deferredPairingURL: .constant(nil), systemColorScheme: .dark
         )
-        shell.upcomingFeedLoader = { _ in UpcomingFeedSnapshot(releases: releases) }
+        shell.upcomingFeedLoader = { progress in
+            if ProcessInfo.processInfo.arguments.contains("--capture-progressive") {
+                try await phases.wait(for: 1)
+                await progress(Array(releases.filter { Calendar.current.isDateInToday($0.date) }.prefix(1)))
+                try await phases.wait(for: 2)
+            }
+            return UpcomingFeedSnapshot(releases: releases)
+        }
         self.shell = shell
         home = shell.sharedHomeViewModel
         #endif
@@ -459,6 +560,7 @@ final class UpcomingCaptureState {
 
     func load() async {
         await home.load()
+        if ProcessInfo.processInfo.arguments.contains("--capture-progressive") { return }
         #if os(tvOS)
         let scope = "upcoming-capture"
         let namespace: String? = "upcoming-capture"
@@ -475,6 +577,20 @@ final class UpcomingCaptureState {
         await home.upcoming.refresh(scope: scope, namespace: namespace, isCurrent: { true }) {
             UpcomingFeedSnapshot(releases: releases)
         }
+    }
+}
+
+private actor UpcomingCapturePhases {
+    private var phase = 0
+
+    func advance(to phase: Int) { self.phase = phase }
+
+    func wait(for phase: Int) async throws {
+        for _ in 0..<400 {
+            if self.phase >= phase { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        preconditionFailure("Upcoming capture did not advance its loading phase")
     }
 }
 
@@ -586,6 +702,19 @@ private struct UpcomingCaptureProvider: MediaProvider {
                     )],
                     for: item
                 )
+            }
+        }
+        if ProcessInfo.processInfo.arguments.contains("--capture-progressive") {
+            let future = result
+            for offset in [-30, -20, -10, -2] {
+                let date = Calendar.current.date(byAdding: .day, value: offset, to: today)!
+                result += future.prefix(3).map { release in
+                    UpcomingRelease(
+                        id: "\(release.id)-past-\(offset)", titleKey: release.titleKey, item: release.item,
+                        date: date, datePrecision: release.datePrecision, kind: release.kind,
+                        interests: release.interests, episodes: release.episodes
+                    )
+                }
             }
         }
         return UpcomingReleaseBuilder.merging(result)

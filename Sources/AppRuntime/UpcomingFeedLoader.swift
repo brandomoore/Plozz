@@ -19,8 +19,8 @@ extension UniversalWatchlistHost {
 public enum UpcomingFeedLoader {
     public static func scopeKey(
         profileID: String, accounts: [ResolvedAccount],
-        requestIdentity: SeerRequestIdentity, connectionRevision: UUID,
-        language: String, regionCode: String?
+        requestIdentity: SeerRequestIdentity, connectionRevision: UUID?,
+        language: String, regionCode: String?, requestServerURL: String? = nil
     ) -> String {
         let sources = accounts.map {
             [
@@ -31,7 +31,7 @@ public enum UpcomingFeedLoader {
         }.sorted().joined(separator: "|")
         return [
             profileID, sources, String(describing: requestIdentity),
-            connectionRevision.uuidString, language, regionCode ?? "",
+            connectionRevision?.uuidString ?? "", language, regionCode ?? "", requestServerURL ?? "",
         ].map { "\($0.utf8.count):\($0)" }.joined()
     }
 

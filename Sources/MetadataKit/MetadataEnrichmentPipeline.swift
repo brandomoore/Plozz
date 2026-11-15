@@ -178,7 +178,14 @@ public actor MetadataEnrichmentPipeline {
             // Thread already-resolved ids downstream so an exact-id lookup replaces a
             // fuzzy title search (no duplicate work).
             let threaded = query.mergingProviderIDs(result.externalIDs.mapValues(\.value))
-            var enrichment = await provider.enrich(threaded, missing: round.fields)
+            var enrichment: MetadataEnrichment
+            if query.scheduleStartDate != nil, round.fields.contains(.nextAiringEpisode) {
+                let response = await provider.enrichReporting(threaded, missing: round.fields)
+                enrichment = response.enrichment
+                if case .failure = response.health { enrichment.calendarScheduleAvailable = false }
+            } else {
+                enrichment = await provider.enrich(threaded, missing: round.fields)
+            }
             if !Self.supportsTextLanguage(query, source: round.source) {
                 enrichment.title = nil
                 enrichment.overview = nil

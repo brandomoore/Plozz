@@ -292,13 +292,20 @@ struct HomeTab: View {
         let region = Locale.current.region?.identifier
         let language = locale.identifier
         let identity = activeSeerrIdentity
+        let cacheScope = UpcomingFeedLoader.scopeKey(
+            profileID: profileID ?? runtime.scopeKey, accounts: accounts,
+            requestIdentity: identity, connectionRevision: nil, language: language,
+            regionCode: region, requestServerURL: seer.savedBaseURLString
+        )
         let isCurrent: @MainActor @Sendable () -> Bool = {
             isProfileAuthorized() && profilesModel?.activeProfileID == profileID
                 && upcomingScopeKey == scope
                 && profilesModel?.activeProfile.seerrRequestIdentity == identity
         }
         await sharedHomeViewModel.upcoming.refresh(
-            scope: scope, namespace: libraryPreferencesNamespace, isCurrent: isCurrent
+            scope: scope, namespace: libraryPreferencesNamespace, cacheScope: cacheScope,
+            rehydrate: { mediaItemActionHandler?.rehydratePersistedArtwork($0) ?? $0 },
+            isCurrent: isCurrent
         ) { progress in
             try await UpcomingFeedLoader.load(
                 accounts: accounts, watchlist: saved, regionCode: region,
@@ -637,7 +644,7 @@ struct HomeTab: View {
                 if isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active, isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }
+                if phase == .active, isActiveTab { sharedHomeViewModel.upcoming.refreshIfStale() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistDidChange)) { _ in
                 if isActiveTab { sharedHomeViewModel.upcoming.refreshRevision += 1 }

@@ -334,6 +334,13 @@ public struct PlozzMetrics: Equatable, Sendable {
         return metrics
     }
 
+    public func sizingPosters(width: CGFloat) -> PlozzMetrics {
+        var metrics = self
+        metrics.posterWidth = width
+        metrics.posterHeight = width * posterHeight / posterWidth
+        return metrics
+    }
+
     // MARK: Concentric card corner radii (derived)
 
     /// Touch artwork keeps the same rounding across responsive card sizes.

@@ -43,6 +43,22 @@ public enum PlozziOSMediaRailLayout {
     }
 }
 
+public struct PlozziOSPosterGridLayout {
+    public let columns: Int
+    public let metrics: PlozzMetrics
+    public let spacing: CGFloat
+
+    public init(contentWidth: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle) {
+        spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+        let slot = metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle)
+        let width = contentWidth > 0 ? contentWidth : slot
+        columns = max(1, Int(floor((width + spacing) / (slot + spacing))))
+        let margin = slot - metrics.posterWidth
+        let artworkWidth = (width - CGFloat(columns - 1) * spacing) / CGFloat(columns) - margin
+        self.metrics = metrics.sizingPosters(width: max(1, artworkWidth))
+    }
+}
+
 public struct PlozziOSMediaSection<Content: View>: View {
     @Environment(\.homeRowEditAction) private var editAction
     @Environment(\.horizontalSizeClass) private var sizeClass

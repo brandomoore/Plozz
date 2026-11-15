@@ -344,9 +344,12 @@ extension HomeRowArrangementHostedTests {
             UpcomingFeedSnapshot(releases: releases)
         }
         let metrics = PlozzMetrics.touch(density: .standard)
-        let pitch = metrics.cardSlotWidth(for: .poster, cardStyle: .borderless)
-            + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: .borderless)
         for width: CGFloat in [390, 1194] {
+            let agendaWidth = width > 800 ? width - 352 : width
+            let pageInset = PlozziOSMediaRailLayout.pageInset(for: width > 600 ? .regular : .compact)
+            let inset = PlozziOSMediaRailLayout.artworkAlignedInset(pageInset, metrics: metrics, cardStyle: .borderless)
+            let layout = PlozziOSPosterGridLayout(contentWidth: agendaWidth - 2 * inset, metrics: metrics, cardStyle: .borderless)
+            let pitch = layout.metrics.cardSlotWidth(for: .poster, cardStyle: .borderless) + layout.spacing
             try await withWindow(size: CGSize(width: width, height: 1000)) {
                 UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
                     .environment(\.plozzMetrics, metrics)
@@ -359,6 +362,7 @@ extension HomeRowArrangementHostedTests {
                 }
                 XCTAssertEqual(frames[0].midY, frames[1].midY, accuracy: 0.005)
                 XCTAssertEqual((frames[1].minX - frames[0].minX) * width, pitch, accuracy: 3)
+                XCTAssertEqual(frames[0].minX * width, pageInset, accuracy: 3)
                 if width < 600 {
                     XCTAssertLessThan(frames[2].midY, frames[0].midY)
                     XCTAssertEqual(frames[2].minX, frames[0].minX, accuracy: 0.005)

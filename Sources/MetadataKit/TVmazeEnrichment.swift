@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 
 /// The consolidated TVmaze result: the scattered id (KeylessIDResolver), poster/still
 /// (TVmazeArtworkProvider), and overview (OverviewRouter) paths gathered behind one
@@ -42,6 +43,15 @@ public protocol TVmazeEnriching: Sendable {
     /// TheTVDB id is known for — which is most of them, since the schedule request
     /// deliberately never runs a title resolve to find one.
     func upcomingEpisodes(_ query: MetadataQuery, limit: Int) async -> TVmazeUpcoming?
+    /// Nil is an authoritative unmatched title; transport and listing failures throw.
+    func calendarEpisodes(_ query: MetadataQuery) async throws -> TVmazeUpcoming?
+}
+
+public extension TVmazeEnriching {
+    func calendarEpisodes(_ query: MetadataQuery) async throws -> TVmazeUpcoming? {
+        guard let result = await upcomingEpisodes(query, limit: .max) else { throw AppError.serverUnreachable }
+        return result
+    }
 }
 
 /// TVmaze's future episodes for a show, plus its airing cadence.
@@ -72,7 +82,68 @@ public struct TVmazeNextEpisode: Sendable, Equatable {
 /// poster, per-episode still, and (episode or show) summary. Consolidates the three
 /// previously separate TVmaze call sites.
 public struct TVmazeClient: TVmazeEnriching {
-    public init() {}
+    private let http: MetadataDiscoveryHTTPClient
+
+    public init(http: MetadataDiscoveryHTTPClient = .init()) {
+        self.http = http
+    }
+
+    public func calendarEpisodes(_ query: MetadataQuery) async throws -> TVmazeUpcoming? {
+        let showID: Int
+        if let known = query.providerIDs.providerID(.tvmaze).flatMap(Int.init), known > 0 {
+            showID = known
+        } else {
+            let identity = Self.showIdentity(for: query)
+            var show: Show?
+            var lookupFailure: Error?
+            for url in Self.lookupURLs(for: identity) {
+                do {
+                    show = try await http.decode(Show.self, from: URLRequest(url: url))
+                    break
+                } catch MetadataDiscoveryHTTPError.status(404, _) {
+                    continue
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    lookupFailure = error
+                }
+            }
+            if show == nil {
+                guard let title = metadataEscaped(query.title),
+                      let url = URL(string: "https://api.tvmaze.com/singlesearch/shows?q=\(title)") else {
+                    throw AppError.invalidResponse
+                }
+                do {
+                    let candidate = try await http.decode(Show.self, from: URLRequest(url: url))
+                    if Self.isConsistentIdentity(
+                        candidateIMDb: candidate.externals?.imdb,
+                        candidateTVDB: candidate.externals?.thetvdb, known: identity
+                    ) {
+                        show = candidate
+                    }
+                } catch MetadataDiscoveryHTTPError.status(404, _) {
+                    if let lookupFailure { throw lookupFailure }
+                    return nil
+                }
+            }
+            guard let show else {
+                if let lookupFailure { throw lookupFailure }
+                return nil
+            }
+            showID = show.id
+        }
+        let listing = try await http.decode(
+            [ListedEpisode].self,
+            from: URLRequest(url: URL(string: "https://api.tvmaze.com/shows/\(showID)/episodes")!)
+        )
+        return TVmazeUpcoming(
+            showID: showID,
+            episodes: Self.scheduledEpisodes(
+                listing, showID: showID,
+                startingAt: query.scheduleStartDate ?? Calendar.current.startOfDay(for: Date()), limit: .max
+            )
+        )
+    }
 
     public func resolve(
         _ query: MetadataQuery,
@@ -220,8 +291,24 @@ public struct TVmazeClient: TVmazeEnriching {
         // Compared against the start of today so an episode airing *today* still
         // counts as upcoming — a date-only schedule can't say whether it has aired.
         let today = query.scheduleStartDate ?? Calendar.current.startOfDay(for: Date())
+        let upcoming = Self.scheduledEpisodes(listing ?? [], showID: showID, startingAt: today, limit: limit)
+        let cadence = AirCadence(
+            weekdays: Self.weekdayIndices(from: show?.schedule?.days),
+            airsTime: show?.schedule?.time?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyOrNil
+        )
+        guard query.scheduleStartDate != nil || !upcoming.isEmpty || !cadence.isEmpty else { return nil }
+        return TVmazeUpcoming(
+            showID: showID,
+            episodes: upcoming,
+            cadence: cadence.isEmpty ? nil : cadence
+        )
+    }
+
+    private static func scheduledEpisodes(
+        _ listing: [ListedEpisode], showID: Int, startingAt today: Date, limit: Int
+    ) -> [ProviderNextEpisode] {
         let sourceURL = URL(string: "https://api.tvmaze.com/shows/\(showID)")
-        let upcoming = (listing ?? []).compactMap { ep -> ProviderNextEpisode? in
+        let upcoming = listing.compactMap { ep -> ProviderNextEpisode? in
             guard let resolved = Self.scheduleDate(
                 airstamp: ep.airstamp,
                 airdate: ep.airdate,
@@ -242,16 +329,7 @@ public struct TVmazeClient: TVmazeEnriching {
         .sorted { $0.airDate < $1.airDate }
         .prefix(limit)
 
-        let cadence = AirCadence(
-            weekdays: Self.weekdayIndices(from: show?.schedule?.days),
-            airsTime: show?.schedule?.time?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyOrNil
-        )
-        guard query.scheduleStartDate != nil || !upcoming.isEmpty || !cadence.isEmpty else { return nil }
-        return TVmazeUpcoming(
-            showID: showID,
-            episodes: Array(upcoming),
-            cadence: cadence.isEmpty ? nil : cadence
-        )
+        return Array(upcoming)
     }
 
     /// Resolves TVmaze's schedule fields without mistaking its placeholder noon
@@ -404,9 +482,10 @@ public struct TVmazeEnrichmentProvider: MetadataEnrichmentProvider {
     /// cached has to be dropped. v5: season-0 specials are no longer returned as
     /// upcoming episodes. v6: an `airstamp` with blank `airtime` is now date-only;
     /// TVmaze synthesizes noon for streaming titles whose real time is unknown.
+    /// v7: calendar lookup distinguishes unmatched titles from unavailable listings.
     public init(
         client: any TVmazeEnriching = TVmazeClient(),
-        policy: ProviderPolicy = ProviderPolicy(version: 6)
+        policy: ProviderPolicy = ProviderPolicy(version: 7)
     ) {
         self.client = client
         self.policy = policy
@@ -436,10 +515,24 @@ public struct TVmazeEnrichmentProvider: MetadataEnrichmentProvider {
             // The full listing first — it fills the whole upcoming run and the
             // cadence in one pass. `nextEpisode` stays the fallback for a show whose
             // listing is unavailable but whose next episode is known.
-            let listed = await client.upcomingEpisodes(
-                query, limit: query.scheduleStartDate == nil ? 24 : .max
-            )
-            if query.scheduleStartDate != nil { out.calendarScheduleAvailable = listed != nil }
+            let listed: TVmazeUpcoming?
+            if query.scheduleStartDate != nil {
+                do {
+                    listed = try await client.calendarEpisodes(query)
+                    if listed == nil {
+                        out.calendarScheduleNotFound = true
+                    } else {
+                        out.calendarScheduleAvailable = true
+                        out.calendarScheduleComplete = true
+                    }
+                } catch {
+                    PlozzLog.networking.debug("TVmaze calendar request unavailable")
+                    out.calendarScheduleAvailable = false
+                    listed = nil
+                }
+            } else {
+                listed = await client.upcomingEpisodes(query, limit: 24)
+            }
             if let listed, query.scheduleStartDate != nil || !listed.episodes.isEmpty {
                 let identity = MediaIdentity.external(source: "tvmaze", value: String(listed.showID))
                 let mapped = listed.episodes.map {
