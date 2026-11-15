@@ -34,9 +34,9 @@ native date-target scroll positioning keeping Today in place when progressive
 results insert older dates. The selected date and following groups occupy at least
 the viewport height so a sparse agenda can align below the native toolbar without
 being clamped to the bottom of its history.
-On mobile, Today holds entry into history until a deliberate 900-point pull,
+On mobile, Today holds entry into history until a deliberate 597.6-point pull,
 capped at 85% of the usable scroll viewport height so release stays reachable
-on phones and smaller windows. The elastic curve requires 2.5 times the former
+on phones and smaller windows. The elastic curve requires 1.66 times the original
 finger travel for the same deflection.
 A continuous rubber-band curve gives the agenda visible initial movement and
 progressively stronger resistance, reaching up to about 75 points before release.
@@ -74,9 +74,11 @@ SwiftUI's scroll delegate; VoiceOver and Switch Control scrolling bypass it.
 Target selection exchanges locked value snapshots with the native adapter rather
 than accessing UIKit from the nonisolated behavior. A held pull's return commits
 that native target once, stopping deceleration, and animates an equal-and-opposite
-additive bounds displacement back to zero. The compositor owns the spring,
-without per-frame SwiftUI updates or moving the layout's Today anchor. A new
-touch picks up the current presentation position; navigation, relayout, detach
+additive translation of the agenda's content host back to zero. The viewport
+bounds, native scroll-edge blur and scroll indicators are not animated with the
+content. The compositor owns the spring, without per-frame SwiftUI updates or
+moving the layout's Today anchor. A new touch converts the content host's current
+presentation translation back into the native offset; navigation, relayout, detach
 and app deactivation cancel the owned animation. Regrabbing a return preserves
 its unbroken hold. Gesture setup recovers the touch-down position from native
 translation when SwiftUI's interaction phase arrives after the first movement;

@@ -43,7 +43,8 @@ struct UpcomingTodayAnchor: View {
 }
 
 struct UpcomingScrollDetentDrag: Sendable {
-    static let fullReleaseDistance: CGFloat = 900
+    private static let resistanceScale: CGFloat = 1.66
+    static let fullReleaseDistance: CGFloat = 360 * resistanceScale
     static let snapDistance: CGFloat = 48
     static let maximumSnapVelocity: CGFloat = 1_200
     let start: CGFloat
@@ -103,14 +104,14 @@ struct UpcomingScrollDetentDrag: Sendable {
 
     private static func stretch(_ pull: CGFloat) -> CGFloat {
         let dimension: CGFloat = 120
-        let elasticity: CGFloat = 0.55 / 2.5
+        let elasticity: CGFloat = 0.55 / resistanceScale
         return dimension * elasticity * pull / (dimension + elasticity * pull)
     }
 
     static func pull(forStretch distance: CGFloat, releaseDistance: CGFloat = fullReleaseDistance) -> CGFloat {
         let distance = min(stretch(releaseDistance), max(0, distance))
         // Regrabbing a pixel-rounded return must not pop the hold by itself.
-        return min(releaseDistance - 1, 120 * distance / ((0.55 / 2.5) * (120 - distance)))
+        return min(releaseDistance - 1, 120 * distance / ((0.55 / resistanceScale) * (120 - distance)))
     }
 
     func shouldSnap(offset: CGFloat, translation: CGFloat, velocity: CGFloat) -> Bool {
@@ -249,6 +250,14 @@ final class UpcomingScrollDetent {
 
     private var usesAssistiveScrolling: Bool {
         UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning
+    }
+
+    var contentLayer: CALayer? {
+        guard let scrollView, var content = anchor, content.isDescendant(of: scrollView) else { return nil }
+        while let parent = content.superview, parent !== scrollView {
+            content = parent
+        }
+        return content.layer
     }
 
     func attach(to scroll: UIScrollView) {
@@ -443,13 +452,13 @@ final class UpcomingScrollDetent {
     }
 
     private func animateOffset(to offset: CGFloat, displacement: CGFloat, returning: Bool) {
-        guard let scrollView else { return }
+        guard let scrollView, let contentLayer else { return }
         stopMotion(preservingPosition: false)
-        let completion = UpcomingScrollMotion(owner: self, returning: returning)
+        let completion = UpcomingScrollMotion(owner: self, layer: contentLayer, returning: returning)
         motion = completion
         let spring = Spring(response: returning ? 0.4 : 0.3, dampingRatio: 0.78)
-        let animation = CASpringAnimation(keyPath: "bounds.origin.y")
-        animation.fromValue = displacement
+        let animation = CASpringAnimation(keyPath: "transform.translation.y")
+        animation.fromValue = -displacement
         animation.toValue = 0
         animation.isAdditive = true
         animation.mass = spring.mass
@@ -457,25 +466,28 @@ final class UpcomingScrollDetent {
         animation.damping = spring.damping
         animation.duration = spring.settlingDuration
         animation.delegate = completion
-        // Commit the real offset once, then let the compositor release the
-        // equal-and-opposite displacement. No second per-frame scroll driver.
+        // Animate only the agenda host, never the viewport bounds: UIKit's
+        // native edge blur and scroll indicators must remain stationary.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         adjustingOffset = true
         scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: offset), animated: false)
         adjustingOffset = false
-        scrollView.layer.add(animation, forKey: UpcomingScrollMotion.key)
+        contentLayer.add(animation, forKey: UpcomingScrollMotion.key)
         CATransaction.commit()
         updateTargetState()
     }
 
     private func stopMotion(preservingPosition: Bool) {
-        guard motion != nil, let scrollView else { return }
-        let visibleOffset = scrollView.layer.presentation()?.bounds.origin.y ?? scrollView.contentOffset.y
-        motion = nil
+        guard let motion, let scrollView else { return }
+        let translation = motion.layer.map { layer in
+            (layer.presentation()?.transform.m42 ?? layer.transform.m42) - layer.transform.m42
+        } ?? 0
+        let visibleOffset = (scrollView.layer.presentation()?.bounds.origin.y ?? scrollView.contentOffset.y) - translation
+        self.motion = nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        scrollView.layer.removeAnimation(forKey: UpcomingScrollMotion.key)
+        motion.layer?.removeAnimation(forKey: UpcomingScrollMotion.key)
         if preservingPosition {
             adjustingOffset = true
             scrollView.setContentOffset(
@@ -497,11 +509,13 @@ final class UpcomingScrollDetent {
 fileprivate final class UpcomingScrollMotion: NSObject, CAAnimationDelegate {
     static let key = "plozz.upcoming.elasticity"
     let returning: Bool
+    weak var layer: CALayer?
     @MainActor private weak var owner: UpcomingScrollDetent?
 
     @MainActor
-    init(owner: UpcomingScrollDetent, returning: Bool) {
+    init(owner: UpcomingScrollDetent, layer: CALayer, returning: Bool) {
         self.owner = owner
+        self.layer = layer
         self.returning = returning
     }
 

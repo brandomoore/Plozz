@@ -35,7 +35,7 @@ final class TouchFeedbackInteractionTests: XCTestCase {
                 withVelocity: .slow, thenHoldForDuration: hold
             )
         }
-        let releasePull = min(900, try XCTUnwrap(initial["viewport"]) * 0.85) + 35
+        let releasePull = min(597.6, try XCTUnwrap(initial["viewport"]) * 0.85) + 35
         XCTAssertLessThan(startY + releasePull, app.frame.maxY - 30, "The stronger release must fit on screen")
         pull(420)
         let caught = expectation(
@@ -44,8 +44,8 @@ final class TouchFeedbackInteractionTests: XCTestCase {
         wait(for: [caught], timeout: 3)
         let held = try snapshot()
         XCTAssertGreaterThan(try XCTUnwrap(held["pull"]), 390, "The former 360-point release must now remain held")
-        XCTAssertGreaterThan(try XCTUnwrap(held["held"]), 45, "The agenda must visibly stretch, not remain pinned")
-        XCTAssertLessThan(try XCTUnwrap(held["held"]), 55, "The same pull must visibly meet stronger resistance")
+        XCTAssertGreaterThan(try XCTUnwrap(held["held"]), 60, "The tuned pull must be softer than the 2.5x curve")
+        XCTAssertLessThan(try XCTUnwrap(held["held"]), 67, "The pull must retain the requested 1.66x resistance")
         XCTAssertEqual(try XCTUnwrap(held["pops"]), 0, "The former threshold must no longer unlock history")
         XCTAssertEqual(try XCTUnwrap(held["catches"]), 1)
         XCTAssertEqual(try XCTUnwrap(held["offset"]), 0, accuracy: 1)
@@ -53,6 +53,8 @@ final class TouchFeedbackInteractionTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(held["returnTravel"]), 20)
         XCTAssertLessThan(try XCTUnwrap(held["returnModelDrift"]), 1,
                           "Actual native deceleration must not fight the return spring")
+        XCTAssertLessThan(try XCTUnwrap(held["viewportDrift"]), 1,
+                          "The viewport and native edge blur must not move with the return spring")
         attachScrub(app, name: "Upcoming returns after a real resisted pull")
 
         pull(releasePull, hold: 0)
@@ -68,6 +70,8 @@ final class TouchFeedbackInteractionTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(released["maximumTension"]), 0.9)
         XCTAssertGreaterThan(try XCTUnwrap(released["releaseFrames"]), 3,
                              "The pop must visibly animate while the finger remains down")
+        XCTAssertLessThan(try XCTUnwrap(released["viewportDrift"]), 1,
+                          "The release spring must also leave the native edge blur stationary")
         attachScrub(app, name: "Upcoming history after a real release pop")
     }
 
@@ -106,7 +110,7 @@ final class TouchFeedbackInteractionTests: XCTestCase {
             )
             let future = try snapshot()
             XCTAssertGreaterThan(try XCTUnwrap(future["offset"]), 250)
-            let distance = momentum ? 100 : min(900, try XCTUnwrap(future["viewport"]) * 0.85) + 35
+            let distance = momentum ? 100 : min(597.6, try XCTUnwrap(future["viewport"]) * 0.85) + 35
             upper.press(
                 forDuration: 0.05, thenDragTo: upper.withOffset(CGVector(dx: 0, dy: distance)),
                 withVelocity: momentum ? .fast : .slow, thenHoldForDuration: momentum ? 0 : 0.3

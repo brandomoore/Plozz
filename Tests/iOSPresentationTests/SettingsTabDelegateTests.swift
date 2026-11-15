@@ -124,6 +124,8 @@ final class SettingsTabDelegateTests: XCTestCase {
         detent: UpcomingScrollDetent, scroll: UIScrollView, today: CGFloat
     ) async throws {
         let animationKey = "plozz.upcoming.elasticity"
+        let contentLayer = try XCTUnwrap(detent.contentLayer)
+        XCTAssertTrue(contentLayer.superlayer === scroll.layer, "The agenda host is separate from viewport chrome")
         detent.reduceMotion = false
         var events: [TouchFeedback.Event] = []
         detent.onFeedback = { events.append($0) }
@@ -145,23 +147,27 @@ final class SettingsTabDelegateTests: XCTestCase {
             XCTAssertEqual(target.y, today, accuracy: 1)
             scroll.delegate?.scrollViewDidEndDragging?(scroll, willDecelerate: false)
             let deadline = Date().addingTimeInterval(3)
-            while scroll.layer.animation(forKey: animationKey) == nil, Date() < deadline {
+            while contentLayer.animation(forKey: animationKey) == nil, Date() < deadline {
                 try await Task.sleep(for: .milliseconds(5))
             }
-            XCTAssertNotNil(scroll.layer.animation(forKey: animationKey))
+            XCTAssertNotNil(contentLayer.animation(forKey: animationKey))
+            XCTAssertNil(scroll.layer.animation(forKey: animationKey))
         }
         func sampleMotion(at modelOffset: CGFloat) async throws -> [CGFloat] {
             var samples: [CGFloat] = []
             let deadline = Date().addingTimeInterval(3)
-            while scroll.layer.animation(forKey: animationKey) != nil, Date() < deadline {
-                samples.append(try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y)
+            while contentLayer.animation(forKey: animationKey) != nil, Date() < deadline {
+                let translation = try XCTUnwrap(contentLayer.presentation()).transform.m42 - contentLayer.transform.m42
+                samples.append(scroll.contentOffset.y - translation)
+                XCTAssertEqual(try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y, modelOffset, accuracy: 0.5,
+                               "The viewport and native edge blur must stay fixed while the agenda springs")
                 XCTAssertEqual(scroll.contentOffset.y, modelOffset, accuracy: 0.5,
                                "The spring must not compete with native scrolling frame by frame")
                 detent.updateAnchor()
                 XCTAssertEqual(try XCTUnwrap(detent.todayOffset), today, accuracy: 0.5)
                 try await Task.sleep(for: .milliseconds(10))
             }
-            XCTAssertNil(scroll.layer.animation(forKey: animationKey))
+            XCTAssertNil(contentLayer.animation(forKey: animationKey))
             XCTAssertGreaterThan(samples.count, 3, "Observe rendered motion, not just animation configuration")
             return samples
         }
@@ -190,7 +196,7 @@ final class SettingsTabDelegateTests: XCTestCase {
         while detent.phase != .interacting, Date() < grabDeadline {
             try await Task.sleep(for: .milliseconds(5))
         }
-        XCTAssertNil(scroll.layer.animation(forKey: animationKey))
+        XCTAssertNil(contentLayer.animation(forKey: animationKey))
         let grabbedOffset = scroll.contentOffset.y
         XCTAssertLessThan(grabbedOffset, today - 5, "A new touch must grab the visible spring, not jump to its target")
         var target = CGPoint(x: scroll.contentOffset.x, y: today - 900)
@@ -205,9 +211,13 @@ final class SettingsTabDelegateTests: XCTestCase {
 
         try await beginPull()
         scroll.contentOffset.y = today - 54.247
-        try await returnHeldPull()
         try await Task.sleep(for: .milliseconds(30))
+        try await returnHeldPull()
+        let visibleAtTap = try XCTUnwrap(scroll.layer.presentation()).bounds.origin.y
+            - (try XCTUnwrap(contentLayer.presentation()).transform.m42 - contentLayer.transform.m42)
         detent.phaseChanged(to: .tracking)
+        XCTAssertEqual(scroll.contentOffset.y, visibleAtTap, accuracy: 0.5,
+                       "A touch before the first spring frame must preserve the rendered offset")
         XCTAssertLessThan(scroll.contentOffset.y, today - 5)
         detent.phaseChanged(to: .idle)
         let afterTap = try await sampleMotion(at: today)

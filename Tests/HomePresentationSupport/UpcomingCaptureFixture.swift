@@ -518,6 +518,7 @@ struct UpcomingCaptureFixture: View {
             var returnFrames = 0
             var returnTravel: Double = 0
             var returnModelDrift: Double = 0
+            var viewportDrift: Double = 0
             var releaseFrames = 0
             var viewport: Double = 0
             var viewportTop: Double = 0
@@ -585,7 +586,7 @@ struct UpcomingCaptureFixture: View {
             ).y
             if detent.phase == .tracking, previousPhase != .tracking {
                 interruptedMotion = previousPhase == .decelerating
-                    || scroll.layer.animation(forKey: "plozz.upcoming.elasticity") != nil
+                    || detent.contentLayer?.animation(forKey: "plozz.upcoming.elasticity") != nil
             }
             if detent.phase == .interacting, previousPhase != .interacting {
                 gestureOrigin = previousOffset
@@ -602,12 +603,19 @@ struct UpcomingCaptureFixture: View {
                 evidence.pull = max(evidence.pull, scroll.panGestureRecognizer.translation(in: window).y)
                 if evidence.pops == 0 { evidence.held = max(evidence.held, -evidence.offset) }
             }
-            if let animation = scroll.layer.animation(forKey: "plozz.upcoming.elasticity") as? CASpringAnimation,
+            if let contentLayer = detent.contentLayer,
+               let animation = contentLayer.animation(forKey: "plozz.upcoming.elasticity") as? CASpringAnimation,
                let displacement = animation.fromValue as? NSNumber,
-               let presentation = scroll.layer.presentation() {
-                if displacement.doubleValue < 0 {
+               let presentation = contentLayer.presentation(),
+               let viewportPresentation = scroll.layer.presentation() {
+                evidence.viewportDrift = max(
+                    evidence.viewportDrift, abs(viewportPresentation.bounds.origin.y - scroll.contentOffset.y)
+                )
+                if displacement.doubleValue > 0 {
                     evidence.returnFrames += 1
-                    evidence.returnTravel = max(evidence.returnTravel, abs(presentation.bounds.origin.y - today))
+                    evidence.returnTravel = max(
+                        evidence.returnTravel, abs(presentation.transform.m42 - contentLayer.transform.m42)
+                    )
                     evidence.returnModelDrift = max(evidence.returnModelDrift, abs(evidence.offset))
                 } else if detent.phase == .interacting {
                     evidence.releaseFrames += 1
