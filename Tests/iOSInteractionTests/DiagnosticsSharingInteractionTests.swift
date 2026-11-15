@@ -59,9 +59,11 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
             launch(arguments: ["--diagnostics-onboarding"] + (isLight ? ["--light"] : []))
             let info = app.buttons["About Diagnostic Sharing"]
             XCTAssertTrue(info.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertLessThanOrEqual(info.frame.width, 44)
+            XCTAssertLessThanOrEqual(info.frame.height, 44)
             try assertNeutralInk(info)
             capture("onboarding-neutral-\(isLight ? "light" : "dark")")
-            info.tap()
+            tapInfoTargetEdge(info)
             let done = app.buttons["Done"]
             XCTAssertTrue(done.waitForExistence(timeout: 5))
             capture("onboarding-information-neutral-\(isLight ? "light" : "dark")")
@@ -89,10 +91,8 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
             XCTAssertEqual(repository.label, "GitHub repo")
             let info = app.buttons["About Diagnostic Sharing"]
             XCTAssertTrue(info.isHittable)
-            XCTAssertGreaterThanOrEqual(info.frame.width, 44)
-            XCTAssertGreaterThanOrEqual(info.frame.height, 44)
             capture("onboarding-simple")
-            info.tap()
+            tapInfoTargetEdge(info)
             XCTAssertTrue(app.staticTexts["Automatic Reports"].waitForExistence(timeout: 5))
             XCTAssertEqual(disclosures.count, 2)
             XCTAssertTrue(app.staticTexts[
@@ -162,11 +162,9 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         launch()
         let info = app.buttons["diagnostics-information-button"]
         XCTAssertTrue(info.waitForExistence(timeout: 10))
-        XCTAssertGreaterThanOrEqual(info.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(info.frame.height, 44)
         let disclosures = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "through Sentry"))
         XCTAssertEqual(disclosures.count, 0, "Detailed disclosures should not crowd the settings page.")
-        info.tap()
+        tapInfoTargetEdge(info)
         XCTAssertTrue(app.staticTexts["Automatic Reports"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Manual Reports"].exists)
         XCTAssertEqual(disclosures.count, 2)
@@ -176,6 +174,13 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         XCTAssertTrue(info.waitForExistence(timeout: 5))
         XCTAssertEqual(app.switches["diagnostics-sharing-toggle"].value as? String, "0")
         XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "0")
+    }
+
+    private func tapInfoTargetEdge(_ info: XCUIElement) {
+        // Exercise a 44-point touch target, not just the smaller native glass bounds.
+        info.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: 0, dy: -21))
+            .tap()
     }
 
     private func launch(arguments: [String] = []) {

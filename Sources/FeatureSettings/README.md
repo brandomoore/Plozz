@@ -315,14 +315,15 @@ use the shared Settings card, with
 48-point content insets on tvOS and the standard card insets on mobile.
 Like other first-use prompts, it supplies the palette's neutral accent to native
 controls rather than inheriting the system-blue tint.
-Its circular info button uses the same native secondary action style as
-Don't Share (Liquid Glass where available) and sits 12 points inside the card's
-top-trailing corner, independently of its content insets. It opens the shared
-sheet with detailed disclosures, the optional-sharing explanation and the Privacy
-Policy link; opening or
-dismissing it does not choose consent. The footer contains only the GitHub repo
-link, which opens the repository
-on mobile or a scannable QR sheet on Apple TV; opening it does not grant consent.
+Its circular info button uses regular native control sizing and the same secondary
+action style as Don't Share (Liquid Glass where available). The 44-point minimum
+target wraps the styled button rather than enlarging its label and glass surface.
+It sits 12 points inside the card's top-trailing corner, independently of its
+content insets. It opens the shared sheet with detailed disclosures, the
+optional-sharing explanation and the Privacy Policy link; opening or dismissing
+it does not choose consent. The footer contains only the GitHub repo link, which
+opens the repository on mobile or a scannable QR sheet on Apple TV; opening it
+does not grant consent.
 
 Settings and the consent screen also expose **Privacy Policy**, opening the
 public policy on mobile or its URL and QR code on Apple TV. `SettingsCopy` keeps
