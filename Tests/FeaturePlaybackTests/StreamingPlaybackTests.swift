@@ -1630,6 +1630,48 @@ final class StreamingPlaybackTests: XCTestCase {
         await model.stop()
     }
 
+    func testStreamingAudioSelectionHonorsOrderedLanguagesAndManualChoice() {
+        let english = MediaTrack(id: 3, kind: .audio, displayTitle: "English", language: "eng", isDefault: true)
+        let japanese = MediaTrack(id: 4, kind: .audio, displayTitle: "Japanese", language: "jpn")
+        let tracks = [english, japanese]
+        var options = StreamingPlaybackOptions(quality: .hd720)
+        options.preferredAudioLanguages = ["fr", "ja", "en"]
+        XCTAssertEqual(options.selectedAudio(in: tracks)?.id, japanese.id)
+        options.audioTrack = english
+        XCTAssertEqual(options.selectedAudio(in: tracks)?.id, english.id)
+        options.audioTrack = nil
+        options.preferredAudioLanguages = ["fr"]
+        XCTAssertEqual(options.selectedAudio(in: tracks)?.id, english.id)
+    }
+
+    func testRememberedMovieAudioReachesTheServerBeforeRenditionSelection() async throws {
+        for includesBrowserItem in [true, false] {
+            let suite = "StreamingTitleMemory-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let store = SeriesTrackPreferenceStore(defaults: defaults)
+            let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+            let memory = SeriesTrackMemory(store: store, accountFallbackID: "test",
+                                           rememberAudio: false, rememberSubtitle: false)
+            memory.recordAudioSelection(language: "jpn", for: item)
+            let provider = QualityPlaybackProvider()
+            let engine = QualityEngine()
+            let model = PlayerViewModel(
+                provider: provider, itemID: item.id, episodeItem: includesBrowserItem ? item : nil,
+                playbackSettings: .init(rememberAudioTrackPerSeries: false),
+                streamingOptions: .init(quality: .hd720),
+                seriesTrackStore: store, seriesAccountFallbackID: "test",
+                engineFactory: .init(makeNative: { _ in engine })
+            )
+            await model.load()
+            let calls = await provider.calls
+            XCTAssertEqual(model.phase, .ready)
+            XCTAssertEqual(calls.first?.options.preferredAudioLanguages, ["ja"])
+            XCTAssertEqual(calls.first?.options.selectedAudio(in: engine.audioTracks)?.id, 4)
+            await model.stop()
+        }
+    }
+
     func testRenditionSwitchRetainsManualAudioAndSubtitleSelections() async {
         let (model, engine, provider) = make(options: .init(quality: .original))
         await model.load()

@@ -560724,6 +560724,7 @@
       }
     },
     "Normal (Default)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {

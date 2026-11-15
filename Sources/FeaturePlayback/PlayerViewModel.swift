@@ -260,6 +260,7 @@ public final class PlayerViewModel {
     /// The item already selected by the UI. When it has a completed local copy,
     /// playback can start without first contacting the provider.
     private let offlineItem: MediaItem?
+    private let initialPlaybackItem: MediaItem?
     @ObservationIgnored private var discEntryOverride: DiscPlaybackBehavior?
     @ObservationIgnored private var discRegionOverride: UInt32?
     @ObservationIgnored private var discVideoSelection: (source: PlaybackSource, playlist: Int, featureResume: TimeInterval)?
@@ -806,6 +807,7 @@ public final class PlayerViewModel {
         self.playbackSourceAccountID =
             episodeItem?.sourceAccountID ?? offlineItem?.sourceAccountID ?? seriesAccountFallbackID
         self.offlineItem = offlineItem
+        self.initialPlaybackItem = episodeItem ?? offlineItem
         self.discEntryOverride = offlineItem?.discPlaybackOverride ?? episodeItem?.discPlaybackOverride
             ?? ((offlineItem ?? episodeItem)?.discMenuAvailability?.canAttempt == false ? .playVideo : nil)
         self.mediaSourceID = mediaSourceID
@@ -818,7 +820,7 @@ public final class PlayerViewModel {
         self.spoilerSettings = spoilerSettings
         self.seriesMemory = SeriesTrackMemory(
             store: seriesTrackStore,
-            accountFallbackID: seriesAccountFallbackID,
+            accountFallbackID: self.playbackSourceAccountID,
             rememberAudio: playbackSettings.rememberAudioTrackPerSeries,
             rememberSubtitle: playbackSettings.rememberSubtitleTrackPerSeries
         )
@@ -1576,7 +1578,15 @@ public final class PlayerViewModel {
             options.startPosition = itemID == self.itemID ? startPosition : 0
             if itemID == self.itemID, let retry = streamingQuality.fallbackCodec { options.codec = retry }
             let source = itemID == self.itemID ? (streamingMediaSourceID ?? mediaSourceID) : mediaSourceID
-            if let item = offlineItem {
+            let preferenceItem: MediaItem?
+            if let known = offlineCandidate ?? initialPlaybackItem, known.id == itemID {
+                preferenceItem = known
+            } else if seriesMemory.store != nil {
+                preferenceItem = try await provider.item(id: itemID)
+            } else {
+                preferenceItem = nil
+            }
+            if let item = preferenceItem {
                 options.preferredAudioLanguages = preferredAudioLanguages(
                     for: item, originalLanguage: await resolvedOriginalAudioLanguage(for: item)
                 )

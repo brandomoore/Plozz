@@ -611,6 +611,7 @@ targets:
       - path: Tests/FeaturePlaybackTests/VideoNowPlayingCoordinatorTests.swift
       - path: Tests/FeaturePlaybackTests/SystemPlaybackAudioTests.swift
       - path: Tests/FeaturePlaybackTests/SeriesTrackMemoryTests.swift
+      - path: Tests/FeaturePlaybackTests/StreamingPlaybackTests.swift
       - path: Tests/FeaturePlaybackTests/SubtitleTrackControllerTests.swift
       - path: Tests/CoreModelsTests/SeriesTrackPreferenceStoreTests.swift
       - path: Tests/FeatureLiveTVCoreTests/LiveTVPlaybackCoordinatorTests.swift

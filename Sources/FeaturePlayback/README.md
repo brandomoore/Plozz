@@ -1532,6 +1532,10 @@ provider default when unavailable. Audio memory captures the outgoing title befo
 a server-rendition replacement clears its request. Series audio/subtitle toggles
 and series-only subtitle memory are unchanged. Storage is read during playback
 setup and written for manual choices, not during frame analysis or seeking.
+Server-rendition selection receives remembered language before requesting the
+stream, using the selected title's metadata or a passive provider metadata read
+when an ID-only caller has no item. Next-title preparation must not reuse the
+outgoing title's preference metadata.
 
 Dark picture content can establish a crop without reaching a bright-scene
 average: the detector also accepts a broadly supported center distinguishable

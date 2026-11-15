@@ -50,6 +50,50 @@ final class PlayerViewModelEOFTests: XCTestCase {
     }
 
     #if canImport(UIKit)
+    func testMoviePreferencesUseSelectedAccountWhenResolvedItemIsUntagged() async throws {
+        let suite = "TitleAccountMemory-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = SeriesTrackPreferenceStore(defaults: defaults)
+        let tracks = [
+            MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "eng", isDefault: true),
+            MediaTrack(id: 2, kind: .audio, displayTitle: "French", language: "fra")
+        ]
+        for account in ["secondary", "primary", "secondary"] {
+            let item = MediaItem(id: "1", title: "Film", kind: .movie,
+                                 providerIDs: ["Imdb": account == "secondary" ? "tt123" : "tt456"])
+            var selected = item
+            selected.sourceAccountID = account
+            let engine = SpyVideoEngine()
+            engine.supportsActivePictureAnalysis = true
+            engine.audioTracks = tracks
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mp4")!,
+                               audioTracks: tracks), kind: .plex
+            )
+            let model = PlayerViewModel(
+                provider: provider, itemID: item.id, episodeItem: selected,
+                seriesTrackStore: store, seriesAccountFallbackID: "primary",
+                engineFactory: .init(makeNative: { _ in engine })
+            )
+            await model.load()
+            XCTAssertEqual(model.phase, .ready)
+            if account == "primary" {
+                XCTAssertFalse(engine.lastLoadedRequest?.preferredAudioLanguages.contains("fr") ?? false)
+                XCTAssertEqual(model.controls.videoZoom.settings, .onDemandDefault)
+            } else {
+                model.selectAudioOption(id: 2)
+                model.controls.videoZoom.setCustomPercent(117)
+                let memory = SeriesTrackMemory(store: store, accountFallbackID: account,
+                                               rememberAudio: false, rememberSubtitle: false)
+                XCTAssertEqual(memory.rememberedAudioLanguage(for: item), "fr")
+                XCTAssertEqual(store.preference(forKey: try XCTUnwrap(memory.localKey(for: item)))?.videoZoom,
+                               .init(mode: .custom, customPercent: 117))
+            }
+            await model.stop()
+        }
+    }
+
     func testMovieLanguageAndZoomRestoreBeforeLoadAcrossProfilesAndProviders() async throws {
         for kind in [ProviderKind.jellyfin, .plex] {
             let suite = "TitlePlayback-\(UUID().uuidString)"
