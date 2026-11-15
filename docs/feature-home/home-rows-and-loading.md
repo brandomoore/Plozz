@@ -36,13 +36,16 @@ the viewport height so a sparse agenda can align below the native toolbar withou
 being clamped to the bottom of its history.
 On mobile, Today is a soft scroll detent. Pulling into history gradually changes
 from quarter-speed resistance to normal finger tracking over 120 points; a shorter
-pull into history settles at Today. A projected landing
-within 48 points of Today also settles there, using native scroll deceleration.
+pull into history settles at Today. Releasing within 48 points of Today also
+settles there unless it is a fast pass-through fling. This uses the actual release
+position, not the distant projected end of deceleration. SwiftUI scroll-phase
+events trigger the settle; momentum stops before the native animated scroll begins.
+Deceleration that naturally stops within the same range also settles at Today.
 Deliberate longer pulls, ordinary future scrolling, and calendar jumps remain
 available; a far fling is not captured merely for passing Today. Native outer-edge
 bounce is unchanged, and recycled date anchors cannot retain stale snap geometry.
-The page-scoped native adapter forwards the existing scroll delegate
-and restores it on removal; VoiceOver and Switch Control scrolling bypass it.
+The page-scoped adapter observes native content-offset changes without replacing
+SwiftUI's scroll delegate; VoiceOver and Switch Control scrolling bypass it.
 Reduce Motion uses a nonanimated settle.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
@@ -73,6 +76,9 @@ Upcoming date headings use the shared rail typography. Each date uses standard
 poster cards with shared captions, artwork, and focus behavior. Mobile fits whole
 columns to the actual agenda width after the calendar and shared page insets,
 resizing the artwork itself while retaining the normal visible card gaps.
+Compact layouts use Home's responsive poster sizes as the grid's starting point,
+fitting three whole posters across standard-width phones instead of two oversized
+cards. Smaller phones, density preferences, and wider windows retain responsive sizing.
 Every date uses the same column widths, including sparse dates and partial final
 rows. TV retains its standard adaptive poster slots. Episode numbers
 or grouped episode counts appear in the poster's subtitle, without extra containers

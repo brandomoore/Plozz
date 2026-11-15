@@ -24,6 +24,7 @@ struct UpcomingTodayAnchor: View {
 struct UpcomingScrollDetentDrag {
     static let releaseDistance: CGFloat = 120
     static let snapDistance: CGFloat = 48
+    static let maximumSnapVelocity: CGFloat = 1_200
     let start: CGFloat
     let translation: CGFloat
     let today: CGFloat
@@ -40,23 +41,24 @@ struct UpcomingScrollDetentDrag {
         return today - resisted - max(0, pull - distance)
     }
 
-    func target(proposed: CGFloat, translation: CGFloat) -> CGFloat {
+    func shouldSnap(offset: CGFloat, translation: CGFloat, velocity: CGFloat) -> Bool {
         let raw = start - (translation - self.translation)
-        if start >= today - 2, raw < today, raw > today - Self.releaseDistance, proposed < today {
-            return today
+        if start >= today - 2, raw < today, raw > today - Self.releaseDistance {
+            return true
         }
-        return abs(proposed - today) <= Self.snapDistance ? today : proposed
+        return abs(offset - today) <= Self.snapDistance && abs(velocity) < Self.maximumSnapVelocity
     }
 }
 
 @MainActor
-final class UpcomingScrollDetent: NSObject, UIScrollViewDelegate {
+final class UpcomingScrollDetent {
     private(set) weak var scrollView: UIScrollView?
-    private weak var previousDelegate: UIScrollViewDelegate?
     private weak var anchor: UIView?
     private(set) var todayOffset: CGFloat?
+    private(set) var phase = ScrollPhase.idle
+    private var offsetObservation: NSKeyValueObservation?
     private var drag: UpcomingScrollDetentDrag?
-    private var settlingOffset: CGFloat?
+    private var settleTask: Task<Void, Never>?
     private var adjustingOffset = false
     private var hasResisted = false
     var reduceMotion = false
@@ -69,23 +71,26 @@ final class UpcomingScrollDetent: NSObject, UIScrollViewDelegate {
         if scrollView !== scroll {
             detach()
             scrollView = scroll
-        }
-        if scroll.delegate !== self {
-            previousDelegate = scroll.delegate
-            scroll.delegate = self
+            offsetObservation = scroll.observe(\.contentOffset) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.offsetChanged() }
+            }
         }
         updateAnchor()
     }
 
     func detach() {
-        if let scrollView, scrollView.delegate === self {
-            scrollView.delegate = previousDelegate
-        }
+        cancelInteraction()
+        offsetObservation?.invalidate()
+        offsetObservation = nil
         scrollView = nil
-        previousDelegate = nil
         todayOffset = nil
+        phase = .idle
+    }
+
+    func cancelInteraction() {
+        settleTask?.cancel()
+        settleTask = nil
         drag = nil
-        settlingOffset = nil
         hasResisted = false
     }
 
@@ -98,8 +103,7 @@ final class UpcomingScrollDetent: NSObject, UIScrollViewDelegate {
         if anchor === view {
             anchor = nil
             todayOffset = nil
-            drag = nil
-            settlingOffset = nil
+            cancelInteraction()
         }
     }
 
@@ -108,18 +112,29 @@ final class UpcomingScrollDetent: NSObject, UIScrollViewDelegate {
               anchor.isDescendant(of: scrollView) else { return }
         let offset = anchor.convert(.zero, to: scrollView).y - scrollView.adjustedContentInset.top
         if let todayOffset, abs(offset - todayOffset) > 1 {
-            drag = nil
-            settlingOffset = nil
+            cancelInteraction()
         }
         todayOffset = offset
     }
 
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        previousDelegate?.scrollViewWillBeginDragging?(scrollView)
+    func phaseChanged(from oldPhase: ScrollPhase, to newPhase: ScrollPhase, velocity: CGFloat) {
+        phase = newPhase
+        if newPhase == .tracking {
+            cancelInteraction()
+            beginInteraction()
+        } else if newPhase == .interacting, drag == nil {
+            beginInteraction()
+        } else if oldPhase == .interacting, newPhase == .decelerating || newPhase == .idle {
+            endInteraction(velocity: velocity)
+        } else if oldPhase == .decelerating, newPhase == .idle, settleTask == nil {
+            endInteraction(velocity: 0)
+        }
+    }
+
+    private func beginInteraction() {
         updateAnchor()
-        settlingOffset = nil
+        guard !usesAssistiveScrolling, let scrollView, let todayOffset else { return }
         hasResisted = false
-        guard !usesAssistiveScrolling, let todayOffset else { drag = nil; return }
         drag = UpcomingScrollDetentDrag(
             start: scrollView.contentOffset.y,
             translation: scrollView.panGestureRecognizer.translation(in: scrollView.window).y,
@@ -127,10 +142,10 @@ final class UpcomingScrollDetent: NSObject, UIScrollViewDelegate {
         )
     }
 
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard !adjustingOffset else { return }
+    private func offsetChanged() {
+        guard !adjustingOffset, let scrollView else { return }
         updateAnchor()
-        if scrollView.isDragging, !usesAssistiveScrolling, let drag, drag.start >= drag.today - 2 {
+        if phase == .interacting, !usesAssistiveScrolling, let drag, drag.start >= drag.today - 2 {
             let translation = scrollView.panGestureRecognizer.translation(in: scrollView.window).y
             let raw = drag.start - (translation - drag.translation)
             hasResisted = hasResisted || raw < drag.today
@@ -143,7 +158,6 @@ final class UpcomingScrollDetent: NSObject, UIScrollViewDelegate {
                 // behavior to UIKit instead of clamping the scroll position.
                 guard y > minimum, y < maximum else {
                     self.drag = nil
-                    previousDelegate?.scrollViewDidScroll?(scrollView)
                     return
                 }
                 if abs(y - scrollView.contentOffset.y) > 0.01 {
@@ -153,46 +167,32 @@ final class UpcomingScrollDetent: NSObject, UIScrollViewDelegate {
                 }
             }
         }
-        previousDelegate?.scrollViewDidScroll?(scrollView)
     }
 
-    func scrollViewWillEndDragging(
-        _ scrollView: UIScrollView, withVelocity velocity: CGPoint,
-        targetContentOffset: UnsafeMutablePointer<CGPoint>
-    ) {
-        previousDelegate?.scrollViewWillEndDragging?(
-            scrollView, withVelocity: velocity, targetContentOffset: targetContentOffset
-        )
-        guard !usesAssistiveScrolling, let todayOffset else { return }
-        let proposed = targetContentOffset.pointee.y
-        let target = drag?.target(
-            proposed: proposed,
-            translation: scrollView.panGestureRecognizer.translation(in: scrollView.window).y
-        ) ?? (abs(proposed - todayOffset) <= UpcomingScrollDetentDrag.snapDistance ? todayOffset : proposed)
-        if target == todayOffset {
-            settlingOffset = target
-            targetContentOffset.pointee.y = reduceMotion ? scrollView.contentOffset.y : target
-        }
-    }
-
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    private func endInteraction(velocity: CGFloat) {
+        let completedDrag = drag
         drag = nil
-        previousDelegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
-        if let settlingOffset, !decelerate || reduceMotion {
-            scrollView.setContentOffset(
-                CGPoint(x: scrollView.contentOffset.x, y: settlingOffset), animated: !reduceMotion
-            )
+        guard !usesAssistiveScrolling, let scrollView, let todayOffset else { return }
+        let current = scrollView.contentOffset.y
+        let shouldSnap = completedDrag?.shouldSnap(
+            offset: current,
+            translation: scrollView.panGestureRecognizer.translation(in: scrollView.window).y,
+            velocity: velocity
+        ) ?? (abs(current - todayOffset) <= UpcomingScrollDetentDrag.snapDistance
+            && abs(velocity) < UpcomingScrollDetentDrag.maximumSnapVelocity)
+        guard shouldSnap, abs(current - todayOffset) > 0.5 else { return }
+        // Stop momentum before starting the native settle, on the next turn.
+        // Otherwise UIKit can consume the animated request while decelerating.
+        scrollView.setContentOffset(scrollView.contentOffset, animated: false)
+        settleTask?.cancel()
+        settleTask = Task { @MainActor [weak self, weak scrollView] in
+            await Task.yield()
+            guard !Task.isCancelled, let self, let scrollView,
+                  self.scrollView === scrollView, !self.usesAssistiveScrolling,
+                  self.phase != .tracking, self.phase != .interacting,
+                  let target = self.todayOffset else { return }
+            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: target), animated: !self.reduceMotion)
         }
-        settlingOffset = nil
-    }
-
-    override func responds(to selector: Selector!) -> Bool {
-        super.responds(to: selector) || previousDelegate?.responds(to: selector) == true
-    }
-
-    override func forwardingTarget(for selector: Selector!) -> Any? {
-        if previousDelegate?.responds(to: selector) == true { return previousDelegate }
-        return super.forwardingTarget(for: selector)
     }
 }
 

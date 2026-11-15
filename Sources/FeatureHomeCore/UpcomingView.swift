@@ -49,6 +49,7 @@
                                 minimumSelectedHeight: agendaHeight, contentWidth: agendaContentWidth
                             )
                             #if os(iOS)
+                            .environment(\.plozzMetrics, agendaMetrics)
                             .environment(\.upcomingScrollDetent, todayDetent)
                             .background {
                                 UpcomingScrollProbe(detent: todayDetent, role: .container, reduceMotion: reduceMotion)
@@ -72,6 +73,9 @@
                         .contentMargins(.horizontal, agendaInset, for: .scrollContent)
                         .contentMargins(.vertical, 16, for: .scrollContent)
                         .scrollPosition(id: $scrollDay, anchor: .top)
+                        .onScrollPhaseChange { oldPhase, newPhase, context in
+                            todayDetent.phaseChanged(from: oldPhase, to: newPhase, velocity: context.velocity?.dy ?? 0)
+                        }
                         .modifier(UpcomingScrollEdge())
                         .task(id: agendaSize.width) {
                             guard agendaSize.width > 0 else { return }
@@ -80,6 +84,7 @@
                             proxy.scrollTo(scrollDay ?? selectedDay, anchor: .top)
                         }
                         .onChange(of: selectedDay) { _, day in
+                            todayDetent.cancelInteraction()
                             scrollDay = day
                         }
                         #else
@@ -181,6 +186,15 @@
         }
 
         #if os(iOS)
+        private var agendaMetrics: PlozzMetrics {
+            guard sizeClass == .compact else { return metrics }
+            return PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
+                in: agendaSize.width,
+                inset: PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
+                metrics: metrics, cardStyle: cardStyle
+            )
+        }
+
         private var agendaInset: CGFloat {
             PlozziOSMediaRailLayout.artworkAlignedInset(
                 PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),

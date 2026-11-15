@@ -8,11 +8,11 @@ final class UpcomingScrollDetentTests: XCTestCase {
         let drag = UpcomingScrollDetentDrag(start: 1_000, translation: 0, today: 1_000)
         XCTAssertGreaterThan(drag.offset(translation: 40), 985)
         XCTAssertLessThan(drag.offset(translation: 40), 1_000)
-        XCTAssertEqual(drag.target(proposed: 400, translation: 40), 1_000)
+        XCTAssertTrue(drag.shouldSnap(offset: 987, translation: 40, velocity: -600))
         XCTAssertEqual(drag.offset(translation: -80), 1_080)
-        XCTAssertEqual(drag.target(proposed: 1_300, translation: -80), 1_300)
+        XCTAssertFalse(drag.shouldSnap(offset: 1_080, translation: -80, velocity: 600))
         XCTAssertEqual(drag.offset(translation: 180), 865)
-        XCTAssertEqual(drag.target(proposed: 600, translation: 180), 600)
+        XCTAssertFalse(drag.shouldSnap(offset: 865, translation: 180, velocity: -600))
     }
 
     func testResistanceIsContinuousAndRegainsFingerSpeed() {
@@ -28,22 +28,21 @@ final class UpcomingScrollDetentTests: XCTestCase {
         XCTAssertEqual(drag.offset(translation: 121), 924, accuracy: 0.001)
     }
 
-    func testOnlyNearbyLandingsSnapAndHistoryIsNotTrapped() {
+    func testOnlyNearbyReleasesSnapAndHistoryIsNotTrapped() {
         let history = UpcomingScrollDetentDrag(start: 700, translation: 0, today: 1_000)
         XCTAssertEqual(history.offset(translation: 80), 620)
-        XCTAssertEqual(history.target(proposed: 970, translation: -250), 1_000)
-        XCTAssertEqual(history.target(proposed: 1_035, translation: -300), 1_000)
-        XCTAssertEqual(history.target(proposed: 850, translation: -100), 850)
-        XCTAssertEqual(history.target(proposed: 1_400, translation: -400), 1_400)
+        XCTAssertTrue(history.shouldSnap(offset: 970, translation: -270, velocity: 600))
+        XCTAssertTrue(history.shouldSnap(offset: 1_035, translation: -335, velocity: -600))
+        XCTAssertFalse(history.shouldSnap(offset: 850, translation: -150, velocity: 0))
+        XCTAssertFalse(history.shouldSnap(offset: 1_035, translation: -335, velocity: 2_000))
         let future = UpcomingScrollDetentDrag(start: 1_300, translation: 0, today: 1_000)
-        XCTAssertEqual(future.target(proposed: 600, translation: 100), 600,
-                       "A far fling must not be caught just because it passes Today")
-        XCTAssertEqual(future.target(proposed: 970, translation: 100), 1_000)
-        XCTAssertEqual(future.target(proposed: 600, translation: 450), 600)
+        XCTAssertFalse(future.shouldSnap(offset: 1_200, translation: 100, velocity: -2_000))
+        XCTAssertTrue(future.shouldSnap(offset: 1_030, translation: 270, velocity: -600))
+        XCTAssertFalse(future.shouldSnap(offset: 895, translation: 450, velocity: -600))
     }
 
     @MainActor
-    func testNativeAdapterPreservesProgrammaticNavigationAndRestoresDelegate() {
+    func testOffsetObservationResistsAndReversesWithoutTakingTheNativeDelegate() {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let scroll = DetentTestScrollView(frame: window.bounds)
         scroll.contentInsetAdjustmentBehavior = .never
@@ -58,33 +57,25 @@ final class UpcomingScrollDetentTests: XCTestCase {
         detent.setAnchor(anchor)
         detent.attach(to: scroll)
         XCTAssertEqual(detent.todayOffset, 1_000)
-        XCTAssertTrue(scroll.delegate === detent)
+        XCTAssertTrue(scroll.delegate === previous)
 
         scroll.contentOffset.y = 1_000
-        detent.scrollViewWillBeginDragging(scroll)
-        scroll.testDragging = true
+        detent.phaseChanged(from: .idle, to: .tracking, velocity: 0)
+        detent.phaseChanged(from: .tracking, to: .interacting, velocity: 0)
         scroll.testPan.setTranslation(CGPoint(x: 0, y: 40), in: window)
         scroll.contentOffset.y = 960
-        detent.scrollViewDidScroll(scroll)
         XCTAssertGreaterThan(scroll.contentOffset.y, 985)
         scroll.testPan.setTranslation(CGPoint(x: 0, y: -20), in: window)
         scroll.contentOffset.y += 60
-        detent.scrollViewDidScroll(scroll)
         XCTAssertEqual(scroll.contentOffset.y, 1_020, "Reversing must not retain the resistance displacement")
         scroll.testPan.setTranslation(CGPoint(x: 0, y: 40), in: window)
         scroll.contentOffset.y -= 60
-        detent.scrollViewDidScroll(scroll)
-        var target = CGPoint(x: 0, y: 400)
-        detent.scrollViewWillEndDragging(scroll, withVelocity: CGPoint(x: 0, y: -2), targetContentOffset: &target)
-        XCTAssertEqual(target.y, 1_000)
-        XCTAssertEqual(previous.begins, 1)
-        XCTAssertEqual(previous.ends, 1)
+        XCTAssertGreaterThan(scroll.contentOffset.y, 985)
         XCTAssertGreaterThan(previous.scrolls, 0)
-        let forwarded: UIScrollViewDelegate = detent
-        XCTAssertEqual(forwarded.scrollViewShouldScrollToTop?(scroll), false)
+        XCTAssertTrue(scroll.delegate === previous)
+        XCTAssertEqual(scroll.delegate?.scrollViewShouldScrollToTop?(scroll), false)
 
-        scroll.testDragging = false
-        detent.scrollViewDidEndDragging(scroll, willDecelerate: true)
+        detent.cancelInteraction()
         scroll.contentOffset.y = 300
         XCTAssertEqual(scroll.contentOffset.y, 300, "Calendar navigation must bypass the detent")
         detent.detach()
@@ -106,25 +97,33 @@ final class UpcomingScrollDetentTests: XCTestCase {
         detent.attach(to: scroll)
         defer { detent.detach() }
         scroll.contentOffset.y = 1_000
-        detent.scrollViewWillBeginDragging(scroll)
-        scroll.testDragging = true
+        detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
         scroll.testPan.setTranslation(CGPoint(x: 0, y: 1_200), in: window)
         scroll.contentOffset.y = -40
-        detent.scrollViewDidScroll(scroll)
         XCTAssertEqual(scroll.contentOffset.y, -40, "Do not clamp UIKit's outer-edge bounce")
         detent.removeAnchor(anchor)
         XCTAssertNil(detent.todayOffset, "A recycled lazy date must not leave stale snap geometry")
-        var target = CGPoint(x: 0, y: 980)
-        detent.scrollViewWillEndDragging(scroll, withVelocity: .zero, targetContentOffset: &target)
-        XCTAssertEqual(target.y, 980)
+        scroll.contentOffset.y = 980
+        detent.phaseChanged(from: .interacting, to: .idle, velocity: 0)
+        XCTAssertEqual(scroll.contentOffset.y, 980)
         anchor.frame.origin.y = 1_010
         detent.setAnchor(anchor)
-        detent.scrollViewWillEndDragging(scroll, withVelocity: .zero, targetContentOffset: &target)
-        XCTAssertEqual(target.y, 1_010, "Returning near a remounted Today uses its new geometry")
+        XCTAssertEqual(detent.todayOffset, 1_010)
     }
 
     @MainActor
-    func testReducedMotionSettlesWithoutAnAnimatedScroll() {
+    func testReleaseNearTodaySettlesWithMomentumAndHonorsReducedMotion() async {
+        await verifySettle(reduceMotion: false)
+        await verifySettle(reduceMotion: true)
+    }
+
+    @MainActor
+    func testDecelerationEndingNearTodaySettlesEvenWhenReleaseWasFarAway() async {
+        await verifySettle(reduceMotion: false, deceleratesIntoRange: true)
+    }
+
+    @MainActor
+    private func verifySettle(reduceMotion: Bool, deceleratesIntoRange: Bool = false) async {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let scroll = DetentTestScrollView(frame: window.bounds)
         scroll.contentInsetAdjustmentBehavior = .never
@@ -133,33 +132,81 @@ final class UpcomingScrollDetentTests: XCTestCase {
         let anchor = UIView(frame: CGRect(x: 0, y: 1_000, width: 390, height: 300))
         scroll.addSubview(anchor)
         let detent = UpcomingScrollDetent()
-        detent.reduceMotion = true
+        detent.reduceMotion = reduceMotion
         detent.setAnchor(anchor)
         detent.attach(to: scroll)
         defer { detent.detach() }
-        scroll.contentOffset.y = 1_000
-        detent.scrollViewWillBeginDragging(scroll)
-        scroll.testPan.setTranslation(CGPoint(x: 0, y: 40), in: window)
-        scroll.contentOffset.y = 960
-        var target = CGPoint(x: 0, y: 960)
-        detent.scrollViewWillEndDragging(scroll, withVelocity: .zero, targetContentOffset: &target)
-        detent.scrollViewDidEndDragging(scroll, willDecelerate: false)
-        XCTAssertEqual(scroll.contentOffset.y, 1_000)
-        XCTAssertEqual(scroll.lastAnimated, false)
+        scroll.contentOffset.y = 700
+        detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
+        if deceleratesIntoRange {
+            scroll.contentOffset.y = 800
+            detent.phaseChanged(from: .interacting, to: .decelerating, velocity: 600)
+            XCTAssertNil(scroll.lastAnimated, "A distant release must retain natural momentum")
+        }
+        scroll.testPan.setTranslation(CGPoint(x: 0, y: -330), in: window)
+        scroll.contentOffset.y = 1_030
+        let settled = expectation(description: "Native settle requested")
+        scroll.onSetOffset = { point, animated in
+            if point.y == 1_000 {
+                XCTAssertEqual(animated, !reduceMotion)
+                settled.fulfill()
+            }
+        }
+        if deceleratesIntoRange {
+            detent.phaseChanged(from: .decelerating, to: .idle, velocity: 0)
+        } else {
+            detent.phaseChanged(from: .interacting, to: .decelerating, velocity: 600)
+        }
+        XCTAssertEqual(scroll.lastAnimated, false, "Momentum must stop before the settle starts")
+        await fulfillment(of: [settled], timeout: 1)
+        if reduceMotion { XCTAssertEqual(scroll.contentOffset.y, 1_000) }
+        XCTAssertEqual(scroll.lastAnimated, !reduceMotion)
+    }
+
+    @MainActor
+    func testCalendarNavigationNewTouchAndDetachCancelPendingSettles() async {
+        await verifyCancelledSettle { $0.cancelInteraction() }
+        await verifyCancelledSettle { $0.phaseChanged(from: .decelerating, to: .tracking, velocity: 0) }
+        await verifyCancelledSettle { $0.detach() }
+    }
+
+    @MainActor
+    private func verifyCancelledSettle(_ cancel: (UpcomingScrollDetent) -> Void) async {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let scroll = DetentTestScrollView(frame: window.bounds)
+        scroll.contentInsetAdjustmentBehavior = .never
+        scroll.contentSize = CGSize(width: 390, height: 3_000)
+        window.addSubview(scroll)
+        let anchor = UIView(frame: CGRect(x: 0, y: 1_000, width: 390, height: 300))
+        scroll.addSubview(anchor)
+        let detent = UpcomingScrollDetent()
+        detent.setAnchor(anchor)
+        detent.attach(to: scroll)
+        defer { detent.detach() }
+        scroll.contentOffset.y = 1_020
+        detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
+        detent.phaseChanged(from: .interacting, to: .idle, velocity: 0)
+        cancel(detent)
+        scroll.contentOffset.y = 300
+        let noSettle = expectation(description: "Cancelled navigation must not snap")
+        noSettle.isInverted = true
+        scroll.onSetOffset = { _, _ in noSettle.fulfill() }
+        await fulfillment(of: [noSettle], timeout: 0.1)
+        XCTAssertEqual(scroll.contentOffset.y, 300)
     }
 }
 
 @MainActor
 private final class DetentTestScrollView: UIScrollView {
     let testPan = DetentTestPan()
-    var testDragging = false
     var lastAnimated: Bool?
-    override var isDragging: Bool { testDragging }
+    var onSetOffset: ((CGPoint, Bool) -> Void)?
     override var panGestureRecognizer: UIPanGestureRecognizer { testPan }
 
     override func setContentOffset(_ contentOffset: CGPoint, animated: Bool) {
         lastAnimated = animated
         super.setContentOffset(contentOffset, animated: animated)
+        onSetOffset?(contentOffset, animated)
     }
 }
 
@@ -172,15 +219,8 @@ private final class DetentTestPan: UIPanGestureRecognizer {
 
 @MainActor
 private final class DetentTestDelegate: NSObject, UIScrollViewDelegate {
-    var begins = 0
-    var ends = 0
     var scrolls = 0
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { begins += 1 }
     func scrollViewDidScroll(_ scrollView: UIScrollView) { scrolls += 1 }
-    func scrollViewWillEndDragging(
-        _ scrollView: UIScrollView, withVelocity velocity: CGPoint,
-        targetContentOffset: UnsafeMutablePointer<CGPoint>
-    ) { ends += 1 }
     func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool { false }
 }
 #endif

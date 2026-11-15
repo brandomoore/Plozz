@@ -230,16 +230,31 @@ struct UpcomingCaptureFixture: View {
         }
         if arguments.contains("--capture-dense") {
             let text = try renderedText()
-            let frames = ["The Simpsons", "Severance", "Silo"].map { title in
-                guard let frame = text.filter({ $0.0 == title }).map(\.1).min(by: { $0.minY < $1.minY }) else {
+            guard let today = text.first(where: { $0.0 == "Today" })?.1 else {
+                preconditionFailure("Dense preview must start at Today")
+            }
+            guard let episode = text.first(where: { $0.0.contains("S38") && $0.0.contains("E6") })?.1 else {
+                preconditionFailure("Missing episode caption")
+            }
+            // The subtitle distinguishes the caption from title lettering inside poster artwork.
+            guard let first = text.filter({ $0.0.hasPrefix("The Simps") && $0.1.maxY < today.minY })
+                .map(\.1).min(by: { abs($0.minY - episode.maxY) < abs($1.minY - episode.maxY) }) else {
+                preconditionFailure("Missing Upcoming poster caption: The Simpsons")
+            }
+            let frames = [first] + ["Severance", "Silo"].map { title in
+                guard let frame = text.filter({ $0.0 == title && $0.1.maxY < today.minY })
+                    .map(\.1).min(by: { abs($0.midY - first.midY) < abs($1.midY - first.midY) }) else {
                     preconditionFailure("Missing Upcoming poster caption: \(title)")
                 }
                 return frame
             }
-            let metrics = PlozzMetrics.touch(density: .standard)
             let agenda = agendaScrollView()!
             let pageInset = PlozziOSMediaRailLayout.pageInset(
                 for: window.traitCollection.horizontalSizeClass == .regular ? .regular : .compact
+            )
+            let metrics = posterMetrics(
+                viewport: agenda.bounds.width, inset: pageInset,
+                compact: window.traitCollection.horizontalSizeClass == .compact
             )
             let inset = PlozziOSMediaRailLayout.artworkAlignedInset(pageInset, metrics: metrics, cardStyle: .borderless)
             let layout = PlozziOSPosterGridLayout(
@@ -249,21 +264,22 @@ struct UpcomingCaptureFixture: View {
             let actualPitch = (frames[1].minX - frames[0].minX) * window.bounds.width
             precondition(abs(frames[1].midY - frames[0].midY) < 0.006, "Adjacent posters must share a row")
             precondition(abs(actualPitch - pitch) < 3, "Poster spacing \(actualPitch) differs from shared spacing \(pitch)")
-            if window.bounds.width < 600 {
+            if layout.columns == 2 {
                 precondition(frames[2].midY < frames[0].midY, "Busy dates must wrap on a phone")
                 precondition(abs(frames[2].minX - frames[0].minX) < 0.006, "Wrapped posters must align")
-            } else if window.bounds.width > 1000 {
-                precondition(abs(frames[2].midY - frames[0].midY) < 0.006, "Wide date groups must use adjacent slots")
+            } else {
+                precondition(abs(frames[2].midY - frames[0].midY) < 0.006, "The third poster must remain on the first row")
             }
-            precondition(text.contains { $0.0.contains("S38") && $0.0.contains("E6") }, "Missing episode caption")
             precondition(text.contains { $0.0.contains("3 episodes") }, "Missing grouped episode count")
         }
         if arguments.contains("--capture-scrolled") {
             guard let scroll = agendaScrollView(), scroll.contentSize.height > scroll.bounds.height + 250 else {
                 preconditionFailure("Upcoming capture requires a scrollable agenda")
             }
-            let offset = thirty ? scroll.contentSize.height - scroll.bounds.height : scroll.contentOffset.y + 250
-            scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+            let offset = thirty
+                ? scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                : scroll.contentOffset.y + 250
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: offset), animated: false)
             try await Task.sleep(for: .milliseconds(500))
             if let inlinePicker, let inlineFrame {
                 precondition(abs(inlinePicker.convert(inlinePicker.bounds, to: window).minY - inlineFrame.minY) < 2,
@@ -375,23 +391,40 @@ struct UpcomingCaptureFixture: View {
             precondition(releases.first?.item.title == "01. The Simpsons" && releases.last?.item.title == "30. Foundation",
                          "Numbered preview cards must retain their reading order")
             let text = try renderedText()
-            let expected = arguments.contains("--capture-scrolled") ? "30. Foundation" : "01. The Simpsons"
-            precondition(text.contains { $0.0 == expected }, "Busy-day preview did not render \(expected)")
+            let expected = arguments.contains("--capture-scrolled") ? "30." : "01."
+            precondition(text.contains { $0.0.hasPrefix(expected) }, "Busy-day preview did not render \(expected)")
             if !arguments.contains("--capture-scrolled") {
+                guard let today = text.first(where: { $0.0 == "Today" })?.1 else {
+                    preconditionFailure("Resizing must retain the visible Today heading")
+                }
+                let captions = text.filter { $0.1.maxY < today.minY }
                 let agenda = agendaScrollView()!
                 let frame = agenda.convert(agenda.bounds, to: window)
-                let metrics = PlozzMetrics.touch(density: .standard)
                 let inset = PlozziOSMediaRailLayout.pageInset(
                     for: window.traitCollection.horizontalSizeClass == .regular ? .regular : .compact
+                )
+                let metrics = posterMetrics(
+                    viewport: frame.width, inset: inset,
+                    compact: window.traitCollection.horizontalSizeClass == .compact
                 )
                 let layout = PlozziOSPosterGridLayout(
                     contentWidth: frame.width - 2 * PlozziOSMediaRailLayout.artworkAlignedInset(
                         inset, metrics: metrics, cardStyle: .borderless
                     ), metrics: metrics, cardStyle: .borderless
                 )
-                let first = text.first { $0.0.hasPrefix("01.") }!.1.minX * window.bounds.width
+                if window.bounds.width >= 375 && window.bounds.width < 600 {
+                    precondition(layout.columns == 3, "Phone Upcoming must fit three posters like Home")
+                }
+                let firstFrame = captions.first { $0.0.hasPrefix("01.") }!.1
                 let lastPrefix = String(format: "%02d.", layout.columns)
-                let last = text.first { $0.0.hasPrefix(lastPrefix) }!.1.minX * window.bounds.width
+                let lastFrame = captions.first { $0.0.hasPrefix(lastPrefix) }!.1
+                let nextPrefix = String(format: "%02d.", layout.columns + 1)
+                let nextFrame = captions.first { $0.0.hasPrefix(nextPrefix) }!.1
+                precondition(abs(firstFrame.midY - lastFrame.midY) < 0.006, "The complete first row must remain aligned")
+                precondition(nextFrame.midY < firstFrame.midY && abs(nextFrame.minX - firstFrame.minX) < 0.006,
+                             "The next poster must wrap to the left edge of the following row")
+                let first = firstFrame.minX * window.bounds.width
+                let last = lastFrame.minX * window.bounds.width
                 let left = first - layout.metrics.posterCaptionHorizontalInset - frame.minX
                 let right = frame.maxX - (last - layout.metrics.posterCaptionHorizontalInset + layout.metrics.posterWidth)
                 precondition(abs(left - inset) < 3 && abs(right - inset) < 3,
@@ -401,20 +434,45 @@ struct UpcomingCaptureFixture: View {
                     precondition(abs(gap - left) < 3,
                                  "The calendar gutter must match the page inset: gap=\(gap), left=\(left)")
                 }
-                guard let detent = agenda.delegate as? UpcomingScrollDetent, let todayOffset = detent.todayOffset else {
+                guard let detent = descendants(agenda).compactMap({ $0 as? UpcomingScrollProbe.Probe })
+                    .first(where: { $0.role == .container })?.detent,
+                      let nativeDelegate = agenda.delegate, let todayOffset = detent.todayOffset else {
                     preconditionFailure("Upcoming must attach its native Today detent")
                 }
                 precondition(abs(todayOffset - agenda.contentOffset.y) < 2,
                              "The Today detent must match the initial native date position: \(todayOffset), \(agenda.contentOffset.y)")
-                guard let today = text.first(where: { $0.0 == "Today" })?.1 else {
-                    preconditionFailure("Resizing must retain the visible Today heading")
+                let horizontalOffset = agenda.contentOffset.x
+                for delta: CGFloat in [20, 40, 80, 40, 0] {
+                    agenda.setContentOffset(CGPoint(x: horizontalOffset, y: todayOffset + delta), animated: false)
+                    try await Task.sleep(for: .milliseconds(150))
+                    precondition(agenda.delegate === nativeDelegate, "SwiftUI must retain its native scroll delegate")
+                    precondition(abs((detent.todayOffset ?? .infinity) - todayOffset) < 2,
+                                 "Native scrolling must retain the Today content coordinate")
+                }
+                if progressive {
+                    agenda.contentOffset.y = todayOffset - 300
+                    detent.phaseChanged(from: .idle, to: .interacting, velocity: 0)
+                    agenda.contentOffset.y = todayOffset - 30
+                    detent.phaseChanged(from: .interacting, to: .decelerating, velocity: 600)
+                    var settleOffsets = [agenda.contentOffset.y]
+                    for _ in 0..<60 where abs(agenda.contentOffset.y - todayOffset) >= 1 || detent.phase != .idle {
+                        try await Task.sleep(for: .milliseconds(16))
+                        settleOffsets.append(agenda.contentOffset.y)
+                    }
+                    precondition(abs(agenda.contentOffset.y - todayOffset) < 1 && detent.phase == .idle,
+                                 "The native settle must return to Today: offsets=\(settleOffsets), today=\(todayOffset), anchor=\(String(describing: detent.todayOffset)), phase=\(detent.phase)")
+                    precondition(agenda.delegate === nativeDelegate, "Native settling must preserve SwiftUI's delegate")
+                    precondition(abs(agenda.contentOffset.x - horizontalOffset) < 0.5,
+                                 "Native settling must preserve the horizontal page inset")
+                    FileHandle.standardOutput.write(Data("Upcoming native settle verified with injected release phase\n".utf8))
                 }
                 let top = (1 - today.maxY) * window.bounds.height
                 precondition(top >= before.maxY + 8 && top <= before.maxY + 36,
                              "Resizing must keep Today below the toolbar")
             }
             if arguments.contains("--capture-scrolled") {
-                precondition(text.contains { $0.0 == "A saved movie" }, "The following date must remain reachable")
+                precondition(text.contains { $0.0.hasPrefix("A saved") },
+                             "The following date must remain reachable; visible captions: \(text.map(\.0))")
             }
             FileHandle.standardOutput.write(Data("Upcoming thirty-card preview verified\n".utf8))
         }
@@ -427,6 +485,14 @@ struct UpcomingCaptureFixture: View {
             try image.pngData()!.write(to: path)
         }
         FileHandle.standardOutput.write(Data("Upcoming capture ready\n".utf8))
+    }
+
+    private func posterMetrics(viewport: CGFloat, inset: CGFloat, compact: Bool) -> PlozzMetrics {
+        let metrics = PlozzMetrics.touch(density: .standard)
+        guard compact else { return metrics }
+        return PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
+            in: viewport, inset: inset, metrics: metrics, cardStyle: .borderless
+        )
     }
     #endif
 
