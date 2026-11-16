@@ -46,8 +46,8 @@ The current window is 30 days back through 90 days ahead. TV starts at Today;
 earlier days are selected through the calendar, keeping Up from the first card
 available to reach the toolbar. Phone and tablet retain scrollable history, with
 native date-target scroll positioning keeping Today in place when progressive
-results insert older dates. The selected date and following groups occupy at least
-the viewport height so a sparse agenda can align below the native toolbar without
+results insert older dates. The final date occupies at least
+the viewport height so any selected date can align below the native toolbar without
 being clamped to the bottom of its history.
 On mobile, Today holds entry into history until a deliberate 432-point pull,
 capped at 85% of the usable scroll viewport height so release stays reachable
@@ -81,9 +81,11 @@ There is no second per-frame scroll driver racing the scroll view's release. Nat
 converted from points/ms to the policy's points/s.
 Deliberate released pulls, ordinary future scrolling, existing history scrolling,
 and calendar jumps remain available. Native outer-edge bounce is unchanged.
-Mobile date sections keep their headers mounted, including
-an empty Today, so lazy recycling cannot remove the detent while scrolling
-through history or future dates. Poster grids remain lazy. Initial alignment
+Mobile date sections keep their headers mounted in one stable date list, including
+an empty Today, so changing the selection does not reparent sections or remove
+the detent while scrolling through history or future dates. The final date reserves
+enough height to align it at the top, including dates with no releases.
+Poster grids remain lazy. Initial alignment
 uses the selected date rather than an interim scroll-position report from layout.
 The typed `ScrollPosition` relinquishes programmatic positioning when interaction
 begins; an older date command must not move the viewport during the drag.
@@ -112,12 +114,17 @@ committed and not after a deliberate pop.
 Positioning, calendar jumps, cancelled catches, and repeated layout callbacks do
 not emit feedback.
 Ordinary approach deceleration remains system-owned. Reduce Motion skips the
-elastic animations and makes explicit Today resets nonanimated.
+elastic animations and makes explicit date navigation nonanimated.
 Reselecting Upcoming in native or opaque navigation animates its visible agenda
 back to Today from either direction, including repeated taps after scrolling away.
 The page issues one animated typed date-position command, not a competing native
-offset animation or a second unanimated selection observer. Calendar input owns
-its separate positioning action. Interrupted
+offset animation or a second unanimated selection observer. Calendar input uses
+the same animated handoff, including taps on the already-selected date after
+scrolling away. A cancellable, latest-request-only task lets a newly inserted
+empty date mount before issuing its scroll command. New user gestures cancel
+pending date commands, and initial width alignment cannot overwrite navigation.
+The latest selection replaces the previous scroll destination.
+Interrupted
 elastic motion is picked up at its rendered position before navigation begins.
 The shell resolves the visible scroll owner before invoking this page-local reset; detail pages and
 other tabs retain their usual scroll-to-top behavior.
@@ -125,8 +132,13 @@ Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.
 Calendar and Filters remain at the top while the agenda scrolls: mobile
-uses the native navigation toolbar without a duplicate page title. The tab shell
-keeps its appearance bridge inside `NavigationStack`, so UIKit can recognize the
+uses the native navigation toolbar without a duplicate page title. The shared
+active-profile Settings control sits separately to their right, both in the
+Upcoming tab and when opened from Coming Soon.
+The partial-refresh footer applies to the entire feed, not the final date:
+it preserves Retry when history, requests, or release-date lookups fail, even
+when other sources supplied usable releases.
+The tab shell keeps its appearance bridge inside `NavigationStack`, so UIKit can recognize the
 stack and merge its inline-large toolbar into the iPad tab-bar line. Wrapping the
 stack in that bridge's background breaks the merge even when the bridge is inactive.
 Content insets belong to the agenda, not the scroll viewport. Content scrolls

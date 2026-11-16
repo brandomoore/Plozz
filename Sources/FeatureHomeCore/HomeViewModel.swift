@@ -1983,9 +1983,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     /// not just on the way in, so a file written by a build that predates the rule
     /// (or by one whose enrichment added a resumable source ref afterwards) cannot
     /// repaint a stale playback position either.
-    public func cachedHeroItems(for settings: HeroSettings) -> [MediaItem]? {
+    public func cachedHeroItems(for settings: HeroSettings, language: String = "en") -> [MediaItem]? {
         guard settings.isActive, !cachedHeroIsInvalidated else { return nil }
-        let key = HeroConfigurationKey(settings: settings)
+        let key = HeroConfigurationKey(settings: settings, language: language)
         let visibility = currentVisibility()
         let selectionKey = HeroLaunchSelectionKey(
             configuration: key, disabledLibraryKeys: visibility.disabledKeys
@@ -2204,7 +2204,8 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     public func cacheHeroCandidatePool(
         _ pool: HeroFreshnessCandidatePool,
         for settings: HeroSettings,
-        preservingUnseen: Bool = false
+        preservingUnseen: Bool = false,
+        language: String = "en"
     ) {
         guard settings.isActive else { return }
         let durable = pool.durable()
@@ -2212,7 +2213,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         let generation = Self.nextSnapshotPersistenceGeneration()
         heroPersistenceGeneration = generation
         let store = contentStore
-        let key = HeroConfigurationKey(settings: settings)
+        let key = HeroConfigurationKey(settings: settings, language: language)
         let history = preservingUnseen ? heroExposureState.history : nil
         heroPersistenceTask = Task { [weak self] in
             await HomeSnapshotPersistence.shared.saveHeroCandidatePool(
@@ -2225,12 +2226,12 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         }
     }
 
-    public func cacheHeroItems(_ items: [MediaItem], for settings: HeroSettings) {
+    public func cacheHeroItems(_ items: [MediaItem], for settings: HeroSettings, language: String = "en") {
         guard settings.isActive, !items.isEmpty else { return }
         let generation = Self.nextSnapshotPersistenceGeneration()
         heroPersistenceGeneration = generation
         let store = contentStore
-        let key = HeroConfigurationKey(settings: settings)
+        let key = HeroConfigurationKey(settings: settings, language: language)
         heroPersistenceTask = Task { [weak self] in
             await HomeSnapshotPersistence.shared.saveHero(
                 items, for: key, generation: generation, to: store

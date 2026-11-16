@@ -4,6 +4,30 @@ import XCTest
 @testable import MetadataKit
 
 final class TVDBDiscoveryProviderTests: XCTestCase {
+    func testOnlyAdmittedDiscoveryItemsReceiveTranslatedDisplayText() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            switch request.url?.path {
+            case "/v4/movies/filter":
+                return .init(json: """
+                {"data":[{"id":42,"name":"Original","overview":"Original overview","year":"2026"},
+                         {"id":43,"name":"Outside limit","year":"2026"}]}
+                """)
+            case "/v4/movies/42/translations/fra":
+                return .init(json: #"{"data":{"name":"Titre FR","overview":"Description FR","language":"fra"}}"#)
+            default:
+                return TMDbTVDBDiscoveryFixture.tvdbReply(request)
+            }
+        }
+        let items = try await TVDBDiscoveryProvider(config: config, http: fixture.http).discover(
+            .init(limit: 1, language: "fr-CA", region: "CA", now: now)
+        )
+        XCTAssertEqual(items.map(\.title), ["Titre FR"])
+        XCTAssertEqual(items.first?.overview, "Description FR")
+        XCTAssertEqual(items.first?.providerIDs.providerID(.tvdb), "42")
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.filter { $0.url!.path.contains("/translations/") }.count, 1)
+    }
+
     private let now = Date(timeIntervalSince1970: 1_779_494_400)
 
     private var config: TVDBConfig {
@@ -110,6 +134,24 @@ final class TVDBDiscoveryProviderTests: XCTestCase {
         let fallback = TMDbTVDBDiscoveryFixture.query(requests[5])
         XCTAssertEqual(fallback["country"], "usa")
         XCTAssertEqual(fallback["lang"], "eng")
+    }
+
+    func testRegionalLanguagesResolveWithoutCatalogShortCodes() async throws {
+        for (language, region, code, country) in [("pt-BR", "BR", "pt", "bra"), ("zh-Hant", "TW", "zhtw", "twn")] {
+            let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+                TMDbTVDBDiscoveryFixture.tvdbReply(request)
+            }
+            let provider = TVDBDiscoveryProvider(config: config, http: fixture.http)
+            _ = try await provider.discover(.init(language: language, region: region))
+            let requests = await fixture.recorded()
+            let filters = requests.filter { $0.url?.lastPathComponent == "filter" }
+            XCTAssertEqual(filters.count, 2)
+            for request in filters {
+                let query = TMDbTVDBDiscoveryFixture.query(request)
+                XCTAssertEqual(query["lang"], code)
+                XCTAssertEqual(query["country"], country)
+            }
+        }
     }
 
     func testConfigurationFingerprintChangesForKeyAndBaseURLWithoutExposingEither() {

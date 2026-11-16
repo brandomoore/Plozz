@@ -3,7 +3,7 @@
     import CoreModels
     import CoreUI
 
-    public struct UpcomingView: View {
+    public struct UpcomingView<TrailingToolbar: ToolbarContent>: View {
         @Bindable private var model: UpcomingFeedModel
         @Environment(\.themePalette) private var palette
         #if os(tvOS)
@@ -22,15 +22,29 @@
             )
             @State private var hasScrolledAgenda = false
             @State private var todayDetent = UpcomingScrollDetent()
+            @State private var dateScrollRequest: UUID?
         #endif
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
         @State private var didScrollInitially = false
         private let interval: DateInterval
+        private let trailingToolbar: TrailingToolbar
 
-        public init(model: UpcomingFeedModel, interval: DateInterval) {
+        public init(
+            model: UpcomingFeedModel, interval: DateInterval,
+            @ToolbarContentBuilder trailingToolbar: () -> TrailingToolbar
+        ) {
             self.model = model
             self.interval = interval
+            self.trailingToolbar = trailingToolbar()
+        }
+
+        public init(model: UpcomingFeedModel, interval: DateInterval)
+        where TrailingToolbar == ToolbarItemGroup<EmptyView> {
+            self.model = model
+            self.interval = interval
+            // EmptyView itself only conforms to ToolbarContent on OS 27 and later.
+            self.trailingToolbar = ToolbarItemGroup(placement: .topBarTrailing) { EmptyView() }
         }
 
         public var body: some View {
@@ -49,7 +63,7 @@
                         ScrollView {
                             UpcomingAgenda(
                                 model: model, selectedDay: selectedDay,
-                                minimumSelectedHeight: agendaHeight, contentWidth: agendaContentWidth
+                                minimumLastDayHeight: agendaHeight, contentWidth: agendaContentWidth
                             )
                             #if os(iOS)
                             .environment(\.plozzMetrics, agendaMetrics)
@@ -58,10 +72,7 @@
                                 UpcomingScrollProbe(
                                     detent: todayDetent, role: .container, reduceMotion: reduceMotion,
                                     onScrollToToday: {
-                                        let today = Calendar.current.startOfDay(for: Date())
-                                        selectedDay = today
-                                        scrollPosition.scrollTo(id: today, anchor: .top)
-                                        hasScrolledAgenda = false
+                                        requestDateScroll(to: Calendar.current.startOfDay(for: Date()))
                                     }
                                 )
                             }
@@ -89,16 +100,26 @@
                         .onScrollPhaseChange { _, newPhase in
                             if newPhase == .interacting {
                                 hasScrolledAgenda = true
+                                dateScrollRequest = nil
                                 scrollPosition.isPositionedByUser = true
                             }
                             todayDetent.phaseChanged(to: newPhase)
                         }
                         .modifier(UpcomingScrollEdge())
                         .task(id: agendaSize.width) {
-                            guard agendaSize.width > 0, !hasScrolledAgenda else { return }
+                            guard agendaSize.width > 0, !hasScrolledAgenda, dateScrollRequest == nil else { return }
                             await Task.yield()
-                            guard !Task.isCancelled, !hasScrolledAgenda else { return }
+                            guard !Task.isCancelled, !hasScrolledAgenda, dateScrollRequest == nil else { return }
                             scrollPosition.scrollTo(id: selectedDay, anchor: .top)
+                        }
+                        .task(id: dateScrollRequest) {
+                            guard let request = dateScrollRequest else { return }
+                            // Mount empty date targets before issuing the animated command.
+                            await Task.yield()
+                            guard !Task.isCancelled, dateScrollRequest == request, !hasScrolledAgenda else { return }
+                            todayDetent.scrollToDate {
+                                scrollPosition.scrollTo(id: selectedDay, anchor: .top)
+                            }
                         }
                         #else
                         .onChange(of: selectedDay) { _, day in
@@ -138,6 +159,7 @@
                         calendarButton
                         UpcomingFilterMenu(model: model)
                     }
+                    trailingToolbar
                 }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { availableSize = $0 }
                 .onChange(of: supportsInlineCalendar) { _, supported in
@@ -202,14 +224,19 @@
         private var calendarSelection: Binding<Date> {
             Binding(
                 get: { selectedDay },
-                set: { day in
-                    guard day != selectedDay else { return }
-                    selectedDay = day
-                    todayDetent.cancelInteraction()
-                    hasScrolledAgenda = false
-                    scrollPosition.scrollTo(id: day, anchor: .top)
+                set: {
+                    requestDateScroll(to: $0)
+                    showingCalendar = false
                 }
             )
+        }
+
+        private func requestDateScroll(to day: Date) {
+            todayDetent.prepareForDateScroll()
+            scrollPosition.isPositionedByUser = true
+            selectedDay = Calendar.current.startOfDay(for: day)
+            hasScrolledAgenda = false
+            dateScrollRequest = UUID()
         }
 
         private var agendaMetrics: PlozzMetrics {
@@ -358,7 +385,7 @@
     private struct UpcomingAgenda: View {
         let model: UpcomingFeedModel
         let selectedDay: Date
-        let minimumSelectedHeight: CGFloat
+        let minimumLastDayHeight: CGFloat
         let contentWidth: CGFloat
         @Environment(\.plozzMetrics) private var metrics
         @Environment(\.plozzCardStyle) private var cardStyle
@@ -389,18 +416,8 @@
             #endif
             #if os(iOS)
             VStack(alignment: .leading, spacing: 28) {
-                let history = visibleDays.filter { $0 < selectedDay }
-                if !history.isEmpty {
-                    dateGroups(history, groups: groups, columns: columns, metrics: gridMetrics, width: width)
-                }
-                VStack(alignment: .leading, spacing: 20) {
-                    dateGroups(
-                        visibleDays.filter { $0 >= selectedDay }, groups: groups,
-                        columns: columns, metrics: gridMetrics, width: width
-                    )
-                    refreshError
-                }
-                .frame(minHeight: minimumSelectedHeight, alignment: .top)
+                dateGroups(visibleDays, groups: groups, columns: columns, metrics: gridMetrics, width: width)
+                refreshError
             }
             .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
             #else
@@ -467,6 +484,7 @@
                     }
                 }
                 #if os(iOS)
+                .frame(minHeight: day == days.last ? minimumLastDayHeight : 0, alignment: .top)
                 .background {
                     if Calendar.current.isDateInToday(day) {
                         UpcomingTodayAnchor()

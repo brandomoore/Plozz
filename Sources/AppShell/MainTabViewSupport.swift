@@ -483,6 +483,7 @@ private func failoverPlayItem(
 private func makePlayerViewModel(
     for request: PlayRequest,
     accounts: [ResolvedAccount],
+    metadataLanguage: @escaping @MainActor @Sendable () -> String,
     networkFileResolver: any MediaTransportNetworkFileResolving,
     authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving,
     offlinePlaybackResolver: (any OfflinePlaybackResolving)? = nil,
@@ -637,6 +638,7 @@ private func makePlayerViewModel(
     episodeViewModel.controls.infoCard.castDetailLoader = makeCastDetailLoader(
         for: request.item,
         accounts: accounts,
+        metadataLanguage: metadataLanguage,
         // So a credit the viewer owns isn't marked absent. A server's person
         // query only returns titles whose own People list names the person, and
         // a series records its main cast rather than a guest voice part — so
@@ -747,6 +749,7 @@ extension View {
         resumePrompt: Binding<MediaItem?>,
         pendingPlaylistOrigin: Binding<VideoPlaylistPlaybackOrigin?>,
         accounts: [ResolvedAccount],
+        metadataLanguage: @escaping @MainActor @Sendable () -> String,
         networkFileResolver: any MediaTransportNetworkFileResolving,
         authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving,
         offlinePlaybackResolver: (any OfflinePlaybackResolving)?,
@@ -797,6 +800,7 @@ extension View {
                     let model = try makePlayerViewModel(
                         for: request,
                         accounts: accounts,
+                        metadataLanguage: metadataLanguage,
                         networkFileResolver: networkFileResolver,
                         authenticatedHTTPResolver: authenticatedHTTPResolver,
                         offlinePlaybackResolver: offlinePlaybackResolver,

@@ -592,6 +592,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   top for a softly faded reflection, shifting the original artwork below more
   of the status-bar chrome without moving metadata or growing the hero.
   Home and Details share this still-image layout, including swipe reflections.
+  Only Home adds progressive blur across the top reflection; Details keep it sharp
+  rather than stacking that treatment with native navigation chrome.
   The bottom reflection and minimum dissolve span remain intact; trailers keep
   their full-stage presentation. Landscape and tvOS heroes are unchanged.
 

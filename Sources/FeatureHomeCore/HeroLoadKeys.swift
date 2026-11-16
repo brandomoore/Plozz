@@ -85,7 +85,8 @@ public struct HeroCurationLoadKey: Equatable, Sendable {
         scopeID: ObjectIdentifier,
         seerRevision: UUID,
         isPreparingHome: Bool = false,
-        loadingRows: Set<HomeRowKind> = []
+        loadingRows: Set<HomeRowKind> = [],
+        language: String = "en"
     ) {
         isAwaitingSources = isPreparingHome || HomeHeroLaunchPolicy.isAwaitingSources(
             settings: settings, loadingRows: loadingRows
@@ -95,7 +96,7 @@ public struct HeroCurationLoadKey: Equatable, Sendable {
         recentlyAdded = settings.isEnabled(.recentlyAdded) ? content.latest : []
         libraries = settings.isEnabled(.randomFromLibrary) || settings.isEnabled(.collection)
             ? content.libraries : []
-        configuration = HeroConfigurationKey(settings: settings)
+        configuration = HeroConfigurationKey(settings: settings, language: language)
         self.visibility = visibility
         self.freshnessRevision = freshnessRevision
         let enrichesCollectionHistory = settings.isEnabled(.collection) && settings.hideWatched

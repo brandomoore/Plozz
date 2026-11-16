@@ -1942,6 +1942,7 @@ struct MainTabView: View {
             resumePrompt: $resumePrompt,
             pendingPlaylistOrigin: $pendingPlaylistOrigin,
             accounts: accounts,
+            metadataLanguage: { (profileSettings.appLanguageModel.language.locale ?? .current).identifier },
             networkFileResolver: networkFileResolver,
             authenticatedHTTPResolver: authenticatedHTTPResolver,
             offlinePlaybackResolver: offlinePlaybackResolver,

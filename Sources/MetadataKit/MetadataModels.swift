@@ -36,7 +36,7 @@ public struct MetadataQuery: Sendable, Hashable {
 
     public func forMetadataLanguage(_ identifier: String) -> Self {
         var copy = self
-        copy.metadataLanguage = Locale.Language(identifier: identifier).minimalIdentifier
+        copy.metadataLanguage = Locale.canonicalLanguageIdentifier(from: identifier)
         return copy
     }
 
@@ -88,7 +88,7 @@ public struct MetadataQuery: Sendable, Hashable {
         scheduleStartDate: Date? = nil
     ) {
         self.artworkLanguage = Self.normalizedArtworkLanguage(artworkLanguage)
-        self.metadataLanguage = Locale.Language(identifier: metadataLanguage).minimalIdentifier
+        self.metadataLanguage = Locale.canonicalLanguageIdentifier(from: metadataLanguage)
         self.scheduleStartDate = scheduleStartDate
         self.contentType = contentType
         self.kind = kind

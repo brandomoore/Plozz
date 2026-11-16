@@ -8,6 +8,53 @@ import XCTest
 
 @MainActor
 final class LiveDetailConsistencyTests: XCTestCase {
+    func testLiveTVDBRequestedLanguageText() async throws {
+        let (data, response) = try await URLSession.shared.data(for: URLRequest(
+            url: try LiveHomeReadOnlyAccount.broker().appendingPathComponent("metadata"), timeoutInterval: 15
+        ))
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw AppError.invalidResponse }
+        struct Configuration: Decodable { let tvdbAPIKey: String }
+        let config = try JSONDecoder().decode(Configuration.self, from: data)
+        guard !config.tvdbAPIKey.isEmpty else { throw AppError.invalidResponse }
+        let client = TVDBClient(config: .init(apiKey: config.tvdbAPIKey))
+        let englishResult = await client.resolve(byTVDBID: "81189", isMovie: false, language: "en")
+        let english = try XCTUnwrap(englishResult)
+        for language in ["fr", "de"] {
+            let localizedResult = await client.resolve(
+                byTVDBID: "81189", isMovie: false, language: language
+            )
+            let localized = try XCTUnwrap(localizedResult)
+            XCTAssertEqual(localized.tvdbID, english.tvdbID)
+            XCTAssertFalse(localized.overview?.isEmpty ?? true)
+            XCTAssertNotEqual(localized.overview, english.overview)
+        }
+        print("LIVE_METADATA source=tvdb languages=en,fr,de identityPreserved=true")
+    }
+
+    func testLiveWikipediaOverviewAndBiographyLanguages() async throws {
+        _ = try LiveHomeReadOnlyAccount.broker()
+        let movie = MediaItem(id: "public-movie", title: "Spirited Away", kind: .movie, productionYear: 2001)
+        let overview = WikipediaEnrichmentProvider()
+        let biography = WikipediaPersonBiographyProvider()
+        var overviews: [String: String] = [:]
+        var biographies: [String: String] = [:]
+        for language in ["en", "fr", "de"] {
+            let result = await overview.enrich(
+                MetadataQuery(movie).forMetadataLanguage(language), missing: [.overview]
+            )
+            let text = try XCTUnwrap(result.overview)
+            XCTAssertFalse(text.value.isEmpty)
+            XCTAssertEqual(text.sourceURL?.host, "\(language).wikipedia.org")
+            overviews[language] = text.value
+            let personText = await biography.biography(for: "Tom Hanks", role: "Actor", language: language)
+            XCTAssertFalse(personText?.isEmpty ?? true)
+            biographies[language] = personText
+        }
+        XCTAssertEqual(Set(overviews.values).count, 3)
+        XCTAssertEqual(Set(biographies.values).count, 3)
+        print("LIVE_METADATA source=wikipedia languages=en,fr,de overviewAndBiography=true")
+    }
+
     func testLiveJellyfinDetailRoutes() async throws { try await exercise(.jellyfin) }
     func testLivePlexDetailRoutes() async throws { try await exercise(.plex) }
     func testLiveEmbyDetailRoutes() async throws { try await exercise(.emby) }

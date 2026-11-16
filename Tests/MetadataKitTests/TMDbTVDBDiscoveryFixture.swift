@@ -44,9 +44,9 @@ actor TMDbTVDBDiscoveryFixture {
         case "login":
             return Reply(json: #"{"status":"success","data":{"token":"fixture-jwt"}}"#)
         case "countries":
-            return Reply(json: #"{"data":[{"id":"usa","shortCode":"US"},{"id":"can","shortCode":"CA"},{"id":"fra","shortCode":"FR"},{"id":"jpn","shortCode":"JP"}]}"#)
+            return Reply(json: #"{"data":[{"id":"usa","shortCode":""},{"id":"can","shortCode":""},{"id":"fra","shortCode":""},{"id":"jpn","shortCode":""},{"id":"bra","shortCode":""},{"id":"twn","shortCode":""}]}"#)
         case "languages":
-            return Reply(json: #"{"data":[{"id":"eng","shortCode":"en"},{"id":"fra","shortCode":"fr"},{"id":"jpn","shortCode":"ja"}]}"#)
+            return Reply(json: #"{"data":[{"id":"eng","shortCode":null},{"id":"fra","shortCode":null},{"id":"jpn","shortCode":null},{"id":"pt","shortCode":null},{"id":"zhtw","shortCode":null}]}"#)
         default:
             return Reply(json: #"{"status":"success","data":[]}"#)
         }
