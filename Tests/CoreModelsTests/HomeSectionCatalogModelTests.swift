@@ -129,11 +129,13 @@ final class HomeSectionCatalogModelTests: XCTestCase {
         )
         await model.load(libraries: [], accounts: [account], visibility: visibility)
         let native = HomeRowID.server(accountID: account.account.id, section: "native")
-        XCTAssertEqual(model.catalog.sections(in: visibility.visibility).enabled, [native])
+        XCTAssertEqual(model.catalog.sections(in: visibility.visibility).enabled, [native, .global(.comingSoon)])
         XCTAssertTrue(model.serverFailures.isEmpty)
         let loadedID = HomeSectionCatalogModel.loadID(libraries: [], accounts: [account], visibility: visibility)
         try visibility.setHomeSectionVisible(true, id: .libraries, catalog: model.catalog)
-        XCTAssertEqual(model.catalog.sections(in: visibility.visibility).enabled, [native, .libraries])
+        XCTAssertEqual(
+            model.catalog.sections(in: visibility.visibility).enabled, [native, .global(.comingSoon), .libraries]
+        )
         XCTAssertEqual(
             HomeSectionCatalogModel.loadID(libraries: [], accounts: [account], visibility: visibility), loadedID,
             "Freezing a preset during an edit must not restart discovery or disable a lifted row."
