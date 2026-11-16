@@ -58,7 +58,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
         .ignoresSafeArea(.container, edges: heroActive && !showsPageActions ? .top : [])
-        .modifier(PlozziOSStatusBarScrollFade(enabled: heroActive))
+        .modifier(PlozziOSReducedTransparencyScrollFade(enabled: heroActive))
         .background {
             if showsPageActions && heroActive {
                 PlozziOSWindowSafeAreaTopReader { safeAreaTop = $0 }
@@ -91,7 +91,7 @@ struct PlozziOSHomePageActions: View {
     }
 }
 
-struct PlozziOSStatusBarScrollFade: ViewModifier {
+struct PlozziOSReducedTransparencyScrollFade: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
@@ -99,7 +99,6 @@ struct PlozziOSStatusBarScrollFade: ViewModifier {
     @State private var safeAreaTop: CGFloat = 0
     @State private var scrolledFraction: CGFloat = 0
     var enabled = true
-    var usesMaterial = false
 
     func body(content: Content) -> some View {
         content
@@ -110,32 +109,21 @@ struct PlozziOSStatusBarScrollFade: ViewModifier {
             }
             .overlay(alignment: .top) {
                 if #available(iOS 26.0, *), enabled, !isRunningOnMac,
-                   usesMaterial || systemReduceTransparency || reduceTransparency {
-                    let opaque = systemReduceTransparency || reduceTransparency
-                    let fadeHeight = safeAreaTop + (opaque ? 44 : 16)
-                    Group {
-                        if opaque {
-                            Rectangle().fill(palette.backgroundBase)
-                        } else {
-                            Rectangle().fill(.ultraThinMaterial)
-                        }
-                    }
-                    .frame(height: fadeHeight)
-                    .mask {
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black, location: 0),
-                                .init(color: .black, location: opaque ? safeAreaTop / fadeHeight : 0.2),
-                                .init(color: .clear, location: 1)
-                            ],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    }
+                   systemReduceTransparency || reduceTransparency {
+                    // Protect status text without restoring the opaque native edge
+                    // over the hero. The artwork remains untouched at scroll origin.
+                    LinearGradient(
+                        stops: [
+                            .init(color: palette.backgroundBase, location: 0),
+                            .init(color: palette.backgroundBase, location: safeAreaTop / (safeAreaTop + 44)),
+                            .init(color: palette.backgroundBase.opacity(0), location: 1)
+                        ],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                    .frame(height: safeAreaTop + 44)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea(.container, edges: .top)
-                    // Follow scroll position directly, without a delayed appearance animation.
-                    .opacity(scrolledFraction * (opaque ? 1 : 0.6))
-                    .animation(nil, value: scrolledFraction)
+                    .opacity(scrolledFraction)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 }

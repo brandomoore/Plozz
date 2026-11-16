@@ -1280,7 +1280,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 for sample in landedSamples {
                     for (initial, final) in zip(sample, last) {
                         XCTAssertEqual(Double(initial), Double(final), accuracy: 5,
-                                       "The clear detail header must not change after the page lands.")
+                                       "The detail header must not change after the page lands.")
                     }
                 }
                 let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
@@ -1288,72 +1288,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 let detail = try XCTUnwrap(navigation.topViewController)
                 let scroll = try XCTUnwrap(descendants(detail.view).compactMap { $0 as? UIScrollView }
                     .first { $0.contentSize.height > $0.bounds.height })
-                XCTAssertTrue(scroll.topEdgeEffect.isHidden,
-                              "Detail artwork must not receive a top scroll-edge blur.")
-            }
-        }
-    }
-
-    func testDetailMaterialFadeTracksScrollAndReturnsClear() async throws {
-        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
-        let item = try await artworkItem()
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        try await withWindow(
-            item: item, size: scene.coordinateSpace.bounds.size, sizeClass: .compact,
-            insets: .zero, pull: PlozziOSHomeHeroPullModel()
-        ) { window, host in
-            for scheme in [ColorScheme.dark, .light] {
-                host.rootView = AnyView(
-                    NavigationStack {
-                        ScrollView {
-                            Color.blue.frame(height: 2400)
-                        }
-                        .ignoresSafeArea()
-                        .modifier(PlozziOSNavigationBackground(hidesTopScrollEdge: true))
-                        .modifier(PlozziOSStatusBarScrollFade(usesMaterial: true))
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.hidden, for: .navigationBar)
-                    }
-                    .environment(\.themePalette, scheme == .dark ? .dark : .light)
-                    .environment(\.colorScheme, scheme)
-                    .environment(\.plozzReduceTransparency, false)
-                )
-                try await waitForHostedLayout(window)
-                let scroll = try XCTUnwrap(descendants(host.view).compactMap { $0 as? UIScrollView }.first)
-                var colors: [[UInt8]] = []
-                for offset: CGFloat in [0, 16, 32, 48, 64, 32, 0] {
-                    scroll.setContentOffset(CGPoint(x: 0, y: offset - scroll.adjustedContentInset.top), animated: false)
-                    try await waitForHostedLayout(window)
-                    let image = snapshot(window, name: "detail-material-\(scheme)-\(offset)")
-                    colors.append(try pixel(image, at: CGPoint(x: 8, y: 8)))
-                    let body = try pixel(image, at: CGPoint(x: 8, y: 200))
-                    XCTAssertGreaterThan(Int(body[2]) - Int(body[0]), 100,
-                                         "The status overlay must not cover the body.")
-                    if !UIAccessibility.isReduceTransparencyEnabled {
-                        let belowStatus = try pixel(
-                            image, at: CGPoint(x: 8, y: window.safeAreaInsets.top + 20)
-                        )
-                        for (actual, expected) in zip(belowStatus, body) {
-                            XCTAssertEqual(Double(actual), Double(expected), accuracy: 3,
-                                           "The material must end just below the status area.")
-                        }
-                    }
-                    XCTAssertTrue(scroll.topEdgeEffect.isHidden, "Do not stack the native edge over the material.")
-                }
-                let origin = colors[0]
-                XCTAssertGreaterThan(Int(origin[2]) - Int(origin[0]), 100)
-                let distances = colors.map { color in
-                    zip(color.prefix(3), origin.prefix(3)).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
-                }
-                XCTAssertGreaterThan(distances[4], 30, "Scrolling must visibly protect status text.")
-                for index in 1...3 {
-                    XCTAssertGreaterThan(distances[index], distances[index - 1] + 2,
-                                         "The material must fade progressively, not toggle.")
-                    XCTAssertLessThan(distances[index], distances[4] - 2)
-                }
-                XCTAssertEqual(Double(distances[5]), Double(distances[2]), accuracy: 5,
-                               "The same scroll position must produce the same fade in either direction.")
-                XCTAssertLessThanOrEqual(distances[6], 5, "Returning to the top must restore the clear artwork.")
+                XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled,
+                               "Normal detail chrome must use the native top scroll-edge effect.")
             }
         }
     }
@@ -1374,7 +1310,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                                 Color.blue.frame(height: 2400)
                             }
                             .ignoresSafeArea()
-                            .modifier(PlozziOSStatusBarScrollFade())
+                            .modifier(PlozziOSReducedTransparencyScrollFade())
                             .scrollEdgeEffectHidden(true, for: .top)
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbarBackground(.hidden, for: .navigationBar)

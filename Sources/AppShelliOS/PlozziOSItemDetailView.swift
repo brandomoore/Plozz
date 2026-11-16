@@ -327,7 +327,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
             isActive: isPageVisible && playbackRequest == nil
         )
         .navigationBarTitleDisplayMode(.inline)
-        // Keep the artwork clear behind the native toolbar controls.
+        // Let the native scroll edge own the backdrop without a second navigation-bar layer.
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -668,8 +668,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             heroPullDistance = pullDistance
         }
         .ignoresSafeArea(.container, edges: .top)
-        .modifier(PlozziOSNavigationBackground(hidesTopScrollEdge: true))
-        .modifier(PlozziOSStatusBarScrollFade(usesMaterial: true))
+        .modifier(PlozziOSNavigationBackground())
+        .modifier(PlozziOSReducedTransparencyScrollFade())
         .navigationTitle(Text(verbatim: ""))
         .task(id: seasonRequestRefreshKey(for: detail)) {
             await refreshVisibleSeasonRequests(for: detail)

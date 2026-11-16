@@ -1005,7 +1005,6 @@ private struct PlozziOSScreenshotTabRouter: View {
 
 struct PlozziOSNavigationBackground: ViewModifier {
     var hidesRegularTabBackdrop = false
-    var hidesTopScrollEdge = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
@@ -1019,7 +1018,7 @@ struct PlozziOSNavigationBackground: ViewModifier {
             content
                 .toolbarBackground(hidesTabBackdrop || opaqueChrome ? .hidden : .automatic, for: .tabBar)
                 // Hide only the full-width edge backdrop; native controls keep their opaque treatment.
-                .scrollEdgeEffectHidden(hidesTopScrollEdge || isRunningOnMac || opaqueChrome, for: .top)
+                .scrollEdgeEffectHidden(isRunningOnMac || opaqueChrome, for: .top)
                 .scrollEdgeEffectHidden(opaqueChrome, for: .bottom)
         } else {
             content
