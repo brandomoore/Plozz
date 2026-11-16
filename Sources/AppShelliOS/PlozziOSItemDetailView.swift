@@ -12,7 +12,19 @@ import SeerService
 import TraktService
 import SwiftUI
 
+private struct PlozziOSDetailViewModelKey: Hashable {
+    let itemID: String
+    let libraryOrigin: String?
+}
+
 struct PlozziOSItemDetailView: View {
+    /// One view model per title/origin, retained across body re-evaluations. The
+    /// factory used to run inside `canonicalDetail`'s view builder, so every render
+    /// pass could construct another `ItemDetailViewModel` and start its loads again
+    /// — the entering freeze and the metadata/play label repopulating in place.
+    @State private var detailViewModels =
+        KeyedViewStateCache<PlozziOSDetailViewModelKey, ItemDetailViewModel>()
+
     @Environment(HomeViewModel.self) private var homeViewModel: HomeViewModel?
     @Environment(\.locale) private var locale
     let appModel: PlozziOSAppModel
@@ -48,6 +60,19 @@ struct PlozziOSItemDetailView: View {
 
     var body: some View {
         detailBody
+            // Detail-path telemetry anchor (PLZXFAN-gated; kind only). Deliberately
+            // at the page body: the episode browser sits inside a lazy container, so
+            // an anchor there never fires unless the viewer scrolls it into view —
+            // which is why the series fixture produced zero detail lines. This fires
+            // on every detail open, which is what the return-path capture needs.
+            .onAppear {
+                if FanoutDiagnostics.isEnabled {
+                    FanoutDiagnostics.emit(
+                        "DETAILVIEW t=\(Int(ProcessInfo.processInfo.systemUptime * 1000)) appeared kind=\(item.kind.rawValue) "
+                        + "series=\(item.kind == .series)"
+                    )
+                }
+            }
             .detailOpenFeedback()
             .environment(\.plozzArtworkArea, .details)
             // Each detail page installs its own router. A pushed destination —
@@ -106,9 +131,16 @@ struct PlozziOSItemDetailView: View {
     @ViewBuilder
     private func canonicalDetail(for resolvedItem: MediaItem) -> some View {
         let contextItem = item
-        if let model = try? detailEnvironment.makeViewModel(
-            for: resolvedItem, libraryOrigin: originSourceAccountID
-            ) {
+        let key = PlozziOSDetailViewModelKey(
+            itemID: resolvedItem.stablePresentationID,
+            libraryOrigin: originSourceAccountID
+        )
+        let model = try? detailViewModels.value(forKey: key) {
+            try detailEnvironment.makeViewModel(
+                for: resolvedItem, libraryOrigin: originSourceAccountID
+            )
+        }
+        if let model {
                 PlozziOSCanonicalItemDetailView(
                     appModel: appModel,
                     provider: provider,
@@ -169,10 +201,31 @@ struct PlozziOSItemDetailView: View {
                     loadIndexedBatches: relatedTitleLibraryBatchLoaders(in: accounts),
                     displayMode: mode
                 )
-            }
+            },
+            snapshotCache: appModel.detailSnapshotCache
         )
     }
 
+}
+
+/// The largest picture the tapped card already decoded. The push's zoom transition
+/// is stretching this exact image, so the detail hero should start from it rather
+/// than paint a flat background until a 2000px backdrop is fetched and decoded again.
+private func plozziOSHeroSeedArtwork(_ items: MediaItem...) -> UIImage? {
+    let variants: [ArtworkImageVariant] = [
+        .heroBackdrop, .heroPreview, .landscapeCard, .posterCard, .posterPreview, .original
+    ]
+    for item in items {
+        let urls = [item.backdropURL, item.heroBackdropURL, item.posterURL, item.seriesPosterURL]
+        for url in urls.compactMap({ $0 }) {
+            for variant in variants {
+                if let image = ArtworkImageCache.shared.cachedImage(for: url, variant: variant) {
+                    return image
+                }
+            }
+        }
+    }
+    return nil
 }
 
 private struct PlozziOSCanonicalItemDetailView: View {
@@ -219,7 +272,14 @@ private struct PlozziOSCanonicalItemDetailView: View {
     @State private var hasResolvedSeriesPlayTarget = false
     @State private var presentsSeriesDownloads = false
     @State private var heroPullDistance: CGFloat = 0
+    /// True for the duration of a native edge back-swipe. A small vertical
+    /// component of that pan used to reach the scroll view and stretch the hero
+    /// while the page was leaving, so the picture appeared to resize/bounce.
     @State private var isInteractivePopActive = false
+    /// Whether the page's own scroll view is moving. Pull-stretch is a vertical
+    /// scroll gesture; geometry changes from a navigation or inset update must not
+    /// move the hero.
+    @State private var isHeroScrollActive = false
     private let seerService: SeerService?
     private var isDiscoveryItem: Bool { viewModel.isDiscoveryItem }
     private let initialSeasonID: String?
@@ -328,8 +388,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
             isActive: isPageVisible && playbackRequest == nil
         )
         .navigationBarTitleDisplayMode(.inline)
-        // Let the native scroll edge own the backdrop without a second navigation-bar layer.
-        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 PlozziOSDetailAudioMuteControl(
@@ -516,10 +574,15 @@ private struct PlozziOSCanonicalItemDetailView: View {
             dynamicTypeSize: dynamicTypeSize
         ) / 2
         return ScrollView {
-            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
+            // Only the hero and the first sections exist on the push frame. The
+            // information grid, cast, extras and related rows are offscreen work;
+            // building them synchronously during the transition is what made the
+            // page feel locked while it "loaded everything".
+            LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 PlozziOSDetailHeroSection(
                     item: heroTarget,
                     backdropItem: detail.item,
+                    seedArtwork: plozziOSHeroSeedArtwork(heroTarget, detail.item),
                     playableItem: playableHeroTarget,
                     showsPlayPlaceholder: showsPlayPlaceholder,
                     onRetryPlaybackInventory: viewModel.hasNoPlaybackStreams(for: versionTarget) ? {
@@ -613,13 +676,35 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         Task { await viewModel.retryExtras() }
                     }
                 )
+                .plozzFadeInOnAppear()
 
-                if let entries = viewModel.relatedTitlesLoader?.entries, !entries.isEmpty {
-                    PlozziOSRelatedSection(
-                        entries: entries,
-                        inset: pageInset,
-                        onSelect: { item, source in artworkItemNavigator?(item, source) }
-                    )
+                // Related titles arrive after the page is readable, so reserve the
+                // rail's geometry while the loader works — same rule as Home's hero
+                // and the episode rail. Without it the page grew under the viewer the
+                // moment the section appeared. `isLoading`/`hasResolved` are the
+                // loader's own state, so there is no timing guess involved.
+                if let loader = viewModel.relatedTitlesLoader {
+                    PlozzReservedPlaceholder(
+                        isPending: loader.isLoading || !loader.hasResolved,
+                        revealsPlaceholder: true
+                    ) {
+                        PlozziOSHomeSkeletonRail(
+                            title: Text(verbatim: " "),
+                            style: .poster,
+                            showsCaption: true
+                        )
+                        .accessibilityLabel(
+                            Text("Loading related titles")
+                        )
+                    } content: {
+                        if !loader.entries.isEmpty {
+                            PlozziOSRelatedSection(
+                                entries: loader.entries,
+                                inset: pageInset,
+                                onSelect: { item, source in artworkItemNavigator?(item, source) }
+                            )
+                        }
+                    }
                 }
 
                 if !detail.item.detailCredits.isEmpty {
@@ -627,6 +712,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         people: detail.item.people,
                         sourceAccountID: detail.item.sourceAccountID
                     )
+                    .plozzFadeInOnAppear()
                 }
 
                 DetailInformationSections(
@@ -646,6 +732,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         ? HeroContentPolicy.detailDescription(focused: headerPresentation, root: rootPresentation)
                         : nil
                 )
+                .plozzFadeInOnAppear()
             }
             // No trailing padding here. The information band is the last thing in
             // this stack and paints its own tint, so a gap added out here is page
@@ -659,10 +746,14 @@ private struct PlozziOSCanonicalItemDetailView: View {
         .scrollDisabled(isInteractivePopActive)
         .background {
             PlozziOSInteractivePopObserver(isActive: $isInteractivePopActive)
+                .frame(width: 0, height: 0)
                 .allowsHitTesting(false)
         }
         .onChange(of: isInteractivePopActive) { _, active in
             if active { heroPullDistance = 0 }
+        }
+        .onScrollPhaseChange { _, phase in
+            isHeroScrollActive = phase == .interacting || phase == .decelerating
         }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y > trailerPauseThreshold
@@ -674,7 +765,11 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 + geometry.contentInsets.top
             return max(0, -topOffset)
         } action: { _, pullDistance in
-            heroPullDistance = isInteractivePopActive ? 0 : pullDistance
+            // Only a vertical overscroll stretches the hero. While the native
+            // back-swipe owns the touch, the page must stay fixed.
+            guard !isInteractivePopActive else { return }
+            guard pullDistance == 0 || isHeroScrollActive else { return }
+            heroPullDistance = pullDistance
         }
         .ignoresSafeArea(.container, edges: .top)
         .modifier(PlozziOSNavigationBackground())
@@ -1105,7 +1200,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         } else {
             selectedSeasons = nil
         }
-        if appModel.seerService.needsAdminConfirmation,
+        if appModel.activeSeerrRequestIdentity == .admin,
            appModel.profiles.profiles.count > 1 {
             requestConfirmationItem = item
             requestConfirmationSeasons = selectedSeasons
@@ -1132,22 +1227,16 @@ private struct PlozziOSCanonicalItemDetailView: View {
         requestError = nil
         defer { isRequesting = false }
         let requestScope = seasonRequestScope
-        let requestProfileID = appModel.profiles.activeProfileID
-        let requestGeneration = seerService.requestAuthorizationGeneration
         let outcome = await seerService.request(
             item,
             seasons: seasons,
             identity: appModel.activeSeerrRequestIdentity
         )
-        guard requestProfileID == appModel.profiles.activeProfileID,
-              requestGeneration == seerService.requestAuthorizationGeneration else { return }
-        if case let .successElsewhere(message) = outcome {
-            appModel.transientStatusPresenter.present(icon: "checkmark", text: message)
-            return
-        }
         guard context == appModel.plozziOSSeasonRequestContextID else { return }
         switch outcome {
-        case .successElsewhere: break
+        case .successElsewhere:
+            // Another profile already owns this Seerr request; nothing to change.
+            break
         case let .success(status):
             if let seasons {
                 guard requestScope == seasonRequestScope else { return }
@@ -1180,8 +1269,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 }
                 await viewModel.load()
             }
-        case .failure(.cancelled):
-            break
         case let .failure(reason):
             requestError = reason.userMessage
         }
@@ -1740,6 +1827,21 @@ struct PlozziOSInlineSeriesBrowser: View {
     var body: some View {
         if !seasons.isEmpty || !looseEpisodes.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
+                // Detail-path telemetry anchor (PLZXFAN-gated; counts only). Fires
+                // whenever a series page actually builds its episode browser, which
+                // is the surface the "detail reflow" report is about; the return
+                // refresh itself is logged by `DETAILRETURN`.
+                Color.clear
+                    .frame(width: 0, height: 0)
+                    .onAppear {
+                        if FanoutDiagnostics.isEnabled {
+                            FanoutDiagnostics.emit(
+                                "DETAILRAIL appeared seasons=\(seasons.count) "
+                                + "loose=\(looseEpisodes.count) "
+                                + "episodes=\(displayedEpisodes?.count ?? -1)"
+                            )
+                        }
+                    }
                 if !seasons.isEmpty {
                     PlozzContentTabs(
                         options: seasons, id: \.id, selection: selectedSeasonID,
@@ -1758,7 +1860,17 @@ struct PlozziOSInlineSeriesBrowser: View {
                     episodes: displayedEpisodes,
                     isLoading: !seasons.isEmpty
                         && selectedSeasonID != nil
-                        && displayedEpisodes == nil,
+                        && displayedEpisodes == nil
+                        // A cached page is being restored from disk: hold rather than
+                        // paint a skeleton that would be replaced a moment later.
+                        && !viewModel.isRestoringSnapshot,
+                    // Reserve the rail's height on every load AND paint the
+                    // shimmering placeholder cards while the episodes are in flight:
+                    // an empty reserved band reads as broken, and the sweep is the
+                    // only affordance saying the row is coming. The placeholder is
+                    // present from the rail's first frame, so nothing appears or
+                    // disappears mid-page — it is replaced in place by the cards.
+                    showsSkeleton: true,
                     currentEpisodeID: railTargetID,
                     onInteraction: {},
                     onPlay: onPlay
@@ -1805,6 +1917,44 @@ struct PlozziOSInlineSeriesBrowser: View {
             }
             .onChange(of: displayedEpisodes, initial: true) {
                 publishPlayTarget()
+            }
+            // Rail telemetry (PLZXFAN-gated; counts only). The detail half of the
+            // reported reflow is unmeasured, and this is its gate: the rail paints a
+            // skeleton exactly when `displayedEpisodes == nil`, and a return refresh
+            // that clears the season list would make it reappear under the viewer.
+            // Cards-arrived trace: pairs with DETAILVIEW's timestamp to give the
+            // real open latency (item -> seasons -> episodes) instead of a guess.
+            .onChange(of: displayedEpisodes?.count ?? -1, initial: true) { _, count in
+                guard FanoutDiagnostics.isEnabled else { return }
+                let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                FanoutDiagnostics.emit("DETAILCARDS t=\(stamp) count=\(count)")
+            }
+            // Cast and Related arrive from their own network round trips, so they get
+            // their own arrival timestamps: "cast is slow" is only actionable with a
+            // number next to DETAILVIEW's.
+            .onChange(of: viewModel.state.value?.item.detailCredits.count ?? -1, initial: true) { _, count in
+                guard FanoutDiagnostics.isEnabled else { return }
+                let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                FanoutDiagnostics.emit("DETAILCAST t=\(stamp) count=\(count)")
+            }
+            .onChange(of: viewModel.relatedTitlesLoader?.entries.count ?? -1, initial: true) { _, count in
+                guard FanoutDiagnostics.isEnabled else { return }
+                let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                FanoutDiagnostics.emit("DETAILRELATED t=\(stamp) count=\(count)")
+            }
+            .onChange(
+                of: !seasons.isEmpty && selectedSeasonID != nil && displayedEpisodes == nil
+                    && !viewModel.isRestoringSnapshot && hasExplicitSeasonSelection,
+                initial: true
+            ) { _, skeleton in
+                if FanoutDiagnostics.isEnabled {
+                    FanoutDiagnostics.emit(
+                        "DETAILRAIL t=\(Int(ProcessInfo.processInfo.systemUptime * 1000)) skeleton=\(skeleton) "
+                        + "episodes=\(displayedEpisodes?.count ?? -1) "
+                        + "seasons=\(seasons.count) "
+                        + "loose=\(looseEpisodes.count)"
+                    )
+                }
             }
         }
     }
@@ -3527,6 +3677,13 @@ struct PlozziOSInlineEpisodeRail: View {
     @State private var scrollPositionID: String?
     let episodes: [MediaItem]?
     let isLoading: Bool
+    /// Whether the reserved rail shows its skeleton or only holds the space.
+    ///
+    /// A first load holds the geometry invisibly: the cards must not push the page
+    /// down when they arrive (the same reflow Home's preallocated hero avoids), but
+    /// the viewer has not asked for anything, so there is nothing to animate. An
+    /// explicit season switch shows the skeleton as feedback.
+    var showsSkeleton: Bool = true
     var currentEpisodeID: String? = nil
     let onInteraction: () -> Void
     let onPlay: (MediaItem, Bool) -> Void
@@ -3534,12 +3691,14 @@ struct PlozziOSInlineEpisodeRail: View {
     init(
         episodes: [MediaItem]?,
         isLoading: Bool,
+        showsSkeleton: Bool = true,
         currentEpisodeID: String? = nil,
         onInteraction: @escaping () -> Void = {},
         onPlay: @escaping (MediaItem, Bool) -> Void
     ) {
         self.episodes = episodes
         self.isLoading = isLoading
+        self.showsSkeleton = showsSkeleton
         self.currentEpisodeID = currentEpisodeID
         self.onInteraction = onInteraction
         self.onPlay = onPlay
@@ -3547,9 +3706,18 @@ struct PlozziOSInlineEpisodeRail: View {
     }
 
     var body: some View {
-        if isLoading {
+        // Shared guardrail (CoreUI): the placeholder always reserves the rail's real
+        // height, and is only painted when the viewer asked for the change. A local
+        // copy of this rule is how the page ended up reflowing when cards arrived.
+        PlozzReservedPlaceholder(isPending: isLoading, revealsPlaceholder: showsSkeleton) {
             PlozziOSInlineEpisodeSkeletonRail()
-        } else if let episodes, episodes.isEmpty {
+        } content: {
+            railContent
+        }
+    }
+
+    @ViewBuilder private var railContent: some View {
+        if let episodes, episodes.isEmpty {
             ContentUnavailableView(
                 "No episodes",
                 systemImage: "play.rectangle"
@@ -3982,10 +4150,10 @@ struct PlozziOSInlineEpisodeEntry: View {
 /// downloading (unmistakably progress, not a button), and a **filled gray
 /// down-arrow** when complete (a settled status, not an action). Hidden when the
 /// episode isn't downloaded — download itself is started from the ⋯ menu.
-struct PlozziOSCastSection: View {
+private struct PlozziOSCastSection: View {
     @Environment(\.locale) private var locale
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
     // Scales the trailing whitespace with the OS text size so the space under the
     // (variably wrapped) cast names stays proportional at every Dynamic Type level,
@@ -4003,28 +4171,14 @@ struct PlozziOSCastSection: View {
     private var credits: [MediaPersonCredit] { MediaPersonCredit.ordered(people) }
 
     var body: some View {
-        PlozziOSHomeRailLayout { metrics in
-            section(metrics: metrics)
-        }
-    }
-
-    private func section(metrics: PlozzMetrics) -> some View {
-        let pageInset = PlozziOSPageLayout.horizontalInset(
-            for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
-        )
-        let tileDiameter = metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
-        let spacing = metrics.usesDesktopSizing
-            ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
-            : metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle) - metrics.posterWidth
-                + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
-        return PlozziOSMediaSection(
+        PlozziOSMediaSection(
             title: credits.contains { !$0.crewRoles.isEmpty } ? Text("Cast & Crew") : Text("Cast"),
             horizontalInset: pageInset
         ) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
-                    spacing: spacing
+                    spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
                 ) {
                     ForEach(credits) { credit in
                         let person = credit.person
@@ -4049,7 +4203,7 @@ struct PlozziOSCastSection: View {
                             .frame(width: tileDiameter, alignment: .top)
 
                             Text(person.name)
-                                .font(.system(size: metrics.posterTitleFontSize, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(
                                     maxWidth: .infinity,
@@ -4057,7 +4211,7 @@ struct PlozziOSCastSection: View {
                                 )
                             if let role = credit.caption(locale: locale) {
                                 Text(role)
-                                    .font(.system(size: metrics.posterSubtitleFontSize))
+                                    .font(.caption)
                                     .plozzForeground(.secondary)
                                     .fixedSize(
                                         horizontal: false,
@@ -4099,5 +4253,13 @@ struct PlozziOSCastSection: View {
         horizontalSizeClass == .compact ? compactBottomPadding : regularBottomPadding
     }
 
+    private var pageInset: CGFloat {
+        PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
+    }
+
+    /// Desktop cast circles stay smaller than posters; mobile retains its poster scale.
+    private var tileDiameter: CGFloat {
+        metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
+    }
 }
 #endif
