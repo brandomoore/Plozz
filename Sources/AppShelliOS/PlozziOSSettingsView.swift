@@ -266,8 +266,6 @@ struct PlozziOSProfileSettingsSection<Header: View, Row: View, Management: View>
                     row(category)
                 }
             }
-        } footer: {
-            Text(profileScopeFooter)
         }
     }
 }
@@ -434,24 +432,11 @@ var deviceName: String {
     UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
 }
 
-/// Heading for the settings every profile shares. Named for the audience rather
-/// than the hardware, because most of what's in the group syncs — see
-/// `SettingsCopy.everyone`. The reach lives in the section footer instead, so
-/// toggling iCloud Sync never appears to move a row into a different scope.
+/// Heading for settings shared by every profile, independent of iCloud Sync.
 private var deviceSettingsTitle: LocalizedStringResource { SettingsCopy.everyone }
 
-/// Whether this device is currently sharing settings with the user's others.
-/// Read at render time so the scope footers track the iCloud Sync row live.
-private var settingsScopeSyncEnabled: Bool { SyncSetupFeatureFlag().isEnabled }
-
-/// Reach clause for the shared-settings group.
 private var everyoneScopeFooter: LocalizedStringResource {
-    SettingsCopy.everyoneScope(syncEnabled: settingsScopeSyncEnabled, deviceName: deviceName)
-}
-
-/// Reach clause for the active profile's own settings.
-private var profileScopeFooter: LocalizedStringResource {
-    SettingsCopy.profileScope(syncEnabled: settingsScopeSyncEnabled, deviceName: deviceName)
+    "Applies to all profiles on this device."
 }
 
 private struct PlozziOSSettingsSplitView: View {

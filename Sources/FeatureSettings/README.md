@@ -80,7 +80,8 @@ Seerr appears in the active profile's category list, not Everyone. It edits only
 that profile's connections; the existing Kids-profile restrictions still apply.
 On mobile, the active profile's avatar and name form the first row of this same
 settings card, matching the tvOS grouping. The household Profiles entry remains
-under Everyone.
+under Everyone, whose mobile footer explains that it applies to all profiles on
+the device. The profile card has no repeated scope footer.
 
 Playback groups its five optional **Player tabs** in one shared control surface
 on TV and mobile. Labels match the player tabs, Info stays always available, and

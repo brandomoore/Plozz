@@ -75,6 +75,7 @@ final class SettingsCommunityPresentationTests: XCTestCase {
             let text = try recognizedText(in: window, name: "Profile settings Seerr kids-\(isKids)")
             XCTAssertEqual(text.components(separatedBy: "Seerr").count - 1, isKids ? 0 : 1, text)
             XCTAssertEqual(text.components(separatedBy: "Current profile").count - 1, 1, text)
+            XCTAssertFalse(text.contains("Saved to your profile"), text)
             XCTAssertGreaterThan(headerFrame.height, 0)
             XCTAssertEqual(headerFrame.minY, sectionFrame.minY, accuracy: 1,
                            "The identity belongs inside the top of the settings card, not a separate section.")
