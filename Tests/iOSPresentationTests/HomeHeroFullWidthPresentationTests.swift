@@ -1280,7 +1280,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 for sample in landedSamples {
                     for (initial, final) in zip(sample, last) {
                         XCTAssertEqual(Double(initial), Double(final), accuracy: 5,
-                                       "The native top backdrop must not change after the page lands.")
+                                       "The clear detail header must not change after the page lands.")
                     }
                 }
                 let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
@@ -1288,8 +1288,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 let detail = try XCTUnwrap(navigation.topViewController)
                 let scroll = try XCTUnwrap(descendants(detail.view).compactMap { $0 as? UIScrollView }
                     .first { $0.contentSize.height > $0.bounds.height })
-                XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled,
-                               "The correction must preserve the native scroll-edge effect.")
+                XCTAssertTrue(scroll.topEdgeEffect.isHidden,
+                              "Detail artwork must not receive a top scroll-edge blur.")
             }
         }
     }

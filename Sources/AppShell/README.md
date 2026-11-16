@@ -261,11 +261,12 @@ registry.
   bottom-tab backgrounds retain their existing treatment. Search's collapsing
   title row does not clip the profile control's native pressed expansion.
 
-- **Detail navigation uses one top-edge treatment.** The detail page explicitly
-  hides the navigation-bar background across loading and loaded states, while
-  retaining the native scroll-edge effect and toolbar controls. Do not rely on
-  Home's toolbar preference being inherited during a push: the destination must
-  own the same appearance before and after the transition lands.
+- **Detail navigation leaves the top artwork unblurred.** The detail page hides
+  the navigation-bar background and the top native scroll-edge effect, retaining
+  the native toolbar controls. Home's blur and the bottom scroll edge are unchanged.
+  Reduced Transparency still uses its non-blurred status-text fade when scrolling.
+  The destination owns its appearance rather than inheriting Home's toolbar
+  preference during a push.
 
 - **Mac rails fit complete cards plus a next-card preview.** Home, library
   recommendations, related titles, extras, episodes, and cast derive widths from
