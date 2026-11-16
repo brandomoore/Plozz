@@ -74,10 +74,22 @@ private struct LandscapeTitleLogoKey: EnvironmentKey {
     static let defaultValue = LandscapeTitleLogo.off
 }
 
+private struct TitleLogoBackdropKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 public extension EnvironmentValues {
     var plozzLandscapeTitleLogo: LandscapeTitleLogo {
         get { self[LandscapeTitleLogoKey.self] }
         set { self[LandscapeTitleLogoKey.self] = newValue }
+    }
+
+    /// For a row that is not made of episodes but is sized like Continue Watching
+    /// (`showsSeriesArtwork`): draw a full backdrop with the logo over it, instead of
+    /// the episode path's poster ladder.
+    var plozzTitleLogoBackdrop: Bool {
+        get { self[TitleLogoBackdropKey.self] }
+        set { self[TitleLogoBackdropKey.self] = newValue }
     }
 
     var plozzArtworkSettings: ArtworkSettings {

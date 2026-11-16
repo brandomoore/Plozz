@@ -90,9 +90,10 @@ public struct PosterCardView: View {
     @Environment(\.plozzArtworkPolicy) private var inheritedArtworkPolicy
     @Environment(\.plozzContinueWatchingPlaybackDetails) private var playbackDetails
     @Environment(\.plozzLandscapeTitleLogo) private var landscapeTitleLogo
+    @Environment(\.plozzTitleLogoBackdrop) private var titleLogoBackdrop
 
     private var usesLandscapeTitleLogo: Bool {
-        landscapeTitleLogo == .on && !showsSeriesArtwork
+        landscapeTitleLogo == .on && (!showsSeriesArtwork || titleLogoBackdrop)
             && artworkPolicy.usesLandscapeKeyArt(for: item, style: style)
     }
 

@@ -460,6 +460,9 @@
         public let onSeeAll: () -> Void
         private let style: PosterCardView.Style
         private let showsSeriesArtwork: Bool
+        /// Landscape cards draw the show's logo over a full backdrop, the way an
+        /// opted-in landscape row does, at Continue Watching's size.
+        private var usesTitleLogo: Bool { style == .landscape && showsSeriesArtwork }
         private let onFocusEntered: (() -> Void)?
         private let onFocusChange: ((MediaItem?) -> Void)?
         private let onCardFocused: ((MediaItem) -> Void)?
@@ -508,6 +511,11 @@
                     onSelect: { navigate?($0) }
                 )
                 .browsingRow(onSeeAll)
+                .environment(\.plozzArtworkArea, .continueWatching)
+                .environment(\.plozzLandscapeTitleLogo, usesTitleLogo ? .on : .off)
+                .environment(\.plozzTitleLogoBackdrop, usesTitleLogo)
+                // Upcoming titles aren't in the library, so their art is always online.
+                .transformEnvironment(\.plozzArtworkSettings) { $0.setOverride(.online, for: .continueWatching) }
                 .mediaItemActionContext(.upcoming)
             #elseif os(iOS)
                 PlozziOSHomeRailLayout { metrics in
@@ -536,6 +544,11 @@
                     }
                 }
                 .environment(\.plozzCardCaptionView, .home)
+                .environment(\.plozzArtworkArea, .continueWatching)
+                .environment(\.plozzLandscapeTitleLogo, usesTitleLogo ? .on : .off)
+                .environment(\.plozzTitleLogoBackdrop, usesTitleLogo)
+                // Upcoming titles aren't in the library, so their art is always online.
+                .transformEnvironment(\.plozzArtworkSettings) { $0.setOverride(.online, for: .continueWatching) }
                 .mediaItemActionContext(.upcoming)
             #endif
         }
