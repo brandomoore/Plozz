@@ -96,10 +96,9 @@ final class HomePresentationRowTests: XCTestCase {
             let arranged = visibility.rowSections(
                 choices: HomeRowChoice.shared + HomeRowChoice.baseRows(for: source)
             ).enabled
-            // Coming Soon is offered to the arranger at all times but only
-            // becomes a Home row when there is upcoming content. This fixture
-            // has none, so exclude it from the enabled-row comparison.
-            XCTAssertEqual(presented.map(\.id), arranged.filter { $0 != .global(.comingSoon) })
+            // This fixture supplies an Upcoming item, so Coming Soon is both
+            // offered to the arranger and presented as a row.
+            XCTAssertEqual(presented.map(\.id), arranged)
             XCTAssertEqual(presented.last?.id, .libraries)
             XCTAssertTrue(presented.contains { $0.id == .liveTV })
         }
