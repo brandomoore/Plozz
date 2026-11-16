@@ -226,6 +226,18 @@
             "state" : "needs_review",
             "value" : "Plozz अपने आप Jellyfin और Emby सर्वर व मीडिया शेयर खोजने के लिए आपके स्थानीय नेटवर्क का उपयोग करता है।"
           }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz Jellyfin ও Emby সার্ভার এবং মিডিয়া শেয়ার স্বয়ংক্রিয়ভাবে খুঁজে পেতে আপনার স্থানীয় নেটওয়ার্ক ব্যবহার করে।"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plozz Jellyfin اور Emby سرورز اور میڈیا شیئرز خودکار طور پر تلاش کرنے کے لیے آپ کا مقامی نیٹ ورک استعمال کرتا ہے۔"
+          }
         }
       }
     }

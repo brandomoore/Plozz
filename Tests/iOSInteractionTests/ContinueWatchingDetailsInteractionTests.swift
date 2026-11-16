@@ -44,6 +44,28 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Movie-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
     }
 
+    func testCancelledDetailBackSwipeRestoresScrollingAndCompletedSwipeReturnsHome() {
+        launch(["--portrait"])
+        openCard("E2")
+        let play = app.buttons["detail-hero-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 10), app.debugDescription)
+        let window = app.windows.firstMatch
+        let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.35))
+        let shortDrag = window.coordinate(withNormalizedOffset: CGVector(dx: 0.16, dy: 0.39))
+        edge.press(forDuration: 0.05, thenDragTo: shortDrag, withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        app.swipeUp()
+        XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"]
+            .wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        app.swipeDown()
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        let across = window.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.35))
+        edge.press(forDuration: 0.05, thenDragTo: across, withVelocity: .slow, thenHoldForDuration: 0.1)
+        XCTAssertTrue(app.staticTexts["Continue Watching"].waitForExistence(timeout: 10), app.debugDescription)
+        openCard("E2")
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 10), app.debugDescription)
+    }
+
     func testOrdinaryEpisodeBrowsingUsesShowMetadataAndCurrentResume() {
         launch()
         openCard("E3")

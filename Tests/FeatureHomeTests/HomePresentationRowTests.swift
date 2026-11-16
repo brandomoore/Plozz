@@ -74,6 +74,10 @@ final class HomePresentationRowTests: XCTestCase {
             ), name: "News", sourceName: "Source", number: 1
         )
         let snapshot = HomeLiveTVSnapshot(recentChannels: [], channels: [card])
+        let upcoming = UpcomingRelease(
+            id: "release", titleKey: "movie", item: item, date: Date(timeIntervalSince1970: 0),
+            datePrecision: .dateOnly, kind: .digital, interests: [.watchlist]
+        )
         for preset: HomeRowCustomization.Defaults in [.matchServer, .combined] {
             var customization = HomeRowCustomization(defaults: preset)
             if preset == .matchServer {
@@ -87,7 +91,7 @@ final class HomePresentationRowTests: XCTestCase {
                 isGlobalRowEnabled: visibility.isGlobalRowEnabled
             )
             let presented = HomePresentationRow.resolve(
-                rows: home, content: content, visibility: visibility, liveTV: snapshot
+                rows: home, content: content, visibility: visibility, liveTV: snapshot, upcoming: [upcoming]
             )
             let arranged = visibility.rowSections(
                 choices: HomeRowChoice.shared + HomeRowChoice.baseRows(for: source)

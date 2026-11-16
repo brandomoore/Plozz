@@ -77,6 +77,7 @@ final class NavigationDestinationLayoutTests: XCTestCase {
                 NavigationLibraryLayout.homeKey,
                 NavigationLibraryLayout.discoverKey,
                 NavigationLibraryLayout.watchlistKey,
+                NavigationLibraryLayout.upcomingKey,
                 NavigationLibraryLayout.liveTVKey,
                 NavigationLibraryLayout.searchKey,
             ]

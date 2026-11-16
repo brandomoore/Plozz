@@ -165,7 +165,7 @@ struct HomeEditorRowLabel: View {
                             )
                             .accessibilityHidden(true)
                         }
-                        subtitle.font(.footnote).settingsRowSecondary()
+                        subtitle.font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
                     }
                 }
             }

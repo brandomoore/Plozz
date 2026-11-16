@@ -48,23 +48,10 @@ public enum SettingsCopy {
 
     // MARK: - Scope headers
 
-    /// Heading for the settings every profile shares.
-    ///
-    /// Deliberately named for the *audience* rather than the hardware ("This
-    /// Apple TV") or the transport ("iCloud"). Turning iCloud Sync off does not
-    /// move a single setting between sections — it only shrinks how far they
-    /// reach — so a hardware-named heading is correct exactly half the time and
-    /// makes rows appear to jump scope when the toggle flips. The audience never
-    /// changes, so the heading never has to.
-    ///
-    /// "Everyone" over the obvious alternatives, all of which are taken:
-    /// "Household" is Netflix's password-sharing enforcement term, "Family" is
-    /// Apple's own Family Sharing (on this very device), "Home" collides with our
-    /// Home tab, and "Shared" collides with SMB/NFS media shares.
+    /// App management, separate from the active profile's personal preferences.
     public static let everyone = LocalizedStringResource(
-        "settings.scope.everyone",
-        defaultValue: "Everyone",
-        comment: "Heading for the group of settings shared by every profile, as opposed to the section holding the current profile's own settings."
+        "Manage Plozz",
+        comment: "Settings section heading for managing sources, profiles, parental protection, sync, and metadata providers, separate from personal profile preferences. Plozz is the app name and must remain unchanged."
     )
 
     /// Reach clause for the active profile's own settings, when iCloud Sync is on.

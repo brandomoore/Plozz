@@ -44,7 +44,7 @@ struct ViewPreferenceChoiceRow: View {
                         .font(.body.weight(.medium))
                         .multilineTextAlignment(.leading)
                     if isSelected, let detail {
-                        Text(detail).font(.footnote).foregroundStyle(.secondary)
+                        Text(detail).font(SettingsRowMetrics.descriptionFont).foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

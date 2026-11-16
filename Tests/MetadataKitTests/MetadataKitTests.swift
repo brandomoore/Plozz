@@ -297,7 +297,7 @@ final class MetadataKitTests: XCTestCase {
         XCTAssertEqual(TMDbMetadataProvider.bestLogoPath(
             [english, german], preferredLanguage: "fr"
         ), "/en.png")
-        XCTAssertEqual(TMDbMetadataProvider.bestLogoPath([german], preferredLanguage: "fr"), "/de.png")
+        XCTAssertNil(TMDbMetadataProvider.bestLogoPath([german], preferredLanguage: "fr"))
     }
 
     func testLogoCacheSeparatesLanguagesButKeepsOtherArtworkShared() {
@@ -333,6 +333,27 @@ final class MetadataKitTests: XCTestCase {
         let english = await provider.artworkURL(.logo, for: query.forArtworkLanguage("en"))
         XCTAssertEqual(french?.lastPathComponent, "fr.png")
         XCTAssertEqual(english?.lastPathComponent, "en.png")
+    }
+
+    func testFriscoKingLogoLookupRejectsUnrelatedLanguages() async {
+        let provider = TMDbMetadataProvider(
+            access: .proxy(baseURL: URL(string: "https://metadata.example")!),
+            imagesRequest: { _, _ in
+                .init(backdrops: nil, logos: [
+                    .init(file_path: "/mgQXhaG19AVwXsQpWa9ilfklfXM.png", iso_639_1: "uk", vote_average: 0),
+                    .init(file_path: "/cQlTHHqZ0J7SeSU3ex5AHFG74nl.png", iso_639_1: "ru", vote_average: 0)
+                ], posters: nil)
+            }
+        )
+        let query = MetadataQuery(MediaItem(
+            id: "frisco-king", title: "Frisco King", kind: .series, providerIDs: ["Tmdb": "296244"]
+        ))
+        let english = await provider.artworkURL(.logo, for: query.forArtworkLanguage("en-US"))
+        let ukrainian = await provider.artworkURL(.logo, for: query.forArtworkLanguage("uk-UA"))
+        let russian = await provider.artworkURL(.logo, for: query.forArtworkLanguage("ru"))
+        XCTAssertNil(english, "Without a suitable logo, the hero must retain its text title.")
+        XCTAssertEqual(ukrainian?.lastPathComponent, "mgQXhaG19AVwXsQpWa9ilfklfXM.png")
+        XCTAssertEqual(russian?.lastPathComponent, "cQlTHHqZ0J7SeSU3ex5AHFG74nl.png")
     }
 
     func testBestLogoKeepsHigherRatedRasterAndStableTies() {

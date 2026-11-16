@@ -330,6 +330,36 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
+    func testContinuingWithExistingAccountSavesSettingsConnectionImmediately() async throws {
+        var completed = 0
+        try await render(
+            size: .init(width: 390, height: 844), state: .unconfigured, manualForm: true,
+            onConnected: { completed += 1 },
+            configure: { service in
+                let url = URL(string: "https://requests.example")!
+                try service.rememberSetupServer(url, expectedProfileID: "fixture")
+                let authentication = service.authentication(url)
+                service.loginOptions = {
+                    [.init(id: "alex", name: "Alex", mediaServerType: 2) { _ in
+                        try await authentication.password(username: "Passwordless", password: "", local: false)
+                    }]
+                }
+            }
+        ) { window, _, service in
+            XCTAssertTrue(service.profileConnections.connections.isEmpty)
+            let address = try XCTUnwrap(self.textFields(in: window).first { $0.keyboardType == .URL })
+            address.sendActions(for: .primaryActionTriggered)
+            let deadline = ContinuousClock.now + .seconds(3)
+            while completed == 0, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(completed, 1, "The first action must save and finish the account editor.")
+            XCTAssertEqual(service.profileConnections.connections.count, 1)
+            XCTAssertEqual(service.profileConnections.selected?.accountName, "Alex")
+            XCTAssertEqual(service.activeProfileID, "fixture")
+        }
+    }
+
     func testPasswordlessMediaAccountCanSubmit() async throws {
         try await render(size: .init(width: 768, height: 1024), state: .unconfigured, serverType: 3, manualForm: true, configure: { service in
             try service.rememberSetupServer(URL(string: "https://suggested.example")!, expectedProfileID: "fixture")
@@ -500,8 +530,8 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 }
             }) { window, _, service in
                 let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
-                XCTAssertTrue(text.contains("Choose existing account"))
-                XCTAssertFalse(text.contains("Continue as Alex"), "Do not promote an arbitrary first account")
+                XCTAssertTrue(text.contains { $0.hasSuffix("Choose existing account") }, text.joined(separator: " | "))
+                XCTAssertFalse(text.contains { $0.hasSuffix("Continue as Alex") }, "Do not promote an arbitrary first account")
                 XCTAssertNil(selected)
                 guard manualForm else { return }
                 let address = try XCTUnwrap(self.textFields(in: window).first { $0.keyboardType == .URL })
@@ -578,6 +608,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         inputMetrics: SignInInputMetrics? = nil,
         quickConnectAvailable: Bool = true,
         locale: Locale = Locale(identifier: "en"),
+        onConnected: @escaping () -> Void = {},
         configure: (SeerService) async throws -> Void = { _ in },
         inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
@@ -604,7 +635,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 ScrollView {
                     VStack(spacing: 24) {
                         Text(verbatim: "Seerr")
-                        SeerSignInForm(seer: service)
+                        SeerSignInForm(seer: service, onConnected: onConnected)
                     }
                     .padding(24)
                 }
