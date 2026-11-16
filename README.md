@@ -198,14 +198,14 @@ Thank you to the people helping improve Plozz.
 
 <table>
   <tr>
+    <td align="center" width="100"><a href="https://github.com/tresby"><img src="docs/assets/contributors/tresby.png" width="64" height="64" alt="" /><br /><sub>tresby</sub></a></td>
     <td align="center" width="100"><a href="https://github.com/kristofferR"><img src="docs/assets/contributors/kristofferR.png" width="64" height="64" alt="" /><br /><sub>kristofferR</sub></a></td>
     <td align="center" width="100"><a href="https://github.com/MargeyShah"><img src="docs/assets/contributors/MargeyShah.png" width="64" height="64" alt="" /><br /><sub>MargeyShah</sub></a></td>
-    <td align="center" width="100"><a href="https://github.com/moofone"><img src="docs/assets/contributors/moofone.png" width="64" height="64" alt="" /><br /><sub>moofone</sub></a></td>
   </tr>
   <tr>
     <td align="center" width="100"><a href="https://github.com/mossline"><img src="docs/assets/contributors/mossline.png" width="64" height="64" alt="" /><br /><sub>mossline</sub></a></td>
+    <td align="center" width="100"><a href="https://github.com/moofone"><img src="docs/assets/contributors/moofone.png" width="64" height="64" alt="" /><br /><sub>moofone</sub></a></td>
     <td align="center" width="100"><a href="https://github.com/teymourb"><img src="docs/assets/contributors/teymourb.png" width="64" height="64" alt="" /><br /><sub>teymourb</sub></a></td>
-    <td align="center" width="100"><a href="https://github.com/tresby"><img src="docs/assets/contributors/tresby.png" width="64" height="64" alt="" /><br /><sub>tresby</sub></a></td>
   </tr>
 </table>
 
