@@ -348,9 +348,10 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             return try await xmlTVGuide(channelIDs: channelIDs, from: from, to: to, diagnostics: diagnostics)
         }
         try await client.ensureCatalog("live")
-        guard let lineup = try await client.savedGuideLineup(), !lineup.guided.isEmpty else { return [] }
+        guard let lineup = try await client.savedGuideLineup() else { return [] }
         var seen = Set<String>()
-        let guided = channelIDs.filter { seen.insert($0).inserted }.compactMap { lineup.guided[$0] }
+        let requestedIDs = channelIDs.filter { seen.insert($0).inserted }
+        let guided = requestedIDs.compactMap { lineup.guided[$0] }
         if let saved = try await indexedGuide(channels: guided, lineup: lineup, from: from, to: to, diagnostics: diagnostics) {
             return saved
         }
@@ -363,13 +364,14 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             }
         }
         var result: [ServerLiveTVProgramme] = []
-        for channel in guided {
+        // Native listings use stream IDs, even when the channel has no XMLTV guide ID.
+        for id in requestedIDs {
             try Task.checkCancellation()
-            if await client.hasEmptyGuideAnswer(channel.id) { continue }
+            if await client.hasEmptyGuideAnswer(id) { continue }
             let request = IPTVGuideDiagnostics.Request()
             do {
                 let rows = try await IPTVGuideDiagnostics.$request.withValue(request) {
-                    try await client.guide(channelID: channel.id, from: from, to: to)
+                    try await client.guide(channelID: id, from: from, to: to)
                 }
                 diagnostics.record(request, endpoint: .xtream, rows: rows.count)
                 result += rows

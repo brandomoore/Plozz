@@ -487,7 +487,8 @@ final class LiveTVServerImportTests: XCTestCase {
         XCTAssertEqual(saved.sources.first?.entries.count, LiveTVLastSeenSnapshot.maximumChannels)
         XCTAssertEqual(saved.browse.totalCount, 400)
 
-        // A new session: the lineup read is held, so only the saved rows can be on screen.
+        // Same effective viewer after token/session rotation, not another Plex Home viewer.
+        // The lineup read is held, so only the saved rows can be on screen.
         let started = expectation(description: "Lineup read suspended")
         let provider = ServerImportProvider(channels: lineup, suspended: .channels, started: started)
         let context = authorized(server, provider, authorizationID: "next-session")
@@ -500,8 +501,9 @@ final class LiveTVServerImportTests: XCTestCase {
 
         XCTAssertEqual(model.channels.map(\.id), Array(firstModel.channels.prefix(150)).map(\.id))
         XCTAssertEqual(model.guideChannels.map(\.id), Array(firstModel.guideChannels.prefix(150)).map(\.id))
-        XCTAssertEqual(model.categoryChannelCount(nil), 400)
-        XCTAssertEqual(model.browsingCategories, firstModel.browsingCategories)
+        XCTAssertEqual(model.categoryChannelCount(nil), 150)
+        XCTAssertNil(model.provisionalBrowse, "Unproven full-lineup aggregates must not be installed")
+        XCTAssertEqual(model.browsingCategories.map(\.name), firstModel.browsingCategories.map(\.name))
         // A saved row is playable: it is referenced under this session's authorization.
         let reference = try XCTUnwrap(imports.serverChannelReferences[model.channels[0].id])
         XCTAssertEqual(reference.authorizationID, "next-session")
@@ -541,7 +543,8 @@ final class LiveTVServerImportTests: XCTestCase {
         let model = LiveTVPrototypeModel(now: now, channels: [])
         let preload = Task { await imports.reload(into: model, forceServerRefresh: false) }
         await fulfillment(of: [started], timeout: 2)
-        XCTAssertNotNil(model.provisionalBrowse)
+        XCTAssertNil(model.provisionalBrowse)
+        XCTAssertEqual(model.channels.count, 1, "Authorized provisional rows still open immediately")
         XCTAssertEqual(model.categoryChannelCount("Old category"), 1)
 
         profileIsCurrent = false
@@ -597,10 +600,224 @@ final class LiveTVServerImportTests: XCTestCase {
         let entry = saved.sources[0].entries[0]
         let renamed = LiveTVLastSeenSnapshot(sources: [.init(
             sourceID: server.id, accountID: server.accountID, kind: .jellyfin,
-            entries: [.init(nativeID: "another", channel: entry.channel)]
+            entries: [.init(nativeID: "another", channel: entry.channel)], viewerScopeID: saved.sources[0].viewerScopeID
         )], browse: saved.browse)
         let seededWithChangedIdentifier = await seeded(renamed, server)
         XCTAssertEqual(seededWithChangedIdentifier, 0)
+    }
+
+    func testLastSeenRowsDistinguishEffectiveViewerChangesFromSessionRotationForPlexJellyfinAndEmby() async throws {
+        let server = source()
+        for kind: LiveTVPrototypeSource in [.plex, .jellyfin, .emby] {
+            let store = LastSeenMemoryStore()
+            let firstContext = authorized(
+                server, ServerImportProvider(channels: [channel()]), kind: kind,
+                authorizationID: "old-session", viewerScopeID: "profile-account-server-viewer-one"
+            )
+            let first = LiveTVPrototypeImportModel(
+                configuration: .init(servers: [server]), serverProviderResolver: { _ in firstContext }, lastSeen: store
+            )
+            let firstModel = LiveTVPrototypeModel(now: now, channels: [])
+            await first.reload(into: firstModel, forceServerRefresh: false)
+            await first.saveLastSeen(from: firstModel)?.value
+            let saved = try XCTUnwrap(store.load())
+            XCTAssertEqual(saved.sources[0].viewerScopeID, "profile-account-server-viewer-one")
+
+            // For Plex these are distinct Home viewers (including owner vs mapped user);
+            // Jellyfin/Emby use the effective server user, not the expiring session token.
+            for scope: String? in ["profile-account-server-viewer-one", "profile-account-server-viewer-two", nil, ""] {
+                let started = expectation(description: "Current viewer lineup suspended: \(kind) / \(scope ?? "absent")")
+                let provider = ServerImportProvider(channels: [channel()], suspended: .channels, started: started)
+                let context = authorized(
+                    server, provider, kind: kind, authorizationID: "rotated-session", viewerScopeID: scope
+                )
+                let imports = LiveTVPrototypeImportModel(
+                    configuration: .init(servers: [server]), serverProviderResolver: { _ in context },
+                    lastSeen: LastSeenMemoryStore(saved)
+                )
+                let model = LiveTVPrototypeModel(now: now, channels: [])
+                let reload = Task { await imports.reload(into: model, forceServerRefresh: false) }
+                await fulfillment(of: [started], timeout: 2)
+                if scope == "profile-account-server-viewer-one" {
+                    XCTAssertEqual(model.channels, firstModel.channels)
+                    XCTAssertEqual(Set(imports.serverChannelReferences.values.map(\.authorizationID)), ["rotated-session"])
+                } else {
+                    XCTAssertTrue(model.channels.isEmpty, "An account ID alone cannot authorize another viewer's rows")
+                    XCTAssertTrue(imports.serverChannelReferences.isEmpty)
+                    XCTAssertEqual(model.categoryChannelCount(nil), 0)
+                }
+                await provider.resume()
+                await reload.value
+                XCTAssertEqual(model.channels.count, 1, "Missing durable scope must not disable live import")
+            }
+        }
+    }
+
+    func testLegacyAndEmptySnapshotViewerScopesCannotRestoreRows() throws {
+        let server = source()
+        for kind: LiveTVPrototypeSource in [.plex, .jellyfin, .emby] {
+            let context = authorized(server, ServerImportProvider(channels: [channel()]), kind: kind)
+            let catalog = try LiveTVServerCatalog(source: server, context: context, channels: [channel()])
+            let entry = LiveTVLastSeenSnapshot.Entry(nativeID: "native", channel: catalog.channels[0])
+            for scope: String? in [nil, ""] {
+                let rows = LiveTVLastSeenSnapshot.Source(
+                    sourceID: server.id, accountID: server.accountID, kind: kind, entries: [entry], viewerScopeID: scope
+                )
+                XCTAssertNil(LiveTVServerCatalog(lastSeen: rows, source: server, context: context))
+            }
+            let document = LiveTVLastSeenSnapshot(
+                sources: [.init(sourceID: server.id, accountID: server.accountID, kind: kind, entries: [entry])],
+                browse: .init(categories: [], categoryCounts: [:], totalCount: 1)
+            )
+            let bytes = try JSONEncoder().encode(document)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+            let encodedSources = try XCTUnwrap(json["sources"] as? [[String: Any]])
+            XCTAssertNil(encodedSources[0]["viewerScopeID"], "Fixture must exercise the absent legacy field")
+            let decoded = try JSONDecoder().decode(LiveTVLastSeenSnapshot.self, from: bytes)
+            XCTAssertNil(LiveTVServerCatalog(lastSeen: decoded.sources[0], source: server, context: context))
+        }
+    }
+
+    func testViewerChangeWhileSnapshotLoadIsSuspendedRejectsPreviousRows() async throws {
+        let server = source()
+        let oldContext = authorized(
+            server, ServerImportProvider(channels: [channel()]), kind: .plex,
+            authorizationID: "home-one-session", viewerScopeID: "home-one"
+        )
+        let catalog = try LiveTVServerCatalog(source: server, context: oldContext, channels: [channel()])
+        let rows = LiveTVLastSeenSnapshot(sources: [.init(
+            sourceID: server.id, accountID: server.accountID, kind: .plex,
+            entries: [.init(nativeID: "native", channel: catalog.channels[0])], viewerScopeID: "home-one"
+        )], browse: .init(categories: ["Live TV"], categoryCounts: ["Live TV": 1], totalCount: 1))
+        let loadStarted = expectation(description: "Snapshot load suspended")
+        let lineupStarted = expectation(description: "New viewer lineup suspended")
+        let store = SuspendedLastSeenStore(snapshot: rows, started: loadStarted)
+        let provider = ServerImportProvider(channels: [channel()], suspended: .channels, started: lineupStarted)
+        let authorization = ServerAuthorizationFixture()
+        authorization.contexts[server.accountID] = oldContext
+        let imports = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]), serverProviderResolver: authorization.resolve, lastSeen: store
+        )
+        let model = LiveTVPrototypeModel(now: now, channels: [])
+        let reload = Task { await imports.reload(into: model, forceServerRefresh: false) }
+        await fulfillment(of: [loadStarted], timeout: 2)
+        authorization.contexts[server.accountID] = authorized(
+            server, provider, kind: .plex, authorizationID: "home-two-session", viewerScopeID: "home-two"
+        )
+        await store.resume()
+        await fulfillment(of: [lineupStarted], timeout: 2)
+        XCTAssertTrue(model.channels.isEmpty)
+        XCTAssertTrue(imports.serverChannelReferences.isEmpty)
+        XCTAssertEqual(model.categoryChannelCount(nil), 0)
+        await provider.resume()
+        await reload.value
+        XCTAssertEqual(Set(imports.serverChannelReferences.values.map(\.authorizationID)), ["home-two-session"])
+    }
+
+    func testLastSeenBrowseCountsFollowAdmittedSourcesAfterRemovalDisablementOrAuthorizationLoss() async throws {
+        let kept = source(id: "kept", accountID: "one")
+        let removed = source(id: "removed", accountID: "two")
+        let keptChannel = ServerLiveTVChannel(id: "kept", name: "Kept", groups: ["Kept category"])
+        let removedChannel = ServerLiveTVChannel(id: "removed", name: "Removed", groups: ["Removed category"])
+        let store = LastSeenMemoryStore()
+        let original = [
+            kept.accountID: authorized(kept, ServerImportProvider(channels: [keptChannel])),
+            removed.accountID: authorized(removed, ServerImportProvider(channels: [removedChannel]))
+        ]
+        let first = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [kept, removed]), serverProviderResolver: { original[$0] }, lastSeen: store
+        )
+        let firstModel = LiveTVPrototypeModel(now: now, channels: [])
+        await first.reload(into: firstModel, forceServerRefresh: false)
+        await first.saveLastSeen(from: firstModel)?.value
+        let saved = try XCTUnwrap(store.load())
+        XCTAssertEqual(saved.sources.count, 2)
+        XCTAssertEqual(saved.browse.totalCount, 2)
+
+        for boundary in ["unchanged", "removed", "disabled", "unauthorized"] {
+            var disabled = removed
+            disabled.isEnabled = false
+            let servers = boundary == "removed" ? [kept] : [kept, boundary == "disabled" ? disabled : removed]
+            let started = expectation(description: "First lineup suspended: \(boundary)")
+            let provider = ServerImportProvider(channels: [keptChannel], suspended: .channels, started: started)
+            let contexts = [
+                kept.accountID: authorized(kept, provider),
+                removed.accountID: authorized(removed, ServerImportProvider(channels: [removedChannel]))
+            ]
+            let imports = LiveTVPrototypeImportModel(
+                configuration: .init(servers: servers),
+                serverProviderResolver: { boundary == "unauthorized" && $0 == removed.accountID ? nil : contexts[$0] },
+                lastSeen: LastSeenMemoryStore(saved)
+            )
+            let model = LiveTVPrototypeModel(now: now, channels: [])
+            let reload = Task { await imports.reload(into: model, forceServerRefresh: false) }
+            await fulfillment(of: [started], timeout: 2)
+            let unchanged = boundary == "unchanged"
+            XCTAssertEqual(Set(model.channels.map(\.name)), unchanged ? ["Kept", "Removed"] : ["Kept"])
+            XCTAssertEqual(model.categoryChannelCount(nil), unchanged ? 2 : 1)
+            XCTAssertEqual(model.categoryChannelCount("Kept category"), 1)
+            XCTAssertEqual(model.categoryChannelCount("Removed category"), unchanged ? 1 : 0)
+            XCTAssertEqual(model.browsingCategories.contains { $0.name == "Removed category" }, unchanged)
+            XCTAssertNil(model.provisionalBrowse, "Derive summaries from admitted rows, never unscoped aggregates")
+            if unchanged {
+                XCTAssertEqual(model.browseSummary, saved.browse, "Valid all-source counts still open immediately")
+            }
+            await provider.resume()
+            await reload.value
+        }
+    }
+
+    func testLastSeenReopenUsesCurrentHiddenPreferencesAndFiltersInsteadOfSavedAggregateCategories() async throws {
+        for boundary in ["hidden", "favorites-filter"] {
+            let suite = "LiveTVServerImportTests.reopen.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let preferences = LiveTVPreferencesStore(defaults: defaults)
+            let server = source()
+            let lineup = [
+                ServerLiveTVChannel(id: "kept", name: "Kept", groups: ["Kept category"]),
+                ServerLiveTVChannel(id: "excluded", name: "Excluded", groups: ["Excluded category"])
+            ]
+            let store = LastSeenMemoryStore()
+            let first = LiveTVPrototypeImportModel(
+                configuration: .init(servers: [server]),
+                serverProviderResolver: { [self] _ in authorized(server, ServerImportProvider(channels: lineup)) },
+                lastSeen: store
+            )
+            let original = LiveTVPrototypeModel(now: now, channels: [], preferencesStore: preferences)
+            await first.reload(into: original, forceServerRefresh: false)
+            await first.saveLastSeen(from: original)?.value
+            let saved = try XCTUnwrap(store.load())
+            XCTAssertEqual(saved.browse.totalCount, 2)
+            XCTAssertEqual(saved.browse.categoryCounts["Excluded category"], 1)
+            if boundary == "hidden" {
+                XCTAssertTrue(original.hideChannel(try XCTUnwrap(original.channels.first { $0.name == "Excluded" })))
+            } else {
+                original.toggleFavorite(try XCTUnwrap(original.channels.first { $0.name == "Kept" }).id)
+                original.favoritesOnly = true
+            }
+
+            let started = expectation(description: "Lineup held after \(boundary) preference changed")
+            let provider = ServerImportProvider(channels: lineup, suspended: .channels, started: started)
+            let context = authorized(server, provider)
+            let imports = LiveTVPrototypeImportModel(
+                configuration: .init(servers: [server]), serverProviderResolver: { _ in context }, lastSeen: store
+            )
+            let reopened = LiveTVPrototypeModel(now: now, channels: [], preferencesStore: preferences)
+            let reload = Task { await imports.reload(into: reopened, forceServerRefresh: false) }
+            await fulfillment(of: [started], timeout: 2)
+            XCTAssertEqual(reopened.visibleChannels.map(\.name), ["Kept"])
+            XCTAssertEqual(reopened.categoryChannelCount(nil), 1)
+            XCTAssertEqual(reopened.categoryChannelCount("Kept category"), 1)
+            XCTAssertEqual(reopened.categoryChannelCount("Excluded category"), 0)
+            XCTAssertEqual(reopened.browsingCategories.map(\.name), ["Kept category"])
+            XCTAssertNil(reopened.provisionalBrowse)
+            await provider.resume()
+            await reload.value
+            XCTAssertEqual(reopened.visibleChannels.map(\.name), ["Kept"])
+            XCTAssertEqual(reopened.categoryChannelCount(nil), 1)
+            XCTAssertEqual(reopened.categoryChannelCount("Excluded category"), 0)
+        }
     }
 
     func testLastSeenRowsAreDroppedWhenTheLineupCannotBeRead() async throws {
@@ -833,11 +1050,39 @@ final class LiveTVServerImportTests: XCTestCase {
 
     private func authorized(
         _ source: LiveTVServerSource, _ provider: ServerImportProvider,
-        kind: LiveTVPrototypeSource = .jellyfin, authorizationID: String = "active-profile"
+        kind: LiveTVPrototypeSource = .jellyfin, authorizationID: String = "active-profile",
+        viewerScopeID: String? = "same-profile-account-server-viewer"
     ) -> LiveTVAuthorizedServerProvider {
         LiveTVAuthorizedServerProvider(
-            accountID: source.accountID, authorizationID: authorizationID, kind: kind, provider: provider
+            accountID: source.accountID, authorizationID: authorizationID, kind: kind, provider: provider,
+            viewerScopeID: viewerScopeID
         )
+    }
+}
+
+private actor SuspendedLastSeenStore: LiveTVLastSeenStoring {
+    let snapshot: LiveTVLastSeenSnapshot
+    let started: XCTestExpectation
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(snapshot: LiveTVLastSeenSnapshot, started: XCTestExpectation) {
+        self.snapshot = snapshot
+        self.started = started
+    }
+
+    func load() async -> LiveTVLastSeenSnapshot? {
+        await withCheckedContinuation {
+            continuation = $0
+            started.fulfill()
+        }
+        return snapshot
+    }
+
+    func save(_ snapshot: LiveTVLastSeenSnapshot?) async {}
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 

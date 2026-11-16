@@ -1067,7 +1067,7 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertEqual(downloads, [["live:10", "live:11"]])
     }
 
-    func testXtreamNeverAsksForAChannelThatHasNoGuideID() async throws {
+    func testSuccessfulXtreamBatchFiltersUnguidedChannelsWithoutNativeRequests() async throws {
         IPTVFixture.state.handler = { request in
             let query = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems
             if query?.first(where: { $0.name == "action" })?.value == "get_live_streams" {
@@ -1076,9 +1076,15 @@ final class IPTVIntegrationTests: XCTestCase {
             return try Self.twoChannelXtream(request)
         }
         let from = Date(timeIntervalSince1970: 100), to = Date(timeIntervalSince1970: 500)
-        let provider = try await makeXtreamGuideProvider { _, _, _, _, _ in [] }
-        _ = try await provider.liveTVGuide(channelIDs: ["live:12", "live:10", "live:13"], from: from, to: to)
+        let provider = try await makeXtreamGuideProvider { _, _, channels, _, _ in
+            XCTAssertEqual(channels.map(\.id), ["live:10"], "Only XMLTV identities belong in the batch projection")
+            XCTAssertEqual(channels.map(\.guideID), ["news"])
+            return []
+        }
+        let rows = try await provider.liveTVGuide(channelIDs: ["live:12", "live:10", "live:13"], from: from, to: to)
+        XCTAssertTrue(rows.isEmpty, "A successful empty batch is authoritative, including unguided channels")
         XCTAssertEqual(listingRequests(), [])
+        XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
     }
 
     func testXtreamDoesNotRepeatAnEmptyChannelAnswerWithoutASavedGuide() async throws {
@@ -1126,7 +1132,15 @@ final class IPTVIntegrationTests: XCTestCase {
         let overloaded = IPTVError.httpStatus(502)
         XCTAssertEqual((1...6).map { IPTVClient.guideBackoffDelay(after: overloaded, failures: $0) },
                        [300, 600, 1_200, 2_400, 3_600, 3_600])
-        XCTAssertEqual(IPTVClient.guideBackoffDelay(after: IPTVError.httpStatus(503), failures: 1), 300)
+        for status in [502, 503, 504] {
+            let error = IPTVError.httpStatus(status)
+            XCTAssertEqual(IPTVClient.guideBackoffDelay(after: error, failures: 1, retryAfter: 7_200), 7_200)
+            XCTAssertEqual(IPTVClient.guideBackoffDelay(after: error, failures: 1, retryAfter: 100_000), 86_400)
+            XCTAssertEqual(IPTVClient.guideBackoffDelay(after: error, failures: 2, retryAfter: 30), 600)
+            for invalid: TimeInterval? in [nil, 0, -1, TimeInterval.infinity, TimeInterval.nan] {
+                XCTAssertEqual(IPTVClient.guideBackoffDelay(after: error, failures: 1, retryAfter: invalid), 300)
+            }
+        }
         XCTAssertEqual(IPTVClient.guideBackoffDelay(after: AppError.rateLimited(retryAfter: 30), failures: 1), 300)
         XCTAssertEqual(IPTVClient.guideBackoffDelay(after: AppError.rateLimited(retryAfter: 7_200), failures: 1), 7_200)
         XCTAssertEqual(IPTVClient.guideBackoffDelay(after: AppError.rateLimited(retryAfter: nil), failures: 2), 600)
@@ -2085,11 +2099,15 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertEqual(listingRequests().count, before + 2)
     }
 
-    private func backoffClients() throws -> (URL, () throws -> IPTVClient) {
+    private func backoffClients(mode: IPTVCredential.Mode = .playlist) throws -> (URL, () throws -> IPTVClient) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try FileManager.default.removeItem(at: root) }
         let url = try XCTUnwrap(URL(string: "https://provider.test/guide.xml"))
-        let credential = try IPTVCredential(mode: .playlist, address: url)
+        let address = try XCTUnwrap(URL(string: mode == .xtream
+            ? "https://provider.test/prefix" : "https://provider.test/guide.xml"))
+        let credential = try IPTVCredential(
+            mode: mode, address: address, username: "fixture-user", password: "fixture-password"
+        )
         return (url, { [self] in
             let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
             addTeardownBlock { await client.cancel() }
@@ -2178,20 +2196,163 @@ final class IPTVIntegrationTests: XCTestCase {
         }
     }
 
+    private struct SavedBackoff: Decodable {
+        let deadline: TimeInterval
+        let failures: Int
+        let status: Int
+        let grantedDelay: TimeInterval
+    }
+
     func testLongRetryAfterSurvivesRelaunch() async throws {
+        for mode in [IPTVCredential.Mode.playlist, .xtream] {
+            for status in [429, 503] {
+                for usesHTTPDate in [false, true] {
+                    IPTVFixture.state.reset()
+                    let (url, makeClient) = try backoffClients(mode: mode)
+                    let first = try makeClient()
+                    if mode == .xtream {
+                        IPTVFixture.state.handler = Self.xtream
+                        try await first.ensureCatalog("live")
+                    }
+                    func requestGuide(_ client: IPTVClient) async throws {
+                        if mode == .xtream {
+                            _ = try await client.guide(
+                                channelID: "live:10", from: Date(timeIntervalSince1970: 100),
+                                to: Date(timeIntervalSince1970: 500)
+                            )
+                        } else {
+                            _ = try await client.guideData(from: url)
+                        }
+                    }
+                    let target = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970) + 7_200)
+                    let header = usesHTTPDate ? HTTPDate.string(from: target) : "7200"
+                    IPTVFixture.state.handler = { _ in (status, ["Retry-After": header], Data()) }
+                    let count = IPTVFixture.state.requests.count
+                    let before = Date().timeIntervalSince1970
+                    do {
+                        try await requestGuide(first)
+                        XCTFail("The initial refusal must remain an error")
+                    } catch {
+                        if status == 503 { XCTAssertEqual(error as? IPTVError, .httpStatus(503)) }
+                        else {
+                            guard case AppError.rateLimited(let delay) = error else { return XCTFail("Expected rate limit") }
+                            XCTAssertNotNil(delay)
+                        }
+                    }
+                    let after = Date().timeIntervalSince1970
+                    XCTAssertEqual(IPTVFixture.state.requests.count, count + 1, "A long server delay forbids transport retries")
+                    let catalog = await first.catalog
+                    let raw = try XCTUnwrap(catalog.state(IPTVClient.guideBackoffStateKey))
+                    let saved = try JSONDecoder().decode(SavedBackoff.self, from: Data(raw.utf8))
+                    XCTAssertEqual(saved.status, status)
+                    XCTAssertEqual(saved.failures, 1)
+                    let minimumDelay = usesHTTPDate ? target.timeIntervalSince1970 - after : 7_200
+                    let maximumDelay = usesHTTPDate ? target.timeIntervalSince1970 - before : 7_200
+                    XCTAssertGreaterThanOrEqual(saved.grantedDelay, minimumDelay)
+                    XCTAssertLessThanOrEqual(saved.grantedDelay, maximumDelay)
+                    XCTAssertGreaterThanOrEqual(saved.deadline, before + minimumDelay)
+                    XCTAssertLessThanOrEqual(saved.deadline, after + maximumDelay)
+
+                    // The in-memory refusal must preserve the original error kind too.
+                    do {
+                        try await requestGuide(first)
+                        XCTFail("In-memory backoff must prevent an early retry")
+                    } catch {
+                        if status == 503 { XCTAssertEqual(error as? IPTVError, .httpStatus(503)) }
+                        else {
+                            guard case AppError.rateLimited = error else { return XCTFail("Expected rate limit") }
+                        }
+                    }
+                    await first.cancel()
+                    let reopened = try makeClient()
+                    do {
+                        try await requestGuide(reopened)
+                        XCTFail("Long saved backoff must prevent an early retry after relaunch")
+                    } catch {
+                        if status == 503 { XCTAssertEqual(error as? IPTVError, .httpStatus(503)) }
+                        else { XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: nil)) }
+                    }
+                    XCTAssertEqual(IPTVFixture.state.requests.count, count + 1)
+                    XCTAssertEqual(try catalog.state(IPTVClient.guideBackoffStateKey), raw, "Blocked reads must not shorten or renew the deadline")
+                    await reopened.cancel()
+                }
+            }
+        }
+    }
+
+    func testLongSaved503BackoffBlocksBeyondFiveMinutesThenExpires() async throws {
         let (url, makeClient) = try backoffClients()
-        IPTVFixture.state.handler = { _ in (429, ["Retry-After": "7200"], Data()) }
         let first = try makeClient()
-        _ = try? await first.guideData(from: url)
-        let count = IPTVFixture.state.requests.count
+        let catalog = await first.catalog
+        // Model one hour elapsed since a two-hour grant, well beyond the old five-minute fallback.
+        let raw = String(decoding: try JSONSerialization.data(withJSONObject: [
+            "deadline": Date().addingTimeInterval(3_600).timeIntervalSince1970,
+            "failures": 1, "status": 503, "grantedDelay": 7_200
+        ]), as: UTF8.self)
+        try catalog.setState(IPTVClient.guideBackoffStateKey, raw)
+        await first.cancel()
+        IPTVFixture.state.handler = { _ in
+            XCTFail("A persisted long delay still applies after five minutes")
+            return (200, [:], Data("<tv/>".utf8))
+        }
         let reopened = try makeClient()
         do {
             _ = try await reopened.guideData(from: url)
-            XCTFail("Long saved rate limit must throw")
-        } catch {
-            guard case AppError.rateLimited = error else { return XCTFail("Expected rate limit") }
+            XCTFail("The saved 503 must block until its deadline")
+        } catch { XCTAssertEqual(error as? IPTVError, .httpStatus(503)) }
+        XCTAssertTrue(IPTVFixture.state.requests.isEmpty)
+        XCTAssertEqual(try catalog.state(IPTVClient.guideBackoffStateKey), raw)
+        await reopened.cancel()
+
+        var expired = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        expired["deadline"] = Date().addingTimeInterval(-1).timeIntervalSince1970
+        try catalog.setState(IPTVClient.guideBackoffStateKey,
+                             String(decoding: JSONSerialization.data(withJSONObject: expired), as: UTF8.self))
+        IPTVFixture.state.handler = { _ in (200, [:], Data("<tv/>".utf8)) }
+        let eligible = try makeClient()
+        let data = try await eligible.guideData(from: url)
+        XCTAssertEqual(data, Data("<tv/>".utf8))
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+        XCTAssertNil(try catalog.state(IPTVClient.guideBackoffStateKey))
+    }
+
+    func test503MissingMalformedAndShortRetryAfterKeepRetryBudgetAndFallbackBackoff() async throws {
+        let cases: [(String?, Int)] = [(nil, 3), ("invalid", 3), ("0", 3), ("30", 1)]
+        for (header, expectedRequests) in cases {
+            IPTVFixture.state.reset()
+            let (url, makeClient) = try backoffClients()
+            let headers = header.map { ["Retry-After": $0] } ?? [:]
+            IPTVFixture.state.handler = { _ in (503, headers, Data()) }
+            let client = try makeClient()
+            do {
+                _ = try await client.guideData(from: url)
+                XCTFail("Exhausted retries must retain the HTTP refusal")
+            } catch { XCTAssertEqual(error as? IPTVError, .httpStatus(503)) }
+            XCTAssertEqual(IPTVFixture.state.requests.count, expectedRequests)
+            let catalog = await client.catalog
+            let raw = try XCTUnwrap(catalog.state(IPTVClient.guideBackoffStateKey))
+            let saved = try JSONDecoder().decode(SavedBackoff.self, from: Data(raw.utf8))
+            XCTAssertEqual(saved.grantedDelay, 300, "Unknown or shorter server delays retain the five-minute floor")
+            XCTAssertEqual(saved.status, 503)
+            XCTAssertEqual(saved.failures, 1, "Transport retries are one logical guide failure")
+            await client.cancel()
         }
-        XCTAssertEqual(IPTVFixture.state.requests.count, count)
+    }
+
+    func testTerminalAuthenticationAfter503RetryDoesNotPersistOverloadMetadata() async throws {
+        let (url, makeClient) = try backoffClients()
+        IPTVFixture.state.handler = { _ in
+            IPTVFixture.state.requests.count == 1
+                ? (503, ["Retry-After": "0"], Data()) : (401, [:], Data())
+        }
+        let client = try makeClient()
+        do {
+            _ = try await client.guideData(from: url)
+            XCTFail("The terminal authentication refusal must remain visible")
+        } catch { XCTAssertEqual(error as? IPTVError, .authentication) }
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+        let catalog = await client.catalog
+        XCTAssertNil(try catalog.state(IPTVClient.guideBackoffStateKey), "The earlier retryable 503 is not the terminal outcome")
     }
 
     func testGuideBackoffDoublingContinuesAfterUserRefreshAndSuccessResetsIt() async throws {
@@ -2237,21 +2398,70 @@ final class IPTVIntegrationTests: XCTestCase {
         }
     }
 
-    func testLineupWithoutGuideIDsMakesNoGuideRequest() async throws {
-        IPTVFixture.state.handler = { request in
-            if request.url?.query?.contains("action=get_live_streams") == true {
-                return (200, [:], Data(#"[{"stream_id":10,"name":"News"}]"#.utf8))
+    func testLineupWithoutGuideIDsUsesRequestedNativeStreamsWhenBatchUnavailable() async throws {
+        for status in [404, 405, 501] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.url?.path == "/prefix/xmltv.php" { return (status, [:], Data()) }
+                if request.url?.query?.contains("action=get_live_streams") == true {
+                    return (200, [:], Data(#"[{"stream_id":10,"name":"Missing"},{"stream_id":12,"name":"Blank","epg_channel_id":""},{"stream_id":13,"name":"Whitespace","epg_channel_id":"  "},{"stream_id":14,"name":"Unrequested"}]"#.utf8))
+                }
+                return try Self.xtream(request)
             }
-            return try Self.xtream(request)
+            let index = SavedGuideIndex(saved: nil)
+            let provider = try await makeXtreamGuideProvider(guideIndex: index) { _, _, _, _, _ in
+                XCTFail("An unavailable batch must not reach the XMLTV parser")
+                return []
+            }
+            for _ in 0..<2 {
+                let rows = try await provider.liveTVGuide(
+                    channelIDs: ["live:13", "live:10", "live:12", "live:10"],
+                    from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
+                )
+                XCTAssertEqual(rows.map(\.channelID), ["live:13", "live:10", "live:12"])
+                XCTAssertEqual(rows.map(\.title), ["News", "News", "News"])
+                XCTAssertEqual(rows.map(\.startDate), Array(repeating: Date(timeIntervalSince1970: 100), count: 3))
+                XCTAssertEqual(rows.map(\.endDate), Array(repeating: Date(timeIntervalSince1970: 400), count: 3))
+            }
+            XCTAssertEqual(listingRequests(), ["13", "10", "12", "13", "10", "12"], "Deduplicate requested streams without catalog-wide fan-out")
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
+            let cached = await index.cachedRequests
+            let downloads = await index.downloadsFor
+            XCTAssertEqual(cached, [[], []], "Saved XMLTV lookup excludes blank and missing guide IDs")
+            XCTAssertEqual(downloads, [[]], "Even an empty XMLTV projection must discover the unavailable batch")
+            await provider.teardown()
         }
-        let provider = try await makeXtreamGuideProvider { _, _, _, _, _ in
-            XCTFail("An unguided lineup must not download a guide")
-            return []
+    }
+
+    func testMixedLineupNativeFallbackKeepsRequestedStreamsSeparateFromXMLTVScope() async throws {
+        for unguidedOnly in [false, true] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.url?.path == "/prefix/xmltv.php" { return (404, [:], Data()) }
+                if request.url?.query?.contains("action=get_live_streams") == true {
+                    return (200, [:], Data(Self.mixedLineup.utf8))
+                }
+                return try Self.xtream(request)
+            }
+            let index = SavedGuideIndex(saved: nil)
+            let provider = try await makeXtreamGuideProvider(guideIndex: index) { _, _, _, _, _ in
+                XCTFail("An unavailable batch must not reach the parser")
+                return []
+            }
+            let requested = unguidedOnly ? ["live:12", "live:12"] : ["live:12", "live:10", "live:12"]
+            let rows = try await provider.liveTVGuide(
+                channelIDs: requested, from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
+            )
+            XCTAssertEqual(rows.map(\.channelID), unguidedOnly ? ["live:12"] : ["live:12", "live:10"])
+            XCTAssertEqual(rows.map(\.title), unguidedOnly ? ["News"] : ["News", "News"])
+            XCTAssertEqual(listingRequests(), unguidedOnly ? ["12"] : ["12", "10"], "Unrequested guided stream 11 must never be fetched")
+            let cached = await index.cachedRequests
+            let downloads = await index.downloadsFor
+            XCTAssertEqual(cached, unguidedOnly ? [[]] : [["live:10"]])
+            XCTAssertEqual(downloads, unguidedOnly ? [[]] : [["live:10"]])
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
+            await provider.teardown()
         }
-        let before = IPTVFixture.state.requests.count
-        let rows = try await provider.liveTVGuide(channelIDs: ["live:10"], from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500))
-        XCTAssertTrue(rows.isEmpty)
-        XCTAssertEqual(IPTVFixture.state.requests.count, before)
     }
 
     func testUnguidedRequestStillLoadsBatchAndSurfacesItsFailure() async throws {

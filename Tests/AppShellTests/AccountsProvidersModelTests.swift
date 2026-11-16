@@ -5,6 +5,7 @@ import CoreUI
 import FeatureAuth
 import AppRuntime
 @testable import AppShell
+@testable import FeatureLiveTVCore
 
 /// Unit tests for ``AccountsProvidersModel`` — the accounts + providers hub split
 /// out of ``AppState``. Cover the hub's own behavior over in-memory stores:
@@ -524,22 +525,177 @@ final class AccountsProvidersModelTests: XCTestCase {
     }
 
     func testLiveTVUsesEffectiveCredentialsAndInvalidatesTheirIdentity() throws {
-        let (model, store, profiles) = try makeModel(accountIDs: [("a", "a.example.com")])
-        model.registry.register(.jellyfin) { LiveTVAccountsTestProvider(session: $0.session) }
-        model.tokenResolver = { _ in "fixture-effective-user-token" }
-        var revision = CredentialRevision()
-        model.credentialRevision = { _ in revision }
-        store.setActiveAccountIDs(["a"])
-        profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
-        model.reloadAccounts()
-        let resolver = model.liveTVProviderResolver()
-        let original = try XCTUnwrap(resolver("a"))
-        let provider = try XCTUnwrap(original.provider as? LiveTVAccountsTestProvider)
-        XCTAssertEqual(provider.session.accessToken, "fixture-effective-user-token")
-        revision = CredentialRevision()
-        let replacement = try XCTUnwrap(resolver("a"))
-        XCTAssertNotEqual(original.authorizationID, replacement.authorizationID)
-        XCTAssertFalse(replacement.authorizationID.contains("fixture-effective-user-token"))
+        for kind: ProviderKind in [.plex, .jellyfin, .emby] {
+            let (model, store, profiles) = try makeModel(accountIDs: [])
+            let originalAccount = account(id: "a", host: "a.example.com", provider: kind)
+            try store.add(originalAccount, token: "fixture-effective-user-token")
+            model.registry.register(kind) { LiveTVAccountsTestProvider(session: $0.session) }
+            model.tokenResolver = { store.token(for: $0) }
+            profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
+            model.reloadAccounts()
+            let resolver = model.liveTVProviderResolver()
+            let original = try XCTUnwrap(resolver("a"))
+            let scope = try XCTUnwrap(original.viewerScopeID)
+            XCTAssertFalse(scope.isEmpty)
+            let provider = try XCTUnwrap(original.provider as? LiveTVAccountsTestProvider)
+            XCTAssertEqual(provider.session.accessToken, "fixture-effective-user-token")
+            let revision = try XCTUnwrap(model.accounts.first).credentialRevision
+
+            try store.add(originalAccount, token: "fixture-rotated-token")
+            model.reloadAccounts()
+            let replacement = try XCTUnwrap(resolver("a"))
+            XCTAssertNotEqual(revision, model.accounts.first?.credentialRevision)
+            XCTAssertEqual(replacement.viewerScopeID, scope, "A new session is still the same viewer: \(kind)")
+            XCTAssertNotEqual(original.authorizationID, replacement.authorizationID)
+            XCTAssertEqual((replacement.provider as? LiveTVAccountsTestProvider)?.session.accessToken, "fixture-rotated-token")
+            XCTAssertFalse(replacement.authorizationID.contains("fixture-rotated-token"))
+            XCTAssertFalse(scope.contains("fixture-effective-user-token"))
+
+            // Durable rows may reopen, but must acquire the new runtime authorization.
+            let source = LiveTVServerSource(id: "server", name: "Server", accountID: "a")
+            let catalog = try LiveTVServerCatalog(
+                source: source, context: original, channels: [.init(id: "native", name: "Saved")]
+            )
+            let rows = LiveTVLastSeenSnapshot.Source(
+                sourceID: source.id, accountID: "a", kind: original.kind,
+                entries: [.init(nativeID: "native", channel: catalog.channels[0])], viewerScopeID: scope
+            )
+            let reopened = try XCTUnwrap(LiveTVServerCatalog(lastSeen: rows, source: source, context: replacement))
+            XCTAssertEqual(reopened.channels, catalog.channels)
+            XCTAssertEqual(Set(reopened.references.values.map(\.authorizationID)), [replacement.authorizationID])
+        }
+    }
+
+    func testLiveTVViewerScopeChangesWithServerAndServerUserForPlexJellyfinAndEmby() throws {
+        for kind: ProviderKind in [.plex, .jellyfin, .emby] {
+            let (model, store, profiles) = try makeModel(accountIDs: [])
+            var current = account(id: "a", host: "a.example.com", provider: kind)
+            model.registry.register(kind) { LiveTVAccountsTestProvider(session: $0.session) }
+            model.tokenResolver = { store.token(for: $0) }
+            profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
+            var scopes: Set<String> = []
+            for boundary in ["original", "server", "server-user"] {
+                if boundary == "server" { current.server.id = "replacement-server" }
+                if boundary == "server-user" { current.userID = "replacement-user" }
+                try store.add(current, token: "same-token")
+                model.reloadAccounts()
+                let context = try XCTUnwrap(model.liveTVProviderResolver()("a"))
+                let scope = try XCTUnwrap(context.viewerScopeID)
+                XCTAssertFalse(scope.isEmpty)
+                XCTAssertTrue(scopes.insert(scope).inserted, "Different \(boundary) must not reuse rows: \(kind)")
+                XCTAssertEqual(model.liveTVProviderResolver()("a")?.viewerScopeID, scope)
+            }
+            XCTAssertEqual(scopes.count, 3)
+        }
+    }
+
+    func testLiveTVMissingCredentialsAndEmptyRequiredViewerIdentityFailClosed() throws {
+        for kind: ProviderKind in [.plex, .jellyfin, .emby] {
+            for missing in ["account", "server", "server-user"] {
+                let (model, store, profiles) = try makeModel(accountIDs: [])
+                var invalid = account(id: missing == "account" ? "" : "a", host: "a.test", provider: kind)
+                if missing == "server" { invalid.server.id = "" }
+                if missing == "server-user" { invalid.userID = "" }
+                try store.add(invalid, token: "fixture")
+                model.registry.register(kind) { LiveTVAccountsTestProvider(session: $0.session) }
+                profiles.setActiveAccountIDs([invalid.id], for: profiles.activeProfileID)
+                model.reloadAccounts()
+                XCTAssertNil(model.liveTVProviderResolver()(invalid.id), "An absent credential cannot resolve a provider")
+                model.tokenResolver = { store.token(for: $0) }
+                let context = try XCTUnwrap(model.liveTVProviderResolver()(invalid.id))
+                XCTAssertNil(context.viewerScopeID, "Empty \(missing) cannot authorize durable rows: \(kind)")
+            }
+        }
+    }
+
+    func testLiveTVLateSnapshotCannotPublishUnderAReplacementProductionViewerScope() async throws {
+        try await assertLateLiveTVResponseIsFenced(suspendSnapshot: true)
+    }
+
+    func testLiveTVLateProviderCannotPublishUnderAReplacementProductionViewerScope() async throws {
+        try await assertLateLiveTVResponseIsFenced(suspendSnapshot: false)
+    }
+
+    private func assertLateLiveTVResponseIsFenced(suspendSnapshot: Bool) async throws {
+        for kind: ProviderKind in [.plex, .jellyfin, .emby] {
+            let (hub, store, profiles) = try makeModel(accountIDs: [])
+            var current = account(id: "a", host: "a.test", provider: kind)
+            try store.add(current, token: "fixture")
+            profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
+            let snapshotStarted = suspendSnapshot ? expectation(description: "Snapshot suspended: \(kind)") : nil
+            let lineupStarted = expectation(description: "Lineup suspended: \(kind)")
+            let snapshotGate = snapshotStarted.map { LiveTVAccountResponseGate(started: $0) }
+            let lineupGate = LiveTVAccountResponseGate(started: lineupStarted)
+            defer {
+                Task {
+                    await snapshotGate?.release()
+                    await lineupGate.release()
+                }
+            }
+            hub.registry.register(kind) { context in
+                let name = context.session.userID == "replacement-user" ? "Replacement viewer" : "Previous viewer"
+                return LiveTVAccountsTestProvider(session: context.session, channels: {
+                    await lineupGate.wait()
+                    return [.init(id: "native", name: name, groups: [name])]
+                })
+            }
+            hub.tokenResolver = { store.token(for: $0) }
+            hub.reloadAccounts()
+            let resolver = hub.liveTVProviderResolver()
+            let original = try XCTUnwrap(resolver("a"))
+            let scope = try XCTUnwrap(original.viewerScopeID)
+            XCTAssertFalse(scope.isEmpty)
+            let source = LiveTVServerSource(id: "server", name: "Server", accountID: "a")
+            let catalog = try LiveTVServerCatalog(
+                source: source, context: original,
+                channels: [.init(id: "native", name: "Previous viewer", groups: ["Previous viewer"])]
+            )
+            let rows = LiveTVLastSeenSnapshot(sources: [.init(
+                sourceID: source.id, accountID: "a", kind: original.kind,
+                entries: [.init(nativeID: "native", channel: catalog.channels[0])], viewerScopeID: scope
+            )], browse: .init(categories: ["Previous viewer"], categoryCounts: ["Previous viewer": 1], totalCount: 1))
+            let lastSeen = LiveTVAccountSnapshotStore(rows, gate: snapshotGate)
+            let imports = LiveTVPrototypeImportModel(
+                configuration: .init(servers: [source]), serverProviderResolver: resolver, lastSeen: lastSeen
+            )
+            let model = LiveTVPrototypeModel(channels: [])
+            let reload = Task { await imports.reload(into: model, forceServerRefresh: false) }
+            if let snapshotStarted {
+                await fulfillment(of: [snapshotStarted], timeout: 2)
+                XCTAssertTrue(model.channels.isEmpty)
+            } else {
+                await fulfillment(of: [lineupStarted], timeout: 2)
+                XCTAssertEqual(model.channels.map(\.name), ["Previous viewer"], "Positive saved-row admission control")
+            }
+
+            current.userID = "replacement-user"
+            try store.add(current, token: "replacement-token")
+            hub.reloadAccounts()
+            let replacement = try XCTUnwrap(resolver("a"))
+            let replacementScope = try XCTUnwrap(replacement.viewerScopeID)
+            XCTAssertFalse(replacementScope.isEmpty)
+            XCTAssertNotEqual(scope, replacementScope)
+            XCTAssertNotEqual(original.authorizationID, replacement.authorizationID)
+            if suspendSnapshot {
+                await snapshotGate?.release()
+                await fulfillment(of: [lineupStarted], timeout: 2)
+                XCTAssertTrue(model.channels.isEmpty, "A late snapshot must not install the previous viewer's rows")
+                XCTAssertTrue(imports.serverChannelReferences.isEmpty)
+                XCTAssertEqual(model.categoryChannelCount(nil), 0)
+            }
+            await lineupGate.release()
+            await reload.value
+            if !suspendSnapshot {
+                XCTAssertTrue(model.channels.isEmpty, "The retired provider's late response must not publish")
+                XCTAssertTrue(imports.serverChannelReferences.isEmpty)
+                XCTAssertFalse(model.browsingCategories.contains { $0.name == "Previous viewer" })
+                await imports.reload(into: model, forceServerRefresh: false)
+            }
+            XCTAssertEqual(model.channels.map(\.name), ["Replacement viewer"])
+            XCTAssertEqual(Set(imports.serverChannelReferences.values.map(\.authorizationID)), [replacement.authorizationID])
+            XCTAssertFalse(model.browsingCategories.contains { $0.name == "Previous viewer" })
+            XCTAssertEqual(model.categoryChannelCount(nil), 1)
+        }
     }
 
     func testLiveTVResolverIsBoundToTheProfileThatCreatedIt() throws {
@@ -557,10 +713,15 @@ final class AccountsProvidersModelTests: XCTestCase {
         XCTAssertNil(resolver("a"))
         let replacement = try XCTUnwrap(model.liveTVProviderResolver()("a"))
         XCTAssertNotEqual(original.authorizationID, replacement.authorizationID)
+        let originalScope = try XCTUnwrap(original.viewerScopeID)
+        let replacementScope = try XCTUnwrap(replacement.viewerScopeID)
+        XCTAssertFalse(originalScope.isEmpty)
+        XCTAssertFalse(replacementScope.isEmpty)
+        XCTAssertNotEqual(originalScope, replacementScope)
     }
 }
 
-private final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProviding, ServerAddressUpdating,
+final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProviding, ServerAddressUpdating,
     AuthenticatedArtworkProviding, Sendable {
     var kind: ProviderKind { session.server.provider }
     let session: UserSession
@@ -569,9 +730,15 @@ private final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProvi
     func updateServerAddresses(_ alternatives: [URL]) { routes.withLock { $0 = alternatives } }
 
     private let artwork: @Sendable () async throws -> Data
-    init(session: UserSession, artwork: @escaping @Sendable () async throws -> Data = { Data([1]) }) {
+    private let channels: (@Sendable () async throws -> [ServerLiveTVChannel])?
+    init(
+        session: UserSession,
+        artwork: @escaping @Sendable () async throws -> Data = { Data([1]) },
+        channels: (@Sendable () async throws -> [ServerLiveTVChannel])? = nil
+    ) {
         self.session = session
         self.artwork = artwork
+        self.channels = channels
     }
     func artworkData(for reference: AuthenticatedArtworkReference) async throws -> Data { try await artwork() }
     func libraries() async throws -> [MediaLibrary] { [] }
@@ -587,10 +754,12 @@ private final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProvi
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
     func liveTVAvailability() async throws -> ServerLiveTVAvailability {
+        if channels != nil { return .init(status: .available, supportsGuide: false) }
         XCTFail("Listing authorized accounts must not contact a Live TV server")
         throw ServerLiveTVError.unsupportedAPI
     }
     func liveTVChannels() async throws -> [ServerLiveTVChannel] {
+        if let channels { return try await channels() }
         XCTFail("Listing authorized accounts must not load channels")
         return []
     }
@@ -602,4 +771,43 @@ private final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProvi
         XCTFail("Listing authorized accounts must not open a tuner")
         throw ServerLiveTVError.unsupportedPlaybackMode
     }
+}
+
+private actor LiveTVAccountResponseGate {
+    private let started: XCTestExpectation
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var released = false
+
+    init(started: XCTestExpectation) { self.started = started }
+
+    func wait() async {
+        guard !released else { return }
+        await withCheckedContinuation {
+            continuation = $0
+            started.fulfill()
+        }
+    }
+
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor LiveTVAccountSnapshotStore: LiveTVLastSeenStoring {
+    private let snapshot: LiveTVLastSeenSnapshot
+    private let gate: LiveTVAccountResponseGate?
+
+    init(_ snapshot: LiveTVLastSeenSnapshot, gate: LiveTVAccountResponseGate?) {
+        self.snapshot = snapshot
+        self.gate = gate
+    }
+
+    func load() async -> LiveTVLastSeenSnapshot? {
+        await gate?.wait()
+        return snapshot
+    }
+
+    func save(_ snapshot: LiveTVLastSeenSnapshot?) async {}
 }

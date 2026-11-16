@@ -9,15 +9,19 @@ public struct LiveTVAuthorizedServerProvider: Sendable {
     public let accountID: String
     /// A nonsecret, opaque identity that changes with the profile, server user, or provider authorization.
     public let authorizationID: String
+    /// Stable profile/server/viewer identity, independent of credential or session rotation.
+    /// Missing scope disables last-seen persistence, not live provider access.
+    public let viewerScopeID: String?
     public let kind: LiveTVPrototypeSource
     public let provider: any ServerLiveTVProviding
 
     public init(
         accountID: String, authorizationID: String, kind: LiveTVPrototypeSource,
-        provider: any ServerLiveTVProviding
+        provider: any ServerLiveTVProviding, viewerScopeID: String? = nil
     ) {
         self.accountID = accountID
         self.authorizationID = authorizationID
+        self.viewerScopeID = viewerScopeID
         self.kind = kind
         self.provider = provider
     }
@@ -142,6 +146,7 @@ public struct LiveTVServerGuideWindowStatus: Identifiable, Equatable, Sendable {
 
 struct LiveTVServerCatalog: Sendable {
     let authorizationID: String
+    let viewerScopeID: String?
     let kind: LiveTVPrototypeSource
     let channels: [LiveTVPrototypeChannel]
     let references: [String: LiveTVServerChannelReference]
@@ -160,7 +165,9 @@ struct LiveTVServerCatalog: Sendable {
         context: LiveTVAuthorizedServerProvider
     ) {
         guard lastSeen.sourceID == source.id, lastSeen.accountID == source.accountID,
-              lastSeen.kind == context.kind, !lastSeen.entries.isEmpty,
+              context.accountID == source.accountID, lastSeen.kind == context.kind,
+              let viewerScopeID = context.viewerScopeID, !viewerScopeID.isEmpty,
+              lastSeen.viewerScopeID == viewerScopeID, !lastSeen.entries.isEmpty,
               lastSeen.entries.count <= LiveTVLastSeenSnapshot.maximumChannels else { return nil }
         var nativeIDs = Set<String>()
         var references: [String: LiveTVServerChannelReference] = [:]
@@ -177,6 +184,7 @@ struct LiveTVServerCatalog: Sendable {
         }
         nativeChannelIDs = nativeIDs
         authorizationID = context.authorizationID
+        self.viewerScopeID = viewerScopeID
         kind = context.kind
         channels = lastSeen.entries.map(\.channel)
         self.references = references
@@ -196,6 +204,7 @@ struct LiveTVServerCatalog: Sendable {
               channels.allSatisfy({ !$0.id.isEmpty && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         else { throw LiveTVServerImportError.invalidCatalog }
         authorizationID = context.authorizationID
+        viewerScopeID = context.viewerScopeID
         kind = context.kind
         var references: [String: LiveTVServerChannelReference] = [:]
         references.reserveCapacity(channels.count)

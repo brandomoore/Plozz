@@ -20,7 +20,20 @@ public struct LiveTVLastSeenSnapshot: Codable, Equatable, Sendable {
         public let sourceID: String
         public let accountID: String
         public let kind: LiveTVPrototypeSource
+        /// Absent in legacy documents, which cannot prove whose lineup was saved.
+        public let viewerScopeID: String?
         public let entries: [Entry]
+
+        public init(
+            sourceID: String, accountID: String, kind: LiveTVPrototypeSource,
+            entries: [Entry], viewerScopeID: String? = nil
+        ) {
+            self.sourceID = sourceID
+            self.accountID = accountID
+            self.kind = kind
+            self.entries = entries
+            self.viewerScopeID = viewerScopeID
+        }
     }
 
     public let sources: [Source]
@@ -34,9 +47,19 @@ public struct LiveTVBrowseSummary: Codable, Equatable, Sendable {
     public let totalCount: Int
 }
 
+public typealias LiveTVLastSeenSaveOperation = @Sendable (LiveTVLastSeenSnapshot?) async -> Void
+
 public protocol LiveTVLastSeenStoring: Sendable {
     func load() async -> LiveTVLastSeenSnapshot?
     func save(_ snapshot: LiveTVLastSeenSnapshot?) async
+    /// Capture write admission before scheduling any asynchronous snapshot preparation.
+    func prepareSave() -> LiveTVLastSeenSaveOperation
+}
+
+public extension LiveTVLastSeenStoring {
+    func prepareSave() -> LiveTVLastSeenSaveOperation {
+        { snapshot in await self.save(snapshot) }
+    }
 }
 
 /// A local, disposable, sealed file per profile. Anything unreadable is treated as absent.
@@ -46,8 +69,46 @@ public actor LiveTVLastSeenStore: LiveTVLastSeenStoring {
     private let url: URL?
     private let secureStore: any SecureStoring
     private let keyName: String
+    private let beforeSave: (@Sendable () async -> Void)?
+    private static let access = Access()
     private static let header = Data("PLS1".utf8)
     private enum CacheError: Error { case missingKey, invalidKey, invalidCiphertext }
+
+    /// All instances share file/key serialization and directory-scoped erasure epochs.
+    /// No suspension is allowed while holding this lock, including during Keychain I/O.
+    private final class Access: @unchecked Sendable {
+        let lock = NSLock()
+        private var generations: [String: UUID] = [:]
+
+        private func key(for directory: URL) -> String {
+            // A parent URL carries a trailing slash even if the caller's directory URL didn't.
+            directory.standardizedFileURL.pathComponents.joined(separator: "/")
+        }
+
+        func generation(for directory: URL) -> UUID {
+            lock.withLock {
+                let directoryKey = key(for: directory)
+                if let generation = generations[directoryKey] { return generation }
+                let generation = UUID()
+                generations[directoryKey] = generation
+                return generation
+            }
+        }
+
+        func withGeneration<T>(for directory: URL, _ generation: UUID, body: () throws -> T) rethrows -> T? {
+            try lock.withLock {
+                guard generations[key(for: directory)] == generation else { return nil }
+                return try body()
+            }
+        }
+
+        func erase<T>(directory: URL?, body: () throws -> T) rethrows -> T {
+            try lock.withLock {
+                if let directory { generations[key(for: directory)] = UUID() }
+                return try body()
+            }
+        }
+    }
 
     private struct Document: Codable {
         var version = 1
@@ -57,13 +118,15 @@ public actor LiveTVLastSeenStore: LiveTVLastSeenStoring {
 
     public init(
         profileID: String, directory: URL? = LiveTVLastSeenStore.defaultDirectory(),
-        secureStore: any SecureStoring
+        secureStore: any SecureStoring,
+        beforeSave: (@Sendable () async -> Void)? = nil
     ) {
+        self.beforeSave = beforeSave
         self.profileID = profileID
         self.secureStore = secureStore
         let name = SHA256.hash(data: Data(profileID.utf8)).map { String(format: "%02x", $0) }.joined()
         keyName = "liveTV.lastSeen." + name + ".key"
-        url = directory?.appendingPathComponent(name).appendingPathExtension("bin")
+        url = directory?.standardizedFileURL.appendingPathComponent(name).appendingPathExtension("bin")
     }
 
     public static func defaultDirectory() -> URL? {
@@ -74,6 +137,15 @@ public actor LiveTVLastSeenStore: LiveTVLastSeenStoring {
     /// Erases last-seen files and keys, preserving other catalog secrets.
     public static func erase(
         profileIDs: [String], directory: URL? = defaultDirectory(), secureStore: any SecureStoring
+    ) throws {
+        let directory = directory?.standardizedFileURL
+        try access.erase(directory: directory) {
+            try eraseFilesAndKeys(profileIDs: profileIDs, directory: directory, secureStore: secureStore)
+        }
+    }
+
+    private static func eraseFilesAndKeys(
+        profileIDs: [String], directory: URL?, secureStore: any SecureStoring
     ) throws {
         var names = Set(profileIDs.map { profileID in
             SHA256.hash(data: Data(profileID.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -94,6 +166,10 @@ public actor LiveTVLastSeenStore: LiveTVLastSeenStoring {
     }
 
     public func load() async -> LiveTVLastSeenSnapshot? {
+        Self.access.lock.withLock { loadRows() }
+    }
+
+    private func loadRows() -> LiveTVLastSeenSnapshot? {
         guard let url, let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         do {
@@ -113,8 +189,27 @@ public actor LiveTVLastSeenStore: LiveTVLastSeenStoring {
         }
     }
 
-    public func save(_ snapshot: LiveTVLastSeenSnapshot?) async {
-        guard let url else { return }
+    public nonisolated func prepareSave() -> LiveTVLastSeenSaveOperation {
+        guard let url else { return { _ in } }
+        let generation = Self.access.generation(for: url.deletingLastPathComponent())
+        return { snapshot in await self.save(snapshot, generation: generation) }
+    }
+
+    public nonisolated func save(_ snapshot: LiveTVLastSeenSnapshot?) async {
+        let write = prepareSave()
+        await write(snapshot)
+    }
+
+    private func save(_ snapshot: LiveTVLastSeenSnapshot?, generation: UUID) async {
+        guard let url, !Task.isCancelled else { return }
+        await beforeSave?()
+        _ = Self.access.withGeneration(for: url.deletingLastPathComponent(), generation) {
+            guard !Task.isCancelled else { return }
+            saveRows(snapshot, to: url)
+        }
+    }
+
+    private func saveRows(_ snapshot: LiveTVLastSeenSnapshot?, to url: URL) {
         guard let snapshot, Self.isValid(snapshot) else {
             try? FileManager.default.removeItem(at: url)
             return
@@ -154,7 +249,9 @@ public actor LiveTVLastSeenStore: LiveTVLastSeenStoring {
         return !entries.isEmpty && entries.count <= LiveTVLastSeenSnapshot.maximumChannels
             && Set(snapshot.sources.map(\.sourceID)).count == snapshot.sources.count
             && Set(entries.map(\.channel.id)).count == entries.count
-            && snapshot.sources.allSatisfy { !$0.sourceID.isEmpty && !$0.accountID.isEmpty }
+            && snapshot.sources.allSatisfy {
+                !$0.sourceID.isEmpty && !$0.accountID.isEmpty && !($0.viewerScopeID?.isEmpty ?? true)
+            }
             // Server lineups carry no stream address; a row that does is not one of ours.
             && entries.allSatisfy {
                 !$0.nativeID.isEmpty && $0.channel.streamURL == nil && $0.channel.httpHeaders.isEmpty

@@ -717,11 +717,14 @@ actor IPTVClient: ApplicationStorageParticipant {
 
     /// How long guide requests should stay away after `error`; nil when it is not the
     /// provider asking for fewer requests. `failures` counts consecutive refusals.
-    static func guideBackoffDelay(after error: any Error, failures: Int) -> TimeInterval? {
+    /// `retryAfter` belongs to the same refusal when its error carries only a status.
+    static func guideBackoffDelay(
+        after error: any Error, failures: Int, retryAfter: TimeInterval? = nil
+    ) -> TimeInterval? {
         let stated: TimeInterval?
         switch error {
-        case AppError.rateLimited(let retryAfter): stated = retryAfter
-        case IPTVError.httpStatus(let status) where [502, 503, 504].contains(status): stated = nil
+        case AppError.rateLimited(let delay): stated = delay ?? retryAfter
+        case IPTVError.httpStatus(let status) where [502, 503, 504].contains(status): stated = retryAfter
         default: return nil
         }
         let own = min(maximumGuideBackoff, firstGuideBackoff * pow(2, Double(min(max(failures, 1), 8) - 1)))
@@ -777,7 +780,7 @@ actor IPTVClient: ApplicationStorageParticipant {
         throw backoff.error
     }
 
-    private func noteGuideOutcome(_ error: (any Error)?) {
+    private func noteGuideOutcome(_ error: (any Error)?, retryAfter: TimeInterval? = nil) {
         guard let error else {
             // Only a back-off that was set has saved state to remove.
             if guideBackoff != nil { try? catalog.removeState(Self.guideBackoffStateKey) }
@@ -785,7 +788,7 @@ actor IPTVClient: ApplicationStorageParticipant {
             return
         }
         let failures = min(guideBackoff?.failures ?? 0, Int.max - 2) + 1
-        guard let delay = Self.guideBackoffDelay(after: error, failures: failures) else { return }
+        guard let delay = Self.guideBackoffDelay(after: error, failures: failures, retryAfter: retryAfter) else { return }
         guideBackoff = (Date().addingTimeInterval(delay), failures, error)
         saveGuideBackoff(grantedDelay: delay)
         PlozzLog.networking.info("IPTV_GUIDE event=backoff failures=\(failures) seconds=\(Int(delay))")
@@ -954,12 +957,13 @@ actor IPTVClient: ApplicationStorageParticipant {
         let admission = try await acquireRefreshWork(.guide)
         defer { releaseRefreshWork(admission) }
         let data: IPTVObject
+        let responseMetadata = IPTVHTTP.ResponseMetadata()
         do {
             data = try await object(url: endpoint(action: "get_simple_data_table", extra: [
                 URLQueryItem(name: "stream_id", value: nativeID)
-            ]))
+            ]), receivedResponse: { responseMetadata.received($0) })
         } catch {
-            if !Task.isCancelled { noteGuideOutcome(error) }
+            if !Task.isCancelled { noteGuideOutcome(error, retryAfter: responseMetadata.retryAfter(for: error)) }
             throw error
         }
         guard !isClosed else { throw CancellationError() }
@@ -1009,9 +1013,11 @@ actor IPTVClient: ApplicationStorageParticipant {
             throw failure
         }
         try checkGuideBackoff()
+        let responseMetadata = IPTVHTTP.ResponseMetadata()
         do {
             let response = try await retriedGuideResponse(
-                from: url, previous: previous, retainsRawResponse: retainsRawResponse, refresh: refresh
+                from: url, previous: previous, retainsRawResponse: retainsRawResponse, refresh: refresh,
+                responseMetadata: responseMetadata
             )
             noteGuideOutcome(nil)
             return response
@@ -1022,13 +1028,14 @@ actor IPTVClient: ApplicationStorageParticipant {
                    url == (try? xtreamGuideURL()) { batchGuideUnavailable = true }
             default: break
             }
-            if !Task.isCancelled { noteGuideOutcome(error) }
+            if !Task.isCancelled { noteGuideOutcome(error, retryAfter: responseMetadata.retryAfter(for: error)) }
             throw error
         }
     }
 
     private func retriedGuideResponse(
-        from url: URL, previous: XMLTVGuideCacheMetadata?, retainsRawResponse: Bool, refresh: GuideRefreshState?
+        from url: URL, previous: XMLTVGuideCacheMetadata?, retainsRawResponse: Bool, refresh: GuideRefreshState?,
+        responseMetadata: IPTVHTTP.ResponseMetadata
     ) async throws -> XMLTVGuideResponse {
         do {
             var attempt = 0
@@ -1043,6 +1050,7 @@ actor IPTVClient: ApplicationStorageParticipant {
                     return try await downloadGuideData(
                         from: url, previous: attemptValidators, retainsRawResponse: retainsRawResponse
                     ) { response in
+                        responseMetadata.received(response)
                         let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
                         let canFallBack = attemptValidators?.hasValidator == true
                             && attemptValidators?.permitsPersistence == true
@@ -1342,9 +1350,11 @@ actor IPTVClient: ApplicationStorageParticipant {
         return result
     }
 
-    private func object(url: URL) async throws -> IPTVObject {
+    private func object(
+        url: URL, receivedResponse: (@Sendable (HTTPURLResponse) -> Void)? = nil
+    ) async throws -> IPTVObject {
         var data = Data()
-        try await read(url: url) { bytes in
+        try await read(url: url, receivedResponse: receivedResponse) { bytes in
             guard data.count + bytes.count <= 16 * 1_024 * 1_024 else { throw IPTVError.oversizedRecord }
             data.append(bytes)
         }
@@ -1353,8 +1363,12 @@ actor IPTVClient: ApplicationStorageParticipant {
         catch { throw IPTVError.malformed }
     }
 
-    private func read(url: URL, consume: (Data) throws -> Void) async throws {
-        let (bytes, _) = try await http.bytes(url: url, headers: credential.headers(for: url))
+    private func read(
+        url: URL, receivedResponse: (@Sendable (HTTPURLResponse) -> Void)? = nil, consume: (Data) throws -> Void
+    ) async throws {
+        let (bytes, _) = try await http.bytes(
+            url: url, headers: credential.headers(for: url), receivedResponse: receivedResponse
+        )
         defer { bytes.task.cancel() }
         var chunk = Data()
         var consumedBytes = 0

@@ -2697,6 +2697,13 @@ public final class AppState {
         apply(.accountsChanged(accountsProviders.accounts))
     }
 
+    @ObservationIgnored
+    var eraseLiveTVLastSeen: ([String]) throws -> Void = { profileIDs in
+        try LiveTVLastSeenStore.erase(
+            profileIDs: profileIDs, secureStore: LiveTVSourceStorage.catalogSecrets()
+        )
+    }
+
     /// Debug-only: wipes everything that gates the first-run experience —
     /// accounts, profiles (collapsed to a single pristine default), the
     /// first-run flag, and the recent-servers list — so the next server add
@@ -2730,9 +2737,7 @@ public final class AppState {
             return false
         }
         do {
-            try LiveTVLastSeenStore.erase(
-                profileIDs: profilesModel.profiles.map(\.id), secureStore: LiveTVSourceStorage.catalogSecrets()
-            )
+            try eraseLiveTVLastSeen(profilesModel.profiles.map(\.id))
         } catch {
             PlozzLog.app.error("First-run reset could not erase Live TV last-seen rows")
             return false

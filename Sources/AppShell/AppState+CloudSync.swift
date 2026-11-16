@@ -335,9 +335,7 @@ extension AppState {
             try providerCredentialSync.eraseLocalState()
             try TrackerTokenSyncBridge.eraseLocalTokens()
             try LiveTVSourceStorage.eraseAllSources()
-            try LiveTVLastSeenStore.erase(
-                profileIDs: profilesModel.profiles.map(\.id), secureStore: LiveTVSourceStorage.catalogSecrets()
-            )
+            try eraseLiveTVLastSeen(profilesModel.profiles.map(\.id))
             for id in profilesModel.profiles.map(\.id) {
                 guard await authorized() else { return .interrupted }
                 try await mediaAliasLedger.removeProfile(id)

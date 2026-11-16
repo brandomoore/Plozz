@@ -515,7 +515,10 @@ public final class PlexHomeUsersModel {
             guard plexResolvedHomeUser[accountID] == binding.homeUserID else { return nil }
             return plexTokenOverrides[accountID]
         }
-        return plexTokenOverrides[accountID] ?? accountsProviders.accountStore.token(for: accountID)
+        // Removing a binding is not yet an owner credential: reconciliation must first
+        // retire the previous Home viewer's override. Never label it as the owner.
+        guard plexResolvedHomeUser[accountID] == nil, plexTokenOverrides[accountID] == nil else { return nil }
+        return accountsProviders.accountStore.token(for: accountID)
     }
 
     private func hasCurrentCredentialSource(for accountID: String) -> Bool {
