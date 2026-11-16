@@ -46,7 +46,7 @@ final class MissingSourcePresentationHostedTests: XCTestCase {
                 .environment(HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore()))
         ) { window in
             try await waitUntil { model.state.value?.item.overview == "External movie overview." }
-            let text = try await visibleText(window, containing: "External Movie")
+            let text = try await visibleText(window, containing: "Request")
             XCTAssertTrue(text.contains("External Movie"), text)
             XCTAssertTrue(text.contains("Request"), text)
             XCTAssertFalse(text.contains("Source Unavailable"), text)

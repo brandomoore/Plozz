@@ -110,19 +110,42 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
                 id: collectionDirectoryID, title: "Collections", kind: .collection, synthesizedName: .collections
             ))
         }
-        for index in libraries.indices where libraries[index].kind == .collection {
-            do {
-                libraries[index].hasCollections = try await collectionDirectoryHasItems(
-                    in: libraries[index].id
-                )
-            } catch {
-                let failure = (error as? AppError) ?? .invalidResponse
-                if Task.isCancelled || error is CancellationError || failure == .cancelled {
-                    throw CancellationError()
+        // Each collection library probe is its own round trip, so run them
+        // together: serial probes made `libraries()` — and therefore the
+        // `recentlyAdded` row that publishes behind it — cost one RTT per
+        // collection library. Results keep their library indices; a failed
+        // probe leaves the flag unset exactly as the serial version did.
+        let collectionIndices = libraries.indices.filter { libraries[$0].kind == .collection }
+        if !collectionIndices.isEmpty {
+            let availability = try await withThrowingTaskGroup(
+                of: (index: Int, available: Bool?).self,
+                returning: [Int: Bool].self
+            ) { group in
+                for index in collectionIndices {
+                    let libraryID = libraries[index].id
+                    group.addTask {
+                        do {
+                            return (index, try await collectionDirectoryHasItems(in: libraryID))
+                        } catch {
+                            let failure = (error as? AppError) ?? .invalidResponse
+                            if Task.isCancelled || error is CancellationError || failure == .cancelled {
+                                throw CancellationError()
+                            }
+                            PlozzLog.networking.error(
+                                "Collection availability failed provider=\(kind.rawValue) error=\(HandoffDiagnostics.errorCode(failure))"
+                            )
+                            return (index, nil)
+                        }
+                    }
                 }
-                PlozzLog.networking.error(
-                    "Collection availability failed provider=\(kind.rawValue) error=\(HandoffDiagnostics.errorCode(failure))"
-                )
+                var availability: [Int: Bool] = [:]
+                for try await (index, available) in group {
+                    if let available { availability[index] = available }
+                }
+                return availability
+            }
+            for (index, available) in availability {
+                libraries[index].hasCollections = available
             }
         }
         return libraries
@@ -248,16 +271,39 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         let merged = outcome.items
         var seriesDates: [String: Date] = [:]
         if includeSeriesRecency {
-            seriesDates = try await seriesLastPlayedDatesBestEffort(for: merged)
+            seriesDates = try await seriesLastPlayedDatesBestEffort(for: merged, seedingFromFeed: true)
         }
         // Stamp NextUp recency BEFORE capping: a just-finished show's next episode
         // must be able to survive the `limit` cut on its stamped recency rather than
         // being dropped merely because in-progress Resume items filled the limit
         // first (r6-jf-precap).
-        let stamped = merged.map(map(item:)).map { stampingSeriesRecency($0, using: seriesDates) }
+        // One pass per feed item: map, clear a briefly-played position, stamp
+        // series recency. Three chained `map`s materialised two intermediate
+        // arrays of the whole feed for no behavioural difference.
+        let stamped = merged.map { dto in
+            stampingSeriesRecency(
+                retainingBrieflyPlayedEpisodes(map(item: dto)),
+                using: seriesDates
+            )
+        }
         logContinueWatchingFeed(merged, endpoint: "Items/Resume + Shows/NextUp")
         let ordered = orderedByEffectiveRecency(stamped)
         return limit == Int.max ? ordered : Array(ordered.prefix(limit))
+    }
+
+    /// A brief play is hidden from the Home row by the shared resume threshold,
+    /// but Jellyfin omits that episode from `NextUp` because it has a saved
+    /// position. Clearing the tiny position on the Resume copy keeps the series
+    /// visible as a suggestion without enabling the expensive resumable NextUp
+    /// query. Series-specific resume keeps the real position.
+    private func retainingBrieflyPlayedEpisodes(_ item: MediaItem) -> MediaItem {
+        guard item.kind == .episode,
+              let position = item.resumePosition, position > 0,
+              position < ContinueWatchingPolicy.minimumResumePosition(duration: item.runtime)
+        else { return item }
+        var copy = item
+        copy.resumePosition = nil
+        return copy
     }
 
     public func resumeEpisode(inSeries seriesID: String) async throws -> MediaItem? {
@@ -444,14 +490,32 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
     /// this feed are fetched, in bounded batches, so an exhaustive Continue
     /// Watching load never becomes an exhaustive library scan.
     private func seriesLastPlayedDatesBestEffort(
-        for items: [BaseItemDto]
+        for items: [BaseItemDto],
+        seedingFromFeed: Bool = false
     ) async throws -> [String: Date] {
+        // A series' recency is its most recently played episode, and the
+        // account-wide feed already carries that date for every in-progress
+        // episode. Seed from those before asking the server so a series whose
+        // metadata has no date does not need a per-series episode lookup.
+        // Scoped series resume keeps the server authoritative.
+        var result: [String: Date] = [:]
+        if seedingFromFeed {
+            for dto in items {
+                guard let seriesID = dto.SeriesId,
+                      let date = Self.parseDate(dto.UserData?.LastPlayedDate) else { continue }
+                result[seriesID] = max(result[seriesID] ?? date, date)
+            }
+        }
+        // Server metadata stays authoritative: it is still requested for every
+        // undated series, and its dates overwrite the feed seeds below. The
+        // seeds only spare the per-series episode lookup when the server has no
+        // series date at all.
         let seriesIDs = Set(items.compactMap { dto -> String? in
             guard dto.UserData?.LastPlayedDate == nil,
                   dto.Type == "Episode" else { return nil }
             return dto.SeriesId
         }).sorted()
-        guard !seriesIDs.isEmpty else { return [:] }
+        guard !seriesIDs.isEmpty else { return result }
 
         let series: [BaseItemDto]
         do {
@@ -468,44 +532,68 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
             PlozzLog.networking.error(
                 "Jellyfin Continue Watching series-recency enrichment failed; preserving feed order: \(String(describing: error))"
             )
-            return [:]
+            return result
         }
-        var result: [String: Date] = [:]
         for dto in series {
             guard let date = Self.parseDate(dto.UserData?.LastPlayedDate) else { continue }
             result[dto.Id] = date
         }
+        // One bounded sliding window over every undated series. The earlier
+        // version awaited fixed batches of four serially, so each batch was a
+        // hard round-trip barrier before the next four could start; the window
+        // keeps at most `maxConcurrent` lookups in flight and refills as soon
+        // as one finishes. Same per-series failure handling, same merge order.
         let missing = seriesIDs.filter { result[$0] == nil }
-        for start in stride(from: 0, to: missing.count, by: 4) {
-            try Task.checkCancellation()
-            let batch = missing[start..<min(start + 4, missing.count)]
-            let dates = try await withThrowingTaskGroup(of: (String, Date?).self) { group in
-                for seriesID in batch {
-                    group.addTask {
-                        do {
-                            let episode = try await client.lastPlayedEpisode(userID: session.userID, seriesID: seriesID)
-                            return (seriesID, Self.parseDate(episode?.UserData?.LastPlayedDate))
-                        } catch let error as AppError where error == .cancelled {
-                            throw error
-                        } catch is CancellationError {
-                            throw CancellationError()
-                        } catch {
-                            PlozzLog.networking.error(
-                                "Continue Watching episode-recency lookup failed; keeping undated Next Up: \(String(describing: error))"
-                            )
-                            return (seriesID, nil)
-                        }
+        if !missing.isEmpty {
+            let maxConcurrent = 4
+            let dates = try await withThrowingTaskGroup(
+                of: (String, Date?).self,
+                returning: [String: Date].self
+            ) { group in
+                var next = 0
+                while next < missing.count && next < maxConcurrent {
+                    let seriesID = missing[next]
+                    group.addTask { [self] in
+                        try await lastPlayedDate(forSeriesID: seriesID)
                     }
+                    next += 1
                 }
                 var dates: [String: Date] = [:]
-                for try await (seriesID, date) in group {
-                    dates[seriesID] = date
+                while let result = try await group.next() {
+                    dates[result.0] = result.1
+                    guard next < missing.count else { continue }
+                    let seriesID = missing[next]
+                    group.addTask { [self] in
+                        try await lastPlayedDate(forSeriesID: seriesID)
+                    }
+                    next += 1
                 }
                 return dates
             }
             result.merge(dates) { existing, _ in existing }
         }
         return result
+    }
+
+    /// One series' last-played episode lookup, shared by every worker in the
+    /// bounded series-recency window. Cancellation propagates; any other
+    /// failure leaves the series undated, which the caller intentionally
+    /// treats as "keep the Next Up item in arrival order".
+    private func lastPlayedDate(forSeriesID seriesID: String) async throws -> (String, Date?) {
+        do {
+            let episode = try await client.lastPlayedEpisode(userID: session.userID, seriesID: seriesID)
+            return (seriesID, Self.parseDate(episode?.UserData?.LastPlayedDate))
+        } catch let error as AppError where error == .cancelled {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            PlozzLog.networking.error(
+                "Continue Watching episode-recency lookup failed; keeping undated Next Up: \(String(describing: error))"
+            )
+            return (seriesID, nil)
+        }
     }
 
     /// Stamps a Continue Watching item that carries no play timestamp of its own —

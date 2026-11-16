@@ -37,17 +37,26 @@ private struct PlozziOSItemNavigationModifier: ViewModifier {
     @State private var navigatedItem: MediaItem?
     @State private var navigatedArtwork: PlozziOSArtworkItemRoute?
     @State private var navigatedPerson: PlozziOSPersonRoute?
+    @Environment(\.plozziOSNavigationRootRequest) private var navigationRootRequest
     @State private var navigatedLibrary: PlozziOSLibraryRoute?
 
     func body(content: Content) -> some View {
         content
+            // Pressing the Search tab with a page pushed returns this stack to its root,
+            // so the viewer lands in the search field instead of staying on the detail
+            // page they had opened from a result.
+            .onChange(of: navigationRootRequest) { _, _ in
+                navigatedItem = nil
+                navigatedPerson = nil
+                navigatedArtwork = nil
+            }
             .navigationDestination(item: $navigatedItem) { item in
                 PlozziOSItemPage(appModel: appModel, item: item)
                     .modifier(ScreenshotArrivalBeacon(appModel: appModel, enabled: registersScreenshotRouting))
             }
             .navigationDestination(item: $navigatedArtwork) { route in
                 PlozziOSItemPage(appModel: appModel, item: route.item)
-                    .mediaArtworkZoomDestination(route.source)
+                    
             }
             .navigationDestination(item: $navigatedPerson) { route in
                 PlozziOSPersonPage(appModel: appModel, route: route)
@@ -236,7 +245,6 @@ private struct PlozziOSPersonPage: View {
         .artworkNavigation { navigatedArtwork = .init(item: $0, source: $1) }
         .navigationDestination(item: $navigatedArtwork) { route in
             PlozziOSItemPage(appModel: appModel, item: route.item)
-                .mediaArtworkZoomDestination(route.source)
         }
         .navigationDestination(item: $navigatedItem) { item in
             PlozziOSItemPage(appModel: appModel, item: item)

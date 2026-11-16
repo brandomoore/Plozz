@@ -30,6 +30,10 @@ class UnsignedIPATests(unittest.TestCase):
             "CFBundleExecutable": "TopShelf" if extension else "Plozz",
             "CFBundleSupportedPlatforms": [ipa.PLATFORMS[platform][2]],
             "CFBundleShortVersionString": "1.0", "CFBundleVersion": "123",
+            "NSLocalNetworkUsageDescription": "Plozz uses your local network to reach media servers.",
+            "NSBonjourServices": ["_jellyfin._tcp", "_smb._tcp", "_plozz-self._tcp"],
+            "NSAppTransportSecurity": {"NSAllowsArbitraryLoads": True},
+            "UIBackgroundModes": ["audio", "remote-notification"],
         }
 
     def test_snapshot_copies_working_edits_not_ignored_secrets(self):
@@ -111,6 +115,22 @@ class UnsignedIPATests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ipa.verify_info(self.info("tvos", True), "tvos", extension=True, app_version=("1", "2"))
         self.assertEqual(ipa.verify_info(self.info(), "ios"), ("1.0", "123"))
+
+    def test_playback_info_requirements_are_enforced(self):
+        for platform in ("ios", "tvos"):
+            with self.subTest(platform=platform):
+                self.assertEqual(
+                    ipa.verify_playback_info(self.info(platform), platform),
+                    list(ipa.PLAYBACK_INFO_KEYS),
+                )
+            for key, value in [
+                ("NSLocalNetworkUsageDescription", ""),
+                ("NSBonjourServices", ["_smb._tcp"]),
+                ("NSAppTransportSecurity", {"NSAllowsLocalNetworking": True}),
+                ("UIBackgroundModes", ["remote-notification"]),
+            ]:
+                with self.subTest(platform=platform, key=key), self.assertRaises(ValueError):
+                    ipa.verify_playback_info(dict(self.info(platform), **{key: value}), platform)
 
     def make_app(self, platform="ios"):
         app = self.root / "Plozz.app"
@@ -250,6 +270,7 @@ class UnsignedIPATests(unittest.TestCase):
         self.assertTrue(receipt["workingTreeModified"])
         self.assertEqual(receipt["sourceRevision"], "source-revision")
         self.assertEqual(len(receipt["ipaSHA256"]), 64)
+        self.assertEqual(receipt["playbackInfoKeys"], list(ipa.PLAYBACK_INFO_KEYS))
         self.assertIn("ipa_path=", github_output.read_text())
         self.assertTrue((evidence / "Plozz-ios-unsigned.ipa").is_file())
         self.assertNotIn("install", [arg for args in calls for arg in args])

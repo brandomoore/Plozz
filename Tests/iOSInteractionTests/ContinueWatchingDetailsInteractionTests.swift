@@ -44,6 +44,27 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Movie-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
     }
 
+    /// Tapping the same card again after backing out must still open it. A
+    /// NavigationLink kept its presented/highlighted state on the source card in
+    /// some stacks, leaving that one card inert until a different link activated.
+    func testTheSameCardOpensAgainAfterReturning() {
+        launch()
+        let card = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "Continuing movie")
+        ).firstMatch
+        for attempt in 0..<3 {
+            XCTAssertTrue(card.waitForExistence(timeout: 10), app.debugDescription)
+            for _ in 0..<3 where !card.isHittable { app.swipeUp() }
+            card.tap()
+            XCTAssertTrue(
+                app.staticTexts["Movie-specific synopsis."].waitForExistence(timeout: 10),
+                "Attempt \(attempt): \(app.debugDescription)"
+            )
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(card.wait(for: \.isHittable, toEqual: true, timeout: 10), app.debugDescription)
+        }
+    }
+
     func testOrdinaryEpisodeBrowsingUsesShowMetadataAndCurrentResume() {
         launch()
         openCard("E3")

@@ -49,6 +49,10 @@ struct PlozziOSApp: App {
             diskCapacity: 512 * 1024 * 1024,
             directory: nil
         )
+        // Mirrors the tvOS entry point. `PLZSTALL=1` arms the opt-in main-actor
+        // wake-up probe, which is how a device run can attribute the post-back
+        // navigation lock to a real stall instead of a screenshot guess.
+        MainActor.assumeIsolated { MainThreadStallProbe.startIfRequested() }
     }
 
     var body: some Scene {
