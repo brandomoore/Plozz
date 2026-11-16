@@ -6,6 +6,7 @@ import FeatureAuth
 import FeatureProfiles
 import Observation
 import SeerService
+import FeatureLiveTVCore
 @testable import AppRuntime
 @testable import AppShell
 
@@ -71,6 +72,56 @@ final class PlexHomeUsersModelTests: XCTestCase {
         model.plexHomeUsersFetch = { _, _ in throw URLError(.notConnectedToInternet) }
         model.plexHomeUserSwitch = { _, _, _, _ in throw AppError.unauthorized }
         return (model, hub, profiles)
+    }
+
+    func testLiveTVPlexHomeScopesAndUnbindingFailClosedUntilCredentialReconciliation() async throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["a"])
+        hub.registry.register(.plex) { LiveTVAccountsTestProvider(session: $0.session) }
+        hub.tokenResolver = { model.resolvedToken(for: $0) }
+        hub.credentialRevision = { model.effectiveCredentialRevision(for: $0) }
+        profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
+        hub.reloadAccounts()
+        let resolver = hub.liveTVProviderResolver()
+        let owner = try XCTUnwrap(resolver("a"))
+        let ownerScope = try XCTUnwrap(owner.viewerScopeID)
+        XCTAssertFalse(ownerScope.isEmpty)
+        var scopes: Set<String> = [ownerScope]
+        var authorizations: Set<String> = [owner.authorizationID]
+        for userID in ["managed-one", "managed-two"] {
+            model.plexHomeUsersFetch = { _, _ in [.init(id: userID, name: userID, requiresPIN: true)] }
+            model.plexHomeUserSwitch = { _, _, _, _ in "cloud-\(userID)" }
+            model.plexServerTokenResolve = { _, _, _ in "server-\(userID)" }
+            activateSavedUser(model, profiles: profiles, accountID: "a",
+                              user: .init(id: userID, name: userID, requiresPIN: true))
+            XCTAssertNil(resolver("a"), "Neither the owner nor the previous Home token authorizes a pending binding")
+            await model.waitForPlexPINRequirementCheck()
+            model.submitPlexPIN("2468")
+            await model.waitForPlexPINRequirementCheck()
+            let context = try XCTUnwrap(resolver("a"))
+            let scope = try XCTUnwrap(context.viewerScopeID)
+            XCTAssertFalse(scope.isEmpty)
+            XCTAssertTrue(scopes.insert(scope).inserted, "Owner and each managed user need distinct durable scopes")
+            XCTAssertTrue(authorizations.insert(context.authorizationID).inserted)
+            XCTAssertEqual(resolver("a")?.viewerScopeID, scope)
+            XCTAssertEqual((context.provider as? LiveTVAccountsTestProvider)?.session.accessToken, "server-\(userID)")
+        }
+        XCTAssertEqual(scopes.count, 3)
+
+        let saved = profiles.activeProfile
+        profiles.update(saved.settingHomeUserBinding(
+            .init(homeUserID: "", name: "Incomplete", requiresPIN: true), forPlexAccount: "a"
+        ))
+        XCTAssertNil(model.resolvedToken(for: "a"), "An empty Home identity must fail closed")
+        XCTAssertNil(resolver("a"))
+        profiles.update(saved.settingHomeUserBinding(nil, forPlexAccount: "a"))
+        // Deliberately inspect the real hub before ensurePlexIdentityForActiveProfile clears the override.
+        XCTAssertNil(model.resolvedToken(for: "a"), "Unbinding cannot relabel the last managed token as owner")
+        XCTAssertNil(resolver("a"))
+        model.ensurePlexIdentityForActiveProfile()
+        let reconciled = try XCTUnwrap(resolver("a"))
+        XCTAssertEqual(reconciled.viewerScopeID, ownerScope)
+        XCTAssertEqual((reconciled.provider as? LiveTVAccountsTestProvider)?.session.accessToken, "admin-a")
+        XCTAssertEqual(model.resolvedToken(for: "a"), "admin-a")
     }
 
     func testSeerrEmbyUsernameSuggestionsStayWithinTheActiveProfileAccounts() throws {

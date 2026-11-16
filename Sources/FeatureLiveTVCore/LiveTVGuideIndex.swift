@@ -15,6 +15,22 @@ public struct LiveTVGuideIndexState: Codable, Sendable {
     func contains(_ range: DateInterval) -> Bool {
         range.start >= lowerBound && range.end <= upperBound
     }
+
+    /// Whether the saved listings may be used without asking the server again.
+    /// `updateInterval` is the profile's chosen limit; nil keeps the response's own lifetime.
+    func isReusable(at now: Date, updateInterval: TimeInterval?) -> Bool {
+        guard let cacheMetadata else { return expiresAt > now }
+        guard let updateInterval else { return expiresAt > now && cacheMetadata.isFresh(at: now) }
+        // An expiry earlier than the response's own marks an index that must be rebuilt soon.
+        if expiresAt < cacheMetadata.expiresAt, expiresAt <= now { return false }
+        return cacheMetadata.isFresh(at: now, updateInterval: updateInterval)
+    }
+
+    /// When an automatic update next falls due. Shorter lifetimes stated by the server are
+    /// honoured when listings are requested, not by updating in the background more often.
+    func updateDue(interval: TimeInterval) -> Date {
+        cacheMetadata?.checkedAt.addingTimeInterval(interval) ?? expiresAt
+    }
 }
 
 enum LiveTVGuideIndexError: Error { case generationChanged }
@@ -27,6 +43,7 @@ public actor LiveTVGuideIndex {
     private let cache: LiveTVIndexedCache
     private let language: String?
     private let clock: @Sendable () -> Date
+    private let updateInterval: @Sendable () -> TimeInterval?
     private var epoch = UUID()
     private var closed = false
     private var invalidating = false
@@ -55,11 +72,13 @@ public actor LiveTVGuideIndex {
 
     public init(
         cache: LiveTVIndexedCache, preferredLanguage: String? = LanguageMatch.deviceLanguageCode,
-        clock: @escaping @Sendable () -> Date = Date.init
+        clock: @escaping @Sendable () -> Date = Date.init,
+        updateInterval: @escaping @Sendable () -> TimeInterval? = { nil }
     ) {
         self.cache = cache
         language = preferredLanguage
         self.clock = clock
+        self.updateInterval = updateInterval
     }
 
     #if DEBUG
@@ -84,9 +103,11 @@ public actor LiveTVGuideIndex {
         }
     }
 
+    /// `trustsGuideIDs`: the lineup and this guide come from the same provider account, so
+    /// a channel's guide ID alone decides its listings.
     public func programs(
         from url: URL, catalog: [LiveTVPrototypeChannel], channels: [LiveTVPrototypeChannel],
-        range: DateInterval, revalidate: @escaping Revalidate
+        range: DateInterval, trustsGuideIDs: Bool = false, revalidate: @escaping Revalidate
     ) async throws -> [LiveTVPrototypeProgram] {
         guard range.duration > 0, range.duration <= 172_800,
               range.start.timeIntervalSince1970.isFinite, range.end.timeIntervalSince1970.isFinite,
@@ -108,7 +129,7 @@ public actor LiveTVGuideIndex {
                 do {
                     let result = try await cache.indexedAccountPrograms(
                         sourceID: sourceID, sourceURL: url, generation: state.generation,
-                        channels: channels, range: range
+                        channels: channels, range: range, trustsGuideIDs: trustsGuideIDs
                     )
                     try Task.checkCancellation()
                     guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
@@ -123,10 +144,9 @@ public actor LiveTVGuideIndex {
                         let parser = LiveTVXMLTVParser(
                             provider: LiveTVGuideSource.provider(for: url), preferredLanguage: language
                         )
-                        let guide = try data.starts(with: [0x1f, 0x8b])
-                            ? parser.parse(gzipData: data, channels: channels, now: range.start)
-                            : parser.parseXML(data: data, channels: channels, now: range.start)
-                        return guide.programs.filter { $0.start < range.end && $0.end > range.start }
+                        return try parser.accountPrograms(
+                            data: data, channels: channels, range: range, trustsGuideIDs: trustsGuideIDs
+                        )
                     }
                 }
                 transientTasks[transientID] = task
@@ -148,7 +168,7 @@ public actor LiveTVGuideIndex {
     /// Without one, every lookup validates the full lineup.
     public func cachedPrograms(
         from url: URL, channels: [LiveTVPrototypeChannel], range: DateInterval,
-        catalogRevision: String? = nil,
+        trustsGuideIDs: Bool = false, catalogRevision: String? = nil,
         catalog: @Sendable () async throws -> [LiveTVPrototypeChannel]
     ) async throws -> [LiveTVPrototypeProgram]? {
         guard range.duration > 0, range.duration <= 172_800,
@@ -163,8 +183,7 @@ public actor LiveTVGuideIndex {
         let now = clock()
         let saved = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)
         var result: [LiveTVPrototypeProgram]?
-        if let state = saved, state.contains(range), state.expiresAt > now,
-           state.cacheMetadata?.isFresh(at: now) ?? true {
+        if let state = saved, state.contains(range), state.isReusable(at: now, updateInterval: updateInterval()) {
             let projection: String
             if let catalogRevision, let cachedProjection, cachedProjection.revision == catalogRevision {
                 projection = cachedProjection.value
@@ -180,7 +199,7 @@ public actor LiveTVGuideIndex {
                 do {
                     result = try await cache.indexedAccountPrograms(
                         sourceID: sourceID, sourceURL: url, generation: state.generation,
-                        channels: channels, range: range
+                        channels: channels, range: range, trustsGuideIDs: trustsGuideIDs
                     )
                 } catch LiveTVGuideIndexError.generationChanged { result = nil }
             }
@@ -189,6 +208,27 @@ public actor LiveTVGuideIndex {
         try Task.checkCancellation()
         guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
         return result
+    }
+
+    /// Brings a guide that is already saved for `url` up to date once it is older than the
+    /// chosen update interval. Returns when it next falls due, or nil when automatic updates
+    /// are off or nothing is saved; a guide is never downloaded here for the first time.
+    public func updateSaved(
+        from url: URL, catalog: @Sendable () async throws -> [LiveTVPrototypeChannel],
+        revalidate: @escaping Revalidate
+    ) async throws -> Date? {
+        guard let interval = updateInterval(), !closed else { return nil }
+        let sourceID = Self.sourceID(url)
+        guard let saved = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url) else { return nil }
+        let now = clock()
+        let due = saved.updateDue(interval: interval)
+        if now < due { return due }
+        _ = try await programs(
+            from: url, catalog: try await catalog(), channels: [],
+            range: DateInterval(start: now, duration: 6 * 3_600), revalidate: revalidate
+        )
+        return try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)?
+            .updateDue(interval: interval)
     }
 
     public func invalidate() async {
@@ -240,7 +280,8 @@ public actor LiveTVGuideIndex {
                             result = .success(try await ServerLiveTVGuideProgress.$report.withValue(progress.send) {
                                 try await Self.resolve(
                                     url: url, catalog: catalog, projection: projection, range: range,
-                                    cache: cache, language: language, force: force, now: self.clock(), download: download
+                                    cache: cache, language: language, force: force, now: self.clock(),
+                                    updateInterval: self.updateInterval(), download: download
                                 )
                             })
                         } catch { result = .failure(error) }
@@ -297,16 +338,19 @@ public actor LiveTVGuideIndex {
 
     private static func resolve(
         url: URL, catalog: [LiveTVPrototypeChannel], projection: String, range: DateInterval,
-        cache: LiveTVIndexedCache, language: String?, force: Bool, now: Date, download: Revalidate
+        cache: LiveTVIndexedCache, language: String?, force: Bool, now: Date,
+        updateInterval: TimeInterval?, download: Revalidate
     ) async throws -> Resolution {
         let sourceID = sourceID(url)
         let saved = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)
         var eligible = saved.flatMap { $0.projection == projection && $0.contains(range) ? $0 : nil }
-        if !force, let eligible, eligible.expiresAt > now,
-           eligible.cacheMetadata?.isFresh(at: now) ?? true {
+        if !force, let eligible, eligible.isReusable(at: now, updateInterval: updateInterval) {
             PlozzLog.networking.info("IPTV_INDEX outcome=reused")
             return .indexed(eligible)
         }
+        let reason = saved == nil ? "none" : saved?.projection != projection ? "lineupChanged"
+            : saved?.contains(range) != true ? "window" : force ? "forced" : "due"
+        PlozzLog.networking.info("IPTV_INDEX outcome=download reason=\(reason)")
         // Only validate a representation that can answer this exact projection
         // and window. A 304 cannot supply stations/intervals we never indexed.
         let previous = eligible?.cacheMetadata.flatMap { $0.hasValidator ? $0 : nil }
@@ -382,9 +426,14 @@ public actor LiveTVGuideIndex {
     private static func projection(_ catalog: [LiveTVPrototypeChannel], language: String?) throws -> String {
         var hasher = SHA256()
         hasher.update(data: try JSONEncoder().encode([
-            "account-xmltv-stations-v1", String(LiveTVXMLTVParser.cacheVersion), language
+            "account-xmltv-stations-v2", String(LiveTVXMLTVParser.cacheVersion), language
         ]))
-        for channel in catalog.sorted(by: { $0.id < $1.id }) {
+        // Only a channel with a guide ID can be given listings. Leaving the others out keeps
+        // a saved guide usable when a provider renames its event channels through the day.
+        let guided = catalog.filter {
+            $0.guideID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }
+        for channel in guided.sorted(by: { $0.id < $1.id }) {
             try Task.checkCancellation()
             hasher.update(data: try JSONEncoder().encode(
                 [channel.id, channel.name, channel.guideID, channel.guideName, channel.country]

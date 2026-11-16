@@ -11,16 +11,54 @@ public struct LiveTVGuideMatcher: Sendable {
 
     public func match(
         channels: [LiveTVPrototypeChannel],
-        guideChannels: [String: [String]]
+        guideChannels: [String: [String]],
+        trustsGuideIDs: Bool = false,
+        spellings: [String: [String]]? = nil
     ) -> [String: [LiveTVPrototypeChannel]] {
-        matching(channels: channels, guideChannels: guideChannels).channelsByGuideID
+        matching(
+            channels: channels, guideChannels: guideChannels, trustsGuideIDs: trustsGuideIDs,
+            spellings: spellings
+        ).channelsByGuideID
     }
 
+    /// `trustsGuideIDs` is for a lineup and guide published by the same provider account.
+    /// There the guide ID is the provider's own key, so every channel carrying it gets the
+    /// listings, whatever else is requested alongside it. A playlist paired with someone
+    /// else's guide keeps the stricter rule: channels sharing an ID must also share a name.
     func matching(
         channels: [LiveTVPrototypeChannel],
         guideChannels: [String: [String]],
-        overrides: [String: String] = [:]
+        overrides: [String: String] = [:],
+        trustsGuideIDs: Bool = false,
+        spellings preparedSpellings: [String: [String]]? = nil
     ) -> (channelsByGuideID: [String: [LiveTVPrototypeChannel]], assignments: [String: LiveTVGuideMatch]) {
+        if trustsGuideIDs {
+            var result: [String: [LiveTVPrototypeChannel]] = [:]
+            var assignments: [String: LiveTVGuideMatch] = [:]
+            // Providers are not consistent about letter case or stray spaces, and some
+            // declare a station under two spellings with the listings under only one. A
+            // channel is offered every spelling of its ID, its own first; the reader takes
+            // the first that has listings.
+            var spellings = preparedSpellings
+            func stations(for guideID: String) -> [String] {
+                if spellings == nil { spellings = Self.spellings(of: guideChannels) }
+                let others = (spellings?[Self.foldedGuideID(guideID)] ?? []).filter { $0 != guideID }
+                return (guideChannels[guideID] == nil ? [] : [guideID]) + others
+            }
+            for channel in channels {
+                if let override = overrides[channel.id], guideChannels[override] != nil {
+                    result[override, default: []].append(channel)
+                    assignments[channel.id] = LiveTVGuideMatch(guideChannelID: override, method: .userConfirmed)
+                    continue
+                }
+                guard let guideID = channel.guideID, !Self.foldedGuideID(guideID).isEmpty else { continue }
+                let ids = stations(for: guideID)
+                guard let first = ids.first else { continue }
+                for id in ids { result[id, default: []].append(channel) }
+                assignments[channel.id] = LiveTVGuideMatch(guideChannelID: first, method: .exactID)
+            }
+            return (result, assignments)
+        }
         let identities = channels.reduce(into: [String: LiveTVStreamIdentity]()) {
             $0[$1.id] = LiveTVStreamIdentity(url: $1.streamURL)
         }
@@ -88,11 +126,13 @@ public struct LiveTVGuideMatcher: Sendable {
         }
 
         let matchedIDs = Set(result.values.flatMap { $0.map(\.id) })
+        // Prepare station names only when the requested set needs name matching.
         let unmatched = channels.filter {
             let identity = identities[$0.id]
             return !matchedIDs.contains($0.id) && overrides[$0.id] == nil
                 && identity?.nativeID == nil && identity?.provider == provider
         }
+        guard !unmatched.isEmpty else { return (result.filter { !$0.value.isEmpty }, assignments) }
         let playlistNames = Dictionary(
             grouping: unmatched,
             by: { normalizedDisplayName($0.guideName ?? $0.name) }
@@ -171,7 +211,51 @@ public struct LiveTVGuideMatcher: Sendable {
         return false
     }
 
+    /// Exact spellings win; alternatives are considered only if the reader found no rows.
+    static func stationReads(
+        matches: [String: [LiveTVPrototypeChannel]], trustsGuideIDs: Bool
+    ) -> [(guideID: String, channels: [LiveTVPrototypeChannel])] {
+        let stations = matches.keys.sorted()
+        if trustsGuideIDs {
+            return stations.map { id in (id, (matches[id] ?? []).filter { $0.guideID == id }) }
+                + stations.map { id in (id, (matches[id] ?? []).filter { $0.guideID != id }) }
+        }
+        return stations.map { ($0, matches[$0] ?? []) }
+    }
+
+    /// Station IDs grouped by their folded form; callers that look up repeatedly keep it.
+    static func spellings(of guideChannels: [String: [String]]) -> [String: [String]] {
+        Dictionary(grouping: guideChannels.keys.sorted(), by: foldedGuideID)
+    }
+
+    static func foldedGuideID(_ id: String) -> String {
+        id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// The same station names are normalised on every guide lookup; remember the answers.
+    private static let normalizedNames = NormalizedNames()
+
+    final class NormalizedNames: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: String] = [:]
+
+        func value(for input: String, make: (String) -> String) -> String {
+            lock.lock()
+            if let value = values[input] { lock.unlock(); return value }
+            lock.unlock()
+            let value = make(input)
+            lock.lock()
+            if values.count < 200_000 { values[input] = value }
+            lock.unlock()
+            return value
+        }
+    }
+
     public func normalizedDisplayName(_ input: String) -> String {
+        Self.normalizedNames.value(for: input, make: Self.normalize)
+    }
+
+    private static func normalize(_ input: String) -> String {
         let folded = input.precomposedStringWithCanonicalMapping
             .folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -179,13 +263,9 @@ public struct LiveTVGuideMatcher: Sendable {
                 of: #"\s*\[(?:not 24/7|geo-blocked|offline)\]\s*$"#,
                 with: "", options: .regularExpression
             )
-        let suffixPattern = #"\s*\((?:2160p|1080p|720p|576p|480p|360p|240p|UHD|FHD|HD|SD)\)\s*$"#
         let range = NSRange(folded.startIndex..., in: folded)
         let stripped: String
-        if let expression = try? NSRegularExpression(
-            pattern: suffixPattern,
-            options: [.caseInsensitive]
-        ) {
+        if let expression = Self.qualitySuffix {
             stripped = expression.stringByReplacingMatches(
                 in: folded, range: range, withTemplate: ""
             )
@@ -195,6 +275,13 @@ public struct LiveTVGuideMatcher: Sendable {
         return stripped.split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
     }
+
+    private static let regionPattern = try? NSRegularExpression(pattern: #"\.([A-Za-z]{2})(?:\d+)?(?:@|$)"#)
+    private static let callSignPattern = try? NSRegularExpression(pattern: #"(?<![A-Z])([KW][A-Z]{3})(?![A-Z])"#)
+    private static let qualitySuffix = try? NSRegularExpression(
+        pattern: #"\s*\((?:2160p|1080p|720p|576p|480p|360p|240p|UHD|FHD|HD|SD)\)\s*$"#,
+        options: [.caseInsensitive]
+    )
 
     private let verifiedAliases: [String: String] = [
         "DareToDreamNetwork.us@SD": "3ABN.Dare.to.Dream.Network.us2",
@@ -214,8 +301,7 @@ public struct LiveTVGuideMatcher: Sendable {
 
     private func sourceRegion(in identifier: String?) -> String? {
         guard let identifier else { return nil }
-        let pattern = #"\.([A-Za-z]{2})(?:\d+)?(?:@|$)"#
-        guard let expression = try? NSRegularExpression(pattern: pattern),
+        guard let expression = Self.regionPattern,
               let match = expression.firstMatch(
                 in: identifier,
                 range: NSRange(identifier.startIndex..., in: identifier)
@@ -275,8 +361,7 @@ public struct LiveTVGuideMatcher: Sendable {
 
     private func affiliateCallSign(in text: String) -> String? {
         let upper = text.uppercased()
-        let pattern = #"(?<![A-Z])([KW][A-Z]{3})(?![A-Z])"#
-        guard let expression = try? NSRegularExpression(pattern: pattern),
+        guard let expression = Self.callSignPattern,
               let match = expression.firstMatch(
                 in: upper,
                 range: NSRange(upper.startIndex..., in: upper)

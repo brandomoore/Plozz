@@ -12,6 +12,7 @@ final class LiveTVChannelOrganizationState {
     var favoriteIDs: Set<String> = []
     var effectiveFavoriteIDs: Set<String> = []
     var hiddenIDs: Set<String> = []
+    var provisionalBrowse: LiveTVBrowseSummary?
 }
 
 public struct LiveTVCategorySummary: Equatable, Identifiable, Sendable {

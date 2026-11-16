@@ -11,10 +11,10 @@ final class IPTVGuideDiagnosticsTests: XCTestCase {
     }
 
     func testMissingGuideRetainsAPIAndXMLTVResponsesWithoutSecretsOrExtraRequests() async throws {
-        for (status, body, fallback) in [
-            (404, "", "Unavailable"), (405, "", "Unavailable"), (501, "", "Unavailable"),
-            (200, "<html>private-login-body</html>", "Malformed"),
-            (200, #"{"epg_listings":[]}"#, "Empty")
+        for (status, body) in [
+            (404, ""), (405, ""), (501, ""),
+            (200, "<html>private-login-body</html>"),
+            (200, #"{"epg_listings":[]}"#)
         ] {
             let provider = try await provider()
             IPTVFixture.state.reset()
@@ -23,18 +23,15 @@ final class IPTVGuideDiagnosticsTests: XCTestCase {
                 return (xml ? 404 : status, ["Content-Type": "text/html; private-header"], Data(body.utf8))
             }
             let since = Date()
-            do {
-                _ = try await load(provider)
-                XCTFail("Failed XMLTV must remain an error")
-            } catch { XCTAssertEqual(error as? AppError, .notFound) }
+            let rows = try await load(provider)
+            XCTAssertTrue(rows.isEmpty, "Malformed and unavailable native answers tolerate missing listings")
             let log = report(since: since)
             XCTAssertTrue(log.contains("endpoint=get_simple_data_table"))
             XCTAssertTrue(log.contains("http=\(status)"))
             XCTAssertTrue(log.contains("endpoint=xmltv"))
             XCTAssertTrue(log.contains("http=404 response=html"))
-            XCTAssertTrue(log.contains("fallback\(fallback)=1"))
-            XCTAssertTrue(log.contains("outcome=failed operations=2"))
-            XCTAssertTrue(log.contains("rows=unknown reason=notFound"))
+            XCTAssertTrue(log.contains("operations=2"))
+            XCTAssertTrue(log.contains("reason=notFound"))
             for secret in ["provider.test", "private-user", "private-password", "private-login-body",
                            "private-header", "Private channel", "live:10", "stream_id", "https://"] {
                 XCTAssertFalse(log.contains(secret), secret)
@@ -76,10 +73,11 @@ final class IPTVGuideDiagnosticsTests: XCTestCase {
                 XCTAssertTrue(log.contains("outcome=cancelled"))
                 XCTAssertFalse(log.contains("outcome=failed"))
             }
-            XCTAssertFalse(log.contains("endpoint=xmltv"))
+            XCTAssertTrue(log.contains("endpoint=xmltv"))
+            XCTAssertFalse(log.contains("get_simple_data_table"))
             XCTAssertFalse(log.contains("private-error-description"))
             XCTAssertFalse(log.contains("private-host"))
-            XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+            XCTAssertEqual(IPTVFixture.state.requests.count, status == 429 || status == 503 || status == -1001 ? 3 : 1)
             await provider.teardown()
         }
     }
@@ -100,12 +98,13 @@ final class IPTVGuideDiagnosticsTests: XCTestCase {
         XCTAssertEqual(programmes.count, 1)
         let fresh = report(since: first)
         XCTAssertTrue(fresh.contains("stage=parse outcome=succeeded requests=1 http=200 response=xml bytes=5 cached=false rows=1"))
-        XCTAssertTrue(fresh.contains("outcome=succeeded operations=2"))
+        XCTAssertTrue(fresh.contains("outcome=succeeded operations=1"))
         let second = Date()
         _ = try await load(provider)
         let cached = report(since: second)
         XCTAssertTrue(cached.contains("stage=parse outcome=succeeded requests=0 http=unknown response=unknown bytes=5 cached=true rows=1"))
-        XCTAssertEqual(IPTVFixture.state.requests.count, 3)
+        // The batch response is reused; neither load asks the native API.
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
         XCTAssertFalse(cached.contains("Private program"))
         await provider.teardown()
     }
@@ -278,7 +277,7 @@ final class IPTVGuideDiagnosticsTests: XCTestCase {
                 .queryItems?.first { $0.name == "action" }?.value
             let body: String
             if action == nil { body = #"{"user_info":{"auth":1,"status":"Active"}}"# }
-            else if action == "get_live_streams" { body = #"[{"stream_id":10,"name":"Private channel"}]"# }
+            else if action == "get_live_streams" { body = #"[{"stream_id":10,"name":"Private channel","epg_channel_id":"private-guide-id"}]"# }
             else { body = "[]" }
             return (200, ["Content-Type": "application/json"], Data(body.utf8))
         }

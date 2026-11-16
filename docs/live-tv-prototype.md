@@ -55,7 +55,7 @@ not a specification.
 
 ## Channel-name presentation
 
-Settings > Live TV > **Clean channel names** is off by default and scoped to
+Settings > Live TV > **Clean channel names** is on by default and scoped to
 the active profile. Its live preview uses the same formatter as the guide and
 up to three distinct original names from the authorized loaded IPTV catalog,
 preferring names that cleanup changes. It excludes hidden and manually renamed
@@ -477,18 +477,11 @@ without relaxing the existing station/region checks or accepting name-only
 guesses. Existing URL accounts refresh once for the new mapping; imported files
 need reimporting to recover previously discarded metadata.
 
-Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
-Xtream otherwise uses its native guide API, falling back to its `xmltv.php`
-for channels with empty, malformed or unsupported API listings. Successful
-native listings are retained. A fresh saved `xmltv.php` index is consulted
-first: a channel needs no provider request only when its saved listings span
-the whole requested window without a gap. Every other channel is asked of the
-native API, by stream, whether or not it has a guide identity
-(`epg_channel_id`). Native listings replace a channel's incomplete saved ones;
-the saved ones are kept when the native API returns none or fails. The index is
-never downloaded for that check, so native listings do not wait for a
-whole-guide transfer, and channels it leaves uncovered are not sent to XMLTV a
-second time.
+Explicit XMLTV guides are ordered, with separate first-guide-origin headers.
+Xtream without an explicit guide uses the saved-index, whole-guide, then
+unavailable-batch native fallback ordering detailed below. A usable saved index
+or successful whole-guide answer, including an empty answer, does not trigger
+per-channel requests to fill gaps.
 The lineup's matching fingerprint is reused across batches for the same committed
 catalog revision; a replacement or explicit invalidation requires validation again.
 Freshness and requested-window coverage are still checked for every batch.
@@ -600,7 +593,8 @@ an unchanged index conditionally. The legacy raw-response cache remains bounded
 to one document and at most 60 seconds; it is not a second persistent XML store.
 
 The existing guide-use/resume request path checks loaded IPTV windows again after
-12 hours, without adding a timer or a coverage-triggered polling heuristic.
+12 hours, without a coverage-triggered polling heuristic; the optional automatic
+update described below is the only timer.
 Existing listings stay visible during refresh and ordinary failures remain
 observable without advancing freshness. Missing windows load on demand. This
 policy does not promise background execution while the OS suspends the app.
@@ -614,6 +608,97 @@ in the requested window retains normal source freshness: an empty viewport is
 not a reason to repeatedly download the whole feed. Legacy zero-row indexes
 without a source programme count require one full rebuild to distinguish these
 cases. There is no new polling timer.
+
+For Xtream accounts without an explicit XMLTV URL, a guide request first ensures
+that a committed live lineup exists, then reads the saved `xmltv.php` index when
+it can answer without a guide download: indexed for the current lineup and window,
+within its reuse limit, and not awaiting an explicit refresh. A usable saved index
+answers the whole request, including gaps and empty results; it does not trigger
+`get_simple_data_table` requests. Otherwise the request tries the whole-guide
+`xmltv.php` endpoint before native listings. Only an unavailable batch endpoint
+(HTTP 404, 405 or 501) permits native fallback; that discovery is remembered in
+memory until guide invalidation, so later requests can skip the missing batch.
+Authentication, overload, transport and parsing failures do not enable native
+fallback. A successful batch response, even with no matching listings, also does
+not enable it.
+
+Native fallback uses stream IDs, not guide IDs (`epg_channel_id`): it sequentially
+requests each distinct caller-requested channel, including channels without guide
+IDs, never the unrequested lineup. An empty native listing table is remembered
+in memory for six hours (cleared by an explicit refresh). Merely receiving rows
+outside the requested window does not create that suppression.
+
+The saved XMLTV index's matching projection contains only lineup channels with
+guide IDs; it cannot supply XMLTV listings for channels without them. Renaming
+such channels does not change that projection. Native fallback can still supply
+their listings when the batch endpoint is unavailable. The lookup retains the
+prepared lineup, its digest, the decoded station document and normalised station
+names between requests.
+
+The earlier sample of one provider found no native listings absent from its guide
+file; that observation is not a guarantee for other providers. The reported
+few-millisecond answer for twelve channels describes a reused-index lookup, not
+visible Live TV opening, first download, parsing or full-lineup publication.
+PR #458's title claim of 13 seconds to under 200 ms lacks comparable real
+visible-open baseline/candidate evidence and is not an established speedup.
+The import replay and publication checks documented below cover their own
+workloads, not that end-to-end claim.
+
+Separately, Live TV can seed an empty destination from at most 150 last-seen
+server-channel rows in a sealed, disposable local file per profile. Restoration
+requires the currently authorized source, account, provider kind and stable
+server/viewer scope, including the Plex Home viewer; credential/session rotation
+alone does not change that scope. Legacy rows without viewer scope are ignored.
+Authorization is rechecked after asynchronous work. Categories and counts are
+derived from admitted rows under current filters, not restored whole-lineup
+aggregates; the authoritative lineup replaces these provisional rows. Cloud
+erasure and first-run reset on tvOS and iOS/iPadOS remove last-seen files and their
+keys without deleting unrelated catalog secrets. Erasure fences already-prepared
+saves so they cannot recreate the erased files or keys; newly admitted saves may
+persist later authorized rows.
+
+For an Xtream account using its own `xmltv.php`, the lineup and guide share one
+key, so a channel's guide ID alone decides its listings: HD, 4K and regional copies
+that carry the same ID all receive them, and the answer for a channel does not
+depend on which other channels were requested with it. Letter case and surrounding
+spaces in the ID are ignored, and when a provider declares a station under several
+spellings the channel's own is read first and another only if it has no listings in
+the window. Playlists and explicit guide
+addresses keep the stricter matcher, where channels sharing an ID must also share a
+name, because there the ID and the guide come from different parties.
+
+Settings > Live TV > Guide preferences > **Update guide automatically** (Off, or
+every 1, 3, 6, 12 or 24 hours; 12 by default; profile-scoped) sets how long a saved
+account guide is reused. A chosen interval can outlast the built-in 12-hour default
+but never a lifetime the server stated. While the app is in the foreground and the
+profile may use Live TV, a low-priority task brings guides that are *already saved*
+up to date once they are older than the interval: one conditional whole-guide
+request per interval and account, never per-channel requests, and never a first
+download for a profile that has not loaded that guide. Playlist-declared guide
+URLs are read from the committed catalog without refreshing the playlist;
+explicit guide overrides retain precedence. An Xtream account's saved
+live lineup is refreshed by the same task on the same interval. Independently,
+reading a saved Xtream live lineup can start a background refresh once it is at
+least 24 hours old, while returning the committed channels immediately. Off
+disables the periodic task, not this stale-lineup refresh or on-demand guide
+loading. Playlist accounts and the film and series libraries keep the 30-minute
+rule. The periodic task starts one minute after launch, waits at least five
+minutes between checks, and backs off from 15 minutes after a failure. Off restores the on-demand behaviour
+described above.
+
+A guide request answered with HTTP 429, 502, 503 or 504 is a signal to back off.
+After any applicable in-request retries, the account makes no new guide transfer
+(per-channel or whole-guide) for five minutes, doubling on each further refusal up
+to one hour, or for a longer valid `Retry-After`, capped at 24 hours. The delay
+applies to 429 and 502/503/504 responses. Requests needing a transfer during that
+period fail with the provider's error without touching the network; reusable
+saved listings remain available. The deadline, refusal count, status and granted
+delay are persisted in the account's catalog and validated on restoration, so
+reopening the provider does not reset the cooldown. A successful guide transfer
+clears it. Explicit refresh bypasses the current deadline but retains the refusal
+count, so another refusal continues the exponential sequence rather than
+restarting at five minutes. Cancellation does not record a new refusal. Guide
+backoff does not affect playback or lineup requests.
 
 Xtream without an explicit XMLTV URL advertises per-channel guide loading.
 Startup discovery and guide preparation warm only the first 12 channels, then
@@ -1088,7 +1173,9 @@ is no prior in-memory history to migrate on the first updated launch.
   right-hand programme/channel-name area plays directly; long-press actions
   remain available there.
   Hidden channels are excluded from Search and every guide section for this
-  profile. Restore them in Settings > Live TV > Hidden channels. Hiding retains
+  profile. Restore them in Settings > Live TV > Hidden channels. Returning to the
+  guide applies restored visibility to rows and categories even when the lineup
+  and browse filters have not changed. Hiding retains
   their favorite/recent metadata and source data, and does not end deliberate
   playback. After hiding, focus goes to the next remaining row, or the previous
   row when the hidden row was last; another occurrence of that channel is not
