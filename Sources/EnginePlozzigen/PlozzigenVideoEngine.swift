@@ -442,6 +442,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private let readAheadPreference: @MainActor () -> PlaybackReadAhead
     private let liveBufferPreference: @MainActor () -> LivePlaybackBuffer
     private let losslessAudioPreference: @MainActor () -> Bool
+    private let videoUpscalingPreference: @MainActor () -> VideoUpscaling
     private var liveOutputPolicy = LiveChannelOutputPolicy()
     private var outputPolicyReload: Task<Void, Never>?
     private var outputLoadGeneration = UUID()
@@ -492,7 +493,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)? = nil,
         readAheadPreference: @escaping @MainActor () -> PlaybackReadAhead = { .default },
         liveBufferPreference: @escaping @MainActor () -> LivePlaybackBuffer = { .default },
-        losslessAudioPreference: @escaping @MainActor () -> Bool = { LosslessAudioSettingsStore().load() }
+        losslessAudioPreference: @escaping @MainActor () -> Bool = { LosslessAudioSettingsStore().load() },
+        videoUpscalingPreference: @escaping @MainActor () -> VideoUpscaling = { .off }
     ) throws {
         self.engine = try AEEngine()
         // Plozz owns its audio session, and on an E-AC-3/Atmos bitstream-passthrough route the HDMI sink
@@ -505,6 +507,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         self.readAheadPreference = readAheadPreference
         self.liveBufferPreference = liveBufferPreference
         self.losslessAudioPreference = losslessAudioPreference
+        self.videoUpscalingPreference = videoUpscalingPreference
         #if canImport(UIKit)
         let surface = AetherPlayerView()
         engine.bind(view: surface)
@@ -1120,6 +1123,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             losslessAudioEnabled: losslessAudioPreference(),
             dolbyVisionFELConversion: request.dolbyVisionFELConversion
                 && Self.supportsFELConversion(for: request),
+            videoUpscaling: request.discPlayback == .openMenu || request.externalAudioURL != nil
+                ? .off : request.videoUpscaling ?? videoUpscalingPreference(),
             outputPolicy: outputPolicy,
             readAhead: isLocalFile || request.suppressOrdinaryWatchReporting
                 ? .default : readAheadPreference()
@@ -1130,6 +1135,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     nonisolated static func onDemandLoadOptions(
         losslessAudioEnabled: Bool = LosslessAudioSettingsStore.defaultEnabled,
         dolbyVisionFELConversion: Bool = false,
+        videoUpscaling: VideoUpscaling = .default,
         outputPolicy: LiveChannelOutputPolicy = .init(),
         readAhead: PlaybackReadAhead = .default
     ) -> LoadOptions {
@@ -1143,6 +1149,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             && AEEngine.OptionalComponent.dolbyVisionFelCurves.isBuiltIn
         options.foldsDolbyVisionFEL = convertsFEL
         options.dolbyVisionHandling = convertsFEL ? .profile7KnownLayers : .profile7MELOnly
+        applyVideoUpscaling(videoUpscaling, to: &options)
         // Aether uses approximately four-second segments and clamps the maximum
         // to 2,700, retaining its free-space budget and producer backpressure.
         switch readAhead {
@@ -1167,7 +1174,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         liveStartupBuffer = buffer
         return Self.liveLoadOptions(
             httpHeaders: httpHeaders, url: url, sourceFormat: sourceFormat,
-            buffer: buffer, losslessAudioEnabled: losslessAudioPreference()
+            buffer: buffer, losslessAudioEnabled: losslessAudioPreference(),
+            videoUpscaling: videoUpscalingPreference()
         )
     }
 
@@ -1175,7 +1183,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         httpHeaders: [String: String], url: URL? = nil,
         sourceFormat: PlozzigenLiveSourceProbe.Format? = nil,
         buffer: LivePlaybackBuffer = .default,
-        losslessAudioEnabled: Bool = LosslessAudioSettingsStore.defaultEnabled
+        losslessAudioEnabled: Bool = LosslessAudioSettingsStore.defaultEnabled,
+        videoUpscaling: VideoUpscaling = .default
     ) -> LoadOptions {
         let suffix = url?.pathExtension.lowercased() ?? ""
         let format = sourceFormat ?? (["ts", "m2ts", "mts"].contains(suffix)
@@ -1197,7 +1206,13 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         )
         options.foldsDolbyVisionFEL = false
         options.dolbyVisionHandling = .profile7MELOnly
+        applyVideoUpscaling(videoUpscaling, to: &options)
         return options
+    }
+
+    private nonisolated static func applyVideoUpscaling(_ selection: VideoUpscaling, to options: inout LoadOptions) {
+        options.upscalesLowResolutionVideo = selection != .off
+        options.upscaleScaler = selection == .animation ? .lineArt : .automatic
     }
 
     nonisolated static func applyLiveOutputPolicy(_ policy: LiveChannelOutputPolicy, to options: inout LoadOptions) {

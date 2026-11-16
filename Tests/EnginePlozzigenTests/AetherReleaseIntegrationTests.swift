@@ -5,6 +5,69 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class AetherReleaseIntegrationTests: XCTestCase {
+    func testUpscalingSelectionReachesOnDemandAndLiveOptionsWithoutChangingOtherPolicies() {
+        for mode in VideoUpscaling.allCases {
+            let options = [
+                PlozzigenVideoEngine.onDemandLoadOptions(videoUpscaling: mode),
+                PlozzigenVideoEngine.liveLoadOptions(
+                    httpHeaders: [:], url: URL(string: "https://media.example/live.ts")!,
+                    videoUpscaling: mode
+                ),
+                PlozzigenVideoEngine.liveLoadOptions(
+                    httpHeaders: [:], url: URL(string: "https://media.example/live.m3u8")!,
+                    videoUpscaling: mode
+                )
+            ]
+            for value in options {
+                XCTAssertEqual(value.upscalesLowResolutionVideo, mode != .off)
+                XCTAssertEqual(value.upscaleScaler, mode == .animation ? .lineArt : .automatic)
+                XCTAssertEqual(value.objectAudioRendering, .off)
+                XCTAssertEqual(value.dolbyVisionHandling, .profile7MELOnly)
+            }
+        }
+    }
+
+    @MainActor
+    func testRequestChoiceOverridesLiveContextAndStandalonePreviewsRemainOff() throws {
+        var liveChoice = VideoUpscaling.automatic
+        let liveEngine = try PlozzigenVideoEngine(videoUpscalingPreference: { liveChoice })
+        let previewEngine = try PlozzigenVideoEngine()
+        defer {
+            liveEngine.stop()
+            previewEngine.stop()
+        }
+        for provider in [ProviderKind.jellyfin, .plex, .emby, .mediaShare, .silo] {
+            for url in [
+                URL(string: "https://media.example/movie.mkv")!,
+                URL(fileURLWithPath: "/fixture/movie.mkv")
+            ] {
+                var request = PlaybackRequest(
+                    item: MediaItem(id: "upscale", title: "Upscaling fixture", kind: .movie), streamURL: url
+                )
+                request.sourceProvider = provider
+                request.suppressOrdinaryWatchReporting = true
+                XCTAssertFalse(previewEngine.onDemandLoadOptions(for: request).upscalesLowResolutionVideo)
+                for mode in VideoUpscaling.allCases {
+                    liveChoice = mode
+                    let options = liveEngine.onDemandLoadOptions(for: request)
+                    XCTAssertEqual(options.upscalesLowResolutionVideo, mode != .off)
+                    XCTAssertEqual(options.upscaleScaler, mode == .animation ? .lineArt : .automatic)
+                }
+                request.videoUpscaling = .off
+                XCTAssertFalse(liveEngine.onDemandLoadOptions(for: request).upscalesLowResolutionVideo)
+                request.videoUpscaling = .automatic
+                XCTAssertTrue(previewEngine.onDemandLoadOptions(for: request).upscalesLowResolutionVideo)
+                request.videoUpscaling = .animation
+                XCTAssertEqual(previewEngine.onDemandLoadOptions(for: request).upscaleScaler, .lineArt)
+                request.discPlayback = .openMenu
+                XCTAssertFalse(liveEngine.onDemandLoadOptions(for: request).upscalesLowResolutionVideo)
+                request.discPlayback = .playVideo
+                request.externalAudioURL = URL(string: "https://media.example/audio.m4a")!
+                XCTAssertFalse(liveEngine.onDemandLoadOptions(for: request).upscalesLowResolutionVideo)
+            }
+        }
+    }
+
     func testFELConversionRequiresHostOptInAndPreservesMELWhenOff() {
         XCTAssertTrue(AetherEngine.OptionalComponent.dolbyVisionFelCurves.isBuiltIn)
         let enabled = PlozzigenVideoEngine.onDemandLoadOptions(dolbyVisionFELConversion: true)

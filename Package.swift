@@ -254,7 +254,7 @@ let package = Package(
         // Shared SDR/HDR active-picture measurements include host-owned native players.
         // 7.53.1 corrects remote-HLS buffering, short forward seeks and tvOS MetalFX
         // availability. FFmpegBuild 3.11.1 adds AV1 forward-keyframe detection.
-        // Audio shaping and low-resolution upscaling remain opt-in and disabled.
+        // Audio shaping stays off; the host selects profile-scoped SDR upscaling.
         // Resume preroll backfill no longer opens a false native-scrub landing watch.
         // 7.66.0 includes AAC/PCE, subtitle-seek and packet-wait fixes.
         // FEL curve folding is available for beta on-demand playback; engine-owned Now Playing stays off.

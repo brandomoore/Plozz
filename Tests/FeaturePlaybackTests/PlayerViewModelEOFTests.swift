@@ -11,6 +11,29 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    func testProfileUpscalingChoiceIsAppliedBeforeEngineLoadAcrossProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for mode in VideoUpscaling.allCases {
+                let item = MediaItem(id: "upscaling", title: "Upscaling fixture", kind: .movie)
+                var request = PlaybackRequest(
+                    item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!
+                )
+                request.videoUpscaling = .animation
+                let provider = RecordingPlaybackProvider(request: request, kind: kind)
+                let engine = SpyVideoEngine()
+                let model = PlayerViewModel(
+                    provider: provider, itemID: item.id,
+                    playbackSettings: .init(videoUpscaling: mode),
+                    engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+                )
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, mode)
+                await model.stop()
+            }
+        }
+    }
+
     func testPostCreditsTailPreservesOrdinaryEOFAutoplayAcrossProviders() async throws {
         for kind in [ProviderKind.jellyfin, .plex] {
             for autoplay in [true, false] {

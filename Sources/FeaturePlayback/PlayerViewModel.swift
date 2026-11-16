@@ -2069,6 +2069,7 @@ public final class PlayerViewModel {
         stopSongWatch()
         var request = request
         request.dolbyVisionFELConversion = dolbyVisionFELOverride ?? playbackSettings.dolbyVisionFELConversion
+        request.videoUpscaling = playbackSettings.videoUpscaling
         controls.felConversion.isEnabled = request.dolbyVisionFELConversion
         controls.felConversion.isAvailable = false
         dynamicRangeLoadGeneration &+= 1

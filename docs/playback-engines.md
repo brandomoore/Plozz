@@ -884,7 +884,23 @@ without reopening media or replacing the player item. Previews explicitly use
 host-owned fixed output; HDR pipeline changes retain the reload path. Late native
 HLS format callbacks honor the current policy, and an outgoing display owner
 cannot clear a newer engine's criteria.
-New audio shaping and low-resolution SDR upscaling remain disabled by default.
+Audio shaping remains disabled. Video upscaling defaults to Automatic for new
+and existing profiles, with Off and explicitly selected Animation alternatives
+in Playback settings on TV and mobile. The preference is passed at load time
+for on-demand playback, IPTV and library channels; a change takes effect on
+the next load. Standalone background previews without a playback preference,
+separate-audio sources and interactive disc menus keep enhancement off.
+Apple's native player and external players do not use this engine setting.
+
+Automatic uses VideoToolbox super resolution where supported, followed by
+MetalFX spatial scaling where available, for 8-bit SDR whose coded width is
+below 1920 and height below 1080. Animation requests Anime4K for drawn content
+up to 1920x1080, including 10-bit SDR; it is not inferred from metadata.
+The engine retains responsibility for OS/GPU support, larger-display checks,
+HDR/Dolby Vision and wireless AirPlay exclusions, source-route eligibility,
+and frame-budget degradation or disablement. OS 26 is required; MetalFX on TV
+also requires tvOS 27.1. Enabling the preference does not guarantee enhancement
+on every source or prove physical-device picture quality or performance.
 The engine uses upstream's single privacy manifest, including local-media file
 timestamps; FFmpeg's applicable frameworks now carry their own manifests.
 The update retains overlapped VOD/HDR preparation and adds the upstream
