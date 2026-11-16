@@ -12,6 +12,8 @@ struct PlozziOSSearchView: View {
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
     @FocusState private var isSearchFocused: Bool
+    @Environment(\.plozziOSSearchFocusRequest) private var searchFocusRequest
+    @Environment(\.plozziOSSearchReplaceQueryRequest) private var searchReplaceQueryRequest
     @State private var viewModel: SearchViewModel
     private let appModel: PlozziOSAppModel
     private let onShowSettings: () -> Void
@@ -52,7 +54,15 @@ struct PlozziOSSearchView: View {
                 isFocused: $isSearchFocused,
                 onShowSettings: onShowSettings
             )
-            .zIndex(1)
+            // Each press of the Search tab is a fresh activation request, including a
+            // re-tap while already on search (which also clears the previous query).
+            .onChange(of: searchFocusRequest, initial: true) { _, _ in
+                isSearchFocused = true
+            }
+            .onChange(of: searchReplaceQueryRequest) { _, _ in
+                viewModel.query = ""
+                isSearchFocused = true
+            }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())

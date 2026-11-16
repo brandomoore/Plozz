@@ -1331,6 +1331,8 @@ public final class PlayerViewModel {
         phase = .loading
         controls.infoCard.chapters = []
         stopSongWatch()  // a new item starts without the last song
+        // A cached item or deep link can reach playback before the shell asks.
+        Task { _ = await LocalNetworkAuthorization.requestIfNeeded() }
         let bringUpStart = Date()
         bringUpStartedAt = bringUpStart
         HandoffDiagnostics.emit(
@@ -3520,7 +3522,15 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
     static func streamingFailure(
         _ error: AppError, evidence: StreamingPlaybackFailure? = nil, streamWasSupplied: Bool = true
     ) -> StreamingQualityError? {
-        if let evidence { return .playback(evidence) }
+        if let evidence {
+            if LocalNetworkAuthorization.recordedState == .denied,
+               evidence.kind == .timedOut || evidence.kind == .network {
+                PlozzLog.playback.error(
+                    "Playback failed while Local Network access is denied; enable it in Settings > Privacy & Security > Local Network"
+                )
+            }
+            return .playback(evidence)
+        }
         switch error {
         case .serverUnreachable: return .playback(.init(kind: .network))
         case .unauthorized, .invalidCredentials: return .authenticationRequired

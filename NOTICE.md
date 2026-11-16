@@ -21,7 +21,7 @@ embedded in the app bundle as frameworks (`AetherLibavcodec.framework`,
 
 | Component | Source (pinned) | License |
 |---|---|---|
-| AetherEngine (media engine; "Plozzigen") | `github.com/brandomoore/AetherEngine` @ `064b152d0242a722de171471b85389116775a8bf` | LGPL-3.0 with Apple Store exception |
+| AetherEngine (media engine; "Plozzigen") | `github.com/brandomoore/AetherEngine` @ `055860a0accaaafa1852d1a65c4f7f505cb7e6ab` | LGPL-3.0 with Apple Store exception |
 | FFmpeg `libav*` (demux / decode / audio bridge / HLS-fMP4 mux) | `github.com/superuser404notfound/FFmpegBuild` @ `3.15.0` (FFmpeg **n8.1.3**) | **LGPL-2.1-or-later** |
 | dav1d 1.5.4 (AV1 software decoder, separate xcframework) | bundled by FFmpegBuild | BSD-2-Clause (permissive) |
 | zimg 3.0.6 (image scaling and color conversion) | bundled by FFmpegBuild | WTFPL |

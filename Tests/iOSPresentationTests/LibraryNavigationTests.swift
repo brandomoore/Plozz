@@ -191,6 +191,94 @@ final class LibraryNavigationTests: XCTestCase {
         }
     }
 
+    func testSearchReselectionPreservesOtherNativeAndProgrammaticDetailStacks() async throws {
+        let app = try makeApp()
+        let order = [
+            NavigationLibraryLayout.downloadsKey,
+            NavigationLibraryLayout.searchKey,
+            NavigationLibraryLayout.homeKey
+        ]
+        let available = NavigationDestinationDefaults.iOS
+        app.settings.navigation.applyLibrarySections(
+            .init(enabled: order, disabled: available.filter { !order.contains($0) }), available: available
+        )
+        @MainActor func navigation(in controller: UIViewController) -> UINavigationController? {
+            for child in controller.children {
+                if let navigation = navigation(in: child) { return navigation }
+            }
+            return controller as? UINavigationController
+        }
+        try await withTabs(app: app) { tabs, window in
+            @MainActor func select(_ title: String) throws {
+                if !tabs.tabs.isEmpty {
+                    let tab = try XCTUnwrap(tabs.tabs.first { $0.title == title })
+                    let previous = tabs.selectedTab
+                    let allowed = tabs.delegate?.tabBarController?(tabs, shouldSelectTab: tab) ?? true
+                    XCTAssertTrue(allowed)
+                    if allowed {
+                        tabs.selectedTab = tab
+                        tabs.delegate?.tabBarController?(tabs, didSelectTab: tab, previousTab: previous)
+                    }
+                } else {
+                    let controller = try XCTUnwrap(tabs.viewControllers?.first { $0.tabBarItem.title == title })
+                    let allowed = tabs.delegate?.tabBarController?(tabs, shouldSelect: controller) ?? true
+                    XCTAssertTrue(allowed)
+                    if allowed {
+                        tabs.selectedViewController = controller
+                        tabs.delegate?.tabBarController?(tabs, didSelect: controller)
+                    }
+                }
+            }
+            try await self.waitUntil(window: window) {
+                Set(self.tabTitles(tabs)).isSuperset(of: ["Home", "Downloads", "Search"])
+            }
+            try select("Home")
+            try await self.waitUntil(window: window) { app.screenshotDirector.navigateToItem != nil }
+            app.screenshotDirector.navigateToItem?(MediaItem(
+                id: "retained-home", title: "Retained Home detail", kind: .movie,
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "plex"
+            ))
+            try await self.waitUntil(window: window) {
+                tabs.selectedViewController.flatMap { navigation(in: $0) }?.viewControllers.count == 2
+            }
+            let home = try XCTUnwrap(tabs.selectedViewController.flatMap { navigation(in: $0) })
+            let homeDetail = try XCTUnwrap(home.topViewController)
+            try select("Downloads")
+            try await self.waitUntil(window: window) {
+                tabs.selectedViewController.flatMap { navigation(in: $0) } != nil
+            }
+            let downloads = try XCTUnwrap(tabs.selectedViewController.flatMap { navigation(in: $0) })
+            let downloadDetail = UIViewController()
+            downloads.pushViewController(downloadDetail, animated: false)
+
+            try select("Search")
+            try await self.waitUntil(window: window) {
+                tabs.selectedViewController.flatMap { navigation(in: $0) } != nil
+            }
+            let search = try XCTUnwrap(tabs.selectedViewController.flatMap { navigation(in: $0) })
+            try await Task.sleep(for: .milliseconds(100))
+            search.pushViewController(UIViewController(), animated: false)
+            window.layoutIfNeeded()
+            let delegate = try XCTUnwrap(tabs.delegate as? PlozziOSSettingsTabAction.Controller)
+            XCTAssertNotNil(delegate.onSearchReselection)
+            XCTAssertEqual(delegate.searchTabIndex, self.tabTitles(tabs).firstIndex(of: "Search"))
+            try select("Search")
+            try await self.waitUntil(window: window) {
+                tabs.selectedViewController.flatMap { navigation(in: $0) }?.viewControllers.count == 1
+            }
+            XCTAssertTrue(home.topViewController === homeDetail,
+                          "Search must not clear the Home modifier's programmatic destination.")
+            XCTAssertTrue(downloads.topViewController === downloadDetail,
+                          "Search must not send native pop requests to other retained tabs.")
+            try select("Home")
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(tabs.selectedViewController.flatMap { navigation(in: $0) }?.topViewController === homeDetail)
+            try select("Downloads")
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(tabs.selectedViewController.flatMap { navigation(in: $0) }?.topViewController === downloadDetail)
+        }
+    }
+
     func testAllLibrariesUsesBothProvidersAndHonorsContentVisibility() async throws {
         let fixture = LibraryNavigationFixture()
         let app = try makeApp(fixture: fixture)
@@ -658,14 +746,17 @@ final class LibraryNavigationTests: XCTestCase {
         }
     }
 
-    private func waitUntil(window: UIWindow, condition: () -> Bool) async throws {
+    private func waitUntil(
+        window: UIWindow, file: StaticString = #filePath, line: UInt = #line,
+        condition: () -> Bool
+    ) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         repeat {
             window.layoutIfNeeded()
             if condition() { return }
             try await Task.sleep(for: .milliseconds(20))
         } while ContinuousClock.now < deadline
-        XCTFail("Expected native library navigation did not appear.")
+        XCTFail("Expected native library navigation did not appear.", file: file, line: line)
     }
 
     private func tabController(in controller: UIViewController) -> UITabBarController? {
@@ -688,7 +779,13 @@ private struct LibraryNavigationProvider: MediaProvider {
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
-    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func item(id: String) async throws -> MediaItem {
+        guard id == "retained-home" else { throw AppError.notFound }
+        return MediaItem(
+            id: id, title: "Retained Home detail", kind: .movie,
+            allowsTitleBasedMetadataMatching: false, sourceAccountID: session.server.id
+        )
+    }
     func children(of itemID: String) async throws -> [MediaItem] { [] }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         await fixture.recordBrowse(accountID: session.server.id, containerID: containerID)

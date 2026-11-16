@@ -51,10 +51,27 @@ public struct HeroDiscoveryRuntime: Sendable {
         guard !Task.isCancelled, request.limit > 0, !enabled.isEmpty,
               await allowsDiscovery() else { return [] }
         let fetched = await discovery(request, enabled)
+        // Simplify toward upstream (testing step): the fork's library-copy
+        // resolution runs as an extra hop BEFORE resolveLibrarySources, which
+        // rewrites hero candidate identity after first paint — the hero + row
+        // artwork leaves and the page resizes again (the observed flicker).
+        // `resolveLibraryCopies` stays for its other callers; the Home/hero
+        // feed composes exactly as upstream main here. Re-introduce the fork
+        // improvement incrementally once the settled flicker is gone.
         guard !Task.isCancelled, await allowsDiscovery() else { return [] }
         let external = Array(fetched.lazy
             .filter { $0.kind == .movie || $0.kind == .series }
             .prefix(request.limit)
+            .map(Self.publicCandidate))
+        return await resolveLibrarySources(in: external, hideWatched: hideWatched, visibility: visibility)
+    }
+
+    public func resolveLibraryCopies(
+        of items: [MediaItem], hideWatched: Bool, visibility: HomeLibraryVisibility = .default
+    ) async -> [MediaItem] {
+        guard !Task.isCancelled, await allowsDiscovery() else { return [] }
+        let external = Array(items.lazy
+            .filter { $0.kind == .movie || $0.kind == .series }
             .map(Self.publicCandidate))
         return await resolveLibrarySources(in: external, hideWatched: hideWatched, visibility: visibility)
     }

@@ -67,6 +67,11 @@ and every provider/feature that talks to a remote server.
 
 ## Invariants
 
+- **Coalescing shares transfers, not consumer lifetimes.** Concurrent bodyless
+  GETs share only when URL, headers, session lane and redirect policy match.
+  Each waiter can cancel independently; the last cancellation stops the transfer.
+  Completed entries are removed, and a late completion cannot replace a newer
+  transfer. This is not a response cache or a cross-account request shortcut.
 - **Approved address routing is bounded and demand-driven.**
   `ServerAddressResolver` shares concurrent credential-free probe sweeps and gives
   local routes a 300 ms head start. Providers use the short discovery timeout;

@@ -394,22 +394,21 @@ public struct JellyfinClient: Sendable {
     /// Plex parity.
     ///
     /// `EnableResumable=false` keeps NextUp complementary rather than overlapping:
-    /// in-progress episodes already come back from `/Items/Resume`, so NextUp is
-    /// scoped to the next-after-completed episode. `EnableRewatching=false` avoids
-    /// resurfacing fully-watched series. A series-specific resume lookup includes
-    /// resumable candidates because compatible servers may not scope Resume to a
-    /// series; the provider still prefers Resume when both return the same episode.
+    /// in-progress episodes already come back from `/Items/Resume`. The brief-play
+    /// gap is handled client-side by retaining the Resume episode as a suggestion
+    /// (see `JellyfinProvider.retainingBrieflyPlayedEpisodes`), so the Home feed
+    /// keeps the cheap query TestFlight uses. `EnableRewatching=false` avoids
+    /// resurfacing fully-watched series.
+    /// Home previews request only their visible prefix. Larger browsing requests
+    /// and exhaustive Continue Watching loads retain the complete feed contract.
     func nextUpItems(
         userID: String, limit: Int, parentID: String? = nil, seriesID: String? = nil
     ) async throws -> [BaseItemDto] {
-        if limit == Int.max {
-            return try await exhaustiveItems { startIndex, pageSize in
-                return try await nextUpItemsPage(
-                    userID: userID,
-                    startIndex: startIndex,
-                    limit: pageSize,
-                    parentID: parentID,
-                    seriesID: seriesID
+        if limit > 100 {
+            return try await exhaustiveItems(limit: limit) { startIndex, pageSize in
+                try await nextUpItemsPage(
+                    userID: userID, startIndex: startIndex, limit: pageSize,
+                    parentID: parentID, seriesID: seriesID
                 )
             }
         }
@@ -463,6 +462,7 @@ public struct JellyfinClient: Sendable {
     /// Duplicate/non-advancing pages fail closed instead of hanging or presenting
     /// a silently truncated "unlimited" row.
     private func exhaustiveItems(
+        limit: Int = .max,
         page: (Int, Int) async throws -> ItemsResponse
     ) async throws -> [BaseItemDto] {
         let pageSize = 100
@@ -473,8 +473,9 @@ public struct JellyfinClient: Sendable {
 
         while true {
             try Task.checkCancellation()
-            let response = try await page(startIndex, pageSize)
-            guard response.Items.count <= pageSize else {
+            let requestedCount = min(pageSize, limit - collected.count)
+            let response = try await page(startIndex, requestedCount)
+            guard response.Items.count <= requestedCount else {
                 throw AppError.invalidResponse
             }
             if let total = response.TotalRecordCount {
@@ -487,7 +488,6 @@ public struct JellyfinClient: Sendable {
                     expectedTotal = total
                 }
             }
-
             guard !response.Items.isEmpty else {
                 if let expectedTotal, collected.count < expectedTotal {
                     throw AppError.invalidResponse
@@ -508,6 +508,7 @@ public struct JellyfinClient: Sendable {
                     return collected
                 }
             }
+            if collected.count == limit { return collected }
 
             let (nextStart, overflow) = startIndex.addingReportingOverflow(response.Items.count)
             guard !overflow, nextStart > startIndex else {
@@ -975,6 +976,31 @@ public struct JellyfinClient: Sendable {
             baseURL: baseURL
         )
         return LibraryQueryFacets(genres: response.Genres ?? [], years: response.Years ?? [])
+    }
+
+    /// Existence-only probe for a collection directory.
+    ///
+    /// Deliberately lighter than `collectionCandidates`: one BoxSet, no sort,
+    /// no artwork and no fields. The probe only needs to know whether anything
+    /// exists, and a sorted/enriched one-row query made the shared
+    /// `libraries()` gate wait on work whose result was thrown away. The total
+    /// count stays so an inconsistent empty page still fails closed.
+    func collectionDirectoryHasItems(userID: String, libraryID: String?) async throws -> ItemsResponse {
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "IncludeItemTypes", value: "BoxSet"),
+                URLQueryItem(name: "Recursive", value: "true"),
+                URLQueryItem(name: "StartIndex", value: "0"),
+                URLQueryItem(name: "Limit", value: "1"),
+                URLQueryItem(name: "EnableImages", value: "false"),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "true")
+            ] + (libraryID.map { [URLQueryItem(name: "ParentId", value: $0)] } ?? []),
+            headers: authHeaders
+        )
+        return try await HTTPResponseDiagnostics.$route.withValue(.collectionCandidates) {
+            try await readCollectionPage(endpoint)
+        }
     }
 
     /// Match the native client: the server decides whether ParentId scopes BoxSets.

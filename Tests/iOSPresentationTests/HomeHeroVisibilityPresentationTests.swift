@@ -1,4 +1,5 @@
 #if os(iOS)
+import AppRuntime
 import CoreModels
 import CoreUI
 import FeatureHomeCore
@@ -271,6 +272,50 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
     private final class SizingActions: MediaItemActionHandling {
         func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] { [] }
         func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
+    }
+
+    func testColdAndReturningHomeForegroundNeverWaitForSlowFailingLogo() async throws {
+        let app = PlozziOSAppModel()
+        let server = try IPTVTestHTTPServer { _ in
+            .init(status: 404, headerDelay: .seconds(2))
+        }
+        let url = try await server.start()
+        do {
+            for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+                let style: HeroArtworkStyle = sizeClass == .compact ? .compactPortrait : .landscape
+                let item = MediaItem(
+                    id: UUID().uuidString, title: "SIGNAL", kind: .movie,
+                    logoURL: url.appendingPathComponent(UUID().uuidString),
+                    allowsTitleBasedMetadataMatching: false
+                )
+                for returning in [false, true] {
+                    let foreground = PlozziOSHomeHeroForeground(
+                        item: item, detailItem: item, watchlistItem: item,
+                        presentation: HeroPresentation(item: item, artworkStyle: style, surface: .home),
+                        style: style, onPlay: { _ in }
+                    )
+                    .padding(24)
+                    .environment(app)
+                    .environment(PlozziOSSidebarGeometryModel())
+                    try await withWindow(foreground, sizeClass: sizeClass) { window in
+                        let initialText = try self.renderedText(in: window)
+                        XCTAssertTrue(initialText.contains("SIGNAL"), "Returning \(returning): \(initialText)")
+                        XCTAssertTrue(initialText.contains("Play"), "Actions cannot wait for a logo: \(initialText)")
+                        if !returning {
+                            try await Task.sleep(for: .milliseconds(2200))
+                            try await self.settle(window)
+                            let failedText = try self.renderedText(in: window)
+                            XCTAssertTrue(failedText.contains("SIGNAL"))
+                            XCTAssertTrue(failedText.contains("Play"))
+                        }
+                    }
+                }
+            }
+        } catch {
+            await server.stop()
+            throw error
+        }
+        await server.stop()
     }
 
     func testActualHomeRemovesCompletedEmptyHeroWithoutChangingItsSettings() async throws {
@@ -579,7 +624,11 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                     style: sizeClass == .compact ? .compactPortrait : .landscape,
                     surfaceRole: .home, dynamicTypeSize: .large, containerHeight: window.bounds.height
                 )
-                XCTAssertEqual(scroll.contentSize.height - rowsHeight, heroHeight + 32, accuracy: 1)
+                // Compact page actions move from their own row into the full-bleed hero.
+                let expectedGrowth = sizeClass == .compact
+                    ? heroHeight - window.safeAreaInsets.top - PlozziOSPageHeaderLayout.actionDiameter
+                    : heroHeight + 32
+                XCTAssertEqual(scroll.contentSize.height - rowsHeight, expectedGrowth, accuracy: 1)
 
                 app.settings.hero.settings.sources = []
                 try await self.settle(window)
@@ -678,6 +727,80 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                     XCTAssertFalse(model.isRefreshing)
                     XCTAssertTrue(self.scrollViews(in: window).first === scroll)
                 }
+            }
+        }
+    }
+
+    func testRemovingLastWatchlistItemCollapsesPreviouslyPaintedHero() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Watchlist Hero fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer { app.selectProfile(original); app.profiles.remove(profile.id) }
+        app.settings.hero.settings.sources = [.watchlist]
+        app.settings.hero.settings.isEnabled = true
+        app.settings.hero.settings.autoAdvance = false
+        let artworkURL = try XCTUnwrap(URL(string: "https://watchlist-hero.invalid/\(UUID()).png"))
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 450)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 800, height: 450))
+        }
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: artworkURL, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(artwork.pngData())),
+            for: URLRequest(url: artworkURL)
+        )
+        defer { cache.removeCachedResponse(for: URLRequest(url: artworkURL)) }
+        _ = await ArtworkImageCache.shared.image(for: artworkURL, variant: .heroBackdrop)
+        for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+            let item = MediaItem(
+                id: "last-watchlist", title: "Last Watchlist Movie", kind: .movie,
+                productionYear: 2020, backdropURL: artworkURL,
+                allowsTitleBasedMetadataMatching: false
+            )
+            let added = await app.performUniversalWatchlist(adding: true, item: item)
+            XCTAssertTrue(added)
+            XCTAssertTrue(app.mediaItemActionHandler.isWatchlisted(item))
+            let handler = MutableHeroWatchlist(items: [item])
+            let provider = EmptyHeroHomeProvider()
+            let model = HomeViewModel(
+                accounts: [ResolvedAccount(account: provider.account, provider: provider)],
+                contentStore: InMemoryHomeContentStore(),
+                currentVisibility: { app.settings.homeVisibility.visibility },
+                mediaItemActionHandler: handler
+            )
+            defer { model.invalidate() }
+            await model.load()
+            let home = PlozziOSHomeView(appModel: app, viewModel: model, onAddServer: {}, onShowSettings: {})
+                .environment(app)
+                .environment(HeroTrailerController())
+                .environment(PlozziOSSidebarGeometryModel())
+            try await withWindow(home, sizeClass: sizeClass) { window in
+                let deadline = ContinuousClock.now + .seconds(5)
+                var text = try self.renderedText(in: window)
+                while !text.contains(item.title), ContinuousClock.now < deadline {
+                    try await self.settle(window)
+                    text = try self.renderedText(in: window)
+                }
+                XCTAssertTrue(text.contains(item.title), text)
+                let removed = await app.performUniversalWatchlist(adding: false, item: item)
+                XCTAssertTrue(removed)
+                handler.items = []
+                model.refreshDurableWatchlist()
+                try await Task.sleep(for: .milliseconds(500))
+                try await self.settle(window)
+                XCTAssertTrue(model.state.value?.watchlist.isEmpty == true)
+                let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                let emptyHeight = scroll.contentSize.height
+                app.settings.hero.settings.isEnabled = false
+                try await self.settle(window)
+                XCTAssertEqual(emptyHeight, scroll.contentSize.height, accuracy: 1,
+                               "A previously visible, now-empty Hero must not retain a permanent skeleton.")
+                app.settings.hero.settings.isEnabled = true
             }
         }
     }
@@ -889,6 +1012,16 @@ struct SeriesHeaderMobileProvider: MediaProvider {
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+@MainActor
+private final class MutableHeroWatchlist: MediaItemActionHandling {
+    var items: [MediaItem]
+    init(items: [MediaItem]) { self.items = items }
+    func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] { [] }
+    func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
+    func durableWatchlistItems(from candidates: [MediaItem]) -> [MediaItem] { items }
+    func isDurableWatchlistPresentationReady() -> Bool { true }
 }
 
 private struct EmptyHeroHomeProvider: MediaProvider {

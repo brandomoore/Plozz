@@ -10,6 +10,34 @@ import XCTest
 
 @MainActor
 final class HeroLogoContinuityTests: XCTestCase {
+    func testHomeShowsReadableTitleWhileOptionalLogoIsPendingOrFails() async throws {
+        for style: HeroArtworkStyle in [.landscape, .compactPortrait] {
+            let fixture = try Fixture()
+            defer { fixture.close() }
+            let item = MediaItem(id: UUID().uuidString, title: "Movie title", kind: .movie)
+            let lookup = LookupGate()
+            defer { lookup.release(nil) }
+            fixture.host.rootView = AnyView(
+                PlozziOSHeroMetadata(
+                    presentation: HeroPresentation(item: item, artworkStyle: style, surface: .home),
+                    style: style, mode: .home,
+                    logoFallback: HeroLogoFallback(for: item) { await lookup.resolve() },
+                    content: .identity
+                )
+                .environment(\.themePalette, .dark)
+                .environment(\.plozzArtworkSettings, ArtworkSettings(preference: .library))
+                .frame(width: 400, height: 250)
+                .background(.black)
+            )
+            try await waitUntil { lookup.calls == 1 }
+            XCTAssertTrue(try fixture.hasTitleText(), "Optional artwork cannot blank the Home title.")
+            lookup.release(nil)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(try fixture.hasTitleText())
+            XCTAssertFalse(try fixture.hasRedLogo())
+        }
+    }
+
     func testDetailNeverShowsTextWhileItsFirstLogoIsLoading() async throws {
         for style: HeroArtworkStyle in [.landscape, .compactPortrait] {
             for findsLogo in [true, false] {

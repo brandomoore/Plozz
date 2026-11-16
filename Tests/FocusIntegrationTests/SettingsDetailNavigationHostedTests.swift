@@ -615,6 +615,16 @@ final class SettingsDetailNavigationHostedTests: XCTestCase {
                         )
                     }
                 } inspect: { window in
+                    // Each loop iteration builds a new window for the opposite
+                    // layout direction. Focus can otherwise stay in the previous
+                    // window's keypad, so ask the new root to re-run its focus
+                    // update before measuring.
+                    window.rootViewController?.setNeedsFocusUpdate()
+                    window.rootViewController?.updateFocusIfNeeded()
+                    // The keypad enters with a transform; measuring during that
+                    // animation yields a frame from the pre-settled composition.
+                    try await Task.sleep(for: .milliseconds(600))
+                    window.layoutIfNeeded()
                     let labels = try self.captureLabels(window, name: "profile-pin-\(parental)-\(direction)")
                     let heading = try self.label(parental ? "Create a Parental PIN" : "Add a Profile PIN?", in: labels)
                     XCTAssertLessThan(heading.height, 80)
@@ -632,9 +642,20 @@ final class SettingsDetailNavigationHostedTests: XCTestCase {
                     }
                     XCTAssertEqual(keys.count, 11, "All ten digits and Delete must remain focusable.")
                     let pad = keys.reduce(CGRect.null) { $0.union($1) }
-                    let focusedFrame = try XCTUnwrap(
+                    var focusedFrame = try XCTUnwrap(
                         NavigationRowFocusRequester.frame(of: focused, relativeTo: window)
                     )
+                    // Entry focus can still be settling from the previous
+                    // destination when this window appears; wait for it to land on
+                    // the top row instead of comparing a stale frame.
+                    for _ in 0..<40 where abs(focusedFrame.minY - pad.minY) > 1
+                        || !pad.insetBy(dx: -1, dy: -1).contains(focusedFrame) {
+                        try await Task.sleep(for: .milliseconds(50))
+                        let current = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+                        focusedFrame = try XCTUnwrap(
+                            NavigationRowFocusRequester.frame(of: current, relativeTo: window)
+                        )
+                    }
                     XCTAssertEqual(focusedFrame.minY, pad.minY, accuracy: 1)
                     XCTAssertEqual(
                         direction == .leftToRight ? focusedFrame.minX : focusedFrame.maxX,

@@ -1007,13 +1007,17 @@ private struct PlozziOSSettingsVersionSection<ReleaseLink: View>: View {
 private struct PlozziOSDeveloperInfoSection: View {
     var body: some View {
         SettingsSectionGroup("Device & Build") {
-            ForEach(DeveloperInfo.snapshot()) { item in
+            ForEach(DeveloperInfo.snapshot(
+                localNetwork: LocalNetworkAuthorization.recordedState.diagnosticLabel
+            )) { item in
                 LabeledContent(item.label, value: item.value)
             }
             LabeledContent("OS", value: ProcessInfo.processInfo.operatingSystemVersionString)
             Button {
                 UIPasteboard.general.string = DeveloperInfo.copyText(
-                    DeveloperInfo.snapshot(),
+                    DeveloperInfo.snapshot(
+                        localNetwork: LocalNetworkAuthorization.recordedState.diagnosticLabel
+                    ),
                     extra: [DeveloperInfoItem(
                         id: "os",
                         label: "OS",

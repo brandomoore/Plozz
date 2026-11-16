@@ -133,6 +133,19 @@ final class HeroLoadKeyTests: XCTestCase {
         )
     }
 
+    func testNativeMembershipDistinguishesAccountsButNotVolatileProgress() {
+        var settings = featured
+        settings.sources = [.recentlyAdded]
+        let item = MediaItem(id: "same-local-id", title: "Movie", kind: .movie, sourceAccountID: "first")
+        let original = curation(settings, revision: 0, content: .init(latest: [item]))
+        var updated = item
+        updated.resumePosition = 100
+        updated.overview = "New description"
+        XCTAssertEqual(original, curation(settings, revision: 0, content: .init(latest: [updated])))
+        updated.sourceAccountID = "second"
+        XCTAssertNotEqual(original, curation(settings, revision: 0, content: .init(latest: [updated])))
+    }
+
     func testWatchlistIntentRollbackReloadsWithoutRowIDChanges() {
         var settings = featured
         settings.sources = [.watchlist]

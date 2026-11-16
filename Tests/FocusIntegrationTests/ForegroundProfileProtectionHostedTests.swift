@@ -195,7 +195,11 @@ final class ForegroundProfileProtectionHostedTests: XCTestCase {
         line: UInt = #line,
         _ condition: () -> Bool
     ) async throws {
-        let deadline = ContinuousClock.now + .seconds(5)
+        // Hosted runners can take several seconds to present a new foreground
+        // window while the previous test's scene is still winding down. This is
+        // a bounded wait for an observable state, not a fixed sleep; keep it
+        // generous so jitter does not look like a focus regression.
+        let deadline = ContinuousClock.now + .seconds(15)
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }

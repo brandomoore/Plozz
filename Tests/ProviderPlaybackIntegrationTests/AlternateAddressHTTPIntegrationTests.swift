@@ -317,6 +317,34 @@ final class AlternateAddressHTTPIntegrationTests: XCTestCase {
         XCTAssertTrue(requests.isEmpty)
     }
 
+    func testOverlappingSameURLRequestsKeepTheirRedirectPolicies() async throws {
+        let (foreign, foreignURL) = try await server { _ in .json(#"{"destination":true}"#) }
+        let gate = RedirectResponseGate()
+        addTeardownBlock { await gate.release() }
+        let (origin, originURL) = try await server { _ in
+            await gate.wait()
+            return .init(status: 302, headers: ["Location": foreignURL.absoluteString + "/destination"])
+        }
+        let http = client()
+        let following = Task {
+            try await http.sendRaw(Endpoint(path: "/redirect", redirectPolicy: .follow), baseURL: originURL)
+        }
+        let restricted = Task {
+            try await http.sendRaw(Endpoint(path: "/redirect", redirectPolicy: .sameOrigin), baseURL: originURL)
+        }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while await origin.requests.count < 2, ContinuousClock.now < deadline { await Task.yield() }
+        let starts = await origin.requests.count
+        XCTAssertEqual(starts, 2, "Transport policy must separate coalescing before either response arrives.")
+        await gate.release()
+        let followed = try await following.value
+        let blocked = try await restricted.value
+        XCTAssertEqual(followed.1.statusCode, 200)
+        XCTAssertEqual(blocked.1.statusCode, 302)
+        let arrivals = await foreign.requests.count
+        XCTAssertEqual(arrivals, 1)
+    }
+
     private func server(
         _ response: @escaping @Sendable (LoopbackHTTPServer.Request) async -> LoopbackHTTPServer.Response
     ) async throws -> (LoopbackHTTPServer, URL) {
@@ -346,6 +374,20 @@ final class AlternateAddressHTTPIntegrationTests: XCTestCase {
         let profile = try JSONDecoder().decode(SiloProfile.self, from: Data(
             #"{"id":"profile","name":"Viewer","has_pin":false,"is_child":false}"#.utf8))
         return try SiloCredential(tokens: tokens, profile: profile, profileToken: nil).encoded()
+    }
+}
+
+private actor RedirectResponseGate {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        if !released { await withCheckedContinuation { waiters.append($0) } }
+    }
+    func release() {
+        released = true
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.resume() }
     }
 }
 

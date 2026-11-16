@@ -27,7 +27,9 @@ final class SeasonLoadStateTests: XCTestCase {
 
     private func makeViewModel(_ provider: FakeMediaProvider) async -> ItemDetailViewModel {
         provider.allItems = [series("show")]
-        let vm = ItemDetailViewModel(provider: provider, itemID: "show")
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: "show", prefetchesOpeningSeason: false
+        )
         await vm.load()
         return vm
     }

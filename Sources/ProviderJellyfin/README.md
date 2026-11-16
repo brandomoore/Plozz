@@ -236,6 +236,13 @@ Upcoming requests the same complete membership with `includeSeriesRecency: false
 That skips parent-date and last-played-episode enrichment only; it must not drop
 Next Up, since series containers can omit otherwise valid viewing history.
 
+Next Up previews remain bounded to the requested count. Prefix browsing and
+unlimited history traverse pages of at most 100 rather than silently truncating
+at the preview boundary. Undated Next Up episodes use series metadata, then the
+latest played episode (at most four concurrent lookups); a Resume episode's date
+is only a fallback. Rewatching an older episode must not erase newer series
+activity when feeds from several servers are combined.
+
 Series-specific resume lookups allow resumable `/Shows/NextUp` candidates.
 Compatible bridges can return an empty series-scoped `/Items/Resume` even when
 their account-wide feed contains the saved episode. The existing two scoped

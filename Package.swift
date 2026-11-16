@@ -31,7 +31,13 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [
         .iOS(.v18),
-        .tvOS(.v18)
+        .tvOS(.v18),
+        // The package's own code uses macOS 13/14 APIs and AetherEngine requires 15 (LocalizedStringResource,
+        // Observable). Without a macOS minimum SwiftPM assumes a legacy default, so
+        // `swift build` and `swift test` fail locally on hosts where the platform is
+        // not declared — CI builds through xcodebuild and never hit it. This changes
+        // nothing for the apps, which target iOS/tvOS 18.
+        .macOS(.v15)
     ],
     products: [
         .library(name: "CoreModels", targets: ["CoreModels"]),

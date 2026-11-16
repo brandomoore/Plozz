@@ -188,6 +188,13 @@ or reporting is disabled. A replaced owner or consent generation cannot append
 late measurements. Off-screen time is not measured as a scheduling stall.
 App Store builds do not run this extra sampler.
 
+`PLZSTALL=1` is the separate one-off console probe: both app entry points arm a
+100 ms main-actor wake-up check that emits `PLZBOOT STALL <ms>ms screen=<context>`
+for overshoots of at least 150 ms. It is a scheduling-delay signal, not presented
+FPS or a hitch count, and costs nothing unless the variable is set. Use it with
+`devicectl device process launch --console` when a navigation report needs a
+real stall measurement rather than a screenshot guess.
+
 The operation recorder itself adds no polling task. The scoped mobile observer
 uses cancellable sleeps; neither adds automatic tracing, file logging, or extra
 Sentry events. Serialization happens only when an existing report is captured.

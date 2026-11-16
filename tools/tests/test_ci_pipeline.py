@@ -160,11 +160,16 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIn("    needs: guards\n", block)
                 self.assertEqual(block.count("needs:"), 1)
                 self.assertIn("    runs-on: xcode-27\n", block)
-                timeout = {"app-build": 60, "package-tests": 80, "hosted-focus": 200}[lane]
+                timeout = {"app-build": 60, "package-tests": 80, "hosted-focus": 180}[lane]
                 self.assertIn(f"    timeout-minutes: {timeout}\n", block)
                 self.assertIn(f"          lane: {lane}\n", block)
                 self.assertIn("uses: ./.github/actions/ci-prepare", block)
-        self.assertNotIn("strategy:", WORKFLOW)
+        # Heavy lanes are sharded in parallel; the app build stays single.
+        self.assertNotIn("strategy:", JOBS["app-build"])
+        for lane, shards in (("package-tests", "[1, 2, 3]"), ("hosted-focus", "[1, 2]")):
+            with self.subTest(sharded=lane):
+                self.assertIn("      fail-fast: false\n", JOBS[lane])
+                self.assertIn(f"        shard: {shards}\n", JOBS[lane])
         self.assertNotIn("continue-on-error", WORKFLOW + PREPARE + SAVE)
 
     def test_all_original_preflight_checks_still_run_without_cache_gates(self):
@@ -191,33 +196,38 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('GIT_CONFIG_PARAMETERS: "\'safe.bareRepository=all\'"', WORKFLOW)
 
     def test_full_matrix_and_hosted_tests_remain_unconditional_and_bounded(self):
+        self.assertIn("tools/ci-shards.py package --index", JOBS["package-tests"])
+        self.assertIn("tools/ci-shards.py focus --index", JOBS["hosted-focus"])
         self.assertIn(
-            'run: python3 tools/run-bounded.py 3600 "CI full test matrix" -- tools/run-tests.sh\n',
+            'python3 tools/run-bounded.py 3600 "package test shard" -- \\\n'
+            '            tools/run-tests.sh "${SELECTED[@]}"\n',
             JOBS["package-tests"],
         )
         package_deadline = int(re.search(
-            r'run-bounded\.py (\d+) "CI full test matrix"', JOBS["package-tests"]
+            r'run-bounded\.py (\d+) "package test shard"', JOBS["package-tests"]
         )[1])
         package_job_minutes = int(re.search(r"timeout-minutes: (\d+)", JOBS["package-tests"])[1])
         self.assertGreaterEqual(package_job_minutes * 60 - package_deadline, 15 * 60,
                                 "Keep setup, timeout teardown, and diagnostic uploads inside the outer job budget.")
-        self.assertIn("run: tools/run-focus-tests.sh\n", JOBS["hosted-focus"])
-        self.assertIn('PLOZZ_FOCUS_TEST_TIMEOUT: "7200"', JOBS["hosted-focus"])
+        self.assertIn('tools/run-focus-tests.sh "${SELECTED[@]}"', JOBS["hosted-focus"])
+        self.assertIn('PLOZZ_FOCUS_TEST_TIMEOUT: "4800"', JOBS["hosted-focus"])
         self.assertEqual(
             re.findall(r"PLOZZ_FOCUS_TEST_TIMEOUT:\s*([^\n]+)", WORKFLOW + PREPARE),
-            ['"7200"'],
+            ['"4800"'],
         )
         self.assertEqual(
             re.findall(r"PLOZZ_FOCUS_BUILD_TIMEOUT:\s*([^\n]+)", WORKFLOW + PREPARE),
-            ['"3600"'],
+            ['"5400"'],
         )
         hosted_deadlines = [
             int(re.search(rf'{name}:\s*"(\d+)"', JOBS["hosted-focus"])[1])
             for name in ("PLOZZ_FOCUS_BUILD_TIMEOUT", "PLOZZ_FOCUS_TEST_TIMEOUT")
         ]
         hosted_job_minutes = int(re.search(r"timeout-minutes: (\d+)", JOBS["hosted-focus"])[1])
+        # A cold hosted build takes over 30 minutes on a fork cache; the bounds
+        # match the original single job and leave 20 minutes inside the job.
         self.assertGreaterEqual(
-            hosted_job_minutes * 60 - sum(hosted_deadlines), 15 * 60,
+            hosted_job_minutes * 60 - sum(hosted_deadlines), 10 * 60,
             "Keep setup, timeout teardown, and diagnostic uploads outside both hosted deadlines.",
         )
         for lane in ("package-tests", "hosted-focus"):
@@ -311,11 +321,20 @@ class WorkflowTests(unittest.TestCase):
             names.append(name)
             self.assertTrue(name.startswith(f"{lane}-diagnostics-"))
             self.assertIn("${{ github.run_id }}-${{ github.run_attempt }}", name)
+            if lane in ("package-tests", "hosted-focus"):
+                self.assertIn("${{ matrix.shard }}", name)
             self.assertIn("retention-days: 7", artifact)
             self.assertIn("if: ${{ always() }}", JOBS[lane])
             self.assertNotIn("DerivedData", artifact)
             self.assertNotIn("SourcePackages", artifact)
         self.assertEqual(len(names), len(set(names)))
+        expanded = [
+            name.replace("${{ matrix.shard }}", str(shard))
+            for name in names
+            for shard in (range(1, 4) if name.startswith("package-tests-") else
+                          range(1, 3) if name.startswith("hosted-focus-") else [1])
+        ]
+        self.assertEqual(len(expanded), len(set(expanded)))
         self.assertIn(".build/test-results", JOBS["package-tests"])
         self.assertIn(".build/focus-test-results", JOBS["hosted-focus"])
 

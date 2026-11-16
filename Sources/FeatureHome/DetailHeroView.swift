@@ -1091,6 +1091,13 @@ struct DetailHeroView: View, Equatable {
                     }
                 }
                 .detailEntranceStage(.controls)
+                // Push the action row down from the metadata above it. This row is
+                // the widest thing in the column (Play + resume + version + trailer +
+                // watchlist in the largest configuration) and sat as close to the
+                // facts line as the facts sit to the description, which read as
+                // crowded at TV distance. Only this gap grows; description -> facts is
+                // unchanged.
+                .padding(.top, 16)
             }
         }
         .padding(.top, PlozzTheme.Metrics.screenVerticalPadding)

@@ -29,6 +29,17 @@ EMPTY_INFO_KEYS = (
     "AniListClientID", "AniListClientSecret", "LastFmAPIKey", "LastFmSharedSecret",
     "PlozzSentryDSN", "PlozzReleaseChannel", "PlozzReleaseID", "PlozzReleaseVersion",
 )
+# Info.plist keys that playback depends on at runtime. A re-signer replaces the
+# signature but keeps this plist, so this script is the last chance to reject a
+# build that dropped one: the Local Network alert is raised by browsing a
+# declared Bonjour type, plain-HTTP LAN streams and AVPlayer's loopback HLS need
+# App Transport Security to allow them, and background audio is what keeps a
+# handed-off player alive. See docs/unsigned-ipa-signing.md.
+PLAYBACK_INFO_KEYS = (
+    "NSLocalNetworkUsageDescription", "NSBonjourServices",
+    "NSAppTransportSecurity", "UIBackgroundModes",
+)
+REQUIRED_BONJOUR_SERVICE = "_jellyfin._tcp"
 MACHO_MAGICS = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe",
                 b"\xca\xfe\xba\xbf", b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce"}
 
@@ -127,6 +138,29 @@ def verify_info(info, platform, *, extension=False, app_version=None):
     return version
 
 
+def verify_playback_info(info, platform):
+    """Reject a package that lost a key playback cannot work without.
+
+    Nothing after this script rewrites the plist: a third-party signer only
+    replaces the signature and provisioning, so a missing key here reaches the
+    device. The unsigned self-build also strips the app's entitlements, which
+    makes these declared keys the only playback capability it can rely on.
+    """
+    usage = info.get("NSLocalNetworkUsageDescription")
+    if not isinstance(usage, str) or not usage.strip():
+        raise ValueError("Missing Local Network usage description")
+    services = info.get("NSBonjourServices")
+    if not isinstance(services, list) or REQUIRED_BONJOUR_SERVICE not in services:
+        raise ValueError(f"Missing {REQUIRED_BONJOUR_SERVICE} Bonjour declaration")
+    ats = info.get("NSAppTransportSecurity")
+    if not isinstance(ats, dict) or ats.get("NSAllowsArbitraryLoads") is not True:
+        raise ValueError("Playback requires NSAllowsArbitraryLoads for plain-HTTP streams")
+    modes = info.get("UIBackgroundModes")
+    if not isinstance(modes, list) or "audio" not in modes:
+        raise ValueError("Missing the audio background mode playback relies on")
+    return list(PLAYBACK_INFO_KEYS)
+
+
 def macho_files(app):
     result = []
     for path in sorted(app.rglob("*")):
@@ -142,6 +176,7 @@ def macho_files(app):
 def verify_and_unsign(app, platform, run):
     info = plistlib.loads((app / "Info.plist").read_bytes())
     version = verify_info(info, platform)
+    playback_keys = verify_playback_info(info, platform)
     extensions = list((app / "PlugIns").glob("*.appex"))
     if len(extensions) != (1 if platform == "tvos" else 0):
         raise ValueError("Unexpected app extension set")
@@ -193,7 +228,7 @@ def verify_and_unsign(app, platform, run):
             raise ValueError("Unexpected signature metadata")
         shutil.rmtree(signature)
     return {"bundleIdentifier": info["CFBundleIdentifier"], "version": version,
-            "binaries": inventory}
+            "playbackInfoKeys": playback_keys, "binaries": inventory}
 
 
 def build(platform, root, env, fds):
@@ -255,7 +290,9 @@ def build(platform, root, env, fds):
             for name in archive.namelist()
         ):
             raise ValueError("Invalid IPA archive layout or checksum")
-        verify_info(plistlib.loads(archive.read(f"Payload/{app.name}/Info.plist")), platform)
+        packaged_info = plistlib.loads(archive.read(f"Payload/{app.name}/Info.plist"))
+        verify_info(packaged_info, platform)
+        verify_playback_info(packaged_info, platform)
     receipt.update({
         "platform": platform, "signed": False, "sourceRevision": revision,
         "workingTreeModified": dirty, "sourceSHA256": source_digest,

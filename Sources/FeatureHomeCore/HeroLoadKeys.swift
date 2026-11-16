@@ -60,11 +60,17 @@ public struct HeroResolutionCacheEntry: Sendable {
 }
 
 /// Content-loading identity, independent of carousel presentation preferences.
+/// Membership is source-scoped; volatile progress/artwork updates do not restart curation.
 public struct HeroCurationLoadKey: Equatable, Sendable {
     public let isAwaitingSources: Bool
-    private let continueWatching: [MediaItem]
-    private let watchlist: [MediaItem]
-    private let recentlyAdded: [MediaItem]
+    private struct Member: Equatable, Sendable {
+        let accountID: String?
+        let itemID: String
+        init(_ item: MediaItem) { accountID = item.sourceAccountID; itemID = item.id }
+    }
+    private let continueWatchingIDs: [Member]
+    private let watchlistIDs: [Member]
+    private let recentlyAddedIDs: [Member]
     private let libraries: [AggregatedLibrary]
     private let configuration: HeroConfigurationKey
     private let visibility: HomeLibraryVisibility
@@ -88,17 +94,17 @@ public struct HeroCurationLoadKey: Equatable, Sendable {
         loadingRows: Set<HomeRowKind> = [],
         language: String = "en"
     ) {
-        isAwaitingSources = isPreparingHome || HomeHeroLaunchPolicy.isAwaitingSources(
-            settings: settings, loadingRows: loadingRows
-        )
-        continueWatching = settings.isEnabled(.continueWatching) ? content.continueWatching : []
-        watchlist = settings.isEnabled(.watchlist) ? content.watchlist : []
-        recentlyAdded = settings.isEnabled(.recentlyAdded) ? content.latest : []
+        continueWatchingIDs = settings.isEnabled(.continueWatching) ? content.continueWatching.map(Member.init) : []
+        watchlistIDs = settings.isEnabled(.watchlist) ? content.watchlist.map(Member.init) : []
+        recentlyAddedIDs = settings.isEnabled(.recentlyAdded) ? content.latest.map(Member.init) : []
         libraries = settings.isEnabled(.randomFromLibrary) || settings.isEnabled(.collection)
             ? content.libraries : []
         configuration = HeroConfigurationKey(settings: settings, language: language)
         self.visibility = visibility
         self.freshnessRevision = freshnessRevision
+        isAwaitingSources = isPreparingHome || HomeHeroLaunchPolicy.isAwaitingSources(
+            settings: settings, loadingRows: loadingRows
+        )
         let enrichesCollectionHistory = settings.isEnabled(.collection) && settings.hideWatched
         self.identityIndexRevision = settings.requiresDiscoveryVerification
             || (settings.isActive && enrichesCollectionHistory)

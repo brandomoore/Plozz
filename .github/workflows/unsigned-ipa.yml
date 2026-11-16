@@ -33,6 +33,9 @@ jobs:
           persist-credentials: false
       - name: Install XcodeGen if missing
         run: command -v xcodegen || brew install xcodegen
+      # The script verifies the Info.plist keys playback needs and strips the app
+      # signature. It cannot grant entitlements or Local Network access — those
+      # come from the signer and the device. See docs/unsigned-ipa-signing.md.
       - name: Build unsigned device app
         id: build
         env:

@@ -21,7 +21,7 @@ jobs:
   guards:
     name: Deterministic preflight
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
@@ -42,6 +42,20 @@ jobs:
 
       - name: Test hygiene guard
         run: python3 tools/test-hygiene.py
+
+      - name: UI loading-state guard
+        run: python3 tools/ui-state-guard.py
+
+      - name: UI loading-state guard regression tests
+        run: python3 -m unittest discover -s tools/tests -p 'test_ui_state_guard.py'
+
+      - name: Device timing-diff regression tests
+        run: python3 -m unittest discover -s tools/tests -p 'test_device_timing_diff.py'
+
+      - name: CI shard partition guard
+        run: |
+          python3 tools/ci-shards.py package --count 3 --verify
+          python3 tools/ci-shards.py focus --count 2 --verify
 
       - name: Settings search coverage and regression tests
         run: tools/check-settings-search.sh
@@ -149,10 +163,17 @@ jobs:
           retention-days: 7
 
   package-tests:
-    name: Full package test matrix
+    name: Package tests (${{ matrix.shard }}/3)
     needs: guards
     runs-on: xcode-27
+    # GitHub caps a job at 3600s and free runners routinely lost the single
+    # 80-minute matrix job to it. Three shards; together with the two focus
+    # shards this is five macOS jobs, the free-plan concurrency limit.
     timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -164,8 +185,13 @@ jobs:
         with:
           lane: package-tests
 
-      - name: Run full test matrix (tvOS Simulator, build-once)
-        run: python3 tools/run-bounded.py 3600 "CI full test matrix" -- tools/run-tests.sh
+      - name: Run package test shard ${{ matrix.shard }} of 3
+        run: |
+          # macOS runners ship bash 3.2: no readarray/mapfile.
+          SELECTED=( $(python3 tools/ci-shards.py package --index "${{ matrix.shard }}" --count 3) )
+          echo "Shard ${{ matrix.shard }}/3: ${#SELECTED[@]} test targets"
+          python3 tools/run-bounded.py 3600 "package test shard" -- \
+            tools/run-tests.sh "${SELECTED[@]}"
 
       - name: Save successful trusted caches
         if: ${{ success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
@@ -180,7 +206,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: package-tests-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          name: package-tests-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
             .build/ci-logs/package-tests
             .build/test-results
@@ -188,10 +214,19 @@ jobs:
           retention-days: 7
 
   hosted-focus:
-    name: App-hosted focus tests
+    name: Hosted focus tests (${{ matrix.shard }}/2)
     needs: guards
     runs-on: xcode-27
-    timeout-minutes: 200
+    # The whole suite used to run in one 240-minute job, which the runner cap
+    # killed. The focus scheme has a single test bundle, so shards are test
+    # classes, derived from project.yml plus the sources by tools/ci-shards.py.
+    # A cold hosted build alone can take over an hour on a fork cache; keep the
+    # job inside the runner cap with room for setup and diagnostics.
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -203,11 +238,14 @@ jobs:
         with:
           lane: hosted-focus
 
-      - name: Run app-hosted episode focus tests
+      - name: Run hosted focus shard ${{ matrix.shard }} of 2
         env:
-          PLOZZ_FOCUS_BUILD_TIMEOUT: "3600"
-          PLOZZ_FOCUS_TEST_TIMEOUT: "7200"
-        run: tools/run-focus-tests.sh
+          PLOZZ_FOCUS_BUILD_TIMEOUT: "5400"
+          PLOZZ_FOCUS_TEST_TIMEOUT: "4800"
+        run: |
+          SELECTED=( $(python3 tools/ci-shards.py focus --index "${{ matrix.shard }}" --count 2) )
+          echo "Shard ${{ matrix.shard }}/2: ${#SELECTED[@]} test classes"
+          tools/run-focus-tests.sh "${SELECTED[@]}"
 
       - name: Save successful trusted caches
         if: ${{ success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
@@ -222,7 +260,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: hosted-focus-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          name: hosted-focus-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
             .build/ci-logs/hosted-focus
             .build/focus-test-results

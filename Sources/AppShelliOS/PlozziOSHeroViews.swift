@@ -136,19 +136,25 @@ extension EnvironmentValues {
 }
 
 private struct PlozziOSHeroContainerHeightModifier: ViewModifier {
-    @State private var height: CGFloat?
+    @Environment(\.plozziOSHeroContainerHeight) private var inheritedHeight
+    @State private var measuredHeight: CGFloat?
 
     func body(content: Content) -> some View {
-        content
-            .environment(\.plozziOSHeroContainerHeight, height)
+        // Seed from this page's proposal, never another scene's screen. UIKit
+        // supplies the owning window once attached, including embedded layouts
+        // whose proposal does not span the complete window.
+        GeometryReader { geometry in
+            content.environment(
+                \.plozziOSHeroContainerHeight,
+                inheritedHeight ?? measuredHeight
+                    ?? (geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom)
+            )
             .background {
-                PlozziOSWindowHeightReader { measured in
-                    guard measured > 0, height != measured else { return }
-                    height = measured
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+                PlozziOSWindowHeightReader { measuredHeight = $0 }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
+        }
     }
 }
 
@@ -458,6 +464,9 @@ struct PlozziOSDetailHeroSection: View {
 
     let item: MediaItem
     let backdropItem: MediaItem
+    /// Artwork the tapped card already had decoded, painted behind the stage until
+    /// the full-size backdrop resolves.
+    var seedArtwork: UIImage? = nil
     let playableItem: MediaItem?
     var showsPlayPlaceholder: Bool = false
     var onRetryPlaybackInventory: (() -> Void)?
@@ -501,6 +510,7 @@ struct PlozziOSDetailHeroSection: View {
             presentation: backdropPresentation,
             style: style,
             surfaceRole: .detail,
+            seedArtwork: seedArtwork,
             isActive: true,
             // Episode pages retain their own still instead of a show backdrop.
             showsBackdrop: !presentsEpisodeStill,
@@ -584,6 +594,10 @@ struct PlozziOSSeriesLoadingHero: View {
         .environment(\.plozzArtworkArea, .home)
         .environment(\.plozziOSHeroLogoSize, settings.logoSize)
         .ignoresSafeArea(.container, edges: .top)
+        // Simplify-toward-upstream (testing step R4): bffac44 does not paint hero
+        // navigation chrome on the loading hero; it hides the toolbar background.
+        // Re-prove the fork's chrome here incrementally once the settled flicker
+        // is gone on phone AND tester.
         .background(palette.backgroundBase.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -606,6 +620,9 @@ struct PlozziOSHeroStage<Foreground: View>: View {
     let presentation: HeroPresentation
     let style: HeroArtworkStyle
     let surfaceRole: HeroTrailerSurfaceRole
+    /// Already-decoded card artwork to show on the first frame (a card's zoom
+    /// transition is already stretching it).
+    var seedArtwork: UIImage? = nil
     let isActive: Bool
     var showsBackdrop = true
     var showsScrim = true
@@ -675,9 +692,18 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         }
         let background = Group {
             if showsBackdrop {
-                PlozziOSReflectedHeroStage(height: height, ancestorScale: pullScale) { _ in
+                PlozziOSReflectedHeroStage(
+                    height: height,
+                    ancestorScale: pullScale,
+                    // A detail page slides in and out under a navigation
+                    // transition. Its global x is the transition offset, not a
+                    // sidebar cover; treating it as one re-crops the artwork on
+                    // every frame (the hero visibly resizing on entry and back).
+                    ignoresGlobalCover: surfaceRole == .detail
+                ) { _ in
                     PlozziOSHeroBackdrop(
                         presentation: presentation,
+                        seedArtwork: seedArtwork,
                         asyncFallbackURL: onlineArtworkFallback,
                         sharedResolutionIdentity: artworkAppearanceID,
                         style: style,
@@ -1102,9 +1128,18 @@ private struct PlozziOSHeroBackdrop: View {
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     let presentation: HeroPresentation
+    var seedArtwork: UIImage? = nil
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let sharedResolutionIdentity: String?
     let style: HeroArtworkStyle
+    /// Once the real backdrop has any picture, drop the card seed so the two can
+    /// never be visible together (the "two images" on the way into a detail page).
+    @State private var backdropResolved = false
+    /// The artwork this surface committed to. Metadata enrichment can add a better
+    /// reference a second after entry; swapping it re-lays out and re-tints the
+    /// hero, which reads as the hero moving/flickering. Freeze the first resolved
+    /// set until the subject changes.
+    @State private var frozenReferences: [ArtworkReference]?
     let itemID: String
     let height: CGFloat
     let showsScrim: Bool
@@ -1188,8 +1223,34 @@ private struct PlozziOSHeroBackdrop: View {
     }
 
     private func stillArtwork() -> some View {
+        ZStack {
+            if let seedArtwork, !backdropResolved {
+                Image(uiImage: seedArtwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .accessibilityHidden(true)
+            }
+            backdropImage
+        }
+    }
+
+    private var currentReferences: [ArtworkReference] {
+        presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area)
+    }
+
+    /// Never freeze an empty candidate list: the first resolve can come from the
+    /// async fallback while the provider item has not supplied its backdrop yet,
+    /// and locking `[]` would blank the hero permanently.
+    private var activeReferences: [ArtworkReference] {
+        if let frozenReferences, !frozenReferences.isEmpty { return frozenReferences }
+        return currentReferences
+    }
+
+    private var backdropImage: some View {
         FallbackAsyncImage(
-            references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
+            references: activeReferences,
             prefersLandscape: style != .compactPortrait,
             maxAspectRatio: 3,
             variant: .heroBackdrop,
@@ -1200,6 +1261,13 @@ private struct PlozziOSHeroBackdrop: View {
             previewVariant: .heroPreview,
             artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
+            onResolveReference: { _ in
+                if frozenReferences == nil, !currentReferences.isEmpty {
+                    frozenReferences = currentReferences
+                }
+                guard !backdropResolved else { return }
+                withAnimation(.easeOut(duration: 0.2)) { backdropResolved = true }
+            },
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
                 "\(surfaceRole == .home ? "home" : "detail"):\(presentation.itemID)", style: style
             ),
@@ -1209,11 +1277,16 @@ private struct PlozziOSHeroBackdrop: View {
         ) { image in
             PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
         } placeholder: {
-            palette.backgroundBase
+            // Keep the seeded card picture visible until the full backdrop lands.
+            seedArtwork == nil ? palette.backgroundBase : Color.clear
         }
         .reportingHeroArtwork(id: presentation.itemID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        .onChange(of: presentation.itemID) { _, _ in
+            backdropResolved = false
+            frozenReferences = nil
+        }
     }
 
     @ViewBuilder
@@ -1818,6 +1891,11 @@ private struct PlozziOSStableHomeHeroMetadata: View {
     let ratingPreferences: DetailPageSettings
     let scheduleLine: LocalizedStringResource?
     let logoFallback: HeroLogoFallback?
+    /// The logo choice locked when the foreground was prepared. A late
+    /// enrichment pass must not replace a visible title with a wordmark (or a
+    /// wordmark with a different one); that is the clear-text flicker.
+    var logoReferencesOverride: [ArtworkReference]? = nil
+    var logoFallbackOverride: HeroLogoFallback?? = nil
     let textSize: HeroTextSize
     @State private var descriptionText: String?
 
@@ -1829,6 +1907,8 @@ private struct PlozziOSStableHomeHeroMetadata: View {
         ratingPreferences: DetailPageSettings,
         scheduleLine: LocalizedStringResource?,
         logoFallback: HeroLogoFallback?,
+        logoReferencesOverride: [ArtworkReference]? = nil,
+        logoFallbackOverride: HeroLogoFallback?? = nil,
         textSize: HeroTextSize
     ) {
         self.presentation = presentation
@@ -1838,6 +1918,8 @@ private struct PlozziOSStableHomeHeroMetadata: View {
         self.ratingPreferences = ratingPreferences
         self.scheduleLine = scheduleLine
         self.logoFallback = logoFallback
+        self.logoReferencesOverride = logoReferencesOverride
+        self.logoFallbackOverride = logoFallbackOverride
         self.textSize = textSize
         _descriptionText = State(
             initialValue: HeroContentPolicy.homeDescription(for: presentation)
@@ -1852,7 +1934,8 @@ private struct PlozziOSStableHomeHeroMetadata: View {
             displayedArtworkID: displayedArtworkID,
             hidesRatings: hidesRatings,
             scheduleLine: scheduleLine,
-            logoFallback: logoFallback,
+            logoFallback: logoFallbackOverride ?? logoFallback,
+            logoReferencesOverride: logoReferencesOverride,
             descriptionOverride: .init(text: descriptionText),
             detailPageSettings: ratingPreferences,
             textSize: textSize
@@ -1909,6 +1992,13 @@ struct PlozziOSHomeHeroForeground: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(PlozziOSAppModel.self) private var appModel
     @Environment(\.mediaItemActionHandler) private var actionHandler
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    /// The logo/text choice this slide revealed with. Freezing it prevents a
+    /// late enrichment logo from swapping a visible title (or a wordmark) for
+    /// something else while the viewer is looking at the hero.
+    @State private var frozenLogoChoice = false
+    @State private var frozenLogoReferences: [ArtworkReference] = []
+    @State private var frozenLogoFallback: HeroLogoFallback?
 
     let item: MediaItem
     let detailItem: MediaItem
@@ -1920,8 +2010,15 @@ struct PlozziOSHomeHeroForeground: View {
     /// "New episode every Friday" for a returning series, from the shared
     /// `HeroScheduleLines` the tvOS hero already uses.
     var scheduleLine: LocalizedStringResource?
+    /// Loads cached badges without delaying the title or actions.
+    var scheduleLines: HeroScheduleLines? = nil
 
     var body: some View {
+        // Reading the store in the body is what makes a late cache hit re-render
+        // this column; the passed line is the fallback for snapshot/fixture input.
+        let resolvedScheduleLine = scheduleLines?.line(for: detailItem)
+            ?? scheduleLines?.line(for: item)
+            ?? scheduleLine
         VStack(
             alignment: style == .compactPortrait ? .center : .leading,
             spacing: 12
@@ -1935,8 +2032,12 @@ struct PlozziOSHomeHeroForeground: View {
                     spoilerSettings: appModel.settings.spoilers.settings
                 ),
                 ratingPreferences: appModel.settings.hero.settings.ratingPreferences,
-                scheduleLine: scheduleLine,
-                logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
+                scheduleLine: resolvedScheduleLine,
+                logoFallback: frozenLogoChoice
+                    ? frozenLogoFallback
+                    : PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
+                logoReferencesOverride: frozenLogoChoice ? frozenLogoReferences : nil,
+                logoFallbackOverride: frozenLogoChoice ? .some(frozenLogoFallback) : nil,
                 textSize: appModel.settings.hero.settings.textSize
             )
             .environment(\.metadataTextScale, appModel.settings.hero.settings.textSize.scale)
@@ -1965,6 +2066,41 @@ struct PlozziOSHomeHeroForeground: View {
         // Width fill / alignment now come from the shared placement modifier.
         .multilineTextAlignment(style == .compactPortrait ? .center : .leading)
         .environment(\.plozziOSHeroLogoSize, appModel.settings.hero.settings.logoSize)
+        .task(id: foregroundReadinessKey) {
+            // Keep the chosen logo source stable across later enrichment.
+            let sources = logoSources
+            if !frozenLogoChoice {
+                frozenLogoChoice = true
+                frozenLogoReferences = sources.references
+                frozenLogoFallback = sources.fallback
+            }
+            if HeroForegroundReadiness.isPrepared(foregroundReadinessKey) {
+                return
+            }
+            await scheduleLines?.loadCached([detailItem, item])
+            let hasAnySource = !sources.references.isEmpty || sources.fallback != nil
+            guard hasAnySource else {
+                HeroForegroundReadiness.markPrepared(foregroundReadinessKey)
+                return
+            }
+            // Prewarm returning slides; the current slide remains usable meanwhile.
+            await HeroLogoPreloader.prepare(
+                references: sources.references,
+                fallback: sources.fallback,
+                policy: artworkPolicy
+            )
+            guard !Task.isCancelled else { return }
+            HeroForegroundReadiness.markPrepared(foregroundReadinessKey)
+        }
+    }
+
+    /// Prewarming is optional; the title fallback and actions are always usable.
+    private var foregroundReadinessKey: String {
+        "\(detailItem.id)#\(style == .compactPortrait)"
+    }
+
+    private var logoSources: (references: [ArtworkReference], fallback: HeroLogoFallback?) {
+        (presentation.logoReferences, PlozziOSHeroMetadata.tmdbLogoFallback(for: item))
     }
 
     @ViewBuilder
@@ -2766,6 +2902,7 @@ struct PlozziOSHeroMetadata: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.plozziOSHeroLogoSize) private var logoSize
     @Environment(\.metadataTextScale) private var textScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var titleFontSize: CGFloat = 34
     @ScaledMetric(relativeTo: .subheadline) private var metadataFontSize: CGFloat = 15
     @ScaledMetric(relativeTo: .body) private var overviewFontSize: CGFloat = 17
@@ -2794,6 +2931,10 @@ struct PlozziOSHeroMetadata: View {
     /// visibly on a discovery item, which comes from Seerr/TMDb and so has no
     /// provider logo at all, while TMDb itself usually has one.
     var logoFallback: HeroLogoFallback? = nil
+    /// A selected Home slide freezes the logo choice it revealed with. Later
+    /// enrichment can add a clearer wordmark, but swapping the visible title for
+    /// it after the reveal is the clear-text flicker; the frozen choice wins.
+    var logoReferencesOverride: [ArtworkReference]? = nil
     /// A selected Home slide freezes its first fully prepared description. Later
     /// payload refreshes may update other chrome, but must not replace a visible
     /// overview with a newly arrived tagline.
@@ -2836,6 +2977,7 @@ struct PlozziOSHeroMetadata: View {
             if content != .information {
                 if let scheduleLine {
                     scheduleBadge(scheduleLine)
+                        .transition(.opacity)
                 }
                 if let seriesBreadcrumb {
                     // The episode is this page's subject, so the show is context
@@ -2874,12 +3016,12 @@ struct PlozziOSHeroMetadata: View {
                         isRunningOnMac: isRunningOnMac && mode == .home
                     )
                     HeroLogoArtwork(
-                        references: titlePresentation.logoReferences,
+                        references: logoReferencesOverride ?? titlePresentation.logoReferences,
                         asyncFallbackURL: logoFallback,
                         displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
                         maxHeight: logoBox.height,
-                        presentationPolicy: .whenResolved,
+                        presentationPolicy: mode == .home ? .whenReady : .whenResolved,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
                         Text(titlePresentation.title)
@@ -2984,10 +3126,23 @@ struct PlozziOSHeroMetadata: View {
                 }
             }
         }
+        // Title, logo, facts, ratings and overview all hydrate after the seed
+        // item. Crossfade their content and animate the small reflow instead of
+        // dropping new fields in with a pop.
+        .contentTransition(.opacity)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: contentFadeKey)
         .frame(maxWidth: .infinity, alignment: style == .compactPortrait ? .center : .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
             if width > 0 { availableWidth = width }
         }
+    }
+
+    private var contentFadeKey: String {
+        "\(titlePresentation.title)|\(descriptionText ?? "")"
+            + "|\(factComponents.joined(separator: ","))"
+            + "|\(effectiveGenres.joined(separator: ","))"
+            + "|\(effectiveTechnicalBadges.map(\.label).joined(separator: ","))"
+            + "|\(effectiveRatings.count)|\(scheduleLine.map(String.init(describing:)) ?? "")"
     }
 
     private var rootPresentation: HeroPresentation {
@@ -3284,6 +3439,9 @@ private struct PlozziOSReflectedHeroStage<
     let height: CGFloat
     var ancestorScale: CGFloat = 1
     var usesNativeBackgroundExtension = true
+    /// Detail pages must size the artwork from their own layout, not from the
+    /// window position: the interactive push/pop moves that position every frame.
+    var ignoresGlobalCover = false
     @ViewBuilder let content: (CGFloat) -> Content
     @ViewBuilder let reflection: (CGFloat, CGFloat) -> Reflection
 
@@ -3292,18 +3450,23 @@ private struct PlozziOSReflectedHeroStage<
             let scaledGlobalMinX = proxy.frame(in: .global).minX
             let horizontalScaleGrowth = proxy.size.width
                 * (max(ancestorScale, 1) - 1) / 2
-            let globalMinX = scaledGlobalMinX + horizontalScaleGrowth
-            let width = windowWidth ?? proxy.size.width
-            let locallyCoveredWidth = max(
-                proxy.safeAreaInsets.leading,
-                globalMinX
-            )
-            let coveredWidth = max(
-                locallyCoveredWidth,
-                sidebarGeometry.isVisible
-                    ? sidebarGeometry.coveredWidth
-                    : 0
-            )
+            let globalMinX = ignoresGlobalCover
+                ? 0
+                : scaledGlobalMinX + horizontalScaleGrowth
+            let width = ignoresGlobalCover
+                ? proxy.size.width
+                : (windowWidth ?? proxy.size.width)
+            let locallyCoveredWidth = ignoresGlobalCover
+                ? 0
+                : max(proxy.safeAreaInsets.leading, globalMinX)
+            let coveredWidth = ignoresGlobalCover
+                ? 0
+                : max(
+                    locallyCoveredWidth,
+                    sidebarGeometry.isVisible
+                        ? sidebarGeometry.coveredWidth
+                        : 0
+                )
             let usableWidth = max(width - coveredWidth, 1)
             let mainOffset = coveredWidth - globalMinX
             ZStack(alignment: .topLeading) {
@@ -3328,6 +3491,7 @@ private struct PlozziOSReflectedHeroStage<
             .environment(\.plozziOSHeroFitsLandscapeArtwork, sidebarGeometry.isVisible && coveredWidth > 0)
             .onChange(of: locallyCoveredWidth, initial: true) {
                 _, locallyCoveredWidth in
+                guard !ignoresGlobalCover else { return }
                 if #unavailable(iOS 26.0), locallyCoveredWidth > 1 {
                     sidebarGeometry.recordCoveredWidth(locallyCoveredWidth)
                 }
@@ -3668,3 +3832,26 @@ struct PlozziOSHomeSidebarOverlapProbe: UIViewControllerRepresentable {
     }
 }
 #endif
+
+/// Remembers which hero foregrounds have already had their logo prepared, so a view
+/// recreated by navigation reveals immediately instead of fading in again.
+enum HeroForegroundReadiness {
+    private static let lock = NSLock()
+    private static var prepared: Set<String> = []
+    private static var order: [String] = []
+    private static let limit = 32
+
+    static func isPrepared(_ key: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return prepared.contains(key)
+    }
+
+    static func markPrepared(_ key: String) {
+        lock.lock(); defer { lock.unlock() }
+        guard prepared.insert(key).inserted else { return }
+        order.append(key)
+        while order.count > limit {
+            prepared.remove(order.removeFirst())
+        }
+    }
+}

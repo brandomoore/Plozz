@@ -399,6 +399,42 @@ final class ArtworkImageVariantTests: XCTestCase {
         XCTAssertNil(cache.cachedImage(for: .networkFile(reference)))
     }
 
+    func testRevisionChangesMissDecodedCacheAndPrefetchFetchesExactArtwork() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ArtworkImageCache(derivedCache: LocalArtworkDerivedCache(directory: directory))
+        let loader = CountingArtworkLoader(data: try jpegFixture())
+        cache.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
+        let original = try networkReference(accountID: UUID().uuidString, sourceRevision: "original")
+        let loaded = await cache.image(for: .networkFile(original), variant: .posterCard)
+        XCTAssertNotNil(loaded)
+        XCTAssertNotNil(cache.cachedImage(for: .networkFile(original), variant: .posterCard))
+        let variants = [
+            try NetworkArtworkReference(
+                accountID: original.accountID, credentialRevision: original.credentialRevision,
+                catalogArtworkID: original.catalogArtworkID, representation: original.representation,
+                sourceRevision: "updated"
+            ),
+            try NetworkArtworkReference(
+                accountID: original.accountID, credentialRevision: CredentialRevision(),
+                catalogArtworkID: original.catalogArtworkID, representation: original.representation,
+                sourceRevision: original.sourceRevision
+            ),
+            try NetworkArtworkReference(
+                accountID: UUID().uuidString, credentialRevision: original.credentialRevision,
+                catalogArtworkID: original.catalogArtworkID, representation: original.representation,
+                sourceRevision: original.sourceRevision
+            )
+        ]
+        for (index, reference) in variants.enumerated() {
+            XCTAssertNil(cache.cachedImage(for: .networkFile(reference), variant: .posterCard))
+            await cache.prefetch(.networkFile(reference), variant: .posterCard)?.value
+            XCTAssertNotNil(cache.cachedImage(for: .networkFile(reference), variant: .posterCard))
+            let count = await loader.loadCount
+            XCTAssertEqual(count, index + 2, "Every distinct revision/account must revalidate its own bytes.")
+        }
+    }
+
     func testAccountPurgeFencesLateInFlightNetworkArtworkCompletion() async throws {
         let cache = ArtworkImageCache.shared
         let reference = try networkReference()

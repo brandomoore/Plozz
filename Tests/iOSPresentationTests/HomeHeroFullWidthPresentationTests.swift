@@ -10,6 +10,53 @@ import XCTest
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    private struct HeroHeightProbe: UIViewRepresentable {
+        @Environment(\.plozziOSHeroContainerHeight) private var height
+        let record: (CGFloat) -> Void
+        func makeUIView(context: Context) -> UIView { UIView() }
+        func updateUIView(_ uiView: UIView, context: Context) {
+            if let height, height > 0 { record(height) }
+        }
+    }
+
+    func testHeroHeightUsesItsOwnWindowOnFirstLayoutAndEveryResize() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        var windows: [UIWindow] = []
+        defer {
+            for window in windows { window.isHidden = true; window.rootViewController = nil }
+            previous?.makeKeyAndVisible()
+        }
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 834, height: 600)] {
+            let window = UIWindow(windowScene: scene)
+            windows.append(window)
+            window.frame = CGRect(origin: .zero, size: size)
+            var samples: [CGFloat] = []
+            window.rootViewController = UIHostingController(rootView: TabView {
+                Tab("Home", systemImage: "house") {
+                    NavigationStack {
+                        HeroHeightProbe { samples.append($0) }
+                            .plozziOSTracksHeroContainerHeight()
+                            .navigationTitle("Home")
+                    }
+                }
+            })
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(try XCTUnwrap(samples.first), size.height, accuracy: 1,
+                           "The initial render must never use another window's screen size.")
+            for resized in [CGSize(width: 844, height: 390), CGSize(width: 600, height: 500)] {
+                samples.removeAll()
+                window.frame = CGRect(origin: .zero, size: resized)
+                window.setNeedsLayout()
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                XCTAssertEqual(try XCTUnwrap(samples.last), resized.height, accuracy: 1)
+            }
+        }
+    }
+
     func testColdHeroPreviewSurvivesRebuildingBeforeFullResolution() async throws {
         for landscape in [false, true] {
             let url = try XCTUnwrap(URL(string: "https://hero-preview.invalid/\(UUID()).png"))
@@ -17,6 +64,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 UIColor.blue.setFill()
                 context.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
             }
+
             let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
             let response = try XCTUnwrap(HTTPURLResponse(
                 url: url, statusCode: 200, httpVersion: nil,
@@ -193,9 +241,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     XCTAssertTrue(snapshot.accessibilityElementsHidden)
                     XCTAssertFalse(snapshot.isDescendant(of: source.view))
                     XCTAssertFalse(snapshot.isDescendant(of: destination.view))
-                } completion: { _ in
-                    finished.fulfill()
-                }
+                } completion: { _ in finished.fulfill() }
                 await fulfillment(of: [finished], timeout: 5)
                 XCTAssertNotNil(heldSnapshot)
                 XCTAssertNil(heldSnapshot?.superview)

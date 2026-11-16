@@ -62,7 +62,36 @@ public final class ItemDetailViewModel {
         public var serverResumeEpisode: MediaItem?
     }
 
-    public private(set) var state: LoadState<Detail> = .idle
+    public private(set) var state: LoadState<Detail> = .idle {
+        didSet {
+            guard FanoutDiagnostics.isEnabled, case let .loaded(detail) = state else { return }
+            FanoutDiagnostics.emit(
+                "DETAILSTATE t=\(Int(ProcessInfo.processInfo.systemUptime * 1000)) "
+                    + "id=\(detail.item.id) kind=\(detail.item.kind.rawValue) "
+                    + "active=\(activeItemID) source=\(activeSourceAccountID ?? "-") "
+                    + "children=\(detail.children.count) sources=\(sources.count) "
+                    + "discovery=\(isDiscoveryItem)"
+            )
+        }
+    }
+    /// Publishes a settled detail only when it actually differs. Several load
+    /// paths assigned `.loaded` twice in the same millisecond (measured on device),
+    /// which re-rendered the whole hero for an identical value.
+    private func publish(_ detail: Detail) {
+        guard state.value != detail else { return }
+        state = .loaded(detail)
+    }
+
+    /// True while a cached detail page is being read back from disk. The read is
+    /// off-actor, so it always lands a turn or two after the first frame; surfaces
+    /// that gate on "no content yet" use this to hold instead of flashing a
+    /// skeleton (measured on device: the episode rail painted skeleton → cards on
+    /// every detail open).
+    ///
+    /// Not observed on purpose: it is read during rendering, and every transition
+    /// that matters already publishes `state`. Tracking it would add a property to an
+    /// `@Observable` type whose budget is a decreasing-only ratchet (arch-guard).
+    @ObservationIgnored public private(set) var isRestoringSnapshot = false
     @ObservationIgnored private var collectionLoadGeneration: UInt64 = 0
 
     /// Playable trailers for this item, loaded alongside detail. Empty until
@@ -557,6 +586,16 @@ public final class ItemDetailViewModel {
     /// after tapping through several titles. Trailers + ratings, by contrast, are
     /// awaited on the `load()` path (see ``runTrailersAndRatings(for:)``).
     private nonisolated(unsafe) var enrichmentTask: Task<Void, Never>?
+    @ObservationIgnored private var detailMetadataTask: Task<Void, Never>?
+    @ObservationIgnored private var episodePrefetchTask: Task<Void, Never>?
+    /// Season whose episodes the viewer most recently had on screen; the snapshot
+    /// persists that one so a revisit paints the rail immediately.
+    @ObservationIgnored private var lastLoadedSeasonID: String?
+    /// Seasons whose episodes came from the on-disk snapshot rather than a live
+    /// fetch. They paint instantly, but the first explicit `loadEpisodes` must
+    /// still refresh them (played state and counts move).
+    @ObservationIgnored private var snapshotSeasonIDs: Set<String> = []
+    private let prefetchesOpeningSeason: Bool
     private nonisolated(unsafe) var streamProbeTask: Task<Void, Never>?
     @ObservationIgnored private var completedStreamProbeKey: String?
     /// The fully-loaded item enrichment is keyed to, so a page returned to (popped
@@ -591,8 +630,24 @@ public final class ItemDetailViewModel {
     /// Stable per-title key for ``snapshotCache``. Scoped by owning account so the
     /// same id on two servers or in two languages caches independently. Routes to a series share a
     /// key (they're all built with the series id as `itemID`).
+    /// How many of a restored season's episodes are hydrated into memory on a
+    /// revisit. Bounded so a long-running show cannot make page-open cost scale with
+    /// its whole episode list on the smallest supported device.
+    static let maxRestoredEpisodesPerSeason = 80
+
+    /// The id this page was opened with, before `adoptLibraryItemIDForActiveAccountIfNeeded`
+    /// re-points `activeItemID` at the library copy. A snapshot written after that
+    /// adoption is stored under the library id, so a page reopened with the original id
+    /// (a discovery/watchlist entry — commonly an anime title) would miss its cache and
+    /// paint placeholders every time.
+    private let navigationItemID: String
+
     private var snapshotKey: String {
-        let key = "\(activeSourceAccountID ?? "_")|\(activeItemID)"
+        snapshotKey(for: activeItemID)
+    }
+
+    private func snapshotKey(for itemID: String) -> String {
+        let key = "\(activeSourceAccountID ?? "_")|\(itemID)"
         return metadataLanguage == "en" ? key : "\(key)|text-language-v2:\(metadataLanguage)"
     }
 
@@ -624,13 +679,18 @@ public final class ItemDetailViewModel {
         relatedTitlesLoader: RelatedTitlesLoader? = nil,
         snapshotCache: DetailSnapshotCache = .ephemeral,
         openingResolver: (@MainActor () async throws -> DetailOpeningResolution)? = nil,
-        localizedDetailMetadataResolver: (@Sendable (MediaItem, String) async -> MetadataEnrichment)? = nil
+        localizedDetailMetadataResolver: (@Sendable (MediaItem, String) async -> MetadataEnrichment)? = nil,
+        /// Opt-in: prefetch the season the page opens on. Off by default — the
+        /// rail loads when it is actually shown, matching upstream lazy loading;
+        /// eager prefetch competed with the page's first paint during the push.
+        prefetchesOpeningSeason: Bool = false
     ) {
         self.relatedTitlesLoader = relatedTitlesLoader
         self.editionOpeningSource = initialItem?.editionOpeningSource
         self.openingEdition = initialItem?.edition
         self.provider = provider
         self.itemID = itemID
+        self.navigationItemID = itemID
         self.activeProvider = provider
         self.activeItemID = itemID
         self.isDiscoveryItem = isDiscoveryItem
@@ -666,6 +726,7 @@ public final class ItemDetailViewModel {
         self.identitySources = identitySources
         self.snapshotCache = snapshotCache
         self.openingResolver = openingResolver
+        self.prefetchesOpeningSeason = prefetchesOpeningSeason
         self.discoverySeed = isDiscoveryItem ? initialItem : nil
         self.usesDefaultExternalMetadataResolver = externalMetadataResolver == nil
 
@@ -692,7 +753,7 @@ public final class ItemDetailViewModel {
                       episode.sourceAccountID == self.activeSourceAccountID else { return nil }
                 return episode
             }
-            self.state = .loaded(Detail(item: seeded, children: [], serverResumeEpisode: resume))
+            self.publish(Detail(item: seeded, children: [], serverResumeEpisode: resume))
         }
     }
 
@@ -761,12 +822,12 @@ public final class ItemDetailViewModel {
             }
         }
         if isDiscoveryItem, let discoverySeed {
-            state = .loaded(Detail(item: discoverySeed, children: []))
+            publish(Detail(item: discoverySeed, children: []))
         } else if var detail = state.value, let nativeDetailItem,
                   nativeDetailItem.id == activeItemID,
                   nativeDetailItem.sourceAccountID == activeSourceAccountID {
             detail.item = tagged(nativeDetailItem)
-            state = .loaded(detail)
+            publish(detail)
         } else {
             state = .loading
         }
@@ -793,7 +854,7 @@ public final class ItemDetailViewModel {
                 initialSources = resolved.sources
                 self.openingResolver = nil
                 openingItem = resolved.item
-                state = .loaded(Detail(
+                publish(Detail(
                     item: resolved.item, children: [], serverResumeEpisode: resolved.resumeEpisode
                 ))
             } catch {
@@ -917,9 +978,15 @@ public final class ItemDetailViewModel {
             )
             let taggedItem = tagged(item)
             nativeDetailItem = taggedItem
+            // Cast and the rest of the external metadata are their own network round
+            // trip. Running them here — concurrent with the children fetch and the
+            // opening season's episode prefetch — means the page settles with cast in
+            // place. They used to start only after children, resume and ratings, which
+            // is why the cast row arrived visibly later than the rest of the page.
+            startDetailMetadataEnrichment(for: item, sourceGeneration: loadSourceGeneration)
 
             if item.kind == .collection {
-                state = .loaded(Detail(
+                publish(Detail(
                     item: taggedItem,
                     children: state.value?.children ?? [],
                     collectionMembersState: .loading
@@ -955,7 +1022,7 @@ public final class ItemDetailViewModel {
                 // exactly as it already does for a seeded open — so an empty-children
                 // first paint is safe and never strands the season picker.
                 let seededChildren = state.value?.children ?? []
-                state = .loaded(Detail(
+                publish(Detail(
                     item: taggedItem,
                     children: seededChildren,
                     childrenLoaded: state.value?.childrenLoaded ?? false,
@@ -985,13 +1052,32 @@ public final class ItemDetailViewModel {
                 )
                 let fetchedChildren = await fetchChildren(loadProvider, of: item.id)
                 guard !Task.isCancelled, isCurrent() else { return }
-                state = .loaded(Detail(
+                publish(Detail(
                     item: tagged(state.value?.item ?? taggedItem),
                     children: fetchedChildren.map(tagged),
                     childrenLoaded: true,
                     upcomingSchedule: state.value?.upcomingSchedule,
                     serverResumeEpisode: serverResumeEpisode
                 ))
+                // Opening a series is three serial server round-trips: the item, its
+                // season list, then the chosen season's episodes. The third does not
+                // have to wait for the view to publish a season selection, so start it
+                // here for the season this page will open on (the resume season when
+                // the server reports one, otherwise the first season). The rail's own
+                // `loadEpisodes` then finds the episodes already in hand instead of
+                // starting a second request behind the first. Fire-and-forget: it must
+                // not hold up the publish above, and a superseded page cancels it via
+                // the generation checks inside `loadEpisodes`.
+                if prefetchesOpeningSeason,
+                   let openingSeasonID = DetailOpeningSelection.openingSeasonID(
+                    children: fetchedChildren,
+                    resumeSeasonID: serverResumeEpisode?.seasonID
+                ) {
+                    episodePrefetchTask?.cancel()
+                    episodePrefetchTask = Task { [weak self] in
+                        await self?.loadEpisodes(for: openingSeasonID)
+                    }
+                }
                 // Deliberately after the state publish: the schedule is decoration,
                 // and must never hold up the page. Cache read first (instant), then
                 // a background refresh that repaints only if it finds something new.
@@ -1011,7 +1097,7 @@ public final class ItemDetailViewModel {
                 // Leaf kinds (movie/episode/video): the hero IS the content, so
                 // publish it immediately, then load trailers/ratings off the
                 // critical path of first paint.
-                state = .loaded(Detail(
+                publish(Detail(
                     item: taggedItem,
                     children: [],
                     childrenLoaded: true,
@@ -1065,7 +1151,7 @@ public final class ItemDetailViewModel {
                 state = .failed(failure)
             } else if detail.item.kind == .collection {
                 detail.collectionMembersState = .failed(failure)
-                state = .loaded(detail)
+                publish(detail)
             }
         }
         for seasonID in interruptedLanguageSeasonIDs.sorted() {
@@ -1075,6 +1161,7 @@ public final class ItemDetailViewModel {
             interruptedLanguageSeasonIDs.remove(seasonID)
         }
     }
+
 
     /// An index miss is not proof of absence: a cold or capped catalogue can miss
     /// a title that a targeted server search finds immediately (issue #33).
@@ -1124,7 +1211,7 @@ public final class ItemDetailViewModel {
         owned.availability = nil
         owned.downloadProgress = nil
         owned.hasRequestDownloadActivity = nil
-        state = .loaded(Detail(item: owned, children: []))
+        publish(Detail(item: owned, children: []))
         isDiscoveryItem = false
         PlozzLog.app.info(
             "Detail ownership probe: resolved library source id=\(seed.id) libraryID=\(selected.itemID)"
@@ -1172,8 +1259,14 @@ public final class ItemDetailViewModel {
         detail.externalAvailability =
             resolved.availability.isEmpty ? nil : resolved.availability
         detail.childrenLoaded = true
-        state = .loaded(detail)
+        publish(detail)
         hasPaintedFreshDetail = true
+        // Discovery titles (AniList/Seerr/watchlist entries with no library item)
+        // take this path instead of `load()`, and this path never wrote a snapshot.
+        // TV and film pages therefore reopened from cache while an anime page
+        // painted placeholders on every visit. Persist here as well, and again after
+        // the optional ratings/trailer work below adds anything worth keeping.
+        persistSnapshot()
 
         let enriched = detail.item
         if enriched.kind == .series {
@@ -1194,9 +1287,10 @@ public final class ItemDetailViewModel {
            !latest.item.usesProviderRatings {
             latest.item.ratings =
                 latest.item.ratings.mergedWithAuthoritative(externalRatings)
-            state = .loaded(latest)
+            publish(latest)
         }
         await trailer
+        persistSnapshot()
     }
 
     private static func applying(
@@ -1330,7 +1424,7 @@ public final class ItemDetailViewModel {
         latest.item.availability = status.status
         latest.item.downloadProgress = status.downloadProgress
         latest.item.hasRequestDownloadActivity = status.hasDownloadActivity
-        state = .loaded(latest)
+        publish(latest)
     }
 
     /// Public entry so the detail view can poll a discovery title's live Seerr
@@ -1514,7 +1608,7 @@ public final class ItemDetailViewModel {
                 detail.item.sources = updatingInventories(in: detail.item.sources).map {
                     stampedPrimarySource($0, from: detail.item, preservingWatchState: true)
                 }
-                state = .loaded(detail)
+                publish(detail)
                 sources = updatingInventories(in: sources).map {
                     stampedPrimarySource($0, from: detail.item, preservingWatchState: true)
                 }
@@ -1536,7 +1630,7 @@ public final class ItemDetailViewModel {
                     detail.item.sources = detail.item.sources.map {
                         stampedPrimarySource($0, from: detail.item, preservingWatchState: true)
                     }
-                    state = .loaded(detail)
+                    publish(detail)
                     sources = sources.map {
                         stampedPrimarySource($0, from: detail.item, preservingWatchState: true)
                     }
@@ -1570,16 +1664,27 @@ public final class ItemDetailViewModel {
             provider: provider,
             sourceGeneration: sourceGeneration
         )
-        async let metadataDone: Void = enrichDetailMetadata(for: item, sourceGeneration: sourceGeneration)
+        // Cast/metadata already started at item resolution (see
+        // `startDetailMetadataEnrichment`); starting it here too would fetch it twice.
         async let extrasDone: Void = loadExtras(
             for: item,
             children: children,
             provider: provider,
             sourceGeneration: sourceGeneration
         )
+        // The early start is an overlap, not a detached fire-and-forget: the page
+        // still settles only when the metadata it was waiting for has been applied.
+        // Without awaiting it, `load()` returned before cast/studios arrived (so a
+        // caller saw a half-enriched item), and cancelling `load()` no longer
+        // cancelled the fetch, letting late crew publish onto a page that had gone.
+        let metadata = detailMetadataTask
+        await withTaskCancellationHandler {
+            await metadata?.value
+        } onCancel: {
+            metadata?.cancel()
+        }
         _ = await trailersDone
         _ = await ratingsDone
-        _ = await metadataDone
         _ = await extrasDone
     }
 
@@ -1680,6 +1785,12 @@ public final class ItemDetailViewModel {
     /// page's `provider.item` (the multi-second blank-detail hang).
     public func suspendEnrichment() {
         enrichmentTask?.cancel(); enrichmentTask = nil
+        // The early metadata/cast fetch and the opening-season prefetch are page-local
+        // work. Leaving them running meant a page the viewer had already left kept a
+        // network round trip and its decodes alive while Home scrolled — measured as
+        // hitching on exit. Both are cancellable, so cancel them here with the rest.
+        detailMetadataTask?.cancel(); detailMetadataTask = nil
+        episodePrefetchTask?.cancel(); episodePrefetchTask = nil
         streamProbeTask?.cancel(); streamProbeTask = nil
         crossServerDiscoveryTask?.cancel(); crossServerDiscoveryTask = nil
         alternateSourceEnrichmentTask?.cancel(); alternateSourceEnrichmentTask = nil
@@ -1935,7 +2046,7 @@ public final class ItemDetailViewModel {
                 }
                 return updated
             }
-            state = .loaded(detail)
+            publish(detail)
         }
         for (seasonID, episodes) in seasonEpisodes {
             seasonEpisodes[seasonID] = episodes.map { episode in
@@ -2023,7 +2134,7 @@ public final class ItemDetailViewModel {
         if item.kind == .collection {
             if case var .loaded(detail) = state {
                 detail.item = tagged(item)
-                state = .loaded(detail)
+                publish(detail)
             }
             await retryCollectionMembers()
             return
@@ -2037,7 +2148,7 @@ public final class ItemDetailViewModel {
         }
         guard !Task.isCancelled, isCurrent() else { return }
         let upcomingSchedule = state.value?.upcomingSchedule
-        state = .loaded(Detail(
+        publish(Detail(
             item: tagged(item),
             children: children.map(tagged),
             childrenLoaded: true,
@@ -2107,6 +2218,27 @@ public final class ItemDetailViewModel {
         guard !isDiscoveryItem, !Task.isCancelled,
               case let .loaded(detail) = state, detail.childrenLoaded,
               let provider = activeProvider else { return }
+        // Return-path telemetry (PLZXFAN-gated; counts and kinds only). The detail
+        // half of the reported reflow has never been measurable, and the suspects are
+        // exactly here: this force-refreshes every season, which drives the inline
+        // rail's `displayedEpisodes == nil` skeleton gate.
+        let diagnosticsOn = FanoutDiagnostics.isEnabled
+        if diagnosticsOn {
+            FanoutDiagnostics.emit(
+                "DETAILRETURN begin kind=\(detail.item.kind.rawValue) "
+                + "children=\(detail.children.count) seasons=\(seasonEpisodes.count) "
+                + "childrenLoaded=\(!detail.children.isEmpty)"
+            )
+        }
+        defer {
+            if diagnosticsOn {
+                FanoutDiagnostics.emit(
+                    "DETAILRETURN end kind=\(detail.item.kind.rawValue) "
+                    + "seasons=\(seasonEpisodes.count) "
+                    + "episodeCounts=\(seasonEpisodes.values.map(\.count).sorted())"
+                )
+            }
+        }
         let generation = sourceGeneration
         let itemID = activeItemID
         let accountID = activeSourceAccountID
@@ -2145,7 +2277,7 @@ public final class ItemDetailViewModel {
                 current.children = children.map(tagged)
                 current.serverResumeEpisode = resume.map(tagged)
             }
-            state = .loaded(current)
+            publish(current)
             sources = sources.map { source in
                 guard source.accountID == accountID, source.itemID == fetched.id else { return source }
                 var copy = source
@@ -2294,7 +2426,7 @@ public final class ItemDetailViewModel {
         let generation = sourceGeneration
         let itemID = detail.item.id
         detail.collectionMembersState = .loading
-        state = .loaded(detail)
+        publish(detail)
 
         do {
             var members: [MediaItem] = []
@@ -2328,7 +2460,7 @@ public final class ItemDetailViewModel {
             current.children = members.map(tagged)
             current.childrenLoaded = true
             current.collectionMembersState = members.isEmpty ? .empty : .loaded(members.count)
-            state = .loaded(current)
+            publish(current)
             persistSnapshot()
         } catch {
             guard !Task.isCancelled,
@@ -2338,7 +2470,7 @@ public final class ItemDetailViewModel {
                   isStillLoaded(detail.item, sourceGeneration: generation),
                   case var .loaded(current) = state else { return }
             current.collectionMembersState = .failed((error as? AppError) ?? .unknown(""))
-            state = .loaded(current)
+            publish(current)
         }
     }
 
@@ -2354,6 +2486,16 @@ public final class ItemDetailViewModel {
     /// cancels indexed lookups and fallback searches.
     private func loadRelatedTitles(for item: MediaItem) {
         guard let relatedTitlesLoader else { return }
+        // Enrichment rewrites the item (ratings, overview, credits) and then calls
+        // this again. Restarting the fetch for the same subject cancelled the
+        // in-flight request and started a second one, so the row's arrival time
+        // depended on which pass finished last — the reported "related loads slower
+        // depending, inconsistent". Same subject while a fetch is running or done is
+        // a no-op; only a different item restarts it.
+        if relatedTitlesItem?.id == item.id,
+           relatedTitlesTask != nil || relatedTitlesLoader.hasResolved {
+            return
+        }
         if relatedTitlesTask != nil {
             relatedTitlesTask?.cancel()
             relatedTitlesLoader.cancel()
@@ -2395,7 +2537,7 @@ public final class ItemDetailViewModel {
     private func applyUpcomingSchedule(_ record: SeriesScheduleRecord) {
         guard var detail = state.value, detail.upcomingSchedule != record else { return }
         detail.upcomingSchedule = record
-        state = .loaded(detail)
+        publish(detail)
         persistSnapshot()
     }
 
@@ -2411,7 +2553,7 @@ public final class ItemDetailViewModel {
               var detail = state.value else { return }
         detail.serverResumeEpisode = resume.map(tagged)
         resumeResolution.isResolving = false
-        state = .loaded(detail)
+        publish(detail)
     }
 
     private func fetchServerResumeEpisode(
@@ -2480,6 +2622,7 @@ public final class ItemDetailViewModel {
     /// focus change.
     public func loadEpisodes(for seasonID: String, forceRefresh: Bool = false) async {
         guard let provider = activeProvider else { return }
+        lastLoadedSeasonID = seasonID
         let sourceItemID = activeItemID
         let sourceAccountID = activeSourceAccountID
         let loadSourceGeneration = sourceGeneration
@@ -2503,7 +2646,8 @@ public final class ItemDetailViewModel {
                 let previousAttemptFailed = seasonLoadFailures.contains(seasonID)
                 if !needsForcedRefresh,
                    seasonEpisodes[seasonID] != nil,
-                   !previousAttemptFailed {
+                   !previousAttemptFailed,
+                   !snapshotSeasonIDs.contains(seasonID) {
                     return
                 }
                 let token = UUID()
@@ -2540,6 +2684,7 @@ public final class ItemDetailViewModel {
                         self.seasonLoadFailures.remove(seasonID)
                     }
                     self.seasonEpisodes[seasonID] = self.stampSeriesTMDb(into: episodes.map(self.tagged))
+                    self.snapshotSeasonIDs.remove(seasonID)
                     self.persistSnapshot()
                 }
                 seasonLoads[seasonID] = load
@@ -2750,7 +2895,7 @@ public final class ItemDetailViewModel {
         serverRatingsTask = nil
         if var detail = state.value, detail.serverResumeEpisode != nil {
             detail.serverResumeEpisode = nil
-            state = .loaded(detail)
+            publish(detail)
         }
         seasonLoadingResumeSourceGeneration = nil
         snapshotRestoreTask?.cancel()
@@ -2783,13 +2928,35 @@ public final class ItemDetailViewModel {
         // A snapshot's children are a COMPLETED fetch persisted from a prior visit,
         // so mark them loaded — otherwise a revisited folder would flash its
         // loading placeholder (and, worse, never distinguish empty-from-loading).
-        state = .loaded(Detail(
+        publish(Detail(
             item: item,
             children: snapshot.children.map(tagged),
             childrenLoaded: true,
             upcomingSchedule: snapshot.upcomingSchedule,
             serverResumeEpisode: serverResumeEpisode
         ))
+        // Restore the episodes for the season this page will actually open on — the
+        // snapshot already persists them, and ignoring them left the rail empty on
+        // every revisit, so a series reopened a second later still painted
+        // placeholders and fetched again.
+        //
+        // Deliberately bounded, because this is a low-RAM path (a 3 GB Apple TV is the
+        // smallest supported device): a snapshot can hold episodes for every season
+        // the viewer browsed, and mapping all of them into memory to paint one rail is
+        // pure waste. Only the opening season is restored, and only its first
+        // `maxRestoredEpisodesPerSeason` — the rail is lazy and the live fetch fills
+        // the rest on demand. Everything else stays on disk until a page needs it.
+        if !snapshot.seasonEpisodes.isEmpty,
+           let openingSeasonID = DetailOpeningSelection.openingSeasonID(
+               children: snapshot.children,
+               resumeSeasonID: nil
+           ),
+           let episodes = snapshot.seasonEpisodes[openingSeasonID] {
+            seasonEpisodes[openingSeasonID] = episodes
+                .prefix(Self.maxRestoredEpisodesPerSeason)
+                .map(tagged)
+            snapshotSeasonIDs.insert(openingSeasonID)
+        }
         if snapshot.sources.count > 1 {
             let restored = prunedToActiveAccounts(snapshot.sources)
             if restored.count > 1 {
@@ -2811,8 +2978,24 @@ public final class ItemDetailViewModel {
         let generation = sourceGeneration
         let itemID = activeItemID
         let accountID = activeSourceAccountID
+        // Publishes "a cached page is being restored" so surfaces that would
+        // otherwise paint a loading skeleton can hold instead. The restore reads from
+        // disk off-actor, so on a revisited title it always finishes a turn or two
+        // after the first frame — measured on device as the episode rail going
+        // skeleton → cards on every open.
+        isRestoringSnapshot = true
+        let alternateKey = snapshotKey(for: navigationItemID)
         snapshotRestoreTask = Task { [weak self] in
-            guard let snapshot = await cache.snapshot(for: key),
+            defer {
+                if let self, self.isCurrentSource(generation: generation, itemID: itemID, accountID: accountID) {
+                    self.isRestoringSnapshot = false
+                }
+            }
+            var restored = await cache.snapshot(for: key)
+            if restored == nil, alternateKey != key {
+                restored = await cache.snapshot(for: alternateKey)
+            }
+            guard let snapshot = restored,
                   let self, !Task.isCancelled,
                   self.isCurrentSource(generation: generation, itemID: itemID, accountID: accountID) else { return }
             self.applySnapshotIfNotStale(snapshot)
@@ -2845,11 +3028,11 @@ public final class ItemDetailViewModel {
             }
             if enriched != detail.item {
                 detail.item = enriched
-                state = .loaded(detail)
+                publish(detail)
             }
         }
         if let detail = state.value, detail.children.isEmpty, !snapshot.children.isEmpty {
-            state = .loaded(Detail(
+            publish(Detail(
                 item: detail.item,
                 children: snapshot.children.map(tagged),
                 childrenLoaded: true,
@@ -2860,7 +3043,23 @@ public final class ItemDetailViewModel {
                   detail.upcomingSchedule == nil,
                   let upcomingSchedule = snapshot.upcomingSchedule {
             detail.upcomingSchedule = upcomingSchedule
-            state = .loaded(detail)
+            publish(detail)
+        }
+        // The live item can beat the disk read, in which case the restore takes the
+        // "adopt enrichments" path above and the rail stayed empty until the live
+        // season fetch landed — the placeholder pass a revisit should never show.
+        // Fill the opening season from the snapshot when the live load has not
+        // already produced one; bounded exactly like `applySnapshot`.
+        if seasonEpisodes.isEmpty,
+           let openingSeasonID = DetailOpeningSelection.openingSeasonID(
+               children: state.value?.children ?? snapshot.children,
+               resumeSeasonID: serverResumeEpisode?.seasonID
+           ),
+           let episodes = snapshot.seasonEpisodes[openingSeasonID] {
+            seasonEpisodes[openingSeasonID] = episodes
+                .prefix(Self.maxRestoredEpisodesPerSeason)
+                .map(tagged)
+            snapshotSeasonIDs.insert(openingSeasonID)
         }
         if sources.count <= 1, snapshot.sources.count > 1 {
             let restored = prunedToActiveAccounts(snapshot.sources)
@@ -2880,19 +3079,45 @@ public final class ItemDetailViewModel {
     /// never overwrites a richer snapshot.
     private func persistSnapshot() {
         guard let detail = state.value, !detail.item.id.isEmpty else { return }
-        let snapshot = DetailSnapshotCache.Snapshot(
-            item: detail.item,
-            children: detail.children,
-            seasonEpisodes: [:],
-            sources: sources,
-            upcomingSchedule: detail.upcomingSchedule
-        )
+        // Persist the episodes for the season this page shows, bounded.
+        //
+        // This used to be `[:]` — every snapshot was written without episodes — so the
+        // restore path had nothing to paint and a revisited series always fetched its
+        // rail again. Only one season is stored (the one just loaded, else the season
+        // the page opens on) and only its first `maxRestoredEpisodesPerSeason`, because
+        // this file is read back on the smallest supported device.
+        let persistedSeasonID = lastLoadedSeasonID
+            ?? DetailOpeningSelection.openingSeasonID(
+                children: detail.children,
+                resumeSeasonID: serverResumeEpisode?.seasonID
+            )
+        var persistedEpisodes: [String: [MediaItem]] = [:]
+        if let persistedSeasonID, let episodes = seasonEpisodes[persistedSeasonID] {
+            persistedEpisodes[persistedSeasonID] = Array(
+                episodes.prefix(Self.maxRestoredEpisodesPerSeason)
+            )
+        }
+        // Build the snapshot inside the detached task, not on the caller. Constructing
+        // it here copied the item, its children and up to 80 episodes on the main
+        // actor every time a season loaded, which is exactly the enter/exit churn the
+        // viewer feels as a freeze when moving between seasons.
+        let item = detail.item
+        let children = detail.children
+        let sourcesSnapshot = sources
+        let schedule = detail.upcomingSchedule
         let key = snapshotKey
         let cache = snapshotCache
         pendingSnapshotWrite?.cancel()
         pendingSnapshotWrite = Task.detached(priority: .utility) {
             try? await Task.sleep(nanoseconds: 400_000_000)
             if Task.isCancelled { return }
+            let snapshot = DetailSnapshotCache.Snapshot(
+                item: item,
+                children: children,
+                seasonEpisodes: persistedEpisodes,
+                sources: sourcesSnapshot,
+                upcomingSchedule: schedule
+            )
             await cache.store(snapshot, for: key)
         }
     }
@@ -2960,8 +3185,19 @@ public final class ItemDetailViewModel {
         } else {
             detail.item.ratings = detail.item.ratings.mergedWithAuthoritative(ratings)
         }
-        state = .loaded(detail)
+        publish(detail)
         persistSnapshot()
+    }
+
+    /// Starts the external metadata (cast, overview, ratings text) fetch early.
+    ///
+    /// Cancellable and generation-guarded like the other speculative work: navigating
+    /// away must not leave a fetch running against the next page's provider.
+    private func startDetailMetadataEnrichment(for item: MediaItem, sourceGeneration: UInt64) {
+        detailMetadataTask?.cancel()
+        detailMetadataTask = Task { [weak self] in
+            await self?.enrichDetailMetadata(for: item, sourceGeneration: sourceGeneration)
+        }
     }
 
     private func enrichDetailMetadata(for item: MediaItem, sourceGeneration: UInt64) async {
@@ -2974,7 +3210,7 @@ public final class ItemDetailViewModel {
         let enriched = DetailMetadataResolver.applying(enrichment, to: detail.item, refreshExternalText: true)
         guard enriched != detail.item else { return }
         detail.item = enriched
-        state = .loaded(detail)
+        publish(detail)
     }
 
     /// Confirms missing source facts with a bounded background probe.
@@ -3008,7 +3244,7 @@ public final class ItemDetailViewModel {
 
         let enrichedItem = detail.item.applyingSupplementalStreamFacts(facts)
         detail.item = enrichedItem
-        state = .loaded(detail)
+        publish(detail)
         sources = sources.map { stampedPrimarySource($0, from: enrichedItem, preservingWatchState: true) }
         persistSnapshot()
     }
@@ -3353,7 +3589,7 @@ public final class ItemDetailViewModel {
         if case var .loaded(detail) = state {
             detail.item.rejectedSourceIDs.formUnion(rejectedSourceIDs)
             detail.item.sources.removeAll { rejectedSourceIDs.contains($0.id) }
-            state = .loaded(detail)
+            publish(detail)
         }
         applyUnifiedWatchState()
     }
@@ -3573,7 +3809,7 @@ public final class ItemDetailViewModel {
         detail.item.isPlayed = unified.isPlayed
         detail.item.lastPlayedAt = unified.lastPlayedAt
         detail.item = applyingDetailWatchMutations(to: detail.item)
-        state = .loaded(detail)
+        publish(detail)
     }
 
     /// Label for the primary action button, reflecting resume vs. play.

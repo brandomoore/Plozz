@@ -128,6 +128,15 @@ for a covered page, another item's theme, or a settings preview.
   Watchlist and requests stay independent. Horizontal paging and vertical scrolling
   do not open details; in-flight page transitions disable the artwork link.
   VoiceOver exposes the artwork as More Info with the current title.
+  Optional Home logos load behind a readable title fallback; Play and Watchlist
+  never wait for artwork. Pending curation reserves geometry, but authoritative
+  empty completion removes it even after the carousel has previously painted.
+  Mobile hero height uses its owning window, seeded from the page's current
+  proposal including safe areas before attachment. It never reads an arbitrary
+  foreground scene or the device's full screen.
+  Selecting or reselecting Search resets only Search's native and programmatic
+  detail navigation. Other tabs retain their stacks, including custom tab order
+  and iPad presentation.
   Mobile Home stays stationary beneath a pushed detail page. A transition-scoped,
   non-interactive snapshot covers the outgoing page's native parallax and is
   removed on completion or cancellation; destination animation and native Back
