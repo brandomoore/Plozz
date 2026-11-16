@@ -261,10 +261,13 @@ registry.
   bottom-tab backgrounds retain their existing treatment. Search's collapsing
   title row does not clip the profile control's native pressed expansion.
 
-- **Detail navigation leaves the top artwork unblurred.** The detail page hides
-  the navigation-bar background and the top native scroll-edge effect, retaining
-  the native toolbar controls. Home's blur and the bottom scroll edge are unchanged.
-  Reduced Transparency still uses its non-blurred status-text fade when scrolling.
+- **Detail navigation leaves the resting artwork unblurred.** The detail page
+  hides the navigation-bar background and the native top scroll-edge effect.
+  An Apple ultra-thin material overlay protects status text as scrolling begins:
+  its opacity follows the first 64 points of scroll directly, returning to zero
+  at the top, without a timed arrival animation or additional tint.
+  Reduced Transparency uses the same scroll-linked, non-blurred color fade.
+  Native toolbar controls, Home's blur and the bottom scroll edge are unchanged.
   The destination owns its appearance rather than inheriting Home's toolbar
   preference during a push.
 

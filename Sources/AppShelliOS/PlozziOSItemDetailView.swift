@@ -669,7 +669,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .modifier(PlozziOSNavigationBackground(hidesTopScrollEdge: true))
-        .modifier(PlozziOSReducedTransparencyScrollFade())
+        .modifier(PlozziOSStatusBarScrollFade(usesMaterial: true))
         .navigationTitle(Text(verbatim: ""))
         .task(id: seasonRequestRefreshKey(for: detail)) {
             await refreshVisibleSeasonRequests(for: detail)
