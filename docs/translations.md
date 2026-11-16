@@ -60,14 +60,14 @@ release blocker. A later native-speaker correction changes the unit to
 
 ## Languages
 
-Plozz ships 36 non-English languages:
+Plozz supports 38 non-English localizations:
 
-- Arabic, Bulgarian, Catalan, Croatian, Czech, Danish, Dutch
+- Arabic, Bengali, Bulgarian, Catalan, Croatian, Czech, Danish, Dutch
 - Finnish, French, German, Greek, Hebrew, Hindi, Hungarian
 - Indonesian, Italian, Japanese, Korean, Malay, Norwegian Bokmål
 - Polish, Brazilian Portuguese, Romanian, Russian
 - Serbian (Latin), Slovak, Slovenian, Spanish, Swedish, Thai, Turkish
-- Ukrainian, Vietnamese, Simplified Chinese, Traditional Chinese, Persian
+- Ukrainian, Urdu, Vietnamese, Simplified Chinese, Traditional Chinese, Persian
 
 This set deliberately covers hard engineering cases, not just reach. German
 stresses long labels; Polish/Russian/Ukrainian/Czech/Slovak exercise multi-form
