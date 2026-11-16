@@ -531,15 +531,26 @@
         }
 
         private func statusCue(for release: UpcomingRelease) -> Text {
-            let date = release.date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
-            if let subtitle = release.subtitle {
-                return Text(LocalizedStringResource(
-                    "upcoming.release.status",
-                    defaultValue: "\(date) · \(subtitle)",
-                    comment: "Coming Soon card cue. First placeholder is a locale-formatted release date; second is an already localized season/episode subtitle. Preserve both; their order and separator may be adapted."
-                ))
+            Text(verbatim: Self.airCue(for: release.date, now: Date(), locale: locale))
+        }
+
+        /// "Today", "Tomorrow", "In 5 days", or the formatted air date once it is
+        /// more than two weeks away (or already past).
+        static func airCue(
+            for airDate: Date, now: Date, locale: Locale, calendar: Calendar = .current
+        ) -> String {
+            let days = calendar.dateComponents(
+                [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: airDate)
+            ).day ?? 0
+            guard (0...14).contains(days) else {
+                return airDate.formatted(.dateTime.month(.abbreviated).day().locale(locale))
             }
-            return Text(verbatim: date)
+            let formatter = RelativeDateTimeFormatter()
+            formatter.locale = locale
+            formatter.calendar = calendar
+            formatter.dateTimeStyle = .named
+            formatter.formattingContext = .beginningOfSentence
+            return formatter.localizedString(from: DateComponents(day: days))
         }
     }
 
