@@ -65,6 +65,12 @@ Applicable TMDb, TheTVDB and Wikipedia translations are tried before
 English/original text fills remaining gaps. Wikipedia biographies follow the
 matched person's language link without weakening namesake checks; existing
 server biographies remain authoritative.
+Existing discovery-feed titles and descriptions may be replaced by localized
+external metadata; the original feed remains the fallback. Known externally
+attributed share text gets the same per-view refresh without rewriting shared
+catalog records. Native, NFO, filename and unknown-provenance text stays protected.
+Home discovery requests and persisted hero selections include regional/script
+language identity, so switching languages triggers curation on both platforms.
 Interrupted season requests restart without requiring a selection change.
 Account/language-scoped snapshots race opening hydration and can fill sparse
 seeds during transient outages. They never mask rejected authorization or a
@@ -87,13 +93,15 @@ claiming broader coverage.
 A combined Jellyfin/Plex case passes a real merged episode through runtime
 preselection before opening its parent and changing sources. Public TMDb checks
 cover French episode metadata, language-isolated cache reuse, and English release
-aliases resolved into French metadata. These are live model checks, not rendered
+aliases resolved into French metadata. Opt-in TheTVDB and Wikipedia checks compare
+actual English, French and German descriptions and biographies. These are live model checks, not rendered
 navigation or physical-device playback evidence.
 
 The tests reuse the [live Home broker contract](home-rows-and-loading.md#opt-in-live-data-row-verification)
 and read-only HTTP guard through `LiveHomeReadOnlyAccount`, including production
 account tagging on raw provider results. Add `/emby` with the same configuration
-shape and `/metadata` returning an in-memory `tmdbBearerToken`. Credentials remain
+shape and `/metadata` returning in-memory `tmdbBearerToken` and `tvdbAPIKey` values
+from the built app's configuration, not the minimal XCTest host. Credentials remain
 private; the broker and owned simulators must have bounded lifetimes. An opted-in
 run must execute every requested case without skips.
 

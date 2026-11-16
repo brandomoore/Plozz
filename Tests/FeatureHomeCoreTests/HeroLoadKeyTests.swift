@@ -19,14 +19,15 @@ final class HeroLoadKeyTests: XCTestCase {
         membershipRevision: Int = 0,
         scopeID: ObjectIdentifier? = nil,
         isPreparingHome: Bool = false,
-        loadingRows: Set<HomeRowKind> = []
+        loadingRows: Set<HomeRowKind> = [],
+        language: String = "en"
     ) -> HeroCurationLoadKey {
         HeroCurationLoadKey(
             content: content, settings: settings, visibility: .default,
             freshnessRevision: 0, identityIndexRevision: revision,
             watchlistMembershipRevision: membershipRevision,
             scopeID: scopeID ?? ObjectIdentifier(scope), seerRevision: connection,
-            isPreparingHome: isPreparingHome, loadingRows: loadingRows
+            isPreparingHome: isPreparingHome, loadingRows: loadingRows, language: language
         )
     }
 
@@ -51,6 +52,37 @@ final class HeroLoadKeyTests: XCTestCase {
                 "Unrelated Home rows must not delay or restart this hero."
             )
         }
+
+    }
+
+    func testDiscoveryLanguageSwitchRestartsCurationAndSeparatesRegionalCaches() throws {
+        for (first, second) in [("en", "fr"), ("pt-PT", "pt-BR"), ("zh-Hans", "zh-Hant")] {
+            let initial = curation(featured, revision: 0, language: first)
+            let changed = curation(featured, revision: 0, language: second)
+            XCTAssertNotEqual(initial, changed)
+            let restored = try JSONDecoder().decode(
+                HeroConfigurationKey.self,
+                from: JSONEncoder().encode(HeroConfigurationKey(settings: featured, language: first))
+            )
+            XCTAssertNotEqual(restored, HeroConfigurationKey(settings: featured, language: second))
+        }
+        XCTAssertEqual(
+            curation(featured, revision: 0, language: "pt_BR"),
+            curation(featured, revision: 0, language: "pt-BR")
+        )
+        var nativeOnly = featured
+        nativeOnly.sources = [.recentlyAdded]
+        XCTAssertEqual(
+            curation(nativeOnly, revision: 0, language: "en"),
+            curation(nativeOnly, revision: 0, language: "fr")
+        )
+        var disabled = featured
+        disabled.isEnabled = false
+        XCTAssertEqual(
+            curation(disabled, revision: 0, language: "en"),
+            curation(disabled, revision: 0, language: "fr")
+        )
+        XCTAssertEqual(HeroConfigurationKey(settings: featured, language: "pt-BR").metadataLanguage, "pt-BR")
     }
 
     func testAsyncHeroSourcesWaitForPreparationButNotUnrelatedRows() {

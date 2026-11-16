@@ -178,10 +178,8 @@ public actor TVDBClient {
     /// before its separate English/original fallback pass.
     func translatedText(id: String, isMovie: Bool, language: String) async -> TVDBMetadata? {
         guard let numericID = Int(id), numericID > 0 else { return nil }
-        let code = LanguageMatch.matches(language, "nb") ? "nor"
-            : (Locale.Language(identifier: language).languageCode?.identifier(.alpha3)
-                ?? LanguageMatch.alpha3(language))
-        guard code.utf8.count == 3, code.utf8.allSatisfy({ (97...122).contains($0) }) else { return nil }
+        let code = TVDBLocale.languageIdentifier(language)
+        guard (2...4).contains(code.utf8.count), code.utf8.allSatisfy({ (97...122).contains($0) }) else { return nil }
         let type = isMovie ? "movies" : "series"
         do {
             let data = try await discoveryData(path: "\(type)/\(numericID)/translations/\(code)")

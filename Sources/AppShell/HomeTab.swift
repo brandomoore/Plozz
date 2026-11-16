@@ -377,6 +377,7 @@ struct HomeTab: View {
             HomeView(
                 viewModel: sharedHomeViewModel,
                 visibility: homeVisibility,
+                metadataLanguage: locale.identifier,
                 spoilerSettings: spoilerSettings,
                 heroSettings: heroSettings,
                 heroBackground: heroBackground,

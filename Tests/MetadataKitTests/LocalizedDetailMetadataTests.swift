@@ -38,9 +38,9 @@ final class LocalizedDetailMetadataTests: XCTestCase {
             "de": "deu", "el": "ell", "es": "spa", "fa": "fas", "fi": "fin", "fr": "fra",
             "he": "heb", "hi": "hin", "hr": "hrv", "hu": "hun", "id": "ind", "it": "ita",
             "ja": "jpn", "ko": "kor", "ms": "msa", "nb": "nor", "nl": "nld", "pl": "pol",
-            "pt-BR": "por", "ro": "ron", "ru": "rus", "sk": "slk", "sl": "slv", "sr-Latn": "srp",
+            "pt-BR": "pt", "ro": "ron", "ru": "rus", "sk": "slk", "sl": "slv", "sr-Latn": "srp",
             "sv": "swe", "th": "tha", "tr": "tur", "uk": "ukr", "vi": "vie",
-            "zh-Hans": "zho", "zh-Hant": "zho", "fr-CA": "fra"
+            "zh-Hans": "zho", "zh-Hant": "zhtw", "fr-CA": "fra"
         ]
         for language in AppLanguage.releaseReady + ["en", "fr-CA"] {
             guard let code = codes[language] else {
@@ -58,7 +58,9 @@ final class LocalizedDetailMetadataTests: XCTestCase {
             }
             let client = TVDBClient(config: .init(apiKey: "fixture", apiBaseURL: URL(string: "https://tvdb.example/v4")!),
                                     http: fixture.http)
-            let text = await client.translatedText(id: "42", isMovie: false, language: language)
+            let query = MetadataQuery(MediaItem(id: "series", title: "Series", kind: .series))
+                .forMetadataLanguage(language)
+            let text = await client.translatedText(id: "42", isMovie: false, language: query.metadataLanguage)
             XCTAssertEqual(text?.title, "Localized title")
             XCTAssertEqual(text?.overview, "Localized overview")
         }
@@ -267,7 +269,7 @@ final class LocalizedDetailMetadataTests: XCTestCase {
             title: .init(value: "English title", source: .tmdb),
             overview: .init(value: "English overview", source: .tmdb),
             genres: .init(value: ["English genre"], source: .tmdb)
-        ), to: item)
+        ), to: item, refreshExternalText: true)
         XCTAssertEqual(result, item)
         XCTAssertFalse(DetailMetadataResolver.missingFields(in: item).contains(.overview))
         item.overview = " \n "
@@ -296,6 +298,65 @@ final class LocalizedDetailMetadataTests: XCTestCase {
         XCTAssertEqual(provider.calls.first?.query.metadataLanguage, "fr")
         XCTAssertTrue(provider.calls.filter { $0.query.metadataLanguage == "en" }
             .allSatisfy { !$0.missing.contains(.overview) })
+    }
+
+    func testExistingDiscoveryTextRefreshesWithoutMutatingSeedOrIdentity() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            let language = TMDbTVDBDiscoveryFixture.query(request)["language"] ?? "en"
+            if request.url?.path == "/3/movie/129" {
+                return .init(json: """
+                {"title":"Title \(language)","overview":"Overview \(language)","genres":[{"name":"Genre \(language)"}]}
+                """)
+            }
+            return .init(json: "{}")
+        }
+        let provider = TMDbEnrichmentProvider(provider: TMDbMetadataProvider(
+            access: .directToken("fixture"), detailHTTP: fixture.http, imagesRequest: { _, _ in nil }
+        ))
+        let resolver = ExternalTitleMetadataResolver(pipeline: .init(
+            providers: [CachedEnrichmentProvider(base: provider, cache: ProviderResultCache())],
+            config: .init(order: [.tmdb])
+        ))
+        var seed = MediaItem(
+            id: "external", title: "Original title", kind: .movie, overview: "Original overview",
+            genres: ["Original genre"], providerIDs: ["Tmdb": "129"],
+            locallyValidatedPlayableSource: false
+        )
+        let artwork = URL(string: "https://example.com/existing-artwork.jpg")!
+        seed.posterURL = artwork
+        seed.logoURL = artwork
+        seed.backdropURL = artwork
+        for language in ["fr", "de", "en", "fr"] {
+            let result = await resolver.resolve(item: seed, regionCode: "US", language: language)
+            let displayed = DetailMetadataResolver.applying(
+                result.enrichment, to: seed, refreshExternalText: true, isDiscoverySeed: true
+            )
+            XCTAssertEqual(displayed.title, "Title \(language)")
+            XCTAssertEqual(displayed.overview, "Overview \(language)")
+            XCTAssertEqual(displayed.genres, ["Genre \(language)"])
+            XCTAssertEqual(displayed.id, seed.id)
+            XCTAssertEqual(displayed.providerIDs, seed.providerIDs)
+        }
+        XCTAssertEqual(seed.overview, "Original overview")
+        XCTAssertEqual(
+            DetailMetadataResolver.applying(.init(), to: seed, refreshExternalText: true, isDiscoverySeed: true),
+            seed, "Unavailable translations must retain original feed text."
+        )
+    }
+
+    func testOnlyKnownExternalProvenanceCanReplaceNativeDisplayText() {
+        for source: MetadataSource in [.server, .localNFO, .filename, .tmdb, .tvdb] {
+            var item = MediaItem(id: "share-item", title: "File title", kind: .movie, overview: "Original")
+            item.sourceAccountID = "share"
+            item.metadataProvenance.set(SourcedValue(value: "Original", source: source), for: .overview)
+            let result = DetailMetadataResolver.applying(
+                .init(overview: .init(value: "Description FR", source: .tmdb)),
+                to: item, refreshExternalText: true
+            )
+            XCTAssertEqual(result.overview, source == .tmdb || source == .tvdb ? "Description FR" : "Original")
+            XCTAssertEqual(result.title, item.title)
+            XCTAssertEqual(result.sourceAccountID, item.sourceAccountID)
+        }
     }
 
     func testQueryCopiesPreserveLanguageAndLanguageIsPartOfIdentity() {

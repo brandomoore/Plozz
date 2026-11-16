@@ -151,34 +151,32 @@ public struct TVDBDiscoveryProvider: HeroDiscoveryProviding {
             if countries == nil {
                 let data = try await client.discoveryData(path: "countries")
                 let response: Response<LocaleRecord> = try TVDBDiscoveryProvider.decode(data)
-                _ = try Self.identifier(region, in: response.data, fallback: "usa")
+                _ = try Self.identifier(TVDBLocale.countryIdentifier(region), in: response.data, fallback: "usa", country: true)
                 countries = response.data
             }
             if languages == nil {
                 let data = try await client.discoveryData(path: "languages")
                 let response: Response<LocaleRecord> = try TVDBDiscoveryProvider.decode(data)
-                _ = try Self.identifier(Self.baseLanguage(language), in: response.data, fallback: "eng")
+                _ = try Self.identifier(TVDBLocale.languageIdentifier(language), in: response.data, fallback: "eng")
                 languages = response.data
             }
             return (
-                try Self.identifier(region, in: countries ?? [], fallback: "usa"),
-                try Self.identifier(Self.baseLanguage(language), in: languages ?? [], fallback: "eng")
+                try Self.identifier(TVDBLocale.countryIdentifier(region), in: countries ?? [], fallback: "usa", country: true),
+                try Self.identifier(TVDBLocale.languageIdentifier(language), in: languages ?? [], fallback: "eng")
             )
         }
 
-        private static func baseLanguage(_ value: String) -> String {
-            value.replacingOccurrences(of: "_", with: "-").split(separator: "-").first
-                .map(String.init) ?? ""
-        }
-
-        private static func identifier(_ raw: String, in records: [LocaleRecord], fallback: String) throws -> String {
+        private static func identifier(
+            _ raw: String, in records: [LocaleRecord], fallback: String, country: Bool = false
+        ) throws -> String {
             let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let valid = records.filter {
-                guard let id = $0.id, id.utf8.count == 3 else { return false }
+                guard let id = $0.id, (2...4).contains(id.utf8.count) else { return false }
                 return id.lowercased().utf8.allSatisfy { (97...122).contains($0) }
             }
             let match = valid.first {
                 $0.id?.lowercased() == value || $0.shortCode?.lowercased() == value
+                    || (country && $0.id.map { TVDBLocale.countryIdentifier($0) == value } == true)
             } ?? valid.first { $0.id?.lowercased() == fallback }
             guard let id = match?.id else { throw MetadataDiscoveryHTTPError.invalidResponse }
             return id.lowercased()

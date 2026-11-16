@@ -652,7 +652,7 @@ public final class ItemDetailViewModel {
         self.detailMetadataResolver = localizedDetailMetadataResolver ?? { item, _ in
             await detailMetadataResolver(item)
         }
-        self.metadataLanguage = Locale.Language(identifier: metadataLanguage).minimalIdentifier
+        self.metadataLanguage = Locale.canonicalLanguageIdentifier(from: metadataLanguage)
         self.sourceAccountID = sourceAccountID
         self.originSourceAccountID = originSourceAccountID
         self.onlineTrailerResolver = onlineTrailerResolver
@@ -744,7 +744,7 @@ public final class ItemDetailViewModel {
         _ language: String,
         resolver: (@Sendable (MediaItem) async -> MetadataEnrichment)? = nil
     ) {
-        let language = Locale.Language(identifier: language).minimalIdentifier
+        let language = Locale.canonicalLanguageIdentifier(from: language)
         guard language != metadataLanguage else { return }
         interruptedLanguageSeasonIDs.formUnion(seasonLoads.keys)
         suspendEnrichment()
@@ -1203,7 +1203,9 @@ public final class ItemDetailViewModel {
         _ enrichment: MetadataEnrichment,
         to item: MediaItem
     ) -> MediaItem {
-        var copy = DetailMetadataResolver.applying(enrichment, to: item)
+        var copy = DetailMetadataResolver.applying(
+            enrichment, to: item, refreshExternalText: true, isDiscoverySeed: true
+        )
         if copy.overview?.isEmpty != false, let overview = enrichment.overview {
             copy.overview = overview.value
             copy.metadataProvenance.set(overview, for: .overview)
@@ -2963,11 +2965,13 @@ public final class ItemDetailViewModel {
     }
 
     private func enrichDetailMetadata(for item: MediaItem, sourceGeneration: UInt64) async {
-        guard !DetailMetadataResolver.missingFields(in: item).isEmpty, !Task.isCancelled else { return }
+        guard !Task.isCancelled,
+              !DetailMetadataResolver.missingFields(in: item)
+                .union(DetailMetadataResolver.refreshableTextFields(in: item)).isEmpty else { return }
         let enrichment = await detailMetadataResolver(item, metadataLanguage)
         guard !Task.isCancelled, self.sourceGeneration == sourceGeneration,
               case var .loaded(detail) = state, detail.item.id == item.id else { return }
-        let enriched = DetailMetadataResolver.applying(enrichment, to: detail.item)
+        let enriched = DetailMetadataResolver.applying(enrichment, to: detail.item, refreshExternalText: true)
         guard enriched != detail.item else { return }
         detail.item = enriched
         state = .loaded(detail)

@@ -136,6 +136,24 @@ final class TVDBDiscoveryProviderTests: XCTestCase {
         XCTAssertEqual(fallback["lang"], "eng")
     }
 
+    func testRegionalLanguagesResolveWithoutCatalogShortCodes() async throws {
+        for (language, region, code, country) in [("pt-BR", "BR", "pt", "bra"), ("zh-Hant", "TW", "zhtw", "twn")] {
+            let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+                TMDbTVDBDiscoveryFixture.tvdbReply(request)
+            }
+            let provider = TVDBDiscoveryProvider(config: config, http: fixture.http)
+            _ = try await provider.discover(.init(language: language, region: region))
+            let requests = await fixture.recorded()
+            let filters = requests.filter { $0.url?.lastPathComponent == "filter" }
+            XCTAssertEqual(filters.count, 2)
+            for request in filters {
+                let query = TMDbTVDBDiscoveryFixture.query(request)
+                XCTAssertEqual(query["lang"], code)
+                XCTAssertEqual(query["country"], country)
+            }
+        }
+    }
+
     func testConfigurationFingerprintChangesForKeyAndBaseURLWithoutExposingEither() {
         let first = TVDBDiscoveryProvider(config: config).cacheIdentifier
         let differentKey = TVDBDiscoveryProvider(config: .init(

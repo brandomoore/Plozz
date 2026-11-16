@@ -72,7 +72,9 @@ load-bearing.
   Artwork, playable identity, file/stream facts and Common Sense are not filled
   by this resolver.
   Detail pages pass the effective UI/profile locale to text enrichment, including
-  missing-text resolution for external/discovery details.
+  text refresh for external/discovery details. Existing feed text is a fallback,
+  not authoritative server text. Known externally attributed share metadata is
+  refreshed only in the detail presentation; shared catalog records remain unchanged.
   TMDB detail, episode, credits and matching requests carry that language;
   when a localized title search misses an English release alias, identity lookup
   retries the English search with the same exact-title/year checks. Detail text
@@ -90,13 +92,17 @@ load-bearing.
   ordered pipeline for movie/series gaps; Wikipedia artwork remains idle-only.
   Retained detail models update their language in place, discard late old-language
   work and refill gaps from native metadata, not previously enriched text.
-  TheTVDB requests ISO-639-3 translations for detail text and admitted discovery
+  TheTVDB requests its catalog language IDs (including `pt` for Brazilian
+  Portuguese and `zhtw` for Traditional Chinese) for detail text and admitted discovery
   candidates, with at most four translation requests in flight and a four-second
   translation budget that retains original feed text on timeout.
   Wikipedia follows the matched English article's language link,
   including Chinese/Serbian script variants, rather than searching for a different
   work or person. Person biographies preserve server priority and refresh external
   prose when the selected language changes; in-player biography caches separate languages.
+  Home discovery requests, task identities and persisted hero selections retain
+  the full language, including regional/script distinctions, so a language switch
+  cannot reuse the previous language's discovery snapshot.
   This does not translate existing server metadata or shared share-scanner records.
   AniList and TVmaze retain their available original/English text. Selecting a language cannot guarantee
   translated descriptions when the server or external service has no such text.

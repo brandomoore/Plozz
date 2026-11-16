@@ -191,7 +191,7 @@ public final class PersonDetailViewModel {
     private var biographyIsExternal = false
 
     public func updateMetadataLanguage(_ language: String) async {
-        let language = Locale.Language(identifier: language).minimalIdentifier
+        let language = Locale.canonicalLanguageIdentifier(from: language)
         guard metadataLanguage != language else { return }
         metadataLanguage = language
         guard nativeBiographyResolved, biography == nil || biographyIsExternal else { return }
