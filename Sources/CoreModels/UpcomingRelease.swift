@@ -136,6 +136,10 @@ public enum UpcomingReleaseBuilder {
         for release in releases {
             let key = release.kind == .digital ? "\(release.titleKey)|digital" : release.id
             if var existing = merged[key] {
+                // Prefer provider history over saved/requested metadata, regardless of arrival order.
+                if !existing.interests.contains(.watching), release.interests.contains(.watching) {
+                    existing.item = release.item
+                }
                 existing.interests.formUnion(release.interests)
                 merged[key] = existing
             } else {
@@ -147,6 +151,7 @@ public enum UpcomingReleaseBuilder {
 
     public static func episodes(
         _ episodes: [UpcomingEpisode], for item: MediaItem,
+        interests: Set<UpcomingInterest> = [.watching],
         calendar: Calendar = .current
     ) -> [UpcomingRelease] {
         let titleKey = UpcomingRelease.titleKey(for: item)
@@ -175,7 +180,7 @@ public enum UpcomingReleaseBuilder {
                 id: "\(titleKey)|episodes|\(key)", titleKey: titleKey, item: item,
                 date: first.airDate,
                 datePrecision: ordered.count == 1 ? first.datePrecision : .dateOnly,
-                kind: .episode, interests: [.watching], episodes: ordered
+                kind: .episode, interests: interests, episodes: ordered
             )
         }.sorted { $0.date < $1.date }
     }

@@ -11,17 +11,20 @@ import FoundationNetworking
 final class SeerRecordingHTTPClient: HTTPClient, @unchecked Sendable {
     struct Sent {
         let baseURL: URL
+        let method: HTTPMethod
         let path: String
         let queryItems: [URLQueryItem]
         let headers: [String: String]
         let body: Data?
+        let redirectPolicy: Endpoint.RedirectPolicy
+        let allowsAutomaticAddressRetry: Bool
         var json: [String: Any]? {
             guard let body else { return nil }
             return (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
         }
     }
 
-    struct Stub { var status: Int; var body: Data }
+    struct Stub { var status: Int; var body: Data; var headers: [String: String] = [:] }
 
     private var responses: [String: [Stub]] = [:]
     var error: AppError?
@@ -33,9 +36,9 @@ final class SeerRecordingHTTPClient: HTTPClient, @unchecked Sendable {
     private var suspensionContinuations: [String: [CheckedContinuation<Void, Never>]] = [:]
     private let lock = NSLock()
 
-    func stub(pathSuffix: String, json: String, status: Int = 200) {
+    func stub(pathSuffix: String, json: String, status: Int = 200, headers: [String: String] = [:]) {
         lock.lock(); defer { lock.unlock() }
-        responses[pathSuffix] = [Stub(status: status, body: Data(json.utf8))]
+        responses[pathSuffix] = [Stub(status: status, body: Data(json.utf8), headers: headers)]
     }
 
     func enqueueStub(pathSuffix: String, json: String, status: Int = 200) {
@@ -96,10 +99,13 @@ final class SeerRecordingHTTPClient: HTTPClient, @unchecked Sendable {
         sent.append(
             Sent(
                 baseURL: baseURL,
+                method: endpoint.method,
                 path: endpoint.path,
                 queryItems: endpoint.queryItems,
                 headers: endpoint.headers,
-                body: endpoint.body
+                body: endpoint.body,
+                redirectPolicy: endpoint.redirectPolicy,
+                allowsAutomaticAddressRetry: endpoint.allowsAutomaticAddressRetry
             )
         )
         if let error { lock.unlock(); throw error }
@@ -138,7 +144,7 @@ final class SeerRecordingHTTPClient: HTTPClient, @unchecked Sendable {
         }
 
         guard let stub = match else { throw AppError.notFound }
-        let response = HTTPURLResponse(url: baseURL, statusCode: stub.status, httpVersion: nil, headerFields: nil)!
+        let response = HTTPURLResponse(url: baseURL, statusCode: stub.status, httpVersion: nil, headerFields: stub.headers)!
         return (stub.body, response)
     }
 }

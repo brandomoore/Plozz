@@ -186,13 +186,29 @@ public final class PersonDetailViewModel {
     /// queries badly enough that one took 19.6 seconds and returned nothing —
     /// an empty pane for an actor with plenty to show. Cancelled with its
     /// parent, abandoning a person abandons their lookup too.
-    private func fetchExternalBiography() async -> String? {
+    private var metadataLanguage = "en"
+    private var nativeBiographyResolved = false
+    private var biographyIsExternal = false
+
+    public func updateMetadataLanguage(_ language: String) async {
+        let language = Locale.canonicalLanguageIdentifier(from: language)
+        guard metadataLanguage != language else { return }
+        metadataLanguage = language
+        guard nativeBiographyResolved, biography == nil || biographyIsExternal else { return }
+        biography = nil
+        let text = await fetchExternalBiography(language: language)
+        guard !Task.isCancelled, metadataLanguage == language else { return }
+        biography = text
+        biographyIsExternal = text != nil
+    }
+
+    private func fetchExternalBiography(language: String) async -> String? {
         guard !biographyProviders.isEmpty else { return nil }
         let name = person.name
         guard !name.isEmpty else { return nil }
         for provider in biographyProviders {
             if Task.isCancelled { return nil }
-            if let text = await provider.biography(for: name, role: person.kind), !text.isEmpty {
+            if let text = await provider.biography(for: name, role: person.kind, language: language), !text.isEmpty {
                 return text
             }
         }
@@ -400,7 +416,8 @@ public final class PersonDetailViewModel {
         func elapsed(_ from: Date) -> Int { Int(Date().timeIntervalSince(from) * 1000) }
         // In flight while the servers are asked, and cancelled with this task if
         // the viewer moves on; see the method.
-        async let externalBiography = fetchExternalBiography()
+        let loadingLanguage = metadataLanguage
+        async let externalBiography = fetchExternalBiography(language: loadingLanguage)
         // No OWNING server is not the end of the lookup.
         //
         // A person reached from a discovery title — a cast face on a show nobody
@@ -482,9 +499,19 @@ public final class PersonDetailViewModel {
         }
 
         let stage = Date()
-        let external = await externalBiography
+        nativeBiographyResolved = true
+        var external = await externalBiography
+        if loadingLanguage != metadataLanguage {
+            let currentLanguage = metadataLanguage
+            external = await fetchExternalBiography(language: currentLanguage)
+            if currentLanguage != metadataLanguage { external = nil }
+        }
+        guard !Task.isCancelled else { return }
         // Servers still win: this is only consulted because none had one.
-        if biography == nil, let external, !external.isEmpty { biography = external }
+        if biography == nil, let external, !external.isEmpty {
+            biography = external
+            biographyIsExternal = true
+        }
         PersonDiagnostics.emit(
             "person.external name=\(person.name) "
             + "bio=\(biography == nil ? "MISS" : "hit") waited=\(elapsed(stage))"

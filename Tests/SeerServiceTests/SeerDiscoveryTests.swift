@@ -18,6 +18,7 @@ private final class HostRoutedHTTPClient: HTTPClient, @unchecked Sendable {
     private let lock = NSLock()
     private var behaviors: [String: Behavior] = [:]
     private var probes: [String] = []
+    private var requests: [(Endpoint, URL)] = []
     private let defaultBehavior: Behavior
 
     init(default defaultBehavior: Behavior = .error(.serverUnreachable)) {
@@ -34,10 +35,16 @@ private final class HostRoutedHTTPClient: HTTPClient, @unchecked Sendable {
         return probes.filter { $0 == host }.count
     }
 
+    var recordedRequests: [(Endpoint, URL)] {
+        lock.lock(); defer { lock.unlock() }
+        return requests
+    }
+
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         let host = baseURL.host ?? ""
         lock.lock()
         probes.append(host)
+        requests.append((endpoint, baseURL))
         let behavior = behaviors[host] ?? defaultBehavior
         lock.unlock()
 
@@ -58,6 +65,79 @@ private final class HostRoutedHTTPClient: HTTPClient, @unchecked Sendable {
 }
 
 final class SeerDiscoveryTests: XCTestCase {
+    func testOlderJellyfinSeerrRemainsDiscoverableWithoutOfferingAccountReuse() async {
+        let http = SeerRecordingHTTPClient()
+        http.stub(pathSuffix: "/status", json: #"{"version":"3.3.0"}"#)
+        http.stub(pathSuffix: "/settings/public", json: #"{"initialized":true,"mediaServerType":2,"mediaServerLogin":true}"#)
+        http.stub(pathSuffix: "/quickconnect/check", json: "{}", status: 404)
+        let discovery = SeerDiscovery(http: http, subnetHosts: { [] })
+        let url = URL(string: "https://requests.example.test/seerr")!
+        let results = await collect(discovery.discover(
+            urlHints: [url], includesSubnet: false, inspectMethods: true
+        ))
+        XCTAssertEqual(results.map(\.baseURL), [url])
+        XCTAssertEqual(results.first?.loginMethods?.jellyfinQuickConnect, false)
+        XCTAssertEqual(http.sentPaths, [
+            "/api/v1/status", "/api/v1/settings/public", "/api/v1/auth/jellyfin/quickconnect/check"
+        ])
+    }
+
+    func testRemoteCandidatesPreserveHTTPSCustomPortAndProxyPathWithoutGuessingDomains() throws {
+        let source = try XCTUnwrap(URL(string: "https://media.example.test:8443/media/jellyfin"))
+        let candidates = SeerDiscovery.setupCandidates(mediaURLs: [source, source])
+        XCTAssertTrue(candidates.contains(source))
+        XCTAssertTrue(candidates.contains(URL(string: "https://media.example.test:8443")!))
+        XCTAssertTrue(candidates.contains(URL(string: "https://media.example.test:8443/seerr")!))
+        XCTAssertTrue(candidates.contains(URL(string: "https://media.example.test/seerr")!))
+        XCTAssertTrue(candidates.contains(URL(string: "https://media.example.test:5055")!))
+        XCTAssertTrue(candidates.allSatisfy { $0.scheme == "https" && $0.host == source.host })
+        XCTAssertEqual(candidates.count, Set(candidates).count)
+    }
+
+    func testCandidateGenerationRejectsCredentialedRoutesAndKeepsIPv6AndPlexLocalHost() {
+        let candidates = SeerDiscovery.setupCandidates(mediaURLs: [
+            URL(string: "https://name:password@example.test")!,
+            URL(string: "https://example.test?token=private")!,
+            URL(string: "https://192-168-1-9.fixture.plex.direct:32400")!,
+            URL(string: "https://[fd00::5]:8920/jellyfin")!
+        ])
+        XCTAssertFalse(candidates.contains { $0.host == "example.test" })
+        XCTAssertTrue(candidates.contains(URL(string: "http://192.168.1.9:5055")!))
+        XCTAssertTrue(candidates.contains(URL(string: "http://[fd00::5]:5055")!))
+        XCTAssertTrue(candidates.contains(URL(string: "https://[fd00::5]:8920/jellyfin")!))
+    }
+
+    func testExactURLFastPhaseDoesNotSweepSubnetAndPreservesItsOrigin() async {
+        let http = HostRoutedHTTPClient(default: .json(#"{"version":"3.5.2"}"#))
+        let discovery = SeerDiscovery(http: http, subnetHosts: {
+            XCTFail("Known endpoints must not enumerate the subnet")
+            return ["192.168.1.12"]
+        })
+        let url = URL(string: "https://requests.example.test:15056/my/seerr")!
+        let results = await collect(discovery.discover(urlHints: [url, url], includesSubnet: false))
+        XCTAssertEqual(results.map(\.baseURL), [url])
+        XCTAssertEqual(http.probeCount(forHost: "requests.example.test"), 1)
+    }
+
+    func testDiscoveryReturnsReadyCapabilitiesWithoutCredentialsOrCrossOriginRetries() async {
+        let http = HostRoutedHTTPClient(default: .json(
+            #"{"version":"3.5.2","initialized":true,"mediaServerType":1,"mediaServerLogin":true,"localLogin":false}"#
+        ))
+        let url = URL(string: "https://requests.example.test:8443/seerr")!
+        let results = await collect(makeDiscovery(http).discover(
+            urlHints: [url], includesSubnet: false, inspectMethods: true
+        ))
+        XCTAssertEqual(results.first?.loginMethods?.mediaServerType, 1)
+        XCTAssertEqual(results.first?.loginMethods?.mediaServerLogin, true)
+        XCTAssertEqual(http.recordedRequests.map { $0.0.path }, ["/api/v1/status", "/api/v1/settings/public"])
+        for (endpoint, baseURL) in http.recordedRequests {
+            XCTAssertEqual(baseURL, url)
+            XCTAssertTrue(endpoint.headers.isEmpty)
+            XCTAssertEqual(endpoint.redirectPolicy, .sameOrigin)
+            XCTAssertFalse(endpoint.allowsAutomaticAddressRetry)
+        }
+    }
+
     /// All these tests inject `subnetHosts: { [] }` so results come only from
     /// `hostHints` — fully hermetic, no dependency on the test machine's real
     /// network interfaces.
@@ -134,6 +214,38 @@ final class SeerDiscoveryTests: XCTestCase {
         let results = await collect(discovery.discover(hostHints: ["192.168.1.10", "192.168.1.11"], timeout: 2))
 
         XCTAssertEqual(results.map { $0.baseURL.host }, ["192.168.1.10"])
+    }
+
+    func testPlexAliasesAndSubnetAddressProduceOneProbeAndResultPerHost() async {
+        let http = HostRoutedHTTPClient()
+        http.stub(host: "192.168.1.9", .json(#"{"version":"3.5.2"}"#))
+        http.stub(host: "192.168.1.10", .json(#"{"version":"3.5.2"}"#))
+        let discovery = SeerDiscovery(
+            http: http, port: 5055, concurrency: 4,
+            subnetHosts: { ["192.168.1.9", "192.168.1.10"] }
+        )
+        let aliases = ["192-168-1-9.first.plex.direct", "192-168-1-9.second.PLEX.DIRECT"]
+
+        let results = await collect(discovery.discover(
+            hostHints: aliases + ["192.168.1.9", "192-168-1-10.other.plex.direct"], timeout: 2
+        ))
+
+        XCTAssertEqual(Set(results.map(\.baseURL.absoluteString)),
+                       ["http://192.168.1.9:5055", "http://192.168.1.10:5055"])
+        XCTAssertEqual(results.count, 2)
+        XCTAssertEqual(http.probeCount(forHost: "192.168.1.9"), 1)
+        XCTAssertEqual(http.probeCount(forHost: "192.168.1.10"), 1)
+        for alias in aliases { XCTAssertEqual(http.probeCount(forHost: alias.lowercased()), 0) }
+    }
+
+    func testDiscoveryDoesNotRewriteOtherHostnamesOrMalformedPlexAddresses() async {
+        let http = HostRoutedHTTPClient(default: .json(#"{"version":"3.5.2"}"#))
+        let hosts = ["192-168-1-9.example.com", "999-168-1-9.test.plex.direct", "requests.local"]
+
+        let results = await collect(makeDiscovery(http).discover(hostHints: hosts, timeout: 2))
+
+        XCTAssertEqual(Set(results.compactMap(\.baseURL.host)), Set(hosts))
+        for host in hosts { XCTAssertEqual(http.probeCount(forHost: host), 1) }
     }
 
     func testSubnetSweepCandidatesAreAlsoProbed() async {

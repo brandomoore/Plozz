@@ -65,7 +65,7 @@ public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendab
 public struct HeroDiscoveryRecency: Hashable, Sendable {
     public static let `default` = HeroDiscoveryRecency()
     /// Retires cached pools containing removed feeds or older eligibility policies.
-    public static let contentVersion = 3
+    public static let contentVersion = 4
     public let years: Int
 
     public init(years: Int = 2) {

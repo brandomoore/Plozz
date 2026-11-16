@@ -108,6 +108,21 @@ final class UpcomingEpisodeTests: XCTestCase {
         XCTAssertFalse(filters.includes(release))
     }
 
+    func testWatchingAndRequestedShowsMergeWithoutLosingNativeSourceOrFilterInterests() throws {
+        var native = MediaItem(id: "library-show", title: "Show", kind: .series, providerIDs: ["Tmdb": "42"])
+        native.sourceAccountID = "server"
+        let requested = MediaItem(id: "seer:series:42", title: "Show", kind: .series, providerIDs: ["Tmdb": "42"])
+        let history = UpcomingReleaseBuilder.episodes([sample()], for: native)
+        let request = UpcomingReleaseBuilder.episodes([sample()], for: requested, interests: [.requested])
+        for input in [history + request, request + history] {
+            let merged = UpcomingReleaseBuilder.merging(input)
+            XCTAssertEqual(merged.count, 1)
+            XCTAssertEqual(merged.first?.item.id, native.id)
+            XCTAssertEqual(merged.first?.item.sourceAccountID, "server")
+            XCTAssertEqual(merged.first?.interests, [.watching, .requested])
+        }
+    }
+
     private func sample() -> UpcomingEpisode {
         UpcomingEpisode(
             seriesIdentity: .external(source: "anilist", value: "21"),

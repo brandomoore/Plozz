@@ -15,7 +15,7 @@ struct SeerClient: Sendable {
 
     init(config: SeerConfig, http: HTTPClient) {
         self.config = config
-        self.http = http
+        self.http = SeerCredentialHTTPClient(underlying: http, config: config)
     }
 
     private var baseURL: URL {
@@ -148,6 +148,12 @@ struct SeerClient: Sendable {
         return try await http.decode(SeerUserPage.self, from: endpoint, baseURL: baseURL)
     }
 
+    func currentUser() async throws -> SeerUserDTO {
+        try await http.decode(
+            SeerUserDTO.self, from: Endpoint(path: "/api/v1/auth/me", headers: headers()), baseURL: baseURL
+        )
+    }
+
     // MARK: - Radarr / Sonarr defaults
 
     /// `GET /api/v1/service/radarr` — configured Radarr servers (for defaults).
@@ -184,16 +190,20 @@ struct SeerClient: Sendable {
         return try await http.decode(SeerPersonalRequestPage.self, from: endpoint, baseURL: baseURL)
     }
 
-    func requestedMovie(tmdbID: Int, language: String) async throws -> SeerDiscoverResult {
-        try await http.decode(
+    func requestedTitle(mediaType: String, tmdbID: Int, language: String) async throws -> SeerDiscoverResult {
+        guard mediaType == "movie" || mediaType == "tv" else { throw AppError.invalidResponse }
+        var result = try await http.decode(
             SeerDiscoverResult.self,
             from: Endpoint(
-                method: .get, path: "/api/v1/movie/\(tmdbID)",
+                method: .get, path: "/api/v1/\(mediaType)/\(tmdbID)",
                 queryItems: [URLQueryItem(name: "language", value: language)],
                 headers: headers()
             ),
             baseURL: baseURL
         )
+        // Detail endpoints may omit the discriminator present on search results.
+        if result.mediaTypeWasOmitted { result.mediaType = mediaType }
+        return result
     }
 
     /// The low-level result of `POST /api/v1/request`: either created (2xx, with

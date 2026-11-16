@@ -4,7 +4,7 @@ import UIKit
 import CoreUI
 import os
 
-extension UpcomingView {
+extension UpcomingView where TrailingToolbar == ToolbarItemGroup<EmptyView> {
     /// A navigation reselection resets only the visible Upcoming agenda.
     @MainActor
     public static func scrollToToday(in scrollView: UIScrollView) -> Bool {
@@ -16,9 +16,9 @@ extension UpcomingView {
             }
             return view.subviews.lazy.compactMap { findProbe(in: $0) }.first
         }
-        guard let probe = findProbe(in: scrollView), let detent = probe.detent,
+        guard let probe = findProbe(in: scrollView), probe.detent != nil,
               let action = probe.onScrollToToday else { return false }
-        detent.scrollToToday(action)
+        action()
         return true
     }
 }
@@ -303,9 +303,21 @@ final class UpcomingScrollDetent {
         releaseShift = 0
     }
 
-    func scrollToToday(_ updatePosition: () -> Void) {
+    func prepareForDateScroll() {
+        let hadElasticMotion = motion != nil
+        let nativeOffset = scrollView?.layer.presentation()?.bounds.origin
         stopMotion(preservingPosition: true)
         cancelInteraction()
+        if let scrollView {
+            let offset = hadElasticMotion ? scrollView.contentOffset : (nativeOffset ?? scrollView.contentOffset)
+            adjustingOffset = true
+            scrollView.setContentOffset(offset, animated: false)
+            adjustingOffset = false
+        }
+    }
+
+    func scrollToDate(_ updatePosition: () -> Void) {
+        prepareForDateScroll()
         withAnimation(reduceMotion ? nil : .smooth) { updatePosition() }
     }
 

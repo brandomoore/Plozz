@@ -419,12 +419,13 @@ struct PlozziOSHeroRequestButton: View {
             .disabled(true)
     }
 
-    @ViewBuilder
     private var requestLabel: some View {
-        if request.isRequesting {
-            ProgressView()
-        } else {
-            Label("Request", systemImage: "plus.circle")
+        Label {
+            Text("Request")
+        } icon: {
+            ActionProgressIcon(
+                systemName: "plus.circle", isLoading: request.isRequesting
+            )
         }
     }
 
@@ -909,6 +910,7 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
     private static var topBlurLeadIn: CGFloat { 8 }
 
     let height: CGFloat
+    let surfaceRole: HeroTrailerSurfaceRole
     @ViewBuilder let picture: (PlozziOSHeroPictureLayout) -> Picture
 
     var body: some View {
@@ -939,7 +941,7 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
                 }
             }
             .overlay(alignment: .top) {
-                if topHeight > 0, !reduceTransparency {
+                if surfaceRole == .home, topHeight > 0, !reduceTransparency {
                     topReflectionBlur(geometry, width: width, topHeight: topHeight,
                                       radius: topHeight / 6, from: 0, to: 0.55)
                     topReflectionBlur(geometry, width: width, topHeight: topHeight,
@@ -1118,7 +1120,7 @@ private struct PlozziOSHeroBackdrop: View {
     var body: some View {
         ZStack {
             if extendsArtwork {
-                PlozziOSExtendedHeroArtwork(height: height) { layout in
+                PlozziOSExtendedHeroArtwork(height: height, surfaceRole: surfaceRole) { layout in
                     stillArtwork()
                         .frame(width: layout.width, height: layout.height)
                         .clipped()
@@ -1618,7 +1620,7 @@ struct PlozziOSHomeStaticBackdrop: View {
         width: CGFloat
     ) -> some View {
         if extendsArtwork {
-            PlozziOSExtendedHeroArtwork(height: height) { layout in
+            PlozziOSExtendedHeroArtwork(height: height, surfaceRole: .home) { layout in
                 PlozziOSSlidingHeroArtwork(
                     presentation: presentation,
                     style: style,
@@ -2692,6 +2694,7 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzReducePanelGlass) private var reducePanelGlass
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         if #available(iOS 26.0, *), !reducePanelGlass, !reduceTransparency {
@@ -2727,7 +2730,8 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
                 .font(.headline.weight(.semibold))
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(kind == .primary ? palette.backgroundBase : palette.primaryText)
+                .foregroundStyle(nativeForeground)
+                .tint(nativeForeground)
                 // Keep the native icon slot stable even for short glyphs such as ellipsis.
                 .frame(width: circular ? 18 : nil, height: circular ? 18 : nil)
         }
@@ -2740,6 +2744,10 @@ struct PlozziOSHeroActionButtonStyle: PrimitiveButtonStyle {
         } else {
             button.buttonStyle(.glass)
         }
+    }
+
+    private var nativeForeground: Color {
+        kind == .primary && isEnabled ? palette.backgroundBase : palette.primaryText
     }
 }
 

@@ -4,6 +4,8 @@ import CoreUI
 import CoreNetworking
 import FeatureAuth
 import FeatureProfiles
+import Observation
+import SeerService
 @testable import AppRuntime
 @testable import AppShell
 
@@ -69,6 +71,88 @@ final class PlexHomeUsersModelTests: XCTestCase {
         model.plexHomeUsersFetch = { _, _ in throw URLError(.notConnectedToInternet) }
         model.plexHomeUserSwitch = { _, _, _, _ in throw AppError.unauthorized }
         return (model, hub, profiles)
+    }
+
+    func testSeerrEmbyUsernameSuggestionsStayWithinTheActiveProfileAccounts() throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["plex"])
+        for id in ["first", "second"] {
+            let account = Account(
+                id: id,
+                server: MediaServer(id: id, name: "Emby", baseURL: URL(string: "https://\(id).example")!, provider: .emby),
+                userID: id, userName: "Emby \(id)", deviceID: "device"
+            )
+            try hub.accountStore.add(account, token: "fixture-\(id)")
+        }
+        hub.reloadAccounts()
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore())
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        profiles.setActiveAccountIDs(["first", "plex"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.embyUsernames(), ["Emby first"])
+        XCTAssertEqual(Set(service.setupSources().map(\.mediaServerType)), [1, 3])
+        profiles.setActiveAccountIDs(["second"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.embyUsernames(), ["Emby second"])
+        XCTAssertEqual(service.setupSources().flatMap(\.urls), [URL(string: "https://second.example")!])
+        XCTAssertEqual(service.setupSources().map(\.mediaServerType), [3])
+        profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
+        XCTAssertTrue(service.embyUsernames().isEmpty)
+        XCTAssertTrue(service.setupSources().isEmpty)
+    }
+
+    func testSeerrOffersTheExistingAccountWhenPlexAuthorizationFinishes() async throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["a"])
+        profiles.update(profiles.activeProfile.settingHomeUserBinding(
+            .init(homeUserID: "viewer", name: "Viewer", requiresPIN: true, pinRequirementVerified: true),
+            forPlexAccount: "a"
+        ))
+        model.plexHomeUsersFetch = { _, _ in
+            [PlexHomeUser(id: "viewer", name: "Viewer", requiresPIN: true)]
+        }
+        model.plexHomeUserSwitch = { user, pin, _, _ in
+            XCTAssertEqual(user, "viewer")
+            XCTAssertEqual(pin, "2468")
+            return "viewer-cloud"
+        }
+        model.plexServerTokenResolve = { _, _, _ in "viewer-server" }
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore(connection: nil))
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        model.ensurePlexIdentityForActiveProfile()
+        await model.waitForPlexPINRequirementCheck()
+        let refreshed = expectation(description: "Refresh Seerr sign-in choices after authorization")
+        withObservationTracking {
+            XCTAssertTrue(service.loginOptions().isEmpty, "Never offer the owner's credential before viewer authorization")
+        } onChange: {
+            refreshed.fulfill()
+        }
+
+        model.submitPlexPIN("2468")
+        await model.waitForPlexPINRequirementCheck()
+
+        XCTAssertEqual(service.loginOptions().map(\.name), ["Viewer"])
+        await fulfillment(of: [refreshed], timeout: 1)
+    }
+
+    func testSeerrExistingJellyfinChoicesIdentifyServersWithinTheActiveProfile() throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["plex"])
+        for id in ["first", "second", "excluded"] {
+            try hub.accountStore.add(Account(
+                id: id, server: MediaServer(
+                    id: id, name: "Server \(id)", baseURL: URL(string: "https://\(id).example")!, provider: .jellyfin
+                ), userID: id, userName: "Alex", deviceID: "device"
+            ), token: "fixture-\(id)")
+        }
+        hub.reloadAccounts()
+        profiles.setActiveAccountIDs(["first", "second"], for: profiles.activeProfileID)
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore())
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        let choices = service.loginOptions()
+        XCTAssertEqual(Set(choices.map(\.id)), ["first", "second"])
+        for choice in choices {
+            XCTAssertEqual(choice.name, "Alex")
+            XCTAssertEqual(choice.serverName, "Server \(choice.id)")
+            XCTAssertEqual(choice.serverURL, URL(string: "https://\(choice.id).example")!)
+        }
+        profiles.setActiveAccountIDs(["second"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.loginOptions().map(\.id), ["second"])
     }
 
     func testOnePINAuthenticatesTheSameHomeUserAcrossServersWithDistinctServerTokens() async throws {

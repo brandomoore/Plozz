@@ -616,10 +616,7 @@ public struct SettingsView: View {
                        value: hasParentalPIN ? Text(ProfileLockCopy.on) : Text(ProfileLockCopy.off),
                        route: .parentalPIN)
 
-                // Seerr is one shared admin connection powering the Home hero's
-                // trending row + requests for everyone on this Apple TV, so it's
-                // a household concern — not a per-profile tracker. The per-profile
-                // "requests are made as" mapping is managed inside its page.
+                // This entry edits only the active profile's Seerr connections.
                 SettingsSectionButton(title: Text(verbatim: "Seerr"), icon: "sparkles.tv", assetIcon: "SeerrIcon",
                        value: seerrRowValue,
                        route: .seerr)
@@ -1140,8 +1137,12 @@ public struct SettingsView: View {
                 )
             }
         case let .seerUserPicker(profileID):
-            if let profile = profiles.first(where: { $0.id == profileID }) {
-                SeerUserPickerView(seer: seer, profile: profile, onSelect: { onSetSeerrUser(profileID, $0) })
+            if profileID == seer.activeProfileID {
+                SeerConnectionsView(seer: seer)
+            } else {
+                SeerSettingsPage {
+                    Text("Switch to this profile to sign in to Seerr.")
+                }
             }
         case .releaseNotes:
             ReleaseNotesSettingsView(model: .shared)

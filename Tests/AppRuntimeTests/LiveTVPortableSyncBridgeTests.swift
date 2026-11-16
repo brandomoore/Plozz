@@ -211,17 +211,67 @@ final class LiveTVPortableSyncBridgeTests: XCTestCase {
     func testProfileRemovalSurvivesReopeningWithoutErasingLocalSourcesOrFavorites() async throws {
         let fixture = try makeFixture()
         let profileID = fixture.profiles.activeProfileID
+        let preferences = fixture.preferences
         fixture.consent(profileID).isEnabled = true
-        try fixture.preferences.save(.init(favoriteIDs: ["favorite"]))
+        try preferences.save(.init(favoriteIDs: ["favorite"]))
         let initial = await fixture.bridge.capture(fallback: [:])
         XCTAssertFalse(initial.isEmpty)
+        _ = fixture.profiles.add(name: "Survivor")
         try fixture.bridge.removeProfile(profileID)
+        fixture.profiles.remove(profileID)
         let reopened = fixture.makeBridge()
         let after = await reopened.capture(fallback: initial)
         XCTAssertTrue(after.isEmpty)
         XCTAssertFalse(fixture.consent(profileID).isEnabled)
-        XCTAssertEqual(try fixture.preferences.load().favoriteIDs, ["favorite"])
+        XCTAssertEqual(try preferences.load().favoriteIDs, ["favorite"])
         XCTAssertEqual(try fixture.sources.load().playlists.count, 1)
+    }
+
+    func testRestoredProfileDoesNotDeletePeerSourcesFromOldRemovalMarker() async throws {
+        let fixture = try makeFixture()
+        let profile = fixture.profiles.activeProfile
+        fixture.consent(profile.id).isEnabled = true
+        try fixture.sources.save(.init(servers: [
+            .init(id: "server", name: "Live TV", accountID: "iptv-account")
+        ]))
+        var initial = await fixture.bridge.capture(fallback: [:])
+        let sourceKey = LiveTVPortableRecordKey(
+            profileID: profile.id, kind: .source, entityID: "server"
+        ).recordName
+        XCTAssertNotNil(initial[sourceKey])
+        let peerKey = record("other-profile", "favorite")
+        initial[peerKey] = try LiveTVPortableRecord(channel: .init(isFavorite: true)).encoded()
+        var ledger = SyncLedger()
+        _ = ledger.applyFetched(saved: initial.map {
+            SyncRemoteRecord(recordName: $0.key, value: $0.value, editedAt: 1, systemFields: Data())
+        }, deleted: [], now: 1)
+        _ = fixture.profiles.add(name: "Survivor")
+        try fixture.bridge.removeProfile(profile.id)
+        fixture.profiles.remove(profile.id)
+        let removed = await fixture.makeBridge().capture(fallback: initial)
+        XCTAssertNil(removed[sourceKey])
+
+        fixture.profiles.applySyncedProfileDTOs(
+            [profile.id: ProfileSyncDTO(profile: profile)], deletions: []
+        )
+        fixture.consent(profile.id).isEnabled = true
+        try fixture.sources.save(.empty)
+        let reopened = fixture.makeBridge()
+        let restored = await reopened.capture(fallback: initial)
+
+        XCTAssertEqual(restored[sourceKey], initial[sourceKey])
+        XCTAssertEqual(restored[peerKey], initial[peerKey])
+        let plan = ledger.reconcileLocal(desired: restored, now: 2)
+        XCTAssertTrue(plan.deletes.isEmpty, "A partial capture must not queue the restored profile's sources for deletion.")
+        XCTAssertTrue(try fixture.sources.load().servers.isEmpty, "A restored descriptor must not sign in or enroll.")
+        let repeated = await fixture.makeBridge().capture(fallback: restored)
+        XCTAssertEqual(repeated[sourceKey], initial[sourceKey])
+
+        try reopened.removeProfile(profile.id)
+        fixture.profiles.remove(profile.id)
+        let deletedAgain = await fixture.makeBridge().capture(fallback: repeated)
+        XCTAssertNil(deletedAgain[sourceKey])
+        XCTAssertEqual(deletedAgain[peerKey], initial[peerKey])
     }
 
     func testDeferredProfileDeletionCannotRepublishPortableState() async throws {

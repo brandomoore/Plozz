@@ -588,6 +588,7 @@ public struct RootView: View {
                     }
             }
         }
+        .seerRequestDestination(appState.seerService)
         .signInSyncPermission(
             appState.providerCredentialSync.publicationPermission,
             canPresent: startupPresentationReady && rootPresentation.active == nil
@@ -1273,7 +1274,7 @@ private enum OnboardingPage: Equatable {
     }
 }
 
-private struct OnboardingFlowView: View {
+struct OnboardingFlowView: View {
     let appState: AppState
     let step: OnboardingStep
     let canReturnToApp: Bool
@@ -1326,6 +1327,7 @@ private struct OnboardingFlowView: View {
         .onChange(of: currentPage) { _, newPage in
             enqueue(newPage)
         }
+        .prepareSeerrSetup(appState.seerService)
     }
 
     private var currentPage: OnboardingPage {
@@ -1659,6 +1661,7 @@ private struct ProfileSetupFlowView: View {
         }
         // Explicitly disable implicit fades between stage enum values.
         .transaction { $0.animation = nil }
+        .prepareSeerrSetup(appState.seerService)
     }
 
     private var showsDetour: Bool {

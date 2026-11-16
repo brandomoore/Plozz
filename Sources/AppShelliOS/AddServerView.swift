@@ -278,20 +278,9 @@ struct ManagedServerDiscoverySection: View {
                 Button {
                     onSelect(server)
                 } label: {
-                    HStack(spacing: 12) {
+                    ServerDiscoveryRow(name: Text(verbatim: server.name), address: server.baseURL) {
                         ProviderBrandMark(provider: server.provider, size: 32)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(verbatim: server.name).font(.headline)
-                            Text(verbatim: server.baseURL.absoluteString)
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.forward")
-                            .foregroundStyle(.secondary).accessibilityHidden(true)
                     }
-                    .frame(minHeight: 44)
                 }
                 .disabled(model.phase == .validating)
                 .accessibilityIdentifier("discovered-server-\(server.id)")

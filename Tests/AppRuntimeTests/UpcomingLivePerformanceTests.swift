@@ -63,7 +63,7 @@ final class UpcomingLivePerformanceTests: XCTestCase {
                 ) async throws -> UpcomingFeedSnapshot = { progress in
                     try await UpcomingFeedLoader.load(
                         accounts: [account], watchlist: [], regionCode: "US", interval: interval,
-                        requestedMovies: { [] }, isCurrent: { true },
+                        requestedTitles: { [] }, isCurrent: { true },
                         onProgress: {
                             progress($0)
                             clock.record($0)

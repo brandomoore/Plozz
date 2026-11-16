@@ -240,7 +240,7 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
+        ToolbarItem(placement: cancelSelection == nil ? .topBarLeading : .cancellationAction) {
             if let cancelSelection {
                 Button("Cancel", systemImage: "xmark", action: cancelSelection)
             } else if !hasSidebar && !showsDirectory && !isSearching {

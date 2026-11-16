@@ -933,7 +933,8 @@ struct MainTabView: View {
             discoveredAccountIDs: navigationStyleModel.discoveredAccountIDs,
             disabledLibraryKeys: homeVisibility.visibility.disabledKeys,
             hasDiscoverySearch: seer.isConfigured,
-            hasWatchlistItems: navigationStyleModel.hasWatchlistItems
+            hasWatchlistItems: navigationStyleModel.hasWatchlistItems,
+            hasWatchlistTitles: navigationStyleModel.hasWatchlistTitles
         )
     }
 
@@ -947,6 +948,9 @@ struct MainTabView: View {
     private func refreshWatchlistNavigation() {
         if let hasItems = watchlistHasItems() {
             navigationStyleModel.hasWatchlistItems = hasItems
+            navigationStyleModel.hasWatchlistTitles = upcomingWatchlist().contains {
+                $0.kind == .movie || $0.kind == .series
+            }
         }
     }
 
@@ -1218,10 +1222,10 @@ struct MainTabView: View {
                 detailSnapshotCache: detailSnapshotCache,
                 authenticatedHTTPResolver: authenticatedHTTPResolver,
                 seer: seer,
-                activeSeerrIdentity: activeProfile.seerrRequestIdentity,
-                activeSeerrUserName: activeProfile.seerrUserName,
+                activeSeerrIdentity: seer.requestIdentity,
+                activeSeerrUserName: seer.requestAccountName,
                 confirmAdminRequest: profiles.count > 1
-                    && activeProfile.seerrRequestIdentity == .admin,
+                    && seer.needsAdminConfirmation,
                 homeVisibility: homeVisibility,
                 homeLayoutStore: homeLayoutStore,
                 homeContentStore: homeContentStore,
@@ -1295,10 +1299,10 @@ struct MainTabView: View {
                 detailSnapshotCache: detailSnapshotCache,
                 authenticatedHTTPResolver: authenticatedHTTPResolver,
                 seer: seer,
-                activeSeerrIdentity: activeProfile.seerrRequestIdentity,
-                activeSeerrUserName: activeProfile.seerrUserName,
+                activeSeerrIdentity: seer.requestIdentity,
+                activeSeerrUserName: seer.requestAccountName,
                 confirmAdminRequest: profiles.count > 1
-                    && activeProfile.seerrRequestIdentity == .admin,
+                    && seer.needsAdminConfirmation,
                 homeVisibility: homeVisibility,
                 behavior: subtitleBehaviorModel.settings,
                 style: subtitleStyleModel.style,
@@ -1938,6 +1942,7 @@ struct MainTabView: View {
             resumePrompt: $resumePrompt,
             pendingPlaylistOrigin: $pendingPlaylistOrigin,
             accounts: accounts,
+            metadataLanguage: { (profileSettings.appLanguageModel.language.locale ?? .current).identifier },
             networkFileResolver: networkFileResolver,
             authenticatedHTTPResolver: authenticatedHTTPResolver,
             offlinePlaybackResolver: offlinePlaybackResolver,

@@ -235,6 +235,13 @@ Spanish while another keeps English on the same Apple TV.
 code that formats, compares or sorts text must be handed a locale explicitly
 rather than reading the process-wide one.
 
+At a UIKit string boundary, resolve a `LocalizedStringResource` whose `locale`
+is the current SwiftUI environment locale. Passing `locale` directly to
+`String(localized:locale:)` controls formatting, not the lookup language.
+For example, the Seerr account chooser resolves
+`String(localized: LocalizedStringResource("Request as", locale: locale))`
+when presenting, so its labels follow the active profile's language.
+
 ## Verifying
 
 ```sh

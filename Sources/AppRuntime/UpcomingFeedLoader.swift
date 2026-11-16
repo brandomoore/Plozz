@@ -30,7 +30,7 @@ public enum UpcomingFeedLoader {
             ].map { "\($0.utf8.count):\($0)" }.joined()
         }.sorted().joined(separator: "|")
         return [
-            profileID, sources, String(describing: requestIdentity),
+            "interested-titles-v2", profileID, sources, String(describing: requestIdentity),
             connectionRevision?.uuidString ?? "", language, regionCode ?? "", requestServerURL ?? "",
         ].map { "\($0.utf8.count):\($0)" }.joined()
     }
@@ -46,7 +46,7 @@ public enum UpcomingFeedLoader {
     public static func load(
         accounts: [ResolvedAccount], watchlist: [MediaItem], regionCode: String?,
         interval: DateInterval,
-        requestedMovies: @escaping @Sendable () async throws -> [MediaItem],
+        requestedTitles: @escaping @Sendable () async throws -> [MediaItem],
         isCurrent: @escaping @MainActor @Sendable () -> Bool,
         onProgress: @escaping @MainActor @Sendable ([UpcomingRelease]) -> Void = { _ in },
         schedule: @escaping @Sendable (MediaItem, DateInterval) async throws -> [UpcomingEpisode] = {
@@ -57,22 +57,29 @@ public enum UpcomingFeedLoader {
         }
     ) async throws -> UpcomingFeedSnapshot {
         try await checkScope(isCurrent)
-        let savedMovies = watchlist.filter { $0.kind == .movie }
+        let savedTitles = watchlist.filter { $0.kind == .movie || $0.kind == .series }
         let limiter = ConcurrencyLimiter(limit: 4)
-        @Sendable func resolve(_ titles: [MediaItem], requested: [MediaItem] = []) async throws -> UpcomingFeedSnapshot
+        @Sendable func resolve(
+            _ titles: [MediaItem], watching: Bool = false, requested: [MediaItem] = []
+        ) async throws -> UpcomingFeedSnapshot
         {
+            @Sendable func interests(for item: MediaItem) -> Set<UpcomingInterest> {
+                var interests = Set<UpcomingInterest>()
+                if watching { interests.insert(.watching) }
+                if savedTitles.contains(where: { sameTitle($0, item) }) { interests.insert(.watchlist) }
+                if requested.contains(where: { sameTitle($0, item) }) { interests.insert(.requested) }
+                return interests
+            }
             let batches = await map(titles) { item -> (releases: [UpcomingRelease], failed: Bool) in
                 do {
                     let releases = try await limiter.runUnlessCancelled {
                         try await checkScope(isCurrent)
+                        let interests = interests(for: item)
                         if item.kind == .series {
                             let episodes = try await schedule(item, interval)
-                            return UpcomingReleaseBuilder.episodes(episodes, for: item)
+                            return UpcomingReleaseBuilder.episodes(episodes, for: item, interests: interests)
                         }
                         guard let regionCode else { return [UpcomingRelease]() }
-                        var interests = Set<UpcomingInterest>()
-                        if savedMovies.contains(where: { sameTitle($0, item) }) { interests.insert(.watchlist) }
-                        if requested.contains(where: { sameTitle($0, item) }) { interests.insert(.requested) }
                         let availability = await movieAvailability(item, regionCode)
                         guard availability.releaseDatesAvailable != false else { throw AppError.notFound }
                         return UpcomingReleaseBuilder.movies(
@@ -93,10 +100,12 @@ public enum UpcomingFeedLoader {
             try await checkScope(isCurrent)
             return UpcomingFeedSnapshot(
                 releases: batches.flatMap(\.releases), failedSourceCount: batches.filter(\.failed).count,
-                failedTitleKeys: Set(
-                    zip(titles, batches).compactMap { item, batch in
-                        batch.failed ? UpcomingRelease.titleKey(for: item) : nil
-                    })
+                failedTitleInterests: zip(titles, batches).reduce(into: [:]) { result, pair in
+                    if pair.1.failed {
+                        result[UpcomingRelease.titleKey(for: pair.0), default: []]
+                            .formUnion(interests(for: pair.0))
+                    }
+                }
             )
         }
 
@@ -104,7 +113,7 @@ public enum UpcomingFeedLoader {
             group.addTask {
                 let watched = await map(accounts) { account -> (items: [MediaItem], failed: Bool) in
                     do {
-                        return try await watchedSeries(account: account, isCurrent: isCurrent)
+                        return try await watchingTitles(account: account, isCurrent: isCurrent)
                     } catch is CancellationError {
                         return ([], false)
                     } catch {
@@ -113,7 +122,7 @@ public enum UpcomingFeedLoader {
                     }
                 }
                 try await checkScope(isCurrent)
-                let shows = MediaItemMerger.merge(watched.flatMap(\.items)).sorted {
+                let titles = MediaItemMerger.merge(watched.flatMap(\.items)).sorted {
                     let lhs = schedulePriority($0)
                     let rhs = schedulePriority($1)
                     if lhs != rhs { return lhs < rhs }
@@ -122,7 +131,7 @@ public enum UpcomingFeedLoader {
                     }
                     return $0.stablePresentationID < $1.stablePresentationID
                 }
-                var snapshot = try await resolve(shows)
+                var snapshot = try await resolve(titles, watching: true)
                 snapshot.failedAccountIDs = Set(
                     zip(accounts, watched).compactMap { account, result in
                         result.failed ? account.account.id : nil
@@ -134,7 +143,7 @@ public enum UpcomingFeedLoader {
                 var requests: [MediaItem] = []
                 var requestsFailed = false
                 do {
-                    requests = try await requestedMovies().filter { $0.kind == .movie }
+                    requests = try await requestedTitles().filter { $0.kind == .movie || $0.kind == .series }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -142,7 +151,7 @@ public enum UpcomingFeedLoader {
                     requestsFailed = true
                 }
                 try await checkScope(isCurrent)
-                var snapshot = try await resolve(MediaItemMerger.merge(savedMovies + requests), requested: requests)
+                var snapshot = try await resolve(MediaItemMerger.merge(savedTitles + requests), requested: requests)
                 snapshot.requestsFailed = requestsFailed
                 if requestsFailed { snapshot.failedSourceCount += 1 }
                 return snapshot
@@ -152,7 +161,9 @@ public enum UpcomingFeedLoader {
                 combined.releases += snapshot.releases
                 combined.failedSourceCount += snapshot.failedSourceCount
                 combined.failedAccountIDs.formUnion(snapshot.failedAccountIDs)
-                combined.failedTitleKeys.formUnion(snapshot.failedTitleKeys)
+                for (key, interests) in snapshot.failedTitleInterests {
+                    combined.failedTitleInterests[key, default: []].formUnion(interests)
+                }
                 combined.requestsFailed = combined.requestsFailed || snapshot.requestsFailed
             }
             try await checkScope(isCurrent)
@@ -177,7 +188,7 @@ public enum UpcomingFeedLoader {
         }
     }
 
-    private static func watchedSeries(
+    private static func watchingTitles(
         account: ResolvedAccount,
         isCurrent: @escaping @MainActor @Sendable () -> Bool
     ) async throws -> (items: [MediaItem], failed: Bool) {
@@ -226,6 +237,10 @@ public enum UpcomingFeedLoader {
             let continuing = try await account.provider.continueWatching(
                 limit: .max, includeSeriesRecency: false
             )
+            for var movie in continuing where movie.kind == .movie {
+                movie.sourceAccountID = account.account.id
+                series.append(movie)
+            }
             var known = Set(series.map(\.id))
             for episode in continuing where episode.kind == .episode {
                 guard let id = episode.seriesID, known.insert(id).inserted else { continue }

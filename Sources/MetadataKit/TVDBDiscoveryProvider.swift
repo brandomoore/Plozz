@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 
 /// Public catalog discovery using the bundled project's existing v4 login.
@@ -24,7 +25,7 @@ public struct TVDBDiscoveryProvider: HeroDiscoveryProviding {
     public var isEnabled: Bool { config.isConfigured }
 
     public var cacheIdentifier: String {
-        let configuration = "\(config.apiBaseURL.absoluteString)\n\(config.apiKey ?? "")"
+        let configuration = "text-language-v2\n\(config.apiBaseURL.absoluteString)\n\(config.apiKey ?? "")"
         return "tvdb:" + MetadataDiscoveryHTTPClient.configurationFingerprint(configuration)
     }
 
@@ -62,9 +63,52 @@ public struct TVDBDiscoveryProvider: HeroDiscoveryProviding {
                 let item = feed[index]
                 guard seen.insert(item.id).inserted else { continue }
                 result.append(item)
-                if result.count == request.limit { return result }
+                if result.count == request.limit {
+                    return try await localized(result, language: request.language)
+                }
             }
         }
+        return try await localized(result, language: request.language)
+    }
+
+    private func localized(_ items: [MediaItem], language: String) async throws -> [MediaItem] {
+        guard !items.isEmpty, !LanguageMatch.matches(language, "en") else { return items }
+        var result = items
+        let client = client
+        @Sendable func translation(at index: Int) async -> (Int, TVDBMetadata?) {
+            let item = items[index]
+            guard !Task.isCancelled, let id = item.providerIDs.providerID(.tvdb) else { return (index, nil) }
+            return (index, await client.translatedText(id: id, isMovie: item.kind == .movie, language: language))
+        }
+        // Translation must not consume the whole discovery deadline and discard a
+        // usable feed. Keep original text for requests that miss this smaller budget.
+        await withTaskGroup(of: (Int, TVDBMetadata?)?.self) { group in
+            group.addTask {
+                do { try await Task.sleep(for: .seconds(4)) } catch { return nil }
+                return nil
+            }
+            var next = min(4, items.count)
+            var completed = 0
+            for index in 0..<next {
+                group.addTask { await translation(at: index) }
+            }
+            while let response = await group.next(), let (index, text) = response {
+                if let title = text?.title { result[index].title = title }
+                if let overview = text?.overview { result[index].overview = overview }
+                completed += 1
+                if completed == items.count { break }
+                if next < items.count {
+                    let index = next
+                    next += 1
+                    group.addTask { await translation(at: index) }
+                }
+            }
+            group.cancelAll()
+            if completed < items.count, !Task.isCancelled {
+                PlozzLog.discovery.error("TheTVDB translation deadline reached; retaining available discovery text.")
+            }
+        }
+        try Task.checkCancellation()
         return result
     }
 
@@ -107,34 +151,32 @@ public struct TVDBDiscoveryProvider: HeroDiscoveryProviding {
             if countries == nil {
                 let data = try await client.discoveryData(path: "countries")
                 let response: Response<LocaleRecord> = try TVDBDiscoveryProvider.decode(data)
-                _ = try Self.identifier(region, in: response.data, fallback: "usa")
+                _ = try Self.identifier(TVDBLocale.countryIdentifier(region), in: response.data, fallback: "usa", country: true)
                 countries = response.data
             }
             if languages == nil {
                 let data = try await client.discoveryData(path: "languages")
                 let response: Response<LocaleRecord> = try TVDBDiscoveryProvider.decode(data)
-                _ = try Self.identifier(Self.baseLanguage(language), in: response.data, fallback: "eng")
+                _ = try Self.identifier(TVDBLocale.languageIdentifier(language), in: response.data, fallback: "eng")
                 languages = response.data
             }
             return (
-                try Self.identifier(region, in: countries ?? [], fallback: "usa"),
-                try Self.identifier(Self.baseLanguage(language), in: languages ?? [], fallback: "eng")
+                try Self.identifier(TVDBLocale.countryIdentifier(region), in: countries ?? [], fallback: "usa", country: true),
+                try Self.identifier(TVDBLocale.languageIdentifier(language), in: languages ?? [], fallback: "eng")
             )
         }
 
-        private static func baseLanguage(_ value: String) -> String {
-            value.replacingOccurrences(of: "_", with: "-").split(separator: "-").first
-                .map(String.init) ?? ""
-        }
-
-        private static func identifier(_ raw: String, in records: [LocaleRecord], fallback: String) throws -> String {
+        private static func identifier(
+            _ raw: String, in records: [LocaleRecord], fallback: String, country: Bool = false
+        ) throws -> String {
             let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let valid = records.filter {
-                guard let id = $0.id, id.utf8.count == 3 else { return false }
+                guard let id = $0.id, (2...4).contains(id.utf8.count) else { return false }
                 return id.lowercased().utf8.allSatisfy { (97...122).contains($0) }
             }
             let match = valid.first {
                 $0.id?.lowercased() == value || $0.shortCode?.lowercased() == value
+                    || (country && $0.id.map { TVDBLocale.countryIdentifier($0) == value } == true)
             } ?? valid.first { $0.id?.lowercased() == fallback }
             guard let id = match?.id else { throw MetadataDiscoveryHTTPError.invalidResponse }
             return id.lowercased()
