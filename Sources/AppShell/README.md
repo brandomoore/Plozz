@@ -261,6 +261,12 @@ registry.
   bottom-tab backgrounds retain their existing treatment. Search's collapsing
   title row does not clip the profile control's native pressed expansion.
 
+- **Detail navigation uses one top-edge treatment.** The detail page explicitly
+  hides the navigation-bar background across loading and loaded states, while
+  retaining the native scroll-edge effect and toolbar controls. Do not rely on
+  Home's toolbar preference being inherited during a push: the destination must
+  own the same appearance before and after the transition lands.
+
 - **Mac rails fit complete cards plus a next-card preview.** Home, library
   recommendations, related titles, extras, episodes, and cast derive widths from
   their actual content viewport. `DesktopMediaRailLayout` chooses a whole-card
