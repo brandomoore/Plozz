@@ -48,6 +48,26 @@ final class HomeHeroInteractionTests: XCTestCase {
         assertDetail("Details for series from emby")
     }
 
+    func testTwoSlideCarouselPagesBackwardAndForward() {
+        let artwork = app.buttons["home-hero-artwork-detail"]
+        XCTAssertTrue(artwork.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(artwork.value as? String, "Hero Movie")
+        for (startX, endX, title) in [
+            (0.2, 0.8, "Hero Episode"),
+            (0.2, 0.8, "Hero Movie"),
+            (0.8, 0.2, "Hero Episode"),
+            (0.8, 0.2, "Hero Movie")
+        ] {
+            let start = artwork.coordinate(withNormalizedOffset: CGVector(dx: startX, dy: 0.3))
+            let end = artwork.coordinate(withNormalizedOffset: CGVector(dx: endX, dy: 0.3))
+            start.press(forDuration: 0.05, thenDragTo: end)
+            let paged = expectation(for: NSPredicate(format: "value == %@", title), evaluatedWith: artwork)
+            wait(for: [paged], timeout: 5)
+            XCTAssertTrue(artwork.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+            XCTAssertFalse(app.navigationBars.buttons.firstMatch.exists)
+        }
+    }
+
     func testOpeningEpisodeShowsSeededDetailWhileItsShowLoads() {
         app.terminate()
         app.launchArguments += ["--hero-native-chrome", "--hero-series-loading"]

@@ -1750,7 +1750,8 @@ struct PlozziOSHomeHeroCarousel: View {
     /// finger has moved past a small threshold stops a slow horizontal wiggle
     /// from swapping the incoming artwork/text between the previous and next
     /// slide (the "competing options" flicker).
-    @State private var dragTargetID: String?
+    // Two slides share the same next/previous item, so identity cannot encode direction.
+    @State private var dragTarget: (id: String, forward: Bool)?
     @State private var rootItems: [String: HeroResolutionCacheEntry] = [:]
     @State private var playTargets: [String: HeroResolutionCacheEntry] = [:]
     @State private var transitionTargetID: String?
@@ -1808,7 +1809,7 @@ struct PlozziOSHomeHeroCarousel: View {
             // enters from the opposite edge and settles into place by the same
             // amount — both tracking the finger via `progress`, in either direction.
             let slideTravel = proxy.size.width * 0.35
-            let lockedForward = dragTargetItem.flatMap(isForwardTarget)
+            let lockedForward = dragTarget?.forward
             let slideDir: CGFloat = dragOffset == 0
                 ? transitionDirection
                 : (lockedForward.map { $0 ? -1 : 1 } ?? (dragOffset < 0 ? -1 : 1))
@@ -1935,8 +1936,9 @@ struct PlozziOSHomeHeroCarousel: View {
                 PlozziOSHorizontalHeroDragGesture(
                     isEnabled: isActive && !transitionInProgress,
                     onChanged: { translation in
-                        if dragTargetID == nil, abs(translation.width) >= 8, items.count > 1 {
-                            dragTargetID = adjacentItem(forward: translation.width < 0)?.id
+                        if dragTarget == nil, abs(translation.width) >= 8,
+                           let target = adjacentItem(forward: translation.width < 0) {
+                            dragTarget = (target.id, translation.width < 0)
                         }
                         dragOffset = translation.width
                     },
@@ -2275,16 +2277,8 @@ struct PlozziOSHomeHeroCarousel: View {
         if let transitionTargetID {
             return items.first { $0.id == transitionTargetID }
         }
-        guard dragOffset != 0, items.count > 1, let dragTargetID else { return nil }
-        return items.first { $0.id == dragTargetID }
-    }
-
-    private func isForwardTarget(_ item: MediaItem) -> Bool? {
-        guard items.count > 1,
-              let targetIndex = items.firstIndex(where: { $0.id == item.id }),
-              let currentIndex = items.firstIndex(where: { $0.id == selectedItemID })
-        else { return nil }
-        return targetIndex == (currentIndex + 1) % items.count
+        guard dragOffset != 0, items.count > 1, let dragTarget else { return nil }
+        return items.first { $0.id == dragTarget.id }
     }
 
     /// Whether this item's hero backdrop is already decoded and resident.
@@ -2474,13 +2468,13 @@ struct PlozziOSHomeHeroCarousel: View {
             || abs(projectedWidth) >= stageWidth * 0.28
         let forward = translation.width < 0
         let target = dragTargetItem
-        let directionMatches = target.flatMap(isForwardTarget).map { $0 == forward } ?? false
+        let directionMatches = dragTarget?.forward == forward
         guard abs(translation.width) > abs(translation.height) * 1.2,
               shouldCommit, let target, directionMatches else {
             withAnimation(.easeOut(duration: 0.2)) {
                 dragOffset = 0
             }
-            dragTargetID = nil
+            dragTarget = nil
             return
         }
         beginTransition(
@@ -2500,7 +2494,7 @@ struct PlozziOSHomeHeroCarousel: View {
             return
         }
         transitionInProgress = true
-        transitionDirection = isForwardTarget(target).map { $0 ? -1 : 1 } ?? (forward ? -1 : 1)
+        transitionDirection = forward ? -1 : 1
         transitionTargetID = target.id
         HeroArtDiagnostics.emit(
             "slide BEGIN from=\(currentItem?.title ?? "?") to=\(target.title) "
@@ -2540,7 +2534,7 @@ struct PlozziOSHomeHeroCarousel: View {
                 transitionTargetID = nil
                 transitionDirection = 0
                 dragOffset = 0
-                dragTargetID = nil
+                dragTarget = nil
                 foregroundVisible = false
             }
             HeroArtDiagnostics.emit(

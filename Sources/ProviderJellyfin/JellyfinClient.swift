@@ -275,8 +275,8 @@ public struct JellyfinClient: Sendable {
     func nativeHomeItems(
         userID: String, sectionID: String, limit: Int, parentID: String?
     ) async throws -> [BaseItemDto] {
-        if limit > 100 {
-            return try await exhaustiveItems(limit: limit) { startIndex, pageSize in
+        if limit == Int.max {
+            return try await exhaustiveItems { startIndex, pageSize in
                 try await nativeHomeItemsPage(
                     userID: userID, sectionID: sectionID, startIndex: startIndex,
                     limit: pageSize, parentID: parentID
@@ -402,8 +402,8 @@ public struct JellyfinClient: Sendable {
     func nextUpItems(
         userID: String, limit: Int, parentID: String? = nil, seriesID: String? = nil
     ) async throws -> [BaseItemDto] {
-        if limit == Int.max {
-            return try await exhaustiveItems { startIndex, pageSize in
+        if limit > 100 {
+            return try await exhaustiveItems(limit: limit) { startIndex, pageSize in
                 try await nextUpItemsPage(
                     userID: userID, startIndex: startIndex, limit: pageSize,
                     parentID: parentID, seriesID: seriesID
