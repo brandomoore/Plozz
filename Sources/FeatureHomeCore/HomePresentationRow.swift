@@ -48,6 +48,19 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// Whether the "cards per row" setting caps this row. Continue Watching (and Next
+    /// Up, which merges into it), Coming Soon and the Libraries tiles keep every card.
+    static func limitsCards(_ choice: HomeRowChoice) -> Bool {
+        switch choice.id {
+        case .global(.continueWatching), .global(.comingSoon), .libraries, .liveTV: return false
+        default: break
+        }
+        if let kind = choice.serverRow?.section.kind, kind == .continueWatching || kind == .nextUp {
+            return false
+        }
+        return choice.id.libraryKind != .nextUp
+    }
+
     public static func hasLiveTVRows(
         _ liveTV: HomeLiveTVSnapshot, visibility: HomeLibraryVisibility
     ) -> Bool {
@@ -251,9 +264,14 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         return ordered.compactMap { byID[$0] }.map { entry in
             let name = visibility.homeRowName(for: entry.id)
             let choice = name.map { entry.choice.renamed(to: $0) } ?? entry.choice
+            let limit = Self.limitsCards(entry.choice) ? visibility.cardsPerRow.count : nil
             switch entry.source {
             case var .home(row):
                 row.customTitle = name
+                if let limit, row.items.count > limit {
+                    row.items = Array(row.items.prefix(limit))
+                    row.hasMore = true
+                }
                 return Self(choice: choice, source: .home(row))
             case .liveTV:
                 return Self(choice: choice, source: entry.source)
@@ -267,6 +285,10 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
                         isHomeDefault: section.isHomeDefault, isLegacyHomeDefault: section.isLegacyHomeDefault,
                         browseID: section.browseID, hasMore: section.hasMore
                     )
+                }
+                if let limit, section.items.count > limit {
+                    section.items = Array(section.items.prefix(limit))
+                    section.hasMore = true
                 }
                 let issue = row.issue.map {
                     HomeSectionIssue(

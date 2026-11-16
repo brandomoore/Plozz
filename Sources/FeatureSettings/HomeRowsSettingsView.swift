@@ -184,6 +184,17 @@ public struct HomeRowsSettingsView: View {
             .accessibilityIdentifier("home-sections-settings")
             .settingsSearchAnchor("home-rows")
             HomeEditorLink {
+                HomeCardsPerRowSettingsView(visibility: visibility)
+                    .environment(hero)
+            } label: {
+                HomeEditorRowLabel(
+                    title: Text("Cards per row"),
+                    value: Text(verbatim: "\(visibility.cardsPerRow.count)")
+                )
+            }
+            .accessibilityIdentifier("home-cards-per-row")
+            .settingsSearchAnchor("home-cards-per-row")
+            HomeEditorLink {
                 HomeFilteringSettingsView(visibility: visibility)
                     .environment(hero)
             } label: {
@@ -204,6 +215,32 @@ public struct HomeRowsSettingsView: View {
         #else
         return hero.settings.isEnabled ? nil : Text("Off")
         #endif
+    }
+}
+
+/// How many titles each Home row shows before its See all card. Continue Watching
+/// and Coming Soon always show everything they have.
+struct HomeCardsPerRowSettingsView: View {
+    let visibility: HomeLibraryVisibilityModel
+
+    var body: some View {
+        HomeEditorPage(title: Text("Cards per row"), showsHeader: true) {
+            SettingsSectionGroup("Titles shown before See all") {
+                Picker("Cards per row", selection: Binding(
+                    get: { visibility.cardsPerRow },
+                    set: { visibility.setCardsPerRow($0) }
+                )) {
+                    ForEach(HomeCardsPerRow.allCases, id: \.self) { option in
+                        Text(verbatim: "\(option.count)").tag(option)
+                    }
+                }
+                .pickerStyle(.inline)
+                .accessibilityIdentifier("home-cards-per-row-picker")
+            }
+            Text("Continue Watching and Coming Soon aren't limited.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

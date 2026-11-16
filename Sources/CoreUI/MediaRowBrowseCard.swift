@@ -8,7 +8,9 @@ public struct MediaRowBrowseCard: View {
     private let style: PosterCardView.Style
     private let showsSeriesArtwork: Bool
     private let featuredSize: CGSize?
+    private let posters: [MediaItem]
     private let onFocus: () -> Void
+    private let onFocusChange: ((Bool) -> Void)?
     private let action: () -> Void
     @PlozzCardFocus private var focused: Bool
     @Environment(\.plozzMetrics) private var metrics
@@ -23,13 +25,16 @@ public struct MediaRowBrowseCard: View {
 
     public init(
         width: CGFloat, style: PosterCardView.Style = .poster, showsSeriesArtwork: Bool = false,
-        featuredSize: CGSize? = nil, onFocus: @escaping () -> Void = {}, action: @escaping () -> Void
+        featuredSize: CGSize? = nil, posters: [MediaItem] = [], onFocus: @escaping () -> Void = {},
+        onFocusChange: ((Bool) -> Void)? = nil, action: @escaping () -> Void
     ) {
         self.width = width
         self.style = style
         self.showsSeriesArtwork = showsSeriesArtwork
         self.featuredSize = featuredSize
+        self.posters = posters
         self.onFocus = onFocus
+        self.onFocusChange = onFocusChange
         self.action = action
     }
 
@@ -57,7 +62,10 @@ public struct MediaRowBrowseCard: View {
             .frame(width: width)
             .accessibilityLabel(Text("See all"))
             .accessibilityIdentifier("home-row-see-all")
-            .onChange(of: focused) { _, value in if value { onFocus() } }
+            .onChange(of: focused) { _, value in
+                if value { onFocus() }
+                onFocusChange?(value)
+            }
     }
 
     @ViewBuilder
@@ -129,18 +137,105 @@ public struct MediaRowBrowseCard: View {
         }
     }
 
+    /// With posters: a dark card holding a 3×3 grid of the row's own posters and a bold
+    /// chevron. Without them (Featured rows): a soft surface with an arrow badge.
     private var artwork: some View {
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(palette.fill)
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        return shape
+            .fill(LinearGradient(
+                colors: posters.isEmpty
+                    ? [palette.cardSurface, palette.fill]
+                    : [Color(white: 0.17), Color(white: 0.06)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            ))
+            .overlay {
+                shape.fill(RadialGradient(
+                    colors: [Color.white.opacity(focused ? 0.12 : 0.05), .clear],
+                    center: .topLeading, startRadius: 0, endRadius: 360
+                ))
+            }
+            .overlay { shape.strokeBorder(palette.cardBorder, lineWidth: 1.5) }
             .overlay { label }
     }
 
+    @ViewBuilder
     private var label: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "chevron.forward").font(.title)
-            if !showsCaption { Text("See all").font(.headline) }
+        if posters.isEmpty {
+            badgeLabel
+        } else {
+            posterGridLabel
+        }
+    }
+
+    /// Nine of the row's posters in a grid, with a chevron beside them.
+    private var posterGridLabel: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let height = geometry.size.height
+            let gap = width * 0.03
+            // Squarer than a poster, so the grid fills a narrow card; the picture is cropped.
+            let tileAspect: CGFloat = 0.8
+            let fitByWidth = (width * 0.70 - 2 * gap) / 3
+            let fitByHeight = ((height * 0.82 - 2 * gap) / 3) * tileAspect
+            let tileWidth = min(fitByWidth, fitByHeight)
+            let tileHeight = tileWidth / tileAspect
+            HStack(spacing: width * 0.04) {
+                VStack(spacing: gap) {
+                    ForEach(0..<3, id: \.self) { row in
+                        HStack(spacing: gap) {
+                            ForEach(0..<3, id: \.self) { column in
+                                posterTile(index: row * 3 + column)
+                                    .frame(width: tileWidth, height: tileHeight)
+                            }
+                        }
+                    }
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: tileWidth * 1.1, weight: .heavy))
+                    .foregroundStyle(.white.opacity(focused ? 1 : 0.88))
+                    .frame(width: tileWidth * 0.62)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .animation(.easeOut(duration: 0.2), value: focused)
+    }
+
+    @ViewBuilder
+    private func posterTile(index: Int) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        if posters.indices.contains(index) {
+            let item = posters[index]
+            FallbackAsyncImage(
+                references: item.artworkReferences(for: item.kind == .episode ? .seriesPoster : .poster),
+                variant: .posterPreview,
+                content: { image in image.resizable().aspectRatio(contentMode: .fill) },
+                placeholder: { Color.white.opacity(0.14) }
+            )
+            .clipShape(shape)
+            .overlay { shape.strokeBorder(.white.opacity(0.14), lineWidth: 1) }
+        } else {
+            shape.fill(.white.opacity(0.1))
+        }
+    }
+
+    private var badgeLabel: some View {
+        VStack(spacing: 18) {
+            ZStack {
+                Circle()
+                    .fill(focused ? palette.accent : palette.primaryText.opacity(0.16))
+                Circle()
+                    .strokeBorder(palette.primaryText.opacity(focused ? 0 : 0.28), lineWidth: 1.5)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 38, weight: .bold))
+                    .foregroundStyle(focused ? palette.onAccent : palette.primaryText)
+            }
+            .frame(width: 92, height: 92)
+            if !showsCaption {
+                Text("See all").font(.headline.weight(.semibold))
+            }
         }
         .foregroundStyle(palette.primaryText)
+        .animation(.easeOut(duration: 0.2), value: focused)
     }
 
     private var caption: some View {

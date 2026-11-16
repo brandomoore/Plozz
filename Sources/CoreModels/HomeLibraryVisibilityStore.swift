@@ -382,6 +382,14 @@ public final class HomeLibraryVisibilityModel {
         store.save(visibility)
     }
 
+    public var cardsPerRow: HomeCardsPerRow { visibility.cardsPerRow }
+
+    public func setCardsPerRow(_ count: HomeCardsPerRow) {
+        guard visibility.cardsPerRow != count else { return }
+        visibility.cardsPerRow = count
+        store.save(visibility)
+    }
+
     public func setHideWatchedRecentlyAdded(_ hide: Bool) {
         guard visibility.hideWatchedRecentlyAdded != hide else { return }
         visibility.hideWatchedRecentlyAdded = hide

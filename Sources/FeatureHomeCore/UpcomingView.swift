@@ -511,6 +511,7 @@
                     onSelect: { navigate?($0) }
                 )
                 .browsingRow(onSeeAll)
+                .withoutLeadingBrowseCard()
                 .environment(\.plozzArtworkArea, .continueWatching)
                 .environment(\.plozzLandscapeTitleLogo, usesTitleLogo ? .on : .off)
                 .environment(\.plozzTitleLogoBackdrop, usesTitleLogo)

@@ -70,6 +70,9 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
     /// On by default for every layout, independently of the saved row arrangement.
     public var mergeNextUpIntoContinueWatching: Bool
     public var hideWatchedRecentlyAdded: Bool
+    /// How many titles each Home row shows, not counting its See all cards.
+    /// Continue Watching and Coming Soon are not limited by it.
+    public var cardsPerRow: HomeCardsPerRow
 
     public var mergesNextUpRows: Bool {
         mergeNextUpIntoContinueWatching && isGlobalRowEnabled(.continueWatching)
@@ -144,6 +147,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         mergeNextUpIntoContinueWatching: Bool = true,
         collectionSections: [CollectionSection] = [],
         hideWatchedRecentlyAdded: Bool = false,
+        cardsPerRow: HomeCardsPerRow = .default,
         dismissedEmptyHomeRows: Set<HomeRowID> = []
     ) {
         self.mergeLibrariesOnHome = mergeLibrariesOnHome
@@ -160,6 +164,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         self.mergeNextUpIntoContinueWatching = mergeNextUpIntoContinueWatching
         self.collectionSections = collectionSections
         self.hideWatchedRecentlyAdded = hideWatchedRecentlyAdded
+        self.cardsPerRow = cardsPerRow
         self.dismissedEmptyHomeRows = dismissedEmptyHomeRows
     }
 
@@ -396,6 +401,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         case collectionSections
         case mergeNextUpIntoContinueWatching
         case hideWatchedRecentlyAdded
+        case cardsPerRow
         case dismissedEmptyHomeRows
         case homeRowNames
     }
@@ -445,6 +451,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         self.hideWatchedRecentlyAdded = try container.decodeIfPresent(
             Bool.self, forKey: .hideWatchedRecentlyAdded
         ) ?? false
+        self.cardsPerRow = try container.decodeIfPresent(HomeCardsPerRow.self, forKey: .cardsPerRow) ?? .default
         self.dismissedEmptyHomeRows = try container.decodeIfPresent(
             Set<HomeRowID>.self, forKey: .dismissedEmptyHomeRows
         ) ?? []
@@ -473,6 +480,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         if !collectionSections.isEmpty { try container.encode(collectionSections, forKey: .collectionSections) }
         try container.encode(mergeNextUpIntoContinueWatching, forKey: .mergeNextUpIntoContinueWatching)
         try container.encode(hideWatchedRecentlyAdded, forKey: .hideWatchedRecentlyAdded)
+        try container.encode(cardsPerRow, forKey: .cardsPerRow)
         if !dismissedEmptyHomeRows.isEmpty {
             try container.encode(
                 dismissedEmptyHomeRows.sorted { $0.presentationID < $1.presentationID },
@@ -484,6 +492,17 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
 
 public enum ContinueWatchingCardLayout: String, CaseIterable, Codable, Sendable {
     case landscape, portrait
+}
+
+/// The number of titles a Home row shows before its See all card.
+public enum HomeCardsPerRow: Int, CaseIterable, Codable, Sendable {
+    case eleven = 11
+    case sixteen = 16
+    case twentyOne = 21
+
+    public static let `default`: Self = .twentyOne
+
+    public var count: Int { rawValue }
 }
 
 public enum ContinueWatchingPlaybackDetails: String, CaseIterable, Codable, Sendable {
