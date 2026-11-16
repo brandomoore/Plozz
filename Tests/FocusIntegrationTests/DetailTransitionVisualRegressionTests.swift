@@ -558,7 +558,14 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
     }
 
     func testBorrowedTrailerTransportCannotControlAReplacementItem() async throws {
-        try await withTrailerFixture { model, video in
+        let directory = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "Fixtures", withExtension: nil
+        )).appendingPathComponent("active-picture-hls")
+        let server = try SubtitleFixtureServer(directory: directory)
+        defer { server.stop() }
+        let port = try await server.start()
+        let video = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/active-picture.m3u8"))
+        try await withTrailerFixture(videoURL: video) { model, video in
             let controller = model.trailer
             controller.play(itemID: "hero", resolvedURL: video, muted: true)
             controller.claimSurface(.detail, itemID: "hero")
@@ -1196,12 +1203,19 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
 
     private func withTrailerFixture(
         videoFrames: Int = 30,
+        videoURL: URL? = nil,
         _ run: (TransitionShowModel, URL) async throws -> Void
     ) async throws {
         let scene = try await activeScene()
         let provider = TransitionShowProvider(artwork: try await seedArtwork())
         let model = TransitionShowModel(provider: provider)
-        let host = UIHostingController(rootView: TransitionShowRoot(model: model))
+        let host = UIHostingController(rootView:
+            TransitionShowRoot(model: model)
+                .overlay {
+                    HeroTrailerVideoLayer(controller: model.trailer, role: .detail)
+                        .frame(width: 160, height: 96)
+                }
+        )
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         window.rootViewController = host
@@ -1212,7 +1226,12 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        let video = try await makeTrailerVideo(frameCount: videoFrames)
+        let video: URL
+        if let videoURL {
+            video = videoURL
+        } else {
+            video = try await makeTrailerVideo(frameCount: videoFrames)
+        }
         try await run(model, video)
     }
 
@@ -1290,18 +1309,13 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
     }
 
     private func assertProductionHeroEntrance(episodeContext: Bool, zoomEnabled: Bool = true) async throws {
-        let settingsStore = MetadataProviderSettingsStore()
-        let originalSettings = settingsStore.load()
-        var settings = originalSettings
-        settings.preferOnlineArtwork = false
-        settingsStore.save(settings)
-        defer { settingsStore.save(originalSettings) }
         let scene = try await activeScene()
         let artwork = try await seedArtwork()
         let provider = TransitionShowProvider(artwork: artwork, episodeCount: 12)
         let model = TransitionShowModel(provider: provider)
         let host = TransitionShowController(rootView: TransitionShowRoot(
-            model: model, directEntry: episodeContext, zoomEnabled: zoomEnabled
+            model: model, directEntry: episodeContext,
+            artworkSettings: ArtworkSettings(preference: .library), zoomEnabled: zoomEnabled
         ))
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -1329,13 +1343,13 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         system.requestFocusUpdate(to: host)
         system.updateFocusIfNeeded()
         try await waitUntil { system.focusedItem === source }
+        try await waitUntil { host.settledFocusItemID == ObjectIdentifier(source) }
         host.target = nil
-        DetailTransitionNavigation.prepare(
-            for: episodeContext ? provider.episode : provider.show, in: window, source: nil
-        )
+        let destination = episodeContext ? provider.episode : provider.show
+        DetailTransitionNavigation.prepare(for: destination, in: window, source: nil)
         let cover = window.subviews.compactMap { $0 as? DetailTransitionOverlay }.first
         XCTAssertEqual(cover != nil, zoomEnabled)
-        model.path.append(1)
+        withCinematicDetailNavigation(for: destination) { model.path.append(1) }
         try await waitUntil {
             model.detail.state.value?.childrenLoaded == true && self.verticalScroll(in: host.view) != nil
         }
@@ -2928,6 +2942,7 @@ private final class TransitionShowModel {
                 ExternalTitleMetadata(enrichment: MetadataEnrichment(),
                                       availability: ExternalTitleAvailability(regionCode: region))
             },
+            metadataLanguage: "en_US",
             sourceAccountID: "transition-fixture",
             onlineTrailerResolver: { _ in [] },
             playableVideoIDResolver: { _ in nil },
@@ -3050,6 +3065,8 @@ private struct TransitionShowRoot: View {
             }
         }
         .tabViewStyle(.tabBarOnly)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .environment(\.scenePhase, .active)
         .environment(\.themePalette, .dark)
         .environment(\.gradientBackgroundsEnabled, model.gradientEnabled)
         .environment(\.plozzArtworkSettings, artworkSettings)
