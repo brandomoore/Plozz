@@ -270,6 +270,7 @@
 
     private struct UpcomingFeedStatus: View {
         let model: UpcomingFeedModel
+        @Environment(\.plozzSeerConnected) private var seerConnected
 
         var body: some View {
             if model.isLoading {
@@ -277,8 +278,6 @@
             } else if model.releases.isEmpty, model.failedSourceCount > 0 {
                 ContentUnavailableView {
                     Label("Couldn't load releases", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text("Try again to check for upcoming episodes and movie releases.")
                 } actions: {
                     Button("Retry") { model.refreshRevision += 1 }
                         .accessibilityIdentifier("upcoming.retry")
@@ -287,8 +286,6 @@
             } else if !model.releases.isEmpty, model.visibleReleases.isEmpty {
                 ContentUnavailableView {
                     Label("No matching releases", systemImage: "line.3.horizontal.decrease")
-                } description: {
-                    Text("Change your filters or restore hidden titles to see more releases.")
                 } actions: {
                     if model.filters != UpcomingFilters() {
                         Button("Reset filters") { model.filters = UpcomingFilters() }
@@ -308,8 +305,9 @@
             } else if model.visibleReleases.isEmpty {
                 ContentUnavailableView(
                     "Nothing upcoming yet", systemImage: "calendar",
-                    description: Text(
-                        "New episodes from shows you've watched and releases for movies you've saved or requested appear here. Live TV schedules are in the guide.")
+                    description: seerConnected
+                        ? Text("Shows and movies you watch, watchlist, or request appear here.")
+                        : Text("Shows and movies you watch or watchlist appear here.")
                 )
             }
         }

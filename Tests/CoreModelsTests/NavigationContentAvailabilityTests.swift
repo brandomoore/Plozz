@@ -85,7 +85,7 @@ final class NavigationContentAvailabilityTests: XCTestCase {
         }
     }
 
-    func testUpcomingUsesEligibleProfileSourcesNotLiveChannelsOrUnwatchedSavedShows() {
+    func testUpcomingUsesEligibleProfileSourcesAndSavedTitlesNotUnrelatedContent() {
         let iptv = account("iptv", provider: .iptv)
         for kind in [MediaItemKind.movie, .series, .folder, .unknown] {
             XCTAssertTrue(availability(accounts: [iptv], libraries: [library("iptv", kind: kind)])
@@ -100,7 +100,7 @@ final class NavigationContentAvailabilityTests: XCTestCase {
             accounts: [iptv], libraries: [library("iptv")], disabled: ["iptv:movies"]
         ).hasUpcomingContent)
         XCTAssertFalse(availability(accounts: [iptv], watchlist: true).hasUpcomingContent)
-        XCTAssertTrue(availability(accounts: [iptv], watchlist: true, movies: true).hasUpcomingContent)
+        XCTAssertTrue(availability(accounts: [iptv], watchlist: true, titles: true).hasUpcomingContent)
         XCTAssertTrue(availability(accounts: [iptv], discovery: true).hasUpcomingContent)
     }
 
@@ -344,12 +344,12 @@ final class NavigationContentAvailabilityTests: XCTestCase {
     private func availability(
         accounts: [Account] = [], libraries: [AggregatedLibrary] = [],
         known: Set<String> = [], disabled: Set<String> = [],
-        discovery: Bool = false, watchlist: Bool = false, movies: Bool = false
+        discovery: Bool = false, watchlist: Bool = false, titles: Bool = false
     ) -> NavigationContentAvailability {
         NavigationContentAvailability(
             accounts: accounts, libraries: libraries, discoveredAccountIDs: known,
             disabledLibraryKeys: disabled, hasDiscoverySearch: discovery, hasWatchlistItems: watchlist,
-            hasWatchlistMovies: movies
+            hasWatchlistTitles: titles
         )
     }
 

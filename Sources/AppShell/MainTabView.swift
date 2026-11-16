@@ -934,7 +934,7 @@ struct MainTabView: View {
             disabledLibraryKeys: homeVisibility.visibility.disabledKeys,
             hasDiscoverySearch: seer.isConfigured,
             hasWatchlistItems: navigationStyleModel.hasWatchlistItems,
-            hasWatchlistMovies: navigationStyleModel.hasWatchlistMovies
+            hasWatchlistTitles: navigationStyleModel.hasWatchlistTitles
         )
     }
 
@@ -948,7 +948,9 @@ struct MainTabView: View {
     private func refreshWatchlistNavigation() {
         if let hasItems = watchlistHasItems() {
             navigationStyleModel.hasWatchlistItems = hasItems
-            navigationStyleModel.hasWatchlistMovies = upcomingWatchlist().contains { $0.kind == .movie }
+            navigationStyleModel.hasWatchlistTitles = upcomingWatchlist().contains {
+                $0.kind == .movie || $0.kind == .series
+            }
         }
     }
 

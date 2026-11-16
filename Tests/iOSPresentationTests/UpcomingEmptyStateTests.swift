@@ -10,20 +10,27 @@ import XCTest
 @MainActor
 final class UpcomingEmptyStateTests: XCTestCase {
     func testEmptyAndFailedAgendasExplainTheStateOnPhoneAndTablet() async throws {
-        for failed in [false, true] {
+        for (failed, connected) in [(false, false), (false, true), (true, false)] {
             let model = try makeModel()
             await model.refresh(scope: UUID().uuidString, namespace: nil, isCurrent: { true }) {
                 UpcomingFeedSnapshot(failedSourceCount: failed ? 1 : 0)
             }
             for width in [CGFloat(390), 834] {
-                let text = try await renderedText(model: model, width: width, name: failed ? "failed" : "empty")
+                let text = try await renderedText(
+                    model: model, width: width, name: failed ? "failed" : (connected ? "empty-seerr" : "empty"),
+                    seerConnected: connected
+                )
                 if failed {
                     XCTAssertTrue(text.contains("Couldn't load releases"), text)
                     XCTAssertTrue(text.contains("Retry"), text)
                     XCTAssertFalse(text.contains("Nothing upcoming yet"), text)
                 } else {
                     XCTAssertTrue(text.contains("Nothing upcoming yet"), text)
-                    XCTAssertTrue(text.contains("Live TV schedules are in the guide."), text)
+                    XCTAssertTrue(text.contains(connected
+                        ? "Shows and movies you watch, watchlist, or request appear here."
+                        : "Shows and movies you watch or watchlist appear here."), text)
+                    XCTAssertFalse(text.contains("guide"), text)
+                    if !connected { XCTAssertFalse(text.contains("request"), text) }
                     XCTAssertFalse(text.contains("Retry"), text)
                 }
             }
@@ -60,7 +67,9 @@ final class UpcomingEmptyStateTests: XCTestCase {
         return UpcomingFeedModel(defaults: defaults)
     }
 
-    private func renderedText(model: UpcomingFeedModel, width: CGFloat, name: String) async throws -> String {
+    private func renderedText(
+        model: UpcomingFeedModel, width: CGFloat, name: String, seerConnected: Bool = false
+    ) async throws -> String {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -72,6 +81,7 @@ final class UpcomingEmptyStateTests: XCTestCase {
             .environment(\.themePalette, .dark)
             .environment(\.colorScheme, .dark)
             .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.plozzSeerConnected, seerConnected)
             .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
             .environment(\.plozzMetrics, .touch(density: .standard))
         )

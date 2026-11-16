@@ -17,7 +17,7 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         disabledLibraryKeys: Set<String>,
         hasDiscoverySearch: Bool,
         hasWatchlistItems: Bool,
-        hasWatchlistMovies: Bool = false
+        hasWatchlistTitles: Bool = false
     ) {
         let accountIDs = Set(accounts.map(\.id))
         hasMusicOnlyAccount = !accounts.isEmpty && accounts.allSatisfy { $0.server.provider == .subsonic }
@@ -42,7 +42,7 @@ public struct NavigationContentAvailability: Equatable, Sendable {
                 && [.movie, .series, .folder, .unknown].contains($0.library.kind)
         }
         hasUpcomingContent = hasReleaseLibrary || hasUnresolvedMediaServer
-            || hasWatchlistMovies || hasDiscoverySearch
+            || hasWatchlistTitles || hasDiscoverySearch
         // Discovery can keep Home useful without making it the landing page for a live-only playlist.
         prefersLiveTV = (!hasHomeContent && !hasMusicOnlyAccount)
             || (!accounts.isEmpty && accounts.allSatisfy { $0.server.provider == .iptv } && !hasLibraries)

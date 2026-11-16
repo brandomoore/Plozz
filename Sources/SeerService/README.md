@@ -140,6 +140,9 @@ Results from another destination must not become availability overrides for
 the server currently being browsed.
 Upcoming uses the selected connection's server-bound request identity for both
 loading and cache ownership, including after changing an API-key request user.
+It includes pending and approved personal movie and TV requests, deduplicating
+season requests by media type and TMDB ID. Title details may omit `mediaType`;
+the requested endpoint supplies it, while an explicit conflicting type is rejected.
 
 ## Device transfer
 

@@ -10,23 +10,25 @@ watched series across paged provider libraries, including caught-up shows, and
 uses the complete Resume/Next Up feed to include a first unfinished episode and
 history missing from a series container. It omits optional parent-recency reads,
 not feed membership; Upcoming orders by release date rather than playback recency.
-Ordinary Continue Watching keeps its existing recency enrichment. Merely owning,
-watchlisting or requesting an unwatched show does not enroll it. Movies come from
-the watchlist and personal requests; the household request list is never used.
-Seerr is optional.
+Ordinary Continue Watching keeps its existing recency enrichment. Shows qualify
+through viewing history, watchlisting, or a personal request; untouched library
+shows do not qualify. Movies come from Continue Watching, the watchlist, and
+personal requests. Overlapping interests merge into one release and remain
+independently filterable. The household request list is never used. Seerr is optional.
 
 Upcoming hides automatically when the active profile has no eligible movie or
-series library, saved movie, or configured Seerr connection. This is a navigation
+series library, saved show/movie, or configured Seerr connection. This is a navigation
 default, not a content restriction: explicitly showing Upcoming in the navigation
 arranger overrides it, including for live-TV-only profiles. Library discovery
 failures retain remembered libraries; an unresolved media server keeps the tab
 available rather than treating an outage as an empty catalogue. Empty release
 results never determine navigation visibility.
 
-An empty agenda explains which shows and movies appear and points live-TV users
-to the guide. A failed initial refresh offers Retry instead of claiming there are
-no releases. Filters and hidden titles have their own empty state with the
+An empty agenda briefly explains which shows and movies appear, mentioning requests
+only when Seerr is connected. A failed initial refresh offers Retry instead of
+claiming there are no releases. Filters and hidden titles have their own empty state with the
 corresponding reset or restore actions. These states are shared by TV and mobile.
+Feed scope versioning invalidates older movie-only watchlist/request snapshots.
 
 Dates come through the existing metadata providers: TVmaze/TheTVDB episode
 listings, AniList's next episode, and regional TMDB movie release events. A

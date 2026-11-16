@@ -1098,8 +1098,8 @@ struct PlozziOSTabShell: View {
             return try await UpcomingFeedLoader.load(
                 accounts: accounts, watchlist: saved, regionCode: region,
                 interval: UpcomingFeedLoader.window(),
-                requestedMovies: {
-                    try await seer.personallyRequestedMovies(identity: identity, language: language)
+                requestedTitles: {
+                    try await seer.personallyRequestedTitles(identity: identity, language: language)
                 },
                 isCurrent: isCurrent, onProgress: progress
             )
@@ -1210,7 +1210,7 @@ struct PlozziOSTabShell: View {
             disabledLibraryKeys: appModel.settings.homeVisibility.visibility.disabledKeys,
             hasDiscoverySearch: appModel.seerService.isConfigured,
             hasWatchlistItems: navigation.hasWatchlistItems,
-            hasWatchlistMovies: navigation.hasWatchlistMovies
+            hasWatchlistTitles: navigation.hasWatchlistTitles
         )
     }
 
@@ -1227,8 +1227,10 @@ struct PlozziOSTabShell: View {
     private func refreshWatchlistNavigation() {
         if let hasItems = appModel.navigationWatchlistHasItems {
             appModel.settings.navigation.hasWatchlistItems = hasItems
-            appModel.settings.navigation.hasWatchlistMovies =
-                appModel.resolvedUniversalWatchlistItems(candidates: []).contains { $0.kind == .movie }
+            appModel.settings.navigation.hasWatchlistTitles =
+                appModel.resolvedUniversalWatchlistItems(candidates: []).contains {
+                    $0.kind == .movie || $0.kind == .series
+                }
         }
     }
 
