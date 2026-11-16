@@ -371,7 +371,8 @@ which puts the shared minimum height and padding inside the TV focus fill.
 `SettingsSectionGroup` supplies this style by default on TV, with the same
 uniform outer focus clearance and corner radius as other Settings form groups.
 Grouped checkable rows leave that outer clearance to the group on TV; their
-mobile hit-area inset ownership is unchanged. Horizontal `SettingsInputRow`
+mobile hit area owns the shared control insets, matching neighboring single-line
+rows rather than adding a second, larger vertical padding. Horizontal `SettingsInputRow`
 uses the shared form layout so its label joins the other control labels.
 `SettingsFocusButtonStyle` is only for labels that already supply their own
 control geometry. Standalone and inline actions use `plozzActionButton`; do not

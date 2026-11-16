@@ -79,7 +79,12 @@ public struct SettingsCheckableRow: View {
         #endif
     }
     private var minRowHeight: CGFloat { SettingsRowMetrics.minHeight(prominence) }
-    private var verticalPadding: CGFloat { SettingsRowMetrics.verticalPadding(prominence) }
+    private var verticalPadding: CGFloat {
+        #if os(iOS)
+        if ownsGroupInsets { return MobileSettingsMetrics.controlVerticalInset }
+        #endif
+        return SettingsRowMetrics.verticalPadding(prominence)
+    }
     private var ownsGroupInsets: Bool {
         #if os(tvOS)
         false
@@ -118,7 +123,7 @@ public struct SettingsCheckableRow: View {
                 SettingsCheckmark(isChecked: isChecked, prominence: prominence)
             }
             .frame(minHeight: ownsGroupInsets ? 44 : minRowHeight)
-            .padding(.vertical, ownsGroupInsets ? 12 : verticalPadding)
+            .padding(.vertical, verticalPadding)
             .padding(.horizontal, ownsGroupInsets ? 16 : labelInset)
             .contentShape(Rectangle())
             .opacity(isEnabled ? 1 : 0.35)
