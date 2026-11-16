@@ -229,7 +229,6 @@ private enum PlozziOSSettingsDestination: Hashable {
     /// The household's Parental PIN.
     case parentalPIN
     case profile(ProfileSettingsCategory)
-    case downloads
     case syncSetup
     case metadata
     case diagnostics
@@ -254,7 +253,9 @@ struct PlozziOSProfileSettingsSection<Header: View, Row: View, Management: View>
         SettingsSectionGroup {
             header()
                 .settingsActionRow()
-            ForEach(ProfileSettingsCategory.allCases.filter { $0 != .seerr || !isKidsProfile }) { category in
+            ForEach(ProfileSettingsCategory.allCases.filter {
+                !isKidsProfile || ($0 != .seerr && $0 != .downloads)
+            }) { category in
                 if category == .language {
                     PlozziOSSettingsLanguagePicker(appLanguage: appLanguage)
                         .settingsActionRow()
@@ -404,6 +405,8 @@ private struct PlozziOSProfileSettingsPage: View {
             PlozziOSMyLibrariesSettingsView(
                 appModel: appModel, onAddServer: onAddServer, onAddUser: onAddUser
             )
+        case .downloads:
+            PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
         case .appearance:
             PlozziOSAppearanceSettingsView(
                 appModel: appModel, theme: appModel.settings.theme,
@@ -593,11 +596,6 @@ private struct PlozziOSSettingsSplitView: View {
                                 .metadata,
                                 title: "Metadata Providers",
                                 systemImage: "sparkles.rectangle.stack"
-                            )
-                            settingsRow(
-                                .downloads,
-                                title: "Downloads",
-                                systemImage: "arrow.down.circle"
                             )
                         }
                     }
@@ -840,8 +838,6 @@ private struct PlozziOSSettingsSplitView: View {
                 onAddUser: onAddUser, canManageProviders: !isParentalSealed,
                 isPresented: selection == .profile(category)
             )
-        case .downloads:
-            PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
         case .syncSetup:
             PlozziOSSyncSetupSettingsView(appModel: appModel)
         case .metadata:
@@ -1209,12 +1205,6 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 .contentShape(Rectangle())
                         }
                         .settingsActionRow()
-                        SettingsPageLink {
-                            PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
-                        } label: {
-                            Label("Downloads", systemImage: "arrow.down.circle")
-                        }
-                        .settingsActionRow()
                     }
                 }
 
@@ -1565,7 +1555,7 @@ private struct PlozziOSSettingsSearchDestination: View {
         case .liveTV, .liveTVSources, .liveTVGuide, .liveTVVisibility: profilePage(.liveTV)
         case .language: profilePage(.language)
         case .trackers: profilePage(.trackers)
-        case .downloads: PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
+        case .downloads: profilePage(.downloads)
         case .profiles:
             List {
                 SettingsSectionGroup {

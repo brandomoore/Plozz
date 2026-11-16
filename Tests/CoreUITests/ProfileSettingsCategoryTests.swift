@@ -3,10 +3,13 @@ import XCTest
 
 final class ProfileSettingsCategoryTests: XCTestCase {
     func testProfileCategoriesHaveOneCrossPlatformOrder() {
-        XCTAssertEqual(ProfileSettingsCategory.allCases, [
-            .playback, .subtitles, .liveTV, .libraries, .appearance, .screensNavigation, .trackers, .seerr, .language
-        ])
-        XCTAssertEqual(Set(ProfileSettingsCategory.allCases.map(\.id)).count, 9)
+        var expected: [ProfileSettingsCategory] = [.playback, .subtitles, .liveTV, .libraries]
+        #if os(iOS)
+        expected.append(.downloads)
+        #endif
+        expected += [.appearance, .screensNavigation, .trackers, .seerr, .language]
+        XCTAssertEqual(ProfileSettingsCategory.allCases, expected)
+        XCTAssertEqual(Set(ProfileSettingsCategory.allCases.map(\.id)).count, expected.count)
     }
 
     func testSummariesDescribeTheirGroupsRatherThanAnUnrelatedScope() {

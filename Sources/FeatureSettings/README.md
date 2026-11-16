@@ -78,6 +78,8 @@ normal clearance, and places group separators after the complete row. Settings
 summaries use `SettingsRowMetrics.descriptionFont`, not per-page caption sizes.
 Seerr appears in the active profile's category list, not All profiles. It edits only
 that profile's connections; the existing Kids-profile restrictions still apply.
+Downloads follows Libraries in the mobile profile card and uses that profile's
+existing download model. It remains hidden for Kids profiles and unavailable on tvOS.
 On mobile, the active profile's avatar and name form the first row of this same
 settings card, matching the tvOS grouping. The household Profiles entry remains
 under All profiles. The shared section has no scope footer; device and sync

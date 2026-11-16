@@ -1,12 +1,15 @@
 import CoreModels
 import Foundation
 
-/// The same profile-owned categories, in the same order, on every platform.
+/// Profile-owned categories in a shared order, with platform-specific capabilities.
 public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendable {
     case playback
     case subtitles
     case liveTV
     case libraries
+    #if os(iOS)
+    case downloads
+    #endif
     case appearance
     case screensNavigation
     case trackers
@@ -21,6 +24,9 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
         case .subtitles: "Subtitles"
         case .liveTV: "Live TV"
         case .libraries: SettingsCopy.libraries
+        #if os(iOS)
+        case .downloads: "Downloads"
+        #endif
         case .appearance: "Appearance"
         case .screensNavigation: "Screens & Navigation"
         case .trackers: "Trackers"
@@ -35,6 +41,9 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
         case .subtitles: "captions.bubble"
         case .liveTV: "antenna.radiowaves.left.and.right"
         case .libraries: "rectangle.stack"
+        #if os(iOS)
+        case .downloads: "arrow.down.circle"
+        #endif
         case .appearance: "paintpalette"
         case .screensNavigation: "rectangle.3.group"
         case .trackers: "link"
