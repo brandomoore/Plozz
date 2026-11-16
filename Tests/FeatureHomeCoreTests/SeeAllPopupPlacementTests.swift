@@ -36,7 +36,7 @@ final class SeeAllPopupPlacementTests: XCTestCase {
         var episode = MediaItem(id: "e", title: "The Twist", kind: .episode)
         episode.overview = "Everyone dies."
         episode.episodeNumber = 5
-        episode.ratings = [ExternalRating(source: .imdb, value: 9, scale: .tenPoint)]
+        episode.ratings = [ExternalRating(source: .imdb, value: 9, scale: .outOfTen)]
         let spoilers = SpoilerSettings(isEnabled: true, hideRatingsUntilWatched: true)
         let hidden = SeeAllPopupContent(item: episode, spoilers: spoilers)
         XCTAssertNil(hidden.overview)
