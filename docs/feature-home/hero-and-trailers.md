@@ -69,8 +69,9 @@ for a covered page, another item's theme, or a settings preview.
   viewport- and density-aware poster sizing. At standard density, phone widths
   of at least 375 points show three full items and a partial fourth; wider
   windows add columns. Cast portraits keep their circular shape and match the
-  poster artwork width and spacing, including framed-card spacing. Desktop cast
-  portraits retain their separate smaller size.
+  poster artwork width and spacing, including framed-card spacing. Names and
+  roles use the same Dynamic Type-aware title and subtitle fonts as poster
+  captions. Desktop cast portraits retain their separate smaller size.
 
 - **Home** — `HomeView` + `HomeViewModel` render the focused tvOS rows:
   Continue Watching, Latest, Recently Added (per library). `HomeLayout`

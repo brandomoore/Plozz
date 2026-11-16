@@ -1030,6 +1030,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         }
         for style in [CardStyle.borderless, .framed] {
             try await withWindow { window, host in
+                host.safeAreaRegions = []
                 for width: CGFloat in [390, 440, 834] {
                     let sizeClass: UserInterfaceSizeClass = width < 600 ? .compact : .regular
                     let inset = PlozziOSPageLayout.horizontalInset(for: sizeClass)
@@ -1064,7 +1065,14 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     guard rows.count == 3 else { continue }
                     let home = try posterRuns(image, at: CGFloat(rows[0].lowerBound + rows[0].count / 2))
                     let first = try XCTUnwrap(home.first)
+                    XCTAssertEqual(CGFloat(first.lowerBound), inset, accuracy: 2)
                     if width < 600 { XCTAssertEqual(home.count, 4, "Three complete posters and one partial poster.") }
+                    for card in home.dropLast() {
+                        XCTAssertEqual(card.count, first.count, accuracy: 1, "The leading posters must be complete.")
+                    }
+                    let peek = try XCTUnwrap(home.last)
+                    XCTAssertGreaterThan(Double(peek.count) / Double(first.count), 0.20)
+                    XCTAssertLessThan(Double(peek.count) / Double(first.count), 0.42)
                     XCTAssertEqual(home.last?.upperBound, Int(width))
                     for row in rows.dropFirst() {
                         let cards = try posterRuns(image, at: CGFloat(row.lowerBound + row.count / 2))
@@ -1074,6 +1082,68 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                             XCTAssertEqual(actual.upperBound, expected.upperBound, accuracy: 2)
                         }
                         XCTAssertEqual(cards.first?.count ?? 0, first.count, accuracy: 2)
+                    }
+                }
+            }
+        }
+    }
+
+    func testCastCaptionsMatchPosterTypographyAtStandardAndAccessibleSizes() async throws {
+        let artwork = try await posterArtwork()
+        try await withWindow { window, host in
+            host.safeAreaRegions = []
+            window.frame.size = CGSize(width: 834, height: 1400)
+            for typeSize in [DynamicTypeSize.large, .accessibility3] {
+                let metrics = PlozzMetrics.touch(density: .standard, dynamicTypeSize: typeSize)
+                var posterFrames: [CGRect] = []
+                for isCast in [false, true] {
+                    host.rootView = AnyView(
+                        VStack(alignment: .leading) {
+                            if isCast {
+                                PlozziOSCastSection(
+                                    people: [MediaPerson(id: "cast-type", name: "Sam", role: "2026", kind: "Actor")],
+                                    sourceAccountID: nil
+                                )
+                            } else {
+                                PosterCardView(
+                                    item: MediaItem(
+                                        id: "poster-type", title: "Sam", kind: .movie,
+                                        productionYear: 2026, posterURL: artwork
+                                    ),
+                                    enablesAsyncArtworkFallback: false, action: {}
+                                )
+                                .frame(width: metrics.cardSlotWidth(for: .poster, cardStyle: .borderless))
+                                .padding(22)
+                            }
+                        }
+                        .frame(width: 834)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .background(Color.black)
+                        .environment(\.horizontalSizeClass, .regular)
+                        .environment(\.plozzMetrics, metrics)
+                        .environment(\.dynamicTypeSize, typeSize)
+                        .environment(\.plozzCardStyle, .borderless)
+                        .environment(\.plozzCardCaptionSettings, CardCaptionSettings(showsLabels: true))
+                        .environment(\.mediaPersonSourceNavigator, { _, _ in })
+                        .environment(\.themePalette, .dark)
+                        .environment(\.locale, Locale(identifier: "en"))
+                    )
+                    try await settle(window)
+                    let image = snapshot(window, name: "cast-poster-typography-\(isCast)-\(typeSize)")
+                    let observations = try text(image)
+                    let frames = try ["Sam", "2026"].map {
+                        let label = try textFrame($0, observations: observations, size: image.size)
+                        return try brightTextBounds(
+                            image, from: max(0, label.minY - 3), to: label.maxY + 3, minimumBrightness: 70
+                        )
+                    }
+                    if isCast {
+                        for (actual, expected) in zip(frames, posterFrames) {
+                            XCTAssertEqual(actual.width, expected.width, accuracy: 1.5)
+                            XCTAssertEqual(actual.height, expected.height, accuracy: 1.5)
+                        }
+                    } else {
+                        posterFrames = frames
                     }
                 }
             }
@@ -1574,14 +1644,18 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         return runs.filter { $0.count > 3 }
     }
 
-    private func brightTextBounds(_ image: UIImage, from top: CGFloat, to bottom: CGFloat) throws -> CGRect {
+    private func brightTextBounds(
+        _ image: UIImage, from top: CGFloat, to bottom: CGFloat, minimumBrightness: UInt8 = 220
+    ) throws -> CGRect {
         let cg = try XCTUnwrap(image.cgImage)
         let bytes = try rgbaPixels(image)
         var left = cg.width, right = 0, upper = cg.height, lower = 0
         for y in Int(top * image.scale)..<min(cg.height, Int(bottom * image.scale)) {
             for x in 0..<cg.width {
                 let index = (y * cg.width + x) * 4
-                guard bytes[index] > 220, bytes[index + 1] > 220, bytes[index + 2] > 220 else { continue }
+                guard bytes[index] > minimumBrightness,
+                      bytes[index + 1] > minimumBrightness,
+                      bytes[index + 2] > minimumBrightness else { continue }
                 left = min(left, x); right = max(right, x)
                 upper = min(upper, y); lower = max(lower, y)
             }

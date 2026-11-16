@@ -4049,7 +4049,7 @@ struct PlozziOSCastSection: View {
                             .frame(width: tileDiameter, alignment: .top)
 
                             Text(person.name)
-                                .font(.subheadline.weight(.semibold))
+                                .font(.system(size: metrics.posterTitleFontSize, weight: .semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(
                                     maxWidth: .infinity,
@@ -4057,7 +4057,7 @@ struct PlozziOSCastSection: View {
                                 )
                             if let role = credit.caption(locale: locale) {
                                 Text(role)
-                                    .font(.caption)
+                                    .font(.system(size: metrics.posterSubtitleFontSize))
                                     .plozzForeground(.secondary)
                                     .fixedSize(
                                         horizontal: false,
