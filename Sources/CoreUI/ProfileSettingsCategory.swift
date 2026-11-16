@@ -18,7 +18,7 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
 
     public var id: Self { self }
 
-    public var title: LocalizedStringResource {
+    public var localizedTitle: LocalizedStringResource? {
         switch self {
         case .playback: "Playback"
         case .subtitles: "Subtitles"
@@ -30,7 +30,7 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
         case .appearance: "Appearance"
         case .screensNavigation: "Screens & Navigation"
         case .trackers: "Trackers"
-        case .seerr: LocalizedStringResource(stringLiteral: "Seerr")
+        case .seerr: nil
         case .language: "Language"
         }
     }

@@ -551,8 +551,10 @@ public struct SettingsView: View {
                                               value: seerrRowValue, route: .seerr)
                     }
                 default:
-                    sectionRow(category.title, icon: category.symbol,
-                               subtitle: category.summary.map { Text($0) }, route: category.settingsRoute)
+                    if let title = category.localizedTitle {
+                        sectionRow(title, icon: category.symbol,
+                                   subtitle: category.summary.map { Text($0) }, route: category.settingsRoute)
+                    }
                 }
             }
             // The profile's own PIN gate. Belongs to the profile (it travels with

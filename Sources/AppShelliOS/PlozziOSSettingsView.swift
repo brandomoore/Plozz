@@ -282,8 +282,8 @@ struct PlozziOSSettingsCategoryLabel: View {
             VStack(alignment: .leading, spacing: 4) {
                 if category == .seerr {
                     Text(verbatim: "Seerr")
-                } else {
-                    Text(category.title)
+                } else if let title = category.localizedTitle {
+                    Text(title)
                 }
                 if category == .libraries {
                     SettingsLibrarySourcesSummary(

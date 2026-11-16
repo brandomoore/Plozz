@@ -1,5 +1,8 @@
 # CoreUI
 
+`ProfileSettingsCategory.localizedTitle` contains app copy only. Branded categories
+such as Seerr have no localized title; their platform rows render the name verbatim.
+
 `ServerDiscoveryRow` is the shared discovery-button label for media-server and
 Seerr setup: leading icon, server name, secondary address, and disclosure
 chevron. In-place selections, such as Seerr setup, omit the disclosure chevron.
