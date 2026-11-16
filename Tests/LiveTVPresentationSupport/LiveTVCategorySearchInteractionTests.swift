@@ -829,9 +829,16 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 15))
         let back = app.buttons["live-tv-categories"]
         let category = app.buttons["live-tv-category"]
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        }
         if back.exists {
+            XCTAssertTrue(back.isHittable)
             XCTAssertTrue(category.isHittable)
-            XCTAssertGreaterThanOrEqual(category.frame.minX - back.frame.maxX, 8)
+            XCTAssertGreaterThanOrEqual(
+                category.frame.minX - back.frame.maxX, 8,
+                "Back must precede the category menu with its own separated toolbar surface."
+            )
             XCTAssertLessThanOrEqual(category.frame.minX - back.frame.maxX, 24)
             XCTAssertGreaterThan(search.frame.minX - category.frame.maxX,
                                  category.frame.minX - back.frame.maxX)

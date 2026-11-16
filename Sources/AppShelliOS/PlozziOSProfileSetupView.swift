@@ -229,6 +229,7 @@ struct PlozziOSProfileOnboardingCover: View {
                 EmptyView()
             }
         }
+        .prepareSeerrSetup(appModel.seerService)
         .id(appModel.profileOnboardingID)
         .transaction { $0.animation = nil }
     }

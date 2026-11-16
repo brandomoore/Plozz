@@ -50,6 +50,7 @@ struct PlozziOSFirstRunView: View {
                 )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .prepareSeerrSetup(appModel.seerService)
         .onChange(of: step) { _, newStep in
             // nil means the flow finished; keep the current screen rendered so
             // the cover slides away over it rather than over an empty view.
@@ -143,13 +144,11 @@ private struct PlozziOSFirstProfileView: View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(spacing: 32) {
-                    // Edit sits with the thing it edits, and is a stock bordered
-                    // button so it reads as neutral next to the prominent CTA.
                     VStack(spacing: 16) {
                         PlozziOSProfileAvatar(profile: profile, size: 128)
 
                         Button("Edit") { editing = true }
-                            .buttonStyle(.bordered)
+                            .plozzActionButton(role: .secondary)
                             .controlSize(.large)
                             .accessibilityHint("Rename this profile or change its picture")
                     }
@@ -170,11 +169,12 @@ private struct PlozziOSFirstProfileView: View {
 
                     // "Continue" to match the library and theme steps either side
                     // of this one; inline rather than pinned, as they all are.
-                    Button("Continue") {
+                    Button {
                         appModel.confirmFirstRunProfile()
+                    } label: {
+                        Text("Continue").plozzPageActionLabel()
                     }
-                    .plozzActionButton()
-                    .frame(maxWidth: .infinity)
+                    .plozzPageActionButton()
                 }
                 .frame(maxWidth: 520)
                 .padding(.horizontal, 24)
@@ -250,9 +250,10 @@ struct PlozziOSThemeWelcomeView: View {
                         }
                     }
 
-                    Button("Continue", action: onContinue)
-                    .plozzActionButton()
-                    .frame(maxWidth: .infinity)
+                    Button(action: onContinue) {
+                        Text("Continue").plozzPageActionLabel()
+                    }
+                    .plozzPageActionButton()
                 }
                 .frame(maxWidth: 720)
                 .padding(.horizontal, 24)

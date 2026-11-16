@@ -179,6 +179,7 @@ struct HomeTab: View {
 
     @State private var path = NavigationPath()
     @State private var heroRequestFailure: SeerRequestFailure?
+    @State private var heroRequestConfirmation: LocalizedStringResource?
     /// Handles owned above the tab so tab re-hosting cannot destroy them.
     let runtime: HomeTabRuntime
     /// Detail view models, kept across `navigationDestination` re-evaluations.
@@ -300,7 +301,7 @@ struct HomeTab: View {
         let isCurrent: @MainActor @Sendable () -> Bool = {
             isProfileAuthorized() && profilesModel?.activeProfileID == profileID
                 && upcomingScopeKey == scope
-                && profilesModel?.activeProfile.seerrRequestIdentity == identity
+                && seer.requestIdentity == identity
         }
         await sharedHomeViewModel.upcoming.refresh(
             scope: scope, namespace: libraryPreferencesNamespace, cacheScope: cacheScope,
@@ -377,6 +378,7 @@ struct HomeTab: View {
             HomeView(
                 viewModel: sharedHomeViewModel,
                 visibility: homeVisibility,
+                metadataLanguage: locale.identifier,
                 spoilerSettings: spoilerSettings,
                 heroSettings: heroSettings,
                 heroBackground: heroBackground,
@@ -476,16 +478,16 @@ struct HomeTab: View {
                 enabledServerCount: accounts.count
             )
             .alert(
-                "Request Failed",
+                heroRequestConfirmation == nil ? Text("Request Failed") : Text(verbatim: "Seerr"),
                 isPresented: Binding(
-                    get: { heroRequestFailure != nil },
-                    set: { if !$0 { heroRequestFailure = nil } }
-                ),
-                presenting: heroRequestFailure
-            ) { _ in
+                    get: { heroRequestFailure != nil || heroRequestConfirmation != nil },
+                    set: { if !$0 { heroRequestFailure = nil; heroRequestConfirmation = nil } }
+                )
+            ) {
                 Button("OK", role: .cancel) {}
-            } message: { failure in
-                Text(failure.userMessage)
+            } message: {
+                if let confirmation = heroRequestConfirmation { Text(confirmation) }
+                else if let failure = heroRequestFailure { Text(failure.userMessage) }
             }
     }
 
@@ -495,6 +497,11 @@ struct HomeTab: View {
     ) async -> MediaAvailabilityStatus? {
         let outcome = await seer.request(item, seasons: seasons, identity: activeSeerrIdentity)
         switch outcome {
+        case let .successElsewhere(message):
+            heroRequestConfirmation = message
+            return nil
+        case .failure(.cancelled):
+            return nil
         case let .success(status):
             return status
         case let .failure(reason):

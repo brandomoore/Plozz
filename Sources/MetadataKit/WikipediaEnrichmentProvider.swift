@@ -5,7 +5,7 @@ import CoreNetworking
 public struct WikipediaEnrichmentProvider: MetadataEnrichmentProvider {
     public let id: MetadataSource = .wikipedia
     public let capabilities: Set<MetadataCapability> = [.canonicalText, .poster, .backdrop, .logo]
-    public let policy = ProviderPolicy(requestsPerSecond: 1, burst: 2, version: 2)
+    public let policy = ProviderPolicy(requestsPerSecond: 1, burst: 2, version: 3)
     private let http: MetadataDiscoveryHTTPClient
     private let artwork: ArtworkEnrichmentAdapter
 
@@ -30,17 +30,28 @@ public struct WikipediaEnrichmentProvider: MetadataEnrichmentProvider {
     public func enrichReporting(_ query: MetadataQuery, missing: Set<MetadataField>) async -> ProviderResponse {
         var result = await artwork.enrich(query, missing: missing.subtracting([.overview]))
         guard missing.contains(.overview),
-              Locale.Language(identifier: query.metadataLanguage).languageCode?.identifier == "en",
               query.kind == .movie || query.kind == .series,
               let search = WikipediaArtworkProvider.searchTerm(
                 title: query.title, year: query.year, isTV: query.isTV
               ),
               let escaped = metadataEscaped(search),
-              let url = URL(string: "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&explaintext=1&redirects=1&generator=search&gsrnamespace=0&gsrlimit=1&gsrsearch=\(escaped)")
+              var components = URLComponents(string: "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts%7Clanglinks&exintro=1&explaintext=1&redirects=1&generator=search&gsrnamespace=0&gsrlimit=1&gsrsearch=\(escaped)")
         else { return ProviderResponse(enrichment: result, health: result.isEmpty ? .empty : .ok) }
+        components.queryItems = (components.queryItems ?? [])
+            + WikipediaLocalizedText.linkParameters(language: query.metadataLanguage)
+        guard let url = components.url else {
+            return ProviderResponse(enrichment: result, health: .failure(.transient))
+        }
         do {
             let response = try await http.decode(Response.self, from: URLRequest(url: url))
-            if let text = response.query?.pages?.values.first?.extract?
+            let page = response.query?.pages?.values.first
+            if !LanguageMatch.matches(query.metadataLanguage, "en") {
+                if let localized = try await WikipediaLocalizedText.extract(
+                    links: page?.langlinks ?? [], language: query.metadataLanguage, http: http
+                ) {
+                    result.overview = SourcedValue(value: localized.text, source: .wikipedia, sourceURL: localized.url)
+                }
+            } else if let text = page?.extract?
                 .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
                 result.overview = SourcedValue(value: text, source: .wikipedia, sourceURL: url)
             }
@@ -64,6 +75,9 @@ public struct WikipediaEnrichmentProvider: MetadataEnrichmentProvider {
     private struct Response: Decodable, Sendable {
         let query: Query?
         struct Query: Decodable, Sendable { let pages: [String: Page]? }
-        struct Page: Decodable, Sendable { let extract: String? }
+        struct Page: Decodable, Sendable {
+            let extract: String?
+            let langlinks: [WikipediaLocalizedText.Link]?
+        }
     }
 }

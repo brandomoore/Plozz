@@ -134,7 +134,7 @@ public struct ItemDetailView: View {
     /// A user-facing request failure, wrapped for `.alert(item:)`.
     private struct RequestFailureAlert: Identifiable {
         let id = UUID()
-        let title: LocalizedStringResource
+        let title: Text
         let message: MediaRequestActionResult.FailureMessage?
     }
 
@@ -410,7 +410,7 @@ public struct ItemDetailView: View {
         }
         .alert(item: $requestFailure) { failure in
             Alert(
-                title: Text(failure.title),
+                title: failure.title,
                 message: failure.message.map { detail in
                     switch detail {
                     case let .copy(resource): Text(resource)
@@ -499,8 +499,10 @@ public struct ItemDetailView: View {
                 requestOverride = status
             } else {
                 requestOverride = nil
-                if let title = result.failureTitle {
-                    requestFailure = RequestFailureAlert(title: title, message: result.failureMessage)
+                if let message = result.confirmation {
+                    requestFailure = RequestFailureAlert(title: Text(verbatim: "Seerr"), message: .copy(message))
+                } else if let title = result.failureTitle {
+                    requestFailure = RequestFailureAlert(title: Text(title), message: result.failureMessage)
                 }
             }
         }
@@ -519,11 +521,13 @@ public struct ItemDetailView: View {
         Task {
             let result = await onRequestSeasons(item, selected)
             guard seasonRequestScope == scope else { return }
-            if result.isSuccess { seasonRequestState.accept(selected) }
+            if result.status != nil { seasonRequestState.accept(selected) }
             isSeasonRequestInFlight = false
             seasonRequestRetryToken += 1
-            if let title = result.failureTitle {
-                requestFailure = RequestFailureAlert(title: title, message: result.failureMessage)
+            if let message = result.confirmation {
+                requestFailure = RequestFailureAlert(title: Text(verbatim: "Seerr"), message: .copy(message))
+            } else if let title = result.failureTitle {
+                requestFailure = RequestFailureAlert(title: Text(title), message: result.failureMessage)
             }
         }
     }

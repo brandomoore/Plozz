@@ -335,6 +335,7 @@ final class IPTVCatalog {
             try Task.checkCancellation()
             try storageLifecycle?.checkAccess()
             try setState(scope, String(Date().timeIntervalSince1970))
+            try setState("\(scope)-revision", UUID().uuidString)
             try execute("COMMIT")
             outcome = .succeeded
             reclaimJournal()

@@ -77,6 +77,7 @@ public struct SiloSignInView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .settingsPageSurface(horizontalInset: 20)
+        .settingsSignInFields()
         #else
         GeometryReader { geometry in
             ScrollView {

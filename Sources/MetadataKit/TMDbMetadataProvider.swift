@@ -393,7 +393,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         }
         try Task.checkCancellation()
         if !missing.isDisjoint(with: [
-            .genres, .studios, .taglines, .overview,
+            .title, .genres, .studios, .taglines, .overview,
             .originalLanguage, .seriesStatus, .catalogSeasonCount, .catalogEpisodeCount
         ]) {
             let base = "/3/\(query.isTV ? "tv" : "movie")/\(id)"
@@ -406,6 +406,9 @@ public struct TMDbMetadataProvider: ArtworkProvider {
                     result.studios = SourcedValue(value: values, source: .tmdb, sourceURL: url)
                 }
                 if query.kind == .movie || query.kind == .series || query.kind == .video {
+                    if missing.contains(.title), let title = (facts.title ?? facts.name)?.tmdbNonEmpty {
+                        result.title = SourcedValue(value: title, source: .tmdb, sourceURL: url)
+                    }
                     if missing.contains(.originalLanguage),
                        let language = facts.original_language?.tmdbNonEmpty,
                        !["xx", "und", "zxx", "mul"].contains(language.lowercased()),
@@ -897,6 +900,8 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let job: String?
     }
     struct DetailFacts: Decodable, Sendable {
+        let title: String?
+        let name: String?
         let overview: String?
         let tagline: String?
         let genres: [NamedFact]?

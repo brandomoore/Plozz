@@ -253,7 +253,9 @@ public final class LiveTVSourceSyncBridge {
         let pending = profiles.pendingSyncedDeletionProfileIDs
         guard let value = defaults.object(forKey: removedKey) else { return pending }
         guard let ids = value as? [String] else { throw LiveTVPortableStateError.invalidRecord }
-        return Set(ids).union(pending)
+        // Match portable-state removal: a restored roster entry supersedes an old
+        // removal marker, but a pending deletion placeholder still cannot publish.
+        return Set(ids).subtracting(profiles.profilesForSync.map(\.id)).union(pending)
     }
 
     private func admit(_ snapshot: SyncChannelSnapshot) throws {

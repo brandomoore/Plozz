@@ -276,11 +276,12 @@ struct PlozziOSHomeView: View {
         // and the fresh curation folds into it rather than replacing it, so the
         // slides on screen keep their slots when it lands. Same policy as tvOS.
         let settings = appModel.settings.hero.effectiveSettings
+        let initialLanguage = (appModel.appLanguage.language.locale ?? .current).identifier
         if settings.isActive,
-           let seed = viewModel.cachedHeroItems(for: settings) {
+           let seed = viewModel.cachedHeroItems(for: settings, language: initialLanguage) {
             _heroItems = State(initialValue: HeroDiscoveryStatus.clearingRequestStatus(in: seed))
             _heroCuratedConfiguration = State(
-                initialValue: HeroConfigurationKey(settings: settings)
+                initialValue: HeroConfigurationKey(settings: settings, language: initialLanguage)
             )
             _heroCuratedDisabledLibraryKeys = State(
                 initialValue: appModel.settings.homeVisibility.visibility.disabledKeys
@@ -388,10 +389,10 @@ struct PlozziOSHomeView: View {
             heroRetainedMisses = [:]
             let settings = appModel.settings.hero.effectiveSettings
             heroItems = HeroDiscoveryStatus.retainingRequestStatus(
-                in: viewModel.cachedHeroItems(for: settings) ?? [], from: heroItems,
+                in: viewModel.cachedHeroItems(for: settings, language: locale.identifier) ?? [], from: heroItems,
                 sameRequestContext: heroStatusContext == appModel.plozziOSSeasonRequestContextID
             )
-            heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
+            heroCuratedConfiguration = HeroConfigurationKey(settings: settings, language: locale.identifier)
             heroCuratedDisabledLibraryKeys = disabled
             heroCandidatePool = .empty
             refreshHeroSourceEligibility()
@@ -632,9 +633,10 @@ struct PlozziOSHomeView: View {
             scopeID: ObjectIdentifier(viewModel),
             seerRevision: appModel.seerService.connectionRevision,
             isPreparingHome: isPreparingHome,
-            loadingRows: loadingRows
+            loadingRows: loadingRows,
+            language: locale.identifier
         )
-        let heroConfigurationMatches = heroCuratedConfiguration == HeroConfigurationKey(settings: settings)
+        let heroConfigurationMatches = heroCuratedConfiguration == HeroConfigurationKey(settings: settings, language: locale.identifier)
             && heroCuratedDisabledLibraryKeys == visibility.visibility.disabledKeys
         let heroSlotState = HomeHeroSlotState.resolve(
             settings: settings,
@@ -1072,7 +1074,7 @@ struct PlozziOSHomeView: View {
     /// user mappings go to the service's relink failure instead.
     private func beginHeroRequest(_ item: MediaItem) {
         let context = appModel.plozziOSSeasonRequestContextID
-        if appModel.activeSeerrRequestIdentity == .admin,
+        if appModel.seerService.needsAdminConfirmation,
            appModel.profiles.profiles.count > 1 {
             heroRequestConfirmSeasons = nil
             heroRequestConfirmItem = item
@@ -1099,7 +1101,7 @@ struct PlozziOSHomeView: View {
             Task { await refreshHeroSeasonAvailability(for: item) }
             return
         }
-        if appModel.activeSeerrRequestIdentity == .admin,
+        if appModel.seerService.needsAdminConfirmation,
            appModel.profiles.profiles.count > 1 {
             heroRequestConfirmSeasons = selected
             heroRequestConfirmItem = item
@@ -1127,13 +1129,22 @@ struct PlozziOSHomeView: View {
         defer { isRequestingHero = false }
         ensureHeroSeasonRequestContext()
         let requestContext = heroSeasonRequestContext
+        let requestProfileID = appModel.profiles.activeProfileID
+        let requestGeneration = appModel.seerService.requestAuthorizationGeneration
         let outcome = await appModel.seerService.request(
             item,
             seasons: seasons,
             identity: appModel.activeSeerrRequestIdentity
         )
+        guard requestProfileID == appModel.profiles.activeProfileID,
+              requestGeneration == appModel.seerService.requestAuthorizationGeneration else { return }
+        if case let .successElsewhere(message) = outcome {
+            appModel.transientStatusPresenter.present(icon: "checkmark", text: message)
+            return
+        }
         guard context == appModel.plozziOSSeasonRequestContextID else { return }
         switch outcome {
+        case .successElsewhere: break
         case let .success(status):
             if let seasons {
                 guard heroSeasonRequestContext == requestContext else { return }
@@ -1170,6 +1181,8 @@ struct PlozziOSHomeView: View {
                 heroRequestStatusSetAt[item.id] = Date()
                 await refreshFeaturedStatusOnce()
             }
+        case .failure(.cancelled):
+            break
         case let .failure(reason):
             heroRequestError = reason.userMessage
         }
@@ -1257,9 +1270,9 @@ struct PlozziOSHomeView: View {
         featuredDisabledLibraryKeys = []
         let settings = appModel.settings.hero.effectiveSettings
         heroItems = HeroDiscoveryStatus.clearingRequestStatus(
-            in: viewModel.cachedHeroItems(for: settings) ?? []
+            in: viewModel.cachedHeroItems(for: settings, language: locale.identifier) ?? []
         )
-        heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
+        heroCuratedConfiguration = HeroConfigurationKey(settings: settings, language: locale.identifier)
         heroCuratedDisabledLibraryKeys = appModel.settings.homeVisibility.visibility.disabledKeys
         discoveryIdentityRevision = appModel.identityIndex.identityRevisionProvider()
     }
@@ -1351,7 +1364,7 @@ struct PlozziOSHomeView: View {
                 }
             }
         }
-        let configuration = HeroConfigurationKey(settings: settings)
+        let configuration = HeroConfigurationKey(settings: settings, language: locale.identifier)
         let featured = HeroDiscoveryStatus.cachedCandidates(
             featuredItems, configuration: featuredConfiguration,
             disabledLibraryKeys: featuredDisabledLibraryKeys,
@@ -1370,7 +1383,7 @@ struct PlozziOSHomeView: View {
             identitySources: appModel.identityIndex.identitySourcesProvider,
             allowsDiscovery: { await heroModel.allowsDiscovery }
         )
-        let discoveryLanguage = locale.language.languageCode?.identifier ?? "en"
+        let discoveryLanguage = Locale.canonicalLanguageIdentifier(from: locale.identifier)
         let discoveryRegion = locale.region?.identifier ?? "US"
         let currentVisibility = appModel.settings.homeVisibility.visibility
         let pendingMutations = await viewModel.pendingHeroWatchMutations()
@@ -1500,7 +1513,7 @@ struct PlozziOSHomeView: View {
         if durablePool.isEmpty, freshIsAuthoritative {
             viewModel.clearCachedHeroItems()
         } else {
-            viewModel.cacheHeroCandidatePool(durablePool, for: settings)
+            viewModel.cacheHeroCandidatePool(durablePool, for: settings, language: locale.identifier)
         }
     }
 }
