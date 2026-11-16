@@ -27,7 +27,7 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         model.path.append(1)
-        try await waitUntil { model.actions.episodeMenuBuilds > 0 }
+        try await waitUntil(timeout: .seconds(15)) { model.actions.episodeMenuBuilds > 0 }
         try await Task.sleep(for: .milliseconds(500))
         let before = model.actions.episodeMenuBuilds
         for revision in 1...5 {
@@ -69,12 +69,12 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
                 .preferredColorScheme(.dark)
             )
             window.makeKeyAndVisible()
-            try await waitUntil { UIFocusSystem.focusSystem(for: window)?.focusedItem != nil }
+            try await waitUntil(timeout: .seconds(15)) { UIFocusSystem.focusSystem(for: window)?.focusedItem != nil }
             try await waitForHostedLayout(window)
             var text = ""
             var playFrame: CGRect?
             var episodesFrame: CGRect?
-            try await waitUntil {
+            try await waitUntil(timeout: .seconds(15)) {
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                     window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
                 }
@@ -153,12 +153,12 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
             try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
             return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
         }
-        try await waitUntil { try visibleText().contains(provider.seed.title) }
+        try await waitUntil(timeout: .seconds(15)) { try visibleText().contains(provider.seed.title) }
         XCTAssertNil(detail.state.value?.item.overview)
         capture(window, name: "unrated-series-before-parent")
         await gate.release()
-        try await waitUntil { detail.state.value?.item.overview == provider.seed.overview }
-        try await waitUntil { try visibleText().contains("quiet village") }
+        try await waitUntil(timeout: .seconds(15)) { detail.state.value?.item.overview == provider.seed.overview }
+        try await waitUntil(timeout: .seconds(15)) { try visibleText().contains("quiet village") }
         let text = try visibleText()
         XCTAssertTrue(text.contains("quiet village"), text)
         XCTAssertFalse(text.contains("murderer"), text)
@@ -277,7 +277,7 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
     private func verifyEntry(
         _ mode: PrimaryFocusMode, moveToSecondary: Bool = false, queueDuringEntrance: Bool = false
     ) async throws {
-        try await waitUntil {
+        try await waitUntil(timeout: .seconds(15)) {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -298,10 +298,10 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitUntil { model.infoFocused }
+        try await waitUntil(timeout: .seconds(15)) { model.infoFocused }
         recorder.focusFrames.removeAll()
         model.path.append(1)
-        try await waitUntil { model.detailAppeared && !recorder.focusFrames.isEmpty }
+        try await waitUntil(timeout: .seconds(15)) { model.detailAppeared && !recorder.focusFrames.isEmpty }
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
         let first = try XCTUnwrap(recorder.focusFrames.first)
         XCTAssertLessThan(first.minX, 150, "The first native target must be the leading action, not Watchlist: \(recorder.focusFrames)")
@@ -314,7 +314,7 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
         capture(window, name: "detail-primary-pending-\(mode)")
         if let detail = model.detail {
             if mode == .showNavigation {
-                try await waitUntil { detail.episodes(for: "primary-season") != nil }
+                try await waitUntil(timeout: .seconds(15)) { detail.episodes(for: "primary-season") != nil }
                 XCTAssertTrue(detail.isResolvingServerResume, "Resume must remain pending while the actual page loads its rail.")
                 XCTAssertEqual(detail.episodes(for: "primary-season")?.map(\.id), ["primary-episode"])
             } else {
@@ -330,12 +330,12 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
                 host.target = secondary
                 system.requestFocusUpdate(to: host)
                 system.updateFocusIfNeeded()
-                try await waitUntil { system.focusedItem === secondary }
+                try await waitUntil(timeout: .seconds(15)) { system.focusedItem === secondary }
                 host.target = nil
                 expectedItem = secondary
             }
             await model.gate.release()
-            try await waitUntil { detail.state.value?.childrenLoaded == true }
+            try await waitUntil(timeout: .seconds(15)) { detail.state.value?.childrenLoaded == true }
             try await Task.sleep(for: .milliseconds(500))
             XCTAssertTrue(system.focusedItem === expectedItem, "Late provider data must not redirect native focus.")
         }

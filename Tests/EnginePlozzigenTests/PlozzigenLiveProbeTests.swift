@@ -25,7 +25,8 @@ final class PlozzigenLiveProbeTests: XCTestCase {
         let transition = LiveChannelDisplayTransition()
         defer { transition.reset() }
         _ = transition.beginPlayback(
-            isFullscreen: true, changesSource: false, range: facts.range, settings: .default
+            isFullscreen: true, changesSource: false, range: facts.range,
+            settings: .init(fadeOnFrameRateChange: false)
         )
         XCTAssertFalse(transition.veil.isVeiled)
     }

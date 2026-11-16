@@ -6,9 +6,8 @@ extension JellyfinProvider {
     var collectionDirectoryID: String { "\(kind.rawValue):collections" }
 
     func collectionDirectoryHasItems(in libraryID: String) async throws -> Bool {
-        let response = try await client.collectionCandidates(
-            userID: session.userID, libraryID: libraryID == collectionDirectoryID ? nil : libraryID,
-            page: PageRequest(limit: 1)
+        let response = try await client.collectionDirectoryHasItems(
+            userID: session.userID, libraryID: libraryID == collectionDirectoryID ? nil : libraryID
         )
         try Task.checkCancellation()
         var seen = Set<String>()

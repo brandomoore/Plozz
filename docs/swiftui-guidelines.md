@@ -91,6 +91,49 @@ For cross-screen state coordination, follow [state management](state-management.
 
 Do not add ad-hoc foreground/background refresh logic to view bodies.
 
+### Never hide a transient state behind a wall-clock delay
+
+A loading affordance must be chosen from **known state**, not from "has it been
+long enough". Delays are untestable (they depend on network and device speed),
+they behave differently on the same build, and they turn a deterministic rule
+into a threshold nobody can verify. Two concrete cases:
+
+- The Home skeleton paints only when no snapshot exists to restore
+  (`hasPersistedSnapshot == false`); it is not armed after N milliseconds.
+- The detail episode rail paints its skeleton only when the viewer explicitly
+  switched season (`hasExplicitSeasonSelection`) and those episodes are not in
+  hand yet. A page's first load holds the rail's geometry and fills it in place.
+
+Both of these previously shipped with `Task.sleep` graces (250 ms, 2 s, 6 s).
+Each one produced a measured failure that a state rule does not: the skeleton
+still appeared whenever the real fetch outran the delay. If a transient state
+needs to be hidden, hide it while the *data* says it is provisional, not while a
+timer says so.
+
+### Reserve geometry with `PlozzReservedPlaceholder`
+
+Loading placeholders do two different jobs, and conflating them causes reflow:
+reserving the final space, and signalling that work is happening. Use
+`PlozzReservedPlaceholder` (`CoreUI`) instead of writing the rule per view:
+
+```swift
+PlozzReservedPlaceholder(isPending: episodes == nil, revealsPlaceholder: seasonChanged) {
+    EpisodeSkeletonRail()      // must be the real card height
+} content: {
+    EpisodeRail(episodes)
+}
+```
+
+`isPending` decides whether the placeholder is **laid out** — so the page never
+jumps when content lands. `revealsPlaceholder` decides only whether it is
+**painted** — so a first load does not flash a skeleton the viewer never asked
+for. Both are state, never time.
+
+This came from the detail page: the episode rail painted its skeleton on every
+open (a flash), and when that was suppressed the rail reserved no height at all
+and the cards pushed the page down (a reflow). Reserving without revealing fixes
+both. Apply the same primitive to any rail or section that loads after its header.
+
 ## Tests
 
 - Use named constants or shared fixtures for repeated test values, thresholds,

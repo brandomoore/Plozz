@@ -128,7 +128,6 @@ extension View {
         }
         .navigationDestination(for: MediaArtworkZoomRoute<PlozziOSLibraryRoute>.self) { route in
             PlozziOSLibraryDestinationView(appModel: appModel, route: route.value)
-                .mediaArtworkZoomDestination(route.source)
         }
     }
 }

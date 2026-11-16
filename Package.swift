@@ -31,7 +31,13 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [
         .iOS(.v18),
-        .tvOS(.v18)
+        .tvOS(.v18),
+        // The package's own code uses macOS 13/14 APIs and AetherEngine requires 15 (LocalizedStringResource,
+        // Observable). Without a macOS minimum SwiftPM assumes a legacy default, so
+        // `swift build` and `swift test` fail locally on hosts where the platform is
+        // not declared — CI builds through xcodebuild and never hit it. This changes
+        // nothing for the apps, which target iOS/tvOS 18.
+        .macOS(.v15)
     ],
     products: [
         .library(name: "CoreModels", targets: ["CoreModels"]),
@@ -262,7 +268,7 @@ let package = Package(
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "055860a0accaaafa1852d1a65c4f7f505cb7e6ab",
+            revision: "cc3cb49f4014a208f841bde8d1e0a5af0ff885e9",
             traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision

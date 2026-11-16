@@ -103,7 +103,7 @@ final class PlaybackOptionsHostedTests: XCTestCase {
             input.stopRepeating()
             try await self.waitUntil { probe.screen == .zoom && probe.focus == .row(PlaybackOptionsPane.modeSlot(.fit)) }
             try await Task.sleep(for: .milliseconds(350))
-            try self.assertFocusedText("Normal (Default)", in: window)
+            try self.assertFocusedText("Normal", in: window)
             let labels = try self.text(in: DetailTransitionSnapshot.image(of: window)).map(\.text)
             XCTAssertTrue(labels.contains { $0 == "Crop" })
             XCTAssertTrue(labels.contains { $0 == "Stretch" })

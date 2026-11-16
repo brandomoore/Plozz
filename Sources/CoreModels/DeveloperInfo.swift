@@ -29,7 +29,8 @@ public enum DeveloperInfo {
     public static func snapshot(
         bundle: Bundle = .main,
         fileManager: FileManager = .default,
-        channel: AppReleaseChannel = .current
+        channel: AppReleaseChannel = .current,
+        localNetwork: String = "Not checked"
     ) -> [DeveloperInfoItem] {
         func string(_ key: String) -> String {
             (bundle.object(forInfoDictionaryKey: key) as? String) ?? "—"
@@ -68,6 +69,11 @@ public enum DeveloperInfo {
             DeveloperInfoItem(id: "build-number", label: "Build #", value: versionIdentity.displayBuild),
             DeveloperInfoItem(id: "channel", label: "Channel", value: channelLabel),
             DeveloperInfoItem(id: "app-group", label: "App Group", value: appGroupAvailable ? "Available" : "Unavailable (Top Shelf off)"),
+            // The per-app Local Network grant is what a re-signed install
+            // (unsigned IPA + a sideloading tool) loses along with its old
+            // signing identity. It is the first thing to check when browse works
+            // but playback of LAN media times out.
+            DeveloperInfoItem(id: "local-network", label: "Local Network", value: localNetwork),
             DeveloperInfoItem(id: "crash-endpoint", label: "Crash Endpoint", value: crashConfigured ? "Configured" : "Not configured"),
         ]
         if let release = versionIdentity.releaseVersion {

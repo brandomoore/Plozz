@@ -604,8 +604,13 @@ final class GradientBackgroundHostedTests: XCTestCase {
         state.visible = false
         try await Task.sleep(for: .seconds(1))
         let inactive = try pixel(capture(window), at: CGPoint(x: 600, y: 400))
-        XCTAssertLessThan(abs(inactive[0] - inactive[2]), 15, "Hidden Home must drop its artwork tint.")
-        XCTAssertNotEqual(card.cardBackgroundColor, tintedCard)
+        // The tint is presentation, not a live readout. Holding the last artwork
+        // palette while Home is covered is what stops every return from crossfading
+        // the whole page to stock and back (the reported re-render). It changes when
+        // a different slide is displayed, not merely because Home went off screen.
+        XCTAssertGreaterThan(inactive[0], inactive[2] + 10,
+                             "Hidden Home keeps its last artwork palette until a different slide shows.")
+        XCTAssertEqual(card.cardBackgroundColor, tintedCard)
 
         let restoreToken = UUID()
         let session = TVDetailEntranceSession()

@@ -147,6 +147,14 @@ household-keychain access. Provider artwork and keyless enrichment remain;
 expect fresh sign-in and local settings. Playback configuration and license
 notices remain intact; unsigned packaging is not licensing or patent clearance.
 
+The artifact carries **no entitlements** and no provisioning profile, and its
+app executable is unsigned; a re-signer supplies identity and profile claims.
+Local Network access is a per-signature privacy grant, not an entitlement, so a
+re-signed install must be granted it again before streaming from a LAN server
+(the app now asks on the first foreground with an account). See
+[signing an unsigned self-build](../docs/unsigned-ipa-signing.md) for the exact
+entitlement inventory, what Feather keeps or drops, and the verification steps.
+
 ### Tests
 
 Choose checks for the changed behavior, not an automatic full sweep:
@@ -228,3 +236,22 @@ implementation; Subsonic support is music-only and currently development/TestFli
 Follow the [Swift/SwiftUI guidelines](../docs/swiftui-guidelines.md) and existing
 module ownership. Keep changes focused, add relevant regression coverage, and
 update the documentation that owns the changed behavior.
+
+Two conventions that came out of the Home/detail reflow work are now part of
+those guidelines and apply to every surface:
+
+- **Loading states are state-driven.** A placeholder or skeleton is chosen from
+  what the data says (`hasPersistedSnapshot`, `isRestoringSnapshot`,
+  `hasExplicitSeasonSelection`), never from an elapsed-time delay.
+- **Reserve geometry with `PlozzReservedPlaceholder`.** Anything that loads after
+  its header — episode rails, sections, card shelves — lays out its placeholder
+  at the real content height and only *paints* it when the viewer asked for the
+  change. Placeholder counts come from the viewport (`PlozzPlaceholderRail`),
+  never a hardcoded number. Writing that rule locally per view is how the detail
+  page reflowed.
+
+For a new page or rail, follow the [page loading scaffold](../docs/page-loading-scaffold.md):
+load order and prefetch, `Fanout` for multi-account surfaces, reserved placeholders,
+`HTMLText` for provider prose, the observation budget, and how to measure it. It is
+the checklist the Home/detail work was consolidated into; adding a surface should
+reuse those pieces rather than grow a fifth variant.
