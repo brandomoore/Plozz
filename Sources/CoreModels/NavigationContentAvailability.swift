@@ -6,6 +6,7 @@ public struct NavigationContentAvailability: Equatable, Sendable {
     public let hasHomeContent: Bool
     public let hasSearchContent: Bool
     public let hasWatchlistItems: Bool
+    public let hasUpcomingContent: Bool
     public let prefersLiveTV: Bool
     private let hasMusicOnlyAccount: Bool
 
@@ -15,7 +16,8 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         discoveredAccountIDs: Set<String>,
         disabledLibraryKeys: Set<String>,
         hasDiscoverySearch: Bool,
-        hasWatchlistItems: Bool
+        hasWatchlistItems: Bool,
+        hasWatchlistTitles: Bool = false
     ) {
         let accountIDs = Set(accounts.map(\.id))
         hasMusicOnlyAccount = !accounts.isEmpty && accounts.allSatisfy { $0.server.provider == .subsonic }
@@ -33,6 +35,14 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         hasSearchContent = hasLibraries || hasUnresolvedMediaServer || hasDiscoverySearch
         hasHomeContent = hasSearchContent || accounts.contains { $0.server.provider == .plex }
         self.hasWatchlistItems = hasWatchlistItems
+        let hasReleaseLibrary = libraries.contains {
+            accountIDs.contains($0.accountID)
+                && !disabledLibraryKeys.contains($0.key)
+                && !$0.library.isMusic
+                && [.movie, .series, .folder, .unknown].contains($0.library.kind)
+        }
+        hasUpcomingContent = hasReleaseLibrary || hasUnresolvedMediaServer
+            || hasWatchlistTitles || hasDiscoverySearch
         // Discovery can keep Home useful without making it the landing page for a live-only playlist.
         prefersLiveTV = (!hasHomeContent && !hasMusicOnlyAccount)
             || (!accounts.isEmpty && accounts.allSatisfy { $0.server.provider == .iptv } && !hasLibraries)
@@ -43,6 +53,7 @@ public struct NavigationContentAvailability: Equatable, Sendable {
         if !hasHomeContent { hidden.insert(NavigationLibraryLayout.homeKey) }
         if !hasSearchContent { hidden.insert(NavigationLibraryLayout.searchKey) }
         if !hasWatchlistItems { hidden.insert(NavigationLibraryLayout.watchlistKey) }
+        if !hasUpcomingContent { hidden.insert(NavigationLibraryLayout.upcomingKey) }
         return hidden
     }
 

@@ -72,8 +72,7 @@ public struct ThemeMusicVolumeControl: View {
             .accessibilityIdentifier("theme-music-preview")
             if let failure = controller?.failure {
                 Text(failure)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .settingsHelperText()
             }
         }
         .onChange(of: model.settings.volume) { _, volume in

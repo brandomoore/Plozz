@@ -25,6 +25,7 @@ public enum MobileSettingsMetrics {
     public static let groupCornerRadius: CGFloat = 26
     public static let rowInset: CGFloat = 16
     public static let rowVerticalInset: CGFloat = 10
+    public static let descriptionBottomInset: CGFloat = 12
     public static let controlVerticalInset: CGFloat = 4
     public static let rowMinHeight: CGFloat = 52
     public static let previewGridInset: CGFloat = 8
@@ -66,6 +67,8 @@ private struct SettingsRowSeparator: View {
 private struct SettingsActionRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .plozzForeground(.primary)
+            .environment(\.settingsRowIsDestructive, configuration.role == .destructive)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, MobileSettingsMetrics.rowInset)
             .padding(.vertical, MobileSettingsMetrics.rowVerticalInset)
@@ -439,11 +442,7 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
             .settingsGroupSurface(cornerRadius: cornerRadius)
 
             footer
-                #if os(tvOS)
                 .font(SettingsRowMetrics.helperFont)
-                #else
-                .font(.footnote)
-                #endif
                 .plozzForeground(.secondary)
                 .padding(.horizontal, 16)
         }

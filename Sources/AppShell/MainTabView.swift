@@ -933,7 +933,8 @@ struct MainTabView: View {
             discoveredAccountIDs: navigationStyleModel.discoveredAccountIDs,
             disabledLibraryKeys: homeVisibility.visibility.disabledKeys,
             hasDiscoverySearch: seer.isConfigured,
-            hasWatchlistItems: navigationStyleModel.hasWatchlistItems
+            hasWatchlistItems: navigationStyleModel.hasWatchlistItems,
+            hasWatchlistTitles: navigationStyleModel.hasWatchlistTitles
         )
     }
 
@@ -947,6 +948,9 @@ struct MainTabView: View {
     private func refreshWatchlistNavigation() {
         if let hasItems = watchlistHasItems() {
             navigationStyleModel.hasWatchlistItems = hasItems
+            navigationStyleModel.hasWatchlistTitles = upcomingWatchlist().contains {
+                $0.kind == .movie || $0.kind == .series
+            }
         }
     }
 

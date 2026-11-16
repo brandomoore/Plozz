@@ -16,40 +16,65 @@ final class SeerPersonalRequestsTests: XCTestCase {
         )
     }
 
-    private func request(_ id: Int, user: Int = 7, status: Int = 2, type: String = "movie") -> String {
-        #"{"id":\#(id),"status":\#(status),"requestedBy":{"id":\#(user)},"media":{"tmdbId":\#(id),"mediaType":"\#(type)"}}"#
+    private func request(
+        _ id: Int, user: Int = 7, status: Int = 2, type: String = "movie", tmdbID: Int? = nil
+    ) -> String {
+        #"{"id":\#(id),"status":\#(status),"requestedBy":{"id":\#(user)},"media":{"tmdbId":\#(tmdbID ?? id),"mediaType":"\#(type)"}}"#
     }
 
-    func testPersonalPaginationPreservesActingUserAndExcludesDeclinedAndTVRequests() async throws {
+    func testPersonalPaginationIncludesRequestedShowsAndMoviesButNotDeclinedRequests() async throws {
         let http = SeerRecordingHTTPClient()
         http.enqueueStub(
             pathSuffix: "/user/7/requests",
             json: """
-                {"pageInfo":{"results":4},"results":[\(request(1)),\(request(2, status: 3))]}
+                {"pageInfo":{"results":6},"results":[\(request(1)),\(request(2, status: 3))]}
                 """)
         http.enqueueStub(
             pathSuffix: "/user/7/requests",
             json: """
-                {"pageInfo":{"results":4},"results":[\(request(3, type: "tv")),\(request(4))]}
+                {"pageInfo":{"results":6},"results":[\(request(3, status: 1, type: "tv")),\(request(4)),\(request(5, type: "tv", tmdbID: 1)),\(request(6, type: "tv", tmdbID: 1))]}
                 """)
         for id in [1, 4] {
             http.enqueueStub(pathSuffix: "/movie/\(id)", json: #"{"id":\#(id),"title":"Film \#(id)"}"#)
         }
-        let items = try await service(http).personallyRequestedMovies(
+        for id in [1, 3] {
+            http.enqueueStub(pathSuffix: "/tv/\(id)", json: #"{"id":\#(id),"name":"Show \#(id)"}"#)
+        }
+        let items = try await service(http).personallyRequestedTitles(
             identity: .user(id: 7, server: SeerServerIdentity(baseURL: baseURL)), language: "en"
         )
-        XCTAssertEqual(items.map(\.id), ["seer:movie:1", "seer:movie:4"])
+        XCTAssertEqual(items.map(\.id), ["seer:movie:1", "seer:movie:4", "seer:series:1", "seer:series:3"])
+        XCTAssertEqual(items.map(\.kind), [.movie, .movie, .series, .series])
+        XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/tv/1") }.count, 1,
+                       "Multiple season requests enroll a show only once")
         let requests = http.sent.filter { $0.path.hasSuffix("/requests") }
         XCTAssertEqual(requests.map { $0.queryItems.first { $0.name == "skip" }?.value }, ["0", "2"])
         XCTAssertTrue(requests.allSatisfy { $0.headers["X-API-User"] == "7" })
         XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/auth/me") })
     }
 
+    func testPersonalTVDetailsRejectAnExplicitlyWrongMediaType() async {
+        let http = SeerRecordingHTTPClient()
+        http.stub(
+            pathSuffix: "/user/7/requests",
+            json: #"{"pageInfo":{"results":1},"results":[\#(request(1, type: "tv"))]}"#
+        )
+        http.stub(pathSuffix: "/tv/1", json: #"{"id":1,"name":"Wrong kind","mediaType":"movie"}"#)
+        do {
+            _ = try await service(http).personallyRequestedTitles(
+                identity: .user(id: 7, server: SeerServerIdentity(baseURL: baseURL)), language: "en"
+            )
+            XCTFail("An explicit conflicting type must not be overwritten")
+        } catch {
+            XCTAssertEqual(error as? AppError, .invalidResponse)
+        }
+    }
+
     func testUnmappedIdentityResolvesItsOwnUserInsteadOfListingHouseholdRequests() async throws {
         let http = SeerRecordingHTTPClient()
         http.enqueueStub(pathSuffix: "/auth/me", json: #"{"id":9}"#)
         http.enqueueStub(pathSuffix: "/user/9/requests", json: #"{"pageInfo":{"results":0},"results":[]}"#)
-        let items = try await service(http).personallyRequestedMovies(identity: .admin, language: "en")
+        let items = try await service(http).personallyRequestedTitles(identity: .admin, language: "en")
         XCTAssertTrue(items.isEmpty)
         XCTAssertEqual(http.sentPaths.count, 2)
         XCTAssertTrue(http.sentPaths.last?.hasSuffix("/user/9/requests") == true)
@@ -71,7 +96,7 @@ final class SeerPersonalRequestsTests: XCTestCase {
         )
         http.stub(pathSuffix: "/user/9/requests", json: #"{"pageInfo":{"results":0},"results":[]}"#)
 
-        _ = try await service.personallyRequestedMovies(identity: service.requestIdentity, language: "en")
+        _ = try await service.personallyRequestedTitles(identity: service.requestIdentity, language: "en")
 
         XCTAssertEqual(profile.seerrRequestIdentity.userID, 7)
         XCTAssertEqual(service.requestIdentity.userID, 9)
@@ -87,7 +112,7 @@ final class SeerPersonalRequestsTests: XCTestCase {
                 {"pageInfo":{"results":1},"results":[\(request(1, user: 8))]}
                 """)
         do {
-            _ = try await service(http).personallyRequestedMovies(
+            _ = try await service(http).personallyRequestedTitles(
                 identity: .user(id: 7, server: SeerServerIdentity(baseURL: baseURL)), language: "en"
             )
             XCTFail("Foreign user request must be rejected")
@@ -97,7 +122,7 @@ final class SeerPersonalRequestsTests: XCTestCase {
         XCTAssertFalse(http.sentPaths.contains { $0.contains("/movie/") })
         let unboundHTTP = SeerRecordingHTTPClient()
         do {
-            _ = try await service(unboundHTTP).personallyRequestedMovies(
+            _ = try await service(unboundHTTP).personallyRequestedTitles(
                 identity: .user(id: 7, server: nil), language: "en"
             )
             XCTFail("Unbound user must not fall back to admin")
@@ -120,7 +145,7 @@ final class SeerPersonalRequestsTests: XCTestCase {
             XCTAssertEqual(service.requestIdentity, .user(id: 7, server: nil))
             for identity in [service.requestIdentity, .user(id: 7, server: SeerServerIdentity(baseURL: baseURL))] {
                 do {
-                    _ = try await service.personallyRequestedMovies(identity: identity, language: "en")
+                    _ = try await service.personallyRequestedTitles(identity: identity, language: "en")
                     XCTFail("An unverified legacy mapping must require relinking")
                 } catch {
                     XCTAssertEqual(error as? AppError, .unauthorized)
@@ -135,7 +160,7 @@ final class SeerPersonalRequestsTests: XCTestCase {
         let service = service(http)
         service.refusesAdminRequests = { true }
         do {
-            _ = try await service.personallyRequestedMovies(identity: .admin, language: "en")
+            _ = try await service.personallyRequestedTitles(identity: .admin, language: "en")
             XCTFail("A restricted profile needs its own mapped request identity")
         } catch {
             XCTAssertEqual(error as? AppError, .unauthorized)
@@ -150,7 +175,7 @@ final class SeerPersonalRequestsTests: XCTestCase {
         http.suspend(pathSuffix: path)
         let service = service(http)
         let identity = SeerRequestIdentity.user(id: 7, server: SeerServerIdentity(baseURL: baseURL))
-        let load = Task { try await service.personallyRequestedMovies(identity: identity, language: "en") }
+        let load = Task { try await service.personallyRequestedTitles(identity: identity, language: "en") }
         await http.waitUntilSuspended(pathSuffix: path)
         service.disconnect()
         http.resume(pathSuffix: path)

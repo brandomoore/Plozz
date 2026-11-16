@@ -1098,8 +1098,8 @@ struct PlozziOSTabShell: View {
             return try await UpcomingFeedLoader.load(
                 accounts: accounts, watchlist: saved, regionCode: region,
                 interval: UpcomingFeedLoader.window(),
-                requestedMovies: {
-                    try await seer.personallyRequestedMovies(identity: identity, language: language)
+                requestedTitles: {
+                    try await seer.personallyRequestedTitles(identity: identity, language: language)
                 },
                 isCurrent: isCurrent, onProgress: progress
             )
@@ -1174,11 +1174,7 @@ struct PlozziOSTabShell: View {
         let libraries = appModel.visibleNavigationLibraries
         let libraryKeys = Set(libraries.map(\.key))
         return navigation.resolvedLayout(
-            additionallyHiddenKeys: NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(
-                available: NavigationDestinationDefaults.iOS(
-                    visibleLibraries: libraries, hasMusic: appModel.music?.availability.hasMusic == true
-                )
-            )
+            additionallyHiddenKeys: automaticallyHiddenNavigationKeys(appModel: appModel)
         )
             .sections(
                 available: navigation.availableNavigationKeys(
@@ -1213,13 +1209,28 @@ struct PlozziOSTabShell: View {
             discoveredAccountIDs: navigation.discoveredAccountIDs,
             disabledLibraryKeys: appModel.settings.homeVisibility.visibility.disabledKeys,
             hasDiscoverySearch: appModel.seerService.isConfigured,
-            hasWatchlistItems: navigation.hasWatchlistItems
+            hasWatchlistItems: navigation.hasWatchlistItems,
+            hasWatchlistTitles: navigation.hasWatchlistTitles
+        )
+    }
+
+    private static func automaticallyHiddenNavigationKeys(appModel: PlozziOSAppModel) -> Set<String> {
+        NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(
+            available: NavigationDestinationDefaults.iOS(
+                visibleLibraries: appModel.visibleNavigationLibraries,
+                hasMusic: appModel.music?.availability.hasMusic == true
+            ),
+            hasUpcomingContent: navigationAvailability(appModel: appModel).hasUpcomingContent
         )
     }
 
     private func refreshWatchlistNavigation() {
         if let hasItems = appModel.navigationWatchlistHasItems {
             appModel.settings.navigation.hasWatchlistItems = hasItems
+            appModel.settings.navigation.hasWatchlistTitles =
+                appModel.resolvedUniversalWatchlistItems(candidates: []).contains {
+                    $0.kind == .movie || $0.kind == .series
+                }
         }
     }
 
@@ -1376,7 +1387,9 @@ struct PlozziOSTabShell: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
         case .upcoming:
-            UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
+            UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window()) {
+                PlozziOSSettingsToolbarItem(action: showSettings)
+            }
                 .plozziOSItemNavigation(appModel: appModel)
                 .toolbarBackground(.automatic, for: .navigationBar)
                 .background { AppBackground(palette: palette) }
@@ -1612,13 +1625,9 @@ struct PlozziOSTabShell: View {
         .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistCacheDidLoad)) { _ in
             refreshWatchlistNavigation()
         }
-        .onChange(of: NavigationDestinationDefaults.iOS(
-            visibleLibraries: appModel.visibleNavigationLibraries,
-            hasMusic: appModel.music?.availability.hasMusic == true
-        ),
-                  initial: true) { _, available in
-            appModel.settings.navigation.automaticallyHiddenKeys =
-                NavigationDestinationDefaults.iOSAutomaticallyHiddenKeys(available: available)
+        .onChange(of: Self.automaticallyHiddenNavigationKeys(appModel: appModel),
+                  initial: true) { _, hidden in
+            appModel.settings.navigation.automaticallyHiddenKeys = hidden
         }
         .task(id: homeContentIdentity, priority: .utility) {
             await refreshNavigationLibraries()

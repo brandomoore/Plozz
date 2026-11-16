@@ -311,8 +311,8 @@ struct HomeTab: View {
             try await UpcomingFeedLoader.load(
                 accounts: accounts, watchlist: saved, regionCode: region,
                 interval: UpcomingFeedLoader.window(),
-                requestedMovies: {
-                    try await seer.personallyRequestedMovies(identity: identity, language: language)
+                requestedTitles: {
+                    try await seer.personallyRequestedTitles(identity: identity, language: language)
                 },
                 isCurrent: isCurrent, onProgress: progress
             )

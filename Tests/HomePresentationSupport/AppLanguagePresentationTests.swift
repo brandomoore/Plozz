@@ -18,6 +18,8 @@ private struct LanguagePresentationProbe: View {
                 Button("Play") {}
                 Button("Cancel") {}
             }
+            .buttonStyle(.plain)
+            .tint(.primary)
             ForEach([0, 1, 2, 5], id: \.self) { count in
                 Text("\(count) episodes")
             }

@@ -77,7 +77,9 @@ same `SeerConnectionsView` and authentication implementation.
   Authorized Plex account choices refresh when the profile's resolved identity
   changes; pending authorization never substitutes the owner's credential.
   Continuing with a named, authorized Plex/Jellyfin account verifies that
-  identity and saves it without a second confirmation. Emby has no equivalent
+  identity and saves it without a second confirmation in onboarding and Settings,
+  including accounts explicitly selected from the existing-account chooser.
+  Successful saves close the Settings account editor. Emby has no equivalent
   session exchange: a single profile-scoped Emby username can be suggested,
   but Continue opens an editable Emby username/password form. Local Seerr
   credentials are separate and never inherit the Emby username.
@@ -107,7 +109,8 @@ same `SeerConnectionsView` and authentication implementation.
   Editing cancels discovery and discards old capabilities, credentials and account
   choices. It never probes or authenticates until an explicit submit; password
   sign-in returns to checking the new server, while API-key entry clears its key.
-  Finding a server never authenticates or saves an account. Manual sign-ins
+  Finding a server never authenticates or saves an account. Password, API-key,
+  and explicit Plex browser sign-ins
   show the authenticated identity for confirmation before saving.
 - First-run and new-profile setup use a focused, optional onboarding page, not
   the saved-account Settings page. Saving the confirmed account advances setup;
@@ -140,6 +143,9 @@ Results from another destination must not become availability overrides for
 the server currently being browsed.
 Upcoming uses the selected connection's server-bound request identity for both
 loading and cache ownership, including after changing an API-key request user.
+It includes pending and approved personal movie and TV requests, deduplicating
+season requests by media type and TMDB ID. Title details may omit `mediaType`;
+the requested endpoint supplies it, while an explicit conflicting type is rejected.
 
 ## Device transfer
 

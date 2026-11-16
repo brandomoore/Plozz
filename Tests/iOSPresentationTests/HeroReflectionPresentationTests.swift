@@ -12,7 +12,7 @@ final class HeroReflectionPresentationTests: XCTestCase {
         for height in [CGFloat(200), 340] {
             for scheme in [ColorScheme.light, .dark] {
                 let image = try render(
-                    PlozziOSExtendedHeroArtwork(height: height) { layout in
+                    PlozziOSExtendedHeroArtwork(height: height, surfaceRole: .home) { layout in
                         VStack(spacing: 0) {
                             Color(red: 1, green: 0, blue: 0).frame(height: 12)
                             Color(red: 0, green: 0, blue: 1).frame(height: 12)
@@ -47,7 +47,7 @@ final class HeroReflectionPresentationTests: XCTestCase {
 
     func testTopReflectionGraduallyBlursStartingEightPointsBeforeTheSeam() throws {
         func artwork(reduced: Bool) -> some View {
-            PlozziOSExtendedHeroArtwork(height: 340) { layout in
+            PlozziOSExtendedHeroArtwork(height: 340, surfaceRole: .home) { layout in
                 HStack(spacing: 0) {
                     ForEach(0..<50) { index in
                         (index.isMultiple(of: 2) ? Color.white : Color.black).frame(width: 4)
@@ -84,10 +84,40 @@ final class HeroReflectionPresentationTests: XCTestCase {
         }
     }
 
+    func testDetailReflectionDoesNotReceiveTheHomeStatusAreaBlur() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            func artwork(role: HeroTrailerSurfaceRole, reduced: Bool) -> some View {
+                PlozziOSExtendedHeroArtwork(height: 340, surfaceRole: role) { layout in
+                    HStack(spacing: 0) {
+                        ForEach(0..<50) { index in
+                            (index.isMultiple(of: 2) ? Color.white : Color.black).frame(width: 4)
+                        }
+                    }
+                    .frame(width: layout.width, height: layout.height)
+                }
+                .environment(\.plozzReduceTransparency, reduced)
+                .opacity(0.5)
+                .background(scheme == .dark ? Color.black : Color.white)
+            }
+            let reference = try render(artwork(role: .home, reduced: true), height: 340)
+            for reduced in [false, true] {
+                let detail = try render(artwork(role: .detail, reduced: reduced), height: 340)
+                for x: CGFloat in [98, 102] {
+                    for y: CGFloat in [4, 18, 24, 28, 32, 80, 310] {
+                        for (actual, expected) in zip(try rgb(detail, x: x, y: y), try rgb(reference, x: x, y: y)) {
+                            XCTAssertEqual(actual, expected, accuracy: 0.01,
+                                           "Detail must retain the sharp reflection, opacity, and original artwork.")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testTopReflectionBlurPreservesColorAndAlphaInsteadOfAddingATint() throws {
         for scheme in [ColorScheme.light, .dark] {
             func artwork(reduced: Bool) -> some View {
-                PlozziOSExtendedHeroArtwork(height: 340) { layout in
+                PlozziOSExtendedHeroArtwork(height: 340, surfaceRole: .home) { layout in
                     Color(red: 0.2, green: 0.6, blue: 0.9)
                         .frame(width: layout.width, height: layout.height)
                 }
@@ -111,7 +141,7 @@ final class HeroReflectionPresentationTests: XCTestCase {
     func testTopAndBottomSeamsDoNotBrightenDuringSwipeFadesOrPullScaling() throws {
         for scale in [CGFloat(1), 1.17] {
             let image = try render(
-                PlozziOSExtendedHeroArtwork(height: 340) { layout in
+                PlozziOSExtendedHeroArtwork(height: 340, surfaceRole: .home) { layout in
                     Color.white.frame(width: layout.width, height: layout.height)
                 }
                 .scaleEffect(scale, anchor: .topLeading)

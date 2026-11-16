@@ -179,7 +179,7 @@ public final class SeerService {
     private var client: SeerClient { SeerClient(config: config, http: http) }
 
     /// Only this acting user's active requests, never the household request feed.
-    public func personallyRequestedMovies(
+    public func personallyRequestedTitles(
         identity: SeerRequestIdentity, language: String
     ) async throws -> [MediaItem] {
         guard isConfigured else { return [] }
@@ -198,7 +198,7 @@ public final class SeerService {
         guard userID > 0 else { throw AppError.invalidResponse }
         var offset = 0
         var seen = Set<Int>()
-        var movies = Set<Int>()
+        var titles: [String: Set<Int>] = [:]
         while true {
             try Task.checkCancellation()
             let page = try await client.personalRequests(userID: userID, skip: offset)
@@ -208,21 +208,24 @@ public final class SeerService {
             for request in page.results {
                 guard request.requestedBy.id == userID,
                       seen.insert(request.id).inserted else { throw AppError.invalidResponse }
-                if request.media.mediaType == "movie", request.status == 1 || request.status == 2,
+                if ["movie", "tv"].contains(request.media.mediaType), request.status == 1 || request.status == 2,
                    request.media.tmdbId > 0 {
-                    movies.insert(request.media.tmdbId)
+                    titles[request.media.mediaType, default: []].insert(request.media.tmdbId)
                 }
             }
             offset += page.results.count
             if offset >= total { break }
         }
         var items: [MediaItem] = []
-        for id in movies.sorted() {
-            try Task.checkCancellation()
-            let result = try await client.requestedMovie(tmdbID: id, language: language)
-            guard revision == connectionRevision else { throw CancellationError() }
-            guard result.id == id, result.mediaType == "movie" else { throw AppError.invalidResponse }
-            if let item = SeerMapper.mediaItem(from: result) { items.append(item) }
+        for mediaType in ["movie", "tv"] {
+            for id in titles[mediaType, default: []].sorted() {
+                try Task.checkCancellation()
+                let result = try await client.requestedTitle(mediaType: mediaType, tmdbID: id, language: language)
+                guard revision == connectionRevision else { throw CancellationError() }
+                guard result.id == id, result.mediaType == mediaType,
+                      let item = SeerMapper.mediaItem(from: result) else { throw AppError.invalidResponse }
+                items.append(item)
+            }
         }
         return items
     }

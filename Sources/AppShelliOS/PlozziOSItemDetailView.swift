@@ -327,6 +327,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             isActive: isPageVisible && playbackRequest == nil
         )
         .navigationBarTitleDisplayMode(.inline)
+        // Let the native scroll edge own the backdrop without a second navigation-bar layer.
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 PlozziOSDetailAudioMuteControl(

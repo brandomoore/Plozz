@@ -20,6 +20,7 @@ struct SeerDiscoverPage: Decodable {
 struct SeerDiscoverResult: Decodable {
     var id: Int
     var mediaType: String
+    var mediaTypeWasOmitted = false
     var title: String?  // l10n:content — server-supplied media title (movies)
     var name: String?
     var originalTitle: String?
@@ -40,7 +41,9 @@ struct SeerDiscoverResult: Decodable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
-        mediaType = try c.decodeIfPresent(String.self, forKey: .mediaType) ?? "movie"
+        let explicitMediaType = try c.decodeIfPresent(String.self, forKey: .mediaType)
+        mediaType = explicitMediaType ?? "movie"
+        mediaTypeWasOmitted = explicitMediaType == nil
         title = try c.decodeIfPresent(String.self, forKey: .title)
         name = try c.decodeIfPresent(String.self, forKey: .name)
         originalTitle = try c.decodeIfPresent(String.self, forKey: .originalTitle)

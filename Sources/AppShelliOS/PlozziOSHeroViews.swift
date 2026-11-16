@@ -910,6 +910,7 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
     private static var topBlurLeadIn: CGFloat { 8 }
 
     let height: CGFloat
+    let surfaceRole: HeroTrailerSurfaceRole
     @ViewBuilder let picture: (PlozziOSHeroPictureLayout) -> Picture
 
     var body: some View {
@@ -940,7 +941,7 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
                 }
             }
             .overlay(alignment: .top) {
-                if topHeight > 0, !reduceTransparency {
+                if surfaceRole == .home, topHeight > 0, !reduceTransparency {
                     topReflectionBlur(geometry, width: width, topHeight: topHeight,
                                       radius: topHeight / 6, from: 0, to: 0.55)
                     topReflectionBlur(geometry, width: width, topHeight: topHeight,
@@ -1119,7 +1120,7 @@ private struct PlozziOSHeroBackdrop: View {
     var body: some View {
         ZStack {
             if extendsArtwork {
-                PlozziOSExtendedHeroArtwork(height: height) { layout in
+                PlozziOSExtendedHeroArtwork(height: height, surfaceRole: surfaceRole) { layout in
                     stillArtwork()
                         .frame(width: layout.width, height: layout.height)
                         .clipped()
@@ -1619,7 +1620,7 @@ struct PlozziOSHomeStaticBackdrop: View {
         width: CGFloat
     ) -> some View {
         if extendsArtwork {
-            PlozziOSExtendedHeroArtwork(height: height) { layout in
+            PlozziOSExtendedHeroArtwork(height: height, surfaceRole: .home) { layout in
                 PlozziOSSlidingHeroArtwork(
                     presentation: presentation,
                     style: style,

@@ -2,6 +2,7 @@
 import CoreImage
 import CoreModels
 import CoreUI
+import FeatureAuth
 import FeatureSettings
 import SwiftUI
 import UIKit
@@ -24,6 +25,67 @@ private struct SettingsLanguageScopeProbe: View {
 @MainActor
 final class SettingsCommunityPresentationTests: XCTestCase {
     private var capturedImages: [CGImage] = []
+
+    func testSeerrBelongsToTheActiveProfileButRemainsHiddenForKids() async throws {
+        let suite = "SeerrProfileCategory-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let language = AppLanguageSettingsModel(store: AppLanguageSettingsStore(defaults: defaults))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 1300)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for isKids in [false, true] {
+            var headerFrame = CGRect.zero
+            var sectionFrame = CGRect.zero
+            var firstRowFrame = CGRect.zero
+            window.rootViewController = UIHostingController(rootView:
+                PlozziOSProfileSettingsSection(
+                    showsParentalControls: isKids,
+                    isKidsProfile: isKids,
+                    appLanguage: language
+                ) {
+                    PlozziOSProfileIdentityHeader(
+                        profile: Profile(id: "profile-header", name: "Current profile"),
+                        profileCount: 2, onSwitchProfile: {}
+                    )
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { headerFrame = $0 }
+                } row: { category in
+                    PlozziOSSettingsCategoryLabel(category: category, accounts: [], isAccountIncluded: { _ in true })
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                            if category == .playback { firstRowFrame = $0 }
+                        }
+                } management: {
+                    EmptyView()
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { sectionFrame = $0 }
+                .frame(width: 390)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.gradientBackgroundsEnabled, false)
+                .background(Color.black)
+            )
+            window.makeKeyAndVisible()
+            try await waitForHostedLayout(window)
+            let text = try recognizedText(in: window, name: "Profile settings Seerr kids-\(isKids)")
+            XCTAssertEqual(text.components(separatedBy: "Seerr").count - 1, isKids ? 0 : 1, text)
+            XCTAssertEqual(text.components(separatedBy: "Downloads").count - 1, isKids ? 0 : 1, text)
+            XCTAssertEqual(text.components(separatedBy: "Current profile").count - 1, 1, text)
+            XCTAssertFalse(text.contains("Saved to your profile"), text)
+            XCTAssertGreaterThan(headerFrame.height, 0)
+            XCTAssertEqual(headerFrame.minY, sectionFrame.minY, accuracy: 1,
+                           "The identity belongs inside the top of the settings card, not a separate section.")
+            XCTAssertGreaterThanOrEqual(firstRowFrame.minY, headerFrame.maxY)
+            XCTAssertLessThan(firstRowFrame.minY - headerFrame.maxY, MobileSettingsMetrics.sectionSpacing,
+                              "There must not be a section gap between the profile header and its settings.")
+        }
+    }
 
     func testLanguagePickerUsesAppOwnedModelWithoutAnInheritedEnvironment() async throws {
         let suite = "SettingsLanguage-\(UUID().uuidString)"
@@ -110,22 +172,30 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                 ))
                 context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
             }
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["en-US"]
-            try VNImageRequestHandler(cgImage: image).perform([request])
+            let iconColumnWidth = UIFontMetrics(forTextStyle: .body).scaledValue(
+                for: SettingsRowMetrics.iconColumnWidth,
+                compatibleWith: UITraitCollection(preferredContentSizeCategory:
+                    textSize == .accessibility3 ? .accessibilityExtraLarge : .large)
+            )
             let titles = try ["Playback", "Subtitles", "Live TV", "Libraries", "Appearance",
-                              "Screens", "Trackers", "Language"].map { title in
+                              "Screens", "Trackers", "Seerr", "Language"].enumerated().map { index, title in
+                // Recognize each row at native resolution rather than downsampling the tall category list.
+                let rowTop = index * 180
+                let row = try XCTUnwrap(image.cropping(to: CGRect(x: 0, y: rowTop, width: image.width, height: 180)))
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: row).perform([request])
                 let result = try XCTUnwrap(request.results?.first {
                     $0.topCandidates(1).first?.string.contains(title) == true
                 }, "Missing category \(title)")
                 let candidate = try XCTUnwrap(result.topCandidates(1).first)
                 let range = try XCTUnwrap(candidate.string.range(of: title))
                 let bounds = try XCTUnwrap(candidate.boundingBox(for: range)).boundingBox
-                let top = max(0, Int((1 - bounds.maxY) * CGFloat(image.height)) - 2)
-                let bottom = min(image.height, Int((1 - bounds.minY) * CGFloat(image.height)) + 2)
-                // OCR locates the title line; its estimated left edge can include the adjacent icon.
-                let leading = try XCTUnwrap((0..<image.width).first { x in
+                let top = max(0, rowTop + Int((1 - bounds.maxY) * 180) - 2)
+                let bottom = min(image.height, rowTop + Int((1 - bounds.minY) * 180) + 2)
+                // Measure title ink, excluding the independently centered icon column.
+                let leading = try XCTUnwrap((Int(iconColumnWidth)..<image.width).first { x in
                     (top..<bottom).contains { y in
                         let offset = (y * image.width + x) * 4
                         return pixels[offset] > 230 && pixels[offset + 1] > 230 && pixels[offset + 2] > 230
@@ -302,46 +372,8 @@ final class SettingsCommunityPresentationTests: XCTestCase {
         }
     }
 
-    func testMozzUsesOfficialLightAndDarkAppIconResources() throws {
-        let light = try XCTUnwrap(UIImage(
-            named: "MozzAppIcon", in: .main, compatibleWith: UITraitCollection(userInterfaceStyle: .light)
-        ))
-        let dark = try XCTUnwrap(UIImage(
-            named: "MozzAppIcon", in: .main, compatibleWith: UITraitCollection(userInterfaceStyle: .dark)
-        ))
-        for image in [light, dark] {
-            XCTAssertEqual(image.size.width, image.size.height)
-            XCTAssertGreaterThanOrEqual(image.size.width, 144)
-        }
-        XCTAssertNotEqual(light.pngData(), dark.pngData(), "Preserve Mozz's separate official dark icon.")
-        XCTAssertEqual(AppLinks.mozzTestFlight.absoluteString, "https://testflight.apple.com/join/dmeawSSM")
-    }
-
-    func testMozzBetaRowStaysReadableOnPhoneAndPadInBothThemes() async throws {
-        for light in [false, true] {
-            for (width, textSize) in [
-                (320.0, DynamicTypeSize.large), (320.0, .accessibility3), (768.0, .large)
-            ] {
-                let text = try await renderedText(
-                    ScrollView {
-                        PlozziOSMoreAppsSettingsSection()
-                    }
-                    .settingsPageSurface()
-                    .environment(\.dynamicTypeSize, textSize),
-                    size: CGSize(width: width, height: 900), light: light,
-                    name: "mozz-beta-\(width)-\(light)-\(textSize)", initialOnly: true
-                )
-                let readable = text.replacingOccurrences(of: "- ", with: "")
-                    .replacingOccurrences(of: "-", with: "")
-                for label in ["Mozz", "Free, open-source music player", "TestFlight public beta"] {
-                    XCTAssertTrue(readable.contains(label.replacingOccurrences(of: "-", with: "")), text)
-                }
-            }
-        }
-    }
-
     func testCompactSettingsExposeCommunityLinksInBothThemes() async throws {
-        let model = PlozziOSAppModel()
+        let model = try makeSettingsAppWithAccount()
         let originalTheme = model.settings.theme.theme
         defer { model.settings.theme.theme = originalTheme }
         for light in [false, true] {
@@ -353,21 +385,28 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                     systemColorScheme: light ? .light : .dark
                 )
                 .environment(\.horizontalSizeClass, .compact)
+                let firstCapture = capturedImages.count
                 let text = try await renderedText(
                     content, size: size, light: light,
                     name: "compact-settings-community-\(Int(size.width))-\(light)"
                 )
+                XCTAssertTrue(text.localizedCaseInsensitiveContains("Manage Plozz"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("All profiles"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("Everyone"), text)
+                XCTAssertFalse(text.contains("Applies to all profiles on this device."), text)
                 assertCommunity(in: text)
-                XCTAssertTrue(text.contains("Mozz"), text)
-                XCTAssertTrue(text.contains("TestFlight public beta"), text)
+                XCTAssertFalse(text.contains("Mozz"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("More apps"), text)
                 XCTAssertTrue(text.contains("Help & Diagnostics"), text)
                 XCTAssertTrue(text.contains("Version"), text)
+                XCTAssertTrue(text.contains("Build"), text)
+                try assertSignOutFollowsSupport(in: text, image: capturedImages[firstCapture])
             }
         }
     }
 
     func testRegularSettingsExposeCommunityLinksInBothThemes() async throws {
-        let model = PlozziOSAppModel()
+        let model = try makeSettingsAppWithAccount()
         let originalTheme = model.settings.theme.theme
         defer { model.settings.theme.theme = originalTheme }
         for light in [false, true] {
@@ -377,18 +416,87 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                     appModel: model, onClose: {}, systemColorScheme: light ? .light : .dark
                 )
                 .environment(\.horizontalSizeClass, .regular)
+                let firstCapture = capturedImages.count
                 let text = try await renderedText(
                     content, size: size, light: light,
                     name: "regular-settings-community-\(Int(size.width))-\(light)",
                     leadingColumn: true
                 )
+                XCTAssertTrue(text.localizedCaseInsensitiveContains("Manage Plozz"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("All profiles"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("Everyone"), text)
+                XCTAssertFalse(text.contains("Applies to all profiles on this device."), text)
                 assertCommunity(in: text)
-                XCTAssertTrue(text.contains("Mozz"), text)
-                XCTAssertTrue(text.contains("TestFlight public beta"), text)
+                XCTAssertFalse(text.contains("Mozz"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("More apps"), text)
                 XCTAssertTrue(text.contains("Help & Diagnostics"), text)
                 XCTAssertTrue(text.contains("Version"), text)
+                XCTAssertTrue(text.contains("Build"), text)
+                try assertSignOutFollowsSupport(in: text, image: capturedImages[firstCapture])
             }
         }
+    }
+
+    private func makeSettingsAppWithAccount() throws -> PlozziOSAppModel {
+        let suite = "SettingsManagement-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let accounts = AccountStore(secureStore: InMemorySecureStore())
+        try accounts.add(Account(
+            id: "settings-server",
+            server: MediaServer(
+                id: "settings-server", name: "Test server",
+                baseURL: URL(string: "https://settings.fixture.invalid")!, provider: .jellyfin
+            ),
+            userID: "viewer", userName: "Viewer", deviceID: "fixture"
+        ), token: "fixture")
+        return PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
+            accountStore: accounts, profileStore: ProfileStore(defaults: defaults)
+        )
+    }
+
+    private func assertSignOutFollowsSupport(in text: String, image: CGImage) throws {
+        let support = try XCTUnwrap(text.range(of: "Attributions"), text)
+        let signOut = try XCTUnwrap(text.range(of: "Sign Out of All Accounts"), text)
+        XCTAssertLessThan(support.lowerBound, signOut.lowerBound, text)
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        let label = try XCTUnwrap(request.results?.first {
+            $0.topCandidates(1).first?.string.contains("Sign Out of All Accounts") == true
+        })
+        let recognized = try XCTUnwrap(label.topCandidates(1).first)
+        let titleRange = try XCTUnwrap(recognized.string.range(of: "Sign Out of All Accounts"))
+        let box = try XCTUnwrap(recognized.boundingBox(for: titleRange)).boundingBox
+        let title = CGRect(
+            x: box.minX * CGFloat(image.width), y: (1 - box.maxY) * CGFloat(image.height),
+            width: box.width * CGFloat(image.width), height: box.height * CGFloat(image.height)
+        ).integral
+        let icon = CGRect(x: max(0, title.minX - 44), y: title.minY - 5, width: 36, height: title.height + 10)
+        XCTAssertGreaterThan(try redPixelCount(in: image, rect: title), 20, "The sign-out title must stay red.")
+        XCTAssertGreaterThan(try redPixelCount(in: image, rect: icon), 10, "The sign-out icon must stay red.")
+    }
+
+    private func redPixelCount(in image: CGImage, rect: CGRect) throws -> Int {
+        let crop = try XCTUnwrap(image.cropping(to: rect.integral))
+        var pixels = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+        try pixels.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(
+                data: buffer.baseAddress, width: crop.width, height: crop.height,
+                bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        }
+        return stride(from: 0, to: pixels.count, by: 4).filter { index in
+            let red = Int(pixels[index])
+            return red > 100 && red > Int(pixels[index + 1]) * 3 / 2
+                && red > Int(pixels[index + 2]) * 3 / 2
+        }.count
     }
 
     func testLibrarySourceNamesStayInlineWithAdaptiveOverflow() async throws {

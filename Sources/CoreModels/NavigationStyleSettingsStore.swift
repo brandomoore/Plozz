@@ -80,6 +80,7 @@ public final class NavigationStyleSettingsModel {
 
     public var automaticallyHiddenKeys: Set<String> = []
     public var hasWatchlistItems = false
+    public var hasWatchlistTitles = false
     public private(set) var contentLibraries: [AggregatedLibrary]
     public private(set) var discoveredAccountIDs: Set<String>
     public private(set) var offlineAccountIDs: Set<String> = []
