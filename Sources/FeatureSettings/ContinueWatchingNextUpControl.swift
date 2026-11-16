@@ -11,26 +11,21 @@ public struct ContinueWatchingNextUpControl: View {
     }
 
     public var body: some View {
-        Toggle(isOn: Binding(
-            get: { visibility.visibility.mergeNextUpIntoContinueWatching },
-            set: { visibility.setMergeNextUpIntoContinueWatching($0) }
-        )) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Include Next Up")
-                if visibility.isGlobalRowEnabled(.continueWatching) {
-                    Text("Combines Next Up rows here.")
-                        .settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("Add Continue Watching to Home to include Next Up.")
-                        .settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        SettingsDescribedControl {
+            Toggle("Include Next Up", isOn: Binding(
+                get: { visibility.visibility.mergeNextUpIntoContinueWatching },
+                set: { visibility.setMergeNextUpIntoContinueWatching($0) }
+            ))
+            .accessibilityIdentifier("home-merge-next-up")
+        } description: {
+            if visibility.isGlobalRowEnabled(.continueWatching) {
+                Text("Combines Next Up rows here.")
+            } else {
+                Text("Add Continue Watching to Home to include Next Up.")
             }
         }
         .toggleStyle(SettingsSwitchToggleStyle())
         .disabled(!visibility.isGlobalRowEnabled(.continueWatching))
-        .accessibilityIdentifier("home-merge-next-up")
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

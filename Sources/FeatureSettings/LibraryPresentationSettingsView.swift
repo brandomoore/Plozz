@@ -152,8 +152,7 @@ struct LibraryNavigationSettingsView: View {
             )
             .settingsSearchAnchor("library-tab-layout")
             Text("Each library shows only the tabs it supports. Browse stays available if all its other tabs are hidden.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsHelperText()
             Button("Reset Navigation") { model.settings.navigation = .init() }
                 .disabled(isLifting)
         }
@@ -281,8 +280,7 @@ struct LibraryDisplaySettingsView: View {
                 .disabled(isLifting)
             }
             Text("Changes apply only to this library's Recommended page, not Home.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsHelperText()
             Button("Reset Rows") { model.settings.recommendedRows.removeValue(forKey: address) }
                 .disabled(isLifting)
         }

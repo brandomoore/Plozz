@@ -479,9 +479,6 @@ struct PlozziOSLibraryGridView: View {
 
     @ViewBuilder
     private var queryControls: some View {
-        if !viewModel.availableSortFields.isEmpty {
-            sortControl
-        }
         if viewModel.showsFilterMenu {
             LibraryFilterMenu(
                 filters: viewModel.filters, capabilities: viewModel.queryCapabilities, facets: viewModel.queryFacets,
@@ -491,6 +488,9 @@ struct PlozziOSLibraryGridView: View {
                 onRetry: { Task { await viewModel.loadQueryFacetsIfNeeded(retry: true) } }
             )
             .frame(minWidth: 44, minHeight: 44)
+        }
+        if !viewModel.availableSortFields.isEmpty {
+            sortControl
         }
     }
 

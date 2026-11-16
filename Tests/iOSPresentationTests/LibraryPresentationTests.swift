@@ -64,13 +64,18 @@ final class LibraryPresentationTests: XCTestCase {
                 await model.setContentMode(.titles)
                 try await waitForHostedLayout(window)
                 try self.assertTrailingToolbarControls(window, count: 2)
+                try self.assertLibrarySortFollowsFilter(window)
                 try await self.scrollPastHeading(window)
                 try self.assertTrailingToolbarControls(window, count: 2)
+                try self.assertLibrarySortFollowsFilter(window)
                 _ = try self.captureImage(window, name: "library-toolbar-scrolled-\(width)-\(textSize)")
                 for (mode, count) in [(LibraryContentMode.collections, 1), (.playlists, 1), (.recommended, 0), (.titles, 2)] {
                     await model.setContentMode(mode)
                     try await waitForHostedLayout(window)
                     try self.assertTrailingToolbarControls(window, count: count)
+                    if count == 2 {
+                        try self.assertLibrarySortFollowsFilter(window)
+                    }
                 }
             }
         }
@@ -626,6 +631,24 @@ final class LibraryPresentationTests: XCTestCase {
             XCTAssertTrue(hit.isDescendant(of: bar), "Toolbar actions must remain reachable after scrolling.")
             if let button = control as? UIButton { XCTAssertTrue(button.isEnabled) }
         }
+    }
+
+    private func assertLibrarySortFollowsFilter(_ window: UIWindow) throws {
+        let bar = try XCTUnwrap(navigationBar(in: window))
+        let controls = descendants(bar).compactMap { $0 as? UIButton }
+        XCTAssertEqual(controls.count, 2)
+        let sort = try XCTUnwrap(controls.first { control in
+            guard let image = control.image(for: .normal),
+                  let symbol = UIImage(systemName: "arrow.up.arrow.down", withConfiguration: image.configuration)
+            else { return false }
+            return image.isEqual(symbol)
+        }, "Expected the native Sort symbol in the Browse toolbar.")
+        let filter = try XCTUnwrap(controls.first { $0 !== sort })
+        XCTAssertLessThanOrEqual(
+            filter.convert(filter.bounds, to: window).maxX,
+            sort.convert(sort.bounds, to: window).minX,
+            "Browse must place Sort to the right of Filter."
+        )
     }
 
     private func scrollPastHeading(_ window: UIWindow) async throws {
