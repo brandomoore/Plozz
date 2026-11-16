@@ -192,6 +192,26 @@ Keep passwords, tokens and private server URLs out of public issues.
 If Plozz is useful to you, [donations are welcome](https://github.com/sponsors/brandomoore).
 It's free either way.
 
+## Contributors
+
+Thank you to the people helping improve Plozz.
+
+<table>
+  <tr>
+    <td align="center" width="100"><a href="https://github.com/tresby"><img src="docs/assets/contributors/tresby.png" width="64" height="64" alt="" /><br /><sub>tresby</sub></a></td>
+    <td align="center" width="100"><a href="https://github.com/kristofferR"><img src="docs/assets/contributors/kristofferR.png" width="64" height="64" alt="" /><br /><sub>kristofferR</sub></a></td>
+    <td align="center" width="100"><a href="https://github.com/MargeyShah"><img src="docs/assets/contributors/MargeyShah.png" width="64" height="64" alt="" /><br /><sub>MargeyShah</sub></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="100"><a href="https://github.com/mossline"><img src="docs/assets/contributors/mossline.png" width="64" height="64" alt="" /><br /><sub>mossline</sub></a></td>
+    <td align="center" width="100"><a href="https://github.com/moofone"><img src="docs/assets/contributors/moofone.png" width="64" height="64" alt="" /><br /><sub>moofone</sub></a></td>
+    <td align="center" width="100"><a href="https://github.com/teymourb"><img src="docs/assets/contributors/teymourb.png" width="64" height="64" alt="" /><br /><sub>teymourb</sub></a></td>
+  </tr>
+</table>
+
+[Contributions and original references](CONTRIBUTORS.md) ·
+[Commit contributors](https://github.com/brandomoore/Plozz/graphs/contributors)
+
 ## License and credits
 
 [GPL-3.0](LICENSE) with an [App Store Exception](LICENSE-EXCEPTION.md).
