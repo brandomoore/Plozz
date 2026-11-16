@@ -194,17 +194,29 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
     }
 
     func testSeriesDetailsKeepSeriesMetadataAcrossEntryRoutesAndSizeClasses() async throws {
-        let app = PlozziOSAppModel()
-        let original = app.profiles.activeProfileID
+        let suite = "SeriesHeaderFixture.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
         let profile = app.profiles.add(name: "Series header fixture", isAwaitingSetup: false)
         app.selectProfile(profile.id)
         app.settings.heroBackground.settings.detailMode = .off
         app.settings.spoilers.settings = .default
-        defer {
-            app.selectProfile(original)
-            app.profiles.remove(profile.id)
-        }
         let provider = SeriesHeaderMobileProvider()
+        let session = provider.session
+        let account = Account(
+            id: try XCTUnwrap(provider.show.sourceAccountID), server: session.server,
+            userID: session.userID, userName: session.userName, deviceID: session.deviceID
+        )
+        try app.accountsProviders.accountStore.add(account, token: "fixture")
+        app.accountsProviders.registry.register(.jellyfin) { _ in provider }
+        app.profiles.setActiveAccountIDs([account.id], for: profile.id)
+        app.accountsProviders.tokenResolver = { _ in "fixture" }
+        app.accountsProviders.reloadAccounts()
+        XCTAssertNotNil(app.accountsProviders.provider(forAccountID: account.id))
         for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
             for item in [provider.show, provider.season, provider.episode] {
                 let content = NavigationStack {
