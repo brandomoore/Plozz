@@ -38,6 +38,11 @@ private final class SeriesResumeResolution {
 @MainActor
 @Observable
 public final class ItemDetailViewModel {
+    /// Whether this show is on Home's Continue Watching, Next Up or Upcoming rows
+    /// when the page opened. Only then does its page offer Drop Show.
+    /// Set once at open and never mutated, so it is not observed.
+    @ObservationIgnored public var isOnDroppableRow = false
+
     public struct Detail: Equatable, Sendable {
         public var item: MediaItem
         public var children: [MediaItem]

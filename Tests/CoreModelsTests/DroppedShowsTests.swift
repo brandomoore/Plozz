@@ -171,8 +171,9 @@ final class DroppedShowsTests: XCTestCase {
         XCTAssertTrue(offered.contains(.removeFromContinueWatching))
     }
 
-    func testUndropIsVisibleOnTheShowsPage() {
+    func testDropAndUndropAreVisibleOnTheShowsPage() {
         XCTAssertTrue(MediaItemAction.undropShow.isPrimaryDetailAction)
+        XCTAssertTrue(MediaItemAction.dropShow.isPrimaryDetailAction)
         XCTAssertFalse(MediaItemAction.dropShow.isNavigation)
         XCTAssertFalse(MediaItemAction.dropShow.isDestructive, "A drop hides; nothing is deleted")
     }

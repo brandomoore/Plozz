@@ -1311,6 +1311,7 @@ struct HomeTab: View {
             identitySources: identitySources,
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: { runtime.continueWatchingForDetail },
+            droppableShowKeys: { runtime.droppableShowKeys },
             ratingsProvider: ratingsProvider,
             metadataLanguage: metadataLanguage,
             localizedDetailMetadataResolver: {

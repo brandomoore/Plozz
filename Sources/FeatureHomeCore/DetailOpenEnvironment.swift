@@ -42,6 +42,9 @@ public struct DetailOpenEnvironment {
     public let identitySources: @Sendable (MediaItem) -> [MediaSourceRef]
     /// The current profile's already-loaded Home resume state, read at open time.
     public let continueWatchingSnapshot: @MainActor () -> [MediaItem]
+    /// Drop keys (see ``DroppedShowKeys``) of the shows on Home's Continue
+    /// Watching, Next Up and Upcoming rows, read at open time.
+    public let droppableShowKeys: @MainActor () -> Set<String>
     /// Discovers *other servers* hosting the same title off the critical path, to
     /// fill the cross-server picker. `nil` disables cross-server discovery.
     public let crossServerSourceResolver: (@Sendable (MediaItem) async -> CrossServerSourceResolution)?
@@ -73,6 +76,7 @@ public struct DetailOpenEnvironment {
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
         crossServerSourceResolver: (@Sendable (MediaItem) async -> CrossServerSourceResolution)?,
         continueWatchingSnapshot: @escaping @MainActor () -> [MediaItem] = { [] },
+        droppableShowKeys: @escaping @MainActor () -> Set<String> = { [] },
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
         detailMetadataResolver: @escaping @Sendable (MediaItem) async -> MetadataEnrichment = { _ in MetadataEnrichment() },
         metadataLanguage: String = "en",
@@ -90,6 +94,7 @@ public struct DetailOpenEnvironment {
         self.resolveOptionalProvider = resolveOptionalProvider
         self.identitySources = identitySources
         self.continueWatchingSnapshot = continueWatchingSnapshot
+        self.droppableShowKeys = droppableShowKeys
         self.crossServerSourceResolver = crossServerSourceResolver
         self.ratingsProvider = ratingsProvider
         self.detailMetadataResolver = detailMetadataResolver
@@ -321,7 +326,7 @@ public struct DetailOpenEnvironment {
             let expectedIdentity = retargeted ? routingItem : nil
             openingResolver = { try await self.resolveOpening(for: seed, expectedIdentity: expectedIdentity) }
         }
-        return ItemDetailViewModel(
+        let model = ItemDetailViewModel(
             provider: isDiscovery ? nil : try resolveProvider(
                 selectedSource?.accountID ?? item.sourceAccountID ?? libraryOrigin
             ),
@@ -349,6 +354,11 @@ public struct DetailOpenEnvironment {
             openingResolver: openingResolver,
             localizedDetailMetadataResolver: localizedDetailMetadataResolver
         )
+        if !isDiscovery {
+            model.isOnDroppableRow = !Set(DroppedShowKeys.keys(for: item))
+                .isDisjoint(with: droppableShowKeys())
+        }
+        return model
     }
 
     /// Hydrate before resolving membership: episode-derived parent seeds do not

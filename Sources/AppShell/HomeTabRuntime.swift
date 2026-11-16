@@ -28,6 +28,10 @@ struct HomeTabRuntime {
         homeViewModel.existingValue(forKey: scopeKey)?.state.value?.continueWatching ?? []
     }
 
+    @MainActor var droppableShowKeys: Set<String> {
+        homeViewModel.existingValue(forKey: scopeKey)?.droppableShowKeys ?? []
+    }
+
     @MainActor var continueWatchingForDetail: [MediaItem] {
         homeViewModel.existingValue(forKey: scopeKey)?.continueWatchingForDetail ?? []
     }

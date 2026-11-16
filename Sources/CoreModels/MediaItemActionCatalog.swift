@@ -28,23 +28,33 @@ public struct MediaItemActionContext: Sendable, Equatable {
     /// agenda. Nothing there is playable yet, so Drop Show is the one action.
     public var isUpcomingRow: Bool
 
+    /// Whether the target is the show a series details page is about AND that
+    /// show sits on Continue Watching, Next Up or Upcoming. Those rows are the
+    /// only places a show is dropped from, so its page offers Drop Show only then.
+    public var isDroppableShowPage: Bool
+
     public init(
         orderedSiblings: [MediaItem] = [],
         precedingContainerIDs: [String] = [],
         isContinueWatchingRow: Bool = false,
         isNextUpRow: Bool = false,
-        isUpcomingRow: Bool = false
+        isUpcomingRow: Bool = false,
+        isDroppableShowPage: Bool = false
     ) {
         self.orderedSiblings = orderedSiblings
         self.precedingContainerIDs = precedingContainerIDs
         self.isContinueWatchingRow = isContinueWatchingRow
         self.isNextUpRow = isNextUpRow
         self.isUpcomingRow = isUpcomingRow
+        self.isDroppableShowPage = isDroppableShowPage
     }
 
     /// Whether the target is on a row that suggests what to watch next, the
-    /// only places a show can be dropped from, along with Coming Soon.
-    public var offersShowDrop: Bool { isContinueWatchingRow || isNextUpRow || isUpcomingRow }
+    /// places a show can be dropped from, along with Coming Soon and the page of
+    /// a show that is on one of those rows.
+    public var offersShowDrop: Bool {
+        isContinueWatchingRow || isNextUpRow || isUpcomingRow || isDroppableShowPage
+    }
 
     /// No surrounding-list context — the default for standalone cards.
     public static let none = MediaItemActionContext()
@@ -57,6 +67,12 @@ public struct MediaItemActionContext: Sendable, Equatable {
 
     /// Cards on the Coming Soon row and in the Upcoming agenda.
     public static let upcoming = MediaItemActionContext(isUpcomingRow: true)
+
+    /// A series details page's hero. Drop Show is offered only when the show is
+    /// on Continue Watching, Next Up or Upcoming.
+    public static func showDetail(onDroppableRow: Bool) -> MediaItemActionContext {
+        MediaItemActionContext(isDroppableShowPage: onDroppableRow)
+    }
 }
 
 /// Pure, UI-independent rules for which `MediaItemAction`s an item offers and

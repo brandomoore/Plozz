@@ -74,6 +74,7 @@ struct SearchTab: View {
     let watchBridge: WatchOutboxBridge
     let identitySources: @Sendable (MediaItem) -> [MediaSourceRef]
     let continueWatchingSnapshot: @MainActor () -> [MediaItem]
+    let droppableShowKeys: @MainActor () -> Set<String>
     /// Persist an in-player subtitle-appearance edit to the profile store.
     let onSubtitleStyleChanged: (SubtitleStyle) -> Void
     /// Hosted on the root `TabView` (see `MainTabView`) for reliable presentation,
@@ -417,6 +418,7 @@ struct SearchTab: View {
             identitySources: identitySources,
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: continueWatchingSnapshot,
+            droppableShowKeys: droppableShowKeys,
             ratingsProvider: ratingsProvider,
             metadataLanguage: metadataLanguage,
             localizedDetailMetadataResolver: {

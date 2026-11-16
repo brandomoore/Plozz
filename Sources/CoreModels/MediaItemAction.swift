@@ -320,13 +320,13 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
         case .markWatched, .markUnwatched,
              .addToWatchlist, .removeFromWatchlist:
             return true
-        // A dropped show's own page is where someone goes to take the drop back,
-        // so that is visible there rather than behind a long press.
-        case .undropShow:
+        // A show's own page is where someone drops it, or takes the drop back, so
+        // both are visible there rather than behind a long press.
+        case .dropShow, .undropShow:
             return true
         case .markWatchedUpToHere, .goToSeason, .goToMovie, .goToEpisode, .browseFiles,
              .refreshMetadata, .startDownload, .pauseDownload,
-             .resumeDownload, .removeDownload, .removeFromContinueWatching, .dropShow:
+             .resumeDownload, .removeDownload, .removeFromContinueWatching:
             return false
         }
     }

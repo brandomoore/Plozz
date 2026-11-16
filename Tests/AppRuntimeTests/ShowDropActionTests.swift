@@ -49,6 +49,15 @@ final class ShowDropActionTests: XCTestCase {
         XCTAssertEqual(writes.first?.seriesID, "series", "The server is told about the show, not the episode")
     }
 
+    func testShowDetailPageOffersDropShowOnlyForAShowOnADroppableRow() {
+        let coordinator = coordinator(model(), providers: [:])
+        let item = episode()
+
+        XCTAssertTrue(coordinator.actions(for: item, context: .showDetail(onDroppableRow: true)).contains(.dropShow))
+        XCTAssertFalse(coordinator.actions(for: item, context: .showDetail(onDroppableRow: false)).contains(.dropShow))
+        XCTAssertFalse(coordinator.actions(for: item, context: .none).contains(.dropShow))
+    }
+
     func testUndropShowClearsItEverywhere() async throws {
         let dropped = model()
         dropped.drop(episode())

@@ -362,6 +362,15 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     @ObservationIgnored private var detailResumeByAccount: [String: [MediaItem]] = [:]
     /// Detail opens can use a server's native episode ids before the other servers
     /// finish, and after the visible row merges those copies into a single card.
+    /// Drop keys of every show on the Continue Watching, Next Up and Upcoming
+    /// rows — the shows a details page may offer to drop.
+    public var droppableShowKeys: Set<String> {
+        var keys = Set<String>()
+        for item in continueWatchingForDetail { keys.formUnion(DroppedShowKeys.keys(for: item)) }
+        for release in upcoming.homeReleases { keys.formUnion(DroppedShowKeys.keys(for: release.item)) }
+        return keys
+    }
+
     public var continueWatchingForDetail: [MediaItem] {
         let content = state.value
         let visible = hasReceivedLiveContent ? content?.continueWatching ?? [] : []
