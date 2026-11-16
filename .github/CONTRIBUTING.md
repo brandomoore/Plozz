@@ -15,6 +15,14 @@ Plozz is a free, open source media client for Apple TV, iPhone, and iPad.
   and cancellation paths. Build and test affected platforms and sources using
   the [smallest meaningful checks](#tests).
 
+### Design and UX
+
+Design and UX are my favorite parts of building Plozz, and I care a lot about
+helping shape their direction. Thoughtful improvements are very welcome, and
+there's plenty of room to make things better. For bigger UX changes, let's chat
+before you start building. We may want to work through a few versions together,
+and not every idea will be the right fit.
+
 ### Before opening a PR
 
 Review the final diff yourself. **Independent agent review before submission
