@@ -669,9 +669,36 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil,
             insets: .zero, pull: PlozziOSHomeHeroPullModel()
         ) { window, host in
-            for (isRunningOnMac, hidesRegularTabBackdrop) in [(false, false), (false, true), (true, false), (false, false)] {
+            let configurations = [(false, false), (false, true), (true, false), (false, false)]
+            var nativeReferences: [[Bool: UIImage]] = []
+            for (isRunningOnMac, hidesRegularTabBackdrop) in configurations {
+                var references: [Bool: UIImage] = [:]
                 host.rootView = AnyView(
-                    MacNavigationBackgroundFixture(hidesRegularTabBackdrop: hidesRegularTabBackdrop)
+                    MacNavigationBackgroundFixture(
+                        hidesRegularTabBackdrop: hidesRegularTabBackdrop,
+                        usesNativeReference: true, patternedArtwork: true
+                    )
+                    .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
+                    .environment(\.colorScheme, .dark)
+                )
+                try await waitForHostedLayout(window)
+                let referenceTabs = try XCTUnwrap(findController(UITabBarController.self, in: host))
+                for sidebarHidden in [true, false] {
+                    referenceTabs.sidebar.isHidden = sidebarHidden
+                    try await waitForHostedLayout(window)
+                    references[sidebarHidden] = snapshot(
+                        window,
+                        name: "native-navigation-reference-home-\(hidesRegularTabBackdrop)-mac-\(isRunningOnMac)-sidebar-\(!sidebarHidden)"
+                    )
+                }
+                nativeReferences.append(references)
+            }
+            for (index, configuration) in configurations.enumerated() {
+                let (isRunningOnMac, hidesRegularTabBackdrop) = configuration
+                host.rootView = AnyView(
+                    MacNavigationBackgroundFixture(
+                        hidesRegularTabBackdrop: hidesRegularTabBackdrop, patternedArtwork: true
+                    )
                         .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
                         .environment(\.colorScheme, .dark)
                 )
@@ -709,19 +736,18 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     )
                     XCTAssertTrue(window.bounds.contains(profile.offsetBy(dx: trailing.minX, dy: 0)))
                     let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
-                    let x = bar.minX + 4
-                    let top = try pixel(image, at: CGPoint(x: x, y: bar.midY))
-                    let content = try pixel(image, at: CGPoint(x: x, y: bar.maxY + 120))
-                    if isRunningOnMac || UIAccessibility.isReduceTransparencyEnabled {
-                        for channel in 0..<3 {
-                            XCTAssertLessThan(
-                                abs(Int(top[channel]) - Int(content[channel])), 10,
-                                "The navigation area must not add a backdrop over the artwork."
-                            )
+                    let reference = try XCTUnwrap(nativeReferences[index][sidebarHidden])
+                    for x in [bar.midX - 20, bar.midX, bar.midX + 20] {
+                        for y in stride(from: CGFloat(2), through: bar.maxY + 120, by: 2) {
+                            let actual = try pixel(image, at: CGPoint(x: x, y: y))
+                            let native = try pixel(reference, at: CGPoint(x: x, y: y))
+                            for channel in 0..<3 {
+                                XCTAssertLessThan(
+                                    abs(Int(actual[channel]) - Int(native[channel])), 5,
+                                    "Home must match native rendering for this tab-backdrop, Mac, and sidebar state."
+                                )
+                            }
                         }
-                    } else {
-                        XCTAssertEqual(scroll.topEdgeEffect.style, .hard,
-                                       "Home must preserve the fixture's native scroll-edge treatment.")
                     }
                 }
             }
@@ -1881,15 +1907,35 @@ private struct PushedDetailTransparencyFixture: View {
 private struct MacNavigationBackgroundFixture: View {
     var hidesRegularTabBackdrop = false
     var usesHomeScrollView = false
+    var usesNativeReference = false
+    var patternedArtwork = false
     var edgeStyle: ScrollEdgeEffectStyle = .hard
     var hidesNavigationBar = false
     var showsPageActions = false
     var onActionsFrame: (CGRect) -> Void = { _ in }
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var artwork: some View {
+        Color(uiColor: .cyan)
+            .overlay(alignment: .top) {
+                if patternedArtwork {
+                    VStack(spacing: 0) {
+                        ForEach(0..<30) { _ in
+                            Color(uiColor: .magenta).frame(height: 50)
+                            Color.clear.frame(height: 50)
+                        }
+                    }
+                }
+            }
+            .frame(height: 3_000)
+    }
 
     @ViewBuilder private var content: some View {
         if usesHomeScrollView {
             PlozziOSHomeScrollView(heroActive: true, showsPageActions: showsPageActions) {
-                Color(uiColor: .cyan).frame(height: 3_000)
+                artwork
             } rows: {
                 EmptyView()
             } pageActions: {
@@ -1903,12 +1949,27 @@ private struct MacNavigationBackgroundFixture: View {
             }
         } else {
             ScrollView {
-                Color(uiColor: .cyan).frame(height: 3_000)
+                artwork
             }
         }
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if usesNativeReference {
+            tabs
+                .toolbarBackground(
+                    isRunningOnMac || (hidesRegularTabBackdrop && horizontalSizeClass == .regular)
+                        || reduceTransparency ? .hidden : .automatic,
+                    for: .tabBar
+                )
+                .scrollEdgeEffectHidden(isRunningOnMac || reduceTransparency, for: .top)
+                .scrollEdgeEffectHidden(reduceTransparency, for: .bottom)
+        } else {
+            tabs.modifier(PlozziOSNavigationBackground(hidesRegularTabBackdrop: hidesRegularTabBackdrop))
+        }
+    }
+
+    private var tabs: some View {
         TabView {
             Tab("Home", systemImage: "house") {
                 NavigationStack {
@@ -1933,7 +1994,6 @@ private struct MacNavigationBackgroundFixture: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .scrollEdgeEffectStyle(edgeStyle, for: .top)
-        .modifier(PlozziOSNavigationBackground(hidesRegularTabBackdrop: hidesRegularTabBackdrop))
     }
 }
 
