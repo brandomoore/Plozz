@@ -769,7 +769,11 @@ struct PlozziOSHomeView: View {
                         )
                     case let .library(row):
                         if presentation.id == .global(.comingSoon) {
-                            UpcomingHomeRow(title: row.section.displayName, releases: viewModel.upcoming.homeReleases) {
+                            UpcomingHomeRow(
+                                title: row.section.displayName, releases: viewModel.upcoming.homeReleases,
+                                style: appModel.settings.homeVisibility.continueWatchingLayout.cardStyle,
+                                showsSeriesArtwork: appModel.settings.homeVisibility.continueWatchingUsesSeriesArtwork
+                            ) {
                                 showingUpcoming = true
                             }
                         } else {

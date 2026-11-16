@@ -688,7 +688,11 @@ public struct HomeView: View {
                                             )
                                         case let .library(row):
                                             if presentation.id == .global(.comingSoon) {
-                                                UpcomingHomeRow(title: row.section.displayName, releases: viewModel.upcoming.homeReleases) {
+                                                UpcomingHomeRow(
+                                                    title: row.section.displayName, releases: viewModel.upcoming.homeReleases,
+                                                    style: visibility.continueWatchingLayout.cardStyle,
+                                                    showsSeriesArtwork: visibility.continueWatchingUsesSeriesArtwork
+                                                ) {
                                                     onBrowse(.upcoming)
                                                 }
                                             } else {
@@ -1871,6 +1875,8 @@ public struct HomeView: View {
             if presentation.id == .global(.comingSoon) {
                 UpcomingHomeRow(
                     title: section.displayName, releases: viewModel.upcoming.homeReleases,
+                    style: visibility.continueWatchingLayout.cardStyle,
+                    showsSeriesArtwork: visibility.continueWatchingUsesSeriesArtwork,
                     onFocusEntered: reporter.entered, onFocusChange: onFocusChange,
                     onCardFocused: reporter.cardFocused
                 ) { onBrowse?() }

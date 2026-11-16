@@ -458,6 +458,8 @@
         public let title: Text
         public let releases: [UpcomingRelease]
         public let onSeeAll: () -> Void
+        private let style: PosterCardView.Style
+        private let showsSeriesArtwork: Bool
         private let onFocusEntered: (() -> Void)?
         private let onFocusChange: ((MediaItem?) -> Void)?
         private let onCardFocused: ((MediaItem) -> Void)?
@@ -471,6 +473,8 @@
         public init(
             title: Text = Text("Coming Soon"),
             releases: [UpcomingRelease],
+            style: PosterCardView.Style = .landscape,
+            showsSeriesArtwork: Bool = false,
             onFocusEntered: (() -> Void)? = nil,
             onFocusChange: ((MediaItem?) -> Void)? = nil,
             onCardFocused: ((MediaItem) -> Void)? = nil,
@@ -479,6 +483,8 @@
             self.title = title
             self.releases = releases
             self.onSeeAll = onSeeAll
+            self.style = style
+            self.showsSeriesArtwork = showsSeriesArtwork
             self.onFocusEntered = onFocusEntered
             self.onFocusChange = onFocusChange
             self.onCardFocused = onCardFocused
@@ -487,7 +493,8 @@
         public var body: some View {
             #if os(tvOS)
                 MediaRowView(
-                    title: title, items: releases.map(\.item), style: .landscape,
+                    title: title, items: releases.map(\.item), style: style,
+                    showsSeriesArtwork: showsSeriesArtwork,
                     leadingInset: 0, onFocusEntered: onFocusEntered,
                     onFocusChange: onFocusChange, onCardFocused: onCardFocused,
                     statusCue: { item in
@@ -515,12 +522,15 @@
                                     else { navigate?(release.item) }
                                 } label: {
                                     PosterCardView(
-                                        item: release.item, style: .landscape,
-                                        reservesSubtitleSpace: false, statusCue: statusCue(for: release)
+                                        item: release.item, style: style,
+                                        showsSeriesArtwork: showsSeriesArtwork,
+                                        reservesSubtitleSpace: style == .poster || showsSeriesArtwork,
+                                        statusCue: statusCue(for: release)
                                     ) {}
                                 }
                                 .buttonStyle(.plain)
-                                .frame(width: metrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle))
+                                .frame(width: metrics.cardSlotWidth(
+                                    for: style, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork))
                             }
                         }
                     }
