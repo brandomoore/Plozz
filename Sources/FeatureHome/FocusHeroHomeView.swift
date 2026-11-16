@@ -2056,7 +2056,7 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             var owner = NativeFocusRegion.owningController(of: focused)
             while let current = owner, !(current is Controller) { owner = current.parent }
             guard let source = owner as? Controller, source !== self, source.motion === motion,
-                  case .row(let sourceID) = source.kind, entrySourceRowIDs.contains(sourceID) else {
+                  case .row = source.kind else {
                 rowEntryGuides.forEach { $0.update(target: nil, frame: .zero) }
                 return
             }
@@ -2070,18 +2070,9 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             var seen = Set<ObjectIdentifier>()
             var first: (item: any UIFocusItem, frame: CGRect)?
             var last: (item: any UIFocusItem, frame: CGRect)?
-            #if DEBUG
-            var queries = 0
-            defer {
-                if case .row(let id) = kind { measurement?.onFocusScan?(id, queries) }
-            }
-            #endif
             while let container = containers.popLast() {
                 guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
                 let area = container.coordinateSpace.convert(query, from: content)
-                #if DEBUG
-                queries += 1
-                #endif
                 for item in container.focusItems(in: area) {
                     if let children = item.focusItemContainer { containers.append(children) }
                     if let child = item as? UIView { containers.append(child) }
@@ -2120,11 +2111,8 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             }
 
             func update(target: (any UIFocusItem)?, frame: CGRect) {
-                if guide.preferredFocusEnvironments.first !== target {
-                    guide.preferredFocusEnvironments = target.map { [$0] } ?? []
-                }
-                let enabled = target != nil && frame.width > 1 && frame.height > 1
-                if guide.isEnabled != enabled { guide.isEnabled = enabled }
+                guide.preferredFocusEnvironments = target.map { [$0] } ?? []
+                guide.isEnabled = target != nil && frame.width > 1 && frame.height > 1
                 if x.constant != frame.minX { x.constant = frame.minX }
                 if y.constant != frame.minY { y.constant = frame.minY }
                 if width.constant != frame.width { width.constant = frame.width }

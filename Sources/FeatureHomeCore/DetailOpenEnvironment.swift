@@ -347,7 +347,12 @@ public struct DetailOpenEnvironment {
             ),
             snapshotCache: snapshotCache,
             openingResolver: openingResolver,
-            localizedDetailMetadataResolver: localizedDetailMetadataResolver
+            localizedDetailMetadataResolver: localizedDetailMetadataResolver,
+            // Match upstream: the season rail loads when it is actually shown.
+            // Eagerly fetching the opening season's episodes here starts a third
+            // server round-trip during the push, competing with the page's first
+            // paint (the entering freeze) and duplicating the rail's own load.
+            prefetchesOpeningSeason: false
         )
     }
 

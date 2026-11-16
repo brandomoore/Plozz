@@ -294,16 +294,25 @@ private struct ArtworkGradientPaint: View {
 
     var body: some View {
         if enabled {
-            AmbientGradientBackground(palette: palette, tint: isVisible ? model.colors : nil)
+            // Hold the last resolved palette while the surface is off screen.
+            // `tint: isVisible ? model.colors : nil` cleared it, so every return — a
+            // background reopen or a navigation pop — animated the whole-screen
+            // background to the stock palette and then back to the artwork tint:
+            // two 0.8s crossfades the viewer reads as "the page rendered again".
+            // The tint is presentation, not a live readout, so it is held until a
+            // different slide is actually displayed.
+            AmbientGradientBackground(palette: palette, tint: model.colors)
                 #if canImport(UIKit)
                 .task(id: Request(model: ObjectIdentifier(model), key: isVisible ? artwork?.displayed?.key : nil)) {
-                    let displayed = isVisible ? artwork?.displayed : nil
-                    await model.update(owner: owner, key: displayed?.key) {
-                        guard let displayed else { return nil }
-                        return await AmbientPaletteSampler.sample(displayed)
+                    // Do not sample — or clear — while the surface is covered. On the
+                    // phone each slide's backdrop arrives separately, so re-sampling
+                    // per visibility change also re-tinted the page once per artwork
+                    // that landed while it was being dismissed.
+                    guard isVisible, let displayed = artwork?.displayed else { return }
+                    await model.update(owner: owner, key: displayed.key) {
+                        await AmbientPaletteSampler.sample(displayed)
                     }
                 }
-                .onDisappear { model.release(owner: owner) }
                 #endif
         }
     }

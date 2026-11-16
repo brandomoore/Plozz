@@ -57,18 +57,13 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
             .plozzDesktopMediaRailLayout()
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
-        .ignoresSafeArea(.container, edges: heroActive && !showsPageActions ? .top : [])
+        .ignoresSafeArea(.container, edges: heroActive ? .top : [])
+        // Simplify-toward-upstream (testing step R3): bffac44 fades the scrolled
+        // content under the hero instead of painting full-bleed navigation chrome
+        // here. The chrome changes the hero band's layout on identity folds — the
+        // "images leave, page re-lays out" signature. Re-prove the fork's chrome
+        // incrementally once the settled flicker is gone on phone AND tester.
         .modifier(PlozziOSReducedTransparencyScrollFade(enabled: heroActive))
-        .background {
-            if showsPageActions && heroActive {
-                PlozziOSWindowSafeAreaTopReader { safeAreaTop = $0 }
-                    .frame(width: 0, height: 0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-            PlozziOSStationaryNavigationSource()
-                .frame(width: 0, height: 0)
-        }
     }
 }
 

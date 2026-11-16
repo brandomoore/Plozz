@@ -4,6 +4,7 @@ import FeaturePlayback
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
 
 /// Drives the iPhone/iPad build to a named screen so a capture run can photograph
 /// it, the iOS counterpart of the tvOS `ScreenshotDirector`.
@@ -68,6 +69,15 @@ final class PlozziOSScreenshotDirector {
     // brings the Home tab forward first.
     @ObservationIgnored var selectHomeTab: (() -> Void)?
     @ObservationIgnored var navigateToItem: ((MediaItem) -> Void)?
+    /// The first item Home is actually showing, used by capture runs on share
+    /// libraries whose provider has no search endpoint.
+    @ObservationIgnored var firstHomeItem: (() -> MediaItem?)?
+    /// A Home title with a full detail page (movie/series), preferred for hero
+    /// capture over a Continue Watching episode still.
+    @ObservationIgnored var firstDetailItem: (() -> MediaItem?)?
+    /// Indexed full-detail titles from the current Home content, for sweeping
+    /// several hero pages in one automated run.
+    @ObservationIgnored var detailItemAt: ((Int) -> MediaItem?)?
     @ObservationIgnored var navigateToPerson: ((MediaPerson, String?) -> Void)?
     @ObservationIgnored var navigateToLibrary: ((PlozziOSLibraryRoute) -> Void)?
     @ObservationIgnored var resetNavigation: (() -> Void)?
@@ -98,6 +108,62 @@ final class PlozziOSScreenshotDirector {
 
     /// Called by each pushed page from its `onAppear`.
     func notePageArrival() { pageArrivals += 1 }
+
+    /// Captures a high-rate frame burst while a detail push runs. DEBUG-only and
+    /// only reachable through the capture file channel. The host copies the PNGs
+    /// out of Documents and runs Vision over them to measure hero movement,
+    /// flicker and hitch length on the real device.
+    func captureDetailEntryBurst(
+        item: MediaItem,
+        frames: Int,
+        fps: Double,
+        push: () -> Void
+    ) async -> String {
+        #if DEBUG
+        guard let directory = Self.directory else { return "no-container" }
+        let burst = directory.appendingPathComponent(
+            "burst-\(Int(Date().timeIntervalSince1970))", isDirectory: true
+        )
+        guard (try? FileManager.default.createDirectory(
+            at: burst, withIntermediateDirectories: true
+        )) != nil else { return "no-burst-dir" }
+        let interval = UInt64(max(1_000_000, 1_000_000_000 / max(1, fps)))
+        var index = 0
+
+        @MainActor
+        func captureFrame() {
+            guard let scene = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene })
+                    .first(where: { $0.activationState == .foregroundActive }),
+                  let window = scene.windows.first(where: \.isKeyWindow)
+                    ?? scene.windows.first else { return }
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            guard let data = image.pngData() else { return }
+            try? data.write(to: burst.appendingPathComponent(
+                String(format: "f%03d.png", index)
+            ))
+            index += 1
+        }
+
+        // A short Home baseline, then the same push a tap performs.
+        for _ in 0..<8 {
+            captureFrame()
+            try? await Task.sleep(nanoseconds: interval)
+            if Task.isCancelled { break }
+        }
+        push()
+        for _ in 0..<max(1, frames) {
+            captureFrame()
+            try? await Task.sleep(nanoseconds: interval)
+            if Task.isCancelled { break }
+        }
+        return "ok:\(burst.lastPathComponent)"
+        #else
+        return "debug-only"
+        #endif
+    }
 
     init() {}
 
@@ -186,6 +252,11 @@ final class PlozziOSScreenshotDirector {
         case play(title: String, seconds: Double, pause: Bool)
         /// Rotate the device. `landscape` or `portrait`.
         case rotate(landscape: Bool)
+        /// Capture a frame burst while pushing a detail page, for hitch/flicker
+        /// analysis on a real device. Frames are written under Documents.
+        case burst(title: String, frames: Int, fps: Double)
+        /// Capture the same burst for the first title Home is showing.
+        case burstFirst(index: Int, frames: Int, fps: Double)
     }
 
     // MARK: URL
@@ -226,6 +297,19 @@ final class PlozziOSScreenshotDirector {
                 title: title,
                 seconds: query("at").flatMap(Double.init) ?? 0,
                 pause: query("pause") == "1"
+            )
+        case "burstFirst":
+            request = .burstFirst(
+                index: query("index").flatMap(Int.init) ?? 0,
+                frames: query("frames").flatMap(Int.init) ?? 90,
+                fps: query("fps").flatMap(Double.init) ?? 30
+            )
+        case "burst":
+            guard let title = query("title") else { return false }
+            request = .burst(
+                title: title,
+                frames: query("frames").flatMap(Int.init) ?? 90,
+                fps: query("fps").flatMap(Double.init) ?? 30
             )
         case "rotate":
             request = .rotate(landscape: query("to") == "landscape")

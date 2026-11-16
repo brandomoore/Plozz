@@ -56,6 +56,21 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
 
     }
 
+    /// Identity of a piece of artwork that survives credential/source revisions.
+    ///
+    /// The cache key deliberately includes `credentialRevision` and `sourceRevision`
+    /// so a server switch invalidates bytes. The side effect is that a token refresh
+    /// (or a catalogue re-stamp) makes an *already decoded* image a miss: the card
+    /// goes black and re-downloads, which is the reported "card goes black, then fixes
+    /// itself". This key ignores the revisions, so the image already in memory is
+    /// reused for the same file.
+    private struct StableNetworkIdentity: Hashable {
+        let accountID: String
+        let artworkID: String
+        let representation: String
+        let variant: ArtworkImageVariant
+    }
+
     private struct NetworkRevisionScope: Hashable {
         let accountID: String
         let credentialRevision: CredentialRevision
@@ -340,6 +355,9 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
     private var backgroundGeneration: UInt64 = 0
     private let derivedCache: LocalArtworkDerivedCache
     private let warmLimiter: ConcurrencyLimiter
+    /// `StableNetworkIdentity` -> the most recent primary key that produced it, so a
+    /// revision change can serve the decoded image instead of blanking the card.
+    private let stableIdentities = NSCache<NSString, NSString>()
     private let remoteDataLoader: @Sendable (URL) async -> Data?
     private let loadDeadlineScheduler: LoadDeadlineScheduler
     private static let networkForegroundLimiter = ConcurrencyLimiter(limit: 2)
@@ -504,7 +522,37 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
             if case let .remote(url) = reference { return cachedImage(for: url, variant: variant) }
             return nil
         }
-        return cache.object(forKey: CacheKey(reference: network, variant: variant).cacheKey)?.image
+        let key = CacheKey(reference: network, variant: variant)
+        if let image = cache.object(forKey: key.cacheKey)?.image {
+            rememberStableIdentity(network, variant: variant, key: key)
+            return image
+        }
+        // A revision bumped under a card that is already on screen: reuse the decoded
+        // image for the same file rather than showing a placeholder and re-downloading.
+        let stable = stableIdentityKey(network, variant: variant)
+        if let previous = stableIdentities.object(forKey: stable),
+           let image = cache.object(forKey: previous)?.image {
+            return image
+        }
+        return nil
+    }
+
+    private func stableIdentityKey(
+        _ network: NetworkArtworkReference, variant: ArtworkImageVariant
+    ) -> NSString {
+        let identity = StableNetworkIdentity(
+            accountID: network.accountID,
+            artworkID: network.catalogArtworkID,
+            representation: String(describing: network.representation),
+            variant: variant
+        )
+        return String(describing: identity) as NSString
+    }
+
+    private func rememberStableIdentity(
+        _ network: NetworkArtworkReference, variant: ArtworkImageVariant, key: CacheKey
+    ) {
+        stableIdentities.setObject(key.cacheKey, forKey: stableIdentityKey(network, variant: variant))
     }
 
     /// Returns the decoded image for `url`+`variant`, serving a cached copy
