@@ -1080,6 +1080,36 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(model.state.value?.item.overview, french.overview)
     }
 
+    func testResolvedOpeningUsesTheSameLanguageForItsAlternateSnapshotKey() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = DetailSnapshotCache(directory: directory)
+        let series = MediaItem(id: "series", title: "Series", kind: .series, sourceAccountID: "account")
+        let navigation = MediaItem(id: "navigation", title: "Series", kind: .series, sourceAccountID: "account")
+        let english = MediaItem(id: "season", title: "English season", kind: .season, seriesID: series.id)
+        let french = MediaItem(id: "season", title: "Saison FR", kind: .season, seriesID: series.id)
+        await cache.store(.init(item: series, children: [english]), for: "account|navigation")
+        await cache.store(.init(item: series, children: [french]), for: "account|navigation|text-language-v2:fr")
+        let provider = FakeMediaProvider(allItems: [series])
+        let entered = expectation(description: "Live season request entered")
+        let release = AsyncGate()
+        provider.childrenGate = [series.id: { _ in entered.fulfill(); await release.wait() }]
+        let model = ItemDetailViewModel(
+            provider: provider, itemID: navigation.id, initialItem: navigation, metadataLanguage: "fr",
+            sourceAccountID: "account", onlineTrailerResolver: { _ in [] }, snapshotCache: cache,
+            openingResolver: {
+                .init(provider: provider, item: series, sources: [], resumeEpisode: nil)
+            }
+        )
+        defer { release.open(); model.suspendEnrichment() }
+        let load = Task { await model.load() }
+        await fulfillment(of: [entered], timeout: 2)
+        await waitUntil { model.state.value?.children.isEmpty == false }
+        XCTAssertEqual(model.state.value?.children.first?.title, french.title)
+        release.open()
+        await load.value
+    }
+
     func testCancelledDetailEnrichmentCannotPublishLateCrew() async {
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie, overview: "Plot")
         let provider = FakeMediaProvider(allItems: [item], kind: .jellyfin)
@@ -1836,6 +1866,49 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(provider.itemCallCount(for: seed.id), 0)
         XCTAssertGreaterThan(provider.itemCallCount(for: owned.id), 0)
         XCTAssertEqual(vm.currentSourceForDisplay?.accountID, "silo")
+        vm.suspendEnrichment()
+    }
+
+    func testDiscoveryPagePersistsItsSnapshotForTheNextOpen() async throws {
+        // Anime and other discovery titles have no library item, so they take
+        // `loadDiscoveryDetail` rather than `load()`. That path never wrote a
+        // snapshot, so reopening one always repainted placeholders while TV and
+        // film pages restored instantly. Pin the write down.
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plozz-discovery-snapshot-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = DetailSnapshotCache(directory: directory)
+        let seed = MediaItem(
+            id: "external-anime", title: "External anime", kind: .series,
+            overview: "Cached by the discovery path", locallyValidatedPlayableSource: false
+        )
+        let vm = ItemDetailViewModel(
+            provider: nil, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
+            externalMetadataResolver: { _, region in
+                ExternalTitleMetadata(
+                    enrichment: MetadataEnrichment(),
+                    availability: ExternalTitleAvailability(regionCode: region)
+                )
+            },
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            snapshotCache: cache
+        )
+        await vm.load()
+        XCTAssertEqual(vm.state.value?.item.overview, "Cached by the discovery path")
+
+        // `persistSnapshot` coalesces behind a short debounce, so poll the cache
+        // rather than assuming the first write already landed.
+        let key = "_|\(seed.id)"
+        var stored: DetailSnapshotCache.Snapshot?
+        for _ in 0..<50 {
+            stored = await cache.snapshot(for: key)
+            if stored != nil { break }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(stored?.item.id, seed.id, "Discovery pages must cache like library pages")
+        XCTAssertEqual(stored?.item.overview, "Cached by the discovery path")
         vm.suspendEnrichment()
     }
 
@@ -3683,7 +3756,9 @@ final class ItemDetailViewModelTests: XCTestCase {
             "show": [season("s1", "Book One: Water")],
             "s1": [episode("e1", number: 1), episode("e2", number: 2)]
         ]
-        let vm = ItemDetailViewModel(provider: provider, itemID: "show")
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: "show", prefetchesOpeningSeason: false
+        )
         await vm.load()
 
         XCTAssertNil(vm.episodes(for: "s1"))
@@ -4125,7 +4200,8 @@ final class ItemDetailViewModelTests: XCTestCase {
             sourceAccountID: "acct-9",
             onlineTrailerResolver: { _ in [] },
             playableVideoIDResolver: { _ in nil },
-            trailerCache: TrailerResolutionCache()
+            trailerCache: TrailerResolutionCache(),
+            prefetchesOpeningSeason: false
         )
 
         await vm.load()
@@ -4663,7 +4739,7 @@ final class ItemDetailViewModelTests: XCTestCase {
                        "Enabled cross-server source must remain in the restored picker")
     }
 
-    func testSnapshotEpisodesStayHiddenUntilLiveSeasonLoadCompletes() async {
+    func testSnapshotEpisodesPaintImmediatelyAndLiveLoadReplacesThem() async {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("plozz-watch-refresh-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -4694,13 +4770,18 @@ final class ItemDetailViewModelTests: XCTestCase {
             provider: provider,
             itemID: show.id,
             sourceAccountID: "share",
-            snapshotCache: cache
+            snapshotCache: cache,
+            prefetchesOpeningSeason: false
         )
         await vm.load()
         try? await Task.sleep(for: .milliseconds(100))
-        XCTAssertNil(
-            vm.episodes(for: seasonItem.id),
-            "A stale snapshot must not paint an episode rail that will change after arrival"
+        // A revisit paints the cached rail immediately: withholding it until the
+        // live season fetch lands is exactly the placeholder pass the viewer
+        // reported on every reopen. The snapshot's played state may be a moment
+        // stale, and the live load below replaces it.
+        XCTAssertEqual(
+            vm.episodes(for: seasonItem.id)?.map(\.id), [staleEpisode.id],
+            "A revisited series must paint its cached rail instead of a placeholder"
         )
 
         await vm.loadEpisodes(for: seasonItem.id)
@@ -5006,7 +5087,8 @@ final class ItemDetailViewModelTests: XCTestCase {
         let vm = ItemDetailViewModel(
             provider: provider, itemID: "showA", sourceAccountID: "jelly",
             initialSources: sources,
-            alternateProviderResolver: { _ in provider }
+            alternateProviderResolver: { _ in provider },
+            prefetchesOpeningSeason: false
         )
 
         await vm.load()

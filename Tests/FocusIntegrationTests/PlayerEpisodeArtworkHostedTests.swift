@@ -1337,7 +1337,9 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         file: StaticString = #filePath, line: UInt = #line,
         _ condition: () async -> Bool
     ) async throws {
-        let deadline = ContinuousClock.now + .seconds(5)
+        // Hosted focus can take several seconds to install on a cold, loaded
+        // runner; the previous 5 s deadline turned that into a flaky failure.
+        let deadline = ContinuousClock.now + .seconds(10)
         while ContinuousClock.now < deadline {
             if await condition() { return }
             try await Task.sleep(for: .milliseconds(20))

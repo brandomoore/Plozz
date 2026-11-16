@@ -18,6 +18,7 @@ actor HomeSnapshotPersistence {
         generation: UInt64,
         to store: any HomeContentStoring,
         preservePreviousWatchlist: Bool,
+        preservePreviousContinueWatching: Bool = false,
         excludingUnconfirmedContinueWatchingIDs unconfirmedIDs: Set<String>
     ) {
         let scope = store.persistenceScope
@@ -31,6 +32,15 @@ actor HomeSnapshotPersistence {
                 content.watchlist,
                 on: store.load()?.watchlist ?? []
             )
+        }
+        if preservePreviousContinueWatching, durable.continueWatching.isEmpty {
+            // A load whose Continue Watching row came back empty while its other rows
+            // succeeded is not an empty aggregate, so the write went ahead and
+            // replaced a good resume row with nothing — the snapshot then had no cards
+            // to paint on the next launch, which is the reported "starts blank even
+            // though the row was retained". Keep last session's row unless a load has
+            // positively confirmed the viewer has nothing in progress.
+            durable.continueWatching = store.load()?.continueWatching ?? []
         }
         if !unconfirmedIDs.isEmpty {
             durable.continueWatching.removeAll {
@@ -339,6 +349,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     public private(set) var isShowingCachedSnapshot = false
     @ObservationIgnored private var hasReceivedLiveContent = false
     @ObservationIgnored private var hasCompletedHomeLoad = false
+    /// Rows whose last publication reported a failure. They keep a retry footprint
+    /// (a loading row with no cards) until a request actually settles.
+    @ObservationIgnored private var rowsAwaitingRetry: Set<HomeRowKind> = []
     @ObservationIgnored private var detailResumeByAccount: [String: [MediaItem]] = [:]
     /// Detail opens can use a server's native episode ids before the other servers
     /// finish, and after the visible row merges those copies into a single card.
@@ -375,6 +388,22 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     public private(set) var rowFailures: [HomeRowKind: AppError] = [:]
     public private(set) var continueWatchingDiagnostic: LibraryLoadDiagnostic?
     public var hasLiveContinueWatching: Bool { hasReceivedLiveContent }
+    /// Whether a Home snapshot actually exists on disk right now.
+    ///
+    /// Diagnostic-only, and deliberately cheap: the content store memoizes its first
+    /// decode. Exists so launch telemetry can tell "the snapshot is gone" apart from
+    /// "the snapshot is there but the restore is slow" — the two produce the same
+    /// one-frame skeleton on screen and need opposite fixes.
+    public var hasPersistedSnapshot: Bool { contentStore.load() != nil }
+    /// Whether a live aggregation has completed at least once in this session.
+    ///
+    /// Consumers that would otherwise destroy durable state on an *empty* result
+    /// (the hero's cached candidate pool is the first) must wait for this: an empty
+    /// read before the first live load finishes means "nothing arrived yet", not
+    /// "the library is empty". Clearing on that read is how a phone lost the hero
+    /// artwork it would otherwise paint instantly, so every launch started with a
+    /// skeleton until the network caught up.
+    public var hasCompletedLiveLoad: Bool { hasCompletedHomeLoad }
     @ObservationIgnored private var loadGeneration: UInt64 = 0
     @ObservationIgnored private var publishedLoadRows: Set<HomeRowKind> = []
     @ObservationIgnored private var receivedLiveRows: Set<HomeRowKind> = []
@@ -553,6 +582,12 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         recentlyAppliedRecency: @escaping @Sendable () async -> [String: AppliedResumeRecord] = { [:] },
         mediaItemActionHandler: (any MediaItemActionHandling)? = nil,
         policy: ContinueWatchingPolicy = .default,
+        // `false` while the account store has not been read yet. Only an empty list
+        // that is KNOWN empty may prune the cached snapshot; during launch the list
+        // is empty merely because nothing has loaded, and pruning there discarded a
+        // valid snapshot (and `scheduleSnapshotClear()` destroyed it for the next
+        // launch), leaving the page to re-fetch from scratch.
+        accountsAreResolved: Bool = true,
         contentPublisher: @escaping HomeContentPublishing = { _, _ in }
     ) {
         self.accounts = accounts
@@ -639,7 +674,19 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             // `save` refuses to overwrite good content with an empty aggregate,
             // so it came back on every launch. The universal watchlist is the
             // user's own and survives: it isn't a server's to take away.
-            if accounts.isEmpty {
+            // With NO servers to watch, every SERVER-derived row in the snapshot
+            // belongs to a library this profile no longer sees, and `save` refuses to
+            // overwrite good content with an empty aggregate, so the stale library
+            // came back on every launch.
+            //
+            // That pruning must NOT happen here. `init` runs before the profile's
+            // active account selection has been published, so `accounts` is briefly
+            // empty on a perfectly normal launch; pruning (and especially
+            // `scheduleSnapshotClear()`) on that empty list is what intermittently
+            // wiped a valid snapshot and made the next launch show a skeleton before
+            // its cached page. Both the row prune and the snapshot clear now wait for
+            // a load that actually completed (see `load(showLoadingState:)`).
+            if accounts.isEmpty, accountsAreResolved {
                 cached.continueWatching = []
                 cached.latest = []
                 cached.recentlyAddedCandidates = nil
@@ -657,7 +704,16 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                 self.state = .loaded(cached)
                 self.isShowingCachedSnapshot = true
                 if !accounts.isEmpty {
-                    self.loadingRows = [.continueWatching, .recentlyAdded, .watchlist]
+                    // Only rows with nothing cached may start as placeholders. Marking
+                    // them unconditionally made a fully populated Continue Watching row
+                    // (measured: 48 cached cards) render as placeholders on the very
+                    // first frame — the reported "starts out blank, scrolling shows the
+                    // covers". Placeholder-ness follows the data, not the account list.
+                    var pending: Set<HomeRowKind> = []
+                    if cached.continueWatching.isEmpty { pending.insert(.continueWatching) }
+                    if cached.latest.isEmpty { pending.insert(.recentlyAdded) }
+                    if cached.watchlist.isEmpty { pending.insert(.watchlist) }
+                    self.loadingRows = pending
                 }
             }
         }
@@ -816,7 +872,20 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             willReload: true,
             reason: "visibility-changed-or-not-loaded"
         ))
-        await load()
+        // Retention rule: a refresh fold arriving at `.idle`/`.loading`/`.failed`
+        // must NOT tear a page that has already shown content back to the full-screen
+        // skeleton rail. The loud load replaced the settled hero + rows with
+        // placeholders and let every card re-render as its artwork decoded — the
+        // "images leave, elements resize as they render" flicker, most visible
+        // after a background return where the reload rule fires while a load is
+        // still in flight or ended in a failure. Refresh SILENTLY instead: the
+        // previous snapshot stays on screen until replacements are ready
+        // (`load(showLoadingState: false)` keeps `state` loaded and publishes
+        // rows as they arrive). The skeleton only paints for a page that has
+        // never shown content at all; an explicit retry (the "Try Again" button)
+        // still asks for the loud path by calling `load()` directly.
+        let appearedOnce = hasReceivedLiveContent || hasCompletedHomeLoad
+        await load(showLoadingState: !appearedOnce)
     }
 
     public func load() async {
@@ -911,7 +980,36 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             rowFailures = [:]
             continueWatchingDiagnostic = nil
             loadingRows = Set(HomeRowKind.allCases).subtracting(receivedLiveRows)
-            state = .loaded(loadingPresentationContent)
+            // Continue Watching already has cards on screen from the cached snapshot:
+            // keep them painted while the multi-server aggregate arrives instead of
+            // swapping the whole row for placeholders. This was the one row that
+            // always took seconds longer than every other row on launch — not because
+            // its artwork was slow, but because its CONTENT was withheld here. The
+            // fresh aggregate still replaces the cards in place when it resolves.
+            if isShowingCachedSnapshot, !onScreenContinueWatching.isEmpty {
+                loadingRows.remove(.continueWatching)
+            }
+            var initial = previousContent ?? Content()
+            initial.sectionIssues = []
+            initial.mergeLibraries = !visibility.usesIndividualHomeRows
+            initial.librarySections = !visibility.usesIndividualHomeRows ? [] : retainingLibraryRowContent(
+                Self.plannedLibrarySections(libraries: initial.libraries, visibility: visibility),
+                previous: initial.librarySections
+            )
+            initial.serverRows = retainingServerRowContent(
+                HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
+                    .map { HomeServerRow(definition: $0, isLoading: true) },
+                previous: initial.serverRows
+            )
+            initial.collectionRows = HomeCollectionRow.plannedDefinitions(accounts: accounts, visibility: visibility)
+                .map { definition in
+                    var row = initial.collectionRows.first { $0.definition == definition }
+                        ?? HomeCollectionRow(definition: definition)
+                    row.isLoading = true
+                    row.failure = nil
+                    return row
+                }
+            state = .loaded(initial)
         } else if showLoadingState {
             state = .loading
         }
@@ -1297,7 +1395,17 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         content.collectionRows = retainingCollectionRowContent(
             progress.content.collectionRows, previous: content.collectionRows
         )
-        if let resume { content.continueWatching = resume }
+        if let resume {
+            // Never let a mid-load empty result wipe the row: progress arrives per
+            // account, so one account reporting no in-progress titles before the
+            // others land is not evidence that the viewer has none. Blanking here is
+            // the reported "Continue Watching loads, then goes blank, and scrolling
+            // brings the covers back". An empty reconcile only replaces a non-empty
+            // row when the row is fully ready AND nothing was carried forward.
+            if !resume.isEmpty || content.continueWatching.isEmpty {
+                content.continueWatching = resume
+            }
+        }
         if newlyReady.contains(.recentlyAdded) {
             content.latest = progress.content.latest
             content.recentlyAddedCandidates = progress.content.recentlyAddedCandidates
@@ -1344,8 +1452,60 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         // Publish failures with reconciled content, never across an await that
         // could replace a focused loading row before its usable cards arrive.
         rowFailures = progress.failures
+        rowsAwaitingRetry.formUnion(progress.failures.keys)
         continueWatchingDiagnostic = progress.continueWatchingDiagnostic
         loadingRows = progress.loadingRows.subtracting(receivedLiveRows)
+        // A row holding published cards is never a placeholder. Progress is reported
+        // per account, so a partly-loaded aggregate kept marking Continue Watching as
+        // loading and replaced 48 rendered cards with placeholders for ~2.4s
+        // (measured on device). Placeholder-ness follows the VISIBLE data, not the raw
+        // aggregate: a row whose only cards are filtered out (hidden library, watched
+        // Recently Added) is still empty on screen and must reserve its retry
+        // footprint instead of collapsing.
+        let loadingVisibility = currentVisibility()
+        let visibleLatest = (content.latest + (content.recentlyAddedCandidates ?? [])).contains {
+            $0.isVisibleOnHome(isLibraryVisible: loadingVisibility.isEnabled)
+                && (!loadingVisibility.hideWatchedRecentlyAdded
+                    || !HomeRecentlyAddedPolicy.isWatched($0))
+        }
+        let visibleLibraries = content.libraries.contains(
+            where: loadingVisibility.isVisibleOnHome
+        )
+        for kind in HomeRowKind.allCases {
+            let rawHasContent: Bool
+            let hasVisibleCards: Bool
+            switch kind {
+            case .continueWatching:
+                rawHasContent = !content.continueWatching.isEmpty
+                hasVisibleCards = rawHasContent
+            case .recentlyAdded:
+                rawHasContent = !content.latest.isEmpty
+                    || content.recentlyAddedCandidates?.isEmpty == false
+                hasVisibleCards = visibleLatest
+            case .watchlist:
+                rawHasContent = !content.watchlist.isEmpty
+                hasVisibleCards = rawHasContent
+            case .libraries:
+                rawHasContent = !content.libraries.isEmpty
+                hasVisibleCards = visibleLibraries
+            }
+            if hasVisibleCards {
+                loadingRows.remove(kind)
+            } else if (isLoading || isRefreshing), progress.failures[kind] == nil,
+                      rawHasContent || rowsAwaitingRetry.contains(kind) {
+                // A row whose only cards are filtered out, or that is retrying a
+                // failure, is empty on screen and must reserve its footprint.
+                loadingRows.insert(kind)
+            } else if !progress.loadingRows.contains(kind),
+                      progress.failures[kind] == nil, !rawHasContent {
+                // A settled, empty answer is not a loading row; only a query that is
+                // still in flight (or a previous failure) reserves one.
+                loadingRows.remove(kind)
+            }
+            if progress.failures[kind] == nil, !progress.loadingRows.contains(kind) {
+                rowsAwaitingRetry.remove(kind)
+            }
+        }
         let publication = PerformanceDiagnostics.shared.begin(.homePublish)
         if state.value != content { state = .loaded(content) }
         publication?.finish(.succeeded)
@@ -1969,6 +2129,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                 generation: storeGeneration,
                 to: self.contentStore,
                 preservePreviousWatchlist: preservePreviousWatchlist,
+                preservePreviousContinueWatching:
+                    !self.hasCompletedHomeLoad
+                    || self.rowFailures[.continueWatching] != nil,
                 excludingUnconfirmedContinueWatchingIDs:
                     self.unconfirmedContinueWatchingIDs
             )
@@ -2367,6 +2530,8 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                 generation: storeGeneration,
                 to: contentStore,
                 preservePreviousWatchlist: preservePreviousWatchlist,
+                preservePreviousContinueWatching:
+                    !hasCompletedHomeLoad || rowFailures[.continueWatching] != nil,
                 excludingUnconfirmedContinueWatchingIDs: unconfirmedIDs
             )
         }

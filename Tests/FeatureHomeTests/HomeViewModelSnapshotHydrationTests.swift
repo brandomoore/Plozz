@@ -480,8 +480,11 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
             let restartedDeadline = ContinuousClock.now + .seconds(2)
             while provider.librariesCallCount < 2, ContinuousClock.now < restartedDeadline { await Task.yield() }
             XCTAssertEqual(provider.librariesCallCount, 2)
-            XCTAssertTrue(home.loadingRows.contains(.continueWatching),
-                          "The obsolete final result must not mark the cold load complete.")
+            XCTAssertFalse(home.hasCompletedLiveLoad,
+                           "The obsolete final result must not mark the cold load complete.")
+            XCTAssertTrue(home.isRefreshing, "The replacement request is still blocked.")
+            XCTAssertEqual(home.state.value?.continueWatching.map(\.id), ["resume"],
+                           "Previously published cards remain usable during the replacement load.")
 
             replacementGate.open()
             let finishedDeadline = ContinuousClock.now + .seconds(2)
@@ -521,7 +524,10 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         XCTAssertEqual(provider.librariesCallCount, 2)
         XCTAssertEqual(home.state.value?.latest.first?.id, "latest")
         XCTAssertTrue(home.isRefreshing)
-        XCTAssertTrue(home.loadingRows.contains(.continueWatching))
+        // The row already has cards on screen; it must keep them while the refresh
+        // is in flight rather than swapping them for placeholders (the reported
+        // "starts out blank"). `isRefreshing` still reports the in-flight work.
+        XCTAssertFalse(home.loadingRows.contains(.continueWatching))
         secondResumeGate.open()
         let finishDeadline = Date().addingTimeInterval(2)
         while Date() < finishDeadline, home.isRefreshing { await Task.yield() }
@@ -1125,7 +1131,10 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
                 await fulfillment(of: [started], timeout: 3)
                 for _ in 0..<10 {
                     XCTAssertNil(home.rowFailures[kind])
-                    XCTAssertTrue(home.loadingRows.contains(kind))
+                    XCTAssertTrue(
+                        home.loadingRows.contains(kind),
+                        "kind=\(kind) interrupted=\(interrupted) collection=\(collection) hideWatched=\(hideWatched)"
+                    )
                     if case let .home(row)? = visibleRow()?.source {
                         XCTAssertGreaterThan(row.loadingPlaceholderCount, 0)
                     } else {

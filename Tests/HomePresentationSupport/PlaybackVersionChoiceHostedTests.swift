@@ -665,7 +665,15 @@ final class PlaybackVersionChoiceHostedTests: XCTestCase {
             }
             previousImage = bytes
         }
-        let image = try XCTUnwrap(settledImage, "Native focus must settle before measuring badge typography.")
+        _ = try XCTUnwrap(settledImage, "Native focus must settle before measuring badge typography.")
+        // Two identical frames can still precede asynchronous badge content on a
+        // slow CI runner. Measure the picker after it has actually had time to
+        // paint, not merely after focus stopped moving.
+        try await Task.sleep(for: .seconds(1))
+        window.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
         let attachment = XCTAttachment(image: image)
         attachment.name = "TV version picker typography"
         attachment.lifetime = .keepAlways

@@ -12,6 +12,24 @@ import XCTest
 /// Controlled provider contracts over real TCP/URLSession, not live upstream servers.
 @MainActor
 final class AlternateAddressHTTPIntegrationTests: XCTestCase {
+    func testOverlappingGETsKeepTheirOwnRedirectPolicies() async throws {
+        let (destination, destinationURL) = try await server { _ in .json("{}") }
+        let (origin, originURL) = try await server { _ in
+            .init(status: 302, headers: ["Location": destinationURL.absoluteString + "/foreign"],
+                  delay: .milliseconds(100))
+        }
+        let http = client()
+        async let following = http.sendRaw(Endpoint(path: "/same", redirectPolicy: .follow), baseURL: originURL)
+        async let restricted = http.sendRaw(Endpoint(path: "/same", redirectPolicy: .sameOrigin), baseURL: originURL)
+        let responses = try await (following, restricted)
+        XCTAssertEqual(responses.0.1.statusCode, 200)
+        XCTAssertEqual(responses.1.1.statusCode, 302)
+        let originRequests = await origin.requests
+        let redirectedRequests = await destination.requests
+        XCTAssertEqual(originRequests.count, 2)
+        XCTAssertEqual(redirectedRequests.count, 1)
+    }
+
     func testJellyfinColdAndWarmFallbackWithProxyPaths() async throws {
         try await exerciseProvider(.jellyfin, cold: true)
         try await exerciseProvider(.jellyfin, cold: false)

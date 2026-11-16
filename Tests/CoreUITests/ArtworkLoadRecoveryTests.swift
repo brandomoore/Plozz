@@ -119,6 +119,43 @@ final class ArtworkLoadRecoveryTests: XCTestCase {
         try await checkExpiredLoad(networkFile: true)
     }
 
+    func testChangedNetworkArtworkRevisionMustFetchInsteadOfReusingOldPixels() async throws {
+        let loader = ControlledArtworkLoader(first: try imageData(.red), subsequent: try imageData(.blue))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = ArtworkImageCache(derivedCache: LocalArtworkDerivedCache(directory: directory))
+        cache.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
+        let account = UUID().uuidString
+        let credential = CredentialRevision()
+        func reference(_ revision: String) throws -> ArtworkReference {
+            .networkFile(try NetworkArtworkReference(
+                accountID: account, credentialRevision: credential, catalogArtworkID: "same-artwork",
+                representation: RemoteFileRepresentation(
+                    size: 1_024,
+                    identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: .distantPast),
+                    consistency: .changeDetecting
+                ),
+                sourceRevision: revision
+            ))
+        }
+        let old = try reference("old")
+        let new = try reference("new")
+        let first = Task { await cache.image(for: old, variant: .posterCard) }
+        await loader.waitUntilStarted(1)
+        await loader.releaseAll()
+        let firstValue = await first.value
+        let oldImage = try XCTUnwrap(firstValue)
+        XCTAssertNil(cache.cachedImage(for: new, variant: .posterCard))
+        let refresh = try XCTUnwrap(cache.prefetch(new, variant: .posterCard))
+        await loader.waitUntilStarted(2)
+        await loader.releaseAll()
+        await refresh.value
+        let newImage = try XCTUnwrap(cache.cachedImage(for: new, variant: .posterCard))
+        XCTAssertFalse(newImage === oldImage)
+        let count = await loader.count
+        XCTAssertEqual(count, 2)
+    }
+
     func testCancellingOneWaiterKeepsTheOtherWaiterAndDeadlineAlive() async throws {
         let data = try imageData(.red)
         let loader = ControlledArtworkLoader(first: data, subsequent: data)

@@ -1049,6 +1049,9 @@ struct PlozziOSTabShell: View {
     @State private var retainsExplicitWatchlistEntry = false
     @State private var retainsExplicitDownloadEntry = false
     @State private var downloadNavigationID: UUID?
+    @State private var searchFocusRequest = 0
+    @State private var searchReplaceQueryRequest = 0
+    @State private var navigationRootRequest = 0
     @State private var hasChosenNavigationDestination = false
     @State private var scrollToTopRequest = 0
     let homeViewModelBox: LazyViewState<HomeViewModel>
@@ -1284,7 +1287,19 @@ struct PlozziOSTabShell: View {
 
     private func selectDestination(_ destination: PlozziOSDestination) {
         isShowingMorePage = false
-        selectedDestination = resolvedDestination(destination)
+        let wasShowingSearch = effectiveSelectedDestination == .search
+        let resolved = resolvedDestination(destination)
+        selectedDestination = resolved
+        guard resolved == .search else { return }
+        // Pressing Search always lands in the field with the keyboard, whether the
+        // viewer is coming from another tab or pressing Search again while already
+        // there. A re-tap also starts a new search, so the previous query is cleared
+        // instead of being left behind the keyboard.
+        searchFocusRequest &+= 1
+        // Pressing Search means "search", even when a detail page was pushed on top
+        // of the search results: return that stack to its root first, then focus.
+        navigationRootRequest &+= 1
+        if wasShowingSearch { searchReplaceQueryRequest &+= 1 }
     }
 
     private func consumeStandaloneEntryIfNeeded() {
@@ -1320,8 +1335,22 @@ struct PlozziOSTabShell: View {
         } else {
             NavigationStack {
                 destinationContent(for: destination, keepsNavigationBar: isOverflow)
+                    .environment(
+                        \.plozziOSNavigationRootRequest,
+                        destination == .search ? navigationRootRequest : 0
+                    )
                     // Keep the stack itself directly hosted by Tab so iPad can merge its toolbar.
                     .plozzOpaqueNavigationChrome()
+                    // Search results push a detail page through a view-based link, so
+                    // the Search tab needs UIKit to pop back to its root when the tab
+                    // is pressed. Inert for every other destination.
+                    .background {
+                        if destination == .search {
+                            PlozziOSNavigationPopProxy(request: navigationRootRequest)
+                                .frame(width: 0, height: 0)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     .toolbar {
                         if isOverflow, destination != .downloads {
                             PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
@@ -1329,7 +1358,6 @@ struct PlozziOSTabShell: View {
                     }
                     .environment(\.plozziOSIsOverflowDestination, isOverflow)
                     .environment(\.plozziOSOverflowNavigation, overflowNavigation)
-                    .plozzOpaqueNavigationChrome()
             }
             .id(destination == .downloads ? downloadNavigationID : nil)
         }
@@ -1552,7 +1580,8 @@ struct PlozziOSTabShell: View {
             recentlyAppliedRecency: { [weak appModel] in
                 await appModel?.appliedWatchRecency() ?? [:]
             },
-            mediaItemActionHandler: appModel.mediaItemActionHandler
+            mediaItemActionHandler: appModel.mediaItemActionHandler,
+            accountsAreResolved: appModel.accountsProviders.hasResolvedAccounts
         )
     }
 
@@ -1578,6 +1607,8 @@ struct PlozziOSTabShell: View {
 
         .tabViewStyle(.sidebarAdaptable)
         .tint(palette.primaryText)
+        .environment(\.plozziOSSearchFocusRequest, searchFocusRequest)
+        .environment(\.plozziOSSearchReplaceQueryRequest, searchReplaceQueryRequest)
         .modifier(PlozziOSNavigationBackground(
             hidesRegularTabBackdrop: effectiveSelectedDestination == .home && !isShowingMorePage
         ))
@@ -1601,7 +1632,9 @@ struct PlozziOSTabShell: View {
                 hasOpaqueBottomBar: usesOpaqueBottomBar,
                 overflowNavigation: overflowNavigation,
                 scrollToTopRequest: scrollToTopRequest,
-                onPageReselection: UpcomingView.scrollToToday
+                onPageReselection: UpcomingView.scrollToToday,
+                searchTabIndex: tabDestinations.firstIndex(of: .search),
+                onSearchReselection: { selectDestination(.search) }
             )
             .frame(width: 0, height: 0)
         }
@@ -2009,6 +2042,8 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
     var overflowNavigation: PlozziOSOverflowNavigation?
     var scrollToTopRequest = 0
     var onPageReselection: ((UIScrollView) -> Bool)?
+    var searchTabIndex: Int?
+    var onSearchReselection: (() -> Void)?
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
 
@@ -2023,6 +2058,8 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.hasOpaqueBottomBar = hasOpaqueBottomBar
         controller.overflowNavigation = overflowNavigation
         controller.onPageReselection = onPageReselection
+        controller.searchTabIndex = searchTabIndex
+        controller.onSearchReselection = onSearchReselection
         controller.install()
         controller.receiveScrollToTopRequest(scrollToTopRequest)
     }
@@ -2035,6 +2072,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.onBottomBarVisibilityChange = nil
         controller.overflowNavigation = nil
         controller.onPageReselection = nil
+        controller.onSearchReselection = nil
     }
 
     final class Controller: UIViewController, UITabBarControllerDelegate, UITableViewDelegate, UINavigationControllerDelegate {
@@ -2047,6 +2085,8 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         var musicDockUsesBottomBar = true
         var hasOpaqueBottomBar = false
         var onPageReselection: ((UIScrollView) -> Bool)?
+        var searchTabIndex: Int?
+        var onSearchReselection: (() -> Void)?
         private final class MusicInset {
             weak var controller: UIViewController?
             var amount: CGFloat = 0
@@ -2412,7 +2452,14 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             }
             let reselectsCurrentTab = tabBarController.selectedTab === tab
             let allowed = previousDelegate?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
-            if allowed && reselectsCurrentTab { scrollSelectedPageToTop() }
+            if allowed && reselectsCurrentTab {
+                if let searchTabIndex, tabBarController.tabs.indices.contains(searchTabIndex),
+                   tabBarController.tabs[searchTabIndex] === tab {
+                    onSearchReselection?()
+                } else {
+                    scrollSelectedPageToTop()
+                }
+            }
             return allowed
         }
 
@@ -2425,7 +2472,12 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             let reselectsCurrentTab = tabBarController.selectedViewController === viewController
             let allowed = previousDelegate?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
             if allowed && reselectsCurrentTab && viewController !== tabBarController.moreNavigationController {
-                scrollSelectedPageToTop()
+                if let searchTabIndex, controllers.indices.contains(searchTabIndex),
+                   controllers[searchTabIndex] === viewController {
+                    onSearchReselection?()
+                } else {
+                    scrollSelectedPageToTop()
+                }
             }
             return allowed
         }

@@ -5,11 +5,125 @@ import FeatureAuth
 import FeatureHomeCore
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import AppShelliOS
 
 @MainActor
 final class HomeHeroFullWidthPresentationTests: XCTestCase {
+    func testDetailHeroAdoptsUpdatedArtworkWithoutChangingItsSubject() async throws {
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let urls = try ["first", "second"].map {
+            try XCTUnwrap(URL(string: "https://hero-refresh.invalid/\(UUID())/\($0).png"))
+        }
+        defer { urls.forEach { cache.removeCachedResponse(for: URLRequest(url: $0)) } }
+        for (url, color) in zip(urls, [UIColor.blue, .red]) {
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 600)).image { context in
+                color.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
+            }
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: url, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
+            ))
+            cache.storeCachedResponse(
+                CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())),
+                for: URLRequest(url: url)
+            )
+            let prepared = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+            XCTAssertNotNil(prepared)
+        }
+        var item = MediaItem(
+            id: UUID().uuidString, title: "Artwork refresh", kind: .movie,
+            posterURL: urls[0], backdropURL: urls[0], allowsTitleBasedMetadataMatching: false
+        )
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "HeroRefresh-\(UUID())"))
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        app.settings.heroBackground.settings.detailMode = .off
+        let trailer = HeroTrailerController()
+        let sidebar = PlozziOSSidebarGeometryModel()
+        func stage(_ item: MediaItem) -> some View {
+            PlozziOSHeroStage(
+                item: item, presentation: HeroPresentation(item: item, artworkStyle: .landscape, surface: .detail),
+                style: .landscape, surfaceRole: .detail, isActive: true, showsScrim: false,
+                trailerController: trailer, backgroundSettings: app.settings.heroBackground,
+                trailerResolver: app.heroTrailerResolver()
+            ) { EmptyView() }
+            .environment(sidebar)
+            .environment(\.themePalette, .dark)
+            .environment(\.plozziOSHeroContainerHeight, 700)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        try await withWindow(
+            item: item, size: CGSize(width: 650, height: 700), sizeClass: .regular,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            host.rootView = AnyView(stage(item))
+            try await waitForHostedLayout(window)
+            let before = try pixel(snapshot(window, name: "detail-artwork-before"), at: CGPoint(x: 325, y: 100))
+            XCTAssertGreaterThan(Int(before[2]) - Int(before[0]), 150)
+            item.posterURL = urls[1]
+            item.backdropURL = urls[1]
+            host.rootView = AnyView(stage(item))
+            try await waitForHostedLayout(window)
+            let after = try pixel(snapshot(window, name: "detail-artwork-after"), at: CGPoint(x: 325, y: 100))
+            XCTAssertGreaterThan(Int(after[0]) - Int(after[2]), 150,
+                                 "A stable subject must not pin obsolete artwork references.")
+        }
+    }
+
+    func testHomePlayRemainsVisibleWhileOptionalLogoRequestIsBlocked() async throws {
+        let gate = HomeLogoResponseGate()
+        let entered = expectation(description: "Optional logo request entered")
+        let server = try LoopbackHTTPServer { _ in
+            entered.fulfill()
+            await gate.wait()
+            return .init(status: 404)
+        }
+        let url = try await server.start()
+        addTeardownBlock {
+            await gate.release()
+            await server.stop()
+        }
+        var item = try await artworkItem()
+        item.logoURL = url.appendingPathComponent("logo.png")
+        try await withWindow(
+            item: item, size: CGSize(width: 390, height: 844), sizeClass: .compact,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, _ in
+            await fulfillment(of: [entered], timeout: 3)
+            let image = snapshot(window, name: "home-actions-with-pending-logo")
+            let frames = try HeroTextInk.frames(in: image, terms: ["Play"], darkTerms: ["Play"])
+            XCTAssertNotNil(frames["Play"], "Optional artwork must not hide an available playback action.")
+            await gate.release()
+        }
+    }
+
+    func testHeroHeightUsesItsOwnContainerOnFirstLayoutAndResize() async throws {
+        let item = MediaItem(id: UUID().uuidString, title: "Hero", kind: .movie)
+        try await withWindow(
+            item: item, size: CGSize(width: 650, height: 700), sizeClass: .regular,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            var measured: [CGFloat?] = []
+            host.rootView = AnyView(
+                HomeContainerHeightCapture { measured.append($0) }
+                    .plozziOSTracksHeroContainerHeight()
+            )
+            try await waitForHostedLayout(window)
+            XCTAssertFalse(measured.isEmpty)
+            XCTAssertTrue(measured.allSatisfy { $0 == 700 },
+                          "No first-frame seed may use another scene's screen height.")
+            measured.removeAll()
+            window.frame = CGRect(x: 0, y: 0, width: 900, height: 540)
+            try await waitForHostedLayout(window)
+            XCTAssertEqual(measured.last ?? nil, 540)
+        }
+    }
+
     func testColdHeroPreviewSurvivesRebuildingBeforeFullResolution() async throws {
         for landscape in [false, true] {
             let url = try XCTUnwrap(URL(string: "https://hero-preview.invalid/\(UUID()).png"))
@@ -126,6 +240,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         item.parentTitle = "SHOW"
         item.seriesID = "show"
         item.overview = "EPISODE SPOILERS"
+        item.seriesPosterURL = item.posterURL
+        item.fallbackArtworkURL = item.backdropURL
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "SeriesPreview-\(UUID().uuidString)"))
         let app = PlozziOSAppModel(
             accountStore: AccountStore(secureStore: InMemorySecureStore()),
@@ -152,10 +268,13 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 let image = snapshot(window, name: "pending-series-\(Int(size.width))")
                 let color = try pixel(image, at: CGPoint(x: size.width / 2, y: 120))
                 XCTAssertGreaterThan(color[2], 120, "The incoming page must already contain the known artwork.")
-                let text = try HeroTextInk.frames(in: image, terms: ["SHOW", "SPOILERS", "Loading"])
-                XCTAssertNotNil(text["SHOW"])
-                XCTAssertNil(text["SPOILERS"], "A parent-show preview must not reveal the child's synopsis.")
-                XCTAssertNil(text["Loading"], "Loading status is accessible, not a visible replacement page.")
+                let request = VNRecognizeTextRequest()
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                XCTAssertTrue(text.contains("SHOW"), text)
+                XCTAssertFalse(text.contains("SPOILERS"), "A parent-show preview must not reveal the child's synopsis.")
+                XCTAssertFalse(text.contains("Loading"), "Loading status is accessible, not a visible replacement page.")
                 XCTAssertFalse(trailer.isPlaying)
                 XCTAssertFalse(descendants(window).contains { $0 is UIActivityIndicatorView })
             }
@@ -1540,6 +1659,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                         item: item, style: .landscape, height: 680,
                         showsTrailer: false, usesSlidingArtwork: sliding
                     )
+                    .padding(.leading, 280)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea()
                     .environment(sidebar)
@@ -1548,6 +1668,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     .environment(\.colorScheme, .dark)
                 )
                 try await waitForHostedLayout(window)
+                XCTAssertEqual(sidebar.coveredWidth, 280, accuracy: 1)
                 let image = snapshot(window, name: "sidebar-swipe-landing-\(sliding)")
                 let samples = try [CGPoint(x: 310, y: 150), CGPoint(x: 650, y: 150), CGPoint(x: 980, y: 150)].map {
                     try pixel(image, at: $0)
@@ -1916,6 +2037,31 @@ private struct HomeHeroWidthFixture: View {
                 }
             }
         }
+    }
+}
+
+private struct HomeContainerHeightCapture: View {
+    @Environment(\.plozziOSHeroContainerHeight) private var height
+    let record: (CGFloat?) -> Void
+
+    var body: some View {
+        record(height)
+        return Color.clear
+    }
+}
+
+private actor HomeLogoResponseGate {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        guard !released else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func release() {
+        released = true
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending { waiter.resume() }
     }
 }
 #endif

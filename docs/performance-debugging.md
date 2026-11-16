@@ -93,6 +93,13 @@ on iOS 18. The regression is
 Retain the production shell when modifying it. This is simulator navigation
 evidence, not a physical iPhone XR result or proof of a whole-device crash.
 
+The Continue Watching fixture keeps ordinary interaction launches isolated.
+For explicit warm-restart experiments, add `--harness-persisted-home`;
+`--harness-foreground-session` simulates a background/foreground cycle, and
+`--harness-config-churn` replaces profile configuration while Home is mounted.
+These probes are opt-in so saved rows and lifecycle events do not contaminate
+unrelated navigation assertions.
+
 ## Sentry diagnostics and matching symbols
 
 Crash-reporting consent gates all uploads. Automatic UI/network breadcrumbs and
@@ -187,6 +194,13 @@ It stops when Home is covered, replaced or removed, the scene becomes inactive,
 or reporting is disabled. A replaced owner or consent generation cannot append
 late measurements. Off-screen time is not measured as a scheduling stall.
 App Store builds do not run this extra sampler.
+
+`PLZSTALL=1` is the separate one-off console probe: both app entry points arm a
+100 ms main-actor wake-up check that emits `PLZBOOT STALL <ms>ms screen=<context>`
+for overshoots of at least 150 ms. It is a scheduling-delay signal, not presented
+FPS or a hitch count, and costs nothing unless the variable is set. Use it with
+`devicectl device process launch --console` when a navigation report needs a
+real stall measurement rather than a screenshot guess.
 
 The operation recorder itself adds no polling task. The scoped mobile observer
 uses cancellable sleeps; neither adds automatic tracing, file logging, or extra

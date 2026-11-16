@@ -177,6 +177,7 @@ public struct PlayResumeButtonLabel: View {
 
     /// Supplies the default bar height, which tracks the reader's text size.
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
         title: LocalizedStringResource,
@@ -258,6 +259,15 @@ public struct PlayResumeButtonLabel: View {
                 resolvedContent
             }
         }
+        // The label changes from "Play" to "Resume · 43m" when the detail data
+        // lands; crossfade it instead of letting the words snap.
+        .contentTransition(.opacity)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: transitionKey)
+    }
+
+    private var transitionKey: String {
+        "\(String(describing: title))|\(isPlaceholder)|\(isLoading)"
+            + "|\(resumeTrailing ?? "")|\(resumeProgress != nil)|\(seasonEpisodeText ?? "")"
     }
 
     private var placeholderContent: some View {

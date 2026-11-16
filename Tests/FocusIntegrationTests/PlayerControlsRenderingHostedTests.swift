@@ -141,10 +141,10 @@ final class PlayerControlsRenderingHostedTests: XCTestCase {
         }
         model.scrubSeconds = 0
         model.skipGesture.scanLevel = -8
-        _ = try await captureTimeline(in: window, matching: "8.*0:00")
+        _ = try await captureTimeline(in: window, matching: "8.*0:00", recognitionLevel: .fast)
         model.scrubSeconds = 3600
         model.skipGesture.scanLevel = 8
-        _ = try await captureTimeline(in: window, matching: "1:00:00.*8")
+        _ = try await captureTimeline(in: window, matching: "1:00:00.*8", recognitionLevel: .fast)
     }
 
     func testOutgoingTimelineKeepsClockLabelsUntilNextReveal() async throws {

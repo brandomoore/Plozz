@@ -36,6 +36,12 @@ public final class AccountsProvidersModel {
     @ObservationIgnored public var onLocalAccountAuthentication: (String) -> Void = { _ in }
     /// All signed-in accounts, in stable order.
     public private(set) var accounts: [Account] = []
+    /// Whether `accounts` reflects what is on disk yet. `false` until the first
+    /// `reloadAccounts()` completes: consumers that would prune durable state on an
+    /// empty list (Home's cached snapshot is the first) must wait for this, or they
+    /// throw away a perfectly good snapshot during launch, before the account store
+    /// has been read, and the page has to re-fetch everything.
+    public private(set) var hasResolvedAccounts = false
     /// The subset of `accounts` currently included in the active set. Sourced
     /// from the active profile (falling back to the household-global active set
     /// for the default profile).
@@ -532,6 +538,7 @@ public final class AccountsProvidersModel {
         }
         onAccountsInvalidated()
         accounts = updated
+        hasResolvedAccounts = true
         householdActiveAccountIDs = accountStore.activeAccountIDs()
         publishActiveAccountSelection()
     }

@@ -33,6 +33,29 @@ import UIKit
 @MainActor
 @Observable
 final class PlozziOSAppModel {
+
+    /// One scoped detail-snapshot cache per profile/account identity, memoized for
+    /// the app's lifetime. The iOS detail pages previously used
+    /// `DetailSnapshotCache.ephemeral`, so nothing they loaded was restored: every
+    /// visit rebuilt the page instead of painting the cached hero/seasons.
+    @ObservationIgnored private let detailCacheFactory = DetailSnapshotCacheFactory()
+
+    /// The cache for the active profile and its current servers. Switching profile
+    /// or Plex Home user switches scope, so one household member never restores
+    /// another's cached page.
+    var detailSnapshotCache: DetailSnapshotCache {
+        let accounts = accountsProviders.homeAccounts.map(\.account)
+        let profile = profiles.activeProfile
+        let material = profile.plexPlaybackIdentityKey(for: accounts)
+            + "|" + accounts.map(\.connectionScopeKey).sorted().joined(separator: "|")
+        return detailCacheFactory.cache(
+            for: DetailSnapshotCacheScope(
+                profileID: profiles.activeProfileID,
+                identityMaterial: material
+            )
+        )
+    }
+
     let music: PlozziOSMusicRuntime? = AppReleaseChannel.current.isBeta ? PlozziOSMusicRuntime() : nil
     private let appAdmission: AppAdmissionModel
     let offlineMode: PlozziOSOfflineModeModel

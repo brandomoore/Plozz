@@ -13,7 +13,7 @@ public enum HTTPMethod: String, Sendable {
 /// Providers build `Endpoint`s and hand them to `HTTPClient`, which keeps the
 /// transport (URLSession), header redaction, and error mapping in one place.
 public struct Endpoint: Sendable {
-    public enum RedirectPolicy: Equatable, Sendable {
+    public enum RedirectPolicy: Hashable, Sendable {
         case follow
         case sameOrigin
     }

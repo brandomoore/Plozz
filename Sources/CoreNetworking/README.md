@@ -11,6 +11,15 @@ and every provider/feature that talks to a remote server.
   - exposes a typed `decode(_:from:baseURL:)` convenience.
 - `Endpoint`: a transport-agnostic request description (method, path, query,
   headers, body) — providers build these, not raw `URLRequest`s.
+- `HTTPRequestCoalescer` shares only overlapping, body-free GET transfers with
+  identical URL, effective request headers, URLSession identity and redirect policy.
+  Delivery-evidence and non-retryable requests remain independent. Readers cancel
+  independently; the last cancellation retires and cancels the transfer. Completed
+  responses are not retained. The shared owner is `CoreModels/SharedAsyncRequests`,
+  also used by Jellyfin discovery.
+- `NetworkLedger` is an opt-in timing trace. It records typed route, status,
+  elapsed time, bytes and query shape, never raw paths, IDs or query values other
+  than numeric paging bounds.
 - `HTTPResponseDiagnostics`: opt-in task-local decode and paging evidence for library
   failures. It preserves the existing thrown `AppError` and fallback contracts,
   discards evidence when the enclosing operation succeeds, and retains at most

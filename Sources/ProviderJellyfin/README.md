@@ -236,6 +236,11 @@ Upcoming requests the same complete membership with `includeSeriesRecency: false
 That skips parent-date and last-played-episode enrichment only; it must not drop
 Next Up, since series containers can omit otherwise valid viewing history.
 
+Next Up previews of up to 100 items use one request. Larger finite prefixes and
+unlimited feeds use validated pages of at most 100 items, stopping at the requested
+prefix or the server's total. Resume dates are only fallback recency evidence:
+series metadata and the latest played episode remain authoritative.
+
 Series-specific resume lookups allow resumable `/Shows/NextUp` candidates.
 Compatible bridges can return an empty series-scoped `/Items/Resume` even when
 their account-wide feed contains the saved episode. The existing two scoped

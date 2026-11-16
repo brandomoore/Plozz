@@ -12,6 +12,97 @@ import XCTest
 
 @MainActor
 final class LibraryNavigationTests: XCTestCase {
+    func testSearchReselectionPreservesOtherNativeAndProgrammaticDetailStacks() async throws {
+        let app = try makeApp()
+        let available = NavigationDestinationDefaults.iOS
+        let enabled = [
+            NavigationLibraryLayout.downloadsKey,
+            NavigationLibraryLayout.searchKey,
+            NavigationLibraryLayout.homeKey
+        ]
+        app.settings.navigation.applyLibrarySections(
+            .init(enabled: enabled, disabled: available.filter { !enabled.contains($0) }),
+            available: available
+        )
+        @MainActor func navigation(in controller: UIViewController) -> UINavigationController? {
+            for child in controller.children {
+                if let navigation = navigation(in: child) { return navigation }
+            }
+            return controller as? UINavigationController
+        }
+        try await withTabs(app: app) { tabs, window in
+            @MainActor func select(_ title: String) throws {
+                if !tabs.tabs.isEmpty {
+                    let tab = try XCTUnwrap(tabs.tabs.first { $0.title == title })
+                    let previous = tabs.selectedTab
+                    let allowed = tabs.delegate?.tabBarController?(tabs, shouldSelectTab: tab) ?? true
+                    XCTAssertTrue(allowed)
+                    if allowed {
+                        tabs.selectedTab = tab
+                        tabs.delegate?.tabBarController?(tabs, didSelectTab: tab, previousTab: previous)
+                    }
+                } else {
+                    let controller = try XCTUnwrap(
+                        tabs.viewControllers?.first { $0.tabBarItem.title == title }
+                    )
+                    let allowed = tabs.delegate?.tabBarController?(tabs, shouldSelect: controller) ?? true
+                    XCTAssertTrue(allowed)
+                    if allowed {
+                        tabs.selectedViewController = controller
+                        tabs.delegate?.tabBarController?(tabs, didSelect: controller)
+                    }
+                }
+            }
+            try await waitUntil(window: window) {
+                Set(self.tabTitles(tabs)).isSuperset(of: ["Home", "Downloads", "Search"])
+            }
+            try select("Home")
+            try await waitUntil(window: window) { app.screenshotDirector.navigateToItem != nil }
+            app.screenshotDirector.navigateToItem?(MediaItem(
+                id: "retained-home", title: "Retained Home detail", kind: .movie,
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "plex"
+            ))
+            try await waitUntil(window: window) {
+                tabs.selectedViewController.flatMap { navigation(in: $0) }?.viewControllers.count == 2
+            }
+            let home = try XCTUnwrap(tabs.selectedViewController.flatMap { navigation(in: $0) })
+            let homeDetail = try XCTUnwrap(home.topViewController)
+            try select("Downloads")
+            try await waitUntil(window: window) {
+                tabs.selectedViewController.flatMap { navigation(in: $0) } != nil
+            }
+            let downloads = try XCTUnwrap(tabs.selectedViewController.flatMap { navigation(in: $0) })
+            let downloadDetail = UIViewController()
+            downloads.pushViewController(downloadDetail, animated: false)
+
+            try select("Search")
+            try await waitUntil(window: window) {
+                tabs.selectedViewController.flatMap { navigation(in: $0) } != nil
+            }
+            let search = try XCTUnwrap(tabs.selectedViewController.flatMap { navigation(in: $0) })
+            try await Task.sleep(for: .milliseconds(100))
+            search.pushViewController(UIViewController(), animated: false)
+            window.layoutIfNeeded()
+            let delegate = try XCTUnwrap(tabs.delegate as? PlozziOSSettingsTabAction.Controller)
+            XCTAssertNotNil(delegate.onSearchReselection)
+            XCTAssertEqual(delegate.searchTabIndex, self.tabTitles(tabs).firstIndex(of: "Search"))
+            try select("Search")
+            try await waitUntil(window: window) {
+                tabs.selectedViewController.flatMap { navigation(in: $0) }?.viewControllers.count == 1
+            }
+            XCTAssertTrue(home.topViewController === homeDetail,
+                          "Search must not clear Home's programmatic destination.")
+            XCTAssertTrue(downloads.topViewController === downloadDetail,
+                          "Search must not send native pop requests to other retained tabs.")
+            try select("Home")
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(tabs.selectedViewController.flatMap { navigation(in: $0) }?.topViewController === homeDetail)
+            try select("Downloads")
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(tabs.selectedViewController.flatMap { navigation(in: $0) }?.topViewController === downloadDetail)
+        }
+    }
+
     func testUpcomingVisibilityFollowsActiveProfileAndAllowsExplicitShowWithoutSources() throws {
         let app = try makeApp()
         XCTAssertTrue(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.upcoming))
@@ -54,7 +145,7 @@ final class LibraryNavigationTests: XCTestCase {
                 app.settings.navigation.renameDestination(key, to: name, homeVisibility: app.settings.homeVisibility)
             }
             try await self.waitUntil(window: window) {
-                Set(self.tabTitles(tabs)) == Set(["Start", "Offline", "Find", "Queue"])
+                Set(self.tabTitles(tabs)) == Set(["Start", "Upcoming", "Offline", "Find", "Queue"])
             }
             XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), destinations)
             app.settings.homeVisibility.setHomeRowName("Saved", for: .global(.watchlist))
@@ -63,7 +154,7 @@ final class LibraryNavigationTests: XCTestCase {
                 app.settings.navigation.renameDestination(key, to: "", homeVisibility: app.settings.homeVisibility)
             }
             try await self.waitUntil(window: window) {
-                Set(self.tabTitles(tabs)) == Set(["Home", "Downloads", "Search", "Watchlist"])
+                Set(self.tabTitles(tabs)) == Set(["Home", "Upcoming", "Downloads", "Search", "Watchlist"])
             }
         }
     }
@@ -178,15 +269,15 @@ final class LibraryNavigationTests: XCTestCase {
         XCTAssertFalse(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.liveTV))
     }
 
-    func testDefaultTabsRemainHomeDownloadsAndSearchAfterDiscoveryOnPhoneAndTablet() async throws {
+    func testDefaultTabsIncludeUpcomingAfterDiscoveryOnPhoneAndTablet() async throws {
         let app = try makeApp()
-        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
+        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .upcoming, .downloads, .search])
         await app.refreshNavigationLibraries()
         app.settings.navigation.hasWatchlistItems = true
-        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
+        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .upcoming, .downloads, .search])
         try await withTabs(app: app) { tabs, window in
-            try await waitUntil(window: window) { self.tabTitles(tabs).count == 3 }
-            XCTAssertEqual(self.tabTitles(tabs), ["Home", "Downloads", "Search"])
+            try await waitUntil(window: window) { self.tabTitles(tabs).count == 4 }
+            XCTAssertEqual(self.tabTitles(tabs), ["Home", "Upcoming", "Downloads", "Search"])
             XCTAssertFalse(tabs.tabBar.items?.contains { $0.title == "More" } ?? false)
         }
     }
@@ -475,7 +566,7 @@ final class LibraryNavigationTests: XCTestCase {
         let recovered = await app.refreshNavigationLibraries()
         XCTAssertTrue(recovered)
         XCTAssertEqual(app.settings.discoveredLibraries.state.value, app.settings.navigation.contentLibraries)
-        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
+        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .upcoming, .downloads, .search])
         showLibraryShortcuts(in: app)
         XCTAssertTrue(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.library("plex:library")))
         let navigation = app.settings.navigation
@@ -548,7 +639,7 @@ final class LibraryNavigationTests: XCTestCase {
         let shellPublished = await shell.value
         XCTAssertTrue(shellPublished)
         XCTAssertTrue(app.visibleNavigationLibraries.contains { $0.key == "plex:library" })
-        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
+        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .upcoming, .downloads, .search])
         XCTAssertEqual(app.settings.discoveredLibraries.state.value, app.settings.navigation.contentLibraries)
         XCTAssertTrue(app.settings.discoveredLibraries.refreshingAccountIDs.isEmpty)
     }
@@ -610,11 +701,13 @@ final class LibraryNavigationTests: XCTestCase {
     }
 
     private func makeShell(app: PlozziOSAppModel) -> PlozziOSTabShell {
-        PlozziOSTabShell(
+        var shell = PlozziOSTabShell(
             appModel: app, homeViewModelBox: LazyViewState<HomeViewModel>(), onAddServer: {},
             showingSettings: .constant(false), showingProfileSwitcher: .constant(false),
             deferredPairingURL: .constant(nil), systemColorScheme: .dark
         )
+        shell.upcomingFeedLoader = { _ in UpcomingFeedSnapshot() }
+        return shell
     }
 
     private func showLibraryShortcuts(in app: PlozziOSAppModel) {
@@ -658,14 +751,17 @@ final class LibraryNavigationTests: XCTestCase {
         }
     }
 
-    private func waitUntil(window: UIWindow, condition: () -> Bool) async throws {
+    private func waitUntil(
+        window: UIWindow, file: StaticString = #filePath, line: UInt = #line,
+        condition: () -> Bool
+    ) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         repeat {
             window.layoutIfNeeded()
             if condition() { return }
             try await Task.sleep(for: .milliseconds(20))
         } while ContinuousClock.now < deadline
-        XCTFail("Expected native library navigation did not appear.")
+        XCTFail("Expected native library navigation did not appear.", file: file, line: line)
     }
 
     private func tabController(in controller: UIViewController) -> UITabBarController? {

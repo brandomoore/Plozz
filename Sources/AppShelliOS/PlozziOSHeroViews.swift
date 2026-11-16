@@ -136,19 +136,15 @@ extension EnvironmentValues {
 }
 
 private struct PlozziOSHeroContainerHeightModifier: ViewModifier {
-    @State private var height: CGFloat?
-
     func body(content: Content) -> some View {
-        content
-            .environment(\.plozziOSHeroContainerHeight, height)
-            .background {
-                PlozziOSWindowHeightReader { measured in
-                    guard measured > 0, height != measured else { return }
-                    height = measured
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
+        GeometryReader { geometry in
+            content
+                .environment(
+                    \.plozziOSHeroContainerHeight,
+                    geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }
 
@@ -458,6 +454,9 @@ struct PlozziOSDetailHeroSection: View {
 
     let item: MediaItem
     let backdropItem: MediaItem
+    /// Artwork the tapped card already had decoded, painted behind the stage until
+    /// the full-size backdrop resolves.
+    var seedArtwork: UIImage? = nil
     let playableItem: MediaItem?
     var showsPlayPlaceholder: Bool = false
     var onRetryPlaybackInventory: (() -> Void)?
@@ -501,6 +500,7 @@ struct PlozziOSDetailHeroSection: View {
             presentation: backdropPresentation,
             style: style,
             surfaceRole: .detail,
+            seedArtwork: seedArtwork,
             isActive: true,
             // Episode pages retain their own still instead of a show backdrop.
             showsBackdrop: !presentsEpisodeStill,
@@ -606,6 +606,9 @@ struct PlozziOSHeroStage<Foreground: View>: View {
     let presentation: HeroPresentation
     let style: HeroArtworkStyle
     let surfaceRole: HeroTrailerSurfaceRole
+    /// Already-decoded card artwork to show on the first frame (a card's zoom
+    /// transition is already stretching it).
+    var seedArtwork: UIImage? = nil
     let isActive: Bool
     var showsBackdrop = true
     var showsScrim = true
@@ -675,9 +678,18 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         }
         let background = Group {
             if showsBackdrop {
-                PlozziOSReflectedHeroStage(height: height, ancestorScale: pullScale) { _ in
+                PlozziOSReflectedHeroStage(
+                    height: height,
+                    ancestorScale: pullScale,
+                    // A detail page slides in and out under a navigation
+                    // transition. Its global x is the transition offset, not a
+                    // sidebar cover; treating it as one re-crops the artwork on
+                    // every frame (the hero visibly resizing on entry and back).
+                    ignoresGlobalCover: surfaceRole == .detail
+                ) { _ in
                     PlozziOSHeroBackdrop(
                         presentation: presentation,
+                        seedArtwork: seedArtwork,
                         asyncFallbackURL: onlineArtworkFallback,
                         sharedResolutionIdentity: artworkAppearanceID,
                         style: style,
@@ -1102,9 +1114,13 @@ private struct PlozziOSHeroBackdrop: View {
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     let presentation: HeroPresentation
+    var seedArtwork: UIImage? = nil
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let sharedResolutionIdentity: String?
     let style: HeroArtworkStyle
+    /// Once the real backdrop has any picture, drop the card seed so the two can
+    /// never be visible together (the "two images" on the way into a detail page).
+    @State private var backdropResolved = false
     let itemID: String
     let height: CGFloat
     let showsScrim: Bool
@@ -1188,8 +1204,26 @@ private struct PlozziOSHeroBackdrop: View {
     }
 
     private func stillArtwork() -> some View {
+        ZStack {
+            if let seedArtwork, !backdropResolved {
+                Image(uiImage: seedArtwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .accessibilityHidden(true)
+            }
+            backdropImage
+        }
+    }
+
+    private var currentReferences: [ArtworkReference] {
+        presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area)
+    }
+
+    private var backdropImage: some View {
         FallbackAsyncImage(
-            references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
+            references: currentReferences,
             prefersLandscape: style != .compactPortrait,
             maxAspectRatio: 3,
             variant: .heroBackdrop,
@@ -1200,6 +1234,10 @@ private struct PlozziOSHeroBackdrop: View {
             previewVariant: .heroPreview,
             artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
+            onResolveReference: { _ in
+                guard !backdropResolved else { return }
+                withAnimation(.easeOut(duration: 0.2)) { backdropResolved = true }
+            },
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
                 "\(surfaceRole == .home ? "home" : "detail"):\(presentation.itemID)", style: style
             ),
@@ -1209,11 +1247,15 @@ private struct PlozziOSHeroBackdrop: View {
         ) { image in
             PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
         } placeholder: {
-            palette.backgroundBase
+            // Keep the seeded card picture visible until the full backdrop lands.
+            seedArtwork == nil ? palette.backgroundBase : Color.clear
         }
         .reportingHeroArtwork(id: presentation.itemID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        .onChange(of: presentation.itemID) { _, _ in
+            backdropResolved = false
+        }
     }
 
     @ViewBuilder
@@ -1564,7 +1606,7 @@ struct PlozziOSHomeStaticBackdrop: View {
         PlozziOSReflectedHeroStage(
             height: height,
             ancestorScale: ancestorScale,
-            usesNativeBackgroundExtension: false
+            ignoresGlobalCover: false
         ) { usableWidth in
             if usesSlidingArtwork {
                 slidingArtwork(
@@ -1920,8 +1962,15 @@ struct PlozziOSHomeHeroForeground: View {
     /// "New episode every Friday" for a returning series, from the shared
     /// `HeroScheduleLines` the tvOS hero already uses.
     var scheduleLine: LocalizedStringResource?
+    /// Reads cached schedule badges without delaying title or action rendering.
+    var scheduleLines: HeroScheduleLines? = nil
 
     var body: some View {
+        // Reading the store in the body is what makes a late cache hit re-render
+        // this column; the passed line is the fallback for snapshot/fixture input.
+        let resolvedScheduleLine = scheduleLines?.line(for: detailItem)
+            ?? scheduleLines?.line(for: item)
+            ?? scheduleLine
         VStack(
             alignment: style == .compactPortrait ? .center : .leading,
             spacing: 12
@@ -1935,7 +1984,7 @@ struct PlozziOSHomeHeroForeground: View {
                     spoilerSettings: appModel.settings.spoilers.settings
                 ),
                 ratingPreferences: appModel.settings.hero.settings.ratingPreferences,
-                scheduleLine: scheduleLine,
+                scheduleLine: resolvedScheduleLine,
                 logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
                 textSize: appModel.settings.hero.settings.textSize
             )
@@ -1965,6 +2014,9 @@ struct PlozziOSHomeHeroForeground: View {
         // Width fill / alignment now come from the shared placement modifier.
         .multilineTextAlignment(style == .compactPortrait ? .center : .leading)
         .environment(\.plozziOSHeroLogoSize, appModel.settings.hero.settings.logoSize)
+        .task(id: detailItem.stablePresentationID) {
+            await scheduleLines?.loadCached([detailItem, item])
+        }
     }
 
     @ViewBuilder
@@ -2766,6 +2818,7 @@ struct PlozziOSHeroMetadata: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.plozziOSHeroLogoSize) private var logoSize
     @Environment(\.metadataTextScale) private var textScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var titleFontSize: CGFloat = 34
     @ScaledMetric(relativeTo: .subheadline) private var metadataFontSize: CGFloat = 15
     @ScaledMetric(relativeTo: .body) private var overviewFontSize: CGFloat = 17
@@ -2836,6 +2889,7 @@ struct PlozziOSHeroMetadata: View {
             if content != .information {
                 if let scheduleLine {
                     scheduleBadge(scheduleLine)
+                        .transition(.opacity)
                 }
                 if let seriesBreadcrumb {
                     // The episode is this page's subject, so the show is context
@@ -2984,10 +3038,23 @@ struct PlozziOSHeroMetadata: View {
                 }
             }
         }
+        // Title, logo, facts, ratings and overview all hydrate after the seed
+        // item. Crossfade their content and animate the small reflow instead of
+        // dropping new fields in with a pop.
+        .contentTransition(.opacity)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: contentFadeKey)
         .frame(maxWidth: .infinity, alignment: style == .compactPortrait ? .center : .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
             if width > 0 { availableWidth = width }
         }
+    }
+
+    private var contentFadeKey: String {
+        "\(titlePresentation.title)|\(descriptionText ?? "")"
+            + "|\(factComponents.joined(separator: ","))"
+            + "|\(effectiveGenres.joined(separator: ","))"
+            + "|\(effectiveTechnicalBadges.map(\.label).joined(separator: ","))"
+            + "|\(effectiveRatings.count)|\(scheduleLine.map(String.init(describing:)) ?? "")"
     }
 
     private var rootPresentation: HeroPresentation {
@@ -3283,7 +3350,9 @@ private struct PlozziOSReflectedHeroStage<
 
     let height: CGFloat
     var ancestorScale: CGFloat = 1
-    var usesNativeBackgroundExtension = true
+    /// Detail pages must size the artwork from their own layout, not from the
+    /// window position: the interactive push/pop moves that position every frame.
+    var ignoresGlobalCover = false
     @ViewBuilder let content: (CGFloat) -> Content
     @ViewBuilder let reflection: (CGFloat, CGFloat) -> Reflection
 
@@ -3292,23 +3361,27 @@ private struct PlozziOSReflectedHeroStage<
             let scaledGlobalMinX = proxy.frame(in: .global).minX
             let horizontalScaleGrowth = proxy.size.width
                 * (max(ancestorScale, 1) - 1) / 2
-            let globalMinX = scaledGlobalMinX + horizontalScaleGrowth
-            let width = windowWidth ?? proxy.size.width
-            let locallyCoveredWidth = max(
-                proxy.safeAreaInsets.leading,
-                globalMinX
-            )
-            let coveredWidth = max(
-                locallyCoveredWidth,
-                sidebarGeometry.isVisible
-                    ? sidebarGeometry.coveredWidth
-                    : 0
-            )
+            let globalMinX = ignoresGlobalCover
+                ? 0
+                : scaledGlobalMinX + horizontalScaleGrowth
+            let width = ignoresGlobalCover
+                ? proxy.size.width
+                : (windowWidth ?? proxy.size.width)
+            let locallyCoveredWidth = ignoresGlobalCover
+                ? 0
+                : max(proxy.safeAreaInsets.leading, globalMinX)
+            let coveredWidth = ignoresGlobalCover
+                ? 0
+                : max(
+                    locallyCoveredWidth,
+                    sidebarGeometry.isVisible
+                        ? sidebarGeometry.coveredWidth
+                        : 0
+                )
             let usableWidth = max(width - coveredWidth, 1)
             let mainOffset = coveredWidth - globalMinX
             ZStack(alignment: .topLeading) {
-                if #available(iOS 26.0, *),
-                   usesNativeBackgroundExtension || !sidebarGeometry.isVisible, coveredWidth > 0 {
+                if #available(iOS 26.0, *), !sidebarGeometry.isVisible, coveredWidth > 0 {
                     content(usableWidth)
                         .frame(width: usableWidth, height: height)
                         .backgroundExtensionEffect()
@@ -3328,9 +3401,8 @@ private struct PlozziOSReflectedHeroStage<
             .environment(\.plozziOSHeroFitsLandscapeArtwork, sidebarGeometry.isVisible && coveredWidth > 0)
             .onChange(of: locallyCoveredWidth, initial: true) {
                 _, locallyCoveredWidth in
-                if #unavailable(iOS 26.0), locallyCoveredWidth > 1 {
-                    sidebarGeometry.recordCoveredWidth(locallyCoveredWidth)
-                }
+                guard !ignoresGlobalCover else { return }
+                sidebarGeometry.recordCoveredWidth(locallyCoveredWidth)
             }
             .overlay {
                 PlozziOSWindowWidthReader { measuredWidth in
@@ -3412,56 +3484,6 @@ private struct PlozziOSWindowWidthReader: UIViewRepresentable {
             lastWidth = width
             Task { @MainActor in
                 onChange(width)
-            }
-        }
-    }
-}
-
-/// Reports the window's height, so a hero can be sized to the phone it is on
-/// rather than to a constant. See ``EnvironmentValues/plozziOSHeroContainerHeight``.
-///
-/// A `GeometryReader` around the page would report the safe-area content height,
-/// which is the wrong measurement (the hero starts under the status bar) and
-/// would have to be corrected by adding the insets back — reading the window is
-/// the same answer without the correction. Mirrors `PlozziOSWindowWidthReader`.
-struct PlozziOSWindowHeightReader: UIViewRepresentable {
-    let onChange: @MainActor (CGFloat) -> Void
-
-    func makeUIView(context: Context) -> ReportingView {
-        let view = ReportingView()
-        view.onChange = onChange
-        return view
-    }
-
-    func updateUIView(_ uiView: ReportingView, context: Context) {
-        uiView.onChange = onChange
-        uiView.report()
-    }
-
-    final class ReportingView: UIView {
-        var onChange: (@MainActor (CGFloat) -> Void)?
-        private var lastHeight: CGFloat?
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            report()
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            report()
-        }
-
-        func report() {
-            guard let height = window?.bounds.height,
-                  height > 0,
-                  height != lastHeight,
-                  let onChange else {
-                return
-            }
-            lastHeight = height
-            Task { @MainActor in
-                onChange(height)
             }
         }
     }

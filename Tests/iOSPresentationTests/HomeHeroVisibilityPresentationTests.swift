@@ -1,6 +1,8 @@
 #if os(iOS)
+import AppRuntime
 import CoreModels
 import CoreUI
+import FeatureAuth
 import FeatureHomeCore
 @testable import MetadataKit
 import Observation
@@ -13,6 +15,123 @@ import XCTest
 
 @MainActor
 final class HomeHeroVisibilityPresentationTests: XCTestCase {
+    func testRemovingLastWatchlistHeroLeavesNoReservedBand() async throws {
+        let url = try XCTUnwrap(URL(string: "https://watchlist-hero.invalid/\(UUID()).png"))
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 675)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1200, height: 675))
+        }
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
+        ))
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())),
+            for: URLRequest(url: url)
+        )
+        let prepared = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+        XCTAssertNotNil(prepared)
+        let item = MediaItem(
+            id: "last-watch", title: "LAST WATCH", kind: .movie,
+            posterURL: url, backdropURL: url,
+            allowsTitleBasedMetadataMatching: false, sourceAccountID: "empty-hero-account"
+        )
+        let watchlist = HeroWatchlistFixture(item)
+        let provider = EmptyHeroHomeProvider(watchlistItems: { watchlist.items.withLock { $0 } })
+        let suite = "WatchlistHero-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountStore = AccountStore(secureStore: InMemorySecureStore())
+        try accountStore.add(provider.account, token: "fixture")
+        let app = PlozziOSAppModel(
+            accountStore: accountStore, profileStore: ProfileStore(defaults: defaults)
+        )
+        app.accountsProviders.registry.register(.jellyfin) { _ in provider }
+        app.accountsProviders.tokenResolver = { _ in "fixture" }
+        app.accountsProviders.reloadAccounts()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Watchlist hero fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        await app.prepareUniversalWatchlist()
+        XCTAssertTrue(app.isUniversalWatchlistPresentationReady)
+        app.settings.hero.settings.sources = [.watchlist]
+        app.settings.hero.settings.autoAdvance = false
+        app.settings.homeVisibility.applyRows(
+            .init(enabled: [.global(.watchlist), .global(.recentlyAdded)], disabled: [.global(.continueWatching), .libraries]),
+            choices: HomeRowChoice.shared
+        )
+        for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+            app.settings.hero.settings.isEnabled = true
+            watchlist.items.withLock { $0 = [item] }
+            let added = await app.performUniversalWatchlist(adding: true, item: item)
+            XCTAssertTrue(added)
+            XCTAssertTrue(app.mediaItemActionHandler.isWatchlisted(item))
+            let model = HomeViewModel(
+                accounts: [ResolvedAccount(account: provider.account, provider: provider)],
+                layoutStore: InMemoryHomeLayoutStore(), contentStore: NoOpHomeContentStore(),
+                currentVisibility: { app.settings.homeVisibility.visibility },
+                mediaItemActionHandler: app.mediaItemActionHandler
+            )
+            defer { model.invalidate() }
+            await model.load()
+            XCTAssertEqual(model.state.value?.watchlist.count, 1)
+            let home = PlozziOSHomeView(appModel: app, viewModel: model, onAddServer: {}, onShowSettings: {})
+                .environment(app)
+                .environment(HeroTrailerController())
+                .environment(PlozziOSSidebarGeometryModel())
+            try await withWindow(home, sizeClass: sizeClass) { window in
+                let deadline = ContinuousClock.now + .seconds(3)
+                while ContinuousClock.now < deadline {
+                    let text = try renderedText(in: window)
+                    if text.contains("Play"), text.contains("LAST WATCH") { break }
+                    try await settle(window)
+                }
+                let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                })
+                attachment.name = "last-watchlist-hero-\(sizeClass)"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+                let initialText = try renderedText(in: window)
+                XCTAssertTrue(initialText.contains("LAST WATCH"), initialText)
+                XCTAssertTrue(initialText.contains("Play"), "The fixture must first mount a playable hero.")
+                watchlist.items.withLock { $0 = [] }
+                let removed = await app.performUniversalWatchlist(adding: false, item: item)
+                XCTAssertTrue(removed)
+                XCTAssertFalse(app.mediaItemActionHandler.isWatchlisted(item))
+                let remainingProviderItems = try await provider.watchlist()
+                XCTAssertTrue(remainingProviderItems.isEmpty)
+                await model.load()
+                let removalDeadline = ContinuousClock.now + .seconds(3)
+                while ContinuousClock.now < removalDeadline {
+                    let text = try renderedText(in: window)
+                    if model.state.value?.watchlist.isEmpty == true, !text.contains("Play") { break }
+                    try await settle(window)
+                }
+                XCTAssertEqual(model.state.value?.watchlist.count, 0,
+                               "ready=\(app.isUniversalWatchlistPresentationReady), durable=\(app.resolvedUniversalWatchlistItems(candidates: []).map(\.title))")
+                XCTAssertFalse(try renderedText(in: window).contains("LAST WATCH"))
+                func rowFrame() throws -> CGRect {
+                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    }
+                    return try XCTUnwrap(HeroTextInk.frames(in: image, terms: ["Recently Added"])["Recently Added"])
+                }
+                let afterRemoval = try rowFrame()
+                app.settings.hero.settings.isEnabled = false
+                try await settle(window)
+                XCTAssertEqual(afterRemoval.minY, try rowFrame().minY, accuracy: 2,
+                               "A confirmed-empty hero must already have the same layout as a disabled hero.")
+            }
+        }
+    }
+
     func testCompactDetailBadgesStayCloseToSynopsisAndActions() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID
@@ -891,8 +1010,9 @@ struct SeriesHeaderMobileProvider: MediaProvider {
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
-private struct EmptyHeroHomeProvider: MediaProvider {
+private struct EmptyHeroHomeProvider: MediaProvider, WatchlistProviding {
     var latestGate: HomeHeroLoadingGate? = nil
+    var watchlistItems: @Sendable () -> [MediaItem] = { [] }
     let kind: ProviderKind = .jellyfin
     let account = Account(
         id: "empty-hero-account",
@@ -908,6 +1028,8 @@ private struct EmptyHeroHomeProvider: MediaProvider {
         [MediaLibrary(id: "movies", title: "Movies", kind: .movie)]
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func watchlist() async throws -> [MediaItem] { watchlistItems() }
+    func setWatchlisted(_ on: Bool, item: MediaItem) async throws { throw AppError.notFound }
     func latest(limit: Int) async throws -> [MediaItem] {
         await latestGate?.wait()
         return [MediaItem(id: "movie", title: "Available movie", kind: .movie,
@@ -917,7 +1039,10 @@ private struct EmptyHeroHomeProvider: MediaProvider {
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         MediaPage(items: [], startIndex: 0, totalCount: 0)
     }
-    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func item(id: String) async throws -> MediaItem {
+        guard let item = watchlistItems().first(where: { $0.id == id }) else { throw AppError.notFound }
+        return item
+    }
     func children(of itemID: String) async throws -> [MediaItem] { [] }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
@@ -934,5 +1059,10 @@ private final class HomeHeroLoadingGate: Sendable {
             catch { return }
         }
     }
+}
+
+private final class HeroWatchlistFixture: Sendable {
+    let items: Mutex<[MediaItem]>
+    init(_ item: MediaItem) { items = Mutex([item]) }
 }
 #endif

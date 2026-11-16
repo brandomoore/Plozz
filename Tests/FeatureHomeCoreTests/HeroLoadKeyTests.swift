@@ -133,6 +133,21 @@ final class HeroLoadKeyTests: XCTestCase {
         )
     }
 
+    func testSameTitleRefreshesCurationWhenSourceOrArtworkChanges() {
+        var settings = featured
+        settings.sources = [.watchlist]
+        var original = item()
+        original.sourceAccountID = "first"
+        original.posterURL = URL(string: "https://images.example.test/old.jpg")
+        let key = curation(settings, revision: 0, content: .init(watchlist: [original]))
+        var moved = original
+        moved.sourceAccountID = "second"
+        XCTAssertNotEqual(key, curation(settings, revision: 0, content: .init(watchlist: [moved])))
+        var refreshed = original
+        refreshed.posterURL = URL(string: "https://images.example.test/new.jpg")
+        XCTAssertNotEqual(key, curation(settings, revision: 0, content: .init(watchlist: [refreshed])))
+    }
+
     func testWatchlistIntentRollbackReloadsWithoutRowIDChanges() {
         var settings = featured
         settings.sources = [.watchlist]
