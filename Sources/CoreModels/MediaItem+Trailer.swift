@@ -50,6 +50,71 @@ public extension MediaItem {
         return components.url
     }
 
+    // MARK: Direct remote trailers
+
+    /// `providerIDs` key whose value is a direct, playable video URL (MP4, HLS, …)
+    /// supplied by a server's metadata, e.g. AIOMetadata / Trailer.io through
+    /// Jellyfin `RemoteTrailers`. Unlike YouTube links these play in-app.
+    static let directTrailerProviderKey = "DirectTrailerURL"
+
+    /// The playable URL when this item is a direct remote trailer, else `nil`.
+    /// Re-validated on read so a hand-built item can't smuggle in a page URL.
+    var directTrailerURL: URL? {
+        guard let raw = providerIDs[Self.directTrailerProviderKey] else { return nil }
+        return Self.playableDirectTrailerURL(from: raw)
+    }
+
+    /// Whether this item is a direct remote trailer played in-app from a bare URL.
+    var isDirectTrailer: Bool { directTrailerURL != nil }
+
+    /// A trailer backed by a server item (a local trailer file) rather than a
+    /// bare online link. Only these resolve through `provider.playbackInfo`.
+    var isServerItemTrailer: Bool { !isYouTubeTrailer && !isDirectTrailer }
+
+    /// Returns `raw` as a URL only when it is an absolute http(s) link to something
+    /// that can be a media stream: not a YouTube link (those open in YouTube) and
+    /// not an obvious web page. Extension-less URLs are allowed, since signed
+    /// CDN links often have none; a stream that turns out unplayable fails in the
+    /// player like any other.
+    static func playableDirectTrailerURL(from raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = components.host, !host.isEmpty,
+              youTubeVideoID(fromURL: trimmed) == nil,
+              !isYouTubeHost(host),
+              let url = components.url else { return nil }
+        let pageExtensions: Set<String> = ["html", "htm", "php", "asp", "aspx", "jsp", "xhtml"]
+        if pageExtensions.contains((components.path as NSString).pathExtension.lowercased()) { return nil }
+        return url
+    }
+
+    private static func isYouTubeHost(_ host: String) -> Bool {
+        let host = host.lowercased()
+        return ["youtube.com", "youtu.be", "youtube-nocookie.com"]
+            .contains { host == $0 || host.hasSuffix(".\($0)") }
+    }
+
+    /// Builds a trailer item that plays `url` directly, or `nil` when the URL
+    /// isn't a playable direct link (see ``playableDirectTrailerURL(from:)``).
+    static func directTrailer(
+        fromURL urlString: String,
+        title: String,  // l10n:content — media title (MediaItem.title)
+        parentTitle: String? = nil,
+        posterURL: URL? = nil
+    ) -> MediaItem? {
+        guard let url = playableDirectTrailerURL(from: urlString) else { return nil }
+        return MediaItem(
+            id: url.absoluteString,
+            title: title,
+            kind: .video,
+            isTrailer: true,
+            parentTitle: parentTitle,
+            posterURL: posterURL,
+            providerIDs: [directTrailerProviderKey: url.absoluteString]
+        )
+    }
+
     var trailerActionTitle: LocalizedStringResource {
         isYouTubeTrailer
             ? LocalizedStringResource("Watch on YouTube", comment: "Trailer action that leaves Plozz and opens the video on YouTube.")
