@@ -219,6 +219,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     @State private var hasResolvedSeriesPlayTarget = false
     @State private var presentsSeriesDownloads = false
     @State private var heroPullDistance: CGFloat = 0
+    @State private var isInteractivePopActive = false
     private let seerService: SeerService?
     private var isDiscoveryItem: Bool { viewModel.isDiscoveryItem }
     private let initialSeasonID: String?
@@ -655,6 +656,14 @@ private struct PlozziOSCanonicalItemDetailView: View {
         }
 
         .scrollClipDisabled()
+        .scrollDisabled(isInteractivePopActive)
+        .background {
+            PlozziOSInteractivePopObserver(isActive: $isInteractivePopActive)
+                .allowsHitTesting(false)
+        }
+        .onChange(of: isInteractivePopActive) { _, active in
+            if active { heroPullDistance = 0 }
+        }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y > trailerPauseThreshold
         } action: { _, isPastHalfHero in
@@ -665,7 +674,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 + geometry.contentInsets.top
             return max(0, -topOffset)
         } action: { _, pullDistance in
-            heroPullDistance = pullDistance
+            heroPullDistance = isInteractivePopActive ? 0 : pullDistance
         }
         .ignoresSafeArea(.container, edges: .top)
         .modifier(PlozziOSNavigationBackground())
@@ -3973,10 +3982,10 @@ struct PlozziOSInlineEpisodeEntry: View {
 /// downloading (unmistakably progress, not a button), and a **filled gray
 /// down-arrow** when complete (a settled status, not an action). Hidden when the
 /// episode isn't downloaded — download itself is started from the ⋯ menu.
-private struct PlozziOSCastSection: View {
+struct PlozziOSCastSection: View {
     @Environment(\.locale) private var locale
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.themePalette) private var palette
     // Scales the trailing whitespace with the OS text size so the space under the
     // (variably wrapped) cast names stays proportional at every Dynamic Type level,
@@ -3994,14 +4003,28 @@ private struct PlozziOSCastSection: View {
     private var credits: [MediaPersonCredit] { MediaPersonCredit.ordered(people) }
 
     var body: some View {
-        PlozziOSMediaSection(
+        PlozziOSHomeRailLayout { metrics in
+            section(metrics: metrics)
+        }
+    }
+
+    private func section(metrics: PlozzMetrics) -> some View {
+        let pageInset = PlozziOSPageLayout.horizontalInset(
+            for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
+        )
+        let tileDiameter = metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
+        let spacing = metrics.usesDesktopSizing
+            ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
+            : metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle) - metrics.posterWidth
+                + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+        return PlozziOSMediaSection(
             title: credits.contains { !$0.crewRoles.isEmpty } ? Text("Cast & Crew") : Text("Cast"),
             horizontalInset: pageInset
         ) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
-                    spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
+                    spacing: spacing
                 ) {
                     ForEach(credits) { credit in
                         let person = credit.person
@@ -4026,7 +4049,7 @@ private struct PlozziOSCastSection: View {
                             .frame(width: tileDiameter, alignment: .top)
 
                             Text(person.name)
-                                .font(.subheadline.weight(.semibold))
+                                .font(.system(size: metrics.posterTitleFontSize, weight: .semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(
                                     maxWidth: .infinity,
@@ -4034,7 +4057,7 @@ private struct PlozziOSCastSection: View {
                                 )
                             if let role = credit.caption(locale: locale) {
                                 Text(role)
-                                    .font(.caption)
+                                    .font(.system(size: metrics.posterSubtitleFontSize))
                                     .plozzForeground(.secondary)
                                     .fixedSize(
                                         horizontal: false,
@@ -4076,13 +4099,5 @@ private struct PlozziOSCastSection: View {
         horizontalSizeClass == .compact ? compactBottomPadding : regularBottomPadding
     }
 
-    private var pageInset: CGFloat {
-        PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
-    }
-
-    /// Desktop cast circles stay smaller than posters; mobile retains its poster scale.
-    private var tileDiameter: CGFloat {
-        metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
-    }
 }
 #endif

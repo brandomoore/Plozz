@@ -225,11 +225,13 @@ Already identified, owned, unsupported, and personal-media items skip this work.
   endpoint, candidate-image download, SVG renderer, or contrast-analysis pass.
   Better-ranked originals can improve dark-background legibility, but metadata
   ranking does not guarantee contrast. Server artwork and configured source
-  priority remain authoritative. External logos prefer the active app language
-  (including profile overrides), then untagged artwork, English, and other
-  languages; ratings break ties. Regional language tags use the image API's
-  language code. Logo URL and presentation caches include that language, so
-  switching languages cannot reuse a previously selected English logo. This
+  priority remain authoritative. TMDB logos prefer the active app language
+  (including profile overrides), then untagged artwork and English; ratings break
+  ties. Logos tagged with unrelated languages are rejected so the remaining
+  providers or the hero's text title can supply the fallback. Regional language
+  tags use the image API's language code. Logo URL and presentation caches include that language, so
+  switching languages cannot reuse a previously selected English logo. Older
+  language-unrestricted logo selections are not reused. This
   versions only logo keys, not posters/backdrops, and never translates or
   replaces server titles, taglines, or synopses.
 - **Portrait hero artwork is opt-in.** Compact mobile heroes prefer a

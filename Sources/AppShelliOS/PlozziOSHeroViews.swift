@@ -675,7 +675,10 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         }
         let background = Group {
             if showsBackdrop {
-                PlozziOSReflectedHeroStage(height: height, ancestorScale: pullScale) { _ in
+                PlozziOSReflectedHeroStage(
+                    height: height, ancestorScale: pullScale,
+                    ignoresGlobalCover: surfaceRole == .detail
+                ) { _ in
                     PlozziOSHeroBackdrop(
                         presentation: presentation,
                         asyncFallbackURL: onlineArtworkFallback,
@@ -3284,6 +3287,7 @@ private struct PlozziOSReflectedHeroStage<
     let height: CGFloat
     var ancestorScale: CGFloat = 1
     var usesNativeBackgroundExtension = true
+    var ignoresGlobalCover = false
     @ViewBuilder let content: (CGFloat) -> Content
     @ViewBuilder let reflection: (CGFloat, CGFloat) -> Reflection
 
@@ -3292,17 +3296,14 @@ private struct PlozziOSReflectedHeroStage<
             let scaledGlobalMinX = proxy.frame(in: .global).minX
             let horizontalScaleGrowth = proxy.size.width
                 * (max(ancestorScale, 1) - 1) / 2
-            let globalMinX = scaledGlobalMinX + horizontalScaleGrowth
-            let width = windowWidth ?? proxy.size.width
-            let locallyCoveredWidth = max(
-                proxy.safeAreaInsets.leading,
-                globalMinX
-            )
-            let coveredWidth = max(
+            // A detail's moving navigation frame is not sidebar occlusion.
+            let globalMinX = ignoresGlobalCover ? 0 : scaledGlobalMinX + horizontalScaleGrowth
+            let width = ignoresGlobalCover ? proxy.size.width : (windowWidth ?? proxy.size.width)
+            let locallyCoveredWidth = ignoresGlobalCover
+                ? 0 : max(proxy.safeAreaInsets.leading, globalMinX)
+            let coveredWidth = ignoresGlobalCover ? 0 : max(
                 locallyCoveredWidth,
-                sidebarGeometry.isVisible
-                    ? sidebarGeometry.coveredWidth
-                    : 0
+                sidebarGeometry.isVisible ? sidebarGeometry.coveredWidth : 0
             )
             let usableWidth = max(width - coveredWidth, 1)
             let mainOffset = coveredWidth - globalMinX
@@ -3325,10 +3326,13 @@ private struct PlozziOSReflectedHeroStage<
                 }
 
             }
-            .environment(\.plozziOSHeroFitsLandscapeArtwork, sidebarGeometry.isVisible && coveredWidth > 0)
+            .environment(
+                \.plozziOSHeroFitsLandscapeArtwork,
+                sidebarGeometry.isVisible && (ignoresGlobalCover ? sidebarGeometry.coveredWidth : coveredWidth) > 0
+            )
             .onChange(of: locallyCoveredWidth, initial: true) {
                 _, locallyCoveredWidth in
-                if #unavailable(iOS 26.0), locallyCoveredWidth > 1 {
+                if #unavailable(iOS 26.0), !ignoresGlobalCover, locallyCoveredWidth > 1 {
                     sidebarGeometry.recordCoveredWidth(locallyCoveredWidth)
                 }
             }

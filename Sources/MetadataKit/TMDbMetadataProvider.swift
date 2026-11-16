@@ -814,7 +814,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
             if normalized == preferred { return 0 }
             return normalized == "en" ? 2 : 3
         }
-        guard let path = logos.lazy.filter({ $0.file_path?.isEmpty == false }).min(by: {
+        guard let path = logos.lazy.filter({ $0.file_path?.isEmpty == false && rank($0) < 3 }).min(by: {
             let (lr, rr) = (rank($0), rank($1))
             if lr != rr { return lr < rr }
             return ($0.vote_average ?? 0) > ($1.vote_average ?? 0)

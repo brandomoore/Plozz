@@ -10,6 +10,30 @@ import XCTest
 /// fetches every backdrop a title has in one response, ranks textless ones first,
 /// and all but the best were discarded a layer above.
 final class ArtworkCandidateTests: XCTestCase {
+    func testLogoLookupDoesNotReuseLegacyUnrestrictedLanguageSelection() async {
+        let settings = CatalogArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tmdb"]))
+        let cache = MetadataDiskCache(directory: nil)
+        let router = ArtworkRouter(
+            config: .init(tmdb: .disabled), cache: cache,
+            enrichmentBaseline: .init(order: [.tmdb], priority: .init(rules: [])),
+            settingsStore: settings
+        )
+        let item = MediaItem(
+            id: "frisco-king", title: "Frisco King", kind: .series, providerIDs: ["Tmdb": "296244"]
+        )
+        let query = MetadataQuery(item).forArtworkLanguage("en")
+        let legacyKey = "\(query.contentType.rawValue)|logo|tmdb:296244|language-v1:en|provider:tmdb"
+        await cache.store(url("wrong-language"), for: legacyKey)
+        await cache.store(url("poster"), for: ArtworkRouter.providerCacheKey(
+            query: query, kind: .poster, source: .tmdb
+        ))
+
+        let logo = await router.artworkURL(.logo, for: item, language: "en")
+        let poster = await router.artworkURL(.poster, for: item, language: "en")
+        XCTAssertNil(logo, "Old language-unrestricted selections must not survive the policy change.")
+        XCTAssertEqual(poster, url("poster"), "Unrelated artwork caches remain reusable.")
+    }
+
     func testLandscapeCardCacheSeparatesHeroAndLanguageAndHonorsProviderDisablement() async {
         let settings = CatalogArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tmdb"]))
         let cache = MetadataDiskCache(directory: nil)
