@@ -112,6 +112,7 @@ public struct PlozziOSRootView: View {
                     .task { consumeDeferredPairingURL() }
             }
         }
+        .seerRequestDestination(appModel.seerService)
         .signInSyncPermission(
             appModel.providerCredentialSync.publicationPermission,
             canPresent: setupPresentationReady && appModel.isActiveProfileAuthorized
@@ -1063,7 +1064,7 @@ struct PlozziOSTabShell: View {
         UpcomingFeedLoader.scopeKey(
             profileID: appModel.profiles.activeProfileID,
             accounts: appModel.upcomingAccounts,
-            requestIdentity: appModel.profiles.activeProfile.seerrRequestIdentity,
+            requestIdentity: appModel.seerService.requestIdentity,
             connectionRevision: appModel.seerService.connectionRevision,
             language: locale.identifier, regionCode: Locale.current.region?.identifier
         )
@@ -1075,7 +1076,7 @@ struct PlozziOSTabShell: View {
         let saved = appModel.resolvedUniversalWatchlistItems(candidates: [])
         let region = Locale.current.region?.identifier
         let language = locale.identifier
-        let identity = appModel.profiles.activeProfile.seerrRequestIdentity
+        let identity = appModel.seerService.requestIdentity
         let seer = appModel.seerService
         let cacheScope = UpcomingFeedLoader.scopeKey(
             profileID: appModel.profiles.activeProfileID, accounts: accounts,

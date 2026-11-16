@@ -145,7 +145,7 @@ public enum SourceLocalityClassifier {
     /// hyphenated IP — e.g. a Tailscale MagicDNS host `192-168-1-5.tailnet.ts.net`
     /// (the tunnel, must stay `.remote`) or an arbitrary `192-168-1-5.example.com`
     /// (unplaceable, must stay `.unknown`) — as a LAN address.
-    static func leadingIPv4(_ host: String) -> [Int]? {
+    public static func leadingIPv4(_ host: String) -> [Int]? {
         // Bare dotted IPv4 host (`192.168.68.71`).
         let dotted = host.split(separator: ".").map(String.init)
         if dotted.count == 4, let octets = octetsIfValid(dotted) { return octets }

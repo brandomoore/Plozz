@@ -15,7 +15,7 @@ struct SeerClient: Sendable {
 
     init(config: SeerConfig, http: HTTPClient) {
         self.config = config
-        self.http = http
+        self.http = SeerCredentialHTTPClient(underlying: http, config: config)
     }
 
     private var baseURL: URL {
@@ -146,6 +146,12 @@ struct SeerClient: Sendable {
             headers: headers()
         )
         return try await http.decode(SeerUserPage.self, from: endpoint, baseURL: baseURL)
+    }
+
+    func currentUser() async throws -> SeerUserDTO {
+        try await http.decode(
+            SeerUserDTO.self, from: Endpoint(path: "/api/v1/auth/me", headers: headers()), baseURL: baseURL
+        )
     }
 
     // MARK: - Radarr / Sonarr defaults

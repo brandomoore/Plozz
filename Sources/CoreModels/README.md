@@ -317,6 +317,12 @@ a persisted, non-publishing placeholder until a replacement arrives or is added;
 `profilesForSync` excludes it so a restart cannot recreate the deleted record.
 Live TV and media-state captures also exclude `pendingSyncedDeletionProfileIDs`,
 including preserved fallback records, without erasing the temporary local data.
+Live TV's persisted profile-removal markers apply only while the profile remains
+absent from the current roster. A restored profile supersedes an older marker in
+both portable state and playlist-source sync; merely opening an unconfigured
+device must not delete its peer's sources. Pending-deletion placeholders remain
+excluded. Profile removal callers update the roster in the same synchronous
+lifecycle operation as recording the removal.
 The revisioned household Parental PIN moves to the first surviving profile rather
 than disappearing with its former anchor.
 

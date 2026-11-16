@@ -68,7 +68,7 @@ extension PlozziOSAppModel {
                 deviceID: account.deviceID,
                 trustedOrigin: LocalAuthorization.origin(of: account.server.baseURL)))
         }
-        return SyncSecretsBundle(accounts: accts, shares: shares, seerr: currentSeerrSecret())
+        return SyncSecretsBundle(accounts: accts, shares: shares, seerrProfiles: currentSeerrProfiles())
     }
 
     // MARK: - Shared household Seerr connection
@@ -77,6 +77,19 @@ extension PlozziOSAppModel {
     /// store. Not an account id (Seerr is one household-wide connection, not a
     /// per-account login), so it's namespaced to avoid ever colliding with one.
     nonisolated private static let portableSeerrKey = "household.seerr.connection.v1"
+    nonisolated private static let portableSeerrProfilesKey = "household.seerr.profiles.v1"
+
+    nonisolated static func seerrAccountConnectionStore() -> SeerAccountConnectionStore {
+        SeerAccountConnectionStore(secureStore: KeychainStore(service: "com.plozz.app.household"))
+    }
+
+    nonisolated private static func currentSeerrProfiles() -> [String: SeerProfileConnections]? {
+        do { return try seerrAccountConnectionStore().exportAPIKeys() }
+        catch {
+            PlozzLog.auth.error("Seerr pairing could not read profile connections")
+            return nil
+        }
+    }
 
     /// The household Keychain store backing the Seerr connection. One definition so
     /// the app's read path and these transfer paths can't drift on service or key.
@@ -125,7 +138,7 @@ extension PlozziOSAppModel {
             shares: captured.shares.filter {
                 providerCredentialSync.mayPublish(accountID: $0.accountID, credential: $0.credentialEnvelope)
             },
-            seerr: captured.seerr)
+            seerrProfiles: captured.seerrProfiles)
         portableCredentialPublisher.publish {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
@@ -139,14 +152,29 @@ extension PlozziOSAppModel {
             if let seerr = bundle.seerr {
                 records[Self.portableSeerrKey] = String(decoding: try encoder.encode(seerr), as: UTF8.self)
             }
+            if let profiles = bundle.seerrProfiles, !profiles.isEmpty {
+                records[Self.portableSeerrProfilesKey] = String(decoding: try encoder.encode(profiles), as: UTF8.self)
+            }
             return records
         }
     }
 
-    /// Adopt a Seerr connection published by another of the user's devices. Runs
-    /// independently of the pending-server loop below: Seerr is household-wide and
-    /// has no descriptor, so it isn't gated on any server being pending.
+    /// Adopt explicitly shared API keys only into their matching profiles.
+    /// Configured profiles, including intentional disconnects, are left alone.
     private func adoptSyncedSeerrConnection(from store: KeychainStore) {
+        if portableCredentialPublisher.mayRead(Self.portableSeerrProfilesKey),
+           let json = store.string(for: Self.portableSeerrProfilesKey) {
+            do {
+                let connections = try JSONDecoder().decode([String: SeerProfileConnections].self, from: Data(json.utf8))
+                let changed = try Self.seerrAccountConnectionStore().importAPIKeysIfAbsent(
+                    connections, allowedProfiles: Set(profiles.profilesForSync.map(\.id))
+                )
+                if changed.contains(profiles.activeProfileID) {
+                    Task { await seerService.reloadConnection() }
+                }
+            } catch { PlozzLog.auth.error("Seerr synced profile connections could not be restored") }
+            return
+        }
         guard portableCredentialPublisher.mayRead(Self.portableSeerrKey) else { return }
         guard let json = store.string(for: Self.portableSeerrKey) else {
             PlozzLog.auth.info("KeychainSync: no Seerr connection in iCloud Keychain yet")
@@ -157,14 +185,23 @@ extension PlozziOSAppModel {
             PlozzLog.auth.error("KeychainSync: Seerr connection in iCloud Keychain is undecodable")
             return
         }
-        guard Self.installSeerrSecretIfAbsent(secret) else {
-            PlozzLog.auth.info("KeychainSync: Seerr already configured locally — keeping this device's connection")
+        guard let url = URL(string: secret.baseURL) else {
+            PlozzLog.auth.error("KeychainSync: shared Seerr address is invalid")
+            return
+        }
+        do {
+            let legacyStore = Self.seerrConnectionStore()
+            guard try legacyStore.read() == nil else { return }
+            let connection = SeerConnection(baseURL: url, apiKey: secret.apiKey)
+            try Self.seerrAccountConnectionStore().importLegacyIfAbsent(
+                connection, profiles: profiles.profilesForSync
+            )
+            try legacyStore.save(connection)
+        } catch {
+            PlozzLog.auth.error("KeychainSync: legacy Seerr profile connections could not be restored")
             return
         }
         PlozzLog.auth.info("KeychainSync: adopted shared Seerr connection from iCloud Keychain")
-        // The service cached its config at init, BEFORE this ran, so without an
-        // explicit reload the freshly-installed connection stays invisible until
-        // the next launch.
         Task { await seerService.reloadConnection() }
     }
 

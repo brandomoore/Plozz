@@ -387,6 +387,9 @@ struct SeerPageInfo: Decodable {
 /// only `id` is required.
 struct SeerUserDTO: Decodable {
     var id: Int
+    var permissions: Int?
+    var jellyfinUserId: String?
+    var plexId: Int?
     var displayName: String?
     var username: String?
     var plexUsername: String?
@@ -414,11 +417,15 @@ struct SeerUserDTO: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case id, displayName, username, plexUsername, jellyfinUsername, email, avatar
+        case permissions, jellyfinUserId, plexId
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
+        permissions = try c.decodeIfPresent(Int.self, forKey: .permissions)
+        jellyfinUserId = try c.decodeIfPresent(String.self, forKey: .jellyfinUserId)
+        plexId = try c.decodeIfPresent(Int.self, forKey: .plexId)
         displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
         username = try c.decodeIfPresent(String.self, forKey: .username)
         plexUsername = try c.decodeIfPresent(String.self, forKey: .plexUsername)

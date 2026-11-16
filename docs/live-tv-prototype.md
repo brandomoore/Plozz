@@ -200,7 +200,9 @@ Wide layouts use the category sidebar instead of duplicating that menu.
 **Add Source** in the source menu
 opens the existing authorized IPTV/playlist and media-server setup choices.
 **Search** then **More** share one native toolbar group on the directory and
-guide. A native fixed spacer separates Back from the category menu. Guide,
+guide. Back uses leading navigation placement before the category menu; a native
+fixed spacer gives it a separate floating surface. Picker cancellation retains
+its cancellation placement. Guide,
 filters, Multiviews, source management and the existing **Settings** destination
 are contextual actions in **More**; Live TV has no separate profile button.
 Other pages' profile shortcuts are unchanged. Category tiles use

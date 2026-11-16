@@ -238,13 +238,50 @@ final class LiveTVSourceSyncBridgeTests: XCTestCase {
         XCTAssertTrue(try fixture.store.load().playlists.isEmpty)
         let preserved = try await fixture.bridge.capture(fixture.snapshot([unknown: bytes]))
         XCTAssertEqual(preserved[unknown], bytes)
-        try fixture.bridge.removeProfile(fixture.profileID)
-        let removed = LiveTVPortableRecordKey(profileID: fixture.profileID, kind: .source, entityID: source.id).recordName
+        let profileID = fixture.profileID
+        _ = fixture.profiles.add(name: "Survivor")
+        try fixture.bridge.removeProfile(profileID)
+        fixture.profiles.remove(profileID)
+        let removed = LiveTVPortableRecordKey(profileID: profileID, kind: .source, entityID: source.id).recordName
         await fixture.bridge.apply(fixture.snapshot([removed: bytes]))
         XCTAssertTrue(try fixture.store.load().playlists.isEmpty)
         let captured = try await fixture.bridge.capture(fixture.snapshot([removed: bytes]))
         let manifest = try JSONDecoder().decode(LiveTVSourceSyncManifest.self, from: XCTUnwrap(captured[removed]))
         XCTAssertNil(manifest.source)
+    }
+
+    func testRestoredProfileReceivesSourcesDespiteOldRemovalMarker() async throws {
+        let fixture = try Fixture()
+        let profile = fixture.profiles.activeProfile
+        let source = LiveTVPlaylistSource(
+            name: "Restored", playlistURL: URL(string: "https://example.test/live")!
+        )
+        let name = LiveTVPortableRecordKey(
+            profileID: profile.id, kind: .source, entityID: source.id
+        ).recordName
+        let bytes = try LiveTVSourceSyncManifest(source: source).canonicalData()
+        _ = fixture.profiles.add(name: "Survivor")
+        try fixture.bridge.removeProfile(profile.id)
+        fixture.profiles.remove(profile.id)
+        let removed = try await fixture.bridge.capture(fixture.snapshot([name: bytes]))
+        XCTAssertNil(try JSONDecoder().decode(
+            LiveTVSourceSyncManifest.self, from: XCTUnwrap(removed[name])
+        ).source)
+
+        fixture.profiles.applySyncedProfileDTOs(
+            [profile.id: ProfileSyncDTO(profile: profile)], deletions: []
+        )
+        let survivorStore = LiveTVSourcesStore(secureStore: SourceSyncTestSecrets())
+        let reopened = LiveTVSourceSyncBridge(
+            profiles: fixture.profiles, defaults: fixture.defaults,
+            store: { $0 == profile.id ? fixture.store : survivorStore },
+            cache: { _ in fixture.cache }
+        )
+        await reopened.apply(fixture.snapshot([name: bytes]))
+        XCTAssertEqual(try fixture.store.load().playlists, [source])
+        let captured = try await reopened.capture(fixture.snapshot([name: bytes]))
+        XCTAssertEqual(captured[name], bytes)
+        XCTAssertTrue(try survivorStore.load().playlists.isEmpty)
     }
 
     func testDeferredProfileDeletionCannotRepublishSources() async throws {

@@ -42,6 +42,9 @@ session persistence.
   per-flow views above. `BrandQRCodeView` renders the Quick Connect /
   Plex Link codes as scannable QR. `ConnectionCodeView` supplies the shared
   readable code panel for Quick Connect, Plex Link, Silo, and device setup.
+  Mobile sign-in forms use `settingsSignInFields()` for native placeholders,
+  persistent accessible names, and consistent input spacing. This does not
+  remove descriptive section context or change tvOS field presentation.
   `ServerAddressesView` uses the shared provider logo and Settings surfaces to
   separate server/sign-in identity, saved addresses, and address entry. Full
   addresses wrap without truncation, with the protocol labeled separately;

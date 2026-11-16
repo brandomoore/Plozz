@@ -859,7 +859,10 @@ public final class LiveTVPortableSyncBridge {
         guard FileManager.default.fileExists(atPath: url.path) else { return pending }
         let data = try Data(contentsOf: url)
         guard data.count <= 1_024 * 1_024 else { throw LiveTVPortableStateError.tooLarge }
-        return Set(try JSONDecoder().decode([String].self, from: data)).union(pending)
+        let recorded = Set(try JSONDecoder().decode([String].self, from: data))
+        // The roster can restore a profile after this device recorded its removal.
+        // A historical marker must not delete that profile's current peer state.
+        return recorded.subtracting(profiles.profilesForSync.map(\.id)).union(pending)
     }
 
     private var metadataDirectory: URL {

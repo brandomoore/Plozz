@@ -65,9 +65,9 @@ struct PlozziOSLibrarySelectionView: View {
                         )
                         VStack(spacing: 12) {
                             Button(action: onContinue) {
-                                Text("Choose later").frame(maxWidth: .infinity)
+                                Text("Choose later").plozzPageActionLabel()
                             }
-                            .plozzActionButton(role: .primary)
+                            .plozzPageActionButton()
                             Text("You can change these choices later in Settings.")
                                 .font(.footnote)
                                 .plozzForeground(.secondary)
@@ -79,9 +79,9 @@ struct PlozziOSLibrarySelectionView: View {
                         content
                         Section {
                             Button(action: onContinue) {
-                                Text("Continue").frame(maxWidth: .infinity)
+                                Text("Continue").plozzPageActionLabel()
                             }
-                            .plozzActionButton(role: .primary)
+                            .plozzPageActionButton()
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)

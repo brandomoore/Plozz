@@ -3,15 +3,9 @@ import CoreNetworking
 
 /// Connection details for a Seerr (Overseerr / Jellyseerr) instance.
 ///
-/// Unlike the OAuth trackers, Seerr is a **self-hosted** service, so its config
-/// is *user-supplied at runtime* (server URL + admin API key) rather than baked
-/// into the build. The values are persisted per-profile in the Keychain (see
-/// ``SeerCredentialStore``); this struct is the in-memory, decoded view the
-/// service and client operate on.
-///
-/// Phase 1 auth is the **admin API key** sent as `X-Api-Key`. An optional
-/// `userId` (sent as `X-API-User`) lets requests be attributed to a specific
-/// Seerr user instead of the admin (user id 1); it's off by default.
+/// The in-memory view of a profile-bound secure connection. A user session
+/// excludes API-key and acting-user headers. Explicit API-key connections may
+/// carry an administrator-authorized `userId` (`X-API-User`).
 public struct SeerConfig: Sendable, Equatable {
     /// Base URL of the Seerr server, e.g. `https://requests.example.com`. The
     /// `/api/v1` path is appended by the client, so this is the bare origin
@@ -22,16 +16,18 @@ public struct SeerConfig: Sendable, Equatable {
     /// Optional Seerr user id to act on behalf of (`X-API-User`). `nil` acts as
     /// the admin (user 1).
     public var userId: Int?
+    public var session: SeerSessionCredential?
 
-    public init(baseURL: URL? = nil, apiKey: String? = nil, userId: Int? = nil) {
+    public init(baseURL: URL? = nil, apiKey: String? = nil, userId: Int? = nil, session: SeerSessionCredential? = nil) {
         self.baseURL = baseURL
-        self.apiKey = Self.sanitize(apiKey)
-        self.userId = userId
+        self.apiKey = session == nil ? Self.sanitize(apiKey) : nil
+        self.userId = session == nil ? userId : nil
+        self.session = session
     }
 
-    /// Whether both a server URL and an API key resolved, so the feature can run.
+    /// Whether a server address and either supported credential are saved.
     public var isConfigured: Bool {
-        baseURL != nil && apiKey != nil
+        baseURL != nil && (apiKey != nil || session != nil)
     }
 
     /// Normalizes a raw API key: trims whitespace, rejects empty strings.

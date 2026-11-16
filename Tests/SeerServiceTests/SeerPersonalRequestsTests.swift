@@ -55,6 +55,30 @@ final class SeerPersonalRequestsTests: XCTestCase {
         XCTAssertTrue(http.sentPaths.last?.hasSuffix("/user/9/requests") == true)
     }
 
+    func testSelectedConnectionIdentityFollowsRequestUserInsteadOfLegacyProfileMapping() async throws {
+        let http = SeerRecordingHTTPClient()
+        let service = service(http)
+        var profile = Profile(id: "fixture", name: "Fixture")
+        profile.seerrUserID = 7
+        profile.seerrServerIdentity = SeerServerIdentity(baseURL: baseURL)
+        service.configureProfiles(
+            store: InMemorySeerAccountConnectionStore(), profiles: [profile], current: { profile }
+        )
+        let id = try XCTUnwrap(service.profileConnections.defaultID)
+        try service.setRequestUser(
+            SeerUser(id: 9, name: "Updated", serverIdentity: SeerServerIdentity(baseURL: baseURL)),
+            connectionID: id
+        )
+        http.stub(pathSuffix: "/user/9/requests", json: #"{"pageInfo":{"results":0},"results":[]}"#)
+
+        _ = try await service.personallyRequestedMovies(identity: service.requestIdentity, language: "en")
+
+        XCTAssertEqual(profile.seerrRequestIdentity.userID, 7)
+        XCTAssertEqual(service.requestIdentity.userID, 9)
+        XCTAssertEqual(http.sentPaths, ["/api/v1/user/9/requests"])
+        XCTAssertEqual(http.sent.first?.headers["X-API-User"], "9")
+    }
+
     func testForeignUserResponseAndUnboundIdentityFailClosed() async {
         let http = SeerRecordingHTTPClient()
         http.enqueueStub(
@@ -81,6 +105,29 @@ final class SeerPersonalRequestsTests: XCTestCase {
             XCTAssertEqual(error as? AppError, .unauthorized)
         }
         XCTAssertTrue(unboundHTTP.sentPaths.isEmpty)
+    }
+
+    func testSelectedLegacyMappingRequiringRelinkCannotReadPersonalRequests() async throws {
+        for server in [nil, SeerServerIdentity(baseURL: URL(string: "https://other.example.test")!)] {
+            let http = SeerRecordingHTTPClient()
+            let service = service(http)
+            var profile = Profile(id: "legacy", name: "Legacy")
+            profile.seerrUserID = 7
+            profile.seerrServerIdentity = server
+            service.configureProfiles(
+                store: InMemorySeerAccountConnectionStore(), profiles: [profile], current: { profile }
+            )
+            XCTAssertEqual(service.requestIdentity, .user(id: 7, server: nil))
+            for identity in [service.requestIdentity, .user(id: 7, server: SeerServerIdentity(baseURL: baseURL))] {
+                do {
+                    _ = try await service.personallyRequestedMovies(identity: identity, language: "en")
+                    XCTFail("An unverified legacy mapping must require relinking")
+                } catch {
+                    XCTAssertEqual(error as? AppError, .unauthorized)
+                }
+            }
+            XCTAssertTrue(http.sentPaths.isEmpty)
+        }
     }
 
     func testRestrictedUnmappedProfileCannotReadAdminRequests() async {
