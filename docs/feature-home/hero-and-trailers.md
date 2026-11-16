@@ -59,6 +59,19 @@ for a covered page, another item's theme, or a settings preview.
 
 ## Home composition and hero behavior
 
+- **Mobile detail back navigation** — detail artwork uses its local layout width,
+  not its moving window position during a native push or swipe-back. Native back
+  gestures temporarily suspend vertical pull-to-stretch; cancelling the gesture
+  restores ordinary scrolling and pull-to-stretch. The observer does not replace
+  navigation or gesture delegates. Home's sidebar/reflection layout is unchanged.
+
+- **Mobile detail rails** — Related posters and Cast & Crew portraits use Home's
+  viewport- and density-aware poster sizing. At standard density, phone widths
+  of at least 375 points show three full items and a partial fourth; wider
+  windows add columns. Cast portraits keep their circular shape and match the
+  poster artwork width and spacing, including framed-card spacing. Desktop cast
+  portraits retain their separate smaller size.
+
 - **Home** — `HomeView` + `HomeViewModel` render the focused tvOS rows:
   Continue Watching, Latest, Recently Added (per library). `HomeLayout`
   centralises sizing/spacing so all rows feel uniform.

@@ -963,6 +963,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         let items = (0..<12).map { MediaItem(id: "poster-\($0)", title: "Title \($0)", kind: .movie, posterURL: artwork) }
         for style in [CardStyle.borderless, .framed] {
             try await withWindow { window, host in
+                host.safeAreaRegions = []
                 // Reuse the same hierarchy while resizing, including iPad split widths.
                 for width in [CGFloat(320), 374, 375, 390, 402, 440, 507, 768, 1024, 1366] {
                     window.frame.size = CGSize(width: width, height: 1024)
@@ -971,6 +972,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         ScrollView {
                             PlozziOSHomeMediaRail(title: Text("Recently added"), items: items, style: .poster, appModel: app)
                         }
+                        .frame(width: width)
                         .environment(app)
                         .environment(\.horizontalSizeClass, sizeClass)
                         .environment(\.plozzCardStyle, style)
@@ -1002,6 +1004,77 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     XCTAssertGreaterThan(Double(peek.count) / Double(first.count), 0.20)
                     XCTAssertLessThan(Double(peek.count) / Double(first.count), 0.42)
                     XCTAssertEqual(peek.upperBound, Int(width), "The next poster must peek at the physical rail edge.")
+                }
+            }
+        }
+    }
+
+    func testRelatedAndCastMatchHomePosterWidthsAndPeek() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.cardStyle.captions
+        defer { app.settings.cardStyle.captions = original }
+        app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: false)
+        let artwork = try await posterArtwork()
+        let request = URLRequest(url: artwork)
+        let response = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache?.cachedResponse(for: request))
+        URLCache.shared.storeCachedResponse(response, for: request)
+        defer { URLCache.shared.removeCachedResponse(for: request) }
+        let items = (0..<12).map {
+            MediaItem(id: "detail-size-\($0)", title: "Title \($0)", kind: .movie, posterURL: artwork)
+        }
+        let entries = items.map {
+            RelatedEntry(related: RelatedTitle(title: $0.title, kind: .movie, source: .tmdb), libraryItem: $0)
+        }
+        let people = (0..<12).map {
+            MediaPerson(id: "person-\($0)", name: "Person \($0)", kind: $0 == 0 ? "Director" : "Actor", imageURL: artwork)
+        }
+        for style in [CardStyle.borderless, .framed] {
+            try await withWindow { window, host in
+                for width: CGFloat in [390, 440, 834] {
+                    let sizeClass: UserInterfaceSizeClass = width < 600 ? .compact : .regular
+                    let inset = PlozziOSPageLayout.horizontalInset(for: sizeClass)
+                    window.frame.size = CGSize(width: width, height: 1400)
+                    host.rootView = AnyView(
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                                PlozziOSHomeMediaRail(title: Text("Home"), items: items, style: .poster, appModel: app)
+                                PlozziOSRelatedSection(entries: entries, inset: inset, onSelect: { _, _ in })
+                                PlozziOSCastSection(people: people, sourceAccountID: nil)
+                            }
+                        }
+                        .frame(width: width)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .environment(app)
+                        .environment(\.horizontalSizeClass, sizeClass)
+                        .environment(\.plozzCardStyle, style)
+                        .environment(\.plozzCardCaptionSettings, app.settings.cardStyle.captions)
+                        .environment(\.plozzMetrics, .touch(density: .standard))
+                        .environment(\.mediaPersonSourceNavigator, { _, _ in })
+                        .environment(\.themePalette, .dark)
+                    )
+                    try await settle(window)
+                    let deadline = ContinuousClock.now + .seconds(5)
+                    while ContinuousClock.now < deadline {
+                        if try posterRuns(snapshot(window), axis: .vertical, at: inset + 45).count == 3 { break }
+                        try await Task.sleep(for: .milliseconds(100))
+                    }
+                    let image = snapshot(window, name: "home-related-cast-sizing-\(Int(width))-\(style)")
+                    let rows = try posterRuns(image, axis: .vertical, at: inset + 45)
+                    XCTAssertEqual(rows.count, 3, "All three production rails must paint their artwork.")
+                    guard rows.count == 3 else { continue }
+                    let home = try posterRuns(image, at: CGFloat(rows[0].lowerBound + rows[0].count / 2))
+                    let first = try XCTUnwrap(home.first)
+                    if width < 600 { XCTAssertEqual(home.count, 4, "Three complete posters and one partial poster.") }
+                    XCTAssertEqual(home.last?.upperBound, Int(width))
+                    for row in rows.dropFirst() {
+                        let cards = try posterRuns(image, at: CGFloat(row.lowerBound + row.count / 2))
+                        XCTAssertEqual(cards.count, home.count)
+                        for (actual, expected) in zip(cards, home) {
+                            XCTAssertEqual(actual.lowerBound, expected.lowerBound, accuracy: 2)
+                            XCTAssertEqual(actual.upperBound, expected.upperBound, accuracy: 2)
+                        }
+                        XCTAssertEqual(cards.first?.count ?? 0, first.count, accuracy: 2)
+                    }
                 }
             }
         }
