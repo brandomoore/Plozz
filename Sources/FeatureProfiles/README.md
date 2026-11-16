@@ -55,6 +55,8 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 - `AutomaticSignInSettings` — one binding and shared control for the device's
   startup preference, exposed in individual profile settings and Everyone → Profiles.
   The description carries device scope without an extra section heading.
+  Described toggles use CoreUI's `SettingsDescribedControl`, including its shared
+  typography and balanced row padding; do not put helper text inside the toggle label.
 
 ## Invariants
 

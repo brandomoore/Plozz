@@ -72,6 +72,20 @@ Its helper note explains HDMV-only menus, automatic video playback for BD-J,
 and the watch-progress limitation once on both platforms; disc action menus
 and video pickers do not repeat it.
 
+Controls with supporting text use CoreUI's `SettingsDescribedControl` on both
+platforms. It owns helper typography and spacing, keeps the native control's
+normal clearance, and places group separators after the complete row. Settings
+summaries use `SettingsRowMetrics.descriptionFont`, not per-page caption sizes.
+Seerr appears in the active profile's category list, not Manage Plozz. It edits only
+that profile's connections; the existing Kids-profile restrictions still apply.
+Downloads follows Libraries in the mobile profile card and uses that profile's
+existing download model. It remains hidden for Kids profiles and unavailable on tvOS.
+On mobile, the active profile's avatar and name form the first row of this same
+settings card, matching the tvOS grouping. The household Profiles entry remains
+under Manage Plozz. The shared section has no scope footer; device and sync
+details belong inside the relevant settings. The profile card has no repeated
+scope footer.
+
 Playback groups its five optional **Player tabs** in one shared control surface
 on TV and mobile. Labels match the player tabs, Info stays always available, and
 visibility preferences are independent of autoplay and Up Next behavior.
@@ -1028,23 +1042,19 @@ watch history and planning-list behavior are documented in
   exclude that library's content from the combined grid; disabling its content does.
   Settings opens as a sheet from direct tabs or native More without replacing
   the selected page or its navigation history.
-  Everyone uses the TV order, with mobile-only Downloads last. Version/build,
+  Manage Plozz uses the TV order; mobile-only Downloads belongs to the profile card. Version/build,
   release notes, and community links are inline on both mobile root layouts.
   Mobile Community uses standard-height, single-line Discord and GitHub links
   with small brand icons, without subtitles or QR codes. TV keeps its scannable
   community cards.
-  Mobile Settings also includes a **More apps** section linking Mozz to its
-  public TestFlight beta. Both compact and regular layouts share the same native
-  link and preserve the official full-color light/dark app icon. Its three-line
-  label identifies Mozz as a free, open-source music player and names the
-  TestFlight public beta without adding another line. Mozz is not
-  advertised on tvOS. The iOS-only `MozzAppIcon` imageset is copied unchanged from
-  `brandomoore/Mozz` at `b262a5a1257ac20369287599e6fea888462f8284`,
-  `App/Mozz/Assets.xcassets/AppIcon.appiconset`; `AppLinks.mozzTestFlight`
-  owns the invite URL.
+  Mobile Version and Build rows use native labeled icons. Sign Out of All
+  Accounts is a separate final section, with a red sign-out label and icon,
+  retaining the existing confirmation and Kids-profile restrictions.
+  The shared mobile action-row style propagates destructive roles to primary
+  text and icons, instead of overriding them with the neutral settings foreground.
   The compact and regular root menus eagerly lay out their small, fixed set of
   sections. This keeps variable-height groups stable while scrolling rather
-  than repeatedly revising lazy height estimates as the promotion enters view.
+  than repeatedly revising lazy height estimates as sections enter view.
   Kids-profile gates and profile/household storage ownership are unchanged.
   `SettingsLibrarySourcesSummary` shares configured source grouping and profile
   inclusion with TV. Mobile keeps the source icons/names on one horizontal line,

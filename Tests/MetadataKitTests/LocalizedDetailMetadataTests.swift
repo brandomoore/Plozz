@@ -34,12 +34,12 @@ final class LocalizedDetailMetadataTests: XCTestCase {
 
     func testTVDBRequestsSelectedLanguage() async {
         let codes = [
-            "en": "eng", "ar": "ara", "bg": "bul", "ca": "cat", "cs": "ces", "da": "dan",
+            "en": "eng", "ar": "ara", "bg": "bul", "bn": "ben", "ca": "cat", "cs": "ces", "da": "dan",
             "de": "deu", "el": "ell", "es": "spa", "fa": "fas", "fi": "fin", "fr": "fra",
             "he": "heb", "hi": "hin", "hr": "hrv", "hu": "hun", "id": "ind", "it": "ita",
             "ja": "jpn", "ko": "kor", "ms": "msa", "nb": "nor", "nl": "nld", "pl": "pol",
             "pt-BR": "pt", "ro": "ron", "ru": "rus", "sk": "slk", "sl": "slv", "sr-Latn": "srp",
-            "sv": "swe", "th": "tha", "tr": "tur", "uk": "ukr", "vi": "vie",
+            "sv": "swe", "th": "tha", "tr": "tur", "uk": "ukr", "ur": "urd", "vi": "vie",
             "zh-Hans": "zho", "zh-Hant": "zhtw", "fr-CA": "fra"
         ]
         for language in AppLanguage.releaseReady + ["en", "fr-CA"] {

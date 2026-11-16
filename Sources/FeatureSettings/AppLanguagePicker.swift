@@ -65,7 +65,7 @@ struct AppLanguagePicker: View {
 
     /// A native pop-up menu rather than an inline list.
     ///
-    /// Every release-ready language is offered — 37 rows and counting — and as a
+    /// Every release-ready language is offered, and as a
     /// list that is a settings page you scroll for several screens to reach the
     /// one control on it. The same call was already made one file over for the
     /// audio-language preference ("too long for the inline pill picker"); this is

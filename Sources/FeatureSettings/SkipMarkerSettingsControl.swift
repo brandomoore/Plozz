@@ -251,13 +251,13 @@ private struct SkipMarkerCommunityControl: View {
     @Bindable var model: PlaybackSettingsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        SettingsDescribedControl {
             Toggle("Use community markers", isOn: $model.settings.useCommunityMarkers)
-                .accessibilityIdentifier("skip-community-markers").settingsSearchAnchor("community-markers")
+                .accessibilityIdentifier("skip-community-markers")
+        } description: {
             Text("From IntroDB and TheIntroDB when your server has none. Shares IMDb/TMDB IDs.")
-                .settingsHelperText()
-                .fixedSize(horizontal: false, vertical: true)
         }
+        .settingsSearchAnchor("community-markers")
     }
 }
 

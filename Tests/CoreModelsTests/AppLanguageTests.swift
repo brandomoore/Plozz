@@ -99,6 +99,8 @@ final class AppLanguageTests: XCTestCase {
     func testExplicitLanguageCarriesReadingDirection() {
         XCTAssertEqual(AppLanguage.explicit("ar").isRightToLeft, true)
         XCTAssertEqual(AppLanguage.explicit("he").isRightToLeft, true)
+        XCTAssertEqual(AppLanguage.explicit("ur").isRightToLeft, true)
+        XCTAssertEqual(AppLanguage.explicit("bn").isRightToLeft, false)
         XCTAssertEqual(AppLanguage.explicit("en").isRightToLeft, false)
         XCTAssertEqual(AppLanguage.explicit("zh-Hant").isRightToLeft, false)
         XCTAssertNil(AppLanguage.system.isRightToLeft)

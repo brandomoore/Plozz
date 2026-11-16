@@ -1,6 +1,6 @@
 # Localization
 
-Plozz ships English today and is being localized incrementally. This document is
+Plozz supports English and 38 non-English localizations. This document is
 the contract: how strings get from Swift source into a translator's hands and back
 into the app, and the handful of rules that keep that pipeline working.
 
