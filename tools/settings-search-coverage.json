@@ -2391,8 +2391,8 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 4
     },
-    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVGuidePreferences|body|Picker|\"Update guide automatically\"": {
-      "reason": "The contextual interval Picker edits the indexed Update guide automatically row; live-guide-update owns search reveal and selection.",
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVGuidePreferences|body|Picker|\"Refresh while open\"": {
+      "reason": "The contextual interval Picker edits the indexed Refresh while open row; live-guide-update owns search reveal and selection.",
       "covered_by": [
         "live-guide-update"
       ],

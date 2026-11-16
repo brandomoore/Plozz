@@ -658,7 +658,7 @@ actor IPTVClient: ApplicationStorageParticipant {
     struct SavedGuideLineup: Sendable {
         /// Changes whenever the lineup does.
         let revision: String
-        /// Only channels with a guide ID; the others cannot have listings.
+        /// Only XMLTV identities; channels without them can still have native listings.
         let guided: [String: IPTVProvider.IPTVGuideChannel]
     }
 
@@ -1239,8 +1239,8 @@ actor IPTVClient: ApplicationStorageParticipant {
         }
     }
 
-    /// Native listings are allowed only when this account has no batch guide.
-    func mayAskPerChannel() throws -> Bool {
+    /// Skip a known-unavailable batch endpoint until the next explicit refresh.
+    func isBatchGuideUnavailable() throws -> Bool {
         if batchGuideUnavailable { return true }
         return try xtreamGuideURL() == nil
     }

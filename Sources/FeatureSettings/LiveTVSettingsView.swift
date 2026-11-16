@@ -180,15 +180,15 @@ private struct LiveTVGuidePreferences: View {
             Text("Preview after watching keeps the channel playing behind the guide when you leave full screen. Recently watched shows the channels you watched last at the top of the guide.")
         }
         SettingsSectionGroup {
-            SettingsMenuRow(title: "Update guide automatically", value: Text(Self.label(settings.guideUpdateInterval))) {
-                Picker("Update guide automatically", selection: $settings.guideUpdateInterval) {
+            SettingsMenuRow(title: "Refresh while open", value: Text(Self.label(settings.guideUpdateInterval))) {
+                Picker("Refresh while open", selection: $settings.guideUpdateInterval) {
                     ForEach(LiveTVGuideUpdateInterval.allCases, id: \.self) { Text(Self.label($0)).tag($0) }
                 }
             }
             .accessibilityIdentifier("live-tv-guide-update")
             .settingsSearchAnchor("live-guide-update")
         } footer: {
-            Text("Keeps the channel list and a downloaded programme guide up to date while Plozz is open. When off, they update only when you open Live TV.")
+            Text("Updates saved channel lists and guides while Plozz is open. When off, they still update when you use Live TV.")
         }
     }
 

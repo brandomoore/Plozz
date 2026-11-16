@@ -55,7 +55,7 @@ private struct LiveTVGuideAutoUpdateModifier: ViewModifier {
 
 public extension View {
     /// Keeps the active profile's saved programme guides current while the app is in the
-    /// foreground, following that profile's "Update guide automatically" setting.
+    /// foreground, following that profile's "Refresh while open" setting.
     func liveTVGuideAutoUpdate(
         accountIDs: [String], authorizationID: String, isAuthorized: Bool,
         namespace: String?, resolver: @escaping LiveTVServerProviderResolver

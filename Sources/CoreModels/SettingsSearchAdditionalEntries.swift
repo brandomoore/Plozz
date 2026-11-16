@@ -186,7 +186,7 @@ extension SettingsSearchCatalog {
               keywords: "live television guide preview browsing recent channels"),
         .init("live-recent", page: .liveTVGuide, title: "Recently watched",
               keywords: "live television guide preview browsing recent channels"),
-        .init("live-guide-update", page: .liveTVGuide, title: "Update guide automatically",
+        .init("live-guide-update", page: .liveTVGuide, title: "Refresh while open",
               keywords: "live television guide listings programmes refresh update interval background"),
         .init("live-favorites-only", page: .liveTVVisibility, title: "Favorites only",
               keywords: "live television visible hide channels favorites listings"),

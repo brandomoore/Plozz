@@ -352,20 +352,26 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         var seen = Set<String>()
         let requestedIDs = channelIDs.filter { seen.insert($0).inserted }
         let guided = requestedIDs.compactMap { lineup.guided[$0] }
-        if let saved = try await indexedGuide(channels: guided, lineup: lineup, from: from, to: to, diagnostics: diagnostics) {
-            return saved
-        }
-        if !(try await client.mayAskPerChannel()) {
+        let saved = try await indexedGuide(channels: guided, lineup: lineup, from: from, to: to, diagnostics: diagnostics)
+        var batch = saved ?? []
+        if saved == nil, !(try await client.isBatchGuideUnavailable()) {
             do {
-                return try await xmlTVGuide(channelIDs: guided.map(\.id), from: from, to: to, diagnostics: diagnostics)
+                batch = try await xmlTVGuide(channelIDs: guided.map(\.id), from: from, to: to, diagnostics: diagnostics)
             } catch {
                 try Task.checkCancellation()
-                guard try await client.mayAskPerChannel() else { throw error }
+                guard try await client.isBatchGuideUnavailable() else { throw error }
             }
         }
-        var result: [ServerLiveTVProgramme] = []
+        var byChannel = Dictionary(grouping: batch, by: \.channelID)
+        let covered = Set(byChannel.compactMap { id, rows in
+            Self.listings(rows, cover: from, to: to) ? id : nil
+        })
+        if saved != nil { diagnostics.indexed(channels: covered.count) }
+        func result() -> [ServerLiveTVProgramme] {
+            requestedIDs.flatMap { byChannel[$0] ?? [] }
+        }
         // Native listings use stream IDs, even when the channel has no XMLTV guide ID.
-        for id in requestedIDs {
+        for id in requestedIDs where !covered.contains(id) {
             try Task.checkCancellation()
             if await client.hasEmptyGuideAnswer(id) { continue }
             let request = IPTVGuideDiagnostics.Request()
@@ -374,7 +380,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                     try await client.guide(channelID: id, from: from, to: to)
                 }
                 diagnostics.record(request, endpoint: .xtream, rows: rows.count)
-                result += rows
+                if !rows.isEmpty { byChannel[id] = rows }
             } catch {
                 diagnostics.record(request, endpoint: .xtream, error: error)
                 try Task.checkCancellation()
@@ -382,15 +388,26 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                 case IPTVError.malformed:
                     continue
                 case AppError.notFound, IPTVError.unsupported:
-                    return result
+                    return result()
                 default:
                     break
                 }
-                guard !result.isEmpty, Self.canIsolateGuideFailure(error) else { throw error }
-                throw ServerLiveTVPartialGuideError(programmes: result, failure: error)
+                let partial = result()
+                guard !partial.isEmpty, Self.canIsolateGuideFailure(error) else { throw error }
+                throw ServerLiveTVPartialGuideError(programmes: partial, failure: error)
             }
         }
-        return result
+        return result()
+    }
+
+    private static func listings(_ programmes: [ServerLiveTVProgramme], cover from: Date, to: Date) -> Bool {
+        var answered = from
+        for programme in programmes.sorted(by: { $0.startDate < $1.startDate }) {
+            guard programme.startDate <= answered else { return false }
+            answered = max(answered, programme.endDate)
+            if answered >= to { return true }
+        }
+        return answered >= to
     }
 
     private func indexedGuide(
@@ -408,7 +425,6 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             let request = IPTVGuideDiagnostics.Request()
             request.reusedIndex()
             diagnostics.record(request, endpoint: .xmltv, rows: rows.count)
-            diagnostics.indexed(channels: Set(rows.map(\.channelID)).count)
             return rows
         } catch {
             try Task.checkCancellation()

@@ -227,12 +227,12 @@ class RepositoryCoverageTests(unittest.TestCase):
         ))
         guide["calls"] = []
         guide["controls"] = [
-            item for item in guide["controls"] if item["label"] == '"Update guide automatically"'
+            item for item in guide["controls"] if item["label"] == '"Refresh while open"'
         ]
         picker, = [item for item in guide["controls"] if item["kind"] == "Picker"]
         self.assertEqual(picker["anchors"], [])
         key = GUARD.control_key(guide, picker)
-        self.assertEqual(key, 'Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVGuidePreferences|body|Picker|"Update guide automatically"')
+        self.assertEqual(key, 'Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVGuidePreferences|body|Picker|"Refresh while open"')
         catalog = component("SettingsSearchCatalog", "Sources/CoreModels/SettingsSearch.swift")
         catalog["registrations"] = [
             registration for item in self.inventory for registration in item["registrations"]
@@ -255,7 +255,7 @@ class RepositoryCoverageTests(unittest.TestCase):
         del policy["exclusions"][key]
         errors = GUARD.check(inventory, policy)
         self.assertEqual(len(errors), 1)
-        self.assertIn('unregistered LiveTVGuidePreferences.body Picker "Update guide automatically"', errors[0])
+        self.assertIn('unregistered LiveTVGuidePreferences.body Picker "Refresh while open"', errors[0])
 
     def test_live_guide_update_registration_rejects_stale_or_inexact_counts(self):
         for mutation in ("removed", "duplicated", "widened-count"):

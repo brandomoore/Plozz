@@ -212,6 +212,49 @@ final class LiveTVGuideIndexTests: XCTestCase {
         }
     }
 
+    func testAutomaticAndOnDemandRefreshShareOneDownloadAndFreshnessState() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let clock = Mutex(now)
+        let index = LiveTVGuideIndex(
+            cache: fixture.cache, clock: { clock.withLock { $0 } }, updateInterval: { 3_600 }
+        )
+        let channels = [channel("a")]
+        let url = url
+        let range = range
+        let original = httpDocument(try httpMetadata())
+        _ = try await index.programs(from: url, catalog: channels, channels: channels, range: range) { original }
+
+        let checked = now.addingTimeInterval(7_200)
+        clock.withLock { $0 = checked }
+        let refreshed = httpDocument(
+            try httpMetadata(headers: ["ETag": "\"v2\""], at: checked), title: "Updated"
+        )
+        let download = HeldDownload(refreshed)
+        let periodic = Task {
+            try await index.updateSaved(from: url, catalog: { channels }) { _ in
+                .document(try await download.get())
+            }
+        }
+        await download.waitUntilStarted()
+        let onDemand = Task {
+            try await index.programs(from: url, catalog: channels, channels: channels, range: range) { _ in
+                XCTFail("Opening Live TV must join the periodic refresh, not download again")
+                return .document(try await download.get())
+            }
+        }
+        await index.waitForWaitersForTesting(2)
+        await download.release()
+        let nextUpdate = try await periodic.value
+        let rows = try await onDemand.value
+        XCTAssertEqual(nextUpdate, checked.addingTimeInterval(3_600))
+        XCTAssertEqual(rows.map(\.title), ["Updated"])
+        let count = await download.count
+        XCTAssertEqual(count, 1)
+        let cached = try await index.cachedPrograms(from: url, channels: channels, range: range) { channels }
+        XCTAssertEqual(cached?.map(\.title), ["Updated"])
+    }
+
     private func verifyEmptyFeedRecovery(status: Int, lifetime: TimeInterval) async throws {
         let fixture = try CacheFixture()
         defer { fixture.removeOwnedFiles() }

@@ -607,20 +607,22 @@ lifetime, honoring shorter HTTP freshness, including after restoration and
 in the requested window retains normal source freshness: an empty viewport is
 not a reason to repeatedly download the whole feed. Legacy zero-row indexes
 without a source programme count require one full rebuild to distinguish these
-cases. There is no new polling timer.
+cases. Negative-cache expiry does not itself schedule polling.
 
 For Xtream accounts without an explicit XMLTV URL, a guide request first ensures
 that a committed live lineup exists, then reads the saved `xmltv.php` index when
 it can answer without a guide download: indexed for the current lineup and window,
-within its reuse limit, and not awaiting an explicit refresh. A usable saved index
-answers the whole request, including gaps and empty results; it does not trigger
-`get_simple_data_table` requests. Otherwise the request tries the whole-guide
-`xmltv.php` endpoint before native listings. Only an unavailable batch endpoint
-(HTTP 404, 405 or 501) permits native fallback; that discovery is remembered in
-memory until guide invalidation, so later requests can skip the missing batch.
-Authentication, overload, transport and parsing failures do not enable native
-fallback. A successful batch response, even with no matching listings, also does
-not enable it.
+within its reuse limit, and not awaiting an explicit refresh. Otherwise the request
+tries the whole-guide `xmltv.php` endpoint before native listings. Channels whose
+listings cover the complete requested window need no native request. Missing or
+partly covered channels use `get_simple_data_table`, including streams without
+XMLTV guide IDs. Nonempty native listings replace that channel's incomplete batch
+listings; empty, malformed or unavailable native answers retain the batch listings.
+A transient native failure stops further requests and preserves retrieved listings
+as an explicitly incomplete result; authentication and cancellation remain terminal.
+An unavailable batch endpoint (HTTP 404, 405 or 501) is remembered in memory until
+guide invalidation, so later requests can skip the missing batch. Batch authentication,
+overload, transport and parsing failures do not trigger native recovery requests.
 
 Native fallback uses stream IDs, not guide IDs (`epg_channel_id`): it sequentially
 requests each distinct caller-requested channel, including channels without guide
@@ -631,7 +633,7 @@ outside the requested window does not create that suppression.
 The saved XMLTV index's matching projection contains only lineup channels with
 guide IDs; it cannot supply XMLTV listings for channels without them. Renaming
 such channels does not change that projection. Native fallback can still supply
-their listings when the batch endpoint is unavailable. The lookup retains the
+their listings even when the batch endpoint succeeds. The lookup retains the
 prepared lineup, its digest, the decoded station document and normalised station
 names between requests.
 
@@ -667,7 +669,7 @@ the window. Playlists and explicit guide
 addresses keep the stricter matcher, where channels sharing an ID must also share a
 name, because there the ID and the guide come from different parties.
 
-Settings > Live TV > Guide preferences > **Update guide automatically** (Off, or
+Settings > Live TV > Guide preferences > **Refresh while open** (Off, or
 every 1, 3, 6, 12 or 24 hours; 12 by default; profile-scoped) sets how long a saved
 account guide is reused. A chosen interval can outlast the built-in 12-hour default
 but never a lifetime the server stated. While the app is in the foreground and the
