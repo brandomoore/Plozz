@@ -4,6 +4,10 @@
 Link an existing issue with Refs #N; do not use closing keywords for app changes.
 See CONTRIBUTING.md for fixing-commit references and delivery trailers. -->
 
+<!-- For adopted or adapted work, retain the original author/co-author credit
+and source PR/commit references in the commits. Say which parts were adopted;
+the reference must survive a squash or cherry-pick, not only live in this PR. -->
+
 ## Affected platforms and sources
 
 <!-- Name affected tvOS/iOS/iPadOS paths and servers, share protocols, or IPTV
