@@ -8,18 +8,18 @@ public struct UpcomingFeedSnapshot: Sendable {
     public var failedSourceCount: Int
     public var failedAccountIDs: Set<String>
     public var requestsFailed: Bool
-    public var failedTitleKeys: Set<String>
+    public var failedTitleInterests: [String: Set<UpcomingInterest>]
 
     public init(
         releases: [UpcomingRelease] = [], failedSourceCount: Int = 0,
         failedAccountIDs: Set<String> = [], requestsFailed: Bool = false,
-        failedTitleKeys: Set<String> = []
+        failedTitleInterests: [String: Set<UpcomingInterest>] = [:]
     ) {
         self.releases = releases
         self.failedSourceCount = failedSourceCount
         self.failedAccountIDs = failedAccountIDs
         self.requestsFailed = requestsFailed
-        self.failedTitleKeys = failedTitleKeys
+        self.failedTitleInterests = failedTitleInterests
     }
 }
 
@@ -210,30 +210,34 @@ public final class UpcomingFeedModel {
                 }
                 try Task.checkCancellation()
                 guard let self, self.generation == generation, isCurrent() else { return }
-                let retained = self.releases.filter { previous in
-                    let unavailable =
-                        (previous.kind == .episode
-                            && previous.item.sourceAccountID.map(snapshot.failedAccountIDs.contains) == true)
-                        || (snapshot.requestsFailed && previous.interests.contains(.requested))
-                        || snapshot.failedTitleKeys.contains(previous.titleKey)
-                    return unavailable
-                        && !snapshot.releases.contains {
+                var refreshed = snapshot.releases
+                for previous in self.releases {
+                    var retainedInterests = Set<UpcomingInterest>()
+                    if previous.item.sourceAccountID.map(snapshot.failedAccountIDs.contains) == true,
+                       previous.interests.contains(.watching) {
+                        retainedInterests.insert(.watching)
+                    }
+                    if snapshot.requestsFailed, previous.interests.contains(.requested) {
+                        retainedInterests.insert(.requested)
+                    }
+                    retainedInterests.formUnion(snapshot.failedTitleInterests[previous.titleKey] ?? [])
+                    guard !retainedInterests.isEmpty else { continue }
+                    if let index = refreshed.firstIndex(where: {
                             $0.id == previous.id
                                 || ($0.kind == previous.kind && $0.date == previous.date
                                     && MediaItemMerger.merge([$0.item, previous.item]).count == 1)
+                        }) {
+                        if retainedInterests.contains(.watching), !refreshed[index].interests.contains(.watching) {
+                            refreshed[index].item = previous.item
                         }
-                }
-                self.releases =
-                    (snapshot.releases
-                    + retained.map { release in
-                        var release = release
-                        if snapshot.requestsFailed, release.kind != .episode, release.interests.contains(.requested) {
-                            release.interests = [.requested]
-                        }
-                        return release
-                    }).sorted {
-                        $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date
+                        refreshed[index].interests.formUnion(retainedInterests)
+                    } else {
+                        var retained = previous
+                        retained.interests = retainedInterests
+                        refreshed.append(retained)
                     }
+                }
+                self.releases = UpcomingReleaseBuilder.merging(refreshed)
                 self.failedSourceCount = snapshot.failedSourceCount
                 self.refreshedAt = self.refreshRevision == revision ? Date() : nil
                 if self.refreshRevision == revision, let cacheScope, let cache = self.cache {

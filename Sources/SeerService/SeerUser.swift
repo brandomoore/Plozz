@@ -80,6 +80,8 @@ extension SeerUser {
 /// reason** so the UI can explain what happened (no keyboard needed on tvOS) and
 /// offer a real recovery action.
 public enum SeerRequestOutcome: Equatable, Sendable {
+    /// Successful work at another destination must not change the browsing server's availability.
+    case successElsewhere(LocalizedStringResource)
     /// The request was accepted. The carried status is the title's resulting
     /// availability — note `.pending` here means "created, awaiting approval",
     /// which is a **success**, not a failure.
@@ -93,6 +95,8 @@ public enum SeerRequestOutcome: Equatable, Sendable {
 /// verified against a real instance before relying on the fine distinctions
 /// (e.g. quota vs. no-defaults, which Overseerr can both surface via 403/500).
 public enum SeerRequestFailure: Equatable, Sendable {
+    case cancelled
+    case signInRequired
     /// The acting Seerr user has no default server / quality profile set, so
     /// Overseerr couldn't resolve where to send the request. Recovery: set
     /// defaults in the Seerr web UI, or use the Advanced picker (Phase 2).
@@ -151,6 +155,10 @@ public enum SeerRequestFailure: Equatable, Sendable {
     /// consistent.
     public var userMessage: LocalizedStringResource {
         switch self {
+        case .cancelled:
+            return "Request cancelled."
+        case .signInRequired:
+            return "Sign in to Seerr again."
         case .noDefaults:
             return "No default server or quality profile is configured for this user."
         case .noPermission:

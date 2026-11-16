@@ -212,8 +212,16 @@ final class PosterCardPresentationTests: XCTestCase {
         for kind: MediaItemKind in [.collection, .playlist, .folder] {
             XCTAssertTrue(PosterCardPresentation.preservesContainerArtwork(for: kind))
         }
+
         for kind: MediaItemKind in [.movie, .series, .season, .episode, .video] {
             XCTAssertFalse(PosterCardPresentation.preservesContainerArtwork(for: kind))
+        }
+    }
+
+    func testCollectionCoversFillWhilePlaylistAndFolderCoversStillFit() {
+        XCTAssertFalse(PosterCardPresentation.fitsContainerArtwork(for: .collection))
+        for kind: MediaItemKind in [.playlist, .folder] {
+            XCTAssertTrue(PosterCardPresentation.fitsContainerArtwork(for: kind))
         }
     }
 

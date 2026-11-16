@@ -64,13 +64,18 @@ final class LibraryPresentationTests: XCTestCase {
                 await model.setContentMode(.titles)
                 try await waitForHostedLayout(window)
                 try self.assertTrailingToolbarControls(window, count: 2)
+                try self.assertLibrarySortFollowsFilter(window)
                 try await self.scrollPastHeading(window)
                 try self.assertTrailingToolbarControls(window, count: 2)
+                try self.assertLibrarySortFollowsFilter(window)
                 _ = try self.captureImage(window, name: "library-toolbar-scrolled-\(width)-\(textSize)")
                 for (mode, count) in [(LibraryContentMode.collections, 1), (.playlists, 1), (.recommended, 0), (.titles, 2)] {
                     await model.setContentMode(mode)
                     try await waitForHostedLayout(window)
                     try self.assertTrailingToolbarControls(window, count: count)
+                    if count == 2 {
+                        try self.assertLibrarySortFollowsFilter(window)
+                    }
                 }
             }
         }
@@ -248,7 +253,7 @@ final class LibraryPresentationTests: XCTestCase {
         }
     }
 
-    func testCollectionCoversDisplayLandscapeAndSquareArtworkWithoutCropping() async throws {
+    func testCollectionCoversFillPosterCardsWithLandscapeAndSquareArtwork() async throws {
         let appModel = PlozziOSAppModel()
         for size in [CGSize(width: 400, height: 225), CGSize(width: 300, height: 300)] {
             let artwork = try await seedArtwork(size: size, edgeMarkers: true)
@@ -257,6 +262,7 @@ final class LibraryPresentationTests: XCTestCase {
                 size: CGSize(width: 390, height: 844), sizeClass: .compact
             ) { window, model in
                 await model.setContentMode(.collections)
+                model.collectionCoverLayout = .poster
                 try await waitForHostedLayout(window)
                 _ = try self.capture(window, name: "collection-cover-\(Int(size.width))x\(Int(size.height))")
                 let image = try XCTUnwrap(self.capturedImage)
@@ -269,13 +275,16 @@ final class LibraryPresentationTests: XCTestCase {
                     ))
                     context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
                 }
-                var leftEdge = 0, rightEdge = 0
+                var leftEdge = 0, rightEdge = 0, artworkPixels = 0
                 for index in stride(from: 0, to: pixels.count, by: 4) {
                     if pixels[index] > 150, pixels[index + 1] < 100, pixels[index + 2] > 150 { leftEdge += 1 }
                     if pixels[index] < 100, pixels[index + 1] > 150, pixels[index + 2] < 100 { rightEdge += 1 }
+                    if pixels[index] > 180, pixels[index + 1] > 120, pixels[index + 1] < 170,
+                       pixels[index + 2] > 50, pixels[index + 2] < 100 { artworkPixels += 1 }
                 }
-                XCTAssertGreaterThan(leftEdge, 100, "The collection cover's left edge must not be rejected or cropped.")
-                XCTAssertGreaterThan(rightEdge, 100, "The collection cover's right edge must not be rejected or cropped.")
+                XCTAssertGreaterThan(artworkPixels, 1_000, "Custom-ratio artwork must load rather than being rejected.")
+                XCTAssertEqual(leftEdge, 0, "Filling the poster crops the wide cover's left edge.")
+                XCTAssertEqual(rightEdge, 0, "Filling the poster crops the wide cover's right edge.")
             }
         }
     }
@@ -626,6 +635,24 @@ final class LibraryPresentationTests: XCTestCase {
             XCTAssertTrue(hit.isDescendant(of: bar), "Toolbar actions must remain reachable after scrolling.")
             if let button = control as? UIButton { XCTAssertTrue(button.isEnabled) }
         }
+    }
+
+    private func assertLibrarySortFollowsFilter(_ window: UIWindow) throws {
+        let bar = try XCTUnwrap(navigationBar(in: window))
+        let controls = descendants(bar).compactMap { $0 as? UIButton }
+        XCTAssertEqual(controls.count, 2)
+        let sort = try XCTUnwrap(controls.first { control in
+            guard let image = control.image(for: .normal),
+                  let symbol = UIImage(systemName: "arrow.up.arrow.down", withConfiguration: image.configuration)
+            else { return false }
+            return image.isEqual(symbol)
+        }, "Expected the native Sort symbol in the Browse toolbar.")
+        let filter = try XCTUnwrap(controls.first { $0 !== sort })
+        XCTAssertLessThanOrEqual(
+            filter.convert(filter.bounds, to: window).maxX,
+            sort.convert(sort.bounds, to: window).minX,
+            "Browse must place Sort to the right of Filter."
+        )
     }
 
     private func scrollPastHeading(_ window: UIWindow) async throws {

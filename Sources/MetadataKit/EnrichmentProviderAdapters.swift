@@ -62,6 +62,8 @@ public struct ArtworkEnrichmentAdapter: MetadataEnrichmentProvider {
 public protocol TVDBEnriching: Sendable {
     func resolve(byTVDBID id: String, isMovie: Bool) async -> TVDBMetadata?
     func resolve(titles: [String], year: Int?, isMovie: Bool, episodeHints: [SeriesEpisodeHint]) async -> TVDBMetadata?
+    func resolve(byTVDBID id: String, isMovie: Bool, language: String) async -> TVDBMetadata?
+    func resolve(titles: [String], year: Int?, isMovie: Bool, episodeHints: [SeriesEpisodeHint], language: String) async -> TVDBMetadata?
     func backdropURL(title: String, year: Int?, isMovie: Bool, tvdbID: String?) async -> URL?  // l10n:content — media title used as a TheTVDB lookup key
     /// The series' next scheduled episode by a known TheTVDB id. TheTVDB's `nextAired`
     /// is a bare calendar day (`dateOnly`); the season/episode/title are filled
@@ -76,12 +78,30 @@ public protocol TVDBEnriching: Sendable {
 }
 
 public extension TVDBEnriching {
+    func resolve(byTVDBID id: String, isMovie: Bool, language: String) async -> TVDBMetadata? {
+        guard LanguageMatch.matches(language, "en") else { return nil }
+        return await resolve(byTVDBID: id, isMovie: isMovie)
+    }
+
+    func resolve(titles: [String], year: Int?, isMovie: Bool, episodeHints: [SeriesEpisodeHint], language: String) async -> TVDBMetadata? {
+        guard LanguageMatch.matches(language, "en") else { return nil }
+        return await resolve(titles: titles, year: year, isMovie: isMovie, episodeHints: episodeHints)
+    }
+
     func scheduledEpisodes(byTVDBID id: String, from start: Date, limit: Int) async -> TVDBUpcomingSchedule? {
         await upcomingEpisodes(byTVDBID: id, limit: limit)
     }
 }
 
-extension TVDBClient: TVDBEnriching {}
+extension TVDBClient: TVDBEnriching {
+    public func resolve(byTVDBID id: String, isMovie: Bool) async -> TVDBMetadata? {
+        await resolve(byTVDBID: id, isMovie: isMovie, language: "en")
+    }
+
+    public func resolve(titles: [String], year: Int?, isMovie: Bool, episodeHints: [SeriesEpisodeHint]) async -> TVDBMetadata? {
+        await resolve(titles: titles, year: year, isMovie: isMovie, episodeHints: episodeHints, language: "en")
+    }
+}
 
 /// TheTVDB as the canonical primary source for movies + TV (and anime *identity*):
 /// external ids, canonical title/overview/genres, poster, and a hero backdrop. An
@@ -109,7 +129,7 @@ public struct TVDBEnrichmentProvider: MetadataEnrichmentProvider {
     /// version 2 would keep being served without the provider ever running again.
     public init(
         client: any TVDBEnriching,
-        policy: ProviderPolicy = ProviderPolicy(version: 4)
+        policy: ProviderPolicy = ProviderPolicy(version: 5)
     ) {
         self.client = client
         self.policy = policy
@@ -129,7 +149,7 @@ public struct TVDBEnrichmentProvider: MetadataEnrichmentProvider {
         var out = MetadataEnrichment()
         var meta: TVDBMetadata?
         if wantsResolveFields {
-            if let known = knownTVDB, let byID = await client.resolve(byTVDBID: known, isMovie: isMovie) {
+            if let known = knownTVDB, let byID = await client.resolve(byTVDBID: known, isMovie: isMovie, language: query.metadataLanguage) {
                 meta = byID
             } else if knownTVDB == nil {
                 // Most specific title first, then the stored one — a generic folder
@@ -138,7 +158,8 @@ public struct TVDBEnrichmentProvider: MetadataEnrichmentProvider {
                     titles: query.titleAlternates + [query.title],
                     year: query.year,
                     isMovie: isMovie,
-                    episodeHints: query.episodeHints
+                    episodeHints: query.episodeHints,
+                    language: query.metadataLanguage
                 )
             }
         }
@@ -238,11 +259,11 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
     private let provider: any TMDbEnriching
     private let backdropLimit: Int
 
-    /// Version 5 retains scoped credit evidence for cross-source person matching.
+    /// Version 6 includes requested-language display titles.
     public init(
         provider: any TMDbEnriching,
         backdropLimit: Int = 4,
-        policy: ProviderPolicy = ProviderPolicy(version: 5)
+        policy: ProviderPolicy = ProviderPolicy(version: 6)
     ) {
         self.provider = provider
         self.backdropLimit = backdropLimit
@@ -270,7 +291,7 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
             out.episodeStillURL = SourcedValue(value: url, source: .tmdb)
         }
         let detailFields = missing.intersection([
-            .cast, .directors, .writers, .producers, .composers, .studios, .genres, .overview, .taglines,
+            .title, .cast, .directors, .writers, .producers, .composers, .studios, .genres, .overview, .taglines,
             .originalLanguage, .seriesStatus, .catalogSeasonCount, .catalogEpisodeCount
         ])
         if !detailFields.isEmpty {

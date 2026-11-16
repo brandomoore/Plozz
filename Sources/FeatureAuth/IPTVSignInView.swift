@@ -69,6 +69,7 @@ public struct IPTVSignInView: View {
         }
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .background { SettingsPageBackground() }
+        .settingsSignInFields()
         #if canImport(UIKit)
         .keepsDisplayAwake(while: model.isConnecting)
         #endif

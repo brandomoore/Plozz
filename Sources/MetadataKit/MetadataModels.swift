@@ -36,7 +36,7 @@ public struct MetadataQuery: Sendable, Hashable {
 
     public func forMetadataLanguage(_ identifier: String) -> Self {
         var copy = self
-        copy.metadataLanguage = Locale.Language(identifier: identifier).minimalIdentifier
+        copy.metadataLanguage = Locale.canonicalLanguageIdentifier(from: identifier)
         return copy
     }
 
@@ -88,7 +88,7 @@ public struct MetadataQuery: Sendable, Hashable {
         scheduleStartDate: Date? = nil
     ) {
         self.artworkLanguage = Self.normalizedArtworkLanguage(artworkLanguage)
-        self.metadataLanguage = Locale.Language(identifier: metadataLanguage).minimalIdentifier
+        self.metadataLanguage = Locale.canonicalLanguageIdentifier(from: metadataLanguage)
         self.scheduleStartDate = scheduleStartDate
         self.contentType = contentType
         self.kind = kind
@@ -257,7 +257,8 @@ public struct MetadataQuery: Sendable, Hashable {
         if kind == .thumbnail, let s = seasonNumber, let e = episodeNumber {
             parts.append("s\(s)e\(e)")
         }
-        if kind == .logo { parts.append("language-v1:\(artworkLanguage)") }
+        // Earlier logo selections could fall back to an unrelated language.
+        if kind == .logo { parts.append("language-v2:\(artworkLanguage)") }
         return parts.joined(separator: "|")
     }
 }

@@ -132,6 +132,90 @@ struct PrototypeBrowseToolbar: View {
     }
 }
 
+struct PrototypeBrowseSourceMenu: View {
+    let configuration: LiveTVSourcesConfiguration
+    let selectedSourceID: String?
+    let includesLibraryChannels: Bool
+    let selectSource: (String?) -> Void
+    let addSource: () -> Void
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var singleSourceID: String? {
+        guard !includesLibraryChannels else { return nil }
+        let ids = configuration.playlists.filter(\.isEnabled).map(\.id)
+            + configuration.servers.filter(\.isEnabled).map(\.id)
+        return ids.count == 1 ? ids.first : nil
+    }
+
+    private var displayedSourceID: String? { singleSourceID ?? selectedSourceID }
+
+    var body: some View {
+        Menu {
+            Picker("Source", selection: Binding(get: { displayedSourceID }, set: selectSource)) {
+                if singleSourceID == nil {
+                    Text("All").tag(String?.none)
+                }
+                ForEach(configuration.playlists.filter(\.isEnabled)) { source in
+                    Text(verbatim: source.name).tag(Optional(source.id))
+                }
+                ForEach(configuration.servers.filter(\.isEnabled)) { source in
+                    Text(verbatim: source.name).tag(Optional(source.id))
+                }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Button(action: addSource) {
+                Label {
+                    Text(SettingsCopy.addSource)
+                } icon: {
+                    Image(systemName: "plus")
+                }
+            }
+            .accessibilityIdentifier("live-tv-add-source")
+        } label: {
+            HStack(spacing: 6) {
+                #if os(tvOS)
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                #endif
+                sourceLabel
+                    #if os(iOS)
+                    .font(.headline)
+                    #endif
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                #if os(tvOS)
+                Spacer(minLength: 0)
+                #endif
+                Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+            }
+            #if os(tvOS)
+            .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
+            .padding(.horizontal, PrototypeLayout.gap)
+            #else
+            .frame(maxWidth: sizeClass == .compact ? 160 : 220)
+            .fixedSize(horizontal: false, vertical: true)
+            #endif
+        }
+        #if os(tvOS)
+        .menuStyle(.button)
+        #endif
+        .menuOrder(.fixed)
+        .accessibilityLabel("Source")
+        .accessibilityValue(sourceLabel)
+        .accessibilityIdentifier("live-tv-source")
+    }
+
+    private var sourceLabel: Text {
+        if let source = configuration.playlists.first(where: { $0.id == displayedSourceID }) {
+            Text(verbatim: source.name)
+        } else if let source = configuration.servers.first(where: { $0.id == displayedSourceID }) {
+            Text(verbatim: source.name)
+        } else {
+            Text("All")
+        }
+    }
+}
+
 #if os(iOS)
 import UIKit
 
@@ -156,7 +240,7 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
+        ToolbarItem(placement: cancelSelection == nil ? .topBarLeading : .cancellationAction) {
             if let cancelSelection {
                 Button("Cancel", systemImage: "xmark", action: cancelSelection)
             } else if !hasSidebar && !showsDirectory && !isSearching {
@@ -168,43 +252,11 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
         }
         ToolbarItemGroup(placement: .topBarLeading) {
             if (showsDirectory || hasSidebar) && !isSearching {
-                Menu {
-                    Picker("Source", selection: Binding(
-                        get: { model.configuredSourceID }, set: selectSource
-                    )) {
-                        Text("All").tag(String?.none)
-                        ForEach(configuration.playlists.filter(\.isEnabled)) { source in
-                            Text(verbatim: source.name).tag(Optional(source.id))
-                        }
-                        ForEach(configuration.servers.filter(\.isEnabled)) { source in
-                            Text(verbatim: source.name).tag(Optional(source.id))
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    Divider()
-                    Button(action: addSource) {
-                        Label {
-                            Text(SettingsCopy.addSource)
-                        } icon: {
-                            Image(systemName: "plus")
-                        }
-                    }
-                    .accessibilityIdentifier("live-tv-add-source")
-                } label: {
-                    HStack(spacing: 6) {
-                        sourceLabel
-                            .font(.headline)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Image(systemName: "chevron.down").font(.caption.weight(.semibold))
-                    }
-                    .frame(maxWidth: sizeClass == .compact ? 160 : 220)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                .menuOrder(.fixed)
-                .accessibilityLabel("Source")
-                .accessibilityValue(sourceLabel)
-                .accessibilityIdentifier("live-tv-source")
+                PrototypeBrowseSourceMenu(
+                    configuration: configuration, selectedSourceID: model.configuredSourceID,
+                    includesLibraryChannels: model.channels.contains { $0.source == .plozz },
+                    selectSource: selectSource, addSource: addSource
+                )
                 .disabled(isDisabled)
             }
         }
@@ -268,16 +320,6 @@ struct PrototypeTouchBrowseToolbar: ToolbarContent {
                 .accessibilityIdentifier("live-tv-more")
                 .disabled(isDisabled)
             }
-        }
-    }
-
-    private var sourceLabel: Text {
-        if let source = configuration.playlists.first(where: { $0.id == model.configuredSourceID }) {
-            Text(verbatim: source.name)
-        } else if let source = configuration.servers.first(where: { $0.id == model.configuredSourceID }) {
-            Text(verbatim: source.name)
-        } else {
-            Text("All")
         }
     }
 

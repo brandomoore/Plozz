@@ -223,9 +223,9 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         var body: some View {
             HStack(alignment: .top, spacing: 80) {
                 PrototypeBrowseSidebar(
-                    model: state.model, active: $state.active, focusRequest: 0,
+                    model: state.model, configuration: .empty, active: $state.active, focusRequest: 0,
                     categoryFocusRequest: state.request, restoresCategoryFocus: true,
-                    search: {}, enterGuide: {}
+                    search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
                 )
                 .frame(width: 384, height: 900)
                 Button("Guide") {}
@@ -604,9 +604,10 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
             } sidebar: {
                 if realSidebar {
                     PrototypeBrowseSidebar(
-                        model: model.sidebar,
+                        model: model.sidebar, configuration: .empty,
                         active: Binding(get: { model.sidebarActive }, set: { model.sidebarActive = $0 }),
-                        focusRequest: 0, search: {}, enterGuide: {}, multiviews: {}
+                        focusRequest: 0, search: {}, enterGuide: {},
+                        selectSource: { _ in }, addSource: {}, multiviews: {}
                     )
                     .disabled(true)
                 } else {

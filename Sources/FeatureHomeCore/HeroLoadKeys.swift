@@ -93,14 +93,15 @@ public struct HeroCurationLoadKey: Equatable, Sendable {
         scopeID: ObjectIdentifier,
         seerRevision: UUID,
         isPreparingHome: Bool = false,
-        loadingRows: Set<HomeRowKind> = []
+        loadingRows: Set<HomeRowKind> = [],
+        language: String = "en"
     ) {
         continueWatchingIDs = settings.isEnabled(.continueWatching) ? content.continueWatching.map(\.id) : []
         watchlistIDs = settings.isEnabled(.watchlist) ? content.watchlist.map(\.id) : []
         recentlyAddedIDs = settings.isEnabled(.recentlyAdded) ? content.latest.map(\.id) : []
         libraries = settings.isEnabled(.randomFromLibrary) || settings.isEnabled(.collection)
             ? content.libraries : []
-        configuration = HeroConfigurationKey(settings: settings)
+        configuration = HeroConfigurationKey(settings: settings, language: language)
         self.visibility = visibility
         self.freshnessRevision = freshnessRevision
         isAwaitingSources = isPreparingHome || HomeHeroLaunchPolicy.isAwaitingSources(

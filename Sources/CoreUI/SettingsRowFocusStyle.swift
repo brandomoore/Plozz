@@ -75,11 +75,7 @@ public enum SettingsRowMetrics {
         #endif
     }
     public static var helperFont: Font {
-        #if os(tvOS)
         descriptionFont
-        #else
-        .callout
-        #endif
     }
     public static var descriptionFont: Font {
         #if os(tvOS)
@@ -402,6 +398,10 @@ private struct SettingsRowIsFocusedKey: EnvironmentKey {
     static let defaultValue: Bool = false
 }
 
+private struct SettingsRowIsDestructiveKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 private struct SettingsRowFocusForegroundKey: EnvironmentKey {
     static let defaultValue: Color = .white
 }
@@ -419,6 +419,11 @@ private struct SettingsFormTextInsetKey: EnvironmentKey {
 }
 
 public extension EnvironmentValues {
+    var settingsRowIsDestructive: Bool {
+        get { self[SettingsRowIsDestructiveKey.self] }
+        set { self[SettingsRowIsDestructiveKey.self] = newValue }
+    }
+
     /// Group-relative text and divider inset, consumed by already-padded row labels.
     var settingsFormTextInset: CGFloat {
         get { self[SettingsFormTextInsetKey.self] }
@@ -625,8 +630,7 @@ public extension View {
         #endif
     }
 
-    /// L3 — a **feature** description: the intro sentence under the pane's feature
-    /// title (e.g. under "Hero"). Readable but secondary.
+    /// Shared supporting-copy typography for settings controls and page introductions.
     func settingsHelperText() -> some View {
         font(SettingsRowMetrics.helperFont).plozzForeground(.secondary)
             .settingsFormTextLayout()

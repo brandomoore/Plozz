@@ -6,7 +6,145 @@ import UIKit
 
 @MainActor
 final class LiveTVCategorySearchInteractionTests: XCTestCase {
+    func testSingleSourceMenuShowsItsNameAndAddSourceWithoutAll() {
+        let app = launch(managedSourceSetup: true, disabledSource: true)
+        defer { app.terminate() }
+        let source = app.buttons["live-tv-source"]
+        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(XCTWaiter.wait(for: [
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Sample TV"), object: source)
+        ], timeout: 5), .completed, app.debugDescription)
+        activate(source, in: app)
+        let selected = sourceMenuItem("Sample TV", in: app)
+        XCTAssertTrue(selected.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(sourceMenuItem("All", in: app).exists)
+        XCTAssertFalse(sourceMenuItem("Paused TV", in: app).exists)
+        capture("live-tv-single-source-menu", in: app)
+        activate(selected, in: app)
+        XCTAssertTrue(selected.waitForNonExistence(timeout: 5))
+        #if os(tvOS)
+        waitForSourceFocus(in: app)
+        #endif
+        XCTAssertEqual(source.value as? String, "Sample TV")
+        activate(source, in: app)
+        let add = sourceMenuItem("live-tv-add-source", in: app)
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        activate(add, in: app)
+        let playlist = app.buttons["live-tv-add-playlist"]
+        XCTAssertTrue(playlist.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["live-tv-add-server"].exists)
+        activate(playlist, in: app)
+        XCTAssertTrue(app.staticTexts["category-source-setup-request"].wait(
+            for: \.label, toEqual: "playlist", timeout: 5
+        ), app.debugDescription)
+    }
+
+    private func sourceMenuItem(_ name: String, in app: XCUIApplication) -> XCUIElement {
+        #if os(tvOS)
+        app.cells.containing(.other, identifier: name).firstMatch
+        #else
+        app.buttons[name]
+        #endif
+    }
+
     #if os(tvOS)
+    func testSidebarSourceMenuFiltersTheGuideAndRestoresRemoteFocus() {
+        let app = launch(multipleSources: true)
+        defer { app.terminate() }
+        let source = app.buttons["live-tv-source"]
+        let search = app.buttons["live-tv-search"]
+        let allCategories = app.buttons["live-tv-sidebar-category-all"]
+        XCTAssertTrue(allCategories.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(source.isHittable)
+        XCTAssertLessThan(source.frame.maxY, search.frame.minY)
+        XCTAssertEqual(source.value as? String, "All")
+        focus(source, in: app)
+        capture("live-tv-tv-source-sidebar", in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(sourceMenuItem("Local TV", in: app).waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(sourceMenuItem("Paused TV", in: app).exists)
+        capture("live-tv-tv-source-menu", in: app)
+        activate(sourceMenuItem("Local TV", in: app), in: app)
+        waitForSourceFocus(in: app)
+        XCTAssertEqual(source.value as? String, "Local TV")
+        XCTAssertTrue(channel("Local Sport", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(channel("Arena One", in: app).exists)
+        XCTAssertFalse(app.buttons["live-tv-sidebar-category-News"].exists)
+        capture("live-tv-tv-source-local", in: app)
+
+        activate(app.buttons["live-tv-sidebar-category-Music"], in: app)
+        XCTAssertTrue(channel("Local Music", in: app).waitForExistence(timeout: 5))
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("Sample TV", in: app).waitForExistence(timeout: 5))
+        activate(sourceMenuItem("Sample TV", in: app), in: app)
+        waitForSourceFocus(in: app)
+        XCTAssertTrue(allCategories.isSelected, "An unavailable category must reset for the new provider.")
+        XCTAssertTrue(channel("Daily News", in: app).waitForExistence(timeout: 5))
+
+        let sports = app.buttons["live-tv-sidebar-category-Sports"]
+        activate(sports, in: app)
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("Local TV", in: app).waitForExistence(timeout: 5))
+        activate(sourceMenuItem("Local TV", in: app), in: app)
+        waitForSourceFocus(in: app)
+        XCTAssertTrue(sports.isSelected, "A category shared by both providers must be retained.")
+        XCTAssertTrue(channel("Local Sport", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(channel("Local Music", in: app).exists)
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("All", in: app).waitForExistence(timeout: 5))
+        activate(sourceMenuItem("All", in: app), in: app)
+        waitForSourceFocus(in: app)
+        XCTAssertTrue(channel("Arena One", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(channel("Local Sport", in: app).exists)
+
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("Local TV", in: app).waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        waitForSourceFocus(in: app)
+        XCTAssertEqual(source.value as? String, "All")
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(search.wait(for: \.hasFocus, toEqual: true, timeout: 5))
+        XCUIRemote.shared.press(.right)
+        let guideFocus = NSPredicate { _, _ in
+            self.containsFocus(self.channel("Arena One", in: app))
+                || self.containsFocus(app.buttons["Matchday Live"].firstMatch)
+        }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: guideFocus, object: nil)], timeout: 5
+        ), .completed, app.debugDescription)
+        capture("live-tv-tv-source-guide-focus", in: app)
+        if containsFocus(app.buttons["Matchday Live"].firstMatch) { XCUIRemote.shared.press(.left) }
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(sports.wait(for: \.hasFocus, toEqual: true, timeout: 5),
+                      "Returning from the guide must still enter the selected category, not the source menu.")
+    }
+
+    func testSidebarSourceMenuOpensExistingAddSourceChoices() {
+        let app = launch(multipleSources: true, managedSourceSetup: true)
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-tv-sidebar-category-all"].waitForExistence(timeout: 15))
+        activate(app.buttons["live-tv-source"], in: app)
+        let add = sourceMenuItem("live-tv-add-source", in: app)
+        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+        activate(add, in: app)
+        let playlist = app.buttons["live-tv-add-playlist"]
+        XCTAssertTrue(playlist.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["live-tv-add-server"].exists)
+        XCTAssertFalse(app.buttons["live-tv-import-playlist"].exists)
+        capture("live-tv-tv-add-source", in: app)
+        activate(playlist, in: app)
+        XCTAssertTrue(app.staticTexts["category-source-setup-request"].wait(
+            for: \.label, toEqual: "playlist", timeout: 5
+        ), app.debugDescription)
+    }
+
+    private func waitForSourceFocus(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let focused = NSPredicate { _, _ in self.containsFocus(app.buttons["live-tv-source"]) }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: focused, object: nil)], timeout: 5
+        ), .completed, app.debugDescription, file: file, line: line)
+    }
+
     func testPinnedNavigationWaitsForCategoryEntryAndStillAcceptsBack() {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
@@ -664,7 +802,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertFalse(profile.exists)
         XCTAssertTrue(more.exists, app.debugDescription)
         XCTAssertTrue(source.isHittable)
-        XCTAssertEqual(source.value as? String, "All")
+        XCTAssertEqual(source.value as? String, "Sample TV")
         XCTAssertEqual(more.frame.midY, search.frame.midY, accuracy: 1)
         XCTAssertLessThanOrEqual(search.frame.maxX, more.frame.minX)
         XCTAssertLessThanOrEqual(more.frame.minX - search.frame.maxX, 16)
@@ -691,9 +829,16 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 15))
         let back = app.buttons["live-tv-categories"]
         let category = app.buttons["live-tv-category"]
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        }
         if back.exists {
+            XCTAssertTrue(back.isHittable)
             XCTAssertTrue(category.isHittable)
-            XCTAssertGreaterThanOrEqual(category.frame.minX - back.frame.maxX, 8)
+            XCTAssertGreaterThanOrEqual(
+                category.frame.minX - back.frame.maxX, 8,
+                "Back must precede the category menu with its own separated toolbar surface."
+            )
             XCTAssertLessThanOrEqual(category.frame.minX - back.frame.maxX, 24)
             XCTAssertGreaterThan(search.frame.minX - category.frame.maxX,
                                  category.frame.minX - back.frame.maxX)
@@ -1034,7 +1179,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         guideFirst: Bool = false, failsLoading: Bool = false, orientation: String = "auto",
         lightAppearance: Bool = false, dimVideo: Bool = false, multipleSources: Bool = false,
         longSourceName: Bool = false, playbackUnavailable: Bool = false, managedSourceSetup: Bool = false,
-        scrollContent: Bool = false
+        scrollContent: Bool = false, disabledSource: Bool = false
     ) -> XCUIApplication {
         continueAfterFailure = false
         #if os(tvOS)
@@ -1053,6 +1198,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         if playbackUnavailable { app.launchArguments.append("--category-playback-unavailable") }
         if managedSourceSetup { app.launchArguments.append("--category-managed-source-setup") }
         if scrollContent { app.launchArguments.append("--category-scroll-content") }
+        if disabledSource { app.launchArguments.append("--category-disabled-source") }
         app.launch()
         return app
     }

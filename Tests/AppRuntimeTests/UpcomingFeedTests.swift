@@ -28,7 +28,7 @@ final class UpcomingFeedTests: XCTestCase {
             let episode = Self.episode()
             let result = try await UpcomingFeedLoader.load(
                 accounts: [account], watchlist: [], regionCode: "US", interval: Self.interval,
-                requestedMovies: { [] }, isCurrent: { true },
+                requestedTitles: { [] }, isCurrent: { true },
                 schedule: { _, _ in [episode] },
                 movieAvailability: { _, region in .init(regionCode: region) }
             )
@@ -42,24 +42,75 @@ final class UpcomingFeedTests: XCTestCase {
         }
     }
 
-    func testWatchlistedAndRequestedMoviesMergeWithoutIncludingUnwatchedShows() async throws {
+    func testWatchlistedAndRequestedShowsAndMoviesCarryTheirInterests() async throws {
         let film = MediaItem(id: "saved", title: "Film", kind: .movie, providerIDs: ["Tmdb": "17"])
         let request = MediaItem(id: "request", title: "Film", kind: .movie, providerIDs: ["Tmdb": "17"])
         let show = MediaItem(id: "unwatched", title: "Unwatched", kind: .series, providerIDs: ["Tvmaze": "42"])
         let date = Self.day
+        let episode = Self.episode()
         let result = try await UpcomingFeedLoader.load(
             accounts: [], watchlist: [film, show], regionCode: "US", interval: Self.interval,
-            requestedMovies: { [request, show] }, isCurrent: { true },
-            schedule: { _, _ in
-                XCTFail("Saved/requested unwatched shows are not viewing history")
-                return []
-            },
+            requestedTitles: { [request, show] }, isCurrent: { true },
+            schedule: { _, _ in [episode] },
             movieAvailability: { _, region in
                 .init(regionCode: region, releaseEvents: [.init(kind: .digital, date: date, regionCode: region)])
             }
         )
-        XCTAssertEqual(result.releases.count, 1)
-        XCTAssertEqual(result.releases.first?.interests, [.watchlist, .requested])
+        XCTAssertEqual(result.releases.count, 2)
+        XCTAssertEqual(Set(result.releases.map(\.item.kind)), [.movie, .series])
+        XCTAssertTrue(result.releases.allSatisfy { $0.interests == [.watchlist, .requested] })
+        XCTAssertTrue(result.releases.allSatisfy { !$0.interests.contains(.watching) })
+        var filters = UpcomingFilters()
+        filters.interests = [.watching]
+        XCTAssertTrue(result.releases.filter(filters.includes).isEmpty)
+        for interest in [UpcomingInterest.watchlist, .requested] {
+            filters.interests = [interest]
+            XCTAssertEqual(result.releases.filter(filters.includes).count, 2)
+        }
+    }
+
+    func testWatchedShowAndInProgressMovieMergeWithSavedAndRequestedInterests() async throws {
+        var show = MediaItem(id: "watching", title: "Show", kind: .series, providerIDs: ["Tmdb": "42"])
+        show.hasBeenPlayed = true
+        let savedShow = MediaItem(id: "saved-show", title: "Show", kind: .series, providerIDs: ["Tmdb": "42"])
+        var movie = MediaItem(id: "watching-film", title: "Film", kind: .movie, providerIDs: ["Tmdb": "17"])
+        movie.resumePosition = 60
+        let savedMovie = movie
+        let episode = Self.episode()
+        let day = Self.day
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let provider = UpcomingFixtureProvider(kind: kind, items: [show], continuing: [movie])
+            let result = try await UpcomingFeedLoader.load(
+                accounts: [.init(account: Account(id: "account", from: provider.session), provider: provider)],
+                watchlist: [savedShow, savedMovie], regionCode: "US", interval: Self.interval,
+                requestedTitles: { [savedShow, savedMovie] }, isCurrent: { true },
+                schedule: { _, _ in [episode] },
+                movieAvailability: { _, region in
+                    .init(regionCode: region, releaseEvents: [.init(kind: .digital, date: day, regionCode: region)])
+                }
+            )
+            XCTAssertEqual(result.releases.count, 2)
+            XCTAssertTrue(result.releases.allSatisfy { $0.interests == [.watching, .watchlist, .requested] })
+            XCTAssertTrue(result.releases.allSatisfy { $0.item.sourceAccountID == "account" })
+            XCTAssertEqual(result.failedSourceCount, 0)
+        }
+    }
+
+    func testUnstartedShowQualifiesFromEitherWatchlistOrPersonalRequestAlone() async throws {
+        let show = MediaItem(id: "unstarted", title: "Show", kind: .series, providerIDs: ["Tmdb": "42"])
+        let episode = Self.episode()
+        for requested in [false, true] {
+            let snapshot = try await UpcomingFeedLoader.load(
+                accounts: [], watchlist: requested ? [] : [show], regionCode: nil, interval: Self.interval,
+                requestedTitles: { requested ? [show] : [] }, isCurrent: { true },
+                schedule: { _, _ in [episode] }
+            )
+            XCTAssertEqual(snapshot.releases.count, 1)
+            XCTAssertEqual(snapshot.releases.first?.interests, requested ? [.requested] : [.watchlist])
+            var filters = UpcomingFilters()
+            filters.interests.remove(requested ? .requested : .watchlist)
+            XCTAssertTrue(snapshot.releases.filter(filters.includes).isEmpty)
+        }
     }
 
     func testInvalidatedIdentityDoesNotReadProviders() async {
@@ -68,7 +119,7 @@ final class UpcomingFeedTests: XCTestCase {
         do {
             _ = try await UpcomingFeedLoader.load(
                 accounts: [account], watchlist: [], regionCode: "US", interval: Self.interval,
-                requestedMovies: {
+                requestedTitles: {
                     XCTFail("Requests must remain fenced")
                     return []
                 },
@@ -87,11 +138,14 @@ final class UpcomingFeedTests: XCTestCase {
         for available in [false, true] {
             let result = try await UpcomingFeedLoader.load(
                 accounts: [], watchlist: [film], regionCode: "US", interval: Self.interval,
-                requestedMovies: { [] }, isCurrent: { true },
+                requestedTitles: { [] }, isCurrent: { true },
                 movieAvailability: { _, region in .init(regionCode: region, releaseDatesAvailable: available) }
             )
             XCTAssertEqual(result.failedSourceCount, available ? 0 : 1)
-            XCTAssertEqual(result.failedTitleKeys, available ? [] : [UpcomingRelease.titleKey(for: film)])
+            XCTAssertEqual(
+                result.failedTitleInterests,
+                available ? [:] : [UpcomingRelease.titleKey(for: film): [.watchlist]]
+            )
         }
     }
 
@@ -100,7 +154,7 @@ final class UpcomingFeedTests: XCTestCase {
         let date = Self.day
         let snapshot = try await UpcomingFeedLoader.load(
             accounts: [], watchlist: [film], regionCode: "US", interval: Self.interval,
-            requestedMovies: { [] }, isCurrent: { true },
+            requestedTitles: { [] }, isCurrent: { true },
             movieAvailability: { _, region in
                 .init(
                     regionCode: region,
@@ -122,7 +176,7 @@ final class UpcomingFeedTests: XCTestCase {
         let snapshot = try await UpcomingFeedLoader.load(
             accounts: [.init(account: Account(id: "account", from: provider.session), provider: provider)],
             watchlist: [], regionCode: "US", interval: Self.interval,
-            requestedMovies: { [] }, isCurrent: { true }, schedule: { _, _ in [episode] }
+            requestedTitles: { [] }, isCurrent: { true }, schedule: { _, _ in [episode] }
         )
         XCTAssertEqual(snapshot.releases.map(\.item.id), ["watched"])
         XCTAssertEqual(snapshot.failedAccountIDs, ["account"])
@@ -138,7 +192,7 @@ final class UpcomingFeedTests: XCTestCase {
         let snapshot = try await UpcomingFeedLoader.load(
             accounts: [.init(account: Account(from: provider.session), provider: provider)],
             watchlist: [], regionCode: "US", interval: Self.interval,
-            requestedMovies: { [] }, isCurrent: { true }, schedule: { _, _ in [episode] }
+            requestedTitles: { [] }, isCurrent: { true }, schedule: { _, _ in [episode] }
         )
         XCTAssertEqual(snapshot.releases.map(\.item.id), ["first-show"])
         let playbackReads = await provider.playbackReads
@@ -202,7 +256,7 @@ final class UpcomingFeedTests: XCTestCase {
             await model.refresh(scope: "viewer", namespace: nil, isCurrent: { true }) { progress in
                 try await UpcomingFeedLoader.load(
                     accounts: [account], watchlist: [], regionCode: "US", interval: Self.interval,
-                    requestedMovies: {
+                    requestedTitles: {
                         await requests.wait()
                         return []
                     }, isCurrent: { true },
@@ -263,7 +317,7 @@ final class UpcomingFeedTests: XCTestCase {
         let model = UpcomingFeedModel()
         let release = Self.release("show")
         await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
-            .init(releases: [release], failedSourceCount: 1, failedTitleKeys: ["unavailable"])
+            .init(releases: [release], failedSourceCount: 1, failedTitleInterests: ["unavailable": [.watching]])
         }
         await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) {
             XCTFail("One unavailable title must not repeatedly rescan all viewing history")
@@ -327,6 +381,78 @@ final class UpcomingFeedTests: XCTestCase {
         XCTAssertEqual(model.visibleReleases.count, 1)
         await model.refresh(scope: "scope", namespace: "alice", isCurrent: { true }) { .init(releases: [old]) }
         XCTAssertTrue(model.visibleReleases.isEmpty)
+    }
+
+    func testRequestFailureRetainsShowInterestWithoutRestoringRemovedWatchlistMembership() async {
+        let model = UpcomingFeedModel()
+        var original = Self.release("requested")
+        original.interests = [.requested, .watchlist]
+        let saved = original
+        await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) { .init(releases: [saved]) }
+        await model.refresh(scope: "scope", namespace: nil, force: true, isCurrent: { true }) {
+            .init(failedSourceCount: 1, requestsFailed: true)
+        }
+        XCTAssertEqual(model.releases.first?.interests, [.requested])
+        var fresh = original
+        fresh.interests = [.watching]
+        let watching = fresh
+        await model.refresh(scope: "scope", namespace: nil, force: true, isCurrent: { true }) {
+            .init(releases: [watching], failedSourceCount: 1, requestsFailed: true)
+        }
+        XCTAssertEqual(model.releases.count, 1)
+        XCTAssertEqual(model.releases.first?.interests, [.watching, .requested])
+        await model.refresh(scope: "scope", namespace: nil, force: true, isCurrent: { true }) {
+            .init(releases: [watching])
+        }
+        XCTAssertEqual(model.releases.first?.interests, [.watching])
+    }
+
+    func testHistoryFailureRetainsInProgressMovieButSuccessfulEmptyClearsIt() async {
+        let model = UpcomingFeedModel()
+        var movie = MediaItem(id: "film", title: "Film", kind: .movie)
+        movie.sourceAccountID = "offline"
+        let release = UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: Self.day, regionCode: "US")],
+            for: movie, interests: [.watching], regionCode: "US"
+        )
+        await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) { .init(releases: release) }
+        await model.refresh(scope: "scope", namespace: nil, force: true, isCurrent: { true }) {
+            .init(failedSourceCount: 1, failedAccountIDs: ["offline"])
+        }
+        XCTAssertEqual(model.releases, release)
+        await model.refresh(scope: "scope", namespace: nil, force: true, isCurrent: { true }) { .init() }
+        XCTAssertTrue(model.releases.isEmpty)
+    }
+
+    func testMetadataFailureKeepsOnlyCurrentInterestsForRetainedShow() async {
+        let model = UpcomingFeedModel()
+        var original = Self.release("series")
+        original.interests = [.watching, .watchlist, .requested]
+        let release = original
+        await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) { .init(releases: [release]) }
+        await model.refresh(scope: "scope", namespace: nil, force: true, isCurrent: { true }) {
+            .init(failedSourceCount: 1, failedTitleInterests: [release.titleKey: [.requested]])
+        }
+        XCTAssertEqual(model.releases.count, 1)
+        XCTAssertEqual(model.releases.first?.interests, [.requested])
+    }
+
+    func testRepeatedHistoryFailuresPreserveSourceWhenRequestMetadataRefreshes() async {
+        let model = UpcomingFeedModel()
+        let native = Self.release("offline", accountID: "offline")
+        var external = native
+        external.item.sourceAccountID = nil
+        external.interests = [.requested]
+        let requested = external
+        await model.refresh(scope: "scope", namespace: nil, isCurrent: { true }) { .init(releases: [native]) }
+        for _ in 0..<2 {
+            await model.refresh(scope: "scope", namespace: nil, force: true, isCurrent: { true }) {
+                .init(releases: [requested], failedSourceCount: 1, failedAccountIDs: ["offline"])
+            }
+            XCTAssertEqual(model.releases.count, 1)
+            XCTAssertEqual(model.releases.first?.interests, [.watching, .requested])
+            XCTAssertEqual(model.releases.first?.item.sourceAccountID, "offline")
+        }
     }
 
     private static func release(_ id: String, accountID: String? = nil) -> UpcomingRelease {

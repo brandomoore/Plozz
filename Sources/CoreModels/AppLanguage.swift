@@ -90,6 +90,7 @@ public enum AppLanguage: Hashable, Sendable, Identifiable {
     public static let releaseReady: [String] = [
         "ar",
         "bg",
+        "bn",
         "ca",
         "cs",
         "da",
@@ -121,6 +122,7 @@ public enum AppLanguage: Hashable, Sendable, Identifiable {
         "th",
         "tr",
         "uk",
+        "ur",
         "vi",
         "zh-Hans",
         "zh-Hant",

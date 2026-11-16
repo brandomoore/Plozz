@@ -2,6 +2,60 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/073",
+      "version": "2026.11.16",
+      "marketingVersion": "2026.11.16",
+      "build": 73,
+      "releasedAt": "2026-11-16",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Upcoming calendar and Coming Soon for shows and movies you watch, add to Watchlist or request.",
+            "Profile-specific Seerr sign-in with Jellyfin, Plex, Emby or Seerr accounts, plus multiple saved connections. Setup is unavailable in child profiles.",
+            "Bengali and Urdu.",
+            "Remembered movie audio language and movie/series crop settings.",
+            "Optional IPTV channel-name cleanup.",
+            "Beta Dolby Vision P7 FEL to P8.1 conversion, on by default for supported on-demand playback. Approximates brightness, not full FEL reconstruction; turn off for HDR10."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Home and title-detail layouts, with consistent Related and Cast & Crew sizing and steadier artwork during swipe-back.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Home and title-detail layouts.",
+              "platforms": ["tvOS"]
+            },
+            "More metadata and biographies in your selected language, when available.",
+            "Auto Crop defaults on for supported movies and episodes, with steadier framing through seeks.",
+            "Live TV guide loading, compatibility and source controls, plus Plex Live TV playback.",
+            "Settings and sign-in layouts.",
+            {
+              "text": "Search, Downloads and Music layouts.",
+              "platforms": ["iOS"]
+            },
+            "Playback compatibility and subtitle loading, including confirmed Dolby Vision P7 MEL to P8.1 conversion. Unclassified P7 retains HDR10."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Missing Play and ratings on some Home Discovery titles already in your libraries.",
+            {
+              "text": "Picture in Picture not returning to the player when reopening Plozz.",
+              "platforms": ["iOS"]
+            },
+            "Auto Crop changing video colors during native playback.",
+            "Advancing to the next episode before mid- or post-credits scenes."
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/072",
       "version": "2026.11.13",
       "marketingVersion": "2026.11.12",

@@ -252,6 +252,12 @@ private struct CategorySearchSources: LiveTVSourcesStoring {
                       playlistURL: URL(string: "https://fixture.invalid/paused.m3u")!, isEnabled: false)
             ]
         }
+        if ProcessInfo.processInfo.arguments.contains("--category-disabled-source") {
+            sources.playlists.append(
+                .init(id: "paused", name: "Paused TV",
+                      playlistURL: URL(string: "https://fixture.invalid/paused.m3u")!, isEnabled: false)
+            )
+        }
         return sources
     }
 

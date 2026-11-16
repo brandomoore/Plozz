@@ -1,5 +1,13 @@
 # CoreUI
 
+`ProfileSettingsCategory.localizedTitle` contains app copy only. Branded categories
+such as Seerr have no localized title; their platform rows render the name verbatim.
+
+`ServerDiscoveryRow` is the shared discovery-button label for media-server and
+Seerr setup: leading icon, server name, secondary address, and disclosure
+chevron. In-place selections, such as Seerr setup, omit the disclosure chevron.
+The surrounding settings group/action owns padding and interaction.
+
 `PosterCardView.captionSubtitle` supplies localized, caller-owned context in the
 normal caption and accessibility value without mutating media metadata. Omitting
 it preserves the standard provider subtitle and runtime.
@@ -60,6 +68,13 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 Mobile Settings roots and detail pages share `MobileSettingsMetrics`: 16-point
 page/row insets, 28-point section gaps, 52-point minimum rows and 26-point
 continuous group corners. Rows grow with their content and Dynamic Type.
+`SettingsDescribedControl` keeps a control and its helper in one row, so the
+separator follows the description rather than splitting it from the control.
+The control keeps the same top clearance as a plain row, and the helper retains
+the matching bottom inset. On mobile, no extra gap separates the control's
+minimum-height area from its helper. Supporting copy uses `SettingsRowMetrics.descriptionFont`
+through `settingsHelperText()` (including group footers); do not add local font
+sizes or manually spaced control/description stacks.
 `SettingsIconLabelStyle` supplies title anchors for one-pixel group separators:
 they start at the actual text column, mirror in RTL, and run to the trailing
 edge. Text-only rows use the standard inset. Groups consume their own anchors
@@ -216,6 +231,12 @@ An optional secondary-sized status shares the label's baseline in the stacked
 layout or sits below the trailing input in the inline layout, without hiding its
 accessibility text. Autosaving editors own that status and its announcement; the
 input row does not imply persistence or add a focus target.
+Simple iPhone/iPad sign-in forms opt into `settingsSignInFields()`. Native
+placeholders replace the duplicate small labels, while `SettingsInputRow` keeps
+its accessible name after entry. The shared plain field style supplies a minimum
+44-point input and vertical breathing room inside the existing group insets.
+Keep account/server section context, content types, focus, and submit behavior.
+Ordinary settings retain persistent visible labels; tvOS presentation is unchanged.
 The row owns no background or outer insets; do not nest settings surfaces around
 it. Search, code-entry, and message-composition controls are intentional exceptions.
 Composite rows use `settingsControlTarget()` inside each control label for separate,
@@ -315,6 +336,12 @@ without geometry state or an extra hidden copy of the badge views.
 `ActionProgressIcon` overlays native progress inside the original symbol's
 layout footprint. `PlayResumeButtonLabel.isLoading` uses it without changing the
 button's dimensions or the existing resume/placeholder layout.
+The mobile Home/Detail request action uses the same icon slot and retains its
+Request text while choosing an account or submitting, so neither the button nor
+its neighboring actions move when native progress appears.
+Omitting `onLight` lets the owning button supply the indicator tint. The mobile
+hero style uses its disabled-surface foreground for disabled native glass,
+rather than retaining the inverted ink of an enabled prominent button.
 
 `TrailerActionButtonLabel` always renders icon-only on TV and mobile, preserving
 the destination description for accessibility regardless of available width.
@@ -575,6 +602,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   top for a softly faded reflection, shifting the original artwork below more
   of the status-bar chrome without moving metadata or growing the hero.
   Home and Details share this still-image layout, including swipe reflections.
+  Only Home adds progressive blur across the top reflection; Details keep it sharp
+  rather than stacking that treatment with native navigation chrome.
   The bottom reflection and minimum dissolve span remain intact; trailers keep
   their full-stage presentation. Landscape and tvOS heroes are unchanged.
 
@@ -1011,8 +1040,9 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   viewport, text-size, or option changes. Callers supply localized or verbatim
   labels and page keylines; native app tabs and tvOS focus controls are separate.
 - **Container covers** — collection, playlist, and folder cards accept landscape
-  and square primary covers and fit the complete image within the shared card
-  footprint on mobile and tvOS. Media posters retain their portrait aspect guard;
+  and square primary covers on mobile and tvOS. Collection covers fill the shared
+  card footprint proportionally, cropping excess artwork rather than leaving gaps.
+  Playlist and folder covers still fit the complete image. Media posters retain their portrait aspect guard;
   accepting curated container logos must not admit landscape episode stills as
   movie/series posters. Library-tile collages likewise accept wide container covers
   while retaining their aspect guard for ordinary media posters.
@@ -1021,8 +1051,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   landscape majority, and falls back to posters for ties or unknown artwork.
   Server-reported ratios avoid image requests; absent ratios use the normal
   authenticated artwork loader before publication. Paging never changes the
-  browser's chosen shape. The native tvOS grid accepts and fits container covers
-  without relaxing the portrait filter for ordinary media.
+  browser's chosen shape. The native tvOS grid uses the same collection fill and
+  playlist/folder fit behavior without relaxing the portrait filter for ordinary media.
 - **Home row recovery** — ordinary rails and compact empty/failed rows share
   `MediaRowSection` and `MediaRowHeader`, including typography, header spacing,
   pinned-navigation inset, and trailing safe space. `MediaRowStatusContent`

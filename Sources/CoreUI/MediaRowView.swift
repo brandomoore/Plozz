@@ -85,6 +85,7 @@ public struct MediaRowHeader: View {
 
     private var heading: some View {
         let header = title.font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
+            .accessibilityAddTraits(.isHeader)
         return Group {
             if redactionReasons.contains(.placeholder) {
                 header

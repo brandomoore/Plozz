@@ -707,7 +707,7 @@ final class ItemDetailViewModelTests: XCTestCase {
         await model.load()
         release.open()
         await english.value
-        XCTAssertEqual(model.metadataLanguage, "fr")
+        XCTAssertEqual(model.metadataLanguage, "fr-FR")
         XCTAssertEqual(model.state.value?.item.overview, "Description FR")
         model.updateMetadataLanguage("en") { item in
             XCTAssertNil(item.overview, "Prior French enrichment is not native either")
@@ -1061,7 +1061,7 @@ final class ItemDetailViewModelTests: XCTestCase {
         var french = english
         french.overview = "Description FR"
         await cache.store(.init(item: english, children: []), for: "account|movie")
-        await cache.store(.init(item: french, children: []), for: "account|movie|text-language-v1:fr")
+        await cache.store(.init(item: french, children: []), for: "account|movie|text-language-v2:fr")
         let provider = FakeMediaProvider(allItems: [french])
         let entered = AsyncGate()
         let release = AsyncGate()
@@ -1885,6 +1885,7 @@ final class ItemDetailViewModelTests: XCTestCase {
     func testProviderFreeDiscoveryLoadsMetadataAndRequestStatus() async {
         let seed = MediaItem(
             id: "external", title: "External movie", kind: .movie,
+            overview: "Original feed overview",
             locallyValidatedPlayableSource: false
         )
         let vm = ItemDetailViewModel(
@@ -1892,7 +1893,10 @@ final class ItemDetailViewModelTests: XCTestCase {
             discoveryStatusRefresh: { _ in .init(status: .pending) },
             externalMetadataResolver: { _, region in
                 .init(
-                    enrichment: MetadataEnrichment(overview: SourcedValue(value: "External overview", source: .tmdb)),
+                    enrichment: MetadataEnrichment(
+                        title: SourcedValue(value: "Localized movie", source: .tmdb),
+                        overview: SourcedValue(value: "External overview", source: .tmdb)
+                    ),
                     availability: ExternalTitleAvailability(regionCode: region)
                 )
             },
@@ -1904,6 +1908,7 @@ final class ItemDetailViewModelTests: XCTestCase {
         vm.resumeEnrichmentIfNeeded()
         XCTAssertTrue(vm.isDiscoveryItem)
         XCTAssertEqual(vm.state.value?.item.id, seed.id)
+        XCTAssertEqual(vm.state.value?.item.title, "Localized movie")
         XCTAssertEqual(vm.state.value?.item.overview, "External overview")
         XCTAssertEqual(vm.state.value?.item.availability, .pending)
         XCTAssertEqual(vm.state.value?.item.ownershipPresentation().canPlay, false)

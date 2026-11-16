@@ -56,6 +56,18 @@ public final class AppState {
               !self.accountsProviders.activeProfileAwaitsIdentity else { return nil }
         return self.accountsProviders.liveTVProviderResolver()(id)
     }
+
+    private static func seerrAccountConnectionStore() -> SeerAccountConnectionStore {
+        SeerAccountConnectionStore(secureStore: KeychainStore(service: "com.plozz.app.household"))
+    }
+
+    private static func currentSeerrProfiles() -> [String: SeerProfileConnections]? {
+        do { return try seerrAccountConnectionStore().exportAPIKeys() }
+        catch {
+            PlozzLog.auth.error("Seerr pairing could not read profile connections")
+            return nil
+        }
+    }
     private let appAdmission: AppAdmissionModel
     @ObservationIgnored private var accountSetupOriginProfileID: String?
 
@@ -909,9 +921,25 @@ public final class AppState {
         // gated on an authorization — it travels with the bundle the user approved.
         if let seerr = received.secrets?.seerr {
             Self.installSeerrSecretIfAbsent(seerr)
+            if let url = URL(string: seerr.baseURL) {
+                do {
+                    try Self.seerrAccountConnectionStore().importLegacyIfAbsent(
+                        SeerConnection(baseURL: url, apiKey: seerr.apiKey),
+                        profiles: received.config.profiles.map(\.profile)
+                    )
+                } catch { PlozzLog.auth.error("Seerr legacy pairing could not restore profile connections") }
+            }
             // The service cached its config at init; reload so a connection that
             // arrived with this pairing is live now, not after the next launch.
             Task { [seerService] in await seerService.reloadConnection() }
+        }
+        if let seerrProfiles = received.secrets?.seerrProfiles {
+            do {
+                try Self.seerrAccountConnectionStore().importAPIKeysIfAbsent(
+                    seerrProfiles, allowedProfiles: Set(received.config.profiles.map(\.profile.id))
+                )
+                Task { [seerService] in await seerService.reloadConnection() }
+            } catch { PlozzLog.auth.error("Seerr pairing could not restore profile connections") }
         }
         var expected = 0, added = 0
         var failedAccountIDs: [String] = []
@@ -1253,7 +1281,7 @@ public final class AppState {
                 return SyncSecretsBundle(
                     accounts: accts,
                     shares: shares,
-                    seerr: Self.currentSeerrSecret()
+                    seerrProfiles: Self.currentSeerrProfiles()
                 )
             }
         )
@@ -1302,6 +1330,13 @@ public final class AppState {
             guard let profiles = resolvedProfilesModel else { return false }
             return profiles.activeProfile.isKids && profiles.enforcesKidsRestrictions
         }
+        self.seerService.configureProfiles(
+            store: seerService == nil
+                ? SeerAccountConnectionStore(secureStore: KeychainStore(service: "com.plozz.app.household"))
+                : InMemorySeerAccountConnectionStore(),
+            profiles: resolvedProfilesModel.profilesForSync,
+            current: { [resolvedProfilesModel] in resolvedProfilesModel.activeProfile }
+        )
         self.anilistService = anilistService ?? AniListServiceFactory.make(namespace: ns)
         self.malService = malService ?? MALServiceFactory.make(namespace: ns)
         // Last.fm is user-scoped like the trackers; seed it with the active
@@ -1565,16 +1600,11 @@ public final class AppState {
             plexHomeUsers.ensurePlexIdentityForActiveProfile()
         }
 
-        // One-time migration of any legacy per-profile Seerr connection into the
-        // shared household slot, then an initial reachability probe. Runs on the
-        // main actor (inherited); safe because migration no-ops once the household
-        // slot is set. The result's `promotedUserID` is intentionally not applied:
-        // the legacy per-profile `userId` was off-by-default and never set by the
-        // connect UI, so it's always nil in practice; per-profile acting users are
-        // established via the (upcoming) Settings mapping, not migration.
-        let seerNamespaces: [String?] = [nil] + profilesModel.profiles.map { $0.id }
+        SeerProfileAuthentication.configure(
+            service: self.seerService, profiles: profilesModel,
+            accounts: accountsProviders, plex: plexHomeUsers
+        )
         Task { [seerService] in
-            await seerService.migrateLegacyConnectionIfNeeded(namespaces: seerNamespaces)
             await seerService.refreshStatus()
         }
 
@@ -2729,6 +2759,7 @@ public final class AppState {
     /// namespace. Delegates to `profileSettings`; a no-op there when settings
     /// models were injected (tests).
     func rebuildSettingsModels() {
+        seerService.synchronizeProfile()
         HandoffDiagnostics.emit(
             "profile REBUILD active=" + profilesModel.activeProfileID
                 + " ns=" + (profilesModel.activeNamespace ?? "ROOT")

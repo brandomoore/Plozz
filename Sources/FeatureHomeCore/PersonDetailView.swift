@@ -29,6 +29,7 @@ public struct PersonDetailView: View {
     private let onSelectItem: (MediaItem) -> Void
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.locale) private var locale
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var onSelectArtwork: ((MediaItem, MediaArtworkZoomSource) -> Void)?
@@ -174,6 +175,7 @@ public struct PersonDetailView: View {
             }
         }
         .task { await viewModel.load() }
+        .task(id: locale.identifier) { await viewModel.updateMetadataLanguage(locale.identifier) }
         .detailOpenFeedback()
         .environment(\.plozzCardCaptionView, .filmography)
     }

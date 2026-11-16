@@ -11,36 +11,29 @@ import XCTest
 
 @MainActor
 final class ProfileSeerrSetupPresentationTests: XCTestCase {
-    func testConnectedSetupKeepsPageGuttersAndAlignedUserLabels() async throws {
+    func testConnectedSetupKeepsPageGuttersAndOnlyShowsSavedAccounts() async throws {
         for size in [CGSize(width: 390, height: 844), CGSize(width: 320, height: 568),
                      CGSize(width: 768, height: 1024), CGSize(width: 844, height: 390)] {
-            try await render(size: size) { window, scroll in
+            try await render(size: size) { window, scroll, _ in
                 let image = try self.capture(window)
                 self.attach(image, name: "Seerr connected \(Int(size.width))x\(Int(size.height))")
                 let text = try self.recognize(image, size: size)
-                let title = try XCTUnwrap(text.first { $0.text.contains("Requests as") })
-                XCTAssertTrue(text.contains { $0.text.contains("Emby only") })
+                let title = try XCTUnwrap(text.first { $0.text.localizedCaseInsensitiveContains("Seerr") })
+                XCTAssertTrue(text.contains { $0.text == "Home" })
                 XCTAssertGreaterThanOrEqual(title.frame.minX, 20)
                 XCTAssertLessThanOrEqual(title.frame.maxX, size.width - 23)
                 XCTAssertFalse(title.text.contains("—"))
-                let explanation = try XCTUnwrap(text.first { $0.text.contains("Choose whose") })
-                XCTAssertEqual(title.frame.minX, explanation.frame.minX, accuracy: 3)
                 XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
-                let admin = try XCTUnwrap(text.first { $0.text.contains("unrestricted") })
-                try self.assertPanelGutters(image, rowY: admin.frame.midY)
-                if size.height > 700 {
-                    let alex = try XCTUnwrap(text.first { $0.text == "Alex" })
-                    let sam = try XCTUnwrap(text.first { $0.text == "Sam" })
-                    XCTAssertEqual(admin.frame.minX, alex.frame.minX, accuracy: 4)
-                    XCTAssertEqual(alex.frame.minX, sam.frame.minX, accuracy: 4)
-                    let footer = try XCTUnwrap(text.first { $0.text.hasPrefix("Admin is unrestricted.") })
-                    XCTAssertGreaterThanOrEqual(footer.frame.minX, title.frame.minX + 12)
-                }
+                XCTAssertTrue(text.contains { $0.text.contains("Alex") })
+                let account = try XCTUnwrap(text.first { $0.text.contains("Alex") })
+                try self.assertPanelGutters(image, rowY: account.frame.midY)
+                XCTAssertFalse(text.contains { $0.text == "Sam" })
+                XCTAssertFalse(text.contains { $0.text.contains("Choose whose") })
+                XCTAssertFalse(text.contains { $0.text == "Add account" || $0.text == "Ask each time" })
                 try await self.scrollToBottom(scroll, window: window)
                 let bottom = try self.capture(window)
                 self.attach(bottom, name: "Seerr actions \(Int(size.width))x\(Int(size.height))")
                 let bottomText = try self.recognize(bottom, size: size)
-                XCTAssertTrue(bottomText.contains { $0.text == "Not Now" })
                 XCTAssertTrue(bottomText.contains { $0.text == "Continue" })
                 for line in bottomText {
                     XCTAssertGreaterThanOrEqual(line.frame.minX, 20, line.text)
@@ -55,7 +48,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             try await render(
                 size: .init(width: 390, height: 844), typeSize: .accessibility3,
                 direction: direction, longNames: true
-            ) { window, scroll in
+            ) { window, scroll, _ in
                 XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height)
                 XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
                 self.attach(try self.capture(window), name: "Seerr large text top \(direction)")
@@ -64,7 +57,6 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
                 self.attach(image, name: "Seerr large text actions \(direction)")
                 let text = try self.recognize(image, size: window.bounds.size)
                 XCTAssertTrue(text.contains { $0.text == "Continue" })
-                XCTAssertTrue(text.contains { $0.text == "Not Now" })
                 XCTAssertFalse(text.contains { $0.text.contains("…") })
                 for line in text {
                     XCTAssertGreaterThanOrEqual(line.frame.minX, 23, line.text)
@@ -74,18 +66,17 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
-    func testConnectionEmptyAndFailedUserStatesRetainTheSameGutters() async throws {
-        for state in [SeerrSetupHTTP.State.unconfigured, .empty, .failed] {
-            try await render(size: .init(width: 390, height: 844), state: state) { window, scroll in
+    func testDisconnectedAndFailedConnectionsKeepAnExplicitRecoveryPath() async throws {
+        for state in [SeerrSetupHTTP.State.unconfigured, .differentProfile, .failed] {
+            try await render(size: .init(width: 390, height: 844), state: state) { window, scroll, _ in
                 let image = try self.capture(window)
                 self.attach(image, name: "Seerr \(state)")
                 let text = try self.recognize(image, size: window.bounds.size)
-                XCTAssertTrue(text.contains { $0.text.contains("Requests as") })
                 let expected: String
                 switch state {
-                case .unconfigured: expected = "Connect"
-                case .empty: expected = "No Seerr users found."
-                case .failed: expected = "Retry loading users"
+                case .unconfigured: expected = "Set up manually"
+                case .differentProfile: expected = "Switch to this profile"
+                case .failed: expected = "Try again"
                 case .connected: expected = "Alex"
                 }
                 XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveContains(expected) })
@@ -98,26 +89,569 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         }
     }
 
+    func testRequestAccountChoiceCanPresentAboveAnExistingDetailSheet() async throws {
+        for language in ["en", "fr"] {
+            let locale = Locale(identifier: language)
+            try await render(size: .init(width: 390, height: 844), locale: locale) { window, _, service in
+                let root = try XCTUnwrap(window.rootViewController)
+                let sheet = UIHostingController(rootView: Text("Title details"))
+                root.present(sheet, animated: false)
+                defer { sheet.dismiss(animated: false) }
+                try await Task.sleep(for: .milliseconds(150))
+                try service.updateSelection(defaultID: service.profileConnections.defaultID, rememberLastUsed: false, askEachTime: true)
+                let request = Task { await service.request(MediaItem(id: "seer:movie:17", title: "Fixture", kind: .movie)) }
+                defer { request.cancel(); service.chooseDestination(nil) }
+                let deadline = ContinuousClock.now + .seconds(3)
+                while sheet.presentedViewController == nil, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let choice = try XCTUnwrap(sheet.presentedViewController as? UIAlertController,
+                                          "Request choice must not be hidden behind the detail sheet")
+                XCTAssertEqual(choice.title, String(localized: LocalizedStringResource("Request as", locale: locale)))
+                XCTAssertEqual(choice.actions.last?.title, String(localized: LocalizedStringResource("Cancel", locale: locale)))
+                if language == "fr" { XCTAssertNotEqual(choice.title, "Request as") }
+                XCTAssertEqual(choice.actions.count, 2)
+                XCTAssertTrue(choice.actions.first?.title?.contains("Alex") == true)
+                service.chooseDestination(nil)
+                let outcome = await request.value
+                XCTAssertEqual(outcome, .failure(.cancelled))
+            }
+        }
+    }
+
+    func testDiscoveryPreselectsTheAccountWithoutMovingControlsOrOpeningAForm() async throws {
+        var scans = 0
+        var continuation: AsyncStream<DiscoveredSeerServer>.Continuation?
+        let discovered = URL(string: "https://nearby.example")!
+        try await render(size: .init(width: 390, height: 844), state: .unconfigured, configure: { service in
+            service.discoverServers = { _ in
+                scans += 1
+                return AsyncStream { continuation = $0 }
+            }
+            service.loginOptions = {
+                [.init(id: "alex", name: "Alex", mediaServerType: 2, authenticate: { _ in throw AppError.unauthorized })]
+            }
+        }) { window, _, service in
+            defer { continuation?.finish() }
+            XCTAssertEqual(scans, 1)
+            XCTAssertNotNil(UIImage(named: "SeerrIcon"), "The shared server logo must be bundled on iOS too")
+            let before = try self.recognize(self.capture(window), size: window.bounds.size)
+            self.attach(try self.capture(window), name: "Seerr detecting server")
+            let continueBefore = try XCTUnwrap(before.first { $0.text == "Continue" })
+            XCTAssertEqual(self.activityIndicators(in: window).filter(\.isAnimating).count, 1)
+            XCTAssertFalse(before.contains { $0.text.contains("Checking sign-in options") })
+            XCTAssertFalse(before.contains { $0.text.localizedCaseInsensitiveContains("Detected") })
+            XCTAssertTrue(before.contains { $0.text == "Set up manually" })
+            continuation?.yield(.init(baseURL: discovered, version: "1"))
+            try await Task.sleep(for: .milliseconds(150))
+            window.layoutIfNeeded()
+            let text = try self.recognize(self.capture(window), size: window.bounds.size)
+            self.attach(try self.capture(window), name: "Seerr suggested account")
+            let continueAfter = try XCTUnwrap(text.first { $0.text == "Continue as Alex" },
+                                            "A usable server must be ready while the remaining scan is still suspended")
+            XCTAssertEqual(continueBefore.frame.minY, continueAfter.frame.minY, accuracy: 2)
+            XCTAssertTrue(text.contains { $0.text.contains("nearby.example") })
+            XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveCompare("Detected server") == .orderedSame })
+            XCTAssertGreaterThanOrEqual(text.filter { $0.text == "Seerr" }.count, 2,
+                                       "The detected server must retain the shared named server row")
+            XCTAssertTrue(self.textFields(in: window).isEmpty)
+            XCTAssertEqual(self.activityIndicators(in: window).filter(\.isAnimating).count, 0)
+            XCTAssertNil(service.profileConnections.setupServer)
+            XCTAssertFalse(text.contains { $0.text.contains("Find on local network") })
+            XCTAssertTrue(text.contains { $0.text == "Set up manually" })
+            XCTAssertFalse(service.isConfigured, "Finding a server must not authenticate or save an account")
+        }
+    }
+
+    func testLateDiscoveryCannotReplaceTypedAddressOrCrossProfiles() async throws {
+        for switchProfile in [false, true] {
+            var continuation: AsyncStream<DiscoveredSeerServer>.Continuation?
+            try await render(size: .init(width: 390, height: 844), state: .unconfigured, manualForm: true, configure: { service in
+                service.discoverServers = { _ in
+                    AsyncStream { continuation = $0 }
+                }
+            }) { window, _, service in
+                defer { continuation?.finish() }
+                let field = try XCTUnwrap(self.textFields(in: window).first)
+                if switchProfile {
+                    let other = Profile(id: "replacement", name: "Replacement")
+                    service.configureProfiles(store: InMemorySeerAccountConnectionStore(), profiles: [other], current: { other })
+                } else {
+                    field.text = "https://typed.example"
+                    field.sendActions(for: .editingChanged)
+                }
+                try await Task.sleep(for: .milliseconds(50))
+                continuation?.yield(.init(baseURL: URL(string: "https://late.example")!, version: "1"))
+                continuation?.finish()
+                try await Task.sleep(for: .milliseconds(100))
+                if !switchProfile { XCTAssertEqual(field.text, "https://typed.example") }
+                let text = try self.recognize(self.capture(window), size: window.bounds.size)
+                XCTAssertFalse(text.contains { $0.text.contains("late.example") })
+                XCTAssertFalse(service.isConfigured)
+            }
+        }
+    }
+
+    func testDiscoveryChoicesUseNamedRowsSeparateFromManualEntry() async throws {
+        let candidates = [URL(string: "http://192.168.1.9:5055")!, URL(string: "http://192.168.1.10:5055")!]
+        for count in 1...candidates.count {
+            let urls = Array(candidates.prefix(count))
+            try await render(size: .init(width: 768, height: 1024), state: .unconfigured, manualForm: true, configure: { service in
+                service.discoverServers = { _ in
+                    AsyncStream {
+                        for url in urls { $0.yield(.init(baseURL: url, version: "3.5.2")) }
+                        $0.finish()
+                    }
+                }
+            }) { window, scroll, service in
+                let deadline = ContinuousClock.now + .seconds(3)
+                while (service.setupDiscovery.isSearching || service.setupDiscovery.servers.count != count),
+                      ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertEqual(service.setupDiscovery.servers.count, count)
+                XCTAssertFalse(service.setupDiscovery.isSearching)
+                try await Task.sleep(for: .milliseconds(50))
+                window.layoutIfNeeded()
+                let text = try self.recognize(self.capture(window), size: window.bounds.size)
+                let addresses = text.filter { line in urls.contains { line.text.contains($0.host!) } }
+                XCTAssertEqual(addresses.count, count)
+                let title = count == 1 ? "Detected server" : "Detected servers"
+                XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveCompare(title) == .orderedSame })
+                XCTAssertGreaterThanOrEqual(text.filter { $0.text == "Seerr" }.count, count + 1)
+                let entry = try XCTUnwrap(self.textFields(in: window).first)
+                let entryFrame = entry.convert(entry.bounds, to: window)
+                XCTAssertTrue(addresses.allSatisfy { $0.frame.maxY < entryFrame.minY },
+                              "Discovered servers belong above the separate manual address field")
+                XCTAssertTrue(text.contains { $0.text.localizedCaseInsensitiveCompare("Scan Again") == .orderedSame },
+                              text.map(\.text).joined(separator: " | "))
+                XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+                XCTAssertFalse(service.isConfigured)
+            }
+        }
+    }
+
+    func testPluginSuggestionPreselectsWithoutAuthenticatingOrOpeningAForm() async throws {
+        try await render(size: .init(width: 390, height: 844), state: .unconfigured, configure: { service in
+            service.suggestedAddresses = { [URL(string: "https://suggested.example")!] }
+            service.discoverServers = { _ in
+                XCTFail("A supplied address should not start a subnet scan")
+                return AsyncStream { $0.finish() }
+            }
+            service.loginOptions = {
+                [.init(id: "alex", name: "Alex", mediaServerType: 2, authenticate: { _ in throw AppError.unauthorized })]
+            }
+            service.prepareSetup()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while service.setupDiscovery.isSearching, ContinuousClock.now < deadline { await Task.yield() }
+            XCTAssertNotNil(service.setupDiscovery.selected, "Prepare before the Seerr page mounts")
+            service.suggestedAddresses = { XCTFail("Page entry must reuse preparation"); return [] }
+            service.discoveryMethods = { _ in XCTFail("Page entry must reuse capabilities"); throw AppError.invalidResponse }
+        }) { window, _, service in
+            let text = try self.recognize(self.capture(window), size: window.bounds.size)
+            XCTAssertTrue(text.contains { $0.text.contains("suggested.example") })
+            XCTAssertTrue(text.contains { $0.text == "Continue as Alex" })
+            XCTAssertTrue(self.textFields(in: window).isEmpty)
+            XCTAssertNil(service.profileConnections.setupServer)
+            XCTAssertFalse(service.isConfigured)
+        }
+    }
+
+    func testResumedSetupKeepsTheChosenPlexServerAndOffersItsAccount() async throws {
+        let selected = URL(string: "https://plex.example.test:15056/seerr")!
+        try await render(size: .init(width: 390, height: 844), state: .unconfigured, serverType: 1, configure: { service in
+            try service.rememberSetupServer(selected, expectedProfileID: "fixture")
+            service.suggestedAddresses = { XCTFail("Resume must not replace the chosen server"); return [] }
+            service.discoverServers = { _ in XCTFail("Resume must not scan again"); return AsyncStream { $0.finish() } }
+            let authentication = service.authentication
+            service.authentication = { url in
+                XCTAssertEqual(url, selected)
+                return authentication(url)
+            }
+            service.loginOptions = {
+                [.init(id: "alex", name: "Alex", mediaServerType: 1, authenticate: { _ in throw AppError.unauthorized })]
+            }
+        }) { window, _, service in
+            let deadline = ContinuousClock.now + .seconds(3)
+            while service.setupDiscovery.isSearching, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(service.setupDiscovery.selected?.baseURL, selected)
+            try await Task.sleep(for: .milliseconds(50))
+            window.layoutIfNeeded()
+            self.attach(try self.capture(window), name: "Seerr resumed Plex account")
+            let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+            XCTAssertTrue(text.contains { $0.hasSuffix("Continue as Alex") }, text.joined(separator: " | "))
+            XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare("Server") == .orderedSame })
+            XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("Detected") })
+            XCTAssertFalse(text.contains { $0.contains("Jellyfin") })
+            XCTAssertFalse(service.isConfigured)
+        }
+    }
+
+    private func textFields(in view: UIView) -> [UITextField] {
+        ((view as? UITextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields)
+    }
+
+    private func activityIndicators(in view: UIView) -> [UIActivityIndicatorView] {
+        ((view as? UIActivityIndicatorView).map { [$0] } ?? []) + view.subviews.flatMap(activityIndicators)
+    }
+
+    func testIncompatibleServerDoesNotOfferTheExistingPlexAccount() async throws {
+        try await render(size: .init(width: 390, height: 844), state: .unconfigured, serverType: 2, configure: { service in
+            service.suggestedAddresses = { [URL(string: "https://jellyfin-seerr.example")!] }
+            service.loginOptions = {
+                [.init(id: "plex", name: "Alex", mediaServerType: 1, authenticate: { _ in
+                    XCTFail("Detection must never authenticate"); throw AppError.unauthorized
+                })]
+            }
+        }) { window, _, service in
+            let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+            XCTAssertFalse(text.contains("Continue as Alex"))
+            XCTAssertTrue(text.contains("Sign in with Jellyfin"))
+            XCTAssertFalse(text.contains { $0.contains("Choose a sign-in method") })
+            XCTAssertTrue(text.contains("Set up manually"))
+            XCTAssertTrue(self.textFields(in: window).isEmpty)
+            XCTAssertFalse(service.isConfigured)
+        }
+    }
+
+    func testEmbyUsernameCanBeSuggestedWithoutClaimingSessionReuse() async throws {
+        try await render(size: .init(width: 390, height: 844), state: .unconfigured, serverType: 3, configure: { service in
+            service.suggestedAddresses = { [URL(string: "https://emby-seerr.example")!] }
+            service.embyUsernames = { ["Emby Alex"] }
+        }) { window, _, service in
+            let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+            XCTAssertTrue(text.contains("Continue as Emby Alex"))
+            XCTAssertTrue(text.contains("Set up manually"))
+            XCTAssertTrue(self.textFields(in: window).isEmpty)
+            XCTAssertTrue(service.loginOptions().isEmpty)
+            XCTAssertFalse(service.isConfigured)
+        }
+    }
+
+    func testContinuingWithExistingAccountSavesSettingsConnectionImmediately() async throws {
+        var completed = 0
+        try await render(
+            size: .init(width: 390, height: 844), state: .unconfigured, manualForm: true,
+            onConnected: { completed += 1 },
+            configure: { service in
+                let url = URL(string: "https://requests.example")!
+                try service.rememberSetupServer(url, expectedProfileID: "fixture")
+                let authentication = service.authentication(url)
+                service.loginOptions = {
+                    [.init(id: "alex", name: "Alex", mediaServerType: 2) { _ in
+                        try await authentication.password(username: "Passwordless", password: "", local: false)
+                    }]
+                }
+            }
+        ) { window, _, service in
+            XCTAssertTrue(service.profileConnections.connections.isEmpty)
+            let address = try XCTUnwrap(self.textFields(in: window).first { $0.keyboardType == .URL })
+            address.sendActions(for: .primaryActionTriggered)
+            let deadline = ContinuousClock.now + .seconds(3)
+            while completed == 0, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(completed, 1, "The first action must save and finish the account editor.")
+            XCTAssertEqual(service.profileConnections.connections.count, 1)
+            XCTAssertEqual(service.profileConnections.selected?.accountName, "Alex")
+            XCTAssertEqual(service.activeProfileID, "fixture")
+        }
+    }
+
+    func testPasswordlessMediaAccountCanSubmit() async throws {
+        try await render(size: .init(width: 768, height: 1024), state: .unconfigured, serverType: 3, manualForm: true, configure: { service in
+            try service.rememberSetupServer(URL(string: "https://suggested.example")!, expectedProfileID: "fixture")
+        }) { window, _, _ in
+            let fields = self.textFields(in: window)
+            let username = try XCTUnwrap(fields.first { $0.textContentType == .username })
+            let password = try XCTUnwrap(fields.first { $0.isSecureTextEntry })
+            username.text = "Passwordless"
+            username.sendActions(for: .editingChanged)
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertTrue(password.text?.isEmpty != false)
+            password.sendActions(for: .primaryActionTriggered)
+            try await Task.sleep(for: .milliseconds(150))
+            let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+            XCTAssertTrue(text.contains("Use this account"), "An empty media password must reach server authentication")
+        }
+    }
+
+    func testSharedSignInInputsUsePlaceholdersAndComfortableInsets() async throws {
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 768, height: 1024)] {
+            let metrics = SignInInputMetrics()
+            try await render(size: size, state: .unconfigured, inputMetrics: metrics) { window, scroll, _ in
+                let image = try self.capture(window)
+                self.attach(image, name: "Shared sign-in fields \(Int(size.width))")
+                let lines = try self.recognize(image, size: size)
+                XCTAssertEqual(lines.filter { $0.text == "Email" }.count, 1)
+                XCTAssertEqual(lines.filter { $0.text == "Password" }.count, 1)
+                XCTAssertTrue(lines.contains { $0.text == "Library name" },
+                              "Ordinary settings must retain their visible labels")
+                let fields = self.textFields(in: window)
+                let email = try XCTUnwrap(fields.first { $0.textContentType == .emailAddress })
+                let password = try XCTUnwrap(fields.first { $0.isSecureTextEntry })
+                for (field, frame) in [(email, metrics.email), (password, metrics.password)] {
+                    XCTAssertGreaterThanOrEqual(frame.height, 44)
+                    let text = try XCTUnwrap(lines.first { $0.text == field.placeholder })
+                    XCTAssertGreaterThanOrEqual(text.frame.minY - frame.minY, 8,
+                                                "Text must not crowd the rounded row's top edge")
+                    XCTAssertGreaterThanOrEqual(frame.maxY - text.frame.maxY, 8,
+                                                "Text must not crowd the rounded row's bottom edge")
+                }
+                email.text = "alex@example.com"
+                email.sendActions(for: .editingChanged)
+                password.text = "fixture-password"
+                password.sendActions(for: .editingChanged)
+                try await Task.sleep(for: .milliseconds(50))
+                XCTAssertEqual(email.text, "alex@example.com")
+                XCTAssertEqual(password.text, "fixture-password")
+                XCTAssertTrue(password.isSecureTextEntry)
+                XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+            }
+        }
+    }
+
+    func testSupportedSignInMethodsAreVisibleWithoutOpeningAMenu() async throws {
+        for (serverType, expected) in [(1, "Use another Plex account"), (2, "Enter username and password"), (3, "Emby account")] {
+            let size = serverType == 2 ? CGSize(width: 390, height: 844) : CGSize(width: 768, height: 1024)
+            try await render(size: size, state: .unconfigured, serverType: serverType, manualForm: true, configure: { service in
+                try service.rememberSetupServer(URL(string: "https://suggested.example")!, expectedProfileID: "fixture")
+                service.loginOptions = {
+                    guard serverType != 3 else { return [] }
+                    return [.init(id: "alex", name: "Alex", mediaServerType: serverType, authenticate: { _ in throw AppError.unauthorized })]
+                }
+            }) { window, _, service in
+                let lines = try self.recognize(self.capture(window), size: window.bounds.size)
+                let text = lines.map(\.text)
+                XCTAssertEqual(text.contains { $0.hasSuffix("Continue as Alex") }, serverType != 3)
+                XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare(expected) == .orderedSame })
+                XCTAssertTrue(text.contains("Seerr account"))
+                XCTAssertTrue(text.contains("Use API key"))
+                XCTAssertFalse(text.contains("Other sign-in options"))
+                XCTAssertFalse(text.contains("Change"))
+                XCTAssertTrue(text.contains { $0.localizedCaseInsensitiveCompare("Seerr server address") == .orderedSame })
+                XCTAssertEqual(self.textFields(in: window).filter { $0.keyboardType == .URL }.count, 1)
+                if serverType == 2 {
+                    self.attach(try self.capture(window), name: "Seerr Jellyfin account options")
+                    XCTAssertFalse(text.contains("Jellyfin"),
+                                   "Provider identity uses a leading logo, not a heading or second text line")
+                    let plainAction = try XCTUnwrap(lines.first { $0.text == "Seerr account" })
+                    for title in ["Continue as Alex", "Enter username and password"] {
+                        let action = try XCTUnwrap(lines.first { $0.text.hasSuffix(title) },
+                                                  text.joined(separator: " | "))
+                        // OCR can include the taller logo in the line's bounds.
+                        XCTAssertLessThan(action.frame.height, plainAction.frame.height * 2,
+                                          "Media-account actions should fit on one text line at the default phone size")
+                    }
+                }
+                XCTAssertFalse(service.isConfigured)
+            }
+        }
+    }
+
+    func testOlderSeerrExplainsPasswordRequirementBeforeAccountSelection() async throws {
+        for manualForm in [false, true] {
+            try await render(size: .init(width: 390, height: 844), state: .unconfigured,
+                             manualForm: manualForm, quickConnectAvailable: false, configure: { service in
+                try service.rememberSetupServer(URL(string: "https://older.example")!, expectedProfileID: "fixture")
+                service.loginOptions = {
+                    [.init(id: "alex", name: "Alex", mediaServerType: 2, authenticate: { _ in
+                        XCTFail("An older Seerr must not attempt account reuse")
+                        throw AppError.unauthorized
+                    })]
+                }
+            }) { window, _, service in
+                let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+                XCTAssertFalse(text.contains { $0.contains("Continue as") || $0.contains("Choose existing account") })
+                XCTAssertTrue(text.joined(separator: " ").contains("Update Seerr for password-free sign-in."))
+                if manualForm {
+                    XCTAssertEqual(self.textFields(in: window).first { $0.textContentType == .username }?.text, "Alex")
+                    XCTAssertNotNil(self.textFields(in: window).first { $0.isSecureTextEntry })
+                } else {
+                    XCTAssertTrue(text.contains { $0.hasSuffix("Sign in with Jellyfin") })
+                }
+                XCTAssertFalse(service.isConfigured)
+                self.attach(try self.capture(window), name: "Older Seerr password requirement \(manualForm)")
+            }
+        }
+    }
+
+    func testEditingCheckedAddressClearsCredentialsAndRequiresANewCheck() async throws {
+        let oldURL = URL(string: "https://old.example")!
+        let newURL = URL(string: "https://new.example")!
+        var checked: [URL] = []
+        try await render(size: .init(width: 768, height: 1024), state: .unconfigured, serverType: 3, manualForm: true, configure: { service in
+            try service.rememberSetupServer(oldURL, expectedProfileID: "fixture")
+            let authentication = service.authentication
+            service.authentication = { url in checked.append(url); return authentication(url) }
+        }) { window, _, service in
+            let fields = self.textFields(in: window)
+            let address = try XCTUnwrap(fields.first { $0.keyboardType == .URL })
+            let username = try XCTUnwrap(fields.first { $0.textContentType == .username })
+            let password = try XCTUnwrap(fields.first { $0.isSecureTextEntry })
+            username.text = "Previous user"
+            username.sendActions(for: .editingChanged)
+            password.text = "previous-fixture-password"
+            password.sendActions(for: .editingChanged)
+            XCTAssertEqual(checked, [oldURL])
+            address.text = newURL.absoluteString
+            address.sendActions(for: .editingChanged)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(checked, [oldURL], "Editing alone must not send credentials or probe the new server")
+            XCTAssertEqual(self.textFields(in: window).count, 1)
+            let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+            XCTAssertTrue(text.contains("Continue"))
+            XCTAssertFalse(text.contains("Change"))
+            address.sendActions(for: .primaryActionTriggered)
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertEqual(checked, [oldURL, newURL])
+            let newFields = self.textFields(in: window)
+            XCTAssertEqual(newFields.first { $0.textContentType == .username }?.text, "")
+            XCTAssertEqual(newFields.first { $0.isSecureTextEntry }?.text, "")
+            XCTAssertFalse(service.isConfigured)
+        }
+    }
+
+    func testMultipleExistingAccountsShowAnExplicitProfileScopedChooser() async throws {
+        for manualForm in [false, true] {
+            var selected: String?
+            try await render(size: .init(width: 768, height: 1024), state: .unconfigured, manualForm: manualForm, configure: { service in
+                try service.rememberSetupServer(URL(string: "https://requests.example")!, expectedProfileID: "fixture")
+                service.loginOptions = {
+                    ["first", "second"].map { id in
+                        .init(id: id, name: "Alex", mediaServerType: 2, serverName: "Server \(id)",
+                              serverURL: URL(string: "https://\(id).example")!) { _ in
+                            selected = id
+                            throw AppError.unauthorized
+                        }
+                    }
+                }
+            }) { window, _, service in
+                let text = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+                XCTAssertTrue(text.contains { $0.hasSuffix("Choose existing account") }, text.joined(separator: " | "))
+                XCTAssertFalse(text.contains { $0.hasSuffix("Continue as Alex") }, "Do not promote an arbitrary first account")
+                XCTAssertNil(selected)
+                guard manualForm else { return }
+                let address = try XCTUnwrap(self.textFields(in: window).first { $0.keyboardType == .URL })
+                address.sendActions(for: .primaryActionTriggered)
+                try await Task.sleep(for: .milliseconds(500))
+                XCTAssertNotNil(window.rootViewController?.presentedViewController)
+                let choices = try self.recognize(self.capture(window), size: window.bounds.size).map(\.text)
+                XCTAssertEqual(choices.filter { $0 == "Alex" }.count, 2)
+                for id in ["first", "second"] {
+                    XCTAssertTrue(choices.contains("Server \(id)"))
+                    XCTAssertTrue(choices.contains { $0.contains("\(id).example") })
+                }
+                XCTAssertNil(selected, "Opening the chooser must not authenticate")
+                self.attach(try self.capture(window), name: "Seerr existing account chooser \(manualForm)")
+                let other = Profile(id: "replacement", name: "Replacement")
+                service.configureProfiles(store: InMemorySeerAccountConnectionStore(), profiles: [other], current: { other })
+                let deadline = ContinuousClock.now + .seconds(3)
+                while window.rootViewController?.presentedViewController != nil, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertNil(window.rootViewController?.presentedViewController,
+                             "A chooser from the previous profile must be dismissed")
+                XCTAssertNil(selected)
+                XCTAssertFalse(service.isConfigured)
+            }
+        }
+    }
+
+    func testMobilePlexSignInUsesBrowserInsteadOfScanningTheSameDevice() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 768, height: 1024)] {
+            let signInURL = URL(string: "https://app.plex.tv/auth#fixture")!
+            let opened = expectation(description: "Open Plex directly from the sign-in action")
+            opened.assertForOverFulfill = true
+            let previous = scene.windows.first(where: \.isKeyWindow)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(origin: .zero, size: size)
+            let host = UIHostingController(rootView:
+                SeerPlexSignInView(url: signInURL, onCancel: {})
+                    .padding(24)
+                    .environment(\.themePalette, ThemePalette.dark)
+                    .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.openURL, OpenURLAction { url in
+                        XCTAssertEqual(url, signInURL)
+                        opened.fulfill()
+                        return .handled
+                    })
+            )
+            host.overrideUserInterfaceStyle = .dark
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            try await Task.sleep(for: .milliseconds(150))
+            window.layoutIfNeeded()
+            let text = try recognize(capture(window), size: size).map(\.text)
+            XCTAssertTrue(text.contains("Open Plex sign-in"))
+            XCTAssertTrue(text.contains("Waiting for sign-in"))
+            XCTAssertTrue(text.contains("Cancel"))
+            XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("scan") })
+            await fulfillment(of: [opened], timeout: 1)
+        }
+    }
+
     private func render(
         size: CGSize, typeSize: DynamicTypeSize = .large,
         direction: LayoutDirection = .leftToRight, longNames: Bool = false,
         state: SeerrSetupHTTP.State = .connected,
-        inspect: (UIWindow, UIScrollView) async throws -> Void
+        serverType: Int = 2,
+        manualForm: Bool = false,
+        inputMetrics: SignInInputMetrics? = nil,
+        quickConnectAvailable: Bool = true,
+        locale: Locale = Locale(identifier: "en"),
+        onConnected: @escaping () -> Void = {},
+        configure: (SeerService) async throws -> Void = { _ in },
+        inspect: (UIWindow, UIScrollView, SeerService) async throws -> Void
     ) async throws {
-        let http = SeerrSetupHTTP(state: state, longNames: longNames)
+        let http = SeerrSetupHTTP(state: state, longNames: longNames, serverType: serverType,
+                                 quickConnectAvailable: quickConnectAvailable)
         let store = InMemorySeerConnectionStore(connection: state == .unconfigured ? nil : .init(
             baseURL: URL(string: "https://fixture.invalid")!, apiKey: "fixture"
         ))
         let service = SeerService(connectionStore: store, http: http)
-        let view = ProfileSeerrSetupView(
-            seer: service,
-            profile: Profile(id: "fixture", name: longNames ? "A household profile with a very long name" : "Emby only"),
-            onSelect: { _ in }, onContinue: {}
-        )
+        service.discoverServers = { _ in AsyncStream { $0.finish() } }
+        service.authentication = { SeerAuthentication(baseURL: $0, http: http) }
+        service.discoveryMethods = { try await SeerAuthentication(baseURL: $0, http: http).setupMethods() }
+        var profile = Profile(id: "fixture", name: longNames ? "A household profile with a very long name" : "Home")
+        profile.seerrUserID = 2
+        profile.seerrUserName = longNames ? "Alex with an exceptionally long household display name" : "Alex"
+        profile.seerrServerIdentity = SeerServerIdentity(baseURL: URL(string: "https://fixture.invalid")!)
+        let current = state == .differentProfile ? Profile(id: "other", name: "Other") : profile
+        service.configureProfiles(store: InMemorySeerAccountConnectionStore(), profiles: [profile, current], current: { current })
+        try await configure(service)
+        let view = Group {
+            if let inputMetrics {
+                SignInInputsPreview(metrics: inputMetrics)
+            } else if manualForm {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        Text(verbatim: "Seerr")
+                        SeerSignInForm(seer: service, onConnected: onConnected)
+                    }
+                    .padding(24)
+                }
+            } else {
+                ProfileSeerrSetupView(
+                    seer: service,
+                    profile: profile,
+                    onSelect: { _ in }, onContinue: {}
+                )
+            }
+        }
+        .seerRequestDestination(service)
         .environment(\.themePalette, ThemePalette.dark)
         .environment(\.dynamicTypeSize, typeSize)
         .environment(\.layoutDirection, direction)
-        .environment(\.locale, Locale(identifier: "en"))
+        .environment(\.locale, locale)
         let deadline = ContinuousClock.now + .seconds(5)
         while UIApplication.shared.connectedScenes.isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
@@ -127,6 +661,7 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
         let host = UIHostingController(rootView: view)
+        host.overrideUserInterfaceStyle = .dark
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -135,14 +670,15 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         let ready = ContinuousClock.now + .seconds(5)
-        while !(await http.finished), state != .unconfigured, ContinuousClock.now < ready {
+        let expectsProbe = state == .connected || state == .failed
+        while !(await http.finished), expectsProbe, ContinuousClock.now < ready {
             try await Task.sleep(for: .milliseconds(20))
         }
-        if state != .unconfigured { let finished = await http.finished; XCTAssertTrue(finished) }
+        if expectsProbe { let finished = await http.finished; XCTAssertTrue(finished) }
         try await Task.sleep(for: .milliseconds(150))
         window.layoutIfNeeded()
         let scroll = try XCTUnwrap(scrollViews(in: host.view).first)
-        try await inspect(window, scroll)
+        try await inspect(window, scroll, service)
     }
 
     private func scrollViews(in view: UIView) -> [UIScrollView] {
@@ -193,6 +729,13 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
     }
 
     private func attach(_ image: UIImage, name: String) {
+        if let directory = ProcessInfo.processInfo.environment["PLOZZ_SEERR_CAPTURE_DIR"] {
+            do {
+                let data = try XCTUnwrap(image.pngData())
+                try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(name + ".png"))
+            } catch { XCTFail("Could not save Seerr presentation evidence: \(error)") }
+            return
+        }
         let attachment = XCTAttachment(image: image)
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -213,33 +756,82 @@ final class ProfileSeerrSetupPresentationTests: XCTestCase {
     }
 }
 
+@MainActor private final class SignInInputMetrics {
+    var email: CGRect = .zero
+    var password: CGRect = .zero
+}
+
+private struct SignInInputsPreview: View {
+    let metrics: SignInInputMetrics
+    @State private var email = ""
+    @State private var password = ""
+    @State private var libraryName = "Movies"
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                SettingsSectionGroup("Seerr account") {
+                    SettingsInputRow("Email") {
+                        TextField("Email", text: $email)
+                            .textContentType(.emailAddress)
+                            .keyboardType(.emailAddress)
+                    }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { metrics.email = $0 }
+                    SettingsInputRow("Password") {
+                        SecureField("Password", text: $password).textContentType(.password)
+                    }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { metrics.password = $0 }
+                }
+                .settingsSignInFields()
+                SettingsSectionGroup {
+                    SettingsInputRow("Library name") {
+                        TextField("Library name", text: $libraryName)
+                    }
+                }
+            }
+            .padding(24)
+        }
+    }
+}
+
 private actor SeerrSetupHTTP: HTTPClient {
-    enum State { case connected, unconfigured, empty, failed }
+    enum State { case connected, unconfigured, differentProfile, failed }
     let state: State
     let longNames: Bool
+    let serverType: Int
+    let quickConnectAvailable: Bool
     private(set) var finished = false
 
-    init(state: State, longNames: Bool) {
+    init(state: State, longNames: Bool, serverType: Int, quickConnectAvailable: Bool = true) {
         self.state = state
         self.longNames = longNames
+        self.serverType = serverType
+        self.quickConnectAvailable = quickConnectAvailable
     }
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         let json: String
-        if endpoint.path.hasSuffix("/status") {
+        if endpoint.path.hasSuffix("/quickconnect/check") {
+            return (Data("{}".utf8), HTTPURLResponse(
+                url: baseURL, statusCode: quickConnectAvailable ? 400 : 404,
+                httpVersion: nil, headerFields: nil
+            )!)
+        } else if endpoint.path.hasSuffix("/settings/public") {
+            json = #"{"initialized":true,"mediaServerType":\#(serverType),"mediaServerLogin":true,"localLogin":true}"#
+        } else if endpoint.path.hasSuffix("/status") {
             json = #"{"version":"1.0"}"#
-        } else if endpoint.path.hasSuffix("/user") {
+        } else if endpoint.path.hasSuffix("/auth/me") {
             finished = true
             if state == .failed { throw AppError.serverUnreachable }
-            if state == .empty {
-                json = #"{"results":[]}"#
-            } else {
-                let name = longNames ? "Alex with an exceptionally long household display name" : "Alex"
-                json = """
-                {"results":[{"id":1,"displayName":"\(name)","email":"alex@example.invalid"},
-                            {"id":2,"displayName":"Sam","email":"sam@example.invalid"}]}
-                """
-            }
+            json = #"{"id":2,"displayName":"Alex","permissions":8}"#
+        } else if endpoint.path.hasSuffix("/auth/jellyfin") {
+            let body = try JSONSerialization.jsonObject(with: XCTUnwrap(endpoint.body)) as? [String: String]
+            XCTAssertEqual(body?["username"], "Passwordless")
+            XCTAssertEqual(body?["password"], "")
+            return (Data("{}".utf8), HTTPURLResponse(
+                url: baseURL, statusCode: 200, httpVersion: nil,
+                headerFields: ["Set-Cookie": "connect.sid=fixture; Path=/; HttpOnly"]
+            )!)
         } else {
             throw AppError.invalidResponse
         }

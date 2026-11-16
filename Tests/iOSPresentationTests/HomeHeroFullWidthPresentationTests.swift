@@ -1149,6 +1149,143 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
+    func testDetailNavigationBackdropRemainsStableAfterLanding() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
+        let item = try await artworkItem()
+        let provider = SeriesHeaderMobileProvider(artworkURL: item.posterURL)
+        let suite = "DetailBackdropLanding-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        try registerDetailProvider(provider, in: app)
+        app.settings.heroBackground.settings.detailMode = .off
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        try await withWindow(
+            item: item, size: scene.coordinateSpace.bounds.size, sizeClass: nil,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            for sourceBarHidden in [false, true] {
+                host.rootView = AnyView(
+                    PushedDetailTransparencyFixture(
+                        app: app, provider: provider,
+                        hidesSourceBar: sourceBarHidden
+                    )
+                    .id(UUID())
+                    .environment(app)
+                    .environment(HeroTrailerController())
+                    .environment(PlozziOSSidebarGeometryModel())
+                    .environment(\.horizontalSizeClass, .compact)
+                    .environment(\.plozziOSHeroContainerHeight, window.bounds.height)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .environment(\.plozzReduceTransparency, false)
+                )
+                var observations: [String] = []
+                var landedSamples: [[UInt8]] = []
+                let start = ContinuousClock.now
+                for index in 0..<24 {
+                    try await Task.sleep(for: .milliseconds(100))
+                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    }
+                    let navigation = findController(UINavigationController.self, in: host)
+                    let landed = navigation?.viewControllers.count == 2 && navigation?.transitionCoordinator == nil
+                    let samples = try [CGFloat(8), 40, 70, 100, 140].map {
+                        try pixel(image, at: CGPoint(x: window.bounds.midX, y: $0))
+                    }
+                    observations.append("\(start.duration(to: .now)) landed=\(landed) samples=\(samples)")
+                    if landed { landedSamples.append(samples[2]) }
+                    if [0, 2, 5, 10, 23].contains(index) {
+                        let attachment = XCTAttachment(image: image)
+                        attachment.name = "detail-source-bar-hidden-\(sourceBarHidden)-frame-\(index)"
+                        attachment.lifetime = .keepAlways
+                        add(attachment)
+                    }
+                }
+                let attachment = XCTAttachment(string: observations.joined(separator: "\n"))
+                attachment.name = "detail-source-bar-hidden-\(sourceBarHidden)-timeline"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                XCTAssertGreaterThan(landedSamples.count, 5)
+                let last = try XCTUnwrap(landedSamples.last)
+                for sample in landedSamples {
+                    for (initial, final) in zip(sample, last) {
+                        XCTAssertEqual(Double(initial), Double(final), accuracy: 5,
+                                       "The detail header must not change after the page lands.")
+                    }
+                }
+                let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
+                XCTAssertFalse(navigation.navigationBar.isHidden)
+                let detail = try XCTUnwrap(navigation.topViewController)
+                let scroll = try XCTUnwrap(descendants(detail.view).compactMap { $0 as? UIScrollView }
+                    .first { $0.contentSize.height > 0 && $0.contentSize.width <= $0.bounds.width + 1 })
+                XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled,
+                               "Normal detail chrome must use the native top scroll-edge effect.")
+            }
+        }
+    }
+
+    func testDetailArtworkKeepsItsCropWhileItsNavigationFrameMoves() async throws {
+        let item = try await artworkItem(marksSides: true)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let suite = "DetailNavigationCrop-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let trailer = HeroTrailerController()
+        try await withWindow(
+            item: item, size: scene.coordinateSpace.bounds.size, sizeClass: .compact,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel()
+        ) { window, host in
+            let width = min(window.bounds.width - 96, 600)
+            var reference: UIImage?
+            for offset: CGFloat in [0, 48, -48, 0] {
+                host.rootView = AnyView(
+                    PlozziOSHeroStage(
+                        item: item,
+                        presentation: HeroPresentation(item: item, artworkStyle: .landscape, surface: .detail),
+                        style: .landscape, surfaceRole: .detail, isActive: false,
+                        showsScrim: false,
+                        trailerController: trailer,
+                        backgroundSettings: app.settings.heroBackground,
+                        trailerResolver: app.heroTrailerResolver()
+                    ) { Color.clear }
+                    .environment(PlozziOSSidebarGeometryModel())
+                    .environment(\.plozzArtworkArea, .details)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.plozziOSHeroContainerHeight, window.bounds.height)
+                    .frame(width: width)
+                    .offset(x: offset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                )
+                try await waitForHostedLayout(window)
+                let image = snapshot(window, name: "detail-navigation-crop-\(Int(offset))")
+                XCTAssertGreaterThan(try pixel(image, at: CGPoint(x: width / 2 + offset, y: 80))[2], 120)
+                if let reference {
+                    for x in stride(from: CGFloat(72), through: width - 72, by: 13) {
+                        for y: CGFloat in [80, 120, 160] {
+                            let expected = try pixel(reference, at: CGPoint(x: x, y: y))
+                            let actual = try pixel(image, at: CGPoint(x: x + offset, y: y))
+                            for channel in 0..<3 {
+                                XCTAssertEqual(Double(actual[channel]), Double(expected[channel]), accuracy: 3,
+                                               "Moving the page must translate, not resize or recrop, its artwork.")
+                            }
+                        }
+                    }
+                } else {
+                    reference = image
+                }
+            }
+        }
+    }
+
     func testReducedTransparencyScrollFadeProtectsStatusTextOnlyAfterScrolling() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         let item = try await artworkItem()
@@ -1639,14 +1776,15 @@ private final class HeroHoverGestureFixture: UIHoverGestureRecognizer {
 private struct PushedDetailTransparencyFixture: View {
     let app: PlozziOSAppModel
     let provider: SeriesHeaderMobileProvider
+    var hidesSourceBar = false
     @State private var showsDetail = false
 
     var body: some View {
         NavigationStack {
             Color.clear
+                .toolbar(hidesSourceBar ? .hidden : .visible, for: .navigationBar)
                 .navigationDestination(isPresented: $showsDetail) {
                     PlozziOSItemDetailView(appModel: app, provider: provider, item: provider.show)
-                        .toolbarBackground(.hidden, for: .navigationBar)
                 }
                 .task {
                     await Task.yield()

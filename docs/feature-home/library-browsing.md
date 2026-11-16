@@ -68,6 +68,8 @@ long titles truncate to fit alongside Back and the menus. Watchlist
 and library grids use that same mobile toolbar placement, keeping supported
 query actions available while the content scrolls without adding a pinned
 content header.
+Library Browse places Filter before Sort on both platforms, keeping Sort at the
+trailing end of the query controls.
 
 Mobile row-browser destinations capture only the app model and resolved layout
 inputs. Capturing the entire Home view causes a navigation update loop on iOS 18

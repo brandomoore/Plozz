@@ -96,7 +96,9 @@ public actor ExternalTitleMetadataResolver {
             .providerID(ProviderIDNamespace.imdb.canonicalKey),
         ]
         requested.formUnion(DetailMetadataResolver.missingFields(in: item))
-        let present = Self.presentFields(in: item)
+        let refreshable = DetailMetadataResolver.refreshableTextFields(in: item, isDiscoverySeed: true)
+        requested.formUnion(refreshable)
+        let present = Self.presentFields(in: item).subtracting(refreshable)
         async let enrichment = pipeline.enrich(
             query,
             present: present,

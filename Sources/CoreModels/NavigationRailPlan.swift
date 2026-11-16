@@ -157,8 +157,12 @@ public enum NavigationDestinationDefaults {
 
     /// New libraries stay in the editor until explicitly shown. This is a
     /// presentation default, not a persisted hide or a content restriction.
-    public static func iOSAutomaticallyHiddenKeys(available: [String]) -> Set<String> {
-        Set(available).subtracting(iOSDefaultVisibleKeys + [NavigationLibraryLayout.musicKey])
+    public static func iOSAutomaticallyHiddenKeys(
+        available: [String], hasUpcomingContent: Bool = true
+    ) -> Set<String> {
+        var hidden = Set(available).subtracting(iOSDefaultVisibleKeys + [NavigationLibraryLayout.musicKey])
+        if !hasUpcomingContent { hidden.insert(NavigationLibraryLayout.upcomingKey) }
+        return hidden
     }
 }
 

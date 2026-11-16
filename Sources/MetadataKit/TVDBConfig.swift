@@ -39,3 +39,19 @@ public struct TVDBConfig: Sendable, Equatable {
         return trimmed
     }
 }
+
+enum TVDBLocale {
+    static func languageIdentifier(_ identifier: String) -> String {
+        let language = Locale.Language(identifier: identifier)
+        let code = language.languageCode?.identifier
+        if code == "nb" || code == "no" { return "nor" }
+        // The live v4 catalog uses these non-ISO identifiers for regional text.
+        if code == "pt", language.region?.identifier == "BR" { return "pt" }
+        if code == "zh", language.script?.identifier == "Hant" { return "zhtw" }
+        return language.languageCode?.identifier(.alpha3) ?? identifier.lowercased()
+    }
+
+    static func countryIdentifier(_ identifier: String) -> String {
+        Locale(identifier: "und_\(identifier)").region?.identifier.lowercased() ?? identifier.lowercased()
+    }
+}
