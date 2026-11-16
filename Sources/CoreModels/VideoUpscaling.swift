@@ -4,6 +4,7 @@ import os
 public enum VideoUpscaling: String, CaseIterable, Codable, Sendable {
     case off
     case automatic
+    case standard
     case animation
 
     public static let `default`: Self = .automatic
@@ -12,6 +13,7 @@ public enum VideoUpscaling: String, CaseIterable, Codable, Sendable {
         switch self {
         case .off: "Off"
         case .automatic: "Automatic"
+        case .standard: "Standard"
         case .animation: "Animation"
         }
     }

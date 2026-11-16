@@ -20,7 +20,7 @@ public struct VideoUpscalingControl: View {
             picker
             #endif
         } description: {
-            Text("Enhances low-resolution SDR on supported devices in AetherEngine. Animation is for drawn content. Applies to new playback.")
+            Text("Automatic selects Animation for anime or animation metadata, otherwise Standard. Standard enhances 8-bit SDR below 1080p; Animation enhances drawn SDR up to 1080p. Requires AetherEngine, supported hardware and a larger display. No HDR or 4K enhancement. Applies to new playback.")
         }
         .accessibilityIdentifier("video-upscaling")
     }

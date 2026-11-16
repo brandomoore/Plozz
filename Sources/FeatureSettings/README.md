@@ -92,9 +92,14 @@ visibility preferences are independent of autoplay and Up Next behavior.
 
 Playback's **Video upscaling** control is shared by TV and mobile and is
 profile-scoped. Automatic is the default, including profiles saved before the
-setting existed; Off and Animation are explicit alternatives. Animation is for
-drawn content, not an automatic genre choice. The setting applies to new
-playback through AetherEngine, including Live TV; native and external players
+setting existed; Off, Standard and Animation are explicit alternatives.
+Automatic chooses Animation from anime identities or animation genres/tags,
+otherwise Standard. Standard enhances supported 8-bit SDR below 1920x1080 in
+both dimensions; Animation accepts drawn 8/10-bit SDR up to 1920x1080 inclusive.
+Both require a larger display and exclude HDR/Dolby Vision and 4K.
+The description distinguishes these limits and metadata-based selection.
+The setting applies to new playback through AetherEngine, including Live TV;
+native and external players
 are unchanged. Engine eligibility and performance fallbacks still apply.
 
 Movie & show details → Trailers & music is the shared destination for trailer

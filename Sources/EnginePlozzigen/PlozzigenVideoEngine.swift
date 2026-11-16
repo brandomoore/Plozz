@@ -5,6 +5,7 @@ import Combine
 import CoreModels
 import CoreNetworking
 import FeaturePlayback
+import MetadataKit
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -1124,7 +1125,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             dolbyVisionFELConversion: request.dolbyVisionFELConversion
                 && Self.supportsFELConversion(for: request),
             videoUpscaling: request.discPlayback == .openMenu || request.externalAudioURL != nil
-                ? .off : request.videoUpscaling ?? videoUpscalingPreference(),
+                ? .off : ContentClassifier.videoUpscaling(
+                    request.videoUpscaling ?? videoUpscalingPreference(), for: request.item
+                ),
             outputPolicy: outputPolicy,
             readAhead: isLocalFile || request.suppressOrdinaryWatchReporting
                 ? .default : readAheadPreference()

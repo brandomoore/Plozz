@@ -64,6 +64,33 @@ public enum ContentClassifier {
         classify(item).subtitleCategory
     }
 
+    /// Selects the requested scaler, not its eligibility. The engine checks the
+    /// decoded format, dimensions, display, route and frame budget.
+    public static func videoUpscaling(
+        _ preference: VideoUpscaling, for item: MediaItem, series: MediaItem? = nil
+    ) -> VideoUpscaling {
+        guard preference == .automatic else { return preference }
+        if hasAnimationMetadata(item) { return .animation }
+        if let series, item.kind == .episode, series.kind == .series,
+           item.seriesID == series.id, item.sourceAccountID == series.sourceAccountID,
+           hasAnimationMetadata(series) {
+            return .animation
+        }
+        return .standard
+    }
+
+    private static func hasAnimationMetadata(_ item: MediaItem) -> Bool {
+        if isAnime(item) || item.providerID(.seriesMal) != nil { return true }
+        return (item.genres + item.tags).contains {
+            switch $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "animation", "animated", "cartoon", "cartoons", "2d animation", "traditional animation":
+                true
+            default:
+                false
+            }
+        }
+    }
+
     /// `true` when the provider-id key names an anime database (AniList / AniDB /
     /// MyAnimeList / Shoko / Kitsu), tolerant of the casing/punctuation each
     /// backend uses. Lets callers copy just a series' anime ids onto its episodes.

@@ -829,6 +829,7 @@ let package = Package(
             dependencies: [
                 "CoreModels",
                 "CoreNetworking",
+                "MetadataKit",
                 "MediaTransportCore",
                 "FeaturePlayback",
                 .product(name: "AetherEngine", package: "AetherEngine"),

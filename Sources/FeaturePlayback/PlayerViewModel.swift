@@ -2056,6 +2056,44 @@ public final class PlayerViewModel {
     }
     #endif
 
+    /// A cancelled metadata lookup returns nil rather than admitting another load.
+    private func resolvedVideoUpscaling(for request: PlaybackRequest) async -> VideoUpscaling? {
+        let preference = playbackSettings.videoUpscaling
+        let selection = ContentClassifier.videoUpscaling(preference, for: request.item)
+        guard preference == .automatic, selection == .standard,
+              request.discPlayback != .openMenu, request.externalAudioURL == nil,
+              request.item.kind == .episode, let seriesID = request.item.seriesID,
+              !seriesID.isEmpty else { return selection }
+        let provider = provider
+        do {
+            let series = try await withThrowingTaskGroup(of: MediaItem.self) { group in
+                group.addTask { try await provider.item(id: seriesID) }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(2))
+                    throw URLError(.timedOut)
+                }
+                defer { group.cancelAll() }
+                guard let first = try await group.next() else { throw CancellationError() }
+                return first
+            }
+            try Task.checkCancellation()
+            guard series.kind == .series, series.id == seriesID,
+                  series.sourceAccountID == request.item.sourceAccountID else {
+                PlozzLog.playback.error("Upscaling received unrelated series metadata; using Standard.")
+                return .standard
+            }
+            return ContentClassifier.videoUpscaling(preference, for: request.item, series: series)
+        } catch {
+            if Task.isCancelled || error is CancellationError
+                || (error as? AppError) == .cancelled
+                || (error as? URLError)?.code == .cancelled {
+                return nil
+            }
+            PlozzLog.playback.error("Upscaling series metadata unavailable; using Standard.")
+            return .standard
+        }
+    }
+
     /// Loads an already-resolved request on the routed engine and finishes the
     /// bring-up (ready state, start report, track menu). Shared by the initial
     /// load and the cross-engine fallback (which re-uses the same request on the
@@ -2074,6 +2112,12 @@ public final class PlayerViewModel {
         controls.felConversion.isAvailable = false
         dynamicRangeLoadGeneration &+= 1
         let rangeLoadGeneration = dynamicRangeLoadGeneration
+        if engineKind == .plozzigen {
+            guard let selection = await resolvedVideoUpscaling(for: request) else { return }
+            guard !Task.isCancelled, !didStop,
+                  dynamicRangeLoadGeneration == rangeLoadGeneration else { return }
+            request.videoUpscaling = selection
+        }
         controls.infoCard.chapters = MediaChapter.normalized(request.chapters, duration: request.item.runtime)
         inheritedPreservedDynamicRange =
             engineKind != .native ? pendingPreservedDynamicRange : nil

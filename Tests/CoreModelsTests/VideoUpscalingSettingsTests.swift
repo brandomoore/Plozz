@@ -32,6 +32,8 @@ final class VideoUpscalingSettingsTests: XCTestCase {
         ProfileSettingsTransfer.apply(snapshot, namespace: "restored", defaults: defaults)
         let restored = PlaybackSettingsStore(defaults: defaults, namespace: "restored")
         XCTAssertEqual(restored.load().videoUpscaling, .animation)
+        guestModel.settings.videoUpscaling = .standard
+        XCTAssertEqual(guest.load().videoUpscaling, .standard)
         guestModel.settings.videoUpscaling = .automatic
         XCTAssertEqual(guest.load().videoUpscaling, .automatic)
         XCTAssertEqual(restored.load().videoUpscaling, .animation)

@@ -885,17 +885,26 @@ host-owned fixed output; HDR pipeline changes retain the reload path. Late nativ
 HLS format callbacks honor the current policy, and an outgoing display owner
 cannot clear a newer engine's criteria.
 Audio shaping remains disabled. Video upscaling defaults to Automatic for new
-and existing profiles, with Off and explicitly selected Animation alternatives
+and existing profiles, with Off, Standard and Animation alternatives
 in Playback settings on TV and mobile. The preference is passed at load time
 for on-demand playback, IPTV and library channels; a change takes effect on
 the next load. Standalone background previews without a playback preference,
 separate-audio sources and interactive disc menus keep enhancement off.
 Apple's native player and external players do not use this engine setting.
 
-Automatic uses VideoToolbox super resolution where supported, followed by
+Automatic selects Animation for anime identities or animation genres/tags,
+otherwise Standard. Episodes can use their exact same-account series metadata;
+the ordinary player uses a two-second cooperative timeout for that lookup and logs a
+Standard fallback if unavailable. Classification uses metadata, not visual
+analysis, and cannot reliably distinguish drawn animation from CGI. Explicit
+Standard and Animation override classification. Raw IPTV without item metadata
+uses Standard in Automatic; library channels use the playing item's metadata.
+Bitrate is not used as a quality threshold for this selection.
+
+Standard uses VideoToolbox super resolution where supported, followed by
 MetalFX spatial scaling where available, for 8-bit SDR whose coded width is
 below 1920 and height below 1080. Animation requests Anime4K for drawn content
-up to 1920x1080, including 10-bit SDR; it is not inferred from metadata.
+up to 1920x1080 inclusive, including 10-bit SDR. Neither mode enhances 4K.
 The engine retains responsibility for OS/GPU support, larger-display checks,
 HDR/Dolby Vision and wireless AirPlay exclusions, source-route eligibility,
 and frame-budget degradation or disablement. OS 26 is required; MetalFX on TV

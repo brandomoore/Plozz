@@ -42,7 +42,9 @@ final class AetherReleaseIntegrationTests: XCTestCase {
                 URL(fileURLWithPath: "/fixture/movie.mkv")
             ] {
                 var request = PlaybackRequest(
-                    item: MediaItem(id: "upscale", title: "Upscaling fixture", kind: .movie), streamURL: url
+                    item: MediaItem(
+                        id: "upscale", title: "Upscaling fixture", kind: .movie, genres: ["Animation"]
+                    ), streamURL: url
                 )
                 request.sourceProvider = provider
                 request.suppressOrdinaryWatchReporting = true
@@ -51,7 +53,10 @@ final class AetherReleaseIntegrationTests: XCTestCase {
                     liveChoice = mode
                     let options = liveEngine.onDemandLoadOptions(for: request)
                     XCTAssertEqual(options.upscalesLowResolutionVideo, mode != .off)
-                    XCTAssertEqual(options.upscaleScaler, mode == .animation ? .lineArt : .automatic)
+                    XCTAssertEqual(
+                        options.upscaleScaler,
+                        mode == .animation || mode == .automatic ? .lineArt : .automatic
+                    )
                 }
                 request.videoUpscaling = .off
                 XCTAssertFalse(liveEngine.onDemandLoadOptions(for: request).upscalesLowResolutionVideo)
@@ -65,6 +70,53 @@ final class AetherReleaseIntegrationTests: XCTestCase {
                 request.externalAudioURL = URL(string: "https://media.example/audio.m4a")!
                 XCTAssertFalse(liveEngine.onDemandLoadOptions(for: request).upscalesLowResolutionVideo)
             }
+        }
+    }
+
+    func testUpscalingModesRetainDecodedResolutionAndHDRLimits() {
+        let cases: [(VideoUpscaling, Int, Int, Bool, Bool, Bool)] = [
+            (.off, 1280, 720, true, false, false),
+            (.standard, 1280, 720, true, false, true),
+            (.standard, 1920, 800, true, false, false),
+            (.standard, 1920, 1080, true, false, false),
+            (.animation, 1920, 1080, true, false, true),
+            (.animation, 1920, 1080, true, true, true),
+            (.standard, 1280, 720, true, true, false),
+            (.animation, 3840, 2160, true, false, false),
+            (.standard, 3840, 2160, true, false, false),
+            (.animation, 1280, 720, false, true, false),
+            (.standard, 1280, 720, false, false, false)
+        ]
+        for (mode, width, height, sdr, tenBit, expected) in cases {
+            let options = PlozzigenVideoEngine.onDemandLoadOptions(videoUpscaling: mode)
+            let decision = UpscaleRouteDecision.decide(
+                preference: options.upscalesLowResolutionVideo,
+                osSupportsStage: true, metalFXSupported: true,
+                source: SourceGeometry(width: width, height: height, sarNum: 1, sarDen: 1),
+                isSDR: sdr, isDolbyVision: false, isEightBit420: !tenBit,
+                display: CGSize(width: 3840, height: 2160),
+                wirelessAirPlayRoute: false, demuxedAudioLive: false,
+                mlScaleFactors: { _, _ in [2] },
+                scaler: options.upscaleScaler, isTenBit420: tenBit
+            )
+            let taken: Bool
+            if case .taken = decision { taken = true } else { taken = false }
+            XCTAssertEqual(taken, expected, "\(mode) \(width)x\(height), SDR: \(sdr), 10-bit: \(tenBit)")
+        }
+        for mode in [VideoUpscaling.standard, .animation] {
+            let options = PlozzigenVideoEngine.onDemandLoadOptions(videoUpscaling: mode)
+            XCTAssertEqual(
+                UpscaleRouteDecision.decide(
+                    preference: options.upscalesLowResolutionVideo,
+                    osSupportsStage: true, metalFXSupported: true,
+                    source: SourceGeometry(width: 1280, height: 720, sarNum: 1, sarDen: 1),
+                    isSDR: true, isDolbyVision: false, isEightBit420: true,
+                    display: CGSize(width: 1280, height: 720),
+                    wirelessAirPlayRoute: false, demuxedAudioLive: false,
+                    mlScaleFactors: { _, _ in [2] }, scaler: options.upscaleScaler
+                ),
+                .notTaken(.displayNotLarger)
+            )
         }
     }
 

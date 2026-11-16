@@ -33,6 +33,14 @@ for the initial compatibility and track-selection limits.
 
 ## Responsibility
 
+Automatic video upscaling uses the shared metadata classifier before engine
+load. An episode without animation hints may query its exact series through
+the current provider, with a two-second cooperative timeout and source-account validation.
+Unavailable or unrelated metadata is logged and selects Standard; cancellation
+does not continue loading. Explicit Standard/Animation/Off skip this lookup.
+Native playback is unchanged. The engine still owns decoded-format, resolution,
+display and route eligibility; metadata never enables HDR or 4K enhancement.
+
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and
 offline playback. Prefer SDH falls back to regular subtitles in the chosen

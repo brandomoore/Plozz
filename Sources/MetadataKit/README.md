@@ -14,6 +14,12 @@ load-bearing.
   the resolved URL in `MetadataDiskCache`.
 - `ContentClassification` — turns a `MediaItem` into a routable
   `ContentType` using provider-supplied genre / external-id hints.
+  Its upscaling selector preserves explicit choices and maps Automatic to
+  Animation for anime identities or animation genres/tags, otherwise Standard.
+  An episode may use its exact, same-account series metadata. This is metadata
+  classification, not visual analysis or reliable separation of drawn and CGI
+  animation; Standard remains an explicit override. Format eligibility belongs
+  to the playback engine, not the classifier.
 - Provider conformers — each isolated behind a small `ArtworkProviding`
   surface and individually unit-testable:
   - **AniList** (GraphQL) — anime hero / poster / score.

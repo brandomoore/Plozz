@@ -28,9 +28,62 @@ final class PlayerViewModelEOFTests: XCTestCase {
                 )
                 await model.load()
                 XCTAssertEqual(model.phase, .ready)
-                XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, mode)
+                XCTAssertEqual(
+                    engine.lastLoadedRequest?.videoUpscaling,
+                    mode == .automatic ? .standard : mode
+                )
                 await model.stop()
             }
+        }
+    }
+
+    func testAutomaticUpscalingUsesTheEpisodeParentWithoutOverridingStandard() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for mode in [VideoUpscaling.automatic, .standard] {
+                var episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: "series")
+                episode.sourceAccountID = "account"
+                var series = MediaItem(id: "series", title: "Series", kind: .series, genres: ["Animation"])
+                series.sourceAccountID = "account"
+                let url = URL(string: "https://fixture.invalid/video.mkv")!
+                let provider = RecordingPlaybackProvider(
+                    request: .init(item: episode, streamURL: url), kind: kind,
+                    requestsByItemID: ["series": .init(item: series, streamURL: url)]
+                )
+                let engine = SpyVideoEngine()
+                let model = PlayerViewModel(
+                    provider: provider, itemID: episode.id,
+                    playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: mode),
+                    engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+                )
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, mode == .automatic ? .animation : .standard)
+                await model.stop()
+            }
+        }
+    }
+
+    func testAutomaticUpscalingFallsBackForMissingSeriesButDoesNotLoadAfterCancellation() async {
+        for error in [AppError.notFound, .cancelled] {
+            let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: "series")
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: episode, streamURL: URL(string: "https://fixture.invalid/video.mkv")!)
+            )
+            await provider.setItemError(error)
+            let engine = SpyVideoEngine()
+            let model = PlayerViewModel(
+                provider: provider, itemID: episode.id,
+                playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: .automatic),
+                engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+            )
+            await model.load()
+            if error == .cancelled {
+                XCTAssertNil(engine.lastLoadedRequest)
+            } else {
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, .standard)
+            }
+            await model.stop()
         }
     }
 
