@@ -124,15 +124,15 @@ struct CollectionSectionSettingsView: View {
                 #else
                 nameInput
                 #endif
-                SettingsMenuRow(title: "Sort", value: sortValue, minimumContentHeight: 44) {
+                SettingsMenuRow(title: "Sort", value: sortValue) {
                     HomeContentSortOptions(query: $draft.query)
                 }
                 .accessibilityIdentifier("collection-section-sort")
-                SettingsMenuRow(title: "Filter", value: filterValue, minimumContentHeight: 44) {
+                SettingsMenuRow(title: "Filter", value: filterValue) {
                     HomeContentFilterOptions(query: $draft.query)
                 }
                 .accessibilityIdentifier("collection-section-filter")
-                SettingsMenuRow(title: "Layout", value: Text(draft.cardStyle.title), minimumContentHeight: 44) {
+                SettingsMenuRow(title: "Layout", value: Text(draft.cardStyle.title)) {
                     Picker("Layout", selection: $draft.cardStyle) {
                         ForEach(CollectionSection.CardStyle.allCases, id: \.self) { style in
                             Text(style.title).tag(style)
@@ -141,7 +141,7 @@ struct CollectionSectionSettingsView: View {
                 }
                 .accessibilityIdentifier("collection-section-card-style")
                 if draft.cardStyle == .landscape {
-                    SettingsMenuRow(title: "Logo", value: Text(draft.titleLogo.title), minimumContentHeight: 44) {
+                    SettingsMenuRow(title: "Logo", value: Text(draft.titleLogo.title)) {
                         Picker("Logo", selection: $draft.titleLogo) {
                             ForEach(LandscapeTitleLogo.allCases, id: \.self) { mode in
                                 Text(mode.title).tag(mode)
