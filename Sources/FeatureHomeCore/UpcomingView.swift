@@ -49,6 +49,7 @@
         }
 
         public var body: some View {
+            let visibleReleases = upcomingAgendaReleases(model.visibleReleases)
             ScrollViewReader { proxy in
                 VStack(alignment: .leading, spacing: 20) {
                     #if os(tvOS)
@@ -80,15 +81,15 @@
                                 )
                             }
                             #endif
-                            .opacity(model.visibleReleases.isEmpty ? 0 : 1)
-                            .accessibilityHidden(model.visibleReleases.isEmpty)
+                            .opacity(visibleReleases.isEmpty ? 0 : 1)
+                            .accessibilityHidden(visibleReleases.isEmpty)
                             #if os(tvOS)
                             .padding(.vertical)
                             .padding(.horizontal, PlozzTheme.Metrics.screenPadding + metrics.railShadowClearance)
                             #endif
                         }
                         .overlay {
-                            if model.visibleReleases.isEmpty {
+                            if visibleReleases.isEmpty {
                                 UpcomingFeedStatus(model: model)
                                     .padding()
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -127,7 +128,7 @@
                         }
                         #else
                         .frame(maxWidth: .infinity)
-                        .navigationEntryFocus(model.isLoading && model.releases.isEmpty ? .pending : nil)
+                        .navigationEntryFocus(model.isLoading && visibleReleases.isEmpty ? .pending : nil)
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { agendaSize = $0 }
                         // Reserve focus lift inside the scroll clip without moving the row keyline.
                         .padding(.horizontal, -metrics.railShadowClearance)
@@ -139,8 +140,8 @@
                                 proxy.scrollTo(selectedDay, anchor: .top)
                             }
                         }
-                        .task(id: model.releases.isEmpty) {
-                            if !model.releases.isEmpty, !didScrollInitially {
+                        .task(id: visibleReleases.isEmpty) {
+                            if !visibleReleases.isEmpty, !didScrollInitially {
                                 await Task.yield()
                                 guard !Task.isCancelled else { return }
                                 didScrollInitially = true
@@ -321,14 +322,25 @@
         #endif
     }
 
+    private func upcomingAgendaReleases(_ releases: [UpcomingRelease]) -> [UpcomingRelease] {
+        #if os(tvOS)
+        let today = Calendar.current.startOfDay(for: Date())
+        return releases.filter { $0.date >= today }
+        #else
+        return releases
+        #endif
+    }
+
     private struct UpcomingFeedStatus: View {
         let model: UpcomingFeedModel
         @Environment(\.plozzSeerConnected) private var seerConnected
 
         var body: some View {
+            let releases = upcomingAgendaReleases(model.releases)
+            let visibleReleases = upcomingAgendaReleases(model.visibleReleases)
             if model.isLoading {
                 ProgressView("Updating releases")
-            } else if model.releases.isEmpty, model.failedSourceCount > 0 {
+            } else if releases.isEmpty, model.failedSourceCount > 0 {
                 ContentUnavailableView {
                     Label("Couldn't load releases", systemImage: "exclamationmark.triangle")
                 } actions: {
@@ -336,7 +348,7 @@
                         .accessibilityIdentifier("upcoming.retry")
                 }
                 .plozzActionButton(role: .secondary)
-            } else if !model.releases.isEmpty, model.visibleReleases.isEmpty {
+            } else if !releases.isEmpty, visibleReleases.isEmpty {
                 ContentUnavailableView {
                     Label("No matching releases", systemImage: "line.3.horizontal.decrease")
                 } actions: {
@@ -355,7 +367,7 @@
                     Text("Some sources couldn't refresh.").foregroundStyle(.secondary)
                     Button("Retry") { model.refreshRevision += 1 }
                 }
-            } else if model.visibleReleases.isEmpty {
+            } else if visibleReleases.isEmpty {
                 ContentUnavailableView(
                     "Nothing upcoming yet", systemImage: "calendar",
                     description: seerConnected
@@ -418,7 +430,7 @@
 
         var body: some View {
             let calendar = Calendar.current
-            let groups = Dictionary(grouping: model.visibleReleases) { calendar.startOfDay(for: $0.date) }
+            let groups = Dictionary(grouping: upcomingAgendaReleases(model.visibleReleases)) { calendar.startOfDay(for: $0.date) }
             #if os(iOS)
                 let days = Set(groups.keys).union([selectedDay, calendar.startOfDay(for: Date())]).sorted()
             #else

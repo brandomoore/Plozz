@@ -44,7 +44,9 @@ movie-release labels; episode cards retain season/episode information.
 
 The current window is 30 days back through 90 days ahead. TV displays Today
 onward, omitting past days from both the agenda and calendar selection. It starts at Today,
-preferring the first release card over the toolbar. Full-width native date
+preferring the first release card over the toolbar. Today-onward
+eligibility also determines TV empty and retry states, so historical releases
+cannot suppress them. Full-width native date
 focus sections bridge the gap from the right-aligned calendar and filter controls
 to sparse release rows without remembering one target across the whole agenda.
 TV date sections reuse Home's `MediaRowSection`, responsive portrait sizing,

@@ -148,6 +148,38 @@ final class UpcomingPresentationHostedTests: XCTestCase {
         }
     }
 
+    func testPastOnlyFeedShowsEmptyStateAndFailedRefreshOffersRetry() async throws {
+        let suite = "UpcomingPresentationHostedTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = UpcomingFeedModel(defaults: defaults)
+        let today = Calendar.current.startOfDay(for: Date())
+        let item = MediaItem(id: "past", title: "Past movie", kind: .movie)
+        let release = UpcomingRelease(
+            id: "past", titleKey: UpcomingRelease.titleKey(for: item), item: item,
+            date: today.addingTimeInterval(-86_400), datePrecision: .dateOnly,
+            kind: .digital, interests: [.watchlist]
+        )
+        let window = try host(PinnedUpcoming(model: model, interval: .init(start: today, duration: 90 * 86_400))
+            .environment(\.locale, Locale(identifier: "en_US")))
+        defer { close(window) }
+        for failures in [0, 1] {
+            await model.refresh(scope: UUID().uuidString, namespace: nil, isCurrent: { true }) {
+                UpcomingFeedSnapshot(releases: [release], failedSourceCount: failures)
+            }
+            try await Task.sleep(for: .milliseconds(600))
+            let observations = try capture(window, name: "upcoming-past-only-\(failures)")
+            let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            if failures == 0 {
+                XCTAssertTrue(text.contains("Nothing upcoming yet"), text)
+                XCTAssertFalse(text.contains("No matching releases"), text)
+            } else {
+                XCTAssertTrue(text.contains("load releases"), text)
+                XCTAssertTrue(text.contains("Retry"), text)
+            }
+        }
+    }
+
     private var previous: UIWindow?
 
     private func host(_ view: some View) throws -> UIWindow {
