@@ -18,6 +18,7 @@ struct UpcomingCaptureFixture: View {
     @State private var fixture = UpcomingCaptureState()
     @State private var isLoaded = false
     #if os(tvOS)
+    @State private var navigationChrome = NavigationChromeModel()
     @State private var tvSelection: NavigationRailDestination =
         ProcessInfo.processInfo.arguments.contains("--capture-home") ? .home : .upcoming
     #endif
@@ -26,22 +27,33 @@ struct UpcomingCaptureFixture: View {
     var body: some View {
         Group {
             #if os(tvOS)
-            TopBarNavigation(
-                destinations: [.home, .upcoming, .watchlist, .search],
-                selection: $tvSelection, preventsAccidentalExit: true,
-                content: { destination, _ in
-                    AnyView(page(home: destination == .home))
-                },
-                label: { destination in
-                    switch destination {
-                    case .home: AnyView(Label("Home", systemImage: "house"))
-                    case .upcoming: AnyView(Label("Upcoming", systemImage: "calendar"))
-                    case .watchlist: AnyView(Label("Watchlist", systemImage: "bookmark"))
-                    default: AnyView(Label("Search", systemImage: "magnifyingglass"))
-                    }
-                },
-                profile: Profile(name: "Viewer"), onOpenProfileSwitcher: {}
-            )
+            if ProcessInfo.processInfo.arguments.contains("--capture-pinned") {
+                NavigationRailShell(
+                    profile: Profile(name: "Viewer"), entries: [],
+                    destinations: [.home, .upcoming], selection: $tvSelection,
+                    onOpenProfileSwitcher: {}, chrome: navigationChrome,
+                    content: page(home: tvSelection == .home), contentDestination: tvSelection
+                )
+                .environment(navigationChrome)
+                .environment(\.plozzNavigationStyle, .rail)
+            } else {
+                TopBarNavigation(
+                    destinations: [.home, .upcoming, .watchlist, .search],
+                    selection: $tvSelection, preventsAccidentalExit: true,
+                    content: { destination, _ in
+                        AnyView(page(home: destination == .home))
+                    },
+                    label: { destination in
+                        switch destination {
+                        case .home: AnyView(Label("Home", systemImage: "house"))
+                        case .upcoming: AnyView(Label("Upcoming", systemImage: "calendar"))
+                        case .watchlist: AnyView(Label("Watchlist", systemImage: "bookmark"))
+                        default: AnyView(Label("Search", systemImage: "magnifyingglass"))
+                        }
+                    },
+                    profile: Profile(name: "Viewer"), onOpenProfileSwitcher: {}
+                )
+            }
             #else
             if isLoaded {
                 fixture.shell
@@ -656,7 +668,11 @@ struct UpcomingCaptureFixture: View {
         NavigationStack {
             Group {
                 if home {
-                    homeContent
+                    if ProcessInfo.processInfo.arguments.contains("--capture-sparse") {
+                        Button("Home fixture") {}.navigationEntryFocus(.content)
+                    } else {
+                        homeContent
+                    }
                 } else {
                     UpcomingView(
                         model: fixture.home.upcoming,
@@ -894,6 +910,15 @@ private struct UpcomingCaptureProvider: MediaProvider {
 
     static var releases: [UpcomingRelease] {
         let today = Calendar.current.startOfDay(for: Date())
+        if ProcessInfo.processInfo.arguments.contains("--capture-sparse") {
+            return [("first", "First upcoming movie", 2), ("later", "Later upcoming movie", 10)].flatMap { id, title, offset in
+                UpcomingReleaseBuilder.movies(
+                    [.init(kind: .digital, date: Calendar.current.date(byAdding: .day, value: offset, to: today)!,
+                           regionCode: "US")],
+                    for: MediaItem(id: id, title: title, kind: .movie), interests: [.watchlist], regionCode: "US"
+                )
+            }
+        }
         let dense = ProcessInfo.processInfo.arguments.contains("--capture-dense")
         let thirty = ProcessInfo.processInfo.arguments.contains("--capture-thirty")
         let items = thirty ? (0..<30).map { index in
