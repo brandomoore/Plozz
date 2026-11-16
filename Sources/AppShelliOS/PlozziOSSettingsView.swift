@@ -435,10 +435,6 @@ var deviceName: String {
 /// Heading for settings shared by every profile, independent of iCloud Sync.
 private var deviceSettingsTitle: LocalizedStringResource { SettingsCopy.everyone }
 
-private var everyoneScopeFooter: LocalizedStringResource {
-    "Applies to all profiles on this device."
-}
-
 private struct PlozziOSSettingsSplitView: View {
     @Environment(\.themePalette) private var palette
     let appModel: PlozziOSAppModel
@@ -603,8 +599,6 @@ private struct PlozziOSSettingsSplitView: View {
                                 title: "Downloads",
                                 systemImage: "arrow.down.circle"
                             )
-                        } footer: {
-                            Text(everyoneScopeFooter)
                         }
                     }
 
@@ -1221,8 +1215,6 @@ private struct PlozziOSSettingsCompactMenu: View {
                             Label("Downloads", systemImage: "arrow.down.circle")
                         }
                         .settingsActionRow()
-                    } footer: {
-                        Text(everyoneScopeFooter)
                     }
                 }
 

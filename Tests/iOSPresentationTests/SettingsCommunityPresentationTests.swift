@@ -425,6 +425,9 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                     content, size: size, light: light,
                     name: "compact-settings-community-\(Int(size.width))-\(light)"
                 )
+                XCTAssertTrue(text.localizedCaseInsensitiveContains("All profiles"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("Everyone"), text)
+                XCTAssertFalse(text.contains("Applies to all profiles on this device."), text)
                 assertCommunity(in: text)
                 XCTAssertTrue(text.contains("Mozz"), text)
                 XCTAssertTrue(text.contains("TestFlight public beta"), text)
@@ -450,6 +453,9 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                     name: "regular-settings-community-\(Int(size.width))-\(light)",
                     leadingColumn: true
                 )
+                XCTAssertTrue(text.localizedCaseInsensitiveContains("All profiles"), text)
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("Everyone"), text)
+                XCTAssertFalse(text.contains("Applies to all profiles on this device."), text)
                 assertCommunity(in: text)
                 XCTAssertTrue(text.contains("Mozz"), text)
                 XCTAssertTrue(text.contains("TestFlight public beta"), text)

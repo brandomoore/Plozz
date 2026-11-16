@@ -76,12 +76,13 @@ Controls with supporting text use CoreUI's `SettingsDescribedControl` on both
 platforms. It owns helper typography and spacing, keeps the native control's
 normal clearance, and places group separators after the complete row. Settings
 summaries use `SettingsRowMetrics.descriptionFont`, not per-page caption sizes.
-Seerr appears in the active profile's category list, not Everyone. It edits only
+Seerr appears in the active profile's category list, not All profiles. It edits only
 that profile's connections; the existing Kids-profile restrictions still apply.
 On mobile, the active profile's avatar and name form the first row of this same
 settings card, matching the tvOS grouping. The household Profiles entry remains
-under Everyone, whose mobile footer explains that it applies to all profiles on
-the device. The profile card has no repeated scope footer.
+under All profiles. The shared section has no scope footer; device and sync
+details belong inside the relevant settings. The profile card has no repeated
+scope footer.
 
 Playback groups its five optional **Player tabs** in one shared control surface
 on TV and mobile. Labels match the player tabs, Info stays always available, and

@@ -562,7 +562,7 @@ public struct SettingsView: View {
         }
     }
 
-    /// The **Everyone** container: everything shared by every profile — server
+    /// The **All profiles** container: everything shared by every profile — server
     /// sign-ins (shared Keychain via `AccountStore`) and profile management (the
     /// roster; the launch picker lives one level in, on the Profiles screen). It
     /// follows the profile card, because the profile holds what people actually
@@ -570,27 +570,19 @@ public struct SettingsView: View {
     /// belongs to a single profile; a profile only picks which of these servers
     /// it watches (see the profile's Libraries section).
     ///
-    /// Named for its audience, not the hardware. Most of what's in here syncs, so
-    /// "This Apple TV" was only ever true when iCloud Sync was off — see
-    /// `SettingsCopy.everyone`. The heading is fixed and the *subtitle* carries the
-    /// reach, so flipping Sync never appears to move a row into another scope.
+    /// Individual settings explain their device and sync scope.
     @ViewBuilder
     private var everyoneSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             // "Identity on top", mirroring the profile card's avatar header. The
-            // glyph tracks reach the same way the subtitle does: people when these
+            // glyph tracks reach: people when these
             // settings span the user's devices, a lone Apple TV when they don't.
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: SettingsWorkspaceHeaderMetrics.labelSpacing) {
-                    SettingsWorkspaceScopeBadge(syncEnabled: syncEnabled)
-                        .accessibilityIdentifier("settings-everyone-icon")
-                    Text(SettingsCopy.everyone)
-                        .font(SettingsWorkspaceHeaderMetrics.titleFont)
-                        .accessibilityIdentifier("settings-everyone-name")
-                }
-                Text(SettingsCopy.everyoneScope(syncEnabled: syncEnabled, deviceName: Self.deviceName))
-                    .font(.caption)
-                    .plozzForeground(.secondary)
+            HStack(spacing: SettingsWorkspaceHeaderMetrics.labelSpacing) {
+                SettingsWorkspaceScopeBadge(syncEnabled: syncEnabled)
+                    .accessibilityIdentifier("settings-everyone-icon")
+                Text(SettingsCopy.everyone)
+                    .font(SettingsWorkspaceHeaderMetrics.titleFont)
+                    .accessibilityIdentifier("settings-everyone-name")
             }
             .padding(SettingsWorkspaceHeaderMetrics.contentInset)
 
