@@ -276148,6 +276148,226 @@
         }
       }
     },
+    "Couldn't load releases" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذّر تحميل مواعيد العرض"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Неуспешно зареждане на премиерите"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No s'han pogut carregar les estrenes"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodařilo se načíst premiéry"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke indlæse udgivelser"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Veröffentlichungen konnten nicht geladen werden"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν ήταν δυνατή η φόρτωση των κυκλοφοριών"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudieron cargar los estrenos"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "بارگیری اطلاعات انتشار ممکن نشد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Julkaisujen lataaminen epäonnistui"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible de charger les sorties"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא ניתן לטעון את מועדי היציאה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "रिलीज़ लोड नहीं हो सकीं"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nije moguće učitati izdanja"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nem sikerült betölteni a megjelenéseket"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat memuat jadwal rilis"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile caricare le uscite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "公開・放送予定を読み込めませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "공개 일정을 불러오지 못했어요"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keluaran tidak dapat dimuatkan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke laste inn utgivelser"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kon releases niet laden"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się wczytać premier"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível carregar os lançamentos"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nu s-au putut încărca lansările"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось загрузить релизы"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodarilo sa načítať nové epizódy a filmy"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Izidov ni bilo mogoče naložiti"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Učitavanje izdanja nije uspelo"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Det gick inte att läsa in nya avsnitt och filmer"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "โหลดกำหนดฉายไม่ได้"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yayınlar yüklenemedi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося завантажити релізи"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không tải được lịch phát hành"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法加载上映及播出信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法載入上映及播出資訊"
+          }
+        }
+      }
+    },
     "Couldn't load rows from %@." : {
       "localizations" : {
         "ar" : {
@@ -547404,6 +547624,7 @@
       }
     },
     "No announced releases" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -558410,6 +558631,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "保留的節目表中沒有相符的節目。"
+          }
+        }
+      }
+    },
+    "No matching releases" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لا توجد مواعيد عرض مطابقة"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Няма съответстващи премиери"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No hi ha estrenes amb aquests filtres"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Žádné odpovídající premiéry"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ingen matchende udgivelser"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine passenden Veröffentlichungen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν βρέθηκαν κυκλοφορίες που να ταιριάζουν"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No hay estrenos que coincidan"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "هیچ موردی با فیلترها مطابقت ندارد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ei suodattimia vastaavia julkaisuja"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aucune sortie correspondante"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "אין תכנים שתואמים למסננים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "फ़िल्टर से मेल खाती कोई रिलीज़ नहीं"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nema izdanja koja odgovaraju filtrima"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nincs a szűrőknek megfelelő megjelenés"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak ada rilis yang sesuai"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nessuna uscita corrispondente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "条件に合う公開・放送予定はありません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "조건에 맞는 공개 일정이 없어요"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tiada keluaran yang sepadan"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ingen utgivelser med disse filtrene"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geen releases voor deze filters"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Brak premier pasujących do filtrów"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nenhum lançamento corresponde aos filtros"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nicio lansare nu corespunde filtrelor"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Нет подходящих релизов"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Žiadne vyhovujúce epizódy ani filmy"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ni izidov, ki ustrezajo filtrom"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nema izdanja koja odgovaraju filterima"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inga matchande avsnitt eller filmer"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ไม่มีกำหนดฉายที่ตรงกัน"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Eşleşen yayın yok"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Немає відповідних релізів"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không có lịch phát hành phù hợp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "没有符合条件的上映或播出信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "沒有符合條件的上映或播出資訊"
           }
         }
       }
@@ -577798,6 +578239,226 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "尚無內容可觀看"
+          }
+        }
+      }
+    },
+    "Nothing upcoming yet" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لا شيء مرتقب حتى الآن"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Все още няма предстоящи заглавия"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Encara no hi ha res previst"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zatím se nic nechystá"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Intet på vej endnu"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Noch steht nichts an"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν υπάρχουν προσεχείς κυκλοφορίες ακόμη"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aún no hay próximos estrenos"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "هنوز چیزی در راه نیست"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ei vielä tulevia julkaisuja"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aucune sortie à venir pour le moment"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "עדיין אין תכנים צפויים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "अभी कुछ भी आने वाला नहीं है"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zasad nema nadolazećih izdanja"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Még nincs közelgő megjelenés"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Belum ada rilis mendatang"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nessuna uscita in programma per ora"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "今のところ公開・放送予定はありません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "아직 예정된 공개 일정이 없어요"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tiada keluaran akan datang buat masa ini"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ingen kommende utgivelser ennå"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nog geen aankomende releases"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Na razie nie ma nadchodzących premier"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ainda não há lançamentos previstos"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Încă nu sunt lansări viitoare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Пока нет предстоящих релизов"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zatiaľ žiadne nadchádzajúce epizódy ani filmy"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Za zdaj ni prihajajočih izidov"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Još nema predstojećih izdanja"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inga kommande avsnitt eller filmer ännu"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ยังไม่มีกำหนดฉายเร็ว ๆ นี้"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Henüz yaklaşan yayın yok"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Поки що немає майбутніх релізів"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chưa có nội dung sắp ra mắt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "暂无即将上映或播出的内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "目前沒有即將上映或播出的內容"
           }
         }
       }
@@ -825312,6 +825973,446 @@
         }
       }
     },
+    "Shows and movies you watch or watchlist appear here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تظهر هنا المسلسلات والأفلام التي تشاهدها أو تضيفها إلى قائمة المشاهدة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Тук се показват сериалите и филмите, които гледате или добавяте в списъка си за гледане."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aquí apareixen les sèries i les pel·lícules que mires o afegeixes a la llista de seguiment."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zde se zobrazují seriály a filmy, které sledujete nebo máte v seznamu ke zhlédnutí."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serier og film, du ser eller har på din huskeliste, vises her."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hier erscheinen Serien und Filme, die du ansiehst oder auf deiner Merkliste hast."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Εδώ εμφανίζονται σειρές και ταινίες που παρακολουθείτε ή έχετε προσθέσει στη λίστα παρακολούθησης."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aquí aparecen las series y películas que ves o añades a tu lista de seguimiento."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سریال‌ها و فیلم‌هایی که تماشا می‌کنید یا به فهرست تماشا اضافه می‌کنید، اینجا نمایش داده می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Täällä näkyvät sarjat ja elokuvat, joita katsot tai jotka olet lisännyt katselulistallesi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les séries et films que vous regardez ou ajoutez à votre liste de suivi apparaissent ici."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "סדרות וסרטים שאתם צופים בהם או מוסיפים לרשימת הצפייה יופיעו כאן."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "आप जो शो और फ़िल्में देखते हैं या वॉचलिस्ट में जोड़ते हैं, वे यहाँ दिखेंगे।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ovdje se prikazuju serije i filmovi koje gledate ili dodate na popis za gledanje."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Itt jelennek meg a nézett vagy a megnézendők listájára mentett sorozatok és filmek."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serial dan film yang Anda tonton atau simpan di daftar tontonan muncul di sini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Qui trovi le serie e i film che guardi o salvi nella lista da vedere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "視聴した番組や映画、ウォッチリストに追加した作品がここに表示されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "시청 중이거나 나중에 볼 목록에 저장한 시리즈와 영화가 여기에 표시돼요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Siri dan filem yang anda tonton atau simpan dalam senarai tontonan dipaparkan di sini."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serier og filmer du ser på eller lagrer for å se senere, vises her."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Series en films die je kijkt of op je kijklijst zet, verschijnen hier."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tutaj pojawiają się seriale i filmy, które oglądasz lub masz na liście do obejrzenia."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Séries e filmes a que você assiste ou que salva na lista para assistir aparecem aqui."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serialele și filmele pe care le urmărești sau le adaugi în lista de vizionare apar aici."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Здесь появятся сериалы и фильмы, которые вы смотрите или добавляете в список просмотра."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tu sa zobrazia seriály a filmy, ktoré sledujete alebo si pridáte do zoznamu na pozretie."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tukaj se prikažejo serije in filmi, ki jih gledate ali dodate na seznam za ogled."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ovde se prikazuju serije i filmovi koje gledate ili dodajete na listu za gledanje."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serier och filmer som du tittar på eller lägger till i din att se-lista visas här."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ซีรีส์และภาพยนตร์ที่คุณดูหรือบันทึกไว้ดูภายหลังจะแสดงที่นี่"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İzlediğiniz veya izleme listenize eklediğiniz dizi ve filmler burada görünür."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Тут з’являються серіали й фільми, які ви дивитеся або додаєте до списку перегляду."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Các phim và chương trình bạn xem hoặc lưu vào danh sách muốn xem sẽ xuất hiện ở đây."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "这里会显示你观看或加入待看列表的剧集和电影。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "這裡會顯示你觀看或加入待看清單的影集和電影。"
+          }
+        }
+      }
+    },
+    "Shows and movies you watch, watchlist, or request appear here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تظهر هنا المسلسلات والأفلام التي تشاهدها أو تضيفها إلى قائمة المشاهدة أو تطلب إضافتها إلى المكتبة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Тук се показват сериалите и филмите, които гледате, добавяте в списъка си за гледане или заявявате."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aquí apareixen les sèries i les pel·lícules que mires, afegeixes a la llista de seguiment o sol·licites."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zde se zobrazují seriály a filmy, které sledujete, máte v seznamu ke zhlédnutí nebo jste si vyžádali."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serier og film, du ser, har på din huskeliste eller har anmodet om, vises her."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hier erscheinen Serien und Filme, die du ansiehst, auf deiner Merkliste hast oder für die Mediathek angefragt hast."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Εδώ εμφανίζονται σειρές και ταινίες που παρακολουθείτε, έχετε προσθέσει στη λίστα παρακολούθησης ή έχετε ζητήσει."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aquí aparecen las series y películas que ves, añades a tu lista de seguimiento o solicitas."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سریال‌ها و فیلم‌هایی که تماشا می‌کنید، به فهرست تماشا اضافه می‌کنید یا درخواست می‌کنید، اینجا نمایش داده می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Täällä näkyvät sarjat ja elokuvat, joita katsot, jotka olet lisännyt katselulistallesi tai joita olet pyytänyt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les séries et films que vous regardez, ajoutez à votre liste de suivi ou demandez apparaissent ici."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "סדרות וסרטים שאתם צופים בהם, מוסיפים לרשימת הצפייה או מבקשים להוסיף לשרת שלכם יופיעו כאן."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "आप जो शो और फ़िल्में देखते हैं, वॉचलिस्ट में जोड़ते हैं या लाइब्रेरी में जोड़ने का अनुरोध करते हैं, वे यहाँ दिखेंगे।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ovdje se prikazuju serije i filmovi koje gledate, dodate na popis za gledanje ili zatražite."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Itt jelennek meg a nézett, a megnézendők listájára mentett vagy kért sorozatok és filmek."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serial dan film yang Anda tonton, simpan di daftar tontonan, atau minta untuk ditambahkan ke pustaka muncul di sini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Qui trovi le serie e i film che guardi, salvi nella lista da vedere o richiedi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "視聴した番組や映画、ウォッチリストに追加した作品、リクエストした作品がここに表示されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "시청 중이거나 나중에 볼 목록에 저장했거나 추가를 요청한 시리즈와 영화가 여기에 표시돼요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Siri dan filem yang anda tonton, simpan dalam senarai tontonan atau minta ditambah ke pelayan anda dipaparkan di sini."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serier og filmer du ser på, lagrer for å se senere eller ber om å få lagt til på serveren din, vises her."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Series en films die je kijkt, op je kijklijst zet of aanvraagt, verschijnen hier."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tutaj pojawiają się seriale i filmy, które oglądasz lub masz na liście do obejrzenia, a także te, o których dodanie prosisz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Séries e filmes a que você assiste, que salva na lista para assistir ou que solicita aparecem aqui."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serialele și filmele pe care le urmărești, le adaugi în lista de vizionare sau le soliciți apar aici."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Здесь появятся сериалы и фильмы, которые вы смотрите, добавляете в список просмотра или запрашиваете."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tu sa zobrazia seriály a filmy, ktoré sledujete, pridáte do zoznamu na pozretie alebo si vyžiadate."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tukaj se prikažejo serije in filmi, ki jih gledate, dodate na seznam za ogled ali zanje pošljete zahtevo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ovde se prikazuju serije i filmovi koje gledate, dodajete na listu za gledanje ili tražite da se dodaju na vaš server."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serier och filmer som du tittar på, lägger till i din att se-lista eller skickar en förfrågan om visas här."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ซีรีส์และภาพยนตร์ที่คุณดู บันทึกไว้ดูภายหลัง หรือขอเพิ่มเข้าคลังจะแสดงที่นี่"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İzlediğiniz, izleme listenize eklediğiniz veya talep ettiğiniz dizi ve filmler burada görünür."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Тут з’являються серіали й фільми, які ви дивитеся, додаєте до списку перегляду або просите додати до медіатеки."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Các phim và chương trình bạn xem, lưu vào danh sách muốn xem hoặc yêu cầu thêm vào thư viện sẽ xuất hiện ở đây."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "这里会显示你观看、加入待看列表或请求添加到媒体库的剧集和电影。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "這裡會顯示你觀看、加入待看清單或請求新增至媒體庫的影集和電影。"
+          }
+        }
+      }
+    },
     "Shows codec, bitrate, buffer, and memory during playback." : {
       "localizations" : {
         "ar" : {
@@ -1022277,6 +1023378,7 @@
       }
     },
     "Upcoming episodes from shows you've watched and movies you've saved or requested appear here." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
