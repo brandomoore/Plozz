@@ -338,7 +338,7 @@ public struct PosterCardView: View {
         if showsSeriesArtwork {
             return style == .poster ? .extendedPortrait(blurredReflection: !reduceTransparency) : .extended
         }
-        if PosterCardPresentation.preservesContainerArtwork(for: item.kind) { return .fitted }
+        if PosterCardPresentation.fitsContainerArtwork(for: item.kind) { return .fitted }
         return hideThumbnail && !nativeUsesProtectedArtwork ? .blurred : .original
     }
 
@@ -1039,7 +1039,7 @@ public struct PosterCardView: View {
             pinIdentity: artworkPolicy.pinIdentity(for: item),
             content: { image in
                 image.resizable()
-                    .aspectRatio(contentMode: PosterCardPresentation.preservesContainerArtwork(for: item.kind) ? .fit : .fill)
+                    .aspectRatio(contentMode: PosterCardPresentation.fitsContainerArtwork(for: item.kind) ? .fit : .fill)
                     .blur(radius: hideThumbnail && spoilerSettings.mode == .blur ? 28 : 0)
                     .overlay(alignment: .topTrailing) {
                         if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
@@ -1481,6 +1481,11 @@ struct ContinueWatchingSeriesLogo: View {
 /// SwiftUI. Folders retain the shared poster footprint/focus mechanics but never
 /// look like playable, unwatched media.
 enum PosterCardPresentation {
+    static func fitsContainerArtwork(for kind: MediaItemKind) -> Bool {
+        kind == .playlist || kind == .folder
+    }
+
+    /// Accept custom container covers regardless of aspect ratio, even when cropped to fill.
     static func preservesContainerArtwork(for kind: MediaItemKind) -> Bool {
         kind == .collection || kind == .playlist || kind == .folder
     }
