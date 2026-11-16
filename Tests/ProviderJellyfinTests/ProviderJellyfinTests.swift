@@ -383,6 +383,52 @@ final class JellyfinProviderMappingTests: XCTestCase {
                        "NextUp must exclude resumable items so it complements, not duplicates, Resume")
     }
 
+    func testContinueWatchingKeepsBrieflyPlayedEpisodeAsSuggestion() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: """
+        {"Items":[{"Id":"brief","Name":"Episode 7","Type":"Episode","SeriesId":"series",
+        "IndexNumber":7,"RunTimeTicks":36000000000,
+        "UserData":{"PlaybackPositionTicks":100000000,"Played":false}}],
+        "TotalRecordCount":1}
+        """)
+        stub.stub(pathSuffix: "/Shows/NextUp", json: #"{"Items":[],"TotalRecordCount":0}"#)
+        let provider = JellyfinProvider(session: makeSession(), http: stub)
+
+        let items = try await provider.continueWatching(limit: 10)
+
+        XCTAssertEqual(items.map(\.id), ["brief"])
+        XCTAssertNil(items.first?.resumePosition,
+                     "A brief play must stay visible as a suggestion without a misleading progress bar")
+        let query = try XCTUnwrap(stub.queryItems(forPathSuffix: "/Shows/NextUp"))
+        XCTAssertEqual(query.first(where: { $0.name == "EnableResumable" })?.value, "false",
+                       "The fast complementary query must remain; the client handles the brief-play gap")
+    }
+
+    func testUnlimitedNextUpUsesOneBoundedCompanionPage() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: #"{"Items":[],"TotalRecordCount":0}"#)
+        let firstPage = (0..<100).map {
+            #"{"Id":"next-\#($0)","Name":"Episode \#($0)","Type":"Episode","SeriesId":"series-\#($0)","UserData":{"LastPlayedDate":"2026-01-01T00:00:00Z"}}"#
+        }.joined(separator: ",")
+        stub.stub(
+            pathSuffix: "/Shows/NextUp",
+            json: #"{"Items":[\#(firstPage)],"TotalRecordCount":101}"#
+        )
+        let provider = JellyfinProvider(session: makeSession(), http: stub)
+
+        let items = try await provider.continueWatching(limit: .max)
+
+        XCTAssertEqual(items.count, 100)
+        let nextUpQueries = zip(stub.sentPaths, stub.sentQueryItems)
+            .filter { $0.0.hasSuffix("/Shows/NextUp") }
+            .map(\.1)
+        XCTAssertEqual(nextUpQueries.count, 1, "The companion feed must not drain every resumable page")
+        let query = try XCTUnwrap(nextUpQueries.first)
+        XCTAssertEqual(query.first { $0.name == "Limit" }?.value, "100")
+        XCTAssertEqual(query.first { $0.name == "StartIndex" }?.value, "0")
+        XCTAssertEqual(query.first { $0.name == "EnableTotalRecordCount" }?.value, "true")
+    }
+
     func testContinueWatchingDedupesItemPresentInBothResumeAndNextUp() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: """

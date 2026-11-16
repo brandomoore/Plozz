@@ -394,29 +394,26 @@ public struct JellyfinClient: Sendable {
     /// Plex parity.
     ///
     /// `EnableResumable=false` keeps NextUp complementary rather than overlapping:
-    /// in-progress episodes already come back from `/Items/Resume`, so NextUp is
-    /// scoped to the next-after-completed episode. `EnableRewatching=false` avoids
-    /// resurfacing fully-watched series. A series-specific resume lookup includes
-    /// resumable candidates because compatible servers may not scope Resume to a
-    /// series; the provider still prefers Resume when both return the same episode.
+    /// in-progress episodes already come back from `/Items/Resume`. The brief-play
+    /// gap is handled client-side by retaining the Resume episode as a suggestion
+    /// (see `JellyfinProvider.retainingBrieflyPlayedEpisodes`), so the Home feed
+    /// keeps the cheap query TestFlight uses. `EnableRewatching=false` avoids
+    /// resurfacing fully-watched series.
+    /// The companion is capped at one 100-item page; draining every page made the
+    /// Home fan-out slower without changing what a rail can show.
     func nextUpItems(
         userID: String, limit: Int, parentID: String? = nil, seriesID: String? = nil
     ) async throws -> [BaseItemDto] {
-        if limit == Int.max {
-            return try await exhaustiveItems { startIndex, pageSize in
-                return try await nextUpItemsPage(
-                    userID: userID,
-                    startIndex: startIndex,
-                    limit: pageSize,
-                    parentID: parentID,
-                    seriesID: seriesID
-                )
-            }
-        }
+        // The companion feed is bounded even for an unbounded Home row. Draining
+        // every resumable + next-up page is what made the resumable query ~850 ms
+        // slower than TestFlight; no Continue Watching rail presents more than
+        // 100 next-up cards. Resume remains the primary feed and is unaffected.
+        let isUnbounded = limit == Int.max
+        let boundedLimit = isUnbounded ? 100 : min(limit, 100)
         return try await nextUpItemsPage(
             userID: userID,
-            startIndex: nil,
-            limit: limit,
+            startIndex: isUnbounded ? 0 : nil,
+            limit: boundedLimit,
             parentID: parentID,
             seriesID: seriesID
         ).Items
@@ -975,6 +972,31 @@ public struct JellyfinClient: Sendable {
             baseURL: baseURL
         )
         return LibraryQueryFacets(genres: response.Genres ?? [], years: response.Years ?? [])
+    }
+
+    /// Existence-only probe for a collection directory.
+    ///
+    /// Deliberately lighter than `collectionCandidates`: one BoxSet, no sort,
+    /// no artwork and no fields. The probe only needs to know whether anything
+    /// exists, and a sorted/enriched one-row query made the shared
+    /// `libraries()` gate wait on work whose result was thrown away. The total
+    /// count stays so an inconsistent empty page still fails closed.
+    func collectionDirectoryHasItems(userID: String, libraryID: String?) async throws -> ItemsResponse {
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "IncludeItemTypes", value: "BoxSet"),
+                URLQueryItem(name: "Recursive", value: "true"),
+                URLQueryItem(name: "StartIndex", value: "0"),
+                URLQueryItem(name: "Limit", value: "1"),
+                URLQueryItem(name: "EnableImages", value: "false"),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "true")
+            ] + (libraryID.map { [URLQueryItem(name: "ParentId", value: $0)] } ?? []),
+            headers: authHeaders
+        )
+        return try await HTTPResponseDiagnostics.$route.withValue(.collectionCandidates) {
+            try await readCollectionPage(endpoint)
+        }
     }
 
     /// Match the native client: the server decides whether ParentId scopes BoxSets.
