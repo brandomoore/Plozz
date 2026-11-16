@@ -40,16 +40,29 @@ final class SettingsCommunityPresentationTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         for isKids in [false, true] {
+            var headerFrame = CGRect.zero
+            var sectionFrame = CGRect.zero
+            var firstRowFrame = CGRect.zero
             window.rootViewController = UIHostingController(rootView:
                 PlozziOSProfileSettingsSection(
-                    profileName: "Current profile", showsParentalControls: isKids,
+                    showsParentalControls: isKids,
                     isKidsProfile: isKids,
                     appLanguage: language
-                ) { category in
+                ) {
+                    PlozziOSProfileIdentityHeader(
+                        profile: Profile(id: "profile-header", name: "Current profile"),
+                        profileCount: 2, onSwitchProfile: {}
+                    )
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { headerFrame = $0 }
+                } row: { category in
                     PlozziOSSettingsCategoryLabel(category: category, accounts: [], isAccountIncluded: { _ in true })
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                            if category == .playback { firstRowFrame = $0 }
+                        }
                 } management: {
                     EmptyView()
                 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { sectionFrame = $0 }
                 .frame(width: 390)
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .environment(\.themePalette, .dark)
@@ -61,6 +74,13 @@ final class SettingsCommunityPresentationTests: XCTestCase {
             try await waitForHostedLayout(window)
             let text = try recognizedText(in: window, name: "Profile settings Seerr kids-\(isKids)")
             XCTAssertEqual(text.components(separatedBy: "Seerr").count - 1, isKids ? 0 : 1, text)
+            XCTAssertEqual(text.components(separatedBy: "Current profile").count - 1, 1, text)
+            XCTAssertGreaterThan(headerFrame.height, 0)
+            XCTAssertEqual(headerFrame.minY, sectionFrame.minY, accuracy: 1,
+                           "The identity belongs inside the top of the settings card, not a separate section.")
+            XCTAssertGreaterThanOrEqual(firstRowFrame.minY, headerFrame.maxY)
+            XCTAssertLessThan(firstRowFrame.minY - headerFrame.maxY, MobileSettingsMetrics.sectionSpacing,
+                              "There must not be a section gap between the profile header and its settings.")
         }
     }
 

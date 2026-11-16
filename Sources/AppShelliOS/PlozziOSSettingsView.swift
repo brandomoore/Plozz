@@ -242,16 +242,18 @@ private enum PlozziOSSettingsDestination: Hashable {
     }
 }
 
-struct PlozziOSProfileSettingsSection<Row: View, Management: View>: View {
-    let profileName: String
+struct PlozziOSProfileSettingsSection<Header: View, Row: View, Management: View>: View {
     let showsParentalControls: Bool
     let isKidsProfile: Bool
     let appLanguage: AppLanguageSettingsModel
+    @ViewBuilder let header: () -> Header
     @ViewBuilder let row: (ProfileSettingsCategory) -> Row
     @ViewBuilder let management: () -> Management
 
     var body: some View {
-        SettingsSectionGroup(verbatim: profileName) {
+        SettingsSectionGroup {
+            header()
+                .settingsActionRow()
             ForEach(ProfileSettingsCategory.allCases.filter { $0 != .seerr || !isKidsProfile }) { category in
                 if category == .language {
                     PlozziOSSettingsLanguagePicker(appLanguage: appLanguage)
@@ -484,14 +486,6 @@ private struct PlozziOSSettingsSplitView: View {
             && !isParentalUnlocked
     }
 
-    private var profileIdentityHeader: some View {
-        SettingsSectionGroup {
-            PlozziOSProfileIdentityHeader(
-                appModel: appModel,
-                onSwitchProfile: onSwitchProfile
-            )
-        }
-    }
     @State private var confirmSignOutAll = false
     /// Whether the Parental PIN has been entered for the Kids Profile currently
     /// open. View state, cleared when the profile changes, so unsealing once
@@ -518,21 +512,17 @@ private struct PlozziOSSettingsSplitView: View {
                         shareIDs: appModel.mediaShareAccountIDs
                     )
 
-                    // The active profile's settings come FIRST: they are what
-                    // anyone actually opens Settings to change, where the device
-                    // group is setup done once.
-                    // Who you are, as the way to become someone else — the
-                    // avatar-in-the-corner convention every streaming app uses.
-                    // Always present, Kids Profile or not: hiding the exit was
-                    // never the protection, the Parental PIN gate is.
-                    profileIdentityHeader
-
                     PlozziOSProfileSettingsSection(
-                        profileName: appModel.profiles.activeProfile.name,
                         showsParentalControls: showsParentalControlsSection,
                         isKidsProfile: appModel.profiles.activeProfile.isKids,
                         appLanguage: appModel.appLanguage
-                    ) { category in
+                    ) {
+                        PlozziOSProfileIdentityHeader(
+                            profile: appModel.profiles.activeProfile,
+                            profileCount: appModel.profiles.profiles.count,
+                            onSwitchProfile: onSwitchProfile
+                        )
+                    } row: { category in
                         Button {
                             selection = .profile(category)
                         } label: {
@@ -1063,15 +1053,6 @@ private struct PlozziOSSettingsCompactMenu: View {
         showsParentalControlsSection && !isParentalUnlocked
     }
 
-    private var profileIdentityHeader: some View {
-        SettingsSectionGroup {
-            PlozziOSProfileIdentityHeader(
-                appModel: appModel,
-                onSwitchProfile: onSwitchProfile
-            )
-        }
-    }
-
     var body: some View {
         ScrollView {
             VStack(spacing: MobileSettingsMetrics.sectionSpacing) {
@@ -1090,14 +1071,17 @@ private struct PlozziOSSettingsCompactMenu: View {
                     shareIDs: appModel.mediaShareAccountIDs
                 )
 
-                profileIdentityHeader
-
                 PlozziOSProfileSettingsSection(
-                    profileName: appModel.profiles.activeProfile.name,
                     showsParentalControls: showsParentalControlsSection,
                     isKidsProfile: appModel.profiles.activeProfile.isKids,
                     appLanguage: appModel.appLanguage
-                ) { category in
+                ) {
+                    PlozziOSProfileIdentityHeader(
+                        profile: appModel.profiles.activeProfile,
+                        profileCount: appModel.profiles.profiles.count,
+                        onSwitchProfile: onSwitchProfile
+                    )
+                } row: { category in
                     SettingsPageLink {
                         PlozziOSProfileSettingsPage(
                             category: category, appModel: appModel, onAddServer: onAddServer,
@@ -3204,19 +3188,20 @@ private struct PlozziOSLicenseBadges: View {
 /// Tapping who you are to become someone else is the convention every streaming
 /// app shares, and it puts switching at the top of Settings instead of several
 /// rows down inside a household section a Kids Profile can't even see.
-private struct PlozziOSProfileIdentityHeader: View {
-    let appModel: PlozziOSAppModel
+struct PlozziOSProfileIdentityHeader: View {
+    let profile: Profile
+    let profileCount: Int
     let onSwitchProfile: () -> Void
 
     var body: some View {
         Button(action: onSwitchProfile) {
             HStack(spacing: 14) {
-                PlozziOSProfileAvatar(profile: appModel.profiles.activeProfile, size: 52)
+                PlozziOSProfileAvatar(profile: profile, size: 52)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: appModel.profiles.activeProfile.name)
+                    Text(verbatim: profile.name)
                         .font(.headline)
                     Text(KidsProfileCopy.openProfiles(
-                        profileCount: appModel.profiles.profiles.count
+                        profileCount: profileCount
                     ))
                     .font(.subheadline)
                     .foregroundStyle(.tint)
@@ -3229,7 +3214,6 @@ private struct PlozziOSProfileIdentityHeader: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .settingsActionRow()
     }
 }
 

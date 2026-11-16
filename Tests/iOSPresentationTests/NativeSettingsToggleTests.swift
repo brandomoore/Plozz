@@ -18,6 +18,7 @@ final class NativeSettingsToggleTests: XCTestCase {
             var group = CGRect.zero
             var described = CGRect.zero
             var description = CGRect.zero
+            var automatic = CGRect.zero
         }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -48,6 +49,10 @@ final class NativeSettingsToggleTests: XCTestCase {
                             Toggle("Next setting", isOn: .constant(false))
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.group = $0 }
+                        SettingsSectionGroup {
+                            AutomaticSignInToggle(settings: .init(isEnabled: .constant(true)))
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.automatic = $0 }
                     }
                     .padding(16)
                     .frame(maxHeight: .infinity, alignment: .top)
@@ -60,8 +65,8 @@ final class NativeSettingsToggleTests: XCTestCase {
                 window.makeKeyAndVisible()
                 try await settle(window)
                 let controls = switches(in: window).map { $0.convert($0.bounds, to: window) }.sorted { $0.minY < $1.minY }
-                XCTAssertEqual(controls.count, 3)
-                guard controls.count == 3 else { continue }
+                XCTAssertEqual(controls.count, 4)
+                guard controls.count == 4 else { continue }
                 XCTAssertEqual(controls[1].minY - frames.group.minY,
                                controls[0].minY - frames.plain.minY, accuracy: 1,
                                "A description must not remove the toggle's top inset.")
@@ -69,6 +74,9 @@ final class NativeSettingsToggleTests: XCTestCase {
                 XCTAssertEqual(frames.described.maxY - frames.description.maxY, 8, accuracy: 1,
                                "Descriptions share the normal row's bottom padding.")
                 if size == .large {
+                    XCTAssertEqual(controls[3].minY - frames.automatic.minY,
+                                   controls[0].minY - frames.plain.minY, accuracy: 1,
+                                   "Automatically Sign In must use the shared described-row clearance.")
                     XCTAssertEqual(controls[1].minY - frames.group.minY,
                                    frames.described.maxY + 4 - frames.description.maxY, accuracy: 1,
                                    "The toggle and description share balanced outer padding.")

@@ -78,6 +78,9 @@ normal clearance, and places group separators after the complete row. Settings
 summaries use `SettingsRowMetrics.descriptionFont`, not per-page caption sizes.
 Seerr appears in the active profile's category list, not Everyone. It edits only
 that profile's connections; the existing Kids-profile restrictions still apply.
+On mobile, the active profile's avatar and name form the first row of this same
+settings card, matching the tvOS grouping. The household Profiles entry remains
+under Everyone.
 
 Playback groups its five optional **Player tabs** in one shared control surface
 on TV and mobile. Labels match the player tabs, Info stays always available, and
