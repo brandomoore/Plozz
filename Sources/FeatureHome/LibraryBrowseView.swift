@@ -540,7 +540,8 @@ public struct LibraryBrowseView: View {
         guard let item = viewModel.item(at: index) else { return }
         seeAllPopup.focusChanged(
             key: item.stablePresentationID, focused: focused,
-            delay: viewModel.presentation.settings.seeAllPopupDelayIfEnabled
+            delay: viewModel.presentation.settings.seeAllPopupDelayIfEnabled,
+            hideAfter: viewModel.presentation.settings.popupHideAfter
         ) { [spoilerSettings, viewModel] in
             SeeAllPopupContent(item: await viewModel.popupDetail(for: item), spoilers: spoilerSettings)
         }

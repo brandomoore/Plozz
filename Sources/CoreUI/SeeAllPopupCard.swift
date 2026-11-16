@@ -8,8 +8,14 @@ import SwiftUI
 public struct SeeAllPopupCard: View {
     static let width: CGFloat = 560
     let content: SeeAllPopupContent
+    /// Called once the whole synopsis has been shown: straight away when it fits,
+    /// otherwise when it has finished scrolling. The pop-up's timeout counts from here.
+    let onReadingFinished: @MainActor () -> Void
 
-    public init(content: SeeAllPopupContent) { self.content = content }
+    public init(content: SeeAllPopupContent, onReadingFinished: @escaping @MainActor () -> Void = {}) {
+        self.content = content
+        self.onReadingFinished = onReadingFinished
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -35,9 +41,10 @@ public struct SeeAllPopupCard: View {
                 Text(verbatim: content.genres.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary) // l10n:content
             }
             if let overview = content.overview {
-                ScrollingSynopsis(text: overview)
+                ScrollingSynopsis(text: overview, onFinished: onReadingFinished)
             }
         }
+        .onAppear { if content.overview == nil { onReadingFinished() } }
         .padding(28)
         .frame(width: Self.width, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -55,6 +62,7 @@ private struct ScrollingSynopsis: View {
     static let windowHeight: CGFloat = 220
     static let pointsPerSecond: CGFloat = 22
     let text: String
+    let onFinished: @MainActor () -> Void
     @State private var contentHeight: CGFloat = 0
     @State private var offset: CGFloat = 0
 
@@ -68,12 +76,46 @@ private struct ScrollingSynopsis: View {
             .offset(y: -offset)
             .frame(height: contentHeight > 0 ? min(contentHeight, Self.windowHeight) : nil, alignment: .top)
             .clipped()
-            .task(id: overflow) {
+            .task(id: contentHeight) {
                 offset = 0
-                guard overflow > 0 else { return }
+                // Not measured yet: finishing now would start the timeout too early.
+                guard contentHeight > 0 else { return }
+                guard overflow > 0 else { onFinished(); return }
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
-                withAnimation(.linear(duration: Double(overflow / Self.pointsPerSecond))) { offset = overflow }
+                let scrollTime = Double(overflow / Self.pointsPerSecond)
+                withAnimation(.linear(duration: scrollTime)) { offset = overflow }
+                do { try await Task.sleep(for: .seconds(scrollTime)) } catch { return }
+                onFinished()
             }
+    }
+}
+
+enum SeeAllPopupTiming {
+    /// Seconds the card takes to fade in when it appears.
+    static let fadeIn = 0.45
+    /// Seconds the card takes to fade out once its time on screen is up.
+    static let fadeOut = 0.6
+}
+
+/// Lets a pop-up's timeout wait for its synopsis to finish scrolling. A finish
+/// that arrives before anyone is waiting is kept, so the order never matters.
+@MainActor
+final class SeeAllPopupReading {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+    }
+
+    func finish() {
+        continuation.yield()
+        continuation.finish()
+    }
+
+    /// Returns when the synopsis has finished, or when the waiting task is cancelled.
+    func wait() async {
+        for await _ in stream { return }
     }
 }
 
@@ -103,14 +145,27 @@ public final class SeeAllPopupPresenter {
         task?.cancel()
         task = nil
         shown = nil
+        host.view.layer.removeAllAnimations()
+        host.view.alpha = 1
         host.view.isHidden = true
         host.rootView = AnyView(EmptyView())
+    }
+
+    /// Fades the card out, then hides it. A focus move meanwhile calls `hide()`,
+    /// which cancels this and resets the card.
+    private func fadeOutAndHide() async {
+        UIView.animate(withDuration: SeeAllPopupTiming.fadeOut, delay: 0, options: .curveEaseInOut) {
+            self.host.view.alpha = 0
+        }
+        do { try await Task.sleep(for: .seconds(SeeAllPopupTiming.fadeOut)) } catch { return }
+        hide()
     }
 
     /// Hides the current card and, when `delay` is set, shows `path`'s after it.
     /// `isStillFocused` guards against a focus move during the delay or the load.
     public func schedule(
-        path: IndexPath, delay: Duration?, bounds: @escaping () -> CGRect, anchor: @escaping () -> CGRect?,
+        path: IndexPath, delay: Duration?, hideAfter: Duration? = nil,
+        bounds: @escaping () -> CGRect, anchor: @escaping () -> CGRect?,
         isRightToLeft: Bool, environment: EnvironmentValues,
         content: @escaping () async -> SeeAllPopupContent?, isStillFocused: @escaping () -> Bool
     ) {
@@ -120,7 +175,8 @@ public final class SeeAllPopupPresenter {
             do { try await Task.sleep(for: delay) } catch { return }
             guard let self, isStillFocused(), let content = await content(),
                   !Task.isCancelled, isStillFocused(), let anchor = anchor() else { return }
-            let card = SeeAllPopupCard(content: content)
+            let reading = SeeAllPopupReading()
+            let card = SeeAllPopupCard(content: content, onReadingFinished: { reading.finish() })
             self.host.rootView = AnyView(card.transformEnvironment(\.self) { target in
                 target.colorScheme = environment.colorScheme
                 target.locale = environment.locale
@@ -132,7 +188,17 @@ public final class SeeAllPopupPresenter {
                 card: size, anchor: anchor, bounds: bounds(), isRightToLeft: isRightToLeft
             )
             self.shown = path
+            self.host.view.alpha = 0
             self.host.view.isHidden = false
+            UIView.animate(withDuration: SeeAllPopupTiming.fadeIn, delay: 0, options: .curveEaseInOut) {
+                self.host.view.alpha = 1
+            }
+            guard let hideAfter else { return }
+            // The timeout counts from the end of the synopsis, not from appearing.
+            await reading.wait()
+            guard !Task.isCancelled else { return }
+            do { try await Task.sleep(for: hideAfter) } catch { return }
+            await self.fadeOutAndHide()
         }
     }
 }
@@ -147,17 +213,27 @@ public final class SeeAllPopupModel {
     public var cardSize: CGSize = .zero
     @ObservationIgnored private var task: Task<Void, Never>?
     public private(set) var focusedKey: String?
+    /// True while the card fades out after its time on screen.
+    public private(set) var isFadingOut = false
+    @ObservationIgnored private var reading = SeeAllPopupReading()
 
     public func hide() {
         task?.cancel()
         task = nil
+        isFadingOut = false
         content = nil
+        // The next card is measured afresh, so it fades in rather than appearing.
+        cardSize = .zero
     }
+
+    /// The card on screen has shown its whole synopsis.
+    func readingFinished() { reading.finish() }
 
     /// Restarts the delay for `key`; any focus change hides the card at once.
     /// `nil` means focus left the grid (ignored if another title already took it).
     public func focusChanged(
-        key: String, focused: Bool, delay: Duration?, detail: @escaping () async -> SeeAllPopupContent?
+        key: String, focused: Bool, delay: Duration?, hideAfter: Duration? = nil,
+        detail: @escaping () async -> SeeAllPopupContent?
     ) {
         guard focused || focusedKey == key else { return }
         focusedKey = focused ? key : nil
@@ -167,7 +243,18 @@ public final class SeeAllPopupModel {
             do { try await Task.sleep(for: delay) } catch { return }
             let loaded = await detail()
             guard let loaded, !Task.isCancelled, self?.focusedKey == key else { return }
-            self?.content = loaded
+            guard let self else { return }
+            let reading = SeeAllPopupReading()
+            self.reading = reading
+            self.content = loaded
+            guard let hideAfter else { return }
+            // The timeout counts from the end of the synopsis, not from appearing.
+            await reading.wait()
+            guard !Task.isCancelled else { return }
+            do { try await Task.sleep(for: hideAfter) } catch { return }
+            self.isFadingOut = true
+            do { try await Task.sleep(for: .seconds(SeeAllPopupTiming.fadeOut)) } catch { return }
+            self.hide()
         }
     }
 }
@@ -185,10 +272,14 @@ public struct SeeAllPopupOverlay: View {
                     card: model.cardSize, anchor: model.anchor,
                     bounds: CGRect(origin: .zero, size: proxy.size).insetBy(dx: 0, dy: 40),
                     isRightToLeft: direction == .rightToLeft)
-                SeeAllPopupCard(content: content)
+                let isVisible = model.cardSize != .zero && !model.isFadingOut
+                SeeAllPopupCard(content: content, onReadingFinished: { model.readingFinished() })
                     .onGeometryChange(for: CGSize.self) { $0.size } action: { model.cardSize = $0 }
                     .offset(x: frame.minX, y: frame.minY)
-                    .opacity(model.cardSize == .zero ? 0 : 1)
+                    .opacity(isVisible ? 1 : 0)
+                    .animation(
+                        .easeInOut(duration: isVisible ? SeeAllPopupTiming.fadeIn : SeeAllPopupTiming.fadeOut),
+                        value: isVisible)
             }
         }
         .allowsHitTesting(false)

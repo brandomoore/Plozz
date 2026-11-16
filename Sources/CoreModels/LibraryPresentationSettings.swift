@@ -73,6 +73,8 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
     public var seeAllPopupDelay: Double
     /// Whether the Search screen's cards also get the pop-up (same delay).
     public var searchPopupEnabled: Bool
+    /// Seconds the pop-up stays on screen before fading out. 0 never times out.
+    public var seeAllPopupDuration: Double
 
     public static let popupDelayRange = 0.5...5.0
     public static let popupDelayStep = 0.5
@@ -82,7 +84,29 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
         from: popupDelayRange.lowerBound, through: popupDelayRange.upperBound, by: popupDelayStep
     ).map { $0 }
 
+    public static let popupDurationRange = 0.0...10.0
+    public static let popupDurationStep = 2.0
+    /// Pop-ups stay until focus moves, as they did before this was a setting.
+    public static let defaultPopupDuration = 0.0
+    /// 0 s (no timeout), then 2 s … 10 s in two-second steps.
+    public static let popupDurationChoices: [Double] = stride(
+        from: popupDurationRange.lowerBound, through: popupDurationRange.upperBound, by: popupDurationStep
+    ).map { $0 }
+
     public static let `default` = LibraryPresentationSettings()
+
+    /// Snaps to the nearest two seconds within 0 s … 10 s.
+    public static func clampedPopupDuration(_ seconds: Double) -> Double {
+        guard seconds.isFinite else { return defaultPopupDuration }
+        let snapped = (seconds / popupDurationStep).rounded() * popupDurationStep
+        return min(max(snapped, popupDurationRange.lowerBound), popupDurationRange.upperBound)
+    }
+
+    /// How long a pop-up stays before fading out, or `nil` when it never times out.
+    public var popupHideAfter: Duration? {
+        let seconds = Self.clampedPopupDuration(seeAllPopupDuration)
+        return seconds > 0 ? .seconds(seconds) : nil
+    }
 
     /// Snaps to the nearest half second within 0.5 s … 5 s.
     public static func clampedPopupDelay(_ seconds: Double) -> Double {
@@ -109,7 +133,8 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
         collectionCoverLayouts: [String: CollectionCoverLayout] = [:],
         seeAllLayout: SeeAllLayout = .grid,
         seeAllPopupDelay: Double = LibraryPresentationSettings.defaultPopupDelay,
-        searchPopupEnabled: Bool = false
+        searchPopupEnabled: Bool = false,
+        seeAllPopupDuration: Double = LibraryPresentationSettings.defaultPopupDuration
     ) {
         self.logoSize = logoSize
         self.textSize = textSize
@@ -119,11 +144,12 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
         self.seeAllLayout = seeAllLayout
         self.seeAllPopupDelay = Self.clampedPopupDelay(seeAllPopupDelay)
         self.searchPopupEnabled = searchPopupEnabled
+        self.seeAllPopupDuration = Self.clampedPopupDuration(seeAllPopupDuration)
     }
 
     private enum CodingKeys: String, CodingKey {
         case logoSize, textSize, navigation, recommendedRows, collectionCoverLayouts
-        case seeAllLayout, seeAllPopupDelay, searchPopupEnabled
+        case seeAllLayout, seeAllPopupDelay, searchPopupEnabled, seeAllPopupDuration
     }
 
     public init(from decoder: Decoder) throws {
@@ -141,7 +167,9 @@ public struct LibraryPresentationSettings: Codable, Equatable, Sendable {
             seeAllLayout: try values.decodeIfPresent(SeeAllLayout.self, forKey: .seeAllLayout) ?? .grid,
             seeAllPopupDelay: try values.decodeIfPresent(Double.self, forKey: .seeAllPopupDelay)
                 ?? Self.defaultPopupDelay,
-            searchPopupEnabled: try values.decodeIfPresent(Bool.self, forKey: .searchPopupEnabled) ?? false
+            searchPopupEnabled: try values.decodeIfPresent(Bool.self, forKey: .searchPopupEnabled) ?? false,
+            seeAllPopupDuration: try values.decodeIfPresent(Double.self, forKey: .seeAllPopupDuration)
+                ?? Self.defaultPopupDuration
         )
     }
 

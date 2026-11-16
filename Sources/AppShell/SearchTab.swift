@@ -151,7 +151,9 @@ struct SearchTab: View {
     private var searchPopup: SeeAllPopup? {
         #if os(tvOS)
         guard let delay = libraryPresentation?.settings.searchPopupDelayIfEnabled else { return nil }
-        return SeeAllPopup(delay: delay, spoilers: spoilerSettings) { item in
+        return SeeAllPopup(
+            delay: delay, hideAfter: libraryPresentation?.settings.popupHideAfter, spoilers: spoilerSettings
+        ) { item in
             guard let accountID = item.sourceAccountID,
                   let provider = try? resolveProvider(accountID, in: accounts),
                   let detail = try? await provider.item(id: item.id), detail.id == item.id

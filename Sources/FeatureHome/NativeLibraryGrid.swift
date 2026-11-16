@@ -602,7 +602,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         }
         let spoilers = spoilerSettings
         popup.schedule(
-            path: path, delay: delay,
+            path: path, delay: delay, hideAfter: model.presentation.settings.popupHideAfter,
             bounds: { [weak self] in self?.view.bounds.insetBy(dx: 0, dy: 40) ?? .zero },
             anchor: { [weak self] in
                 guard let self, let cell = self.collection.cellForItem(at: path) else { return nil }

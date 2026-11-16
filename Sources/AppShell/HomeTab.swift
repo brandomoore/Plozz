@@ -605,7 +605,8 @@ struct HomeTab: View {
     private var seeAllPopup: SeeAllPopup? {
         #if os(tvOS)
         SeeAllPopup(
-            delay: libraryPresentation.settings.seeAllPopupDelayIfEnabled, spoilers: spoilerSettings
+            delay: libraryPresentation.settings.seeAllPopupDelayIfEnabled,
+            hideAfter: libraryPresentation.settings.popupHideAfter, spoilers: spoilerSettings
         ) { item in
             guard let accountID = item.sourceAccountID,
                   let provider = try? resolveProvider(accountID, in: accounts),

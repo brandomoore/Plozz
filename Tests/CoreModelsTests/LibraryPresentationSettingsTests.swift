@@ -2,6 +2,23 @@ import XCTest
 @testable import CoreModels
 
 final class LibraryPresentationSettingsTests: XCTestCase {
+    func testPopupDurationStepsFromZeroToTenAndZeroNeverTimesOut() {
+        XCTAssertEqual(LibraryPresentationSettings.popupDurationChoices, [0, 2, 4, 6, 8, 10])
+        var settings = LibraryPresentationSettings()
+        XCTAssertEqual(settings.seeAllPopupDuration, 0, "Existing profiles keep pop-ups until focus moves")
+        XCTAssertNil(settings.popupHideAfter)
+        settings.seeAllPopupDuration = 6
+        XCTAssertEqual(settings.popupHideAfter, .seconds(6))
+        XCTAssertEqual(LibraryPresentationSettings(seeAllPopupDuration: 99).seeAllPopupDuration, 10)
+        XCTAssertEqual(LibraryPresentationSettings(seeAllPopupDuration: 3.1).seeAllPopupDuration, 4)
+        let decoded = try? JSONDecoder().decode(
+            LibraryPresentationSettings.self,
+            from: JSONEncoder().encode(LibraryPresentationSettings(seeAllPopupDuration: 8)))
+        XCTAssertEqual(decoded?.seeAllPopupDuration, 8)
+        let legacy = try? JSONDecoder().decode(LibraryPresentationSettings.self, from: Data("{}".utf8))
+        XCTAssertEqual(legacy?.seeAllPopupDuration, 0)
+    }
+
     func testDefaultsAndMissingFieldsPreserveExistingLibraryPresentation() throws {
         let settings = try JSONDecoder().decode(LibraryPresentationSettings.self, from: Data("{}".utf8))
         XCTAssertEqual(settings, .default)

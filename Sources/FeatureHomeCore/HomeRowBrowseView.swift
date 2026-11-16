@@ -111,7 +111,8 @@ public struct HomeRowBrowseView<Card: View>: View {
         .environment(\.plozzCardFocusReporter, popup.map { popup in
             { [popupModel] item, focused in
                 popupModel.focusChanged(
-                    key: item.stablePresentationID, focused: focused, delay: popup.delay
+                    key: item.stablePresentationID, focused: focused, delay: popup.delay,
+                    hideAfter: popup.hideAfter
                 ) {
                     SeeAllPopupContent(item: await popup.detail(item), spoilers: popup.spoilers)
                 }

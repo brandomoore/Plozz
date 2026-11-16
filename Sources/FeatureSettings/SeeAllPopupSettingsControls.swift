@@ -13,6 +13,10 @@ struct SeeAllPopupSettingsControls: View {
             allowed: [.seconds], width: .narrow, fractionalPart: whole ? .hide : .show(length: 1)))
     }
 
+    private static func durationLabel(_ seconds: Double) -> Text {
+        seconds == 0 ? Text("No timeout") : Text(verbatim: delayLabel(seconds))
+    }
+
     var body: some View {
         let showsDelay = model.settings.seeAllLayout == .gridWithPopup || model.settings.searchPopupEnabled
         SettingsMenuRow(
@@ -26,7 +30,7 @@ struct SeeAllPopupSettingsControls: View {
             }
         }
         // The delay row exists only while a pop-up is on; search for it lands here otherwise.
-        .settingsSearchAnchor("see-all-layout", fallbackFor: showsDelay ? [] : ["see-all-popup-delay"])
+        .settingsSearchAnchor("see-all-layout", fallbackFor: showsDelay ? [] : ["see-all-popup-delay", "see-all-popup-duration"])
         .accessibilityIdentifier("see-all-layout")
         Toggle("Pop-up details in search", isOn: $model.settings.searchPopupEnabled)
             .settingsSearchAnchor("search-popup")
@@ -44,6 +48,18 @@ struct SeeAllPopupSettingsControls: View {
             }
             .settingsSearchAnchor("see-all-popup-delay")
             .accessibilityIdentifier("see-all-popup-delay")
+            SettingsMenuRow(
+                title: "Pop-up duration", value: Self.durationLabel(model.settings.seeAllPopupDuration),
+                minimumContentHeight: 44
+            ) {
+                Picker("Pop-up duration", selection: $model.settings.seeAllPopupDuration) {
+                    ForEach(LibraryPresentationSettings.popupDurationChoices, id: \.self) { seconds in
+                        Self.durationLabel(seconds).tag(seconds)
+                    }
+                }
+            }
+            .settingsSearchAnchor("see-all-popup-duration")
+            .accessibilityIdentifier("see-all-popup-duration")
         }
     }
 }

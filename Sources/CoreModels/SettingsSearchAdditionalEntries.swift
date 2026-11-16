@@ -24,6 +24,8 @@ extension SettingsSearchCatalog {
               keywords: "search results cards pop-up details focus", platform: .television),
         .init("see-all-popup-delay", page: .homeRowStyle, title: "Pop-up delay",
               keywords: "see all grid pop-up details focus seconds rest", platform: .television),
+        .init("see-all-popup-duration", page: .homeRowStyle, title: "Pop-up duration",
+              keywords: "see all grid search pop-up details panel seconds timeout hide fade", platform: .television),
         .init("library-covers", page: .libraries, title: "Collection covers",
               keywords: "library browse recommended collections playlists presentation layout"),
         .init("recommended-row-layout", page: .libraries, title: "Recommended Page Rows",
