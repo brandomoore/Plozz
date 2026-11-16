@@ -50,10 +50,7 @@ public struct NavigationContentAvailability: Equatable, Sendable {
 
     public var automaticallyHiddenKeys: Set<String> {
         var hidden: Set<String> = []
-        if !hasHomeContent {
-            hidden.insert(NavigationLibraryLayout.homeKey)
-            hidden.insert(NavigationLibraryLayout.upcomingKey)
-        }
+        if !hasHomeContent { hidden.insert(NavigationLibraryLayout.homeKey) }
         if !hasSearchContent { hidden.insert(NavigationLibraryLayout.searchKey) }
         if !hasWatchlistItems { hidden.insert(NavigationLibraryLayout.watchlistKey) }
         if !hasUpcomingContent { hidden.insert(NavigationLibraryLayout.upcomingKey) }

@@ -1125,22 +1125,6 @@ public final class PlayerViewModel {
             shouldDismiss = true
             return
         }
-        // A credits marker may still be resolving whether post-credits content
-        // exists. Never auto-advance before that decision is known; otherwise an
-        // episode with after-credits content would be skipped.
-        //
-        // An EOF *before* the timeline ends is the credits boundary: a known
-        // after-credits tail has not played yet, so do not advance. An EOF at the
-        // real end of the timeline is the ordinary end of the whole episode
-        // (tail included), so autoplay applies again; suppressing there dismissed
-        // the player even when nothing was left to watch.
-        let atTimelineEnd = engine.duration > 0
-            && engine.currentTime >= engine.duration - 0.5
-        if controls.skipSegments.isResolvingPostCredits
-            || (controls.skipSegments.hasPostCredits && !atTimelineEnd) {
-            shouldDismiss = true
-            return
-        }
         if let playlistContext {
             guard playbackSettings.autoPlayNextPlaylistItem,
                   playlistContext.currentIndex + 1 < playlistContext.totalCount else {
@@ -1347,11 +1331,6 @@ public final class PlayerViewModel {
         phase = .loading
         controls.infoCard.chapters = []
         stopSongWatch()  // a new item starts without the last song
-        // Playback may be the first local-network operation after a re-signed
-        // install (cached rows, a deep link straight into an item). Ask from the
-        // app process without gating bring-up on the answer; the foreground
-        // hook in the iOS shell normally got there first.
-        Task { _ = await LocalNetworkAuthorization.requestIfNeeded() }
         let bringUpStart = Date()
         bringUpStartedAt = bringUpStart
         HandoffDiagnostics.emit(
@@ -2277,12 +2256,11 @@ public final class PlayerViewModel {
     /// Fetches skip segments when any kind's skip mode is on, **or** when the Up
     /// Next card is enabled (the card triggers off the closing-credits marker, so
     /// we need the markers even with skip off). Publishes the server's markers as
-    /// soon as they arrive. Community markers then fill only the kinds the server
-    /// lacks; when the server already covers every skippable kind, IntroDB is still
-    /// consulted for an explicit after-credit marker. Duplicate candidates are
-    /// squashed, credits keep the later window, and a finite credits tail can
-    /// identify an after-credit scene. The server's marker always wins for its
-    /// kind. Failures degrade silently to fewer markers. Runs once per load.
+    /// soon as they arrive. Then, only when skipping is on, community markers are
+    /// enabled and the server has no intro or credits marker, looks those up and
+    /// publishes again with the kinds the server lacks filled in; the server's own
+    /// markers always win. Failures degrade silently to fewer markers. Runs once
+    /// per load.
     private func loadSkipSegmentsIfEnabled() {
         // Mirrored before the marker guard, not after: it describes the profile,
         // not the segments, and a viewer with skipping and the Up Next card off
@@ -2294,8 +2272,6 @@ public final class PlayerViewModel {
         segmentsTask?.cancel()
         segmentsTask = nil
         controls.skipSegments.segments = []
-        controls.skipSegments.hasPostCredits = false
-        controls.skipSegments.isResolvingPostCredits = false
         let wantsMarkers = modes.fetchesMarkers || playbackSettings.showUpNextCard
         guard wantsMarkers else { return }
         let provider = provider
@@ -2309,29 +2285,15 @@ public final class PlayerViewModel {
             let server = ((try? await provider.mediaSegments(for: itemID)) ?? [])
                 .normalizedSkipMarkers(duration: duration)
             guard !Task.isCancelled else { return }
-            let serverMerged = server.mergedForPlayback(duration: duration, explicitPostCredits: nil)
-            self?.controls.skipSegments.segments = serverMerged.segments
-            self?.controls.skipSegments.hasPostCredits = serverMerged.hasPostCredits
-            guard looksUpCommunity else { return }
-
-            let serverKinds = Set(server.map(\.kind))
-            let missingKinds = MediaSegment.Kind.skippable.filter { !serverKinds.contains($0) }
-            let sources: CommunitySkipMarkerSources = missingKinds.isEmpty ? [.introDB] : [.introDB, .theIntroDB]
-            self?.controls.skipSegments.isResolvingPostCredits = true
-
+            self?.controls.skipSegments.segments = server.filter(\.isSkippable)
+            guard looksUpCommunity, !server.coversIntroAndCredits else { return }
             let fallback = await Self.communitySegments(
-                for: item, sources: sources, duration: duration,
+                for: item, sources: [.introDB, .theIntroDB], duration: duration,
                 provider: provider, seriesIDResolver: seriesIDResolver, service: community
             )
-            guard !Task.isCancelled, !fallback.isEmpty else {
-                self?.controls.skipSegments.isResolvingPostCredits = false
-                return
-            }
-            self?.controls.skipSegments.isResolvingPostCredits = false
-            let merged = server.filling(from: fallback.segments)
-                .mergedForPlayback(duration: duration, explicitPostCredits: fallback.postCredits)
-            self?.controls.skipSegments.segments = merged.segments
-            self?.controls.skipSegments.hasPostCredits = merged.hasPostCredits
+            guard !Task.isCancelled, !fallback.isEmpty else { return }
+            self?.controls.skipSegments.segments = server.filling(from: fallback)
+                .normalizedSkipMarkers(duration: duration)
         }
     }
 
@@ -2345,11 +2307,11 @@ public final class PlayerViewModel {
         provider: any MediaProvider,
         seriesIDResolver: (@Sendable () async -> [String: String]?)?,
         service: any CommunitySkipMarkerFetching
-    ) async -> CommunitySkipMarkers {
-        guard !sources.isEmpty, !Task.isCancelled, var item else { return .empty }
+    ) async -> [MediaSegment] {
+        guard !sources.isEmpty, !Task.isCancelled, var item else { return [] }
         if item.kind == .episode, let end = item.episodeNumberEnd, end != item.episodeNumber {
             PlozzLog.playback.debug("Community markers omitted for a combined or invalid episode range")
-            return .empty
+            return []
         }
         var series: MediaItem?
         let needsOrder = item.kind == .episode && sources.contains(.theIntroDB)
@@ -2360,24 +2322,24 @@ public final class PlayerViewModel {
             if let seriesID = item.seriesID {
                 do {
                     let candidate = try await provider.item(id: seriesID)
-                    guard !Task.isCancelled else { return .empty }
+                    guard !Task.isCancelled else { return [] }
                     if candidate.kind == .series, candidate.id == seriesID {
                         series = candidate
                     } else {
                         PlozzLog.playback.error("Community marker lookup received unrelated series metadata")
                     }
                 } catch {
-                    guard !Task.isCancelled else { return .empty }
+                    guard !Task.isCancelled else { return [] }
                     PlozzLog.playback.debug("Community marker series lookup failed; retaining known identity")
                 }
             } else if let resolved = await seriesIDResolver?() {
-                guard !Task.isCancelled else { return .empty }
+                guard !Task.isCancelled else { return [] }
                 item.providerIDs.mergeSeriesProviderIDs(from: resolved)
             }
         }
         guard !Task.isCancelled,
-              let query = CommunitySkipMarkerQuery(item: item, series: series, duration: duration) else { return .empty }
-        return await service.markers(for: query, sources: sources)
+              let query = CommunitySkipMarkerQuery(item: item, series: series, duration: duration) else { return [] }
+        return await service.segments(for: query, sources: sources)
     }
 
     /// Seeks past the currently-active skip segment (intro/credits) to its end,
@@ -3558,20 +3520,7 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
     static func streamingFailure(
         _ error: AppError, evidence: StreamingPlaybackFailure? = nil, streamWasSupplied: Bool = true
     ) -> StreamingQualityError? {
-        if let evidence {
-            if LocalNetworkAuthorization.recordedState == .denied,
-               evidence.kind == .timedOut || evidence.kind == .network {
-                // The most common "player is broken" report on a freshly
-                // re-signed install is actually a Local Network denial: the
-                // grant is bound to the signed identity, so a sideloaded
-                // re-sign starts from denied/undecided. Name it in logs so a
-                // diagnostics capture points at the permission, not the codec.
-                PlozzLog.playback.error(
-                    "Playback failed while Local Network access is denied; enable it in Settings ▸ Privacy & Security ▸ Local Network"
-                )
-            }
-            return .playback(evidence)
-        }
+        if let evidence { return .playback(evidence) }
         switch error {
         case .serverUnreachable: return .playback(.init(kind: .network))
         case .unauthorized, .invalidCredentials: return .authenticationRequired

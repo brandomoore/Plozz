@@ -2926,15 +2926,9 @@ private final class PreCommitYieldGate {
 
 private actor RecordingCommunityMarkers: CommunitySkipMarkerFetching {
     private(set) var queries: [CommunitySkipMarkerQuery] = []
-    private let result: CommunitySkipMarkers
-
-    init(result: CommunitySkipMarkers = .empty) {
-        self.result = result
-    }
-
-    func markers(for query: CommunitySkipMarkerQuery, sources: CommunitySkipMarkerSources) async -> CommunitySkipMarkers {
+    func segments(for query: CommunitySkipMarkerQuery, sources: CommunitySkipMarkerSources) async -> [MediaSegment] {
         queries.append(query)
-        return result
+        return []
     }
 }
 

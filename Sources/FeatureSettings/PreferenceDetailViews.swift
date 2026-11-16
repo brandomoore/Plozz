@@ -673,12 +673,11 @@ struct PlaybackDetailView: View {
                         }
                     }
                 }
-            ] + displayFadeRows + videoRows + discRows + advancedRows
+            ] + displayFadeRows + discRows + advancedRows
         }
         #endif
         return subtitleRows
             + audioRows
-            + videoRows
             + versionSelectionRows
             + skipIntroRows
             + skipIntervalRows
@@ -904,22 +903,6 @@ struct PlaybackDetailView: View {
                 }
             }
         ] : [])
-    }
-
-    /// Video playback options, separate from the audio group: the after-credits
-    /// conversion is a picture decision and must not appear under "Audio".
-    private var videoRows: [SettingsSplitRow] {
-        guard AppReleaseChannel.current.isBeta else { return [] }
-        return [
-            SettingsSplitRow(id: "dolby-vision-fel", title: "Video") {
-                SettingsControlRows {
-                    Toggle("P7 FEL → P8.1 conversion", isOn: $playback.settings.dolbyVisionFELConversion)
-                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
-                        .settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        ]
     }
 
     private var skipIntroRows: [SettingsSplitRow] {

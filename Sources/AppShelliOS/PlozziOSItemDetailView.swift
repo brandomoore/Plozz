@@ -1234,6 +1234,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
         )
         guard context == appModel.plozziOSSeasonRequestContextID else { return }
         switch outcome {
+        case .successElsewhere:
+            // Another profile already owns this Seerr request; nothing to change.
+            break
         case let .success(status):
             if let seasons {
                 guard requestScope == seasonRequestScope else { return }

@@ -343,16 +343,6 @@ public final class SkipSegmentsModel {
     /// the existing skip/Up Next policy; timeline annotations do not fetch more.
     public var segments: [MediaSegment] = []
 
-    /// True when the resolved credits marker is followed by an after-credits
-    /// scene. The Up Next card and automatic next-episode advance must stay out of
-    /// the way while that scene is still playable.
-    public var hasPostCredits = false
-
-    /// True while the community post-credits lookup is still in flight. The
-    /// credits skip button stays available, but auto-skip and Up Next wait for the
-    /// final decision so a provisional credits marker cannot end the episode early.
-    public var isResolvingPostCredits = false
-
     /// Set while the user has dismissed the skip button for the *current* segment,
     /// so it doesn't keep re-grabbing focus for the rest of that window.
     public var dismissedSegmentID: String?
@@ -684,10 +674,7 @@ public final class PlayerControlsModel {
               duration.isFinite, duration > 0 else { return false }
         // A finite credits window can end at another scene, even when it is the
         // last reported marker. Only a window reaching EOF can hand off early.
-        guard credits.end >= duration else { return false }
-        // An after-credits scene (or a decision still resolving) keeps the handoff
-        // manual: the scene plays, then the normal next-episode path resumes.
-        return !skipSegments.hasPostCredits && !skipSegments.isResolvingPostCredits
+        return credits.end >= duration
     }
 
     /// Seconds before the end at which the Up Next card appears when there is NO
