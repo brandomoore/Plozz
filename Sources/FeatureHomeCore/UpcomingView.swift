@@ -6,23 +6,24 @@
     public struct UpcomingView<TrailingToolbar: ToolbarContent>: View {
         @Bindable private var model: UpcomingFeedModel
         @Environment(\.themePalette) private var palette
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var agendaSize = CGSize.zero
+        @State private var dateScrollRequest: UUID?
         #if os(tvOS)
             @Environment(\.plozzNavigationContentInset) private var navigationInset
             @Environment(\.plozzTopNavigationContentInsets) private var topNavigationInsets
+            @State private var didChooseCalendarDate = false
         #elseif os(iOS)
             @Environment(\.horizontalSizeClass) private var sizeClass
-            @Environment(\.accessibilityReduceMotion) private var reduceMotion
             @Environment(\.plozzMetrics) private var metrics
             @Environment(\.plozzCardStyle) private var cardStyle
             @State private var availableSize = CGSize.zero
-            @State private var agendaSize = CGSize.zero
             @State private var calendarIsMinimized = false
             @State private var scrollPosition = ScrollPosition(
                 id: Calendar.current.startOfDay(for: Date()), anchor: .top
             )
             @State private var hasScrolledAgenda = false
             @State private var todayDetent = UpcomingScrollDetent()
-            @State private var dateScrollRequest: UUID?
         #endif
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
@@ -58,6 +59,7 @@
                         }
                         .plozzActionButton(role: .secondary)
                         .focusSection()
+                        .navigationEntryFocus(.fallback)
                     #endif
                     HStack(alignment: .top, spacing: 0) {
                         ScrollView {
@@ -122,8 +124,16 @@
                             }
                         }
                         #else
-                        .onChange(of: selectedDay) { _, day in
-                            proxy.scrollTo(day, anchor: .top)
+                        .frame(maxWidth: .infinity)
+                        .navigationEntryFocus(model.isLoading && model.releases.isEmpty ? .pending : nil)
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { agendaSize = $0 }
+                        .task(id: dateScrollRequest) {
+                            guard let request = dateScrollRequest else { return }
+                            await Task.yield()
+                            guard !Task.isCancelled, dateScrollRequest == request else { return }
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
+                                proxy.scrollTo(selectedDay, anchor: .top)
+                            }
                         }
                         .task(id: model.releases.isEmpty) {
                             if !model.releases.isEmpty, !didScrollInitially {
@@ -169,8 +179,19 @@
                 .tint(palette.primaryText)
                 .onAppear { model.refreshIfStale() }
                 #if os(tvOS)
-                .sheet(isPresented: $showingCalendar) {
-                    UpcomingCalendar(selectedDay: $selectedDay, interval: interval)
+                .sheet(isPresented: $showingCalendar, onDismiss: {
+                    if didChooseCalendarDate {
+                        didChooseCalendarDate = false
+                        dateScrollRequest = UUID()
+                    }
+                }) {
+                    UpcomingCalendar(selectedDay: Binding(
+                        get: { selectedDay },
+                        set: {
+                            selectedDay = Calendar.current.startOfDay(for: $0)
+                            didChooseCalendarDate = true
+                        }
+                    ), interval: interval)
                 }
                 #endif
             }
@@ -205,11 +226,7 @@
         }
 
         private var agendaHeight: CGFloat {
-            #if os(iOS)
             max(0, agendaSize.height - 32)
-            #else
-            0
-            #endif
         }
 
         private var agendaContentWidth: CGFloat {
@@ -399,7 +416,7 @@
                 let days = Set(groups.keys).union([selectedDay]).sorted()
             #endif
             #if os(tvOS)
-                let visibleDays = days.filter { $0 >= selectedDay }
+                let visibleDays = days
                 let spacing = metrics.cardSpacing
                 let gridMetrics = metrics
                 let width = metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle)
@@ -448,7 +465,7 @@
             }
             .scrollTargetLayout()
             #else
-            LazyVStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 28) {
                 dateGroupContent(days, groups: groups, columns: columns, metrics: metrics, width: width)
             }
             #endif
@@ -480,11 +497,15 @@
                                 .environment(\.plozzMetrics, metrics)
                                 .frame(width: width)
                                 .contextMenu { Button("Hide title") { model.hide(release) } }
+                                .navigationEntryFocus(day >= selectedDay ? .content : nil)
                         }
                     }
                 }
-                #if os(iOS)
                 .frame(minHeight: day == days.last ? minimumLastDayHeight : 0, alignment: .top)
+                #if os(tvOS)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .focusSection()
+                #else
                 .background {
                     if Calendar.current.isDateInToday(day) {
                         UpcomingTodayAnchor()
@@ -609,7 +630,7 @@
         }
     }
 
-    private struct UpcomingCalendar: View {
+    struct UpcomingCalendar: View {
         @Binding var selectedDay: Date
         let interval: DateInterval
         var dismissesOnSelection = true
@@ -628,45 +649,50 @@
                             month = calendar.date(byAdding: .month, value: -1, to: month)!
                         }
                         .labelStyle(.iconOnly)
+                        .accessibilityIdentifier("upcoming.calendar.previous")
                         .disabled(start <= interval.start)
-                        Text(month, format: .dateTime.month(.wide).year()).font(.title)
+                        Text(month, format: .dateTime.month(.wide).year())
+                            .font(.headline)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .frame(maxWidth: .infinity)
+                            .layoutPriority(1)
+                            .accessibilityIdentifier("upcoming.calendar.month")
                         Button("Next month", systemImage: "chevron.right") {
                             month = calendar.date(byAdding: .month, value: 1, to: month)!
                         }
                         .labelStyle(.iconOnly)
+                        .accessibilityIdentifier("upcoming.calendar.next")
                         .disabled(calendar.date(byAdding: .month, value: 1, to: start)! >= interval.end)
                     }
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7)) {
-                        ForEach(0..<7, id: \.self) { index in
-                            Text(
-                                verbatim: calendar.shortStandaloneWeekdaySymbols[
-                                    (calendar.firstWeekday - 1 + index) % 7]
-                            )
-                            .font(.caption).foregroundStyle(.secondary)
-                        }
-                        ForEach(0..<offset, id: \.self) { _ in Color.clear.frame(height: 60) }
-                        ForEach(0..<dayCount, id: \.self) { index in
-                            let day = calendar.date(byAdding: .day, value: index, to: start)!
-                            Button {
-                                selectedDay = day
-                                dismiss()
-                            } label: {
-                                Text(day, format: .dateTime.day()).frame(maxWidth: .infinity)
+                    Grid(horizontalSpacing: 16, verticalSpacing: 16) {
+                        GridRow {
+                            ForEach(0..<7, id: \.self) { index in
+                                Text(
+                                    verbatim: calendar.shortStandaloneWeekdaySymbols[
+                                        (calendar.firstWeekday - 1 + index) % 7]
+                                )
+                                .font(.caption).foregroundStyle(.secondary)
                             }
-                            .overlay(alignment: .bottom) {
-                                if calendar.isDate(day, inSameDayAs: selectedDay) {
-                                    Circle().frame(width: 8, height: 8).allowsHitTesting(false)
+                        }
+                        ForEach(0..<((offset + dayCount + 6) / 7), id: \.self) { week in
+                            GridRow {
+                                ForEach(0..<7, id: \.self) { weekday in
+                                    let index = week * 7 + weekday - offset
+                                    if index >= 0, index < dayCount {
+                                        calendarCell(calendar.date(byAdding: .day, value: index, to: start)!)
+                                    } else {
+                                        Color.clear.frame(width: 104, height: 92)
+                                    }
                                 }
                             }
-                            .disabled(day < interval.start || day >= interval.end)
-                            .accessibilityAddTraits(calendar.isDate(day, inSameDayAs: selectedDay) ? .isSelected : [])
-                            .accessibilityLabel(Text(day, format: .dateTime.weekday().month().day()))
                         }
                     }
                     Button("Cancel") { dismiss() }
                 }
+                .plozzActionButton(role: .secondary)
                 .padding(48)
-                .frame(maxWidth: 850)
+                .frame(width: 960)
                 .onAppear { month = selectedDay }
             #else
                 DatePicker(
@@ -687,5 +713,57 @@
                 }
             #endif
         }
+
+        #if os(tvOS)
+        private func calendarCell(_ day: Date) -> some View {
+            let calendar = Calendar.current
+            return VStack(spacing: 4) {
+                calendarDay(day)
+                    .overlay(alignment: .topTrailing) {
+                        if calendar.isDate(day, inSameDayAs: selectedDay) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .offset(x: 4, y: -4)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .disabled(day < interval.start || day >= interval.end)
+                    .accessibilityAddTraits(calendar.isDate(day, inSameDayAs: selectedDay) ? .isSelected : [])
+                    .accessibilityLabel(Text(day, format: .dateTime.weekday().month().day()))
+                    .accessibilityIdentifier("upcoming.calendar.day.\(calendar.component(.day, from: day))")
+                Text("Today")
+                    .font(.system(size: 20))
+                    .opacity(calendar.isDateInToday(day) ? 1 : 0)
+                    .accessibilityHidden(!calendar.isDateInToday(day))
+            }
+        }
+
+        @ViewBuilder
+        private func calendarDay(_ day: Date) -> some View {
+            if #available(tvOS 26.0, *) {
+                dayButton(day)
+                    .buttonSizing(.flexible)
+                    .frame(width: 104, height: 66)
+            } else {
+                dayButton(day)
+            }
+        }
+
+        private func dayButton(_ day: Date) -> some View {
+            Button {
+                selectedDay = day
+                dismiss()
+            } label: {
+                Text(day, format: .dateTime.day())
+                    .font(.body)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(width: 40, height: 32)
+            }
+            .buttonBorderShape(.roundedRectangle(radius: 16))
+        }
+        #endif
     }
 #endif

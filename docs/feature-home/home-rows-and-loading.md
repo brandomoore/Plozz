@@ -42,9 +42,14 @@ do not reintroduce an already-released movie. Movie dates are omitted when no
 device region is available. There are no release-type filters or repetitive
 movie-release labels; episode cards retain season/episode information.
 
-The current window is 30 days back through 90 days ahead. TV starts at Today;
-earlier days are selected through the calendar, keeping Up from the first card
-available to reach the toolbar. Phone and tablet retain scrollable history, with
+The current window is 30 days back through 90 days ahead. TV starts at Today,
+preferring the first release card over the toolbar. Full-width native date
+focus sections bridge the gap from the right-aligned calendar and filter controls
+to sparse release rows without remembering one target across the whole agenda.
+The TV calendar uses uniform date controls, a separate
+Today label, a selected-date checkmark, and a single-line month heading. Selecting
+a date scrolls after the sheet dismisses, retaining earlier releases for scrolling
+back; reduced motion disables the scroll animation. Phone and tablet retain scrollable history, with
 native date-target scroll positioning keeping Today in place when progressive
 results insert older dates. The final date occupies at least
 the viewport height so any selected date can align below the native toolbar without
