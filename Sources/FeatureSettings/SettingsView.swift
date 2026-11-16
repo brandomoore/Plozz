@@ -562,7 +562,7 @@ public struct SettingsView: View {
         }
     }
 
-    /// The **All profiles** container: everything shared by every profile — server
+    /// The **Manage Plozz** container: everything shared by every profile — server
     /// sign-ins (shared Keychain via `AccountStore`) and profile management (the
     /// roster; the launch picker lives one level in, on the Profiles screen). It
     /// follows the profile card, because the profile holds what people actually

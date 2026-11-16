@@ -604,7 +604,6 @@ private struct PlozziOSSettingsSplitView: View {
                         settingsRow(.releaseNotes, title: "Release Notes", systemImage: "doc.text")
                     }
                     PlozziOSCommunitySettingsSection()
-                    PlozziOSMoreAppsSettingsSection()
 
                     SettingsSectionGroup("Privacy") {
                         PrivacyPolicyLink()
@@ -613,12 +612,6 @@ private struct PlozziOSSettingsSplitView: View {
                     SettingsSectionGroup("Support") {
                         settingsRow(.diagnostics, title: "Help & Diagnostics", systemImage: "ladybug")
                         settingsRow(.attributions, title: SettingsCopy.attributions, systemImage: "doc.text.magnifyingglass")
-                        if !appModel.accounts.isEmpty, !appModel.profiles.activeProfile.isKids {
-                            Button("Sign Out of All Accounts", role: .destructive) {
-                                confirmSignOutAll = true
-                            }
-                            .settingsActionRow()
-                        }
                     }
                     // Hidden until Developer Mode is unlocked (tap Version seven
                     // times). Gating on the runtime flag rather than
@@ -637,6 +630,11 @@ private struct PlozziOSSettingsSplitView: View {
                             .settingsActionRow()
                         }
                         PlozziOSDeveloperInfoSection()
+                    }
+                    if !appModel.accounts.isEmpty, !appModel.profiles.activeProfile.isKids {
+                        PlozziOSSignOutSettingsSection {
+                            confirmSignOutAll = true
+                        }
                     }
                 }
             }
@@ -856,38 +854,16 @@ private struct PlozziOSSettingsSplitView: View {
     }
 }
 
-struct PlozziOSMoreAppsSettingsSection: View {
+struct PlozziOSSignOutSettingsSection: View {
+    let action: () -> Void
+
     var body: some View {
-        SettingsSectionGroup("More apps") {
-            Link(destination: AppLinks.mozzTestFlight) {
-                HStack(spacing: 16) {
-                    Image("MozzAppIcon")
-                        .renderingMode(.original)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 48, height: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: "Mozz")
-                            .font(.body.weight(.medium))
-                        Text("Free, open-source music player")
-                            .font(.footnote)
-                            .plozzForeground(.secondary)
-                        Text("TestFlight public beta")
-                            .font(.footnote)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "arrow.up.forward")
-                        .font(.subheadline.weight(.semibold))
-                        .plozzForeground(.secondary)
-                        .accessibilityHidden(true)
-                }
-                .multilineTextAlignment(.leading)
+        SettingsSectionGroup {
+            Button(role: .destructive, action: action) {
+                Label("Sign Out of All Accounts", systemImage: "rectangle.portrait.and.arrow.right")
             }
-            .accessibilityHint(Text("Opens TestFlight."))
-            .accessibilityIdentifier("settings-mozz-beta")
+            .settingsActionRow()
+            .accessibilityIdentifier("settings-sign-out-all")
         }
     }
 }
@@ -941,8 +917,10 @@ private struct PlozziOSSettingsVersionSection<ReleaseLink: View>: View {
 
     var body: some View {
         SettingsSectionGroup(verbatim: "Plozz") {
-            LabeledContent("Version") {
+            LabeledContent {
                 Text(AppVersionIdentity.current.displayVersion)
+            } label: {
+                Label("Version", systemImage: "tag")
             }
             .contentShape(Rectangle())
             .onTapGesture {
@@ -952,8 +930,10 @@ private struct PlozziOSSettingsVersionSection<ReleaseLink: View>: View {
                     showDeveloperUnlockedAlert = true
                 }
             }
-            LabeledContent("Build") {
+            LabeledContent {
                 Text(AppVersionIdentity.current.displayBuild)
+            } label: {
+                Label("Build", systemImage: "number")
             }
             if ReleaseNotesModel.shared.isAvailable { releaseLink() }
         }
@@ -1217,7 +1197,6 @@ private struct PlozziOSSettingsCompactMenu: View {
                     .settingsActionRow()
                 }
                 PlozziOSCommunitySettingsSection()
-                PlozziOSMoreAppsSettingsSection()
 
                 SettingsSectionGroup("Privacy") {
                     PrivacyPolicyLink()
@@ -1240,12 +1219,6 @@ private struct PlozziOSSettingsCompactMenu: View {
                         Label(SettingsCopy.attributions, systemImage: "doc.text.magnifyingglass")
                     }
                     .settingsActionRow()
-                    if !appModel.accounts.isEmpty, !appModel.profiles.activeProfile.isKids {
-                        Button("Sign Out of All Accounts", role: .destructive) {
-                            confirmSignOutAll = true
-                        }
-                        .settingsActionRow()
-                    }
                 }
 
                 // Hidden until Developer Mode is unlocked (tap Version seven
@@ -1270,6 +1243,11 @@ private struct PlozziOSSettingsCompactMenu: View {
                         Label(accountError, systemImage: "exclamationmark.triangle.fill")
                             .labelStyle(.titleAndIcon)
                             .foregroundStyle(.red)
+                    }
+                }
+                if !appModel.accounts.isEmpty, !appModel.profiles.activeProfile.isKids {
+                    PlozziOSSignOutSettingsSection {
+                        confirmSignOutAll = true
                     }
                 }
             }

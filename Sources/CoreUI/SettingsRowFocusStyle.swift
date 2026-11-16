@@ -398,6 +398,10 @@ private struct SettingsRowIsFocusedKey: EnvironmentKey {
     static let defaultValue: Bool = false
 }
 
+private struct SettingsRowIsDestructiveKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 private struct SettingsRowFocusForegroundKey: EnvironmentKey {
     static let defaultValue: Color = .white
 }
@@ -415,6 +419,11 @@ private struct SettingsFormTextInsetKey: EnvironmentKey {
 }
 
 public extension EnvironmentValues {
+    var settingsRowIsDestructive: Bool {
+        get { self[SettingsRowIsDestructiveKey.self] }
+        set { self[SettingsRowIsDestructiveKey.self] = newValue }
+    }
+
     /// Group-relative text and divider inset, consumed by already-padded row labels.
     var settingsFormTextInset: CGFloat {
         get { self[SettingsFormTextInsetKey.self] }

@@ -48,10 +48,10 @@ public enum SettingsCopy {
 
     // MARK: - Scope headers
 
-    /// Names the audience; individual settings explain their device and sync scope.
+    /// App management, separate from the active profile's personal preferences.
     public static let everyone = LocalizedStringResource(
-        "All profiles",
-        comment: "Heading for the group of settings shared by every profile, as opposed to the section holding the current profile's own settings."
+        "Manage Plozz",
+        comment: "Settings section heading for managing sources, profiles, parental protection, sync, and metadata providers, separate from personal profile preferences. Plozz is the app name and must remain unchanged."
     )
 
     /// Reach clause for the active profile's own settings, when iCloud Sync is on.

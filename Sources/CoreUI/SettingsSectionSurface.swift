@@ -67,6 +67,8 @@ private struct SettingsRowSeparator: View {
 private struct SettingsActionRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .plozzForeground(.primary)
+            .environment(\.settingsRowIsDestructive, configuration.role == .destructive)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, MobileSettingsMetrics.rowInset)
             .padding(.vertical, MobileSettingsMetrics.rowVerticalInset)

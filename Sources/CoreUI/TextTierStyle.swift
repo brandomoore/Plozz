@@ -19,6 +19,7 @@ public enum PlozzTextTier: Sendable {
 
 private struct PlozzForegroundModifier: ViewModifier {
     @Environment(\.themePalette) private var palette
+    @Environment(\.settingsRowIsDestructive) private var isDestructiveAction
     @Environment(\.settingsRowIsFocused) private var isRowFocused
     @Environment(\.settingsRowFocusForeground) private var rowFocusForeground
     let tier: PlozzTextTier
@@ -28,6 +29,9 @@ private struct PlozzForegroundModifier: ViewModifier {
     }
 
     private var color: Color {
+        if isDestructiveAction, case .primary = tier {
+            return .red
+        }
         if isRowFocused {
             switch tier {
             case .primary: return rowFocusForeground
