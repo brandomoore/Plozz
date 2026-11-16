@@ -33,7 +33,7 @@ public enum FastHeroTrailerResolver {
             }
             let trailers = (try? await provider.trailers(for: source.itemID)) ?? []
             guard !Task.isCancelled else { return nil }
-            guard let local = trailers.first(where: { !$0.isYouTubeTrailer }),
+            guard let local = trailers.first(where: \.isServerItemTrailer),
                   let request = try? await provider.playbackInfo(for: local.id)
             else {
                 continue

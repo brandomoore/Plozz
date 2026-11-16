@@ -121,7 +121,7 @@ struct SearchTab: View {
             for source in sources {
                 guard let provider = resolveOptionalProvider(source.accountID, in: accounts) else { continue }
                 let trailers = (try? await provider.trailers(for: source.itemID)) ?? []
-                guard let local = trailers.first(where: { !$0.isYouTubeTrailer }) else { continue }
+                guard let local = trailers.first(where: \.isServerItemTrailer) else { continue }
                 guard let request = try? await provider.playbackInfo(for: local.id) else { continue }
                 let url: URL?
                 if let streamURL = request.streamURL {

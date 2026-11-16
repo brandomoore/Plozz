@@ -1736,12 +1736,13 @@ public final class ItemDetailViewModel {
         let provided = (try? await provider.trailers(for: item.id)) ?? []
         guard isCurrent() else { return }
 
-        let localCount = provided.filter { !$0.isYouTubeTrailer }.count
-        let ytCount = provided.count - localCount
-        Self.trailerDiag("loadTrailers item=\(item.id) provider=\(provider.kind.rawValue) provided=\(provided.count) local=\(localCount) yt=\(ytCount)")
+        let localCount = provided.filter(\.isServerItemTrailer).count
+        let directCount = provided.filter(\.isDirectTrailer).count
+        let ytCount = provided.count - localCount - directCount
+        Self.trailerDiag("loadTrailers item=\(item.id) provider=\(provider.kind.rawValue) provided=\(provided.count) local=\(localCount) direct=\(directCount) yt=\(ytCount)")
 
         // 1) A real local trailer file wins outright — no network verification.
-        if let local = provided.first(where: { !$0.isYouTubeTrailer }) {
+        if let local = provided.first(where: \.isServerItemTrailer) {
             guard isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
             Self.trailerDiag("loadTrailers item=\(item.id) -> LOCAL trailer id=\(local.id)")
             trailers = [tagged(local.markingAsTrailer())]
@@ -1761,6 +1762,17 @@ public final class ItemDetailViewModel {
             guard isCurrent() else { return }
             Self.trailerDiag("loadTrailers item=\(item.id) -> CROSS-SERVER LOCAL trailer id=\(crossLocal.id) account=\(ownerAccountID)")
             trailers = [crossLocal.markingAsTrailer().taggingSource(ownerAccountID)]
+            return
+        }
+
+        // 1c) A direct video URL from the server's metadata (AIOMetadata /
+        //     Trailer.io) plays in the native player, so it outranks YouTube,
+        //     which leaves the app. Link syntax was validated when the provider
+        //     built the item; an unplayable stream fails in the player.
+        if let direct = provided.first(where: \.isDirectTrailer) {
+            guard isStillLoaded(item, sourceGeneration: sourceGeneration) else { return }
+            Self.trailerDiag("loadTrailers item=\(item.id) -> DIRECT remote trailer")
+            trailers = [tagged(stampTrailerContext(direct.markingAsTrailer(), from: item))]
             return
         }
 
@@ -1851,7 +1863,7 @@ public final class ItemDetailViewModel {
             seenAccounts.insert(source.accountID)
             guard let altProvider = alternateProviderResolver(source.accountID) else { continue }
             let altTrailers = (try? await altProvider.trailers(for: source.itemID)) ?? []
-            if let local = altTrailers.first(where: { !$0.isYouTubeTrailer }) {
+            if let local = altTrailers.first(where: \.isServerItemTrailer) {
                 return (local, source.accountID)
             }
         }
@@ -1883,7 +1895,7 @@ public final class ItemDetailViewModel {
     /// Keep external trailer metadata attached to the parent title. Local trailers
     /// and already-populated fields remain untouched.
     private func stampTrailerContext(_ trailer: MediaItem, from item: MediaItem) -> MediaItem {
-        guard trailer.isYouTubeTrailer else { return trailer }
+        guard trailer.isYouTubeTrailer || trailer.isDirectTrailer else { return trailer }
         var copy = trailer
         if copy.parentTitle?.isEmpty != false { copy.parentTitle = item.title }
         if copy.productionYear == nil { copy.productionYear = item.productionYear }

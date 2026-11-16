@@ -763,14 +763,17 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         async let localTask = client.localTrailers(userID: session.userID, id: itemID)
         async let remoteTask = client.remoteTrailers(userID: session.userID, id: itemID)
 
-        // Local trailer files play through the normal provider path; server
-        // remote trailers are links that open in YouTube. Both are best-effort
-        // so one failing doesn't hide the
-        // other.
+        // Local trailer files play through the normal provider path. Server
+        // remote trailers are either YouTube links (open in YouTube) or direct
+        // video URLs (e.g. AIOMetadata / Trailer.io), which play in-app. Both
+        // are best-effort so one failing doesn't hide the other. Server order is
+        // kept; the detail view decides source priority.
         let local = ((try? await localTask) ?? []).map { map(item: $0).markingAsTrailer() }
         let remote = ((try? await remoteTask) ?? []).compactMap { link -> MediaItem? in
             guard let url = link.Url else { return nil }
-            return MediaItem.youTubeTrailer(fromURL: url, title: link.Name ?? "Trailer")
+            let title = link.Name ?? "Trailer"
+            return MediaItem.youTubeTrailer(fromURL: url, title: title)
+                ?? MediaItem.directTrailer(fromURL: url, title: title)
         }
         return local + remote
     }
