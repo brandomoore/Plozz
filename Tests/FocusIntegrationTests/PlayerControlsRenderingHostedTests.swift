@@ -372,6 +372,11 @@ private func captureTimeline(
             .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
         if text.range(of: expected, options: .regularExpression) != nil { return rendered }
     } while ContinuousClock.now < deadline
+    XCTContext.runActivity(named: "Timeline render timeout") { activity in
+        let attachment = XCTAttachment(image: rendered)
+        attachment.lifetime = .keepAlways
+        activity.add(attachment)
+    }
     XCTFail("Timeline did not render \(expected): \(text)")
     return rendered
 }
