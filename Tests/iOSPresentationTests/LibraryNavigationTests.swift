@@ -54,7 +54,7 @@ final class LibraryNavigationTests: XCTestCase {
                 app.settings.navigation.renameDestination(key, to: name, homeVisibility: app.settings.homeVisibility)
             }
             try await self.waitUntil(window: window) {
-                Set(self.tabTitles(tabs)) == Set(["Start", "Offline", "Find", "Queue"])
+                Set(self.tabTitles(tabs)) == Set(["Start", "Upcoming", "Offline", "Find", "Queue"])
             }
             XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), destinations)
             app.settings.homeVisibility.setHomeRowName("Saved", for: .global(.watchlist))
@@ -63,7 +63,7 @@ final class LibraryNavigationTests: XCTestCase {
                 app.settings.navigation.renameDestination(key, to: "", homeVisibility: app.settings.homeVisibility)
             }
             try await self.waitUntil(window: window) {
-                Set(self.tabTitles(tabs)) == Set(["Home", "Downloads", "Search", "Watchlist"])
+                Set(self.tabTitles(tabs)) == Set(["Home", "Upcoming", "Downloads", "Search", "Watchlist"])
             }
         }
     }
@@ -178,15 +178,15 @@ final class LibraryNavigationTests: XCTestCase {
         XCTAssertFalse(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.liveTV))
     }
 
-    func testDefaultTabsRemainHomeDownloadsAndSearchAfterDiscoveryOnPhoneAndTablet() async throws {
+    func testDefaultTabsIncludeUpcomingAfterDiscoveryOnPhoneAndTablet() async throws {
         let app = try makeApp()
-        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
+        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .upcoming, .downloads, .search])
         await app.refreshNavigationLibraries()
         app.settings.navigation.hasWatchlistItems = true
-        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
+        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .upcoming, .downloads, .search])
         try await withTabs(app: app) { tabs, window in
-            try await waitUntil(window: window) { self.tabTitles(tabs).count == 3 }
-            XCTAssertEqual(self.tabTitles(tabs), ["Home", "Downloads", "Search"])
+            try await waitUntil(window: window) { self.tabTitles(tabs).count == 4 }
+            XCTAssertEqual(self.tabTitles(tabs), ["Home", "Upcoming", "Downloads", "Search"])
             XCTAssertFalse(tabs.tabBar.items?.contains { $0.title == "More" } ?? false)
         }
     }
@@ -210,24 +210,7 @@ final class LibraryNavigationTests: XCTestCase {
         }
         try await withTabs(app: app) { tabs, window in
             @MainActor func select(_ title: String) throws {
-                if !tabs.tabs.isEmpty {
-                    let tab = try XCTUnwrap(tabs.tabs.first { $0.title == title })
-                    let previous = tabs.selectedTab
-                    let allowed = tabs.delegate?.tabBarController?(tabs, shouldSelectTab: tab) ?? true
-                    XCTAssertTrue(allowed)
-                    if allowed {
-                        tabs.selectedTab = tab
-                        tabs.delegate?.tabBarController?(tabs, didSelectTab: tab, previousTab: previous)
-                    }
-                } else {
-                    let controller = try XCTUnwrap(tabs.viewControllers?.first { $0.tabBarItem.title == title })
-                    let allowed = tabs.delegate?.tabBarController?(tabs, shouldSelect: controller) ?? true
-                    XCTAssertTrue(allowed)
-                    if allowed {
-                        tabs.selectedViewController = controller
-                        tabs.delegate?.tabBarController?(tabs, didSelect: controller)
-                    }
-                }
+                try self.selectTab(title, in: tabs)
             }
             try await self.waitUntil(window: window) {
                 Set(self.tabTitles(tabs)).isSuperset(of: ["Home", "Downloads", "Search"])
@@ -358,13 +341,7 @@ final class LibraryNavigationTests: XCTestCase {
         try await withTabs(app: app) { tabs, window in
             try await waitUntil(window: window) { self.tabTitles(tabs).contains("All Libraries") }
             await fixture.clearBrowseRequests()
-            if let tab = tabs.tabs.first(where: { $0.title == "All Libraries" }) {
-                tabs.selectedTab = tab
-            } else {
-                tabs.selectedViewController = try XCTUnwrap(
-                    tabs.viewControllers?.first { $0.tabBarItem.title == "All Libraries" }
-                )
-            }
+            try selectTab("All Libraries", in: tabs)
             let deadline = ContinuousClock.now + .seconds(5)
             while await fixture.browseRequests.count < 2, ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(50))
@@ -504,7 +481,7 @@ final class LibraryNavigationTests: XCTestCase {
     }
 
     func testLibraryTabBrowsesItsOwningProvider() async throws {
-        let fixture = LibraryNavigationFixture()
+        let fixture = LibraryNavigationFixture(includesBrowseItems: true)
         let app = try makeApp(fixture: fixture)
         await app.refreshNavigationLibraries()
         let available = NavigationDestinationDefaults.iOS(visibleLibraries: app.visibleNavigationLibraries)
@@ -517,13 +494,7 @@ final class LibraryNavigationTests: XCTestCase {
         try await withTabs(app: app) { tabs, window in
             try await waitUntil(window: window) { self.tabTitles(tabs).contains("Plex Movies") }
             await fixture.clearBrowseRequests()
-            if let libraryTab = tabs.tabs.first(where: { $0.title == "Plex Movies" }) {
-                tabs.selectedTab = libraryTab
-            } else {
-                tabs.selectedViewController = try XCTUnwrap(
-                    tabs.viewControllers?.first { $0.tabBarItem.title == "Plex Movies" }
-                )
-            }
+            try selectTab("Plex Movies", in: tabs)
             let deadline = ContinuousClock.now + .seconds(5)
             while await !fixture.browseRequests.contains("plex:library"), ContinuousClock.now < deadline {
                 window.layoutIfNeeded()
@@ -531,7 +502,21 @@ final class LibraryNavigationTests: XCTestCase {
             }
             let requests = await fixture.browseRequests
             XCTAssertTrue(requests.contains("plex:library"), "\(requests)")
-            XCTAssertFalse(requests.contains("jellyfin:library"), "\(requests)")
+            let renderDeadline = ContinuousClock.now + .seconds(5)
+            var text = ""
+            repeat {
+                try await waitForHostedLayout(window)
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let request = VNRecognizeTextRequest()
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                if text.contains("Plex library item") { break }
+            } while ContinuousClock.now < renderDeadline
+            XCTAssertTrue(text.contains("Plex library item"), text)
+            XCTAssertFalse(text.contains("Jellyfin library item"), text)
         }
     }
 
@@ -563,7 +548,7 @@ final class LibraryNavigationTests: XCTestCase {
         let recovered = await app.refreshNavigationLibraries()
         XCTAssertTrue(recovered)
         XCTAssertEqual(app.settings.discoveredLibraries.state.value, app.settings.navigation.contentLibraries)
-        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
+        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .upcoming, .downloads, .search])
         showLibraryShortcuts(in: app)
         XCTAssertTrue(PlozziOSTabShell.configuredDestinations(appModel: app).contains(.library("plex:library")))
         let navigation = app.settings.navigation
@@ -636,7 +621,7 @@ final class LibraryNavigationTests: XCTestCase {
         let shellPublished = await shell.value
         XCTAssertTrue(shellPublished)
         XCTAssertTrue(app.visibleNavigationLibraries.contains { $0.key == "plex:library" })
-        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .downloads, .search])
+        XCTAssertEqual(PlozziOSTabShell.configuredDestinations(appModel: app), [.home, .upcoming, .downloads, .search])
         XCTAssertEqual(app.settings.discoveredLibraries.state.value, app.settings.navigation.contentLibraries)
         XCTAssertTrue(app.settings.discoveredLibraries.refreshingAccountIDs.isEmpty)
     }
@@ -767,6 +752,27 @@ final class LibraryNavigationTests: XCTestCase {
     private func tabTitles(_ tabs: UITabBarController) -> [String] {
         tabs.tabs.isEmpty ? (tabs.viewControllers ?? []).compactMap(\.tabBarItem.title) : tabs.tabs.map(\.title)
     }
+
+    private func selectTab(_ title: String, in tabs: UITabBarController) throws {
+        if !tabs.tabs.isEmpty {
+            let tab = try XCTUnwrap(tabs.tabs.first { $0.title == title })
+            let previous = tabs.selectedTab
+            let allowed = tabs.delegate?.tabBarController?(tabs, shouldSelectTab: tab) ?? true
+            XCTAssertTrue(allowed)
+            if allowed {
+                tabs.selectedTab = tab
+                tabs.delegate?.tabBarController?(tabs, didSelectTab: tab, previousTab: previous)
+            }
+        } else {
+            let controller = try XCTUnwrap(tabs.viewControllers?.first { $0.tabBarItem.title == title })
+            let allowed = tabs.delegate?.tabBarController?(tabs, shouldSelect: controller) ?? true
+            XCTAssertTrue(allowed)
+            if allowed {
+                tabs.selectedViewController = controller
+                tabs.delegate?.tabBarController?(tabs, didSelect: controller)
+            }
+        }
+    }
 }
 
 private struct LibraryNavigationProvider: MediaProvider {
@@ -788,8 +794,7 @@ private struct LibraryNavigationProvider: MediaProvider {
     }
     func children(of itemID: String) async throws -> [MediaItem] { [] }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
-        await fixture.recordBrowse(accountID: session.server.id, containerID: containerID)
-        return .init(items: [], startIndex: 0, totalCount: 0)
+        await fixture.browse(accountID: session.server.id, containerID: containerID, kind: kind)
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
@@ -799,6 +804,7 @@ private struct LibraryNavigationProvider: MediaProvider {
 
 private actor LibraryNavigationFixture {
     let libraryCount: Int
+    let includesBrowseItems: Bool
     private var failure: AppError?
     private var started: XCTestExpectation?
     private var continuation: CheckedContinuation<Void, Never>?
@@ -806,7 +812,10 @@ private actor LibraryNavigationFixture {
     private var allContinuations: [CheckedContinuation<Void, Never>] = []
     private(set) var browseRequests: [String] = []
 
-    init(libraryCount: Int = 1) { self.libraryCount = libraryCount }
+    init(libraryCount: Int = 1, includesBrowseItems: Bool = false) {
+        self.libraryCount = libraryCount
+        self.includesBrowseItems = includesBrowseItems
+    }
     func setFailure(_ failure: AppError?) { self.failure = failure }
     func pause(started: XCTestExpectation) { self.started = started }
     func resume() { continuation?.resume(); continuation = nil }
@@ -817,7 +826,17 @@ private actor LibraryNavigationFixture {
         allContinuations.removeAll()
     }
     func clearBrowseRequests() { browseRequests.removeAll() }
-    func recordBrowse(accountID: String, containerID: String) { browseRequests.append("\(accountID):\(containerID)") }
+    func browse(accountID: String, containerID: String, kind: MediaItemKind) -> MediaPage {
+        browseRequests.append("\(accountID):\(containerID)")
+        let items: [MediaItem] = includesBrowseItems ? [
+            MediaItem(
+                id: "\(accountID)-item",
+                title: accountID == "plex" ? "Plex library item" : "Jellyfin library item",
+                kind: kind, allowsTitleBasedMetadataMatching: false, sourceAccountID: accountID
+            )
+        ] : []
+        return .init(items: items, startIndex: 0, totalCount: items.count)
+    }
 
     func libraries(accountID: String, library: MediaLibrary) async throws -> [MediaLibrary] {
         if allPaused {

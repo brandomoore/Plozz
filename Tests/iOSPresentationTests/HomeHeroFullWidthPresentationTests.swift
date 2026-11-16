@@ -5,6 +5,7 @@ import FeatureAuth
 import FeatureHomeCore
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import AppShelliOS
 
@@ -173,6 +174,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         item.title = "EPISODE"
         item.parentTitle = "SHOW"
         item.seriesID = "show"
+        item.seriesPosterURL = item.posterURL
+        item.fallbackArtworkURL = item.backdropURL
         item.overview = "EPISODE SPOILERS"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "SeriesPreview-\(UUID().uuidString)"))
         let app = PlozziOSAppModel(
@@ -200,10 +203,16 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 let image = snapshot(window, name: "pending-series-\(Int(size.width))")
                 let color = try pixel(image, at: CGPoint(x: size.width / 2, y: 120))
                 XCTAssertGreaterThan(color[2], 120, "The incoming page must already contain the known artwork.")
-                let text = try HeroTextInk.frames(in: image, terms: ["SHOW", "SPOILERS", "Loading"])
-                XCTAssertNotNil(text["SHOW"])
-                XCTAssertNil(text["SPOILERS"], "A parent-show preview must not reveal the child's synopsis.")
-                XCTAssertNil(text["Loading"], "Loading status is accessible, not a visible replacement page.")
+                let frames = try HeroTextInk.frames(in: image, terms: ["SHOW"])
+                XCTAssertNotNil(frames["SHOW"])
+                let request = VNRecognizeTextRequest()
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("SPOILERS"),
+                               "A parent-show preview must not reveal the child's synopsis.")
+                XCTAssertFalse(text.localizedCaseInsensitiveContains("Loading"),
+                               "Loading status is accessible, not a visible replacement page.")
                 XCTAssertFalse(trailer.isPlaying)
                 XCTAssertFalse(descendants(window).contains { $0 is UIActivityIndicatorView })
             }
@@ -221,6 +230,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 let originalDelegate = navigation.delegate
                 let originalGestureDelegate = navigation.interactivePopGestureRecognizer?.delegate
                 let source = try XCTUnwrap(navigation.topViewController)
+                XCTAssertNotNil(findController(PlozziOSStationaryNavigationSource.Controller.self, in: source))
                 let sourceFrame = source.view.convert(source.view.bounds, to: window)
                 let destination = UIViewController()
                 destination.view.backgroundColor = .systemGreen
@@ -228,20 +238,26 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 let coordinator = try XCTUnwrap(navigation.transitionCoordinator)
                 let finished = expectation(description: "Native detail push finishes")
                 var heldSnapshot: UIView?
-                coordinator.animate { context in
-                    let snapshots = self.descendants(context.containerView).filter {
+                coordinator.animate(alongsideTransition: nil) { _ in finished.fulfill() }
+                let deadline = ContinuousClock.now + .seconds(2)
+                while heldSnapshot == nil, ContinuousClock.now < deadline {
+                    heldSnapshot = self.descendants(coordinator.containerView).first {
                         $0.accessibilityIdentifier == "home-navigation-source-snapshot"
                     }
-                    XCTAssertEqual(snapshots.count, 1)
-                    guard let snapshot = snapshots.first else { return }
-                    heldSnapshot = snapshot
-                    XCTAssertTrue(snapshot.superview === context.containerView)
+                    if heldSnapshot == nil { try await Task.sleep(for: .milliseconds(10)) }
+                }
+                let snapshots = self.descendants(coordinator.containerView).filter {
+                    $0.accessibilityIdentifier == "home-navigation-source-snapshot"
+                }
+                XCTAssertEqual(snapshots.count, 1)
+                if let snapshot = heldSnapshot {
+                    XCTAssertTrue(snapshot.superview === coordinator.containerView)
                     XCTAssertEqual(snapshot.convert(snapshot.bounds, to: window), sourceFrame)
                     XCTAssertFalse(snapshot.isUserInteractionEnabled)
                     XCTAssertTrue(snapshot.accessibilityElementsHidden)
                     XCTAssertFalse(snapshot.isDescendant(of: source.view))
                     XCTAssertFalse(snapshot.isDescendant(of: destination.view))
-                } completion: { _ in finished.fulfill() }
+                }
                 await fulfillment(of: [finished], timeout: 5)
                 XCTAssertNotNil(heldSnapshot)
                 XCTAssertNil(heldSnapshot?.superview)
@@ -679,8 +695,18 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                             CGAffineTransform(scaleX: image.scale, y: image.scale)
                         ))), scale: image.scale, orientation: .up
                     )
-                    let controls = try HeroTextInk.frames(in: controlImage, terms: ["PROFILE"])
-                    let profile = try XCTUnwrap(controls["PROFILE"])
+                    let request = VNRecognizeTextRequest()
+                    request.recognitionLanguages = ["en-US"]
+                    try VNImageRequestHandler(cgImage: XCTUnwrap(controlImage.cgImage)).perform([request])
+                    let bounds = try XCTUnwrap(request.results?.first {
+                        $0.topCandidates(1).first?.string.contains("PROFILE") == true
+                    }).boundingBox
+                    let profile = CGRect(
+                        x: bounds.minX * controlImage.size.width,
+                        y: (1 - bounds.maxY) * controlImage.size.height,
+                        width: bounds.width * controlImage.size.width,
+                        height: bounds.height * controlImage.size.height
+                    )
                     XCTAssertTrue(window.bounds.contains(profile.offsetBy(dx: trailing.minX, dy: 0)))
                     let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
                     let x = bar.minX + 4
@@ -694,10 +720,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                             )
                         }
                     } else {
-                        XCTAssertGreaterThan(
-                            Int(content[1]) - Int(top[1]), 20,
-                            "The native top-edge treatment must render over the cyan artwork at rest."
-                        )
+                        XCTAssertEqual(scroll.topEdgeEffect.style, .hard,
+                                       "Home must preserve the fixture's native scroll-edge treatment.")
                     }
                 }
             }
@@ -917,6 +941,10 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         )
         app.accountsProviders.registry.register(.jellyfin) { _ in provider }
         try app.accountsProviders.accountStore.add(account, token: "fixture")
+        let profile = app.profiles.add(name: "Detail artwork fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        app.profiles.setActiveAccountIDs([account.id], for: profile.id)
+        app.accountsProviders.tokenResolver = { _ in "fixture" }
         app.accountsProviders.reloadAccounts()
         XCTAssertNotNil(app.accountsProviders.provider(forAccountID: account.id))
     }
@@ -1333,7 +1361,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                 XCTAssertFalse(navigation.navigationBar.isHidden)
                 let detail = try XCTUnwrap(navigation.topViewController)
                 let scroll = try XCTUnwrap(descendants(detail.view).compactMap { $0 as? UIScrollView }
-                    .first { $0.contentSize.height > $0.bounds.height })
+                    .filter { $0.bounds.height > 0 && $0.contentSize.width <= $0.bounds.width + 1 }
+                    .max { $0.bounds.height < $1.bounds.height })
                 XCTAssertEqual(scroll.topEdgeEffect.isHidden, UIAccessibility.isReduceTransparencyEnabled,
                                "Normal detail chrome must use the native top scroll-edge effect.")
             }
@@ -1678,7 +1707,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
                 density: .standard, dynamicTypeSize: .large, isRunningOnMac: isRunningOnMac
             ))
-            .environment(\.plozziOSHeroContainerHeight, size.height)
+            .environment(\.plozziOSHeroContainerHeight, tracksWindowHeight ? nil : size.height)
             .environment(\.plozziOSIsRunningOnMac, isRunningOnMac)
             .environment(\.scenePhase, .active)
             .environment(\.locale, Locale(identifier: "en_US"))

@@ -2714,7 +2714,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertTrue(text.contains("Custom row"), text)
             XCTAssertTrue(text.contains("No additional rows available."), text)
             XCTAssertFalse(text.contains("Available rows"), text)
-            XCTAssertTrue(text.contains("Next Up is included in Continue Watching."), text)
+            XCTAssertTrue(text.contains("Next Up is included in Continue Watching"), text)
         }
     }
 
@@ -3859,8 +3859,28 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         } inspect: { window in
             let lines = try await self.capture(window, name: "Mobile Home artwork without duplicate merge toggle")
             let text = lines.map(\.0).joined(separator: " ")
-            XCTAssertTrue(text.contains("Reorder"), text)
             XCTAssertTrue(text.contains("Hero"), text)
+            XCTAssertTrue(text.contains("Rows"), text)
+            XCTAssertTrue(text.contains("Card labels"), text)
+            XCTAssertTrue(text.contains("Filtering"), text)
+            XCTAssertFalse(text.contains("Artwork"), text)
+            XCTAssertFalse(text.contains("Include Next Up"), text)
+            XCTAssertFalse(text.contains("No video libraries are available"), text)
+        }
+        try await withWindow {
+            NavigationStack {
+                PlozziOSHomeSettingsView(
+                    hero: HeroSettingsModel(store: InMemoryHeroSettingsStore()),
+                    heroBackground: HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore()),
+                    cards: CardStyleSettingsModel(),
+                    visibility: visibility, accounts: [], searchPage: .homeRows
+                )
+            }
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Mobile Home row arrangement")
+            let text = lines.map(\.0).joined(separator: " ")
+            XCTAssertTrue(text.contains("Edit"), text)
+            XCTAssertTrue(text.contains("Home rows"), text)
             XCTAssertTrue(text.contains("Continue Watching"), text)
             XCTAssertTrue(text.contains("Add row"), text)
             XCTAssertFalse(text.contains("Artwork"), text)
@@ -4112,7 +4132,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertEqual(offlineRequests, 1)
             let lines = try await self.capture(window, name: "Home customization with an offline server")
             let text = lines.map(\.0).joined(separator: " ")
-            XCTAssertTrue(text.contains("Reorder"), text)
+            XCTAssertTrue(text.contains("Rows"), text)
             XCTAssertTrue(text.contains("Hero"), text)
             XCTAssertFalse(text.contains("Available server"), "Whole-library controls belong in Settings > Libraries.")
             XCTAssertFalse(text.contains("Movies"), text)
@@ -4156,8 +4176,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 XCTAssertEqual(requests, 1, title)
                 let lines = try await self.capture(window, name: "Home settings \(title)")
                 let text = lines.map(\.0).joined(separator: " ")
-                XCTAssertTrue(text.contains("Reorder"), text)
-                XCTAssertTrue(text.contains("Hero"), text)
+                XCTAssertTrue(text.contains("Edit"), text)
+                XCTAssertTrue(text.contains("Home rows"), text)
                 XCTAssertTrue(text.contains(title), "Expected the active viewer's \(title): \(text)")
             }
         }
@@ -4196,11 +4216,11 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             let currentRequests = await current.libraryRequests
             XCTAssertEqual(currentRequests, 1)
             let before = try await self.capture(window, name: "Current account libraries")
-            XCTAssertTrue(before.map(\.0).joined(separator: " ").contains("Reorder"))
+            XCTAssertTrue(before.map(\.0).joined(separator: " ").contains("Edit"))
             await delayed.resumeLibraries()
             let after = try await self.capture(window, name: "Current libraries after stale failure")
             let text = after.map(\.0).joined(separator: " ")
-            XCTAssertTrue(text.contains("Hero"), text)
+            XCTAssertTrue(text.contains("Home rows"), text)
             XCTAssertTrue(text.contains("Current movies"), text)
             XCTAssertFalse(text.contains("Original movies"), text)
         }
@@ -4811,7 +4831,7 @@ private struct HomeSettingsViewerHost: View {
             PlozziOSHomeSettingsView(
                 hero: hero, heroBackground: heroBackground,
                 cards: cards,
-                visibility: visibility, accounts: source.accounts
+                visibility: visibility, accounts: source.accounts, searchPage: .homeRows
             )
         }
     }
