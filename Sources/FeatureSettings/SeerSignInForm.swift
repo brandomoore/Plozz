@@ -570,7 +570,7 @@ struct SeerSignInForm: View {
             authenticationRevision = revision
             password = ""
             key = ""
-            if showsSuggestedSetup, case .existing = operation.action {
+            if case .existing = operation.action {
                 save(account)
             }
         } catch is CancellationError {
