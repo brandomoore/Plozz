@@ -264,8 +264,9 @@ registry.
 - **Detail navigation leaves the resting artwork unblurred.** The detail page
   hides the navigation-bar background and the native top scroll-edge effect.
   An Apple ultra-thin material overlay protects status text as scrolling begins:
-  its opacity follows the first 64 points of scroll directly, returning to zero
-  at the top, without a timed arrival animation or additional tint.
+  its opacity follows the first 64 points of scroll directly, capped at 60% and
+  returning to zero at the top, without a timed arrival animation or additional
+  tint. The gradient starts near the top and ends 16 points below the status area.
   Reduced Transparency uses the same scroll-linked, non-blurred color fade.
   Native toolbar controls, Home's blur and the bottom scroll edge are unchanged.
   The destination owns its appearance rather than inheriting Home's toolbar

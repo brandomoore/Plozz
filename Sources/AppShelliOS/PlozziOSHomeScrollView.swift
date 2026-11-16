@@ -111,19 +111,21 @@ struct PlozziOSStatusBarScrollFade: ViewModifier {
             .overlay(alignment: .top) {
                 if #available(iOS 26.0, *), enabled, !isRunningOnMac,
                    usesMaterial || systemReduceTransparency || reduceTransparency {
+                    let opaque = systemReduceTransparency || reduceTransparency
+                    let fadeHeight = safeAreaTop + (opaque ? 44 : 16)
                     Group {
-                        if systemReduceTransparency || reduceTransparency {
+                        if opaque {
                             Rectangle().fill(palette.backgroundBase)
                         } else {
                             Rectangle().fill(.ultraThinMaterial)
                         }
                     }
-                    .frame(height: safeAreaTop + 44)
+                    .frame(height: fadeHeight)
                     .mask {
                         LinearGradient(
                             stops: [
                                 .init(color: .black, location: 0),
-                                .init(color: .black, location: safeAreaTop / (safeAreaTop + 44)),
+                                .init(color: .black, location: opaque ? safeAreaTop / fadeHeight : 0.2),
                                 .init(color: .clear, location: 1)
                             ],
                             startPoint: .top, endPoint: .bottom
@@ -132,7 +134,7 @@ struct PlozziOSStatusBarScrollFade: ViewModifier {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea(.container, edges: .top)
                     // Follow scroll position directly, without a delayed appearance animation.
-                    .opacity(scrolledFraction)
+                    .opacity(scrolledFraction * (opaque ? 1 : 0.6))
                     .animation(nil, value: scrolledFraction)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)

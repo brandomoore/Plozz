@@ -1329,6 +1329,15 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     let body = try pixel(image, at: CGPoint(x: 8, y: 200))
                     XCTAssertGreaterThan(Int(body[2]) - Int(body[0]), 100,
                                          "The status overlay must not cover the body.")
+                    if !UIAccessibility.isReduceTransparencyEnabled {
+                        let belowStatus = try pixel(
+                            image, at: CGPoint(x: 8, y: window.safeAreaInsets.top + 20)
+                        )
+                        for (actual, expected) in zip(belowStatus, body) {
+                            XCTAssertEqual(Double(actual), Double(expected), accuracy: 3,
+                                           "The material must end just below the status area.")
+                        }
+                    }
                     XCTAssertTrue(scroll.topEdgeEffect.isHidden, "Do not stack the native edge over the material.")
                 }
                 let origin = colors[0]
