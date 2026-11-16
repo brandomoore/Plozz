@@ -1,8 +1,9 @@
 #if os(tvOS)
 import CoreModels
-import CoreUI
+@testable import CoreUI
 @testable import FeatureHomeCore
 import SwiftUI
+import TVUIKit
 import UIKit
 import Vision
 import XCTest
@@ -20,27 +21,90 @@ final class UpcomingPresentationHostedTests: XCTestCase {
         await model.refresh(scope: UUID().uuidString, namespace: nil, isCurrent: { true }) {
             UpcomingFeedSnapshot(releases: [
                 UpcomingRelease(id: "first", titleKey: UpcomingRelease.titleKey(for: item), item: item,
-                                date: today.addingTimeInterval(2 * 86_400), datePrecision: .dateOnly,
+                                date: today.addingTimeInterval(86_400), datePrecision: .dateOnly,
                                 kind: .digital, interests: [.watchlist])
             ])
         }
-        let window = try host(PinnedUpcoming(model: model, interval: .init(start: today, duration: 90 * 86_400)))
-        defer { close(window) }
-        let deadline = ContinuousClock.now + .seconds(5)
-        func contentHasFocus() -> Bool {
-            let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem
-            return descendants(window).compactMap { $0 as? NavigationEntryFocusRegionView }.contains {
-                $0.preference == .content && NativeFocusRegion.contains(focused, in: $0)
+        for style in CardStyle.allCases {
+            let window = try host(PinnedUpcoming(model: model, interval: .init(start: today, duration: 90 * 86_400))
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.plozzCardStyle, style)
+                .environment(\.plozzCardFocusStyle, .system))
+            defer { close(window) }
+            let deadline = ContinuousClock.now + .seconds(5)
+            func contentHasFocus() -> Bool {
+                let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem
+                return descendants(window).compactMap { $0 as? NavigationEntryFocusRegionView }.contains {
+                    $0.preference == .content && NativeFocusRegion.contains(focused, in: $0)
+                }
             }
+            while !contentHasFocus(), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(contentHasFocus(), "Native focus must enter the sparse release grid, not Calendar.")
+            try await Task.sleep(for: .milliseconds(600))
+            let observations = try capture(window, name: "upcoming-first-focus-\(style.rawValue)")
+            let heading = try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string == "Tomorrow" })
+            let headingBottom = (1 - heading.boundingBox.minY) * window.bounds.height
+            let focused = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem as? UIView)
+            let poster = focused as? NativePosterButton
+            func artworkFrames(_ layer: CALayer) -> [CGRect] {
+                guard layer !== poster?.overlayView.layer else { return [] }
+                let state = layer.presentation() ?? layer
+                guard !state.isHidden, state.opacity > 0 else { return [] }
+                let frame = NativeFocusProjection.frame(of: layer, in: window.layer)
+                let isArtwork = state.contents != nil && state.bounds.height > 100
+                    && frame.map { abs($0.height / $0.width - 1.5) < 0.05 } == true
+                return (isArtwork ? frame.map { [$0] } ?? [] : [])
+                    + (layer.sublayers ?? []).flatMap(artworkFrames)
+            }
+            let frame: CGRect
+            if let card = focused as? TVCardView {
+                frame = try XCTUnwrap(NativeFocusProjection.frame(of: card.contentView.layer, in: window.layer))
+            } else {
+                let poster = try XCTUnwrap(poster)
+                let frames = artworkFrames(poster.artworkView.layer)
+                var bounds = try XCTUnwrap(frames.first)
+                for next in frames.dropFirst() { bounds = bounds.union(next) }
+                frame = bounds
+            }
+            XCTAssertGreaterThan(frame.minY, headingBottom + 8, "Focused \(style) artwork must stay below its date heading.")
+            let scroll = try XCTUnwrap(descendants(window).compactMap { $0 as? UIScrollView }.first {
+                focused.isDescendant(of: $0)
+            })
+            let viewport = scroll.convert(scroll.bounds, to: window)
+            XCTAssertGreaterThanOrEqual(frame.minX, viewport.minX, "Focus lift must not clip at the agenda's leading edge.")
+            XCTAssertLessThanOrEqual(frame.maxX, viewport.maxX)
         }
-        while !contentHasFocus(), ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        XCTAssertTrue(contentHasFocus(), "Native focus must enter the sparse release grid, not Calendar.")
-        _ = try capture(window, name: "upcoming-first-focus")
     }
 
-    func testCalendarShowsUntruncatedMonthAndTodayAlongsideSingleLineDates() async throws {
+    func testAgendaHidesOnlyPastDatesEvenWhenAFutureDateIsSelected() async throws {
+        let suite = "UpcomingPresentationHostedTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = UpcomingFeedModel(defaults: defaults)
+        let today = Calendar.current.startOfDay(for: Date())
+        let releases = [(-1, "Past movie"), (2, "Earlier future movie"), (10, "Selected future movie")].map { offset, title in
+            let item = MediaItem(id: title, title: title, kind: .movie)
+            return UpcomingRelease(id: title, titleKey: UpcomingRelease.titleKey(for: item), item: item,
+                                   date: today.addingTimeInterval(Double(offset) * 86_400), datePrecision: .dateOnly,
+                                   kind: .digital, interests: [.watchlist])
+        }
+        await model.refresh(scope: UUID().uuidString, namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        let window = try host(UpcomingAgenda(
+            model: model, selectedDay: releases[2].date, minimumLastDayHeight: 0, contentWidth: 1600
+        ).environment(\.plozzCardFocusStyle, .system))
+        defer { close(window) }
+        try await Task.sleep(for: .milliseconds(600))
+        let labels = descendants(window).compactMap { ($0 as? NativePosterButton)?.accessibilityLabel }
+        XCTAssertFalse(labels.contains { $0.contains("Past movie") }, "\(labels)")
+        XCTAssertTrue(labels.contains { $0.contains("Earlier future movie") }, "\(labels)")
+        XCTAssertTrue(labels.contains { $0.contains("Selected future movie") }, "\(labels)")
+    }
+
+    func testCalendarShowsUntruncatedMonthAndAlignedUniformControls() async throws {
         let today = Calendar.current.startOfDay(for: Date())
         for (locale, month) in [
             ("en_US", Calendar.current.date(byAdding: .day,
@@ -60,7 +124,7 @@ final class UpcomingPresentationHostedTests: XCTestCase {
             let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
             let expected = month.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: locale)))
             XCTAssertTrue(text.contains(expected), text)
-            if locale == "en_US" { XCTAssertTrue(text.contains("Today"), text) }
+            XCTAssertFalse(text.contains("Today"), "Today is indicated on its date, not in a separate caption.")
             for day in ["11", "20", "21", "30"] {
                 XCTAssertTrue(observations.contains { $0.topCandidates(1).first?.string == day }, text)
             }
@@ -73,6 +137,13 @@ final class UpcomingPresentationHostedTests: XCTestCase {
             for date in dates {
                 XCTAssertEqual(date.frame.width, first.frame.width, accuracy: 1)
                 XCTAssertEqual(date.frame.height, first.frame.height, accuracy: 1)
+            }
+            let arrows = controls.sorted { $0.frame.minY < $1.frame.minY }.prefix(2).sorted { $0.frame.minX < $1.frame.minX }
+            XCTAssertEqual(arrows[0].frame.minX, try XCTUnwrap(dates.map(\.frame.minX).min()), accuracy: 1)
+            XCTAssertEqual(arrows[1].frame.maxX, try XCTUnwrap(dates.map(\.frame.maxX).max()), accuracy: 1)
+            for arrow in arrows {
+                XCTAssertEqual(arrow.frame.width, first.frame.width, accuracy: 1)
+                XCTAssertEqual(arrow.frame.height, first.frame.height, accuracy: 1)
             }
         }
     }
@@ -119,7 +190,9 @@ final class UpcomingPresentationHostedTests: XCTestCase {
 
     private func capture(_ window: UIWindow, name: String) throws -> [VNRecognizedTextObservation] {
         window.layoutIfNeeded()
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
         if let directory = ProcessInfo.processInfo.environment["PLOZZ_UPCOMING_CAPTURE_DIR"] {
@@ -151,7 +224,6 @@ private struct PinnedUpcoming: View {
         )
         .environment(chrome)
         .environment(\.plozzNavigationStyle, .rail)
-        .environment(\.plozzCardStyle, .borderless)
     }
 }
 #endif
