@@ -55,7 +55,7 @@ not a specification.
 
 ## Channel-name presentation
 
-Settings > Live TV > **Clean channel names** is off by default and scoped to
+Settings > Live TV > **Clean channel names** is on by default and scoped to
 the active profile. Its live preview uses the same formatter as the guide and
 up to three distinct original names from the authorized loaded IPTV catalog,
 preferring names that cleanup changes. It excludes hidden and manually renamed
@@ -600,7 +600,8 @@ an unchanged index conditionally. The legacy raw-response cache remains bounded
 to one document and at most 60 seconds; it is not a second persistent XML store.
 
 The existing guide-use/resume request path checks loaded IPTV windows again after
-12 hours, without adding a timer or a coverage-triggered polling heuristic.
+12 hours, without a coverage-triggered polling heuristic; the optional automatic
+update described below is the only timer.
 Existing listings stay visible during refresh and ordinary failures remain
 observable without advancing freshness. Missing windows load on demand. This
 policy does not promise background execution while the OS suspends the app.
@@ -614,6 +615,56 @@ in the requested window retains normal source freshness: an empty viewport is
 not a reason to repeatedly download the whole feed. Legacy zero-row indexes
 without a source programme count require one full rebuild to distinguish these
 cases. There is no new polling timer.
+
+For Xtream accounts without an explicit XMLTV URL, a guide request reads the saved
+`xmltv.php` index first when it can answer without the network: indexed for the
+current lineup and window, within its reuse limit, and not awaiting an explicit
+refresh. When it answers, the request makes no `get_simple_data_table` call at all:
+the saved index is the provider's whole guide, and a sample of one provider found
+no channel with native listings that its guide file lacked. When the saved index
+cannot answer, the request order above applies, with two limits: a channel that has
+no guide ID is never asked for natively, and an empty native answer is remembered
+in memory for six hours (cleared by an explicit refresh).
+
+The saved index is tied to the lineup's channels that have a guide ID. Channels
+without one cannot be given listings, so providers that rename event channels
+through the day do not invalidate it. The lookup itself keeps the prepared lineup,
+its digest, the decoded station document and normalised station names between
+requests; a batch of twelve channels is answered in a few milliseconds.
+
+For an Xtream account using its own `xmltv.php`, the lineup and guide share one
+key, so a channel's guide ID alone decides its listings: HD, 4K and regional copies
+that carry the same ID all receive them, and the answer for a channel does not
+depend on which other channels were requested with it. Letter case and surrounding
+spaces in the ID are ignored, and when a provider declares a station under several
+spellings the channel's own is read first and another only if it has no listings in
+the window. Playlists and explicit guide
+addresses keep the stricter matcher, where channels sharing an ID must also share a
+name, because there the ID and the guide come from different parties.
+
+Settings > Live TV > Guide preferences > **Update guide automatically** (Off, or
+every 1, 3, 6, 12 or 24 hours; 12 by default; profile-scoped) sets how long a saved
+account guide is reused. A chosen interval can outlast the built-in 12-hour default
+but never a lifetime the server stated. While the app is in the foreground and the
+profile may use Live TV, a low-priority task brings guides that are *already saved*
+up to date once they are older than the interval: one conditional whole-guide
+request per interval and account, never per-channel requests, and never a first
+download for a profile that has not loaded that guide. An Xtream account's saved
+live lineup is refreshed by the same task on the same interval; reading the lineup
+no longer starts a refresh of its own when it is 30 minutes old, so Off leaves both
+to an explicit refresh. Playlist accounts and the film and series libraries keep the
+30-minute rule.
+It starts one minute after launch, waits at least five minutes between checks, and
+backs off from 15 minutes after a failure. Off restores the on-demand behaviour
+described above.
+
+A guide request answered with HTTP 429, 502, 503 or 504 is a signal to back off.
+After the existing in-request retries, the account makes no guide request (per-channel
+or whole-guide) for five minutes, doubling on each further refusal up to one hour, or
+for a longer `Retry-After` when the provider states one. Requests in that period fail
+with the provider's error without touching the network; saved listings stay visible.
+A successful guide request or an explicit refresh ends the back-off. It is held in
+memory and does not affect playback or lineup requests.
 
 Xtream without an explicit XMLTV URL advertises per-channel guide loading.
 Startup discovery and guide preparation warm only the first 12 channels, then

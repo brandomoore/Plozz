@@ -134,12 +134,75 @@ final class LiveTVGuideMatcherTests: XCTestCase {
         ).isEmpty)
     }
 
+    func testAccountGuideGivesEveryChannelCarryingAnIDItsListingsWhateverElseIsRequested() {
+        let copies = [
+            channel(id: "hd", name: "UK: Sky Cinema Premiere HD", guideID: "premiere.uk"),
+            channel(id: "4k", name: "UK: Sky Cinema Premiere 4K", guideID: "premiere.uk"),
+            channel(id: "backup", name: "VIP | Premiere (backup)", guideID: "premiere.uk"),
+            channel(id: "other", name: "Other", guideID: "missing.uk")
+        ]
+        let guide = ["premiere.uk": ["Sky Cinema Premiere"]]
+        let matcher = LiveTVGuideMatcher()
+        XCTAssertTrue(
+            matcher.match(channels: copies, guideChannels: guide).isEmpty,
+            "A playlist paired with another guide keeps the stricter rule"
+        )
+        let together = matcher.match(channels: copies, guideChannels: guide, trustsGuideIDs: true)
+        XCTAssertEqual(together["premiere.uk"]?.map(\.id), ["hd", "4k", "backup"])
+        XCTAssertNil(together["missing.uk"])
+
+        let cased = [channel(id: "a", name: "A", guideID: " Premiere.UK "), channel(id: "b", name: "B", guideID: "DAVE.uk")]
+        let folded = matcher.match(
+            channels: cased, guideChannels: ["premiere.uk": [], "Dave.uk": [], "dave.UK": []], trustsGuideIDs: true
+        )
+        XCTAssertEqual(folded["premiere.uk"]?.map(\.id), ["a"], "Case and stray spaces do not hide listings")
+        // Declared under several spellings: the channel's own comes first, then the rest.
+        XCTAssertEqual(folded["Dave.uk"]?.map(\.id), ["b"])
+        XCTAssertEqual(folded["dave.UK"]?.map(\.id), ["b"])
+        let own = matcher.matching(
+            channels: [channel(id: "c", name: "C", guideID: "Dave.uk")],
+            guideChannels: ["Dave.uk": [], "dave.UK": []], trustsGuideIDs: true
+        )
+        XCTAssertEqual(own.assignments["c"]?.guideChannelID, "Dave.uk")
+        // The answer for a channel does not depend on what is on screen with it.
+        for copy in copies.prefix(3) {
+            let alone = matcher.match(channels: [copy], guideChannels: guide, trustsGuideIDs: true)
+            XCTAssertEqual(alone["premiere.uk"]?.map(\.id), [copy.id])
+        }
+    }
+
     func testExplicitGuideIDCanIdentifyAStreamWithUnknownDistributor() {
         let channels = [channel(id: "one", name: "Different name", guideID: "provider-native")]
         let result = LiveTVGuideMatcher(provider: .plex).matching(
             channels: channels, guideChannels: ["provider-native": ["Guide name"]]
         )
         XCTAssertEqual(result.assignments["one"]?.method, .exactID)
+    }
+
+    func testSameNamedChannelWithoutGuideIDBlocksPlaylistNameMatch() {
+        let guided = channel(id: "guided", name: "ACC Network", guideID: "ACCNetwork.us@SD")
+        let unguided = LiveTVPrototypeChannel(
+            id: "unguided", number: 2, name: "ACC Network", category: "Test", symbol: "tv",
+            accent: 0, source: .iptv, tagline: "", guideID: nil
+        )
+        let matcher = LiveTVGuideMatcher()
+        let stations = ["ACC.Network.us2": ["ACC Network"]]
+        XCTAssertFalse(matcher.match(channels: [guided], guideChannels: stations).isEmpty)
+        XCTAssertTrue(matcher.match(channels: [guided, unguided], guideChannels: stations).isEmpty)
+    }
+
+    func testNameMemoDoesNotWipeDuringMaximumLineupAndStaysBounded() {
+        let memo = LiveTVGuideMatcher.NormalizedNames()
+        var computed = 0
+        func make(_ input: String) -> String { computed += 1; return input.lowercased() }
+        for i in 0..<100_000 { _ = memo.value(for: "Channel \(i)", make: make) }
+        for i in 0..<100_000 { _ = memo.value(for: "Channel \(i)", make: make) }
+        XCTAssertEqual(computed, 100_000)
+        for i in 100_000..<200_001 { _ = memo.value(for: "Channel \(i)", make: make) }
+        _ = memo.value(for: "Channel 0", make: make)
+        XCTAssertEqual(computed, 200_001, "The full memo never discards earlier entries")
+        _ = memo.value(for: "Channel 200000", make: make)
+        XCTAssertEqual(computed, 200_002, "New entries are not retained beyond the bound")
     }
 
     private func channel(

@@ -145,23 +145,68 @@ struct LiveTVServerCatalog: Sendable {
     let kind: LiveTVPrototypeSource
     let channels: [LiveTVPrototypeChannel]
     let references: [String: LiveTVServerChannelReference]
+    /// Provider channel IDs in this catalogue, kept so each guide batch need not rebuild them.
+    private let nativeChannelIDs: Set<String>
     var programs: [LiveTVPrototypeProgram]
     var inlineGuideFailure: LiveTVServerImportError?
     var pendingGuideChannelIDs: Set<String> = []
+    /// Holds only the rows last on screen, shown until the lineup itself has been read.
+    let isProvisional: Bool
+
+    /// The rows last on screen, admitted under the current authorization. Each identifier is
+    /// derived again, so a row is shown only if this source and account still publish it as saved.
+    init?(
+        lastSeen: LiveTVLastSeenSnapshot.Source, source: LiveTVServerSource,
+        context: LiveTVAuthorizedServerProvider
+    ) {
+        guard lastSeen.sourceID == source.id, lastSeen.accountID == source.accountID,
+              lastSeen.kind == context.kind, !lastSeen.entries.isEmpty,
+              lastSeen.entries.count <= LiveTVLastSeenSnapshot.maximumChannels else { return nil }
+        var nativeIDs = Set<String>()
+        var references: [String: LiveTVServerChannelReference] = [:]
+        for entry in lastSeen.entries {
+            let channel = entry.channel
+            guard nativeIDs.insert(entry.nativeID).inserted, channel.source == context.kind,
+                  channel.configuredSourceID == source.id, channel.streamURL == nil, channel.httpHeaders.isEmpty,
+                  !channel.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  channel.id == Self.channelID(source: source, nativeID: entry.nativeID) else { return nil }
+            references[channel.id] = LiveTVServerChannelReference(
+                sourceID: source.id, accountID: source.accountID,
+                authorizationID: context.authorizationID, channelID: entry.nativeID
+            )
+        }
+        nativeChannelIDs = nativeIDs
+        authorizationID = context.authorizationID
+        kind = context.kind
+        channels = lastSeen.entries.map(\.channel)
+        self.references = references
+        programs = []
+        inlineGuideFailure = nil
+        pendingGuideChannelIDs = context.provider.usesPerChannelLiveTVGuide ? Set(references.keys) : []
+        isProvisional = true
+    }
 
     init(
         source: LiveTVServerSource, context: LiveTVAuthorizedServerProvider, channels: [ServerLiveTVChannel]
     ) throws {
-        guard Set(channels.map(\.id)).count == channels.count,
+        isProvisional = false
+        let nativeChannelIDs = Set(channels.map(\.id))
+        self.nativeChannelIDs = nativeChannelIDs
+        guard nativeChannelIDs.count == channels.count,
               channels.allSatisfy({ !$0.id.isEmpty && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         else { throw LiveTVServerImportError.invalidCatalog }
         authorizationID = context.authorizationID
         kind = context.kind
         var references: [String: LiveTVServerChannelReference] = [:]
         references.reserveCapacity(channels.count)
+        // Every channel shares the source prefix; hash it once and extend a copy per channel.
+        var prefix = SHA256()
+        prefix.update(data: Data((source.id + "\u{1F}" + source.accountID + "\u{1F}").utf8))
         self.channels = try channels.enumerated().map { index, channel in
             if index.isMultiple(of: 1_000) { try Task.checkCancellation() }
-            let id = Self.channelID(source: source, nativeID: channel.id)
+            var hasher = prefix
+            hasher.update(data: Data(channel.id.utf8))
+            let id = "server-channel-" + Self.hex(hasher.finalize())
             references[id] = LiveTVServerChannelReference(
                 sourceID: source.id, accountID: source.accountID,
                 authorizationID: context.authorizationID, channelID: channel.id
@@ -190,7 +235,8 @@ struct LiveTVServerCatalog: Sendable {
     func mapPrograms(
         _ programs: [ServerLiveTVProgramme], source: LiveTVServerSource
     ) throws -> [LiveTVPrototypeProgram] {
-        let knownIDs = Set(references.values.map(\.channelID))
+        if programs.isEmpty { return [] }
+        let knownIDs = nativeChannelIDs
         guard programs.count <= LiveTVXMLTVParser.maximumRetainedPrograms,
               programs.allSatisfy({
                   !$0.id.isEmpty && knownIDs.contains($0.channelID)
@@ -216,7 +262,21 @@ struct LiveTVServerCatalog: Sendable {
         "server-channel-\(digest(source.id + "\u{1F}" + source.accountID + "\u{1F}" + nativeID))"
     }
 
+    private static func hex(_ digest: SHA256.Digest) -> String {
+        String(unsafeUninitializedCapacity: SHA256.byteCount * 2) { buffer in
+            digest.withUnsafeBytes { bytes in
+                for (index, byte) in bytes.enumerated() {
+                    buffer[index * 2] = hexDigits[Int(byte >> 4)]
+                    buffer[index * 2 + 1] = hexDigits[Int(byte & 15)]
+                }
+            }
+            return SHA256.byteCount * 2
+        }
+    }
+
+    private static let hexDigits = Array("0123456789abcdef".utf8)
+
     private static func digest(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        LiveTVIdentityDigest.hex(SHA256.hash(data: Data(value.utf8)))
     }
 }

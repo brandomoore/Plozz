@@ -1,4 +1,5 @@
 import CoreModels
+import CryptoKit
 import Foundation
 import XCTest
 @testable import FeatureLiveTVCore
@@ -435,6 +436,228 @@ final class LiveTVServerImportTests: XCTestCase {
         )
     }
 
+    func testServerChannelIdentifiersKeepTheirPublishedForm() throws {
+        let server = source(id: "srv", accountID: "acct")
+        let catalog = try LiveTVServerCatalog(
+            source: server, context: authorized(server, ServerImportProvider(channels: [])),
+            channels: [channel(), ServerLiveTVChannel(id: "ünï:2", name: "Second")]
+        )
+        // Favourites, hidden channels and guide state are keyed by these identifiers.
+        let expected = ["native", "ünï:2"].map { nativeID in
+            "server-channel-" + SHA256.hash(data: Data("srv\u{1F}acct\u{1F}\(nativeID)".utf8))
+                .map { String(format: "%02x", $0) }.joined()
+        }
+        XCTAssertEqual(catalog.channels.map(\.id), expected)
+        XCTAssertEqual(expected.compactMap { catalog.references[$0]?.channelID }, ["native", "ünï:2"])
+    }
+
+    func testUnchangedLineupUnderNewAuthorizationRepublishesChannelReferences() async throws {
+        let server = source()
+        let provider = ServerImportProvider(channels: [channel()])
+        let fixture = ServerAuthorizationFixture()
+        fixture.contexts[server.accountID] = authorized(server, provider, authorizationID: "first")
+        let imports = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]), serverProviderResolver: fixture.resolve
+        )
+        let model = LiveTVPrototypeModel(now: now, channels: [])
+        await imports.reloadServers(into: model, forceRefresh: false)
+        let id = try XCTUnwrap(model.channels.first?.id)
+        XCTAssertEqual(imports.serverChannelReferences[id]?.authorizationID, "first")
+
+        fixture.contexts[server.accountID] = authorized(server, provider, authorizationID: "second")
+        await imports.reloadServers(into: model, forceRefresh: false)
+
+        XCTAssertEqual(model.channels.map(\.id), [id])
+        XCTAssertEqual(imports.serverChannelReferences[id]?.authorizationID, "second")
+    }
+
+    func testLastSeenRowsShowBeforeTheLineupIsReadAndAreReplacedByIt() async throws {
+        let server = source()
+        let lineup = (1...400).map { ServerLiveTVChannel(id: "n\($0)", name: "Channel \($0)", number: "\($0)", groups: ["Group \($0 % 4)"]) }
+        let store = LastSeenMemoryStore()
+        let first = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]),
+            serverProviderResolver: { [self] _ in authorized(server, ServerImportProvider(channels: lineup)) },
+            lastSeen: store
+        )
+        let firstModel = LiveTVPrototypeModel(now: now, channels: [])
+        await first.reload(into: firstModel, forceServerRefresh: false)
+        await first.saveLastSeen(from: firstModel)?.value
+        let saved = try XCTUnwrap(store.load())
+        XCTAssertEqual(saved.sources.first?.entries.count, LiveTVLastSeenSnapshot.maximumChannels)
+        XCTAssertEqual(saved.browse.totalCount, 400)
+
+        // A new session: the lineup read is held, so only the saved rows can be on screen.
+        let started = expectation(description: "Lineup read suspended")
+        let provider = ServerImportProvider(channels: lineup, suspended: .channels, started: started)
+        let context = authorized(server, provider, authorizationID: "next-session")
+        let imports = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]), serverProviderResolver: { _ in context }, lastSeen: store
+        )
+        let model = LiveTVPrototypeModel(now: now, channels: [])
+        let task = Task { await imports.reload(into: model, forceServerRefresh: false) }
+        await fulfillment(of: [started], timeout: 2)
+
+        XCTAssertEqual(model.channels.map(\.id), Array(firstModel.channels.prefix(150)).map(\.id))
+        XCTAssertEqual(model.guideChannels.map(\.id), Array(firstModel.guideChannels.prefix(150)).map(\.id))
+        XCTAssertEqual(model.categoryChannelCount(nil), 400)
+        XCTAssertEqual(model.browsingCategories, firstModel.browsingCategories)
+        // A saved row is playable: it is referenced under this session's authorization.
+        let reference = try XCTUnwrap(imports.serverChannelReferences[model.channels[0].id])
+        XCTAssertEqual(reference.authorizationID, "next-session")
+        XCTAssertEqual(reference.channelID, "n1")
+        // Rows alone are never remembered as the lineup.
+        XCTAssertNil(imports.saveLastSeen(from: model))
+
+        await provider.resume()
+        await task.value
+        XCTAssertEqual(model.channels, firstModel.channels)
+        XCTAssertEqual(model.guideChannels, firstModel.guideChannels)
+        XCTAssertNil(model.provisionalBrowse)
+        XCTAssertEqual(model.browsingCategories, firstModel.browsingCategories)
+    }
+
+    func testAuthorizationLossDuringHiddenPreloadClearsProvisionalBrowseAndRejectsLateLineup() async throws {
+        let server = source()
+        let lineup = [ServerLiveTVChannel(id: "n1", name: "Old profile", groups: ["Old category"])]
+        let store = LastSeenMemoryStore()
+        let first = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]),
+            serverProviderResolver: { [self] _ in authorized(server, ServerImportProvider(channels: lineup)) },
+            lastSeen: store
+        )
+        let firstModel = LiveTVPrototypeModel(now: now, channels: [])
+        await first.reload(into: firstModel, forceServerRefresh: false)
+        await first.saveLastSeen(from: firstModel)?.value
+
+        let started = expectation(description: "Hidden preload suspended")
+        let provider = ServerImportProvider(channels: lineup, suspended: .channels, started: started)
+        var profileIsCurrent = true
+        let context = authorized(server, provider)
+        let imports = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]), serverProviderResolver: { _ in context },
+            lastSeen: store, catalogIsAuthorized: { profileIsCurrent }
+        )
+        let model = LiveTVPrototypeModel(now: now, channels: [])
+        let preload = Task { await imports.reload(into: model, forceServerRefresh: false) }
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertNotNil(model.provisionalBrowse)
+        XCTAssertEqual(model.categoryChannelCount("Old category"), 1)
+
+        profileIsCurrent = false
+        XCTAssertFalse(imports.ensureCatalogAuthorization(into: model))
+        XCTAssertNil(model.provisionalBrowse)
+        XCTAssertTrue(model.channels.isEmpty)
+        XCTAssertFalse(model.browsingCategories.contains { $0.name == "Old category" })
+        XCTAssertEqual(model.categoryChannelCount(nil), 0)
+        await provider.resume()
+        await preload.value
+        XCTAssertTrue(model.channels.isEmpty)
+        XCTAssertNil(model.provisionalBrowse)
+        XCTAssertEqual(model.categoryChannelCount(nil), 0)
+    }
+
+    func testLastSeenRowsFromAnotherAccountOrChangedIdentifiersAreNotShown() async throws {
+        let server = source()
+        let lineup = [channel()]
+        let store = LastSeenMemoryStore()
+        let first = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]),
+            serverProviderResolver: { [self] _ in authorized(server, ServerImportProvider(channels: lineup)) },
+            lastSeen: store
+        )
+        let firstModel = LiveTVPrototypeModel(now: now, channels: [])
+        await first.reload(into: firstModel, forceServerRefresh: false)
+        await first.saveLastSeen(from: firstModel)?.value
+        let saved = try XCTUnwrap(store.load())
+
+        func seeded(_ snapshot: LiveTVLastSeenSnapshot, _ source: LiveTVServerSource,
+                    kind: LiveTVPrototypeSource = .jellyfin) async -> Int {
+            let started = expectation(description: "Lineup read suspended")
+            let provider = ServerImportProvider(channels: lineup, suspended: .channels, started: started)
+            let context = authorized(source, provider, kind: kind)
+            let imports = LiveTVPrototypeImportModel(
+                configuration: .init(servers: [source]), serverProviderResolver: { _ in context },
+                lastSeen: LastSeenMemoryStore(snapshot)
+            )
+            let model = LiveTVPrototypeModel(now: now, channels: [])
+            let task = Task { await imports.reload(into: model, forceServerRefresh: false) }
+            await fulfillment(of: [started], timeout: 2)
+            let count = model.channels.count
+            await provider.resume()
+            await task.value
+            return count
+        }
+        let seededForSameAccount = await seeded(saved, server)
+        XCTAssertEqual(seededForSameAccount, 1)
+        let seededForOtherAccount = await seeded(saved, source(accountID: "other"))
+        XCTAssertEqual(seededForOtherAccount, 0)
+        let seededForOtherKind = await seeded(saved, server, kind: .plex)
+        XCTAssertEqual(seededForOtherKind, 0)
+        let entry = saved.sources[0].entries[0]
+        let renamed = LiveTVLastSeenSnapshot(sources: [.init(
+            sourceID: server.id, accountID: server.accountID, kind: .jellyfin,
+            entries: [.init(nativeID: "another", channel: entry.channel)]
+        )], browse: saved.browse)
+        let seededWithChangedIdentifier = await seeded(renamed, server)
+        XCTAssertEqual(seededWithChangedIdentifier, 0)
+    }
+
+    func testLastSeenRowsAreDroppedWhenTheLineupCannotBeRead() async throws {
+        let server = source()
+        let store = LastSeenMemoryStore()
+        let first = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]),
+            serverProviderResolver: { [self] _ in authorized(server, ServerImportProvider(channels: [channel()])) },
+            lastSeen: store
+        )
+        let firstModel = LiveTVPrototypeModel(now: now, channels: [])
+        await first.reload(into: firstModel, forceServerRefresh: false)
+        await first.saveLastSeen(from: firstModel)?.value
+        XCTAssertNotNil(store.load())
+
+        let provider = ServerImportProvider(
+            availability: .init(status: .serviceUnavailable, channelCount: 0), channels: []
+        )
+        let context = authorized(server, provider)
+        let imports = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]), serverProviderResolver: { _ in context }, lastSeen: store
+        )
+        let model = LiveTVPrototypeModel(now: now, channels: [])
+        await imports.reload(into: model, forceServerRefresh: false)
+
+        XCTAssertTrue(model.channels.isEmpty)
+        XCTAssertNil(model.provisionalBrowse)
+        XCTAssertTrue(imports.serverChannelReferences.isEmpty)
+    }
+
+    func testGuideBatchesAfterAnUnchangedReimportKeepLineupAndPublishListings() async throws {
+        let server = source()
+        let provider = ServerImportProvider(
+            availability: .init(status: .available, channelCount: 1, supportsGuide: true),
+            channels: [channel()], programs: [program()]
+        )
+        let context = authorized(server, provider)
+        let imports = LiveTVPrototypeImportModel(
+            configuration: .init(servers: [server]), serverProviderResolver: { _ in context }
+        )
+        let model = LiveTVPrototypeModel(now: now, channels: [])
+        await imports.restoreCachedServerCatalogs(into: model)
+        let restored = model.channels
+
+        await imports.reloadServers(into: model, forceRefresh: false)
+
+        XCTAssertEqual(model.channels, restored)
+        XCTAssertEqual(imports.programCount, 1)
+        await provider.replaceGuide([program(id: "later", title: "Later programme")])
+        await imports.reloadServerGuides(
+            channelIDs: model.channels.map(\.id), from: now, to: now.addingTimeInterval(3_600), into: model,
+            force: true
+        )
+        XCTAssertEqual(model.channels, restored)
+        XCTAssertEqual(model.currentProgram(for: restored[0].id)?.title, "Later programme")
+    }
+
     func testCacheRestoreDoesNotInvalidateAnAlreadyLoadingGuide() async throws {
         let server = source()
         let started = expectation(description: "Guide pending")
@@ -616,6 +839,14 @@ final class LiveTVServerImportTests: XCTestCase {
             accountID: source.accountID, authorizationID: authorizationID, kind: kind, provider: provider
         )
     }
+}
+
+private final class LastSeenMemoryStore: LiveTVLastSeenStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshot: LiveTVLastSeenSnapshot?
+    init(_ snapshot: LiveTVLastSeenSnapshot? = nil) { self.snapshot = snapshot }
+    func load() -> LiveTVLastSeenSnapshot? { lock.withLock { snapshot } }
+    func save(_ snapshot: LiveTVLastSeenSnapshot?) { lock.withLock { self.snapshot = snapshot } }
 }
 
 @MainActor

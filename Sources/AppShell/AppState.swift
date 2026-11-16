@@ -3,6 +3,7 @@ import Observation
 import AppRuntime
 import CoreModels
 import CoreNetworking
+import CoreSecureStore
 import CoreUI
 import FeatureAuth
 import FeatureDiscovery
@@ -2726,6 +2727,14 @@ public final class AppState {
         }
         guard accountsProviders.accounts.isEmpty else {
             apply(.accountsChanged(accountsProviders.accounts))
+            return false
+        }
+        do {
+            try LiveTVLastSeenStore.erase(
+                profileIDs: profilesModel.profiles.map(\.id), secureStore: LiveTVSourceStorage.catalogSecrets()
+            )
+        } catch {
+            PlozzLog.app.error("First-run reset could not erase Live TV last-seen rows")
             return false
         }
         plexHomeUsers.resetAllForDebug()
