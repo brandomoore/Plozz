@@ -217,7 +217,6 @@ struct PlozziOSSettingsView: View {
 private enum PlozziOSSettingsDestination: Hashable {
     case search(String)
     case profiles
-    case requests
     case servers
     case myLibraries
     /// Parental PIN prompt unsealing a Kids Profile's restricted settings.
@@ -243,16 +242,17 @@ private enum PlozziOSSettingsDestination: Hashable {
     }
 }
 
-private struct PlozziOSProfileSettingsSection<Row: View, Management: View>: View {
+struct PlozziOSProfileSettingsSection<Row: View, Management: View>: View {
     let profileName: String
     let showsParentalControls: Bool
+    let isKidsProfile: Bool
     let appLanguage: AppLanguageSettingsModel
     @ViewBuilder let row: (ProfileSettingsCategory) -> Row
     @ViewBuilder let management: () -> Management
 
     var body: some View {
         SettingsSectionGroup(verbatim: profileName) {
-            ForEach(ProfileSettingsCategory.allCases) { category in
+            ForEach(ProfileSettingsCategory.allCases.filter { $0 != .seerr || !isKidsProfile }) { category in
                 if category == .language {
                     PlozziOSSettingsLanguagePicker(appLanguage: appLanguage)
                         .settingsActionRow()
@@ -279,16 +279,20 @@ struct PlozziOSSettingsCategoryLabel: View {
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 4) {
-                Text(category.title)
+                if category == .seerr {
+                    Text(verbatim: "Seerr")
+                } else {
+                    Text(category.title)
+                }
                 if category == .libraries {
                     SettingsLibrarySourcesSummary(
                         accounts: accounts, isAccountIncluded: isAccountIncluded
                     )
-                    .font(.caption)
+                    .font(SettingsRowMetrics.descriptionFont)
                     .foregroundStyle(.secondary)
                 } else if let summary = category.summary {
                     Text(summary)
-                        .font(.caption)
+                        .font(SettingsRowMetrics.descriptionFont)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -411,6 +415,8 @@ private struct PlozziOSProfileSettingsPage: View {
             PlozziOSScreensNavigationSettingsView(appModel: appModel)
         case .trackers:
             PlozziOSTrackerSettingsView(appModel: appModel)
+        case .seerr:
+            PlozziOSSeerrSettingsView(appModel: appModel)
         case .language:
             List {
                 PlozziOSSettingsLanguagePicker(appLanguage: appModel.appLanguage)
@@ -524,6 +530,7 @@ private struct PlozziOSSettingsSplitView: View {
                     PlozziOSProfileSettingsSection(
                         profileName: appModel.profiles.activeProfile.name,
                         showsParentalControls: showsParentalControlsSection,
+                        isKidsProfile: appModel.profiles.activeProfile.isKids,
                         appLanguage: appModel.appLanguage
                     ) { category in
                         Button {
@@ -605,11 +612,6 @@ private struct PlozziOSSettingsSplitView: View {
                                 .parentalPIN,
                                 title: KidsProfileCopy.parentalPIN,
                                 systemImage: "figure.and.child.holdinghands"
-                            )
-                            settingsRow(
-                                .requests,
-                                verbatimTitle: "Seerr",
-                                systemImage: "sparkles.tv"
                             )
                             settingsRow(
                                 .syncSetup,
@@ -829,8 +831,6 @@ private struct PlozziOSSettingsSplitView: View {
             }
         case .profiles:
             PlozziOSProfilesView(appModel: appModel, onClose: onClose, onSwitchTo: onSwitchTo)
-        case .requests:
-            PlozziOSSeerrSettingsView(appModel: appModel)
         case .servers:
             PlozziOSServersSettingsView(
                 appModel: appModel,
@@ -1095,6 +1095,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                 PlozziOSProfileSettingsSection(
                     profileName: appModel.profiles.activeProfile.name,
                     showsParentalControls: showsParentalControlsSection,
+                    isKidsProfile: appModel.profiles.activeProfile.isKids,
                     appLanguage: appModel.appLanguage
                 ) { category in
                     SettingsPageLink {
@@ -1227,17 +1228,6 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 KidsProfileCopy.parentalPIN,
                                 systemImage: "figure.and.child.holdinghands"
                             )
-                        }
-                        .settingsActionRow()
-
-                        SettingsPageLink {
-                            PlozziOSSeerrSettingsView(appModel: appModel)
-                        } label: {
-                            Label {
-                                Text(verbatim: "Seerr")
-                            } icon: {
-                                Image(systemName: "sparkles.tv")
-                            }
                         }
                         .settingsActionRow()
 
@@ -2615,16 +2605,12 @@ struct PlozziOSPlaybackSettingsView: View {
                     .settingsSearchAnchor("remember-series-version")
                 Toggle("Background Audio", isOn: $model.settings.backgroundAudio)
                     .settingsSearchAnchor("background-audio")
-                Toggle(isOn: $model.settings.volumeBrightnessGestures) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Volume and brightness gestures")
-                        Text("Swipe up or down on the left for brightness, or on the right for system volume.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                SettingsDescribedControl {
+                    Toggle("Volume and brightness gestures", isOn: $model.settings.volumeBrightnessGestures)
+                        .accessibilityIdentifier("playback-volume-brightness-gestures")
+                } description: {
+                    Text("Swipe up or down on the left for brightness, or on the right for system volume.")
                 }
-                .accessibilityIdentifier("playback-volume-brightness-gestures")
                 .settingsSearchAnchor("volume-brightness")
                 Toggle("Seek without pausing", isOn: $model.settings.seekWithoutPausing)
                     .settingsSearchAnchor("seek-without-pausing")
@@ -2713,32 +2699,32 @@ struct PlozziOSPlaybackSettingsView: View {
             SettingsSectionGroup("Audio") {
                 LosslessAudioControl()
                     .settingsSearchAnchor("lossless-audio")
-                Toggle("Identify songs", isOn: $model.settings.identifySongs)
-                    .settingsSearchAnchor("identify-songs")
-                Text("Shows the song playing in a movie or show in the player’s Info, using Shazam. Needs an internet connection.")
-                    .settingsHelperText()
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsDescribedControl {
+                    Toggle("Identify songs", isOn: $model.settings.identifySongs)
+                } description: {
+                    Text("Shows the song playing in a movie or show in the player’s Info, using Shazam. Needs an internet connection.")
+                }
+                .settingsSearchAnchor("identify-songs")
             }
             .settingsSearchGroup(["lossless-audio", "identify-songs"])
             if AppReleaseChannel.current.isBeta {
                 SettingsSectionGroup("Video") {
-                    Toggle("P7 FEL → P8.1 conversion", isOn: $model.settings.dolbyVisionFELConversion)
-                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
-                        .settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
+                    SettingsDescribedControl {
+                        Toggle("P7 FEL → P8.1 conversion", isOn: $model.settings.dolbyVisionFELConversion)
+                    } description: {
+                        Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
+                    }
                 }
             }
             SettingsSectionGroup("Discs") {
-                VStack(alignment: .leading, spacing: 6) {
+                SettingsDescribedControl {
                     Picker("Disc playback", selection: $model.settings.discPlayback) {
                         ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
                             Text($0.title).tag($0)
                         }
                     }
+                } description: {
                     Text(DiscPlaybackBehavior.settingsNotice)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .settingsSearchAnchor("disc-playback")
             }
@@ -2824,11 +2810,12 @@ private struct PlozziOSSubtitleSettingsView: View {
                 .accessibilityIdentifier("subtitle-style")
             }
             SettingsSectionGroup("Live TV subtitle style") {
-                Toggle("Use a separate style for Live TV", isOn: $style.usesSeparateLiveTVStyle)
-                    .settingsSearchAnchor("live-subtitle-style")
-                Text("Use the same subtitle appearance everywhere, or choose a separate look for Live TV.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsDescribedControl {
+                    Toggle("Use a separate style for Live TV", isOn: $style.usesSeparateLiveTVStyle)
+                } description: {
+                    Text("Use the same subtitle appearance everywhere, or choose a separate look for Live TV.")
+                }
+                .settingsSearchAnchor("live-subtitle-style")
                 if style.usesSeparateLiveTVStyle {
                     Button { showsLiveSubtitleStyle = true } label: {
                         SettingsDisclosureLabel { Text("Customize Live TV subtitles") }
@@ -2893,19 +2880,20 @@ private struct PlozziOSSubtitleSettingsView: View {
                     .autocorrectionDisabled()
                 }
                 .settingsSearchAnchor("subtitle-language")
-                Picker(
-                    "SDH subtitles",
-                    selection: $behavior.settings.hearingImpairedPreference
-                ) {
-                    ForEach(HearingImpairedPreference.allCases, id: \.self) {
-                        Text($0.displayName).tag($0)
+                SettingsDescribedControl {
+                    Picker(
+                        "SDH subtitles",
+                        selection: $behavior.settings.hearingImpairedPreference
+                    ) {
+                        ForEach(HearingImpairedPreference.allCases, id: \.self) {
+                            Text($0.displayName).tag($0)
+                        }
                     }
+                    .accessibilityIdentifier("subtitle-sdh")
+                } description: {
+                    Text(behavior.settings.hearingImpairedPreference.detail)
                 }
-                .accessibilityIdentifier("subtitle-sdh")
                 .settingsSearchAnchor("subtitle-sdh")
-                Text(behavior.settings.hearingImpairedPreference.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             .settingsSearchGroup(
                 ["subtitle-default", "subtitle-separate", "subtitle-download", "subtitle-language", "subtitle-sdh"]
@@ -2972,7 +2960,7 @@ private struct SeparateSettingLabel: View {
             Text(category.separateSettingTitle)
             if let hint = category.separateSettingHint {
                 Text(hint)
-                    .font(.caption)
+                    .font(SettingsRowMetrics.descriptionFont)
                     .foregroundStyle(.secondary)
             }
         }

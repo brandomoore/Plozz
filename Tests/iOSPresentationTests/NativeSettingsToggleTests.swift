@@ -12,6 +12,100 @@ import XCTest
 
 @MainActor
 final class NativeSettingsToggleTests: XCTestCase {
+    func testDescribedControlsKeepPlainRowClearanceAndOneTrailingDivider() async throws {
+        final class Frames {
+            var plain = CGRect.zero
+            var group = CGRect.zero
+            var described = CGRect.zero
+            var description = CGRect.zero
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width: CGFloat in [390, 834] {
+            for size in [DynamicTypeSize.large, .accessibility3] {
+                let frames = Frames()
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 1100)
+                window.rootViewController = UIHostingController(rootView:
+                    VStack(spacing: 28) {
+                        SettingsSectionGroup {
+                            Toggle("Prefer lossless audio", isOn: .constant(true))
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.plain = $0 }
+                        SettingsSectionGroup {
+                            SettingsDescribedControl {
+                                Toggle("Prefer lossless audio", isOn: .constant(true))
+                            } description: {
+                                Text("Turn off for surround sound over regular HDMI ARC, which requires compressed audio.")
+                                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.description = $0 }
+                            }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.described = $0 }
+                            Toggle("Next setting", isOn: .constant(false))
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.group = $0 }
+                    }
+                    .padding(16)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.dynamicTypeSize, size)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .background(Color.black)
+                )
+                window.makeKeyAndVisible()
+                try await settle(window)
+                let controls = switches(in: window).map { $0.convert($0.bounds, to: window) }.sorted { $0.minY < $1.minY }
+                XCTAssertEqual(controls.count, 3)
+                guard controls.count == 3 else { continue }
+                XCTAssertEqual(controls[1].minY - frames.group.minY,
+                               controls[0].minY - frames.plain.minY, accuracy: 1,
+                               "A description must not remove the toggle's top inset.")
+                XCTAssertGreaterThan(frames.description.minY, controls[1].maxY)
+                XCTAssertEqual(frames.described.maxY - frames.description.maxY, 8, accuracy: 1,
+                               "Descriptions share the normal row's bottom padding.")
+                if size == .large {
+                    XCTAssertEqual(controls[1].minY - frames.group.minY,
+                                   frames.described.maxY + 4 - frames.description.maxY, accuracy: 1,
+                                   "The toggle and description share balanced outer padding.")
+                    XCTAssertLessThan(frames.description.minY - controls[1].maxY,
+                                      frames.described.maxY + 4 - frames.description.maxY,
+                                      "Supporting text must sit closer to its control than to the divider.")
+                }
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let cg = try XCTUnwrap(image.cgImage)
+                var bytes = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+                let context = try XCTUnwrap(CGContext(data: &bytes, width: cg.width, height: cg.height,
+                    bitsPerComponent: 8, bytesPerRow: cg.width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+                let scale = image.scale
+                let x = Int((frames.group.maxX - 4) * scale)
+                let firstY = Int((frames.group.minY + 12) * scale)
+                let lastY = Int((frames.described.maxY + 6) * scale)
+                let edges = (firstY..<lastY).filter { y in
+                    let value = Int(bytes[(y * cg.width + x) * 4])
+                    let before = Int(bytes[((y - 2) * cg.width + x) * 4])
+                    let after = Int(bytes[((y + 2) * cg.width + x) * 4])
+                    return value > max(before, after) + 8
+                }
+                XCTAssertFalse(edges.isEmpty, "The complete described row still needs a divider.")
+                XCTAssertTrue(edges.allSatisfy { CGFloat($0) / scale > frames.description.maxY },
+                              "No divider may split the toggle from its description.")
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Described settings \(width) \(size)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     func testSettingsIconsMatchPrimaryTitlesInLightAndDarkThemes() throws {
         for scheme in [ColorScheme.light, .dark] {
             let renderer = ImageRenderer(content:

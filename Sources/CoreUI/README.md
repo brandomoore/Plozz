@@ -65,6 +65,13 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 Mobile Settings roots and detail pages share `MobileSettingsMetrics`: 16-point
 page/row insets, 28-point section gaps, 52-point minimum rows and 26-point
 continuous group corners. Rows grow with their content and Dynamic Type.
+`SettingsDescribedControl` keeps a control and its helper in one row, so the
+separator follows the description rather than splitting it from the control.
+The control keeps the same top clearance as a plain row, and the helper retains
+the matching bottom inset. On mobile, no extra gap separates the control's
+minimum-height area from its helper. Supporting copy uses `SettingsRowMetrics.descriptionFont`
+through `settingsHelperText()` (including group footers); do not add local font
+sizes or manually spaced control/description stacks.
 `SettingsIconLabelStyle` supplies title anchors for one-pixel group separators:
 they start at the actual text column, mirror in RTL, and run to the trailing
 edge. Text-only rows use the standard inset. Groups consume their own anchors

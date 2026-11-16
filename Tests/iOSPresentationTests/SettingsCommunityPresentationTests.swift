@@ -25,6 +25,45 @@ private struct SettingsLanguageScopeProbe: View {
 final class SettingsCommunityPresentationTests: XCTestCase {
     private var capturedImages: [CGImage] = []
 
+    func testSeerrBelongsToTheActiveProfileButRemainsHiddenForKids() async throws {
+        let suite = "SeerrProfileCategory-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let language = AppLanguageSettingsModel(store: AppLanguageSettingsStore(defaults: defaults))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 1300)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for isKids in [false, true] {
+            window.rootViewController = UIHostingController(rootView:
+                PlozziOSProfileSettingsSection(
+                    profileName: "Current profile", showsParentalControls: isKids,
+                    isKidsProfile: isKids,
+                    appLanguage: language
+                ) { category in
+                    PlozziOSSettingsCategoryLabel(category: category, accounts: [], isAccountIncluded: { _ in true })
+                } management: {
+                    EmptyView()
+                }
+                .frame(width: 390)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.gradientBackgroundsEnabled, false)
+                .background(Color.black)
+            )
+            window.makeKeyAndVisible()
+            try await waitForHostedLayout(window)
+            let text = try recognizedText(in: window, name: "Profile settings Seerr kids-\(isKids)")
+            XCTAssertEqual(text.components(separatedBy: "Seerr").count - 1, isKids ? 0 : 1, text)
+        }
+    }
+
     func testLanguagePickerUsesAppOwnedModelWithoutAnInheritedEnvironment() async throws {
         let suite = "SettingsLanguage-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -110,22 +149,30 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                 ))
                 context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
             }
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["en-US"]
-            try VNImageRequestHandler(cgImage: image).perform([request])
+            let iconColumnWidth = UIFontMetrics(forTextStyle: .body).scaledValue(
+                for: SettingsRowMetrics.iconColumnWidth,
+                compatibleWith: UITraitCollection(preferredContentSizeCategory:
+                    textSize == .accessibility3 ? .accessibilityExtraLarge : .large)
+            )
             let titles = try ["Playback", "Subtitles", "Live TV", "Libraries", "Appearance",
-                              "Screens", "Trackers", "Language"].map { title in
+                              "Screens", "Trackers", "Seerr", "Language"].enumerated().map { index, title in
+                // Recognize each row at native resolution rather than downsampling the tall category list.
+                let rowTop = index * 180
+                let row = try XCTUnwrap(image.cropping(to: CGRect(x: 0, y: rowTop, width: image.width, height: 180)))
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: row).perform([request])
                 let result = try XCTUnwrap(request.results?.first {
                     $0.topCandidates(1).first?.string.contains(title) == true
                 }, "Missing category \(title)")
                 let candidate = try XCTUnwrap(result.topCandidates(1).first)
                 let range = try XCTUnwrap(candidate.string.range(of: title))
                 let bounds = try XCTUnwrap(candidate.boundingBox(for: range)).boundingBox
-                let top = max(0, Int((1 - bounds.maxY) * CGFloat(image.height)) - 2)
-                let bottom = min(image.height, Int((1 - bounds.minY) * CGFloat(image.height)) + 2)
-                // OCR locates the title line; its estimated left edge can include the adjacent icon.
-                let leading = try XCTUnwrap((0..<image.width).first { x in
+                let top = max(0, rowTop + Int((1 - bounds.maxY) * 180) - 2)
+                let bottom = min(image.height, rowTop + Int((1 - bounds.minY) * 180) + 2)
+                // Measure title ink, excluding the independently centered icon column.
+                let leading = try XCTUnwrap((Int(iconColumnWidth)..<image.width).first { x in
                     (top..<bottom).contains { y in
                         let offset = (y * image.width + x) * 4
                         return pixels[offset] > 230 && pixels[offset + 1] > 230 && pixels[offset + 2] > 230

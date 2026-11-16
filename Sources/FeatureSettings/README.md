@@ -72,6 +72,13 @@ Its helper note explains HDMV-only menus, automatic video playback for BD-J,
 and the watch-progress limitation once on both platforms; disc action menus
 and video pickers do not repeat it.
 
+Controls with supporting text use CoreUI's `SettingsDescribedControl` on both
+platforms. It owns helper typography and spacing, keeps the native control's
+normal clearance, and places group separators after the complete row. Settings
+summaries use `SettingsRowMetrics.descriptionFont`, not per-page caption sizes.
+Seerr appears in the active profile's category list, not Everyone. It edits only
+that profile's connections; the existing Kids-profile restrictions still apply.
+
 Playback groups its five optional **Player tabs** in one shared control surface
 on TV and mobile. Labels match the player tabs, Info stays always available, and
 visibility preferences are independent of autoplay and Up Next behavior.

@@ -10,6 +10,7 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
     case appearance
     case screensNavigation
     case trackers
+    case seerr
     case language
 
     public var id: Self { self }
@@ -23,6 +24,7 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
         case .appearance: "Appearance"
         case .screensNavigation: "Screens & Navigation"
         case .trackers: "Trackers"
+        case .seerr: LocalizedStringResource(stringLiteral: "Seerr")
         case .language: "Language"
         }
     }
@@ -36,6 +38,7 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
         case .appearance: "paintpalette"
         case .screensNavigation: "rectangle.3.group"
         case .trackers: "link"
+        case .seerr: "sparkles.tv"
         case .language: "globe"
         }
     }

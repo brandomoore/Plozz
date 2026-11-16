@@ -4,9 +4,9 @@ import XCTest
 final class ProfileSettingsCategoryTests: XCTestCase {
     func testProfileCategoriesHaveOneCrossPlatformOrder() {
         XCTAssertEqual(ProfileSettingsCategory.allCases, [
-            .playback, .subtitles, .liveTV, .libraries, .appearance, .screensNavigation, .trackers, .language
+            .playback, .subtitles, .liveTV, .libraries, .appearance, .screensNavigation, .trackers, .seerr, .language
         ])
-        XCTAssertEqual(Set(ProfileSettingsCategory.allCases.map(\.id)).count, 8)
+        XCTAssertEqual(Set(ProfileSettingsCategory.allCases.map(\.id)).count, 9)
     }
 
     func testSummariesDescribeTheirGroupsRatherThanAnUnrelatedScope() {

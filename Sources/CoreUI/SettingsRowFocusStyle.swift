@@ -75,11 +75,7 @@ public enum SettingsRowMetrics {
         #endif
     }
     public static var helperFont: Font {
-        #if os(tvOS)
         descriptionFont
-        #else
-        .callout
-        #endif
     }
     public static var descriptionFont: Font {
         #if os(tvOS)
@@ -625,8 +621,7 @@ public extension View {
         #endif
     }
 
-    /// L3 — a **feature** description: the intro sentence under the pane's feature
-    /// title (e.g. under "Hero"). Readable but secondary.
+    /// Shared supporting-copy typography for settings controls and page introductions.
     func settingsHelperText() -> some View {
         font(SettingsRowMetrics.helperFont).plozzForeground(.secondary)
             .settingsFormTextLayout()

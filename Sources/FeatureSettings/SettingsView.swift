@@ -545,6 +545,11 @@ public struct SettingsView: View {
                     }
                 case .language:
                     AppLanguagePicker(model: appLanguage, isCategoryRow: true)
+                case .seerr:
+                    if !activeProfile.isKids {
+                        SettingsSectionButton(title: Text(verbatim: "Seerr"), icon: category.symbol, assetIcon: "SeerrIcon",
+                                              value: seerrRowValue, route: .seerr)
+                    }
                 default:
                     sectionRow(category.title, icon: category.symbol,
                                subtitle: category.summary.map { Text($0) }, route: category.settingsRoute)
@@ -615,11 +620,6 @@ public struct SettingsView: View {
                 sectionRow(KidsProfileCopy.parentalPIN, icon: "figure.and.child.holdinghands",
                        value: hasParentalPIN ? Text(ProfileLockCopy.on) : Text(ProfileLockCopy.off),
                        route: .parentalPIN)
-
-                // This entry edits only the active profile's Seerr connections.
-                SettingsSectionButton(title: Text(verbatim: "Seerr"), icon: "sparkles.tv", assetIcon: "SeerrIcon",
-                       value: seerrRowValue,
-                       route: .seerr)
 
                 // Cross-device sync + device pairing, combined under one entry that
                 // drills into a detail page (matches the Settings hierarchy).
@@ -1347,7 +1347,7 @@ public struct SettingsView: View {
         return hosts
     }
 
-    /// Right-hand summary for the This Apple TV › Seerr row. `savedBaseURLString`
+    /// Right-hand summary for the active profile's Seerr row. `savedBaseURLString`
     /// is loaded synchronously from the stored config at launch and cleared on
     /// disconnect, so it's a reliable "is a server configured?" signal without
     /// waiting on an async status refresh.
@@ -1448,6 +1448,7 @@ private extension ProfileSettingsCategory {
         case .appearance: .appearance
         case .screensNavigation: .screensNavigation
         case .trackers: .integrations
+        case .seerr: .seerr
         case .language: .language
         }
     }

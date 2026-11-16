@@ -214,7 +214,8 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
             audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
         )
-        XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround"])
+        XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround"]
+            + (AppReleaseChannel.current.isBeta ? ["dolby-vision-fel"] : []))
         let outputRow = try XCTUnwrap(page.audioRows.first { $0.id == "lossless-surround" })
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
