@@ -104,6 +104,26 @@ The [delivery watcher](../docs/discord-bridge.md#delivery-gated-issue-resolution
 verifies release availability before closing GitHub and linked Discord reports.
 Non-app issue closure remains maintainer-managed.
 
+### Preserving contribution credit
+
+When adopting another person's work, preserve the original human author and
+co-author attribution, source PR/issue references, and copyright/license notices.
+Keep attribution with the change, not only in a PR comment or the README:
+
+- Preserve authorship when merging or cherry-picking; use `git cherry-pick -x`
+  to retain the original commit reference.
+- For an adaptation or squash, carry forward the relevant `Refs #N` lines,
+  identify the original author and source commit, and retain applicable human
+  `Co-authored-by` trailers. State which part was adopted; do not imply that an
+  entire PR was accepted when it was not.
+- If a published commit omitted attribution, add a follow-up record linking
+  the original contribution and its integration. Do not silently rewrite
+  published history to repair credit.
+
+Update [CONTRIBUTORS.md](../CONTRIBUTORS.md) for newly credited contributors and
+adapted work. Its persistent source references complement Git history; they
+do not replace it. The app-delivery issue rules above still apply.
+
 ## Building & running
 
 ### Requirements
