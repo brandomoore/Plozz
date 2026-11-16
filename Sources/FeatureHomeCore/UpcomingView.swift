@@ -67,6 +67,7 @@
                             }
                             #endif
                             .opacity(model.visibleReleases.isEmpty ? 0 : 1)
+                            .accessibilityHidden(model.visibleReleases.isEmpty)
                             #if os(tvOS)
                             .padding(.vertical)
                             #endif
@@ -273,6 +274,32 @@
         var body: some View {
             if model.isLoading {
                 ProgressView("Updating releases")
+            } else if model.releases.isEmpty, model.failedSourceCount > 0 {
+                ContentUnavailableView {
+                    Label("Couldn't load releases", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text("Try again to check for upcoming episodes and movie releases.")
+                } actions: {
+                    Button("Retry") { model.refreshRevision += 1 }
+                        .accessibilityIdentifier("upcoming.retry")
+                }
+                .plozzActionButton(role: .secondary)
+            } else if !model.releases.isEmpty, model.visibleReleases.isEmpty {
+                ContentUnavailableView {
+                    Label("No matching releases", systemImage: "line.3.horizontal.decrease")
+                } description: {
+                    Text("Change your filters or restore hidden titles to see more releases.")
+                } actions: {
+                    if model.filters != UpcomingFilters() {
+                        Button("Reset filters") { model.filters = UpcomingFilters() }
+                            .accessibilityIdentifier("upcoming.resetFilters")
+                    }
+                    if !model.hiddenTitles.isEmpty {
+                        Button("Restore hidden titles", action: model.restoreHiddenTitles)
+                            .accessibilityIdentifier("upcoming.restoreHidden")
+                    }
+                }
+                .plozzActionButton(role: .secondary)
             } else if model.failedSourceCount > 0 {
                 HStack {
                     Text("Some sources couldn't refresh.").foregroundStyle(.secondary)
@@ -280,9 +307,9 @@
                 }
             } else if model.visibleReleases.isEmpty {
                 ContentUnavailableView(
-                    "No announced releases", systemImage: "calendar",
+                    "Nothing upcoming yet", systemImage: "calendar",
                     description: Text(
-                        "Upcoming episodes from shows you've watched and movies you've saved or requested appear here.")
+                        "New episodes from shows you've watched and releases for movies you've saved or requested appear here. Live TV schedules are in the guide.")
                 )
             }
         }
