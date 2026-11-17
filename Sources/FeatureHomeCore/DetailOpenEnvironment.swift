@@ -185,11 +185,7 @@ public struct DetailOpenEnvironment {
     public static func relatedTitlesDisplayMode(
         isDiscoveryItem: Bool
     ) -> RelatedTitlesLoader.DisplayMode {
-        // Show recommendations on every detail page. Owned results are matched and
-        // open in place; the rest stay requestable, which is what the discovery
-        // mode already does. Library-only mode left the whole row absent whenever
-        // the ownership index had no match.
-        .includeExternal
+        isDiscoveryItem ? .includeExternal : .libraryOnly
     }
 
     public func initialSources(for item: MediaItem, isDiscovery: Bool) -> [MediaSourceRef] {

@@ -200,7 +200,11 @@ struct PlozziOSItemDetailView: View {
                     indexedLibrarySources: identitySources,
                     loadIndexedItem: relatedTitleLibraryItemLoader(in: accounts),
                     loadIndexedBatches: relatedTitleLibraryBatchLoaders(in: accounts),
-                    displayMode: mode
+                    // The iOS detail page always offers recommendations. Owned
+                    // matches open in place; the rest stay requestable. Keep the
+                    // core loader's library-only policy for callers/tests that
+                    // explicitly ask for it.
+                    displayMode: .includeExternal
                 )
             },
             snapshotCache: appModel.detailSnapshotCache
