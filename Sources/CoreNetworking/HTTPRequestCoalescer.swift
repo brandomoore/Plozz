@@ -1,24 +1,14 @@
+import CoreModels
 import Foundation
 
-/// Shares one in-flight GET transfer between callers that asked for the exact
-/// same URL with the same headers.
+/// Shares only overlapping GET transfers with identical authentication and transport policy.
 ///
 /// Home fan-out routinely asks the same question more than once — a library
 /// inventory requested by the row that needs it and again by the row that
 /// publishes behind it, or the same series metadata fetched for recency and for
-/// identity. Those calls are independent and can overlap, so without a
-/// coalescer each one opens its own connection and the server does the work
-/// twice. Joining an in-flight transfer keeps the request shape unchanged while
-/// removing the duplicate round trip.
-///
-/// Deliberately narrow:
-/// * GET only. A mutating request must never be shared.
-/// * Headers are part of the key, so two users/tokens never share a response.
-/// * Only the transfer is shared. Each caller still decodes, validates and
-///   reports its own diagnostics, so cancellation and error mapping stay
-///   caller-local.
-/// * The shared transfer is unstructured: one caller walking away does not
-///   cancel the bytes another caller is still waiting for.
+/// identity. `SharedAsyncRequests` joins those callers to one transfer while
+/// keeping each reader independently cancellable: a caller that walks away
+/// exits promptly, and the bytes stop when nobody needs them.
 public actor HTTPRequestCoalescer {
     public static let shared = HTTPRequestCoalescer()
 
@@ -30,12 +20,19 @@ public actor HTTPRequestCoalescer {
         /// connection pools, so a discovery probe must never join a
         /// default-lane transfer.
         public let lane: String
+        /// A request that must not follow redirects cannot inherit another
+        /// caller's permission to follow them.
+        public let redirectPolicy: Endpoint.RedirectPolicy
 
-        public init(method: String, url: String, headers: String, lane: String = "") {
+        public init(
+            method: String, url: String, headers: String, lane: String = "",
+            redirectPolicy: Endpoint.RedirectPolicy = .follow
+        ) {
             self.method = method
             self.url = url
             self.headers = headers
             self.lane = lane
+            self.redirectPolicy = redirectPolicy
         }
     }
 
@@ -49,59 +46,21 @@ public actor HTTPRequestCoalescer {
         }
     }
 
-    private struct Entry {
-        let id: UUID
-        let task: Task<Payload, Error>
-    }
-
-    private var entries: [Key: Entry] = [:]
+    private let requests = SharedAsyncRequests<Key, Payload>()
 
     public init() {}
 
     /// Returns the shared transfer's payload and whether this caller joined an
-    /// already-running one. The first caller owns the work.
+    /// already-running one.
     public func perform(
         key: Key,
         operation: @escaping @Sendable () async throws -> Payload
     ) async throws -> (payload: Payload, joined: Bool) {
-        if let entry = entries[key] {
-            return (try await entry.task.value, true)
-        }
-        let id = UUID()
-        let task = Task { try await operation() }
-        entries[key] = Entry(id: id, task: task)
-        // Clearing waits for completion rather than the owner's `await`: if the
-        // owner is cancelled mid-flight the transfer still finishes for joiners,
-        // and the key must stay occupied until it does.
-        Task { [weak self] in
-            _ = try? await task.value
-            await self?.remove(key, id: id)
-        }
-        do {
-            let payload = try await task.value
-            // Owner path is synchronous for reuse: the next request after this
-            // one returns starts fresh instead of racing the cleanup task.
-            remove(key, id: id)
-            return (payload, false)
-        } catch {
-            throw error
-        }
+        let result = try await requests.perform(key: key, operation: operation)
+        return (result.value, result.joined)
     }
 
     /// Number of transfers currently shared. Test seam.
-    func inFlightCount() -> Int {
-        entries.count
-    }
-
-    /// Installs an already-running transfer without starting an owner so tests
-    /// can exercise the join path deterministically. Internal by design.
-    func seedForTesting(key: Key, task: Task<Payload, Error>) {
-        entries[key] = Entry(id: UUID(), task: task)
-    }
-
-    private func remove(_ key: Key, id: UUID) {
-        if entries[key]?.id == id {
-            entries[key] = nil
-        }
-    }
+    func inFlightCount() async -> Int { await requests.inFlightCount }
+    func waitingReaderCount() async -> Int { await requests.waitingReaderCount }
 }

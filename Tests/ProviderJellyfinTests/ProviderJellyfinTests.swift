@@ -383,50 +383,33 @@ final class JellyfinProviderMappingTests: XCTestCase {
                        "NextUp must exclude resumable items so it complements, not duplicates, Resume")
     }
 
-    func testContinueWatchingKeepsBrieflyPlayedEpisodeAsSuggestion() async throws {
-        let stub = StubHTTPClient()
-        stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: """
-        {"Items":[{"Id":"brief","Name":"Episode 7","Type":"Episode","SeriesId":"series",
-        "IndexNumber":7,"RunTimeTicks":36000000000,
-        "UserData":{"PlaybackPositionTicks":100000000,"Played":false}}],
-        "TotalRecordCount":1}
-        """)
-        stub.stub(pathSuffix: "/Shows/NextUp", json: #"{"Items":[],"TotalRecordCount":0}"#)
-        let provider = JellyfinProvider(session: makeSession(), http: stub)
-
-        let items = try await provider.continueWatching(limit: 10)
-
-        XCTAssertEqual(items.map(\.id), ["brief"])
-        XCTAssertNil(items.first?.resumePosition,
-                     "A brief play must stay visible as a suggestion without a misleading progress bar")
-        let query = try XCTUnwrap(stub.queryItems(forPathSuffix: "/Shows/NextUp"))
-        XCTAssertEqual(query.first(where: { $0.name == "EnableResumable" })?.value, "false",
-                       "The fast complementary query must remain; the client handles the brief-play gap")
-    }
-
-    func testUnlimitedNextUpUsesOneBoundedCompanionPage() async throws {
-        let stub = StubHTTPClient()
-        stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: #"{"Items":[],"TotalRecordCount":0}"#)
-        let firstPage = (0..<100).map {
-            #"{"Id":"next-\#($0)","Name":"Episode \#($0)","Type":"Episode","SeriesId":"series-\#($0)","UserData":{"LastPlayedDate":"2026-01-01T00:00:00Z"}}"#
-        }.joined(separator: ",")
-        stub.stub(
-            pathSuffix: "/Shows/NextUp",
-            json: #"{"Items":[\#(firstPage)],"TotalRecordCount":101}"#
-        )
-        let provider = JellyfinProvider(session: makeSession(), http: stub)
-
-        let items = try await provider.continueWatching(limit: .max)
-
-        XCTAssertEqual(items.count, 100)
-        let nextUpQueries = zip(stub.sentPaths, stub.sentQueryItems)
-            .filter { $0.0.hasSuffix("/Shows/NextUp") }
-            .map(\.1)
-        XCTAssertEqual(nextUpQueries.count, 1, "The companion feed must not drain every resumable page")
-        let query = try XCTUnwrap(nextUpQueries.first)
-        XCTAssertEqual(query.first { $0.name == "Limit" }?.value, "100")
-        XCTAssertEqual(query.first { $0.name == "StartIndex" }?.value, "0")
-        XCTAssertEqual(query.first { $0.name == "EnableTotalRecordCount" }?.value, "true")
+    func testNextUpPrefixesAndUnlimitedBrowsingPreserveAllBoundedPages() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            for limit in [100, 120, 235, Int.max] {
+                let expectedCount = min(limit, 300)
+                let stub = StubHTTPClient()
+                let pages = stride(from: 0, to: expectedCount, by: 100).map { start in
+                    let items = (start..<min(start + 100, expectedCount)).map {
+                        #"{"Id":"next-\#($0)","Type":"Episode"}"#
+                    }.joined(separator: ",")
+                    return #"{"Items":[\#(items)],"TotalRecordCount":300}"#
+                }
+                stub.stubSequence(pathSuffix: "/Shows/NextUp", jsons: pages)
+                var session = makeSession()
+                session.server.provider = kind
+                let provider = JellyfinProvider(session: session, http: stub)
+                let items = try await provider.homeNextUp(libraryID: "shows", limit: limit)
+                XCTAssertEqual(items.map(\.id), (0..<expectedCount).map { "next-\($0)" })
+                XCTAssertEqual(stub.sentPaths.count, pages.count)
+                XCTAssertTrue(stub.sentQueryItems.allSatisfy {
+                    $0.first { $0.name == "ParentId" }?.value == "shows"
+                })
+                XCTAssertEqual(
+                    stub.sentQueryItems.compactMap { $0.first { $0.name == "Limit" }?.value },
+                    stride(from: 0, to: expectedCount, by: 100).map { String(min(100, limit - $0)) }
+                )
+            }
+        }
     }
 
     func testContinueWatchingDedupesItemPresentInBothResumeAndNextUp() async throws {

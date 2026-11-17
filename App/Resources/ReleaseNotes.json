@@ -2,6 +2,57 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/073.1",
+      "version": "2026.11.17",
+      "marketingVersion": "2026.11.16",
+      "build": "73.1",
+      "releasedAt": "2026-11-17",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Automatic upscaling for supported SDR below 1080p, or up to 1080p for animation. Enabled by default; HDR and 4K are unchanged.",
+            "Audio sync controls for supported playback.",
+            "Separate default zoom settings for Apple TV, iPhone and iPad.",
+            {
+              "text": "Week navigation in Upcoming.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Live TV startup, guide loading and automatic refresh.",
+            "Home loading across multiple media servers.",
+            {
+              "text": "Playback version and subtitle-sync controls.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Remembered Auto Crop framing on iPhone.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Collection posters not filling their cards.",
+            "Title logos appearing in unrelated languages.",
+            {
+              "text": "Focus getting stuck in long Upcoming lists.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Settings navigation after customizing Home.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/073",
       "version": "2026.11.16",
       "marketingVersion": "2026.11.16",

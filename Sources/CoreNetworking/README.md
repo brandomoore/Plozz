@@ -9,6 +9,25 @@ and every provider/feature that talks to a remote server.
   - serializes an `Endpoint` against a `baseURL`,
   - returns `(Data, HTTPURLResponse)` or throws `AppError`,
   - exposes a typed `decode(_:from:baseURL:)` convenience.
+- Ordinary and foreground HTTP clients reuse separate process-wide session pools.
+  Discovery keeps per-client ephemeral sessions, including isolated cookie stores.
+  Overlapping bodyless GETs share a transfer only when URL, effective request
+  headers, session identity and redirect policy match **and the endpoint opts in**.
+  `allowsRequestCoalescing` defaults to false. Enable it at an audited read
+  definition, never for every GET in a provider or transport wrapper. Unreviewed
+  integrations remain independent; missing an opt-in costs a duplicate read,
+  not a suppressed action. This policy is independent of address retry.
+  Mutations, requests that disable address retry, and requests requiring their
+  own delivery evidence are never shared. This includes Plex write/session GETs
+  and Last.fm/Simkl challenge creation and consumption. Each caller retains its
+  own error mapping and diagnostics.
+  Reads used to authorize writes also need their own transfer: Jellyfin/Emby
+  item detail and Plex metadata stay independent so stale-reset checks cannot
+  join a response captured before newer playback. A bodyless GET is not enough
+  to establish sharing safety, even when completed responses are never cached.
+  `SharedAsyncRequests` provides the same independent-reader cancellation used
+  by Jellyfin discovery: the last cancelled reader retires the transfer, late
+  completions cannot overwrite replacements, and finished values are not cached.
 - `Endpoint`: a transport-agnostic request description (method, path, query,
   headers, body) — providers build these, not raw `URLRequest`s.
 - `HTTPResponseDiagnostics`: opt-in task-local decode and paging evidence for library

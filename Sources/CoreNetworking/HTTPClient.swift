@@ -177,8 +177,6 @@ enum HTTPDecodeDiagnostics {
 /// `URLSession`-backed `HTTPClient`.
 public struct URLSessionHTTPClient: HTTPClient {
     private let session: URLSession
-    /// Stable identity of this transport lane, used only in the coalescing key
-    /// so sessions with different timeouts/pools never share a transfer.
     private let lane: String
 
     public init(session: URLSession = .plozzDefault) {
@@ -268,34 +266,30 @@ public struct URLSessionHTTPClient: HTTPClient {
             case .sameOrigin:
                 delegate = SameOriginHTTPRedirectDelegate(url: request.url ?? baseURL, evidence: delivery)
             }
-            if endpoint.method == .get,
-                      endpoint.allowsAutomaticAddressRetry,
-                      !endpoint.reportsUndeliveredRequests,
-                      let url = request.url {
-                // Identical in-flight GETs share one transfer. Headers are part
-                // of the key, so a different token/user never sees this response.
-                // Delivery evidence is excluded above: a caller that must prove
-                // its own request reached HTTP cannot join someone else's.
+            if endpoint.method == .get, request.httpBody == nil,
+               endpoint.allowsAutomaticAddressRetry, endpoint.allowsRequestCoalescing,
+               !endpoint.reportsUndeliveredRequests,
+               let url = request.url {
                 let key = HTTPRequestCoalescer.Key(
-                    method: endpoint.method.rawValue,
-                    url: url.absoluteString,
-                    headers: Self.coalescingHeaderFingerprint(endpoint.headers),
-                    lane: lane
+                    method: endpoint.method.rawValue, url: url.absoluteString,
+                    headers: Self.coalescingHeaderFingerprint(request.allHTTPHeaderFields ?? [:]),
+                    lane: lane, redirectPolicy: endpoint.redirectPolicy
                 )
                 let boxedDelegate = UncheckedSendableDelegate(delegate: delegate)
                 let boxedRequest = request
                 let session = self.session
                 let shared = try await HTTPRequestCoalescer.shared.perform(key: key) {
-                    let (body, response) = try await session.data(
+                    let (data, response) = try await session.data(
                         for: boxedRequest, delegate: boxedDelegate.delegate
                     )
-                    return HTTPRequestCoalescer.Payload(data: body, response: response)
+                    return HTTPRequestCoalescer.Payload(data: data, response: response)
                 }
                 (data, response) = (shared.payload.data, shared.payload.response)
                 joinedSharedTransfer = shared.joined
             } else {
                 (data, response) = try await session.data(for: request, delegate: delegate)
             }
+            try Task.checkCancellation()
         } catch let urlError as URLError {
             capturedNetworkCode = urlError.errorCode
             HTTPResponseDiagnostics.recordTransportFailure(urlError)
@@ -345,13 +339,9 @@ public struct URLSessionHTTPClient: HTTPClient {
         return (data, http)
     }
 
-    /// Stable, in-memory-only fingerprint of the headers that determine the
-    /// response. Used solely as part of the coalescing key; never logged.
+    /// Request identity stays in memory; credentials must never be logged.
     static func coalescingHeaderFingerprint(_ headers: [String: String]) -> String {
-        headers
-            .map { "\($0.key.lowercased())=\($0.value)" }
-            .sorted()
-            .joined(separator: "\n")
+        headers.map { "\($0.key.lowercased())=\($0.value)" }.sorted().joined(separator: "\n")
     }
 
     static func makeRequest(_ endpoint: Endpoint, baseURL: URL) throws -> URLRequest {
@@ -388,20 +378,9 @@ public struct URLSessionHTTPClient: HTTPClient {
     }
 }
 
-/// Carries a `URLSessionTaskDelegate` into the coalescer's unstructured task.
-/// The delegates in this file are already `@unchecked Sendable`; this only
-/// bridges the existential's missing `Sendable` conformance.
+/// The concrete task delegates are Sendable; their Foundation existential is not.
 private struct UncheckedSendableDelegate: @unchecked Sendable {
     let delegate: (any URLSessionTaskDelegate)?
-}
-
-final class NoHTTPRedirectDelegate: HTTPDeliveryTaskDelegate, @unchecked Sendable {
-    func urlSession(
-        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
-    ) {
-        completionHandler(nil)
-    }
 }
 
 /// Per-task protection for endpoints carrying credentials or tuner ownership.
@@ -478,7 +457,7 @@ public extension URLSession {
     /// Session for probing discovery candidates: very short timeouts so we can
     /// race several candidate URLs per server and fail fast on the wrong ones
     /// without stalling the scan. Does not wait for connectivity.
-    static let plozzDiscovery: URLSession = {
+    static var plozzDiscovery: URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 2.5
         config.timeoutIntervalForResource = 3
@@ -486,7 +465,7 @@ public extension URLSession {
         config.waitsForConnectivity = false
         config.allowsConstrainedNetworkAccess = true
         return OfflineNetworkSession.make(configuration: config)
-    }()
+    }
 }
 
 public extension JSONDecoder {

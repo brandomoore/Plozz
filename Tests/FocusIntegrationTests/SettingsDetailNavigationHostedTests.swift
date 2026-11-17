@@ -11,6 +11,69 @@ import XCTest
 
 @MainActor
 final class SettingsDetailNavigationHostedTests: XCTestCase {
+    func testHomeShortcutReturnRestoresAnAvailableRootCategoryWithoutChangingProfiles() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let navigation = SettingsNavigationModel()
+        let chrome = NavigationChromeModel()
+        let probes = PageMotionProbes()
+        let root = SettingsWorkspace(navigation: navigation) {
+            SettingsSearchTelevisionView {
+                SettingsSectionGroup {
+                    SettingsSectionButton(title: Text("Playback"), icon: "play", route: .playback)
+                    SettingsSectionButton(
+                        title: Text("Screens & Navigation"), icon: "rectangle.3.group", route: .screensNavigation
+                    )
+                    .background { PageMotionProbe(id: "screens-category", probes: probes) }
+                }
+            }
+        } detail: { _ in
+            Button("Customize Home") {}
+                .settingsWorkspaceEntry()
+        }
+        window.rootViewController = UIHostingController(rootView:
+            NavigationRailShell(
+                profile: Profile(name: "Viewer"), entries: [], destinations: [.home, .settings],
+                selection: .constant(.settings), onOpenProfileSwitcher: {}, chrome: chrome,
+                content: root, contentDestination: .settings
+            )
+            .environment(chrome)
+            .environment(\.plozzNavigationStyle, .rail)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for _ in 0..<2 {
+            navigation.openHomeCustomization()
+            let entered = ContinuousClock.now + .seconds(5)
+            while !navigation.focusInDetail, ContinuousClock.now < entered {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(navigation.focusInDetail)
+            navigation.pages.pop()
+            let returned = ContinuousClock.now + .seconds(5)
+            while (navigation.pages.isTransitioning || navigation.restoringSidebar || navigation.focusInDetail),
+                  ContinuousClock.now < returned {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(navigation.path.isEmpty)
+            XCTAssertEqual(navigation.section, .screensNavigation)
+            let category = try XCTUnwrap(probes.frame("screens-category", in: window))
+            let item = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            let focused = try XCTUnwrap(NavigationRowFocusRequester.frame(
+                of: item, relativeTo: window
+            ))
+            XCTAssertTrue(category.contains(CGPoint(x: focused.midX, y: focused.midY)),
+                          "Returning from the shortcut must leave an enabled, natively focused root category.")
+        }
+    }
+
     func testBackEntryGatePreservesAppearanceAndReleasesNativeFocus() async throws {
         for usesGlass in [false, true] {
             let state = SettingsBackEntryTestState()

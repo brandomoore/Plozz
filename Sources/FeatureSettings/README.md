@@ -1172,6 +1172,9 @@ watch history and planning-list behavior are documented in
   directional movement, without resizing or sliding across the screen.
   Back from a category restores its selected row and retained scroll position;
   Back from a child returns one page. Playback initially owns focus, not a second pane.
+  Home's Edit shortcut opens Home directly but remembers Screens & Navigation
+  as its root category, so returning leaves a real enabled row to focus rather
+  than gating every category behind a subpage-only route.
   The remembered category only restores navigation: native focus owns the row's
   highlight and selected accessibility trait. Moving to profile actions, credits,
   or any other root control must not leave an inactive category highlighted.

@@ -1,6 +1,37 @@
 import CoreModels
 import SwiftUI
 
+public struct MediaRowScroll<Content: View>: View {
+    private let metrics: PlozzMetrics
+    private let leadingInset: CGFloat
+    private let trailingInset: CGFloat
+    private let content: Content
+
+    public init(
+        metrics: PlozzMetrics, leadingInset: CGFloat, trailingInset: CGFloat,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.metrics = metrics
+        self.leadingInset = leadingInset
+        self.trailingInset = trailingInset
+        self.content = content()
+    }
+
+    public var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: metrics.cardSpacing) {
+                content
+            }
+            .padding(.leading, leadingInset)
+            .padding(.trailing, trailingInset)
+            // Callers cancel this clearance with the shared rail offsets in layout,
+            // while focused artwork and shadows retain room to draw.
+            .padding(.vertical, metrics.railShadowClearance)
+        }
+        .scrollClipDisabled()
+    }
+}
+
 /// Shared rail chrome; scrolling cards and compact recovery content own their bodies.
 public struct MediaRowSection<Content: View>: View {
     private let title: Text?
