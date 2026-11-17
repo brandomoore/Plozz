@@ -306,8 +306,16 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
             window.isHidden = true
             window.rootViewController = nil
         }
-        try await Task.sleep(for: .milliseconds(400))
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: stage.view))
+        // Wait for the initial native focus instead of assuming 400 ms is enough:
+        // a loaded hosted runner can present the window later, and a missed
+        // starting focus makes every later hand-off assertion look broken.
+        let initialFocus = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                MainActor.assumeIsolated { stage.contains(system.focusedItem, in: stage.hero) }
+            }, object: nil
+        )
+        await fulfillment(of: [initialFocus], timeout: 10)
         XCTAssertTrue(stage.contains(system.focusedItem, in: stage.hero))
         let input = try XCTUnwrap(stage.view.gestureRecognizers?
             .compactMap { $0 as? HeroShowcaseStage.BoundaryInputObserver }.first)
