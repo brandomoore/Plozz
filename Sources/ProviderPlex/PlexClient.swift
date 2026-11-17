@@ -515,7 +515,7 @@ public struct PlexClient: Sendable {
             path: "/library/metadata/\(ratingKeys.joined(separator: ","))",
             queryItems: [URLQueryItem(name: "includeGuids", value: "1")],
             headers: headers,
-            allowsRequestCoalescing: true
+            allowsRequestCoalescing: false
         )
         return try await decode(PlexMediaContainerResponse.self, endpoint)
             .MediaContainer.Metadata ?? []
@@ -586,7 +586,8 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "includePreferences", value: "1")
             ] + (includeChapters ? [URLQueryItem(name: "includeChapters", value: "1")] : []),
             headers: headers,
-            allowsRequestCoalescing: true
+            // Reset arbitration also uses this read; it must not join an older response.
+            allowsRequestCoalescing: false
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.itemDetail) {
             let container = try await decode(PlexMediaContainerResponse.self, endpoint, using: interactiveHTTP).MediaContainer

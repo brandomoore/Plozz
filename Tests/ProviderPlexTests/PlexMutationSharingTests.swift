@@ -5,7 +5,13 @@ import XCTest
 @testable import TestSupportNetworking
 
 final class PlexMutationSharingTests: XCTestCase {
-    func testOverlappingMetadataReadsShareButCompletedReadsAreFresh() async throws {
+    func testOverlappingMetadataReadsRemainIndependent() async throws {
+        for batch in [false, true] {
+            try await assertIndependentMetadataReads(batch: batch)
+        }
+    }
+
+    private func assertIndependentMetadataReads(batch: Bool) async throws {
         let gate = FirstResponseGate()
         let server = try LoopbackHTTPServer { _ in
             await gate.record()
@@ -23,20 +29,24 @@ final class PlexMutationSharingTests: XCTestCase {
             deviceProfile: PlexDeviceProfile(clientIdentifier: "fixture"),
             token: "fixture", http: http, interactiveHTTP: http
         )
-        let first = Task { try await client.metadata(ratingKey: "101") }
+        let read: @Sendable () async throws -> [String?] = {
+            if batch { return try await client.metadata(ratingKeys: ["101"]).map(\.ratingKey) }
+            return [try await client.metadata(ratingKey: "101").ratingKey]
+        }
+        let first = Task { try await read() }
         defer { first.cancel() }
         try await waitUntil { await gate.count == 1 }
-        let second = Task { try await client.metadata(ratingKey: "101") }
+        let second = Task { try await read() }
         defer { second.cancel() }
-        try await waitUntil { await HTTPRequestCoalescer.shared.waitingReaderCount() == 2 }
+        try await waitUntil { await gate.count == 2 }
+        let independent = try await second.value
+        XCTAssertEqual(independent, ["101"])
         await gate.release()
-        let items = try await [first.value, second.value]
-        XCTAssertEqual(items.map(\.ratingKey), ["101", "101"])
-        let sharedRequests = await gate.count
-        XCTAssertEqual(sharedRequests, 1)
-        _ = try await client.metadata(ratingKey: "101")
+        let original = try await first.value
+        XCTAssertEqual(original, ["101"])
+        _ = try await read()
         let freshRequests = await gate.count
-        XCTAssertEqual(freshRequests, 2)
+        XCTAssertEqual(freshRequests, 3)
     }
 
     func testInterleavedGETWritesCannotJoinAnOlderPendingResponse() async throws {

@@ -753,7 +753,8 @@ public struct JellyfinClient: Sendable {
                 URLQueryItem(name: "ImageTypeLimit", value: "4")
             ],
             headers: authHeaders,
-            allowsRequestCoalescing: true
+            // Reset arbitration also uses this read; it must not join an older response.
+            allowsRequestCoalescing: false
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.itemDetail) {
             try await interactiveHTTP.decode(BaseItemDto.self, from: endpoint, baseURL: baseURL)

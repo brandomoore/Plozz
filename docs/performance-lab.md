@@ -1467,10 +1467,15 @@ a claimed user-visible speed improvement at these library sizes.
 
 The November 17, 2026 follow-up tests the selective architecture above at
 1, 3, 10 and 20 accounts, without importing presentation changes. HTTP sharing
-now **defaults off**: audited Jellyfin/Emby and Plex Home/library/item reads opt
-in at their request definitions. Authentication, mutations, playback actions
-and unreviewed integrations remain independent. This makes future omissions
+now **defaults off**: audited Jellyfin/Emby and Plex Home/library reads opt
+in at their request definitions. Authentication, mutations, playback actions,
+item detail and unreviewed integrations remain independent. This makes future omissions
 cost an extra read rather than suppressing an action; it is not a cache.
+
+The first comparisons below describe the pre-main-review candidate
+`4e75e8082`, which still shared item-detail reads. The **Pre-main freshness
+correction** below supersedes that candidate's transfer counts and records
+the final policy and its new measurements.
 
 `MultiServerNetworkPerformanceTests` uses production Home aggregation, provider
 mapping, address resolution and URLSession transport against independent
@@ -1483,7 +1488,7 @@ that a typical single-server household has nine libraries.
 - `home-network-{one,three,ten,twenty}` changes account count, retaining that
   per-account work.
 - `home-network-large` keeps 20 accounts but raises collection directories to
-  24 per account and movie overviews to 16 KiB: 500 libraries and about 13.7 MB
+  24 per account and movie overviews to 16 KiB: 500 libraries and about 14 MB
   of delivered response bodies.
 - `home-network-adverse` adds 300 ms to every response from the first account
   and stops the last origin before loading, producing real connection refusal.
@@ -1513,7 +1518,7 @@ checked against main, not inferred from the checkout's unchanged branch HEAD.
 Both sides used Xcode 27.1, the same iPhone 17 Pro/iOS 26.2 simulator, optimized
 build flags, selected workload/probe sources, one warmup and five retained
 samples. Network receipts are `1c9a476b3c6b4c848600e15611bbb3b1` (main) and
-`93394c1ff7cf4e97bf233f4f6933ab8d` (final opt-in candidate).
+`93394c1ff7cf4e97bf233f4f6933ab8d` (pre-review opt-in candidate).
 
 | Controlled workload | Whole wall median, main / candidate | CPU median, main / candidate | Physical requests, main / candidate |
 | --- | ---: | ---: | ---: |
@@ -1527,8 +1532,8 @@ samples. Network receipts are `1c9a476b3c6b4c848600e15611bbb3b1` (main) and
 The ordinary cases retain respectively 40/120/400/800 items and
 9/27/90/180 libraries. The large case retains 800 items/500 libraries; adverse
 retains 760 items/171 libraries and explicitly reports one failed account.
-Two overlapping detail readers use one transfer per healthy account instead
-of two. Completed reads remain fresh; cancellation and separate identities,
+In that pre-review version, two overlapping detail readers use one transfer per
+healthy account instead of two. Completed reads start a new transfer; cancellation and separate identities,
 sessions, redirect policies and stateful GETs have real-transfer regressions.
 
 At 20 servers, foreground details complete in 64.3 ms versus 87.6 ms, while
@@ -1588,12 +1593,48 @@ comparator refuses them even though selected workloads and environment match.
 The follow-up one-server pair retained identical complete fixtures and therefore
 could use the strict comparator without altering receipts.
 
-The final candidate also completes all six network workloads on tvOS 26.2
+The pre-review candidate also completes all six network workloads on tvOS 26.2
 (`2437b046e8184d63bd95080310d4af63`), retaining the same item, library, failure
 and transfer counts; this is cross-platform acceptance, not a tvOS A/B speedup.
 The six scoped correctness bundles pass 1,650 tests, with 36 skipped; enabled
-performance/live runs above are separate evidence. Independent review found no
-significant issues and specifically retained the coverage limitations above.
+performance/live runs above are separate evidence. These live and hosted
+measurements were not repeated after the freshness correction below.
+
+**Pre-main freshness correction.** Independent landing review found that item
+detail also authorizes queued watch-state resets. A freshness check could join
+an older pending detail response, miss newer server playback and permit a stale
+reset. Jellyfin/Emby item detail and Plex single/batch metadata now explicitly
+remain independent. Browse/discovery sharing is unchanged. There is no new
+provider API or transport dependency on watch-state policy.
+
+Three gated regressions use the real providers and URLSession transport with
+`WatchStateReconciler`: hold an old response, record newer playback, then drain
+the queued reset. Each requires a new transfer and no mutation before releasing
+the old response. All three fail before the correction and pass afterward.
+The four affected package bundles pass 1,638 tests with 36 skips; an independent
+follow-up review closes the finding without further significant issues.
+
+Final iPhone network receipt `e266dd800f834059bd4097b4ba979463` uses the same six
+workloads, Xcode 27.1/iOS 26.2, one warmup and five measured samples. The fixture
+now additionally requires two physical detail transfers per healthy account.
+Against the same historical main control:
+
+| Controlled workload | Wall median, main / final | CPU median, main / final | Physical request median, main / final |
+| --- | ---: | ---: | ---: |
+| 1 server | 108.1 / 52.3 ms | 60.0 / 52.7 ms | 15 / 15 |
+| 3 servers | 146.4 / 104.2 ms | 171.4 / 168.7 ms | 45 / 45 |
+| 10 servers | 403.2 / 307.2 ms | 565.3 / 542.7 ms | 150 / 159 |
+| 20 servers | 629.0 / 508.8 ms | 980.6 / 1,018.4 ms | 300 / 300 |
+| 20, large responses/libraries | 1,328.1 / 1,027.1 ms | 1,831.4 / 1,734.7 ms | 620 / 620 |
+| 20, slow plus unavailable | 2,831.9 / 1,006.3 ms | 906.4 / 848.8 ms | 285 / 285 |
+
+All samples retain the same items, libraries and explicit failures as main.
+The ten-server candidate makes 150-159 requests across its samples; the others
+match main's counts. The detail-transfer reduction is deliberately removed:
+these controls now support lower elapsed time, not fewer requests or uniformly
+lower CPU. As above, added regression coverage changes fixture fingerprints,
+so these are descriptive historical comparisons, not strict comparator passes
+or proof of a general live-server speedup.
 
 #### Bounded full-inventory fetching
 

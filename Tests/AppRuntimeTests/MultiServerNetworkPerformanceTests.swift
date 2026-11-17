@@ -102,6 +102,7 @@ final class MultiServerNetworkPerformanceTests: XCTestCase {
                 XCTAssertEqual(Set(content.latest.map(\.sourceAccountID)).count, healthy)
                 let state = await wire.snapshot()
                 XCTAssertEqual(state.unexpected, 0)
+                XCTAssertEqual(state.details, healthy * 2)
                 XCTAssertGreaterThan(state.requests, 0)
                 return [
                     "servers": count, "libraries": content.libraries.count,

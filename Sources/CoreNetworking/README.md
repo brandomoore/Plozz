@@ -21,6 +21,10 @@ and every provider/feature that talks to a remote server.
   own delivery evidence are never shared. This includes Plex write/session GETs
   and Last.fm/Simkl challenge creation and consumption. Each caller retains its
   own error mapping and diagnostics.
+  Reads used to authorize writes also need their own transfer: Jellyfin/Emby
+  item detail and Plex metadata stay independent so stale-reset checks cannot
+  join a response captured before newer playback. A bodyless GET is not enough
+  to establish sharing safety, even when completed responses are never cached.
   `SharedAsyncRequests` provides the same independent-reader cancellation used
   by Jellyfin discovery: the last cancelled reader retires the transfer, late
   completions cannot overwrite replacements, and finished values are not cached.
