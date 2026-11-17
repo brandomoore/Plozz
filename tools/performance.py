@@ -272,6 +272,23 @@ SCENARIOS = {
         "description": "Load 21 unique cards from 2, 8 and 32 sources of 100,000 titles, with bounded parallel requests.",
         "counters": ["items", "requests", "fetched", "maximumConcurrent"],
     },
+    **{
+        f"home-network-{name}": {
+            "suite": "network", "target": "AppRuntimeTests",
+            "test": f"MultiServerNetworkPerformanceTests/testPerformance{method}",
+            "file": "Tests/AppRuntimeTests/MultiServerNetworkPerformanceTests.swift",
+            "description": "Production Home aggregation, navigation discovery and overlapping detail reads against independent loopback Jellyfin/Emby origins; all owned listeners stop after each sample.",
+            "counters": [
+                "servers", "libraries", "items", "failedAccounts", "wireRequests", "responseBytes",
+                "peakServerRequests", "detailTransfers", "firstContentMicroseconds", "allContentMicroseconds",
+                "detailMicroseconds", "maximumMainActorGapMicroseconds", "sampledPeakFootprintBytes",
+            ],
+        }
+        for name, method in [
+            ("one", "OneServer"), ("three", "ThreeServers"), ("ten", "TenServers"),
+            ("twenty", "TwentyServers"), ("large", "LargeResponses"), ("adverse", "AdverseServers"),
+        ]
+    },
     "home-overlapping-source-browse": {
         "suite": "core", "target": "FeatureHomeCoreTests",
         "test": "HomeContentPagerTests/testPerformanceOverlappingSourcesBrowse",
@@ -680,7 +697,9 @@ SCENARIOS = {
                      "loadingScrollTargets", "finishedRowsWhileScrolling", "maxMainActorGapMicroseconds",
                      "scrollCPUTimeMicroseconds", "scrollWallMicroseconds",
                      "firstRowMicroseconds", "allRowsMicroseconds", "scrollableDistancePoints"],
-    } for count, method in [("one", "OneServerLoads"), ("three", "ThreeServersLoad")]},
+    } for count, method in [
+        ("one", "OneServerLoads"), ("three", "ThreeServersLoad"), ("ten", "TenServersLoad")
+    ]},
     "mobile-home-multi-server-startup-scroll": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "HomeMultiServerLoadingTests/testPerformanceScrollingWhileTwentyServersLoad",

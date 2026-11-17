@@ -454,13 +454,14 @@ public struct PlexClient: Sendable {
         let enriched = Endpoint(
             path: path,
             queryItems: query + [URLQueryItem(name: streamParameter, value: "Stream")],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: true
         )
         do {
             return try await decode(T.self, enriched)
         } catch AppError.invalidResponse {
             PlozzLog.networking.error("Plex rejected \(streamParameter)=Stream on \(path); retrying lean")
-            let lean = Endpoint(path: path, queryItems: query, headers: headers)
+            let lean = Endpoint(path: path, queryItems: query, headers: headers, allowsRequestCoalescing: true)
             return try await decode(T.self, lean)
         }
     }
@@ -469,7 +470,7 @@ public struct PlexClient: Sendable {
 
     /// `GET /library/sections` — top-level libraries.
     func sections() async throws -> [PlexDirectory] {
-        let endpoint = Endpoint(path: "/library/sections", headers: headers)
+        let endpoint = Endpoint(path: "/library/sections", headers: headers, allowsRequestCoalescing: true)
         do {
             return try await decode(PlexMediaContainerResponse.self, endpoint)
                 .MediaContainer.Directory ?? []
@@ -513,7 +514,8 @@ public struct PlexClient: Sendable {
         let endpoint = Endpoint(
             path: "/library/metadata/\(ratingKeys.joined(separator: ","))",
             queryItems: [URLQueryItem(name: "includeGuids", value: "1")],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: true
         )
         return try await decode(PlexMediaContainerResponse.self, endpoint)
             .MediaContainer.Metadata ?? []
@@ -583,7 +585,8 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "includeGuids", value: "1"),
                 URLQueryItem(name: "includePreferences", value: "1")
             ] + (includeChapters ? [URLQueryItem(name: "includeChapters", value: "1")] : []),
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: true
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.itemDetail) {
             let container = try await decode(PlexMediaContainerResponse.self, endpoint, using: interactiveHTTP).MediaContainer

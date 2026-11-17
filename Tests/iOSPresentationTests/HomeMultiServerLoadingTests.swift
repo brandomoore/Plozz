@@ -51,6 +51,12 @@ final class HomeMultiServerLoadingTests: XCTestCase {
         }
     }
 
+    func testPerformanceScrollingWhileTenServersLoad() async throws {
+        try await PerformanceProbe.measure(self, scenario: "mobile-home-ten-server-startup-scroll") {
+            try await self.exercise(scrollsWhileLoading: true, serverCount: 10)
+        }
+    }
+
     func testPerformanceScrollingWhileTwentyServersLoadWithDiagnostics() async throws {
         try PerformanceProbe.requireEnabled()
         try await PerformanceProbe.measure(self, scenario: "mobile-home-startup-diagnostics") {

@@ -1463,6 +1463,138 @@ or rendered screens, and does not establish physical-device responsiveness.
 The retained changes provide bounded work and explicit transport ownership, not
 a claimed user-visible speed improvement at these library sizes.
 
+#### Multi-server transport and Home scale acceptance
+
+The November 17, 2026 follow-up tests the selective architecture above at
+1, 3, 10 and 20 accounts, without importing presentation changes. HTTP sharing
+now **defaults off**: audited Jellyfin/Emby and Plex Home/library/item reads opt
+in at their request definitions. Authentication, mutations, playback actions
+and unreviewed integrations remain independent. This makes future omissions
+cost an extra read rather than suppressing an action; it is not a cache.
+
+`MultiServerNetworkPerformanceTests` uses production Home aggregation, provider
+mapping, address resolution and URLSession transport against independent
+loopback origins. Navigation library discovery and two foreground detail readers
+per healthy account overlap the Home load. Each ordinary origin has one movie
+library, eight collection directories, 20 latest and 20 resume items, and 5 ms
+response latency. These are deliberately collection-heavy controls, not a claim
+that a typical single-server household has nine libraries.
+
+- `home-network-{one,three,ten,twenty}` changes account count, retaining that
+  per-account work.
+- `home-network-large` keeps 20 accounts but raises collection directories to
+  24 per account and movie overviews to 16 KiB: 500 libraries and about 13.7 MB
+  of delivered response bodies.
+- `home-network-adverse` adds 300 ms to every response from the first account
+  and stops the last origin before loading, producing real connection refusal.
+  The remaining 19 accounts must still contribute all their data.
+- A normal regression cancels a 20-account load during two-second responses,
+  requires prompt completion, and checks that cancellation stops admission
+  before all accounts start.
+
+Reproduce with an explicitly owned simulator:
+
+```bash
+python3 tools/performance.py run --platform iOS --sim-id "$PLOZZ_SIM_ID" \
+  --scenario home-network-one home-network-three home-network-ten \
+  home-network-twenty home-network-large home-network-adverse
+```
+
+The same six scenarios support `--platform tvOS`. Hosted loading controls are
+`mobile-home-{one,three,ten}-server-startup-scroll` and
+`mobile-home-multi-server-startup-scroll` (20 servers). Use the existing
+`home-live-combined-queries` broker route for authorized real Plex, Jellyfin and
+Emby data; it is a separate workload, not 20 real remote servers.
+
+**Matched iPhone observations.** Pinned-main source
+`086c8d5365cb6e208638832f17dd919bf5d82aab` was restored temporarily under a build
+lease, then the candidate restored on exit. Control receipt source hashes were
+checked against main, not inferred from the checkout's unchanged branch HEAD.
+Both sides used Xcode 27.1, the same iPhone 17 Pro/iOS 26.2 simulator, optimized
+build flags, selected workload/probe sources, one warmup and five retained
+samples. Network receipts are `1c9a476b3c6b4c848600e15611bbb3b1` (main) and
+`93394c1ff7cf4e97bf233f4f6933ab8d` (final opt-in candidate).
+
+| Controlled workload | Whole wall median, main / candidate | CPU median, main / candidate | Physical requests, main / candidate |
+| --- | ---: | ---: | ---: |
+| 1 server | 108.1 / 52.7 ms | 60.0 / 52.3 ms | 15 / 14 |
+| 3 servers | 146.4 / 99.4 ms | 171.4 / 151.8 ms | 45 / 42 |
+| 10 servers | 403.2 / 315.7 ms | 565.3 / 533.1 ms | 150 / 140 |
+| 20 servers | 629.0 / 471.2 ms | 980.6 / 952.4 ms | 300 / 280 |
+| 20, large responses/libraries | 1,328.1 / 983.7 ms | 1,831.4 / 1,652.3 ms | 620 / 600 |
+| 20, slow plus unavailable | 2,831.9 / 1,000.4 ms | 906.4 / 810.6 ms | 285 / 266 |
+
+The ordinary cases retain respectively 40/120/400/800 items and
+9/27/90/180 libraries. The large case retains 800 items/500 libraries; adverse
+retains 760 items/171 libraries and explicitly reports one failed account.
+Two overlapping detail readers use one transfer per healthy account instead
+of two. Completed reads remain fresh; cancellation and separate identities,
+sessions, redirect policies and stateful GETs have real-transfer regressions.
+
+At 20 servers, foreground details complete in 64.3 ms versus 87.6 ms, while
+median peak active fixture handlers fall from 50 to 38. These are observed
+handler counts, **not an app-global concurrency ceiling**: Home has separate
+five-account lanes and collection discovery has a four-request per-provider
+window. The results support keeping the refilling windows and safe sharing,
+not adding another global scheduler.
+
+First nonempty global content in this fixture is almost as late as all-content
+completion: 458.4/458.7 ms for 20 healthy servers, 986.3/986.9 ms for adverse.
+Global rows wait for account library discovery so music exclusion and ordering
+remain correct; optional collection probes currently delay that discovery.
+Server-specific rows have independent progressive publication. Separating
+essential library classification from optional availability checks is a focused
+future investigation, not justification to remove the filtering barrier.
+
+Memory is not uniformly lower: median sampled physical footprint for the
+20-server case is 237.8 versus 243.8 MiB. These are process samples containing
+both clients and fixture servers, retained caches and allocator history, not
+isolated per-account costs, exact peaks or leak evidence. CPU also includes
+fixture construction/serving. Listeners send `Connection: close`, so this does
+not measure connection-reuse benefits. Connection refusal is not a blackholed
+server or sustained timeout test. Five samples do not establish p95 or
+physical-device responsiveness.
+
+**Real data and rendered Home.** Mixed live-query receipts
+`2a3abd3a405b420cbbf736cbd00688de` / `17b63b0c79964082a2b736142e15374d`
+retain 1,923 merged items, 18 sources and 46 pages, including identical
+date/year/runtime coverage. Whole-workload medians are 14.774 / 15.048 seconds
+(+1.9%), CPU 1.910 / 2.044 seconds, and cold inventory 6.707 / 7.049 seconds.
+Eight warm sorts take 65.2 / 48.8 ms without refetching. This is **no demonstrated
+overall real-server speedup**; caches were not reset and these sequential runs
+do not establish a causal CPU change.
+
+Hosted receipts `e74dbd640db84b8597a93af8bad828f4` /
+`0739c1a1ca3c4c4682179e66d5bdac56` retain 2/6/20/40 rows,
+40/120/400/800 items and 5/15/50/100 provider requests. Whole durations differ
+by less than 0.4%; the prescribed scrolling cadence dominates them.
+At 20 servers the candidate publishes its first row at 359 ms and all rows at
+9.908 seconds; CPU is 4.897 versus 5.157 seconds. Median per-sample maximum
+main-actor gaps are 78.2 versus 82.5 ms, not measured frame hitches.
+The one-server fixture has zero vertical scroll distance: it is a loading
+control, not evidence of scrolling performance.
+
+The first hosted comparison showed a one-server CPU increase from 857 to
+1,043 ms. A separate exact-fixture main/candidate repeat
+(`676c5348b04e4218bf30f94547a9f40c` /
+`ccc41fa2cd874d42806f9320c6aacfb8`) measured 806 / 751 ms with essentially
+identical 9.929-second durations and passed the strict 15% comparator.
+The initial increase did not reproduce; neither pair proves a UI improvement.
+No presentation code was changed.
+
+The larger main/candidate comparisons remain **descriptive**, not strict lab
+passes: added correctness tests change the whole-Tests fingerprint, so the
+comparator refuses them even though selected workloads and environment match.
+The follow-up one-server pair retained identical complete fixtures and therefore
+could use the strict comparator without altering receipts.
+
+The final candidate also completes all six network workloads on tvOS 26.2
+(`2437b046e8184d63bd95080310d4af63`), retaining the same item, library, failure
+and transfer counts; this is cross-platform acceptance, not a tvOS A/B speedup.
+The six scoped correctness bundles pass 1,650 tests, with 36 skipped; enabled
+performance/live runs above are separate evidence. Independent review found no
+significant issues and specifically retained the coverage limitations above.
+
 #### Bounded full-inventory fetching
 
 Full library/collection/playlist inventories now request 200 items per page and

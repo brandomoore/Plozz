@@ -13,7 +13,9 @@ final class HTTPRequestSharingIntegrationTests: XCTestCase {
         }
         addTeardownBlock { await gate.release() }
         let session = session()
-        let endpoint = Endpoint(path: "/items", headers: ["Authorization": "fixture-viewer"])
+        let endpoint = Endpoint(
+            path: "/items", headers: ["Authorization": "fixture-viewer"], allowsRequestCoalescing: true
+        )
         let first = Task { try await URLSessionHTTPClient(session: session).send(endpoint, baseURL: url) }
         defer { first.cancel() }
         try await waitUntil { await server.requests.count == 1 }
@@ -42,21 +44,23 @@ final class HTTPRequestSharingIntegrationTests: XCTestCase {
         addTeardownBlock { await gate.release() }
         let firstSession = session()
         let secondSession = session()
-        var noRetry = Endpoint(path: "/no-retry")
+        var noRetry = Endpoint(path: "/no-retry", allowsRequestCoalescing: true)
         noRetry.allowsAutomaticAddressRetry = false
-        var delivery = Endpoint(path: "/delivery")
+        var delivery = Endpoint(path: "/delivery", allowsRequestCoalescing: true)
         delivery.reportsUndeliveredRequests = true
         let stateful = Endpoint(path: "/stateful-get", allowsRequestCoalescing: false)
+        let unreviewed = Endpoint(path: "/unreviewed-get")
         let requests: [(URLSession, Endpoint, String)] = [
-            (firstSession, .init(path: "/accounts", headers: ["Authorization": "first"]), "first"),
-            (firstSession, .init(path: "/accounts", headers: ["Authorization": "second"]), "second"),
-            (firstSession, .init(path: "/lanes"), "missing"),
-            (secondSession, .init(path: "/lanes"), "missing"),
-            (firstSession, .init(method: .post, path: "/mutation"), "missing"),
-            (firstSession, .init(method: .post, path: "/mutation"), "missing"),
+            (firstSession, .init(path: "/accounts", headers: ["Authorization": "first"], allowsRequestCoalescing: true), "first"),
+            (firstSession, .init(path: "/accounts", headers: ["Authorization": "second"], allowsRequestCoalescing: true), "second"),
+            (firstSession, .init(path: "/lanes", allowsRequestCoalescing: true), "missing"),
+            (secondSession, .init(path: "/lanes", allowsRequestCoalescing: true), "missing"),
+            (firstSession, .init(method: .post, path: "/mutation", allowsRequestCoalescing: true), "missing"),
+            (firstSession, .init(method: .post, path: "/mutation", allowsRequestCoalescing: true), "missing"),
             (firstSession, noRetry, "missing"), (firstSession, noRetry, "missing"),
             (firstSession, delivery, "missing"), (firstSession, delivery, "missing"),
-            (firstSession, stateful, "missing"), (firstSession, stateful, "missing")
+            (firstSession, stateful, "missing"), (firstSession, stateful, "missing"),
+            (firstSession, unreviewed, "missing"), (firstSession, unreviewed, "missing")
         ]
         let tasks = requests.map { session, endpoint, _ in
             Task { try await URLSessionHTTPClient(session: session).send(endpoint, baseURL: url) }
@@ -81,9 +85,13 @@ final class HTTPRequestSharingIntegrationTests: XCTestCase {
         }
         addTeardownBlock { await gate.release() }
         let client = URLSessionHTTPClient(session: session())
-        let follow = Task { try await client.sendRaw(.init(path: "/redirect"), baseURL: origin) }
+        let follow = Task {
+            try await client.sendRaw(.init(path: "/redirect", allowsRequestCoalescing: true), baseURL: origin)
+        }
         let protected = Task {
-            try await client.sendRaw(.init(path: "/redirect", redirectPolicy: .sameOrigin), baseURL: origin)
+            try await client.sendRaw(
+                .init(path: "/redirect", redirectPolicy: .sameOrigin, allowsRequestCoalescing: true), baseURL: origin
+            )
         }
         defer { follow.cancel(); protected.cancel() }
         try await waitUntil { await redirect.requests.count == 2 }

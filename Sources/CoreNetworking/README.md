@@ -12,8 +12,11 @@ and every provider/feature that talks to a remote server.
 - Ordinary and foreground HTTP clients reuse separate process-wide session pools.
   Discovery keeps per-client ephemeral sessions, including isolated cookie stores.
   Overlapping bodyless GETs share a transfer only when URL, effective request
-  headers, session identity and redirect policy match. Stateful GETs must set
-  `allowsRequestCoalescing` to false, independently of address-retry policy.
+  headers, session identity and redirect policy match **and the endpoint opts in**.
+  `allowsRequestCoalescing` defaults to false. Enable it at an audited read
+  definition, never for every GET in a provider or transport wrapper. Unreviewed
+  integrations remain independent; missing an opt-in costs a duplicate read,
+  not a suppressed action. This policy is independent of address retry.
   Mutations, requests that disable address retry, and requests requiring their
   own delivery evidence are never shared. This includes Plex write/session GETs
   and Last.fm/Simkl challenge creation and consumption. Each caller retains its

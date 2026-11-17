@@ -332,7 +332,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Views",
             queryItems: [URLQueryItem(name: "IncludeExternalContent", value: "false")],
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await userViewRequests.run(key: userID) {
             try await http.decode(UserViewsResponse.self, from: endpoint, baseURL: baseURL).Items
@@ -379,7 +380,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Items/Resume",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.resumeItems) {
             try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
@@ -450,7 +452,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Shows/NextUp",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.nextUp) {
             try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
@@ -668,7 +671,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Items/Latest",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         // /Items/Latest returns a bare array, not an Items envelope.
         let items: [BaseItemDto] = try await http.decode([BaseItemDto].self, from: endpoint, baseURL: baseURL)
@@ -748,7 +752,8 @@ public struct JellyfinClient: Sendable {
                 // people and media sources.
                 URLQueryItem(name: "ImageTypeLimit", value: "4")
             ],
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.itemDetail) {
             try await interactiveHTTP.decode(BaseItemDto.self, from: endpoint, baseURL: baseURL)
@@ -934,7 +939,10 @@ public struct JellyfinClient: Sendable {
         if !useServerCollections {
             queryItems.append(collectionGroupingDisabled)
         }
-        let endpoint = Endpoint(path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders)
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders,
+            allowsRequestCoalescing: true
+        )
         return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
     }
 

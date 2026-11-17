@@ -1038,7 +1038,7 @@ let package = Package(
             dependencies: [
                 "AppRuntime", "CoreModels", "FeatureAuthCore", "CrashReporting", "FeatureHomeCore",
                 .target(name: "FeatureHome", condition: .when(platforms: [.tvOS])),
-                "FeatureSyncCloud", "TestSupportPerformance"
+                "FeatureSyncCloud", "TestSupportPerformance", "TestSupportNetworking"
             ]
         ),
         .testTarget(

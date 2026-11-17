@@ -139,6 +139,10 @@ scope. Cancelling one reader does not interrupt other readers, but the last
 reader cancels the underlying work. Completed responses and failures are not
 retained: a subsequent refresh still asks the server. This is request
 coalescing, not the optional persistent metadata/artwork cache.
+The Views, Resume, Next Up, Latest, item-detail and generic library-item request
+definitions also explicitly opt into transport sharing. Other endpoints retain
+the transport's independent-request default, including auth, playback actions
+and dedicated watch-state verification reads. Do not blanket-enable all GETs.
 
 Home browse feeds and collection membership request `DateCreated` so client-side
 Date added sorting uses library dates on both Jellyfin and Emby, without changing

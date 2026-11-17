@@ -1,10 +1,44 @@
-import CoreNetworking
+@testable import CoreNetworking
 import Foundation
 import XCTest
 @testable import ProviderPlex
 @testable import TestSupportNetworking
 
 final class PlexMutationSharingTests: XCTestCase {
+    func testOverlappingMetadataReadsShareButCompletedReadsAreFresh() async throws {
+        let gate = FirstResponseGate()
+        let server = try LoopbackHTTPServer { _ in
+            await gate.record()
+            return .json(#"{"MediaContainer":{"Metadata":[{"ratingKey":"101","type":"movie","title":"Fixture"}]}}"#)
+        }
+        let session = URLSession(configuration: .ephemeral)
+        addTeardownBlock {
+            await gate.release()
+            await server.stop()
+            session.invalidateAndCancel()
+        }
+        let http = URLSessionHTTPClient(session: session)
+        let client = PlexClient(
+            baseURL: try await server.start(),
+            deviceProfile: PlexDeviceProfile(clientIdentifier: "fixture"),
+            token: "fixture", http: http, interactiveHTTP: http
+        )
+        let first = Task { try await client.metadata(ratingKey: "101") }
+        defer { first.cancel() }
+        try await waitUntil { await gate.count == 1 }
+        let second = Task { try await client.metadata(ratingKey: "101") }
+        defer { second.cancel() }
+        try await waitUntil { await HTTPRequestCoalescer.shared.waitingReaderCount() == 2 }
+        await gate.release()
+        let items = try await [first.value, second.value]
+        XCTAssertEqual(items.map(\.ratingKey), ["101", "101"])
+        let sharedRequests = await gate.count
+        XCTAssertEqual(sharedRequests, 1)
+        _ = try await client.metadata(ratingKey: "101")
+        let freshRequests = await gate.count
+        XCTAssertEqual(freshRequests, 2)
+    }
+
     func testInterleavedGETWritesCannotJoinAnOlderPendingResponse() async throws {
         for mutation in Mutation.allCases {
             let gate = FirstResponseGate()
