@@ -79,6 +79,34 @@ docs/ tools/
 - Move view logic into view models or coordinators. Views register, render, and
   call typed actions.
 
+### Hero continuity
+
+Hero animation is about continuity, not decoration. Keep these rules shared
+between Home and detail:
+
+- **One wordmark reveal.** Both surfaces show the transparent logo when it
+  resolves and crossfade it in. Do not let a text title appear first and then
+  swap for a logo. Home's Play/Watchlist row stays outside that gate and is
+  usable immediately.
+- **Home slides stay opaque.** A carousel slide whose artwork is already loaded
+  must not fade when the slide changes or while the page is pulled. An
+  opacity animation tied to `backdropResolved` on every slide causes dimming and
+  black flashes during pull.
+- **Detail has the first-load fade.** The grey/seed-to-backdrop fade belongs to
+  the detail stage only; it is an opacity animation, never a blur or redraw.
+- **Reserve async action slots.** A trailer button (or any action resolved after
+  first paint) must reserve its final size from the start, or Play shifts when
+  it arrives.
+- **Landscape seeds only.** Never seed the landscape detail hero with a portrait
+  poster; scaling it to fill and later swapping in the backdrop reads as the
+  hero resizing.
+- **Scope navigation requests.** A request owned by one tab (for example the
+  Search-root pop/focus request) must be observed only by that tab's navigation
+  stack. Other tabs must keep their pushed pages and scroll positions.
+
+See [page loading scaffold](page-loading-scaffold.md#hero-stages) for the
+loading/reveal side of the same surfaces.
+
 ## State and lifecycle
 
 For cross-screen state coordination, follow [state management](state-management.md):

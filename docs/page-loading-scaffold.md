@@ -116,6 +116,25 @@ A revisit cache is only free if it is small. Two rules, both enforced here:
 When adding a cache, ask: what is the largest thing a single page can put in it, and
 what does that cost on the smallest device we support?
 
+### Hero stages
+
+A hero is a page header that loads artwork and identity separately. Keep its
+loading and reveal behavior stable:
+
+- Reserve the stage's final height before artwork resolves; never let a resource
+  response change the hero band's geometry.
+- Use the shared transparent-wordmark reveal on Home and detail. The wordmark
+  fades in when it resolves; Home's action row does not wait for it.
+- Home carousel slides that already have artwork stay fully opaque across
+  swipes and pull. Only the detail stage uses a first-backdrop fade from the
+  grey/seed base.
+- Detail seeds must be landscape. A portrait poster scaled into the landscape
+  stage is not a valid seed.
+- Reserve every asynchronously resolved action slot (trailer, versions, menu)
+  from the first frame so the primary Play action never moves.
+- Hide native top scroll-edge chrome when the page paints its own hero scrim;
+  otherwise the system dim arrives late and pops over the hero.
+
 ## 4. Sanitise provider text
 
 Providers return prose as HTML. Convert at display with `CoreModels/HTMLText`:

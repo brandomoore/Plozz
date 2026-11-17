@@ -34,6 +34,26 @@ configuration and credentials out of committed guidance.
   reduced-effects fallbacks. Finalize UI behavior and source copy with the
   maintainer before starting translation work.
 
+## Hero and navigation continuity
+
+- Home and detail share one transparent-wordmark reveal: resolved logo plus a
+  short crossfade. Home's Play/Watchlist row must remain usable immediately; do
+  not gate the whole foreground on artwork.
+- A Home hero slide that is already loaded must not fade or dim when the slide
+  changes or when the page is pulled. First-load fades belong to the detail
+  stage only.
+- Reserve the slot for every asynchronously resolved hero action (for example
+  the trailer button) from the first frame so Play does not move when it lands.
+- Seed the detail stage only with landscape artwork. A portrait poster
+  stretched into the landscape hero and then replaced by the backdrop reads as
+  resizing.
+- Scope shell navigation request counters to the stack that owns them. A
+  Search-root request must not pop or reset other tabs' navigation or scroll
+  positions.
+- Keep these invariants covered by hosted/rendered tests; see
+  [SwiftUI guidelines](docs/swiftui-guidelines.md#hero-continuity) and
+  [page loading scaffold](docs/page-loading-scaffold.md#hero-stages).
+
 For state ownership, cancellation, lifecycle adapters, and deterministic tests,
 follow [state management](docs/state-management.md). Language, view, fixture,
 and comment conventions live in the [Swift/SwiftUI guidelines](docs/swiftui-guidelines.md);
