@@ -488,9 +488,10 @@
             }
             .scrollTargetLayout()
             #else
-            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+            LazyVStack(alignment: .leading, spacing: metrics.rowSpacing) {
                 dateGroupContent(days, groups: groups, columns: columns, metrics: metrics, width: width)
             }
+            .focusSection()
             #endif
         }
 
@@ -503,10 +504,20 @@
                     #if os(tvOS)
                     MediaRowSection(title: dayTitle(day), leadingInset: 0) {
                         if let releases = groups[day], !releases.isEmpty {
-                            releaseGrid(releases, columns: columns, metrics: metrics, width: width)
-                                .padding(.leading, metrics.cardRowLeadingPadding(0, cardStyle: cardStyle))
-                                .padding(.top, metrics.railTopPadding)
-                                .padding(.bottom, metrics.railVerticalPadding)
+                            MediaRowScroll(
+                                metrics: metrics,
+                                leadingInset: metrics.cardRowLeadingPadding(0, cardStyle: cardStyle),
+                                trailingInset: PlozzTheme.Metrics.screenPadding
+                            ) {
+                                ForEach(releases) { release in
+                                    UpcomingReleaseCard(release: release)
+                                        .frame(width: width)
+                                        .contextMenu { Button("Hide title") { model.hide(release) } }
+                                        .navigationEntryFocus(day >= selectedDay ? .content : nil)
+                                }
+                            }
+                            .padding(.top, metrics.railTopClearanceOffset)
+                            .padding(.bottom, metrics.railBottomClearanceOffset)
                         }
                     }
                     .environment(\.plozzNavigationContentInset, 0)

@@ -180,8 +180,12 @@ Compact layouts use Home's responsive poster sizes as the grid's starting point,
 fitting three whole posters across standard-width phones instead of two oversized
 cards. Smaller phones, density preferences, and wider windows retain responsive sizing.
 Every date uses the same column widths, including sparse dates and partial final
-rows. TV retains its standard adaptive poster slots. Episode numbers
-or grouped episode counts appear in the poster's subtitle, without extra containers
+rows. On TV, each date is one horizontally scrolling poster rail, using Home's
+shared `MediaRowScroll` layout and focus-lift clearance. Date rails live in a lazy
+vertical stack, matching Home's scrolling structure. Release IDs remain the card
+identity, preserving separate releases of the same title, episode captions, and
+Hide title actions. Episode numbers or grouped episode counts appear in the
+poster's subtitle, without extra containers
 or changes to the underlying detail-navigation item. Coming Soon uses full-size landscape
 media cards on both platforms, with the shared Home headings, spacing, captions
 and mobile row footprint. Dates and episode information use the shared artwork
@@ -200,7 +204,9 @@ below the toolbar. Explicit phase gates separate loading, first-publication, and
 completed renders, including when a shell refresh coalesces.
 `--capture-thirty` instead places thirty uniquely numbered sample cards on Today,
 reusing the fixture artwork. Its scrolled capture reaches the last card and the
-following date; its minimized capture retains Today to compare the same grid.
+following date; its minimized capture retains Today to compare the same date.
+On TV, combine it with `--capture-many-days` to exercise horizontal traversal on
+a busy date followed by Down/Up traversal through seventeen offscreen dates.
 They also support
 `--capture-scrolled`, `--capture-calendar` and
 `--capture-selection` to exercise pinned controls, the real calendar presentation

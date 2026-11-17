@@ -29,6 +29,12 @@ must wrap it in a native button or navigation link; `MediaArtworkZoomButton`
 supports closure-driven selection with the shared artwork transition. tvOS
 selection remains owned by the card's focus control.
 
+`MediaRowScroll` owns the horizontal lazy stack, shared card spacing, and unclipped
+focus-lift clearance for Home rails and TV Upcoming date rails. Its callers apply
+the shared rail clearance offsets to preserve heading and inter-row spacing.
+Upcoming retains release identities rather than deduplicating by media identity,
+so different releases of the same series keep their own cards and captions.
+
 `PlozziOSPageHeader` owns the mobile scrolling header's 20-point horizontal
 insets, 44-point minimum height and 12-point action spacing. Callers must not
 add another top or horizontal inset. `plozziOSPageAction` gives each button or

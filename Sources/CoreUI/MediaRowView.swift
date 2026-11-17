@@ -597,8 +597,10 @@ public struct MediaRowView: View {
                     cardPitch: presentation == .episodeColumn ? nil : cardSlotWidth + layoutMetrics.cardSpacing
                 ) {
                     ScrollViewReader { proxy in
-                        ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: layoutMetrics.cardSpacing) {
+                        MediaRowScroll(
+                            metrics: layoutMetrics,
+                            leadingInset: cardsLeadingInset, trailingInset: cardsTrailingInset
+                        ) {
                             ForEach(Self.presentationElements(
                                 items: items,
                                 loadingPlaceholderCount: max(
@@ -643,20 +645,7 @@ public struct MediaRowView: View {
                                 )
                             }
                             #endif
-                        }
-                        // The row's ordinary page gutter, unchanged from before the
-                        // navigation rail existed, with the first card's visible
-                        // edge under the title.
-                        .padding(.leading, cardsLeadingInset)
-                        .padding(.trailing, cardsTrailingInset)
-                        // Reserve generous vertical room *inside* the clip so a
-                        // focused card's lift + drop shadow are never cut. The
-                        // negative outer padding below cancels this clearance in
-                        // layout, so the row's height and its gap to the neighbouring
-                        // rows are unchanged; only the drawing area grows.
-                        .padding(.vertical, layoutMetrics.railShadowClearance)
                     }
-                    .scrollClipDisabled()
                     .loadingMoreOnScroll(
                         onLoadMore,
                         trailingPlaceholderWidth: CGFloat(loadingPlaceholderCount)

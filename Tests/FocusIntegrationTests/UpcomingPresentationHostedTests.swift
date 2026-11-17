@@ -11,6 +11,111 @@ import XCTest
 
 @MainActor
 final class UpcomingPresentationHostedTests: XCTestCase {
+    func testDateRailPreservesDistinctReleasesAndTheirOriginalNavigationItem() async throws {
+        let suite = "UpcomingPresentationHostedTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = UpcomingFeedModel(defaults: defaults)
+        let today = Calendar.current.startOfDay(for: Date())
+        let item = MediaItem(id: "same-series", title: "Same series", kind: .series)
+        let releases = [2, 3].flatMap { season in
+            UpcomingReleaseBuilder.episodes([UpcomingEpisode(
+                seriesIdentity: .external(source: "fixture", value: item.id),
+                seasonNumber: season, episodeNumber: 1, title: nil, airDate: today,
+                datePrecision: .dateOnly, source: .tvmaze, sourceURL: nil, refreshedAt: today
+            )], for: item)
+        }
+        await model.refresh(scope: UUID().uuidString, namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        var selected: [MediaItem] = []
+        let window = try host(UpcomingView(model: model, interval: .init(start: today, duration: 86_400))
+            .environment(\.locale, Locale(identifier: "en_US"))
+            .environment(\.plozzCardStyle, .borderless)
+            .environment(\.plozzCardFocusStyle, .system)
+            .mediaItemNavigator { selected.append($0) })
+        defer { close(window) }
+        func cards() -> [NativePosterButton] {
+            descendants(window).compactMap { $0 as? NativePosterButton }
+                .filter { $0.accessibilityLabel == item.title }
+        }
+        try await waitUntil { cards().count == 2 }
+        let buttons = cards()
+        XCTAssertEqual(Set(buttons.compactMap(\.accessibilityValue)), ["S2 · E1", "S3 · E1"])
+        for button in buttons { button.sendActions(for: .primaryActionTriggered) }
+        XCTAssertEqual(selected, [item, item], "Presentation must not replace the real provider/navigation identity.")
+    }
+
+    func testDateRailsStayFocusableAfterScrollingPastTheInitialViewport() async throws {
+        let suite = "UpcomingPresentationHostedTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = UpcomingFeedModel(defaults: defaults)
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let dayCount = 12
+        let releases = (0..<dayCount).flatMap { day in
+            (0..<(day == 0 ? 30 : 1)).map { index in
+                let item = MediaItem(id: "\(day)-\(index)", title: "Release \(day)-\(index)", kind: .movie)
+                return UpcomingRelease(
+                    id: item.id, titleKey: UpcomingRelease.titleKey(for: item), item: item,
+                    date: calendar.date(byAdding: .day, value: day, to: today)!,
+                    datePrecision: .dateOnly, kind: .digital, interests: [.watchlist]
+                )
+            }
+        }
+        await model.refresh(scope: UUID().uuidString, namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        let controller = UpcomingFocusController(rootView: AnyView(
+            PinnedUpcoming(model: model, interval: .init(start: today, duration: 90 * 86_400))
+            .environment(\.locale, Locale(identifier: "en_US"))
+            .environment(\.plozzCardStyle, .borderless)
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)))
+        let window = try host(controller: controller)
+        defer { close(window) }
+        func card(_ day: Int) -> UIView? {
+            descendants(window).first {
+                $0.canBecomeFocused && $0.accessibilityLabel == "Release \(day)-0"
+            }
+        }
+        try await waitUntil { card(0) != nil }
+        let first = try XCTUnwrap(card(0))
+        let scrolls = descendants(window).compactMap { $0 as? UIScrollView }.filter {
+            first.isDescendant(of: $0)
+        }
+        let rail = try XCTUnwrap(scrolls.first { $0.contentSize.width > $0.bounds.width + 1 },
+                                "A busy date must use Home's horizontal rail, not a nested vertical grid.")
+        let agenda = try XCTUnwrap(scrolls.first { $0.contentSize.height > $0.bounds.height + 1 })
+        XCTAssertFalse(rail === agenda)
+        XCTAssertLessThan(rail.bounds.height, agenda.bounds.height)
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        for day in 1..<dayCount {
+            func visibleCard() -> UIView? {
+                guard let target = card(day) else { return nil }
+                let frame = target.convert(target.bounds, to: agenda)
+                return agenda.bounds.intersects(frame) ? target : nil
+            }
+            for _ in 0..<4 where visibleCard() == nil {
+                let bottom = max(-agenda.adjustedContentInset.top,
+                                 agenda.contentSize.height - agenda.bounds.height + agenda.adjustedContentInset.bottom)
+                agenda.setContentOffset(CGPoint(
+                    x: agenda.contentOffset.x,
+                    y: min(bottom, agenda.contentOffset.y + agenda.bounds.height / 2)
+                ), animated: false)
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            let target = try XCTUnwrap(visibleCard(), "Date \(day) must become available when the agenda scrolls.")
+            controller.target = target
+            system.requestFocusUpdate(to: controller)
+            system.updateFocusIfNeeded()
+            try await waitUntil { NativeFocusRegion.contains(system.focusedItem, in: target) }
+        }
+        XCTAssertGreaterThan(agenda.contentOffset.y, agenda.bounds.height * 2)
+    }
+
     func testPinnedUpcomingInitiallyFocusesAReleaseRatherThanTheToolbar() async throws {
         let suite = "UpcomingPresentationHostedTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -183,14 +288,18 @@ final class UpcomingPresentationHostedTests: XCTestCase {
     private var previous: UIWindow?
 
     private func host(_ view: some View) throws -> UIWindow {
+        try host(controller: UIHostingController(rootView: view
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)))
+    }
+
+    private func host(controller: UIViewController) throws -> UIWindow {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        window.rootViewController = UIHostingController(rootView: view
-            .environment(\.themePalette, .dark)
-            .environment(\.colorScheme, .dark))
+        window.rootViewController = controller
         window.makeKeyAndVisible()
         return window
     }
@@ -201,8 +310,27 @@ final class UpcomingPresentationHostedTests: XCTestCase {
         previous?.makeKeyAndVisible()
     }
 
+    private func waitUntil(
+        _ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line
+    ) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(condition(), "The expected native focus/layout did not arrive.", file: file, line: line)
+    }
+
     private func descendants(_ view: UIView) -> [UIView] {
         [view] + view.subviews.flatMap(descendants)
+    }
+
+    @MainActor
+    private final class UpcomingFocusController: UIHostingController<AnyView> {
+        var target: UIView?
+
+        override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+            target.map { [$0] } ?? super.preferredFocusEnvironments
+        }
     }
 
     private func focusItems(in window: UIWindow) -> [any UIFocusItem] {

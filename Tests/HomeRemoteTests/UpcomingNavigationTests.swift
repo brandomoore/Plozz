@@ -2,6 +2,38 @@ import XCTest
 
 @MainActor
 final class UpcomingNavigationTests: XCTestCase {
+    func testDenseDateScrollsHorizontallyAndDownThroughOffscreenDates() {
+        let app = launch(sparse: false, extraArguments: ["--capture-thirty", "--capture-many-days"])
+        defer { app.terminate() }
+        let first = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "01. ")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 20), app.debugDescription)
+        assertFocused(first, in: app)
+        for number in 2...9 {
+            XCUIRemote.shared.press(.right)
+            assertFocused(app.buttons.matching(NSPredicate(
+                format: "label BEGINSWITH %@", String(format: "%02d. ", number)
+            )).firstMatch, in: app)
+        }
+        XCUIRemote.shared.press(.down)
+        let movie = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "A saved movie")).firstMatch
+        assertFocused(movie, in: app)
+        for day in 3..<20 {
+            XCUIRemote.shared.press(.down)
+            assertFocused(app.buttons.matching(NSPredicate(
+                format: "label BEGINSWITH %@", "Upcoming day \(day)"
+            )).firstMatch, in: app)
+        }
+        for day in (3..<19).reversed() {
+            XCUIRemote.shared.press(.up)
+            assertFocused(app.buttons.matching(NSPredicate(
+                format: "label BEGINSWITH %@", "Upcoming day \(day)"
+            )).firstMatch, in: app)
+        }
+        XCUIRemote.shared.press(.up)
+        assertFocused(movie, in: app)
+        attach(app, name: "Upcoming deep agenda return")
+    }
+
     func testPinnedEntryPrefersFirstReleaseAndRestoresItFromNavigation() {
         let app = launch()
         defer { app.terminate() }
@@ -104,13 +136,13 @@ final class UpcomingNavigationTests: XCTestCase {
         XCTFail("Could not reach calendar date using the remote: \(app.debugDescription)")
     }
 
-    private func launch() -> XCUIApplication {
+    private func launch(sparse: Bool = true, extraArguments: [String] = []) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = [
-            "--upcoming-capture-fixture", "--capture-pinned", "--capture-sparse",
+            "--upcoming-capture-fixture", "--capture-pinned",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
-        ]
+        ] + (sparse ? ["--capture-sparse"] : []) + extraArguments
         app.launchEnvironment["PLZHFOCUS_STDOUT"] = "1"
         app.launch()
         return app

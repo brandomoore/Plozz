@@ -945,10 +945,15 @@ private struct UpcomingCaptureProvider: MediaProvider {
             [.init(kind: .digital, date: Calendar.current.date(byAdding: .day, value: 2, to: today)!, regionCode: "US")],
             for: movie, interests: [.watchlist], regionCode: "US"
         )
-        if !thirty, ["--capture-scrolled", "--capture-selection", "--capture-calendar-collapsed", "--capture-calendar-resize"]
-            .contains(where: ProcessInfo.processInfo.arguments.contains) {
+        let manyDays = ProcessInfo.processInfo.arguments.contains("--capture-many-days")
+        if manyDays || (!thirty && ["--capture-scrolled", "--capture-selection", "--capture-calendar-collapsed", "--capture-calendar-resize"]
+            .contains(where: ProcessInfo.processInfo.arguments.contains)) {
             for index in 3..<20 {
-                let item = series[index % series.count]
+                var item = series[index % series.count]
+                if manyDays {
+                    item.id = "capture-calendar-day-\(index)"
+                    item.title = "Upcoming day \(index)"
+                }
                 result += UpcomingReleaseBuilder.episodes(
                     [.init(
                         seriesIdentity: .external(source: "capture", value: item.id),
