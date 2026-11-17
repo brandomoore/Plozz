@@ -40,12 +40,12 @@ struct PlaybackOptionsPane: View {
                     )
                 }, palette: palette, focus: $focus)
                 .disabled(model.upscaling.isChanging)
-                Text(model.upscaling.isChanging
-                     ? LocalizedStringResource("Applying…")
-                     : LocalizedStringResource("Reloads at the current position. This playback only."))
-                    .font(.caption)
-                    .plozzForeground(.secondary)
-                    .padding(16)
+                if model.upscaling.isChanging {
+                    Text("Applying…")
+                        .font(.caption)
+                        .plozzForeground(.secondary)
+                        .padding(16)
+                }
             }
             if screen == .zoom {
                 PlayerMenuRowStack(rows: zoom.availableModes.filter { $0 != .custom }.map { mode in

@@ -227,7 +227,6 @@ public enum PlayerMoreMenu {
         if model.upscaling.isAvailable {
             video.append(UIMenu(
                 title: localized("Upscaling"),
-                subtitle: localized("Reloads at the current position. This playback only."),
                 children: VideoUpscaling.allCases.map { selection in
                     UIAction(
                         title: localized(selection.title),
