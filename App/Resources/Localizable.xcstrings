@@ -1199581,6 +1199581,7 @@
       }
     },
     "iPhone, iPad and Apple TV use separate defaults. Changing zoom in the player saves it for that movie or TV show." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1199808,6 +1199809,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "iPhone、iPad 和 Apple TV 三類裝置各有獨立的預設值。在播放器中調整縮放，會為該電影或整部影集儲存設定。"
+          }
+        }
+      }
+    },
+    "iPhone, iPad and Apple TV use separate defaults. Changing zoom mode saves it for that movie or TV show." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تستخدم أجهزة iPhone وiPad وApple TV إعدادات افتراضية منفصلة. يؤدي تغيير وضع التكبير إلى حفظه لذلك الفيلم أو المسلسل."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad и Apple TV използват отделни настройки по подразбиране. Когато промените режима на мащабиране, той се запазва за съответния филм или сериал."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad ও Apple TV-এর ডিফল্ট সেটিংস আলাদা। জুম মোড পরিবর্তন করলে তা সেই সিনেমা বা টিভি সিরিজের জন্য সংরক্ষিত হয়।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’iPhone, l’iPad i l’Apple TV tenen valors per defecte independents. Quan canvieu el mode de zoom, es desa per a aquella pel·lícula o sèrie."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad a Apple TV používají samostatná výchozí nastavení. Když změníte režim přiblížení, uloží se pro daný film nebo seriál."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad og Apple TV har hver deres standardindstillinger. Når du ændrer zoomtilstanden, gemmes den for den pågældende film eller tv-serie."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad und Apple TV verwenden jeweils eigene Standardeinstellungen. Änderungen am Zoommodus werden für den jeweiligen Film oder die jeweilige Serie gespeichert."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Τα iPhone, iPad και Apple TV χρησιμοποιούν ξεχωριστές προεπιλογές. Η αλλαγή της λειτουργίας ζουμ αποθηκεύεται για τη συγκεκριμένη ταινία ή τηλεοπτική σειρά."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad y Apple TV usan valores predeterminados independientes. Al cambiar el modo de zoom, se guarda para esa película o serie."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone، iPad و Apple TV پیش‌فرض‌های جداگانه‌ای دارند. با تغییر حالت بزرگ‌نمایی، انتخاب شما برای همان فیلم یا سریال ذخیره می‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad ja Apple TV käyttävät erillisiä oletusasetuksia. Zoomaustilan muutos tallennetaan kyseiselle elokuvalle tai TV-sarjalle."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les réglages par défaut sont distincts sur iPhone, iPad et Apple TV. Tout changement du mode de zoom est enregistré pour le film ou la série en question."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ל-iPhone, ל-iPad ול-Apple TV יש ברירות מחדל נפרדות. שינוי מצב הזום שומר את הבחירה לאותו סרט או לכל הסדרה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad और Apple TV की डिफ़ॉल्ट सेटिंग्स अलग-अलग हैं। ज़ूम मोड बदलने पर आपकी पसंद उस फ़िल्म या पूरी टीवी सीरीज़ के लिए सहेजी जाती है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad i Apple TV imaju zasebne zadane postavke. Promjena načina zumiranja sprema odabir za taj film ili cijelu TV seriju."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az iPhone, az iPad és az Apple TV külön alapértelmezett beállításokat használ. A nagyítási mód módosításakor a rendszer az adott filmhez vagy a teljes sorozathoz menti a választást."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad, dan Apple TV memiliki pengaturan default yang terpisah. Mengubah mode zoom akan menyimpan pilihan untuk film atau seluruh serial TV tersebut."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad e Apple TV usano impostazioni predefinite separate. Quando cambi la modalità zoom, la scelta viene salvata per quel film o per l’intera serie TV."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone、iPad、Apple TVでは、それぞれ別のデフォルト設定を使います。ズームモードを変更すると、その映画やテレビシリーズ全体の設定として保存されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad, Apple TV는 각각 별도의 기본 설정을 사용합니다. 확대/축소 모드를 변경하면 해당 영화 또는 TV 시리즈 전체의 설정으로 저장됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad dan Apple TV menggunakan tetapan lalai yang berasingan. Perubahan mod zum disimpan untuk filem atau seluruh siri TV tersebut."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad og Apple TV har hver sine standardinnstillinger. Når du endrer zoommodus, lagres den for den aktuelle filmen eller hele TV-serien."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad en Apple TV hebben elk hun eigen standaardinstellingen. Als je de zoommodus wijzigt, wordt die opgeslagen voor die film of de hele tv-serie."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad i Apple TV mają osobne ustawienia domyślne. Po zmianie tryb powiększenia jest zapisywany dla danego filmu lub całego serialu."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad e Apple TV têm ajustes padrão separados. Alterar o modo de zoom salva a escolha para esse filme ou essa série."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad și Apple TV au setări implicite separate. La schimbarea modului de zoom, acesta se salvează pentru filmul sau serialul respectiv."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad и Apple TV используют отдельные настройки по умолчанию. При смене режима масштабирования он сохраняется для этого фильма или сериала."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad a Apple TV majú samostatné predvolené nastavenia. Po zmene sa režim priblíženia uloží pre daný film alebo seriál."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad in Apple TV imajo ločene privzete nastavitve. Spremenjeni način povečave se shrani za ta film ali serijo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad i Apple TV imaju zasebna podrazumevana podešavanja. Kada promenite režim zumiranja, on se čuva za taj film ili seriju."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad och Apple TV har separata standardlägen. När du ändrar zoomläget sparas det för filmen eller hela tv-serien."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad และ Apple TV ใช้ค่าเริ่มต้นแยกกัน เมื่อเปลี่ยนโหมดซูม ระบบจะบันทึกโหมดนั้นไว้สำหรับภาพยนตร์เรื่องนั้นหรือทั้งซีรีส์"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad ve Apple TV için ayrı varsayılan ayarlar kullanılır. Yakınlaştırma modunu değiştirdiğinizde seçiminiz o film veya dizinin tamamı için kaydedilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Для iPhone, iPad і Apple TV діють окремі типові налаштування. Змінений режим масштабування зберігається для цього фільму або всього серіалу."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone، iPad اور Apple TV کی ڈیفالٹ ترتیبات الگ الگ ہیں۔ زوم موڈ تبدیل کرنے پر اسے اس فلم یا پوری ٹی وی سیریز کے لیے محفوظ کر لیا جاتا ہے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad và Apple TV có chế độ mặc định riêng. Khi đổi chế độ thu phóng, lựa chọn của bạn sẽ được lưu cho phim đó hoặc toàn bộ loạt phim truyền hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone、iPad 和 Apple TV 各有独立的默认缩放模式。更改缩放模式后，会为这部电影或整部剧集保存所选模式。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone、iPad 和 Apple TV 各有獨立的預設縮放模式。變更縮放模式後，會為這部電影或整部影集儲存所選模式。"
           }
         }
       }
