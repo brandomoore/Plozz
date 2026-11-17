@@ -317341,6 +317341,238 @@
         }
       }
     },
+    "Custom zoom" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تكبير مخصص"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Мащабиране по избор"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "কাস্টম জুম"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom personalitzat"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vlastní přiblížení"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Brugerdefineret zoom"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Benutzerdefinierter Zoom"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Προσαρμοσμένο ζουμ"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom personalizado"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "بزرگ‌نمایی سفارشی"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mukautettu zoomaus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom personnalisé"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הגדלה מותאמת אישית"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "कस्टम ज़ूम"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prilagođeno zumiranje"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Egyéni nagyítás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom kustom"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom personalizzato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "カスタムズーム"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "사용자 지정 확대/축소"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zum tersuai"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Egendefinert zoom"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aangepaste zoom"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Własne powiększenie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom personalizado"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom personalizat"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Свой масштаб"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vlastné priblíženie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povečava po meri"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prilagođeno uvećanje"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anpassad zoom"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ซูมแบบกำหนดเอง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Özel yakınlaştırma"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Власний масштаб"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "حسب ضرورت زوم"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thu phóng tùy chỉnh"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自定义缩放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自訂縮放"
+          }
+        }
+      }
+    },
     "Custom · %@p · %@ Kbps" : {
       "localizations" : {
         "ar" : {
@@ -325950,6 +326182,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "預設播放器"
+          }
+        }
+      }
+    },
+    "Default zoom" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "التكبير الافتراضي"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Мащабиране по подразбиране"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ডিফল্ট জুম"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom per omissió"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Výchozí přiblížení"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardzoom"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardzoom"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Προεπιλεγμένο ζουμ"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom predeterminado"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "بزرگ‌نمایی پیش‌فرض"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oletuszoomaus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom par défaut"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הגדלה כברירת מחדל"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "डिफ़ॉल्ट ज़ूम"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zadano zumiranje"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alapértelmezett nagyítás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom default"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom predefinito"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "デフォルトのズーム"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "기본 확대/축소"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zum lalai"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardzoom"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standaardzoom"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Domyślne powiększenie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom padrão"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom implicit"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Масштаб по умолчанию"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Predvolené priblíženie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Privzeta povečava"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Podrazumevano uvećanje"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardzoom"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การซูมเริ่มต้น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Varsayılan yakınlaştırma"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Типовий масштаб"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "طے شدہ زوم"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thu phóng mặc định"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "默认缩放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "預設縮放"
           }
         }
       }
@@ -1154752,6 +1155216,238 @@
         }
       }
     },
+    "Zoom" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "التكبير"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Мащабиране"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "জুম"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Přiblížení"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ζουμ"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "بزرگ‌نمایی"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoomaus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הגדלה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ज़ूम"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zumiranje"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nagyítás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ズーム"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "확대/축소"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zum"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Powiększenie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Масштаб"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Priblíženie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povečava"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uvećanje"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ซูม"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yakınlaştırma"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Масштаб"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زوم"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thu phóng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "缩放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "縮放"
+          }
+        }
+      }
+    },
     "Zoom Amount" : {
       "localizations" : {
         "ar" : {
@@ -1198880,6 +1199576,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "iPhone 或 iPad"
+          }
+        }
+      }
+    },
+    "iPhone, iPad and Apple TV use separate defaults. Changing zoom in the player saves it for that movie or TV show." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لكل من iPhone وiPad وApple TV تكبير افتراضي مستقل. تغيير التكبير في المشغّل يحفظه لهذا الفيلم أو للمسلسل بأكمله."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad и Apple TV използват отделни настройки по подразбиране. Промяната на мащабирането в плейъра се запазва за съответния филм или целия сериал."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad ও Apple TV-এর ডিফল্ট সেটিংস আলাদা। প্লেয়ারে জুম বদলালে তা সেই সিনেমা বা পুরো টিভি সিরিজের জন্য সংরক্ষিত হয়।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’iPhone, l’iPad i l’Apple TV tenen valors per omissió independents. Si canvies el zoom al reproductor, es desa per a la pel·lícula o per a tota la sèrie."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pro iPhone, iPad a Apple TV se používají samostatná výchozí nastavení. Změna přiblížení v přehrávači se uloží pro daný film nebo celý seriál."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad og Apple TV har hver deres standardindstillinger. Hvis du ændrer zoom i afspilleren, gemmes valget for den film eller hele tv-serien."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Für iPhone, iPad und Apple TV gelten separate Standardwerte. Zoomänderungen im Player werden für den jeweiligen Film oder die gesamte Serie gespeichert."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Για iPhone, iPad και Apple TV ισχύουν ξεχωριστές προεπιλογές. Οι αλλαγές ζουμ στο πρόγραμμα αναπαραγωγής αποθηκεύονται για τη συγκεκριμένη ταινία ή ολόκληρη τη σειρά."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad y Apple TV usan valores predeterminados independientes. Los cambios de zoom en el reproductor se guardan para esa película o toda la serie."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone، iPad و Apple TV پیش‌فرض‌های جداگانه دارند. تغییر بزرگ‌نمایی در پخش‌کننده برای همان فیلم یا کل سریال ذخیره می‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad ja Apple TV käyttävät erillisiä oletusasetuksia. Soittimessa tehdyt zoomausmuutokset tallennetaan kyseiselle elokuvalle tai koko TV-sarjalle."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad et Apple TV ont des réglages par défaut distincts. Les changements de zoom dans le lecteur sont mémorisés pour ce film ou toute la série."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לכל סוג מכשיר (iPhone, iPad ו-Apple TV) יש ברירת מחדל נפרדת. שינוי ההגדלה בנגן נשמר עבור הסרט או סדרת הטלוויזיה כולה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "डिवाइस के हर प्रकार (iPhone, iPad और Apple TV) का डिफ़ॉल्ट अलग है। प्लेयर में ज़ूम बदलने पर वह उस फ़िल्म या पूरी टीवी सीरीज़ के लिए सहेजा जाता है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Svaka vrsta uređaja (iPhone, iPad i Apple TV) ima zasebnu zadanu postavku. Promjena zumiranja u reproduktoru sprema se za taj film ili cijelu TV seriju."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Készüléktípusonként (iPhone, iPad, Apple TV) külön alapérték érvényes. A lejátszóban módosított nagyítást a rendszer az adott filmhez vagy a teljes tévésorozathoz menti."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Setiap jenis perangkat (iPhone, iPad, dan Apple TV) memiliki pengaturan default terpisah. Perubahan zoom di pemutar disimpan untuk film atau keseluruhan serial TV yang sedang ditonton."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ogni tipo di dispositivo (iPhone, iPad e Apple TV) ha uno zoom predefinito distinto. Le modifiche allo zoom nel lettore vengono salvate per quel film o per l’intera serie TV."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "デフォルト設定はデバイスの種類（iPhone、iPad、Apple TV）ごとに分かれています。プレーヤーでズームを変更すると、その映画またはテレビシリーズ全体の設定として保存されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad, Apple TV는 기기 유형별로 기본값을 따로 사용합니다. 플레이어에서 확대/축소를 변경하면 해당 영화나 TV 시리즈 전체의 설정으로 저장됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad dan Apple TV menggunakan tetapan lalai berasingan mengikut jenis peranti. Zum yang diubah dalam pemain disimpan untuk filem atau seluruh siri TV tersebut."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad og Apple TV har egne standardinnstillinger etter enhetstype. Endrer du zoom i avspilleren, lagres valget for den filmen eller hele TV-serien."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elk apparaattype (iPhone, iPad en Apple TV) heeft een eigen standaardinstelling. Als je de zoom in de speler wijzigt, wordt die keuze opgeslagen voor die film of de hele tv-serie."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Każdy typ urządzenia — iPhone, iPad i Apple TV — ma osobne ustawienia domyślne. Zmiana powiększenia w odtwarzaczu zostaje zapisana dla danego filmu lub całego serialu."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad e Apple TV têm ajustes padrão separados. Alterar o zoom no reprodutor salva a escolha para esse filme ou essa série."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad și Apple TV au setări implicite separate. Modificarea zoomului în player salvează alegerea pentru filmul sau serialul respectiv."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Для iPhone, iPad и Apple TV используются отдельные настройки по умолчанию. Если изменить масштаб в плеере, он сохранится для этого фильма или сериала."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad a Apple TV používajú samostatné predvolené nastavenia. Zmena priblíženia v prehrávači sa uloží pre daný film alebo seriál."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad in Apple TV uporabljajo ločene privzete nastavitve. Sprememba povečave v predvajalniku se shrani za ta film ali to serijo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad i Apple TV imaju zasebna podrazumevana podešavanja. Promena uvećanja u plejeru čuva izbor za taj film ili seriju."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad och Apple TV har separata standardinställningar. Ändrar du zoomen i spelaren sparas den för filmen eller hela tv-serien."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad และ Apple TV ใช้ค่าเริ่มต้นแยกกัน เมื่อปรับซูมในตัวเล่น จะบันทึกค่านั้นไว้สำหรับภาพยนตร์เรื่องนั้นหรือทั้งซีรีส์"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad ve Apple TV için varsayılan ayarlar ayrıdır. Oynatıcıda yakınlaştırmayı değiştirirseniz bu ayar, o film veya dizinin tamamı için kaydedilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad і Apple TV мають окремі типові налаштування. Змінений у програвачі масштаб зберігається для цього фільму або всього серіалу."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone، iPad اور Apple TV کی طے شدہ ترتیبات الگ ہیں۔ پلیئر میں زوم کی تبدیلی اسی فلم یا پوری ٹی وی سیریز کے لیے محفوظ ہو جاتی ہے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone, iPad và Apple TV dùng giá trị mặc định riêng. Khi đổi mức thu phóng trong trình phát, lựa chọn sẽ được lưu cho phim đó hoặc toàn bộ sê-ri."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone、iPad 和 Apple TV 三类设备各有独立的默认设置。在播放器中调整缩放，会为该电影或整部电视剧保存设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone、iPad 和 Apple TV 三類裝置各有獨立的預設值。在播放器中調整縮放，會為該電影或整部影集儲存設定。"
           }
         }
       }
@@ -1290707,6 +1291635,470 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "v%@"
+          }
+        }
+      }
+    },
+    "video crop black bars fit stretch picture notch Dynamic Island" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "فيديو اقتصاص أشرطة سوداء ملاءمة تمديد صورة شق الشاشة نوتش الجزيرة الديناميكية Dynamic Island"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "видео изрязване черни ленти побиране разтягане картина прорез Dynamic Island"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ভিডিও ক্রপ কাটছাঁট কালো বার ফিট মাপসই প্রসারিত ছবি নচ ডায়নামিক আইল্যান্ড Dynamic Island"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vídeo retallar franges negres ajustar estirar imatge osca Dynamic Island"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video oříznutí černé pruhy přizpůsobení roztažení obraz výřez Dynamic Island"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video beskæring sorte bjælker tilpas stræk billede skærmudskæring Dynamic Island"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video Zuschneiden schwarze Balken Einpassen Strecken Bild Notch Displayaussparung Dynamic Island"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "βίντεο περικοπή μαύρες μπάρες προσαρμογή τέντωμα εικόνα εγκοπή notch Dynamic Island"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vídeo video recortar recorte barras negras ajustar estirar imagen muesca notch Dynamic Island"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ویدیو برش نوارهای سیاه تناسب کشیدگی تصویر بریدگی ناچ داینامیک آیلند Dynamic Island"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video rajaus mustat palkit sovitus venytys kuva näyttölovi Dynamic Island"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vidéo recadrage bandes noires ajuster étirer image encoche Dynamic Island"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "וידאו חיתוך פסים שחורים התאמה מתיחה תמונה מגרעת האי הדינמי Dynamic Island"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वीडियो क्रॉप काली पट्टियाँ फ़िट स्ट्रेच तस्वीर नॉच डायनेमिक आइलैंड Dynamic Island"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video obrezivanje crne trake prilagodba rastezanje slika urez Dynamic Island"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "videó körbevágás fekete sávok illesztés nyújtás kép kamerakivágás szenzorsziget Dynamic Island"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video potong crop bilah hitam garis hitam paskan rentangkan gambar takik poni Dynamic Island"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video ritaglio bande nere adatta allunga immagine tacca notch Dynamic Island"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "動画 トリミング 黒帯 画面に合わせる 引き伸ばし 映像 ノッチ ダイナミックアイランド Dynamic Island"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "비디오 동영상 자르기 검은 여백 레터박스 화면 맞춤 늘이기 화면 노치 다이내믹 아일랜드 Dynamic Island"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video pangkas jalur hitam muat skrin regang gambar takuk Dynamic Island"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video beskjæring svarte felt tilpass strekk bilde skjermhakk Dynamic Island"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video bijsnijden zwarte balken passend maken uitrekken beeld inkeping notch Dynamic Island"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "wideo przycinanie czarne pasy dopasowanie rozciąganie obraz wycięcie notch Dynamic Island"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vídeo recorte barras pretas ajustar esticar imagem entalhe notch Dynamic Island"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video decupare benzi negre încadrare întindere imagine decupaj ecran notch Dynamic Island"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "видео обрезка чёрные полосы вписать растянуть изображение вырез Dynamic Island динамический остров"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video orezanie čierne pruhy prispôsobenie roztiahnutie obraz výrez Dynamic Island"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video obrezovanje črni robovi prileganje raztezanje slika izrez Dynamic Island"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video isecanje crne trake uklapanje razvlačenje slika izrez Dynamic Island dinamičko ostrvo"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video beskärning svarta fält anpassa sträck ut bild skärmutskärning flärp Dynamic Island"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "วิดีโอ ครอบตัด แถบดำ ขอบดำ พอดี ยืด ภาพ รอยบาก Dynamic Island"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video kırpma siyah bantlar sığdır esnet görüntü çentik Dynamic Island Dinamik Ada"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "відео обрізання чорні смуги вписати розтягнути зображення виріз Dynamic Island динамічний острів"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ویڈیو کراپ تراشنا سیاہ پٹیاں فٹ پھیلانا تصویر نوچ Dynamic Island ڈائنامک آئی لینڈ"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video cắt xén viền đen vừa khung kéo giãn hình ảnh tai thỏ Dynamic Island đảo động"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "视频 裁剪 黑边 适应屏幕 拉伸 画面 刘海 灵动岛"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "影片 裁切 黑邊 符合螢幕 延展 畫面 瀏海 動態島"
+          }
+        }
+      }
+    },
+    "video crop black bars fit stretch picture size percentage" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "فيديو اقتصاص أشرطة سوداء ملاءمة تمديد صورة حجم نسبة مئوية"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "видео изрязване черни ленти побиране разтягане картина размер процент"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ভিডিও ক্রপ কাটছাঁট কালো বার ফিট মাপসই প্রসারিত ছবি আকার মাপ শতাংশ"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vídeo retallar franges negres ajustar estirar imatge mida percentatge"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video oříznutí černé pruhy přizpůsobení roztažení obraz velikost procenta"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video beskæring sorte bjælker tilpas stræk billede størrelse procent"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video Zuschneiden schwarze Balken Einpassen Strecken Bild Größe Prozent"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "βίντεο περικοπή μαύρες μπάρες προσαρμογή τέντωμα εικόνα μέγεθος ποσοστό"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vídeo video recortar recorte barras negras ajustar estirar imagen tamaño porcentaje"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ویدیو برش نوارهای سیاه تناسب کشیدگی تصویر اندازه درصد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video rajaus mustat palkit sovitus venytys kuva koko prosentti prosenttiosuus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vidéo recadrage bandes noires ajuster étirer image taille pourcentage"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "וידאו חיתוך פסים שחורים התאמה מתיחה תמונה גודל אחוזים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वीडियो क्रॉप काली पट्टियाँ फ़िट स्ट्रेच तस्वीर आकार प्रतिशत"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video obrezivanje crne trake prilagodba rastezanje slika veličina postotak"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "videó körbevágás fekete sávok illesztés nyújtás kép méret százalék"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video potong crop bilah hitam garis hitam paskan rentangkan gambar ukuran persentase"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video ritaglio bande nere adatta allunga immagine dimensione percentuale"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "動画 トリミング 黒帯 画面に合わせる 引き伸ばし 映像 サイズ 割合 パーセント"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "비디오 동영상 자르기 검은 여백 레터박스 화면 맞춤 늘이기 화면 크기 백분율 퍼센트"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video pangkas jalur hitam muat skrin regang gambar saiz peratus"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video beskjæring svarte felt tilpass strekk bilde størrelse prosent"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video bijsnijden zwarte balken passend maken uitrekken beeld grootte percentage"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "wideo przycinanie czarne pasy dopasowanie rozciąganie obraz rozmiar procent"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vídeo recorte barras pretas ajustar esticar imagem tamanho porcentagem"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video decupare benzi negre încadrare întindere imagine dimensiune procent"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "видео обрезка чёрные полосы вписать растянуть изображение размер проценты"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video orezanie čierne pruhy prispôsobenie roztiahnutie obraz veľkosť percento"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video obrezovanje črni robovi prileganje raztezanje slika velikost odstotek"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video isecanje crne trake uklapanje razvlačenje slika veličina procenat"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video beskärning svarta fält anpassa sträck ut bild storlek procent"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "วิดีโอ ครอบตัด แถบดำ ขอบดำ พอดี ยืด ภาพ ขนาด เปอร์เซ็นต์"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video kırpma siyah bantlar sığdır esnet görüntü boyut yüzde"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "відео обрізання чорні смуги вписати розтягнути зображення розмір відсотки"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ویڈیو کراپ تراشنا سیاہ پٹیاں فٹ پھیلانا تصویر سائز فیصد"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "video cắt xén viền đen vừa khung kéo giãn hình ảnh kích thước phần trăm"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "视频 裁剪 黑边 适应屏幕 拉伸 画面 大小 百分比"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "影片 裁切 黑邊 符合螢幕 延展 畫面 大小 百分比"
           }
         }
       }

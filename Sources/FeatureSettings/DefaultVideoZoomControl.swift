@@ -95,11 +95,7 @@ public struct DefaultVideoZoomControl: View {
     }
 
     private var help: Text {
-        switch platform {
-        case .phone: Text("For iPhone. Movies and series keep any zoom you've chosen.")
-        case .tablet: Text("For iPad. Movies and series keep any zoom you've chosen.")
-        case .television: Text("For Apple TV. Movies and series keep any zoom you've chosen.")
-        }
+        Text("iPhone, iPad and Apple TV use separate defaults. Changing zoom in the player saves it for that movie or TV show.")
     }
 }
 #endif
