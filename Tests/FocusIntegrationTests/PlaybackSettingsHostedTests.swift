@@ -63,6 +63,56 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         XCTAssertEqual(store.load().videoUpscaling, .off)
     }
 
+    func testVersionSelectionIsOneLabeledMenuForEverySavedMode() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let suite = "VersionSelectionMenuTV-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let playback = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        let page = PlaybackDetailView(
+            playback: playback,
+            subtitleBehavior: SubtitleBehaviorModel(store: SubtitleBehaviorStore(defaults: defaults)),
+            subtitleStyle: SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults)),
+            subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
+            audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
+        )
+        let row = try XCTUnwrap(page.versionSelectionRows.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView:
+            SettingsFormLayout(title: Text("Playback"), rows: [row])
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .frame(width: SettingsFormMetrics.pageWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let modes: [(PlaybackVersionSelectionMode?, String)] = [
+            (nil, "Choose on first play"), (.askEveryTime, "Ask every time"),
+            (.automatic, "Choose automatically"), (.serverOrder, "Use first from server")
+        ]
+        for (mode, value) in modes {
+            playback.settings.versionSelectionMode = mode
+            try await Task.sleep(for: .milliseconds(400))
+            let text = try visibleText(in: window, attachment: "Version-selection-menu-\(mode?.rawValue ?? "unset")")
+            XCTAssertEqual(text.components(separatedBy: "Version selection").count - 1, 1, text)
+            XCTAssertTrue(text.contains(value), text)
+            for (other, otherValue) in modes where other != mode {
+                XCTAssertFalse(text.contains(otherValue), "Unselected choices belong inside the menu: \(text)")
+            }
+            XCTAssertEqual(profileFocusFrames(in: window).count, 2, "Only the menu and existing help button are focusable.")
+            XCTAssertEqual(playback.settings.versionSelectionMode, mode, "Rendering must not select a mode.")
+        }
+    }
+
     func testExternalPlayerFocusPreviewsOnlyLimitationsWithoutChangingSelection() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -599,7 +649,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
                 if offset >= bottom { break }
             }
             for label in [
-                "Version selection", "Choose on first play", "Ask every time", "Choose automatically",
+                "Version selection", "Choose on first play",
                 "Remember series version choices",
                 "Remember audio language per series",
                 "Autoplay next episode", "Autoplay next playlist item",
@@ -610,8 +660,9 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             ] {
                 XCTAssertTrue(visible.contains(label), "Missing inline control \(label): \(visible)")
             }
-            for option in ["1 minute", "5 minutes", "10 minutes", "Maximum available", "45 seconds"] {
-                XCTAssertFalse(visible.contains(option), "Buffer choices must stay inside their menus: \(visible)")
+            for option in ["Ask every time", "Choose automatically", "Use first from server",
+                           "1 minute", "5 minutes", "10 minutes", "Maximum available", "45 seconds"] {
+                XCTAssertFalse(visible.contains(option), "Choices must stay inside their menus: \(visible)")
             }
             XCTAssertFalse(visible.contains("Turn off if playback stutters"), visible)
             XCTAssertFalse(visible.contains("Applies to new playback sessions"), visible)

@@ -593,32 +593,34 @@ struct PlaybackDetailView: View {
 
     // MARK: - Split sections
 
-    private var versionSelectionRows: [SettingsSplitRow] {
+    var versionSelectionRows: [SettingsSplitRow] {
         [
             SettingsSplitRow(
                 id: "version-selection", title: "Version selection",
                 description: "Ask each time, let Plozz choose, or use the server's first version."
             ) {
                 #if os(tvOS)
-                SettingsControlRows {
-                    if playback.settings.versionSelectionMode == nil {
-                        Text("Choose on first play")
-                            .settingsHelperText()
-                    }
-                    ForEach(PlaybackVersionSelectionMode.allCases, id: \.self) { mode in
-                        SettingsCheckableRow(
-                            title: Text(mode.title), titleLineLimit: nil,
-                            isChecked: playback.settings.versionSelectionMode == mode
-                        ) {
-                            playback.settings.versionSelectionMode = mode
+                SettingsMenuRow(
+                    title: "Version selection",
+                    value: Text(playback.settings.versionSelectionMode?.title ?? "Choose on first play")
+                ) {
+                    Picker("Version selection", selection: $playback.settings.versionSelectionMode) {
+                        if playback.settings.versionSelectionMode == nil {
+                            Text("Choose on first play")
+                                .tag(Optional<PlaybackVersionSelectionMode>.none)
+                                .disabled(true)
+                        }
+                        ForEach(PlaybackVersionSelectionMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(Optional(mode))
                         }
                     }
-                    .settingsSearchAnchor("version-selection")
                 }
+                .accessibilityIdentifier("playback-version-selection")
+                .settingsSearchAnchor("version-selection")
                 #else
                 PlaybackVersionPreferencePicker(model: playback)
                 #endif
-            }.descriptionAccessory {
+            }.labeledControl().descriptionAccessory {
                 #if os(tvOS)
                 return AnyView(AutomaticVersionInfoButton())
                 #else

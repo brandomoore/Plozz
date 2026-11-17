@@ -2391,6 +2391,13 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "count": 4
     },
+    "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVGuidePreferences|body|Picker|\"Refresh while open\"": {
+      "reason": "The contextual interval Picker edits the indexed Refresh while open row; live-guide-update owns search reveal and selection.",
+      "covered_by": [
+        "live-guide-update"
+      ],
+      "count": 1
+    },
     "Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVBrowsingSettingsSections|body|Picker|\"Live TV opens to\"": {
       "reason": "Configured renderer or contextual choice for the indexed control family; the containing editor owns reveal and selection.",
       "covered_by": [

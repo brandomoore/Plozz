@@ -8,6 +8,7 @@ import CoreNetworking
 import FeatureSyncSetup
 import FeatureSyncCloud
 import FeatureWatchlistCore
+import FeatureLiveTVCore
 
 // MARK: - CloudSyncUIModel
 //
@@ -334,6 +335,7 @@ extension AppState {
             try providerCredentialSync.eraseLocalState()
             try TrackerTokenSyncBridge.eraseLocalTokens()
             try LiveTVSourceStorage.eraseAllSources()
+            try eraseLiveTVLastSeen(profilesModel.profiles.map(\.id))
             for id in profilesModel.profiles.map(\.id) {
                 guard await authorized() else { return .interrupted }
                 try await mediaAliasLedger.removeProfile(id)

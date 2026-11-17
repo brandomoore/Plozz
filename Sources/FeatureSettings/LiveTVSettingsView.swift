@@ -179,6 +179,28 @@ private struct LiveTVGuidePreferences: View {
         } footer: {
             Text("Preview after watching keeps the channel playing behind the guide when you leave full screen. Recently watched shows the channels you watched last at the top of the guide.")
         }
+        SettingsSectionGroup {
+            SettingsMenuRow(title: "Refresh while open", value: Text(Self.label(settings.guideUpdateInterval))) {
+                Picker("Refresh while open", selection: $settings.guideUpdateInterval) {
+                    ForEach(LiveTVGuideUpdateInterval.allCases, id: \.self) { Text(Self.label($0)).tag($0) }
+                }
+            }
+            .accessibilityIdentifier("live-tv-guide-update")
+            .settingsSearchAnchor("live-guide-update")
+        } footer: {
+            Text("Updates saved channel lists and guides while Plozz is open. When off, they still update when you use Live TV.")
+        }
+    }
+
+    private static func label(_ interval: LiveTVGuideUpdateInterval) -> LocalizedStringResource {
+        switch interval {
+        case .off: "Off"
+        case .hourly: "Every hour"
+        case .threeHours: "Every 3 hours"
+        case .sixHours: "Every 6 hours"
+        case .twelveHours: "Every 12 hours"
+        case .daily: "Every 24 hours"
+        }
     }
 }
 

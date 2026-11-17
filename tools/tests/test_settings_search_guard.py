@@ -219,6 +219,75 @@ class RepositoryCoverageTests(unittest.TestCase):
     def test_current_settings_controls_have_reviewed_coverage(self):
         self.assertEqual(GUARD.check(self.inventory, self.policy), [])
 
+    def guide_update_coverage_fixture(self):
+        guide = copy.deepcopy(next(
+            item for item in self.inventory
+            if item["name"] == "LiveTVGuidePreferences"
+            and item["file"] == "Sources/FeatureSettings/LiveTVSettingsView.swift"
+        ))
+        guide["calls"] = []
+        guide["controls"] = [
+            item for item in guide["controls"] if item["label"] == '"Refresh while open"'
+        ]
+        picker, = [item for item in guide["controls"] if item["kind"] == "Picker"]
+        self.assertEqual(picker["anchors"], [])
+        key = GUARD.control_key(guide, picker)
+        self.assertEqual(key, 'Sources/FeatureSettings/LiveTVSettingsView.swift|LiveTVGuidePreferences|body|Picker|"Refresh while open"')
+        catalog = component("SettingsSearchCatalog", "Sources/CoreModels/SettingsSearch.swift")
+        catalog["registrations"] = [
+            registration for item in self.inventory for registration in item["registrations"]
+            if registration["anchor"] == '"live-guide-update"'
+        ]
+        self.assertEqual(len(catalog["registrations"]), 1)
+        policy = {
+            "roots": [guide["name"]], "directories": ["Sources/FeatureSettings/"],
+            "traversable_directories": ["Sources/"], "boundaries": {},
+            "exclusions": {key: copy.deepcopy(self.policy["exclusions"][key])},
+        }
+        return [guide, catalog], policy, key
+
+    def test_live_guide_update_contextual_picker_has_exact_reviewed_coverage(self):
+        inventory, policy, key = self.guide_update_coverage_fixture()
+        self.assertEqual(policy["exclusions"][key]["count"], 1)
+        self.assertEqual(policy["exclusions"][key]["covered_by"], ["live-guide-update"])
+        self.assertTrue(policy["exclusions"][key]["reason"].strip())
+        self.assertEqual(GUARD.check(inventory, policy), [])
+        del policy["exclusions"][key]
+        errors = GUARD.check(inventory, policy)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('unregistered LiveTVGuidePreferences.body Picker "Refresh while open"', errors[0])
+
+    def test_live_guide_update_registration_rejects_stale_or_inexact_counts(self):
+        for mutation in ("removed", "duplicated", "widened-count"):
+            with self.subTest(mutation=mutation):
+                inventory, policy, key = self.guide_update_coverage_fixture()
+                guide = inventory[0]
+                picker, = [item for item in guide["controls"] if item["kind"] == "Picker"]
+                if mutation == "removed":
+                    guide["controls"].remove(picker)
+                elif mutation == "duplicated":
+                    guide["controls"].append(copy.deepcopy(picker))
+                else:
+                    policy["exclusions"][key]["count"] = 2
+                self.assertTrue(any(
+                    "Stale or widened coverage exclusion" in error and key in error
+                    for error in GUARD.check(inventory, policy)
+                ))
+
+    def test_live_guide_update_registration_requires_catalog_and_row_anchor(self):
+        inventory, policy, key = self.guide_update_coverage_fixture()
+        inventory[1]["registrations"] = []
+        self.assertIn(
+            f"Coverage exclusion points to a missing setting: {key} -> live-guide-update",
+            GUARD.check(inventory, policy),
+        )
+        inventory, policy, _ = self.guide_update_coverage_fixture()
+        inventory[0]["anchors"].remove('"live-guide-update"')
+        self.assertIn(
+            'Catalog destination has no source anchor: "live-guide-update"',
+            GUARD.check(inventory, policy),
+        )
+
     def test_refactored_editors_still_reject_new_unregistered_preferences(self):
         names = {
             "PlozziOSAppearanceSettingsView", "TrailersAndMusicSettingsView",
