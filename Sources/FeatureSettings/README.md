@@ -15,8 +15,11 @@ The Settings screen and its detail pages. Profile-aware and integration-aware.
 Playback's **Default zoom** uses the shared native menu on TV and mobile.
 Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
 control edits only its own choice. Custom exposes the existing 50-200% range.
-Saved movie/series overrides take priority. The playback settings payload carries
-all three defaults through profile switching, transfer and sync.
+Saved movie/series mode overrides take priority. Auto-crop's pinch-selected
+screen-edge/cutout-safe framing instead carries across all videos for that device
+type and profile. Changing Custom's percentage preserves that shared framing.
+The playback settings payload carries all three defaults through profile switching,
+transfer and sync.
 
 Live TV's **Clean channel names** switch is profile-scoped and off by default.
 The shared TV/mobile section previews up to three distinct original names from

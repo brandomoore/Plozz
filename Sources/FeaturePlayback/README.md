@@ -268,8 +268,8 @@ On iPhone and iPad, the Live TV guide's inline preview uses the shared
 previous/play-pause/next controls and an in-place fullscreen action.
 Fullscreen also exposes a bottom-trailing inward-arrow action to return to the
 preview, matching the expand control's placement; the top-left Close remains.
-Mobile fullscreen video uses the full player bounds, with Normal and Auto-crop
-respecting horizontal cutout insets independently of controls and subtitles.
+Mobile fullscreen video uses the full player bounds, with Normal and the cutout-safe
+Auto-crop level respecting horizontal cutout insets independently of controls and subtitles.
 Showing or hiding controls does not resize
 the picture. The status bar and persistent system overlays hide with the
 fullscreen controls and return when controls are revealed or fullscreen ends.
@@ -1484,11 +1484,16 @@ The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
 It applies to movies, episodes, extras, trailers and Live TV; each platform starts
 with Auto-crop black bars. Unsupported engines fall back to Normal without changing
 the saved choice. Unidentified disc-menu timelines retain Normal framing.
-An explicit zoom-mode choice, including Normal, a Custom percentage or Auto-crop's
-screen-edge/cutout-safe level, is remembered
-per profile and movie/series using the existing title preference store. Only the
-mode, percentage and Auto-crop viewport choice are saved, never detected rectangles.
-Older saved Auto-crop choices default to screen-edge fitting. Defaults and temporary
+An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
+per profile and movie/series using the existing title preference store. Auto-crop's
+screen-edge/cutout-safe pinch level instead updates the profile's shared framing
+preference for the current device type. It carries across movies, shows and live
+channels, including titles with an older saved Auto-crop level. It does not change
+the default zoom mode or another device type's framing. Player composition binds
+the profile's existing `PlaybackSettingsModel` to `PlayerVideoZoomModel`; Live TV
+receives that same model through the shell environment. Only presentation choices
+are saved, never detected rectangles. Until the first shared pinch choice, Auto-crop
+defaults to screen-edge fitting. Defaults and temporary
 unsupported-engine fallbacks do not write preferences. Series choices follow later
 episodes and shared external IDs across servers; movie keys use strong external
 IDs with an account-scoped fallback, never title matching. Existing series keys

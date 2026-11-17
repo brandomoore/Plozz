@@ -138,6 +138,57 @@ final class PlayerViewModelEOFTests: XCTestCase {
         }
     }
 
+    func testAutoCropFramingFollowsTheProfileAcrossDifferentMoviesBeforeLoad() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let suite = "MovieAutoCrop-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let visits: [(id: String, namespace: String?, expectedSafe: Bool, pinchToEdges: Bool?)] = [
+                ("first", nil, false, false),
+                ("second", nil, true, nil),
+                ("old-title", nil, true, true),
+                ("first", nil, false, nil),
+                ("second", "guest", false, nil)
+            ]
+            for visit in visits {
+                let settings = PlaybackSettingsModel(store: PlaybackSettingsStore(
+                    defaults: defaults, namespace: visit.namespace
+                ))
+                let titles = SeriesTrackPreferenceStore(defaults: defaults, namespace: visit.namespace)
+                let item = MediaItem(id: visit.id, title: "Film", kind: .movie,
+                                     sourceAccountID: "account")
+                if visit.id == "old-title" {
+                    let memory = SeriesTrackMemory(store: titles, accountFallbackID: "account",
+                                                   rememberAudio: false, rememberSubtitle: false)
+                    memory.recordVideoZoom(.init(mode: .picture), for: item)
+                }
+                let engine = SpyVideoEngine()
+                engine.supportsActivePictureAnalysis = true
+                let provider = RecordingPlaybackProvider(
+                    request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mp4")!),
+                    kind: kind
+                )
+                let model = PlayerViewModel(
+                    provider: provider, itemID: item.id, episodeItem: item,
+                    playbackSettings: settings.settings, seriesTrackStore: titles,
+                    engineFactory: .init(makeNative: { _ in engine })
+                )
+                model.controls.videoZoom.bindAutoCropFraming(to: settings, platform: .current)
+                engine.onLoad = { [weak model] in
+                    XCTAssertEqual(model?.controls.videoZoom.settings.mode, .picture)
+                    XCTAssertEqual(model?.controls.videoZoom.settings.pictureFitsInsideSafeArea, visit.expectedSafe,
+                                   "Apply shared framing before the first frame, even for an old title preference.")
+                }
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                if let fillsScreen = visit.pinchToEdges {
+                    model.controls.videoZoom.setPinchZoom(fillsScreen: fillsScreen)
+                }
+                await model.stop()
+            }
+        }
+    }
+
     func testDiscPlaylistSelectionIsBoundToCatalogAndSuppressesLibraryProgress() async throws {
         let request = try discRequest()
         let item = request.item

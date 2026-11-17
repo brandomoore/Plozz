@@ -62,6 +62,31 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         XCTAssertEqual(engine.stopCount, 0)
     }
 
+    func testAutoCropFramingCarriesBetweenLiveChannelsAndOtherVideos() async throws {
+        let suite = "LiveAutoCrop-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        let engine = LiveEngineSpy()
+        engine.supportsActivePictureAnalysis = true
+        let input = LiveChannelInput.stream(url: URL(string: "https://example.invalid/live.m3u8")!, httpHeaders: [:])
+        let model = LiveChannelPlayerModel(engine: engine, channelID: "one", input: input)
+        defer { model.stop() }
+        model.videoZoom.bindAutoCropFraming(to: settings, platform: .phone)
+        await model.start()
+        model.videoZoom.setPinchZoom(fillsScreen: false)
+        XCTAssertTrue(settings.settings.videoZoom.phone.pictureFitsInsideSafeArea)
+        await model.changeSource(channelID: "two", input: input)
+        XCTAssertTrue(model.videoZoom.settings.pictureFitsInsideSafeArea)
+        let movie = PlayerVideoZoomModel()
+        movie.bindAutoCropFraming(to: settings, platform: .phone)
+        movie.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertTrue(movie.settings.pictureFitsInsideSafeArea)
+        movie.setPinchZoom(fillsScreen: true)
+        await model.changeSource(channelID: "three", input: input)
+        XCTAssertFalse(model.videoZoom.settings.pictureFitsInsideSafeArea)
+    }
+
     func testLocalJournalCapturesLiveFailuresWithoutServerSessionReporting() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let journal = PlaybackDiagnosticJournal(url: root.appendingPathComponent("playback.json"))
@@ -1940,6 +1965,7 @@ private struct LiveFullscreenHarness: View {
 
 @MainActor
 final class LiveEngineSpy: LiveChannelEngine {
+    var supportsActivePictureAnalysis = false
     var probedSourceFacts: EngineProbedSourceFacts?
     var videoAspectRatio: Double?
     var liveStartupBuffer: LivePlaybackBuffer = .automatic

@@ -137,25 +137,77 @@ final class PlayerVideoZoomTests: XCTestCase {
         XCTAssertEqual(model.settings.mode, .fit)
     }
 
-    func testAutoCropPinchKeepsItsModeAndRemembersBothViewportChoices() {
-        let model = PlayerVideoZoomModel()
-        var saved: [PlayerVideoZoom] = []
-        model.onUserChange = { saved.append($0) }
-        model.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
-        XCTAssertFalse(model.settings.pictureFitsInsideSafeArea)
-        XCTAssertTrue(saved.isEmpty)
-        for fillsScreen in [false, true, false] {
-            model.setPinchZoom(fillsScreen: fillsScreen)
-            XCTAssertEqual(model.settings.mode, .picture)
-            XCTAssertEqual(model.settings.pictureFitsInsideSafeArea, !fillsScreen)
-            XCTAssertEqual(saved.last, model.settings)
+    func testAutoCropPinchSharesFramingAcrossTitlesAndRestartsForOnlyItsDeviceType() throws {
+        let suite = "SharedAutoCrop-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PlaybackSettingsStore(defaults: defaults)
+        for platform in VideoZoomDefaults.Platform.allCases {
+            let preferences = PlaybackSettingsModel(store: store)
+            let model = PlayerVideoZoomModel()
+            var saved: [PlayerVideoZoom] = []
+            model.onUserChange = { saved.append($0) }
+            model.bindAutoCropFraming(to: preferences, platform: platform)
+            model.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+            XCTAssertTrue(saved.isEmpty)
+            for fillsScreen in [false, true] {
+                model.setPinchZoom(fillsScreen: fillsScreen)
+                XCTAssertEqual(model.settings.mode, .picture)
+                XCTAssertEqual(model.settings.pictureFitsInsideSafeArea, !fillsScreen)
+                XCTAssertEqual(saved.last, model.settings)
+
+                let reopened = PlaybackSettingsModel(store: store)
+                let nextMovie = PlayerVideoZoomModel()
+                nextMovie.bindAutoCropFraming(to: reopened, platform: platform)
+                for remembered: PlayerVideoZoom? in [
+                    nil, .init(mode: .picture, pictureFitsInsideSafeArea: fillsScreen)
+                ] {
+                    nextMovie.restoreForPlayback(remembered, defaultPreference: .onDemandDefault,
+                                                 supportsActivePicture: true)
+                    XCTAssertEqual(nextMovie.settings.mode, .picture)
+                    XCTAssertEqual(nextMovie.settings.pictureFitsInsideSafeArea, !fillsScreen,
+                                   "New and previously saved titles must use the shared framing.")
+                }
+                for other in VideoZoomDefaults.Platform.allCases where other != platform {
+                    XCTAssertFalse(reopened.settings.videoZoom[other].pictureFitsInsideSafeArea)
+                }
+                XCTAssertEqual(reopened.settings.videoZoom[platform].mode, .picture)
+            }
+            XCTAssertEqual(saved.count, 2, "Binding and restoring must not write title preferences.")
         }
-        let remembered = model.settings
-        model.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
-        XCTAssertFalse(model.settings.pictureFitsInsideSafeArea, "A new title starts at screen edges.")
-        model.restoreForPlayback(remembered, defaultPreference: .onDemandDefault, supportsActivePicture: true)
-        XCTAssertEqual(model.settings, remembered)
-        XCTAssertEqual(saved.count, 3, "Restoring must not overwrite remembered framing.")
+    }
+
+    func testSharedAutoCropFramingPreservesManualModesAndProfileIsolation() throws {
+        let suite = "AutoCropProfiles-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        preferences.settings.videoZoom.phone = .init(mode: .custom, customPercent: 117)
+        let model = PlayerVideoZoomModel()
+        model.bindAutoCropFraming(to: preferences, platform: .phone)
+        model.restoreForPlayback(.init(mode: .picture), defaultPreference: preferences.settings.videoZoom.phone,
+                                 supportsActivePicture: true)
+        model.setPinchZoom(fillsScreen: false)
+        XCTAssertEqual(preferences.settings.videoZoom.phone.mode, .custom)
+        XCTAssertEqual(preferences.settings.videoZoom.phone.customPercent, 117)
+        let stored = preferences.settings
+        for remembered in [PlayerVideoZoom(mode: .fit), .init(mode: .custom, customPercent: 125)] {
+            model.restoreForPlayback(remembered, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+            XCTAssertEqual(model.settings.mode, remembered.mode)
+            XCTAssertEqual(model.settings.customPercent, remembered.customPercent)
+        }
+        model.setCustomPercent(134)
+        model.settings.mode = .picture
+        XCTAssertTrue(model.settings.pictureFitsInsideSafeArea, "Custom must not reset Auto-crop framing.")
+        model.restoreForPlayback(.onDemandDefault, defaultPreference: .onDemandDefault, supportsActivePicture: false)
+        XCTAssertEqual(model.settings.mode, .fit)
+        XCTAssertEqual(preferences.settings, stored, "Restoration and fallback must not change shared defaults.")
+        let guest = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults, namespace: "guest"))
+        model.bindAutoCropFraming(to: guest, platform: .phone)
+        model.restoreForPlayback(.init(mode: .picture, pictureFitsInsideSafeArea: true),
+                                 defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertFalse(model.settings.pictureFitsInsideSafeArea, "A title cannot import another profile's framing.")
+        XCTAssertTrue(preferences.settings.videoZoom.phone.pictureFitsInsideSafeArea)
     }
 
     func testBothAutoCropLevelsFitTheEntireActivePictureAcrossAspectsAndCutouts() throws {

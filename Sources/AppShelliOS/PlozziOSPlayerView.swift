@@ -624,6 +624,7 @@ struct PlozziOSPlayerView: View {
         // SwiftUI.StoredLocation<PlayerViewModel> → PlayerViewModel).
         // The other callbacks above already hoist `model` for this reason.
         let settings = appModel.settings
+        viewModel.controls.videoZoom.bindAutoCropFraming(to: settings.playback, platform: .current)
         viewModel.onSubtitleStyleChanged = { style in
             settings.subtitleStyle.style = style
         }

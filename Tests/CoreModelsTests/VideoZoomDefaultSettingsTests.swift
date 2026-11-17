@@ -26,7 +26,7 @@ final class VideoZoomDefaultSettingsTests: XCTestCase {
         let primary = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
         let guestStore = PlaybackSettingsStore(defaults: defaults, namespace: "guest")
         let guest = PlaybackSettingsModel(store: guestStore)
-        guest.settings.videoZoom[.phone] = .init(mode: .fit)
+        guest.settings.videoZoom[.phone] = .init(mode: .fit, pictureFitsInsideSafeArea: true)
         guest.settings.videoZoom[.tablet] = .init(mode: .custom, customPercent: 117)
         guest.settings.videoZoom[.television] = .init(mode: .fill)
         primary.settings.videoZoom[.phone] = .init(mode: .stretch)
@@ -37,6 +37,8 @@ final class VideoZoomDefaultSettingsTests: XCTestCase {
         XCTAssertEqual(restored.videoZoom, guest.settings.videoZoom)
         XCTAssertEqual(PlaybackSettingsStore(defaults: defaults).load().videoZoom.phone.mode, .stretch)
         XCTAssertEqual(restored.videoZoom.phone.mode, .fit)
+        XCTAssertTrue(restored.videoZoom.phone.pictureFitsInsideSafeArea)
+        XCTAssertFalse(restored.videoZoom.tablet.pictureFitsInsideSafeArea)
         XCTAssertEqual(restored.videoZoom.tablet.customPercent, 117)
         XCTAssertEqual(restored.videoZoom.television.mode, .fill)
     }

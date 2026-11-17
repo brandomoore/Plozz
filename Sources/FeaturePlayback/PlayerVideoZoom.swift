@@ -109,12 +109,20 @@ public final class PlayerVideoZoomModel {
     }
     @ObservationIgnored var onUserChange: ((PlayerVideoZoom) -> Void)?
     @ObservationIgnored private var isRestoring = false
+    @ObservationIgnored private var autoCropPreference: (model: PlaybackSettingsModel, platform: VideoZoomDefaults.Platform)?
     public var supportsActivePicture = false
     public var availableModes: [PlayerVideoZoom.Mode] {
         supportsActivePicture ? [.fit, .picture, .fill, .stretch, .custom] : [.fit, .fill, .stretch, .custom]
     }
 
     public init() {}
+
+    public func bindAutoCropFraming(to model: PlaybackSettingsModel, platform: VideoZoomDefaults.Platform) {
+        autoCropPreference = (model, platform)
+        var choice = settings
+        choice.pictureFitsInsideSafeArea = model.settings.videoZoom[platform].pictureFitsInsideSafeArea
+        restore(choice)
+    }
 
     func restore(_ settings: PlayerVideoZoom) {
         isRestoring = true
@@ -126,6 +134,9 @@ public final class PlayerVideoZoomModel {
                             supportsActivePicture: Bool) {
         self.supportsActivePicture = supportsActivePicture
         var choice = preference ?? defaultPreference
+        choice.pictureFitsInsideSafeArea = autoCropPreference.map {
+            $0.model.settings.videoZoom[$0.platform].pictureFitsInsideSafeArea
+        } ?? defaultPreference.pictureFitsInsideSafeArea
         if choice.mode == .picture, !supportsActivePicture { choice.mode = .fit }
         restore(choice)
     }
@@ -137,11 +148,15 @@ public final class PlayerVideoZoomModel {
     }
 
     public func setCustomPercent(_ percent: Int) {
-        settings = PlayerVideoZoom(mode: .custom, customPercent: percent)
+        settings = PlayerVideoZoom(mode: .custom, customPercent: percent,
+                                  pictureFitsInsideSafeArea: settings.pictureFitsInsideSafeArea)
     }
 
     public func setPinchZoom(fillsScreen: Bool) {
         if settings.mode == .picture, supportsActivePicture {
+            if let preference = autoCropPreference {
+                preference.model.settings.videoZoom[preference.platform].pictureFitsInsideSafeArea = !fillsScreen
+            }
             settings.pictureFitsInsideSafeArea = !fillsScreen
         } else {
             settings.mode = fillsScreen ? .fill : .fit

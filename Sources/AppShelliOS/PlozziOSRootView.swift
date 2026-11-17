@@ -365,6 +365,7 @@ public struct PlozziOSRootView: View {
         setupPresentationContent
         .plozzOpaqueNavigationChrome()
         .environment(contentRefreshCoordinator)
+        .environment(appModel.settings.playback)
         .background(ContentRefreshLifecycleReader(coordinator: contentRefreshCoordinator))
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
         .detailPlaybackPreparationEnvironment(

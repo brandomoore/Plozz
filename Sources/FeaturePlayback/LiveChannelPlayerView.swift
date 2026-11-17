@@ -64,6 +64,7 @@ public extension View {
 /// caller owns any server-specific live session. Video still runs through Plozz's production
 /// AetherEngine adapter and its existing video surface.
 public struct LiveChannelPlayerView: View {
+    @Environment(PlaybackSettingsModel.self) private var playbackSettingsModel: PlaybackSettingsModel?
     private let channelID: String
     private let title: String // l10n:content — provider-supplied channel name
     private let input: LiveChannelInput
@@ -1022,6 +1023,9 @@ public struct LiveChannelPlayerView: View {
             trackPreferences: trackPreferences,
             defaultVideoZoom: { displayTransitionSettings().videoZoom[.current] }
         )
+        if let playbackSettingsModel {
+            playerModel.videoZoom.bindAutoCropFraming(to: playbackSettingsModel, platform: .current)
+        }
         model = playerModel
         playerModel.onExternalContinuationChanged = onExternalContinuationChanged
         playerModel.setPermitsExternalPresentation(permitsExternalPresentation)

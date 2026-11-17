@@ -23,7 +23,12 @@ public struct DefaultVideoZoomControl: View {
     private var percent: Binding<Int> {
         Binding(
             get: { model.settings.videoZoom[platform].customPercent },
-            set: { model.settings.videoZoom[platform] = .init(mode: .custom, customPercent: $0) }
+            set: {
+                model.settings.videoZoom[platform] = .init(
+                    mode: .custom, customPercent: $0,
+                    pictureFitsInsideSafeArea: model.settings.videoZoom[platform].pictureFitsInsideSafeArea
+                )
+            }
         )
     }
 
@@ -95,7 +100,7 @@ public struct DefaultVideoZoomControl: View {
     }
 
     private var help: Text {
-        Text("iPhone, iPad and Apple TV use separate defaults. Changing zoom in the player saves it for that movie or TV show.")
+        Text("iPhone, iPad and Apple TV use separate defaults. Changing zoom mode saves it for that movie or TV show. Auto-crop remembers pinch zoom across videos.")
     }
 }
 #endif
