@@ -1267,7 +1267,10 @@ private struct PlozziOSHeroBackdrop: View {
         FallbackAsyncImage(
             references: activeReferences,
             prefersLandscape: style != .compactPortrait,
-            maxAspectRatio: 3,
+            // Reject ultra-wide assets (commonly a wordmark or a cropped still)
+            // that fill the band with a letterbox-wide sliver. Normal cinema
+            // backdrops are at most 2.39:1 and remain eligible.
+            maxAspectRatio: surfaceRole == .detail ? 2.6 : 3,
             variant: .heroBackdrop,
             // Put a real picture up while the 2000px pass decodes, rather
             // than a flat colour. The 768px frame is what warming caches for
