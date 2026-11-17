@@ -750,6 +750,11 @@ public final class ItemDetailViewModel {
                 return episode
             }
             self.publish(Detail(item: seeded, children: [], serverResumeEpisode: resume))
+            // Begin the related-title metadata lookup while the view is being
+            // built, not after `load()` publishes full detail. The resolver chain
+            // (AniList/TMDb/Trakt) is the slowest part of the Related row and is
+            // independent of the primary item fetch.
+            relatedTitlesLoader?.prepareRecommendations(for: seeded)
         }
     }
 
