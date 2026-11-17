@@ -47,7 +47,11 @@ struct PlozziOSNavigationPopProxy: UIViewControllerRepresentable {
     final class Controller: UIViewController, UIGestureRecognizerDelegate {
         var request: Int = 0 {
             didSet {
-                guard request != oldValue, request > 0 else { return }
+                // The proxy is installed in every tab so it can sit in the tab's
+                // background, but only Search owns the root request. Without this
+                // guard pressing Search popped every other tab's navigation stack
+                // (and with it their scroll position).
+                guard isSearch, request != oldValue, request > 0 else { return }
                 // Deferred: the update pass can run while the navigation controller is
                 // mid-transition, and popping there is what drops frames.
                 Task { @MainActor [weak self] in
