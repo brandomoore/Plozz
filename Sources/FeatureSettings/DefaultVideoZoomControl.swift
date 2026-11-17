@@ -100,7 +100,7 @@ public struct DefaultVideoZoomControl: View {
     }
 
     private var help: Text {
-        Text("iPhone, iPad and Apple TV use separate defaults. Changing zoom mode saves it for that movie or TV show. Auto-crop remembers pinch zoom across videos.")
+        Text("iPhone, iPad and Apple TV use separate defaults. Changing zoom mode saves it for that movie or TV show.")
     }
 }
 #endif
