@@ -10,7 +10,7 @@ import XCTest
 
 @MainActor
 final class SettingsStepperHostedTests: XCTestCase {
-    func testAudioSyncKeepsFocusAtBoundsAndCommitsOnlyOnRelease() async throws {
+    func testAudioSyncKeepsSingleFocusAtBoundsAndCoalescesReleases() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
@@ -46,11 +46,19 @@ final class SettingsStepperHostedTests: XCTestCase {
             XCTAssertTrue(system.focusedItem === focused, "The pending bound must not disable its focused control.")
             XCTAssertTrue(applied.isEmpty)
             input.endPress()
+            XCTAssertTrue(applied.isEmpty, "Release starts a quiet period rather than reloading immediately.")
+            input.beginPress(start < 0 ? .left : .right)
+            input.endPress()
+            XCTAssertTrue(system.focusedItem === focused)
+            XCTAssertTrue(applied.isEmpty)
+            try await waitUntil { applied.count == 1 }
             XCTAssertEqual(applied, [start < 0 ? -2 : 2])
             input.endPress()
             XCTAssertEqual(applied.count, 1)
             input.beginPress(start < 0 ? .right : .left)
             input.stopRepeating()
+            XCTAssertNil(model.audioSyncAdjustment.value)
+            XCTAssertNil(model.audioSyncAdjustment.commitTask)
             XCTAssertEqual(applied.count, 1, "Cancellation must discard the uncommitted preview.")
         }
     }

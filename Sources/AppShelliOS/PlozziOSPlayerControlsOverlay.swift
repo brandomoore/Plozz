@@ -1324,7 +1324,7 @@ private struct PlozziOSPlaybackSyncControls: View {
     let viewModel: PlayerViewModel
     var includesAudio = true
     var includesSubtitles = true
-    @State private var audioAdjustment = PlayerAudioSyncAdjustment()
+    private var audioAdjustment: PlayerAudioSyncEditor { viewModel.controls.audioSyncAdjustment }
 
     private var audioDelay: TimeInterval { audioAdjustment.value ?? viewModel.controls.audioDelaySeconds }
 
@@ -1335,15 +1335,13 @@ private struct PlozziOSPlaybackSyncControls: View {
                     Stepper(
                         value: Binding(
                             get: { audioDelay },
-                            set: {
-                                audioAdjustment.set($0)
-                                if let value = audioAdjustment.value { _ = viewModel.setAudioDelayLive(value) }
-                            }
+                            set: changeAudioDelay
                         ),
                         in: PlayerControlsModel.audioDelayRange,
                         step: PlayerAudioSyncAdjustment.step,
                         onEditingChanged: { editing in
-                            if !editing, let value = audioAdjustment.finish() { viewModel.setAudioDelay(value) }
+                            if editing { audioAdjustment.beginEditing() }
+                            else { audioAdjustment.endEditing(commit: viewModel.setAudioDelay) }
                         }
                     ) {
                         Text(audioDelay,
@@ -1354,12 +1352,12 @@ private struct PlozziOSPlaybackSyncControls: View {
                     .accessibilityIdentifier("player-audio-delay")
                     Text(PlayerControlsModel.audioSyncHint(for: audioDelay)).plozzForeground(.secondary)
                     Button("Reset") {
-                        _ = audioAdjustment.finish(cancelled: true)
-                        viewModel.setAudioDelay(0)
+                        audioAdjustment.cancel()
+                        changeAudioDelay(0)
                     }
-                        .disabled(viewModel.controls.audioDelaySeconds == 0)
+                        .disabled(audioDelay == 0)
                 }
-                .onDisappear { _ = audioAdjustment.finish(cancelled: true) }
+                .onDisappear { audioAdjustment.cancel() }
             }
 
             if includesSubtitles, viewModel.controls.subtitleDelayAdjustable {
@@ -1382,6 +1380,16 @@ private struct PlozziOSPlaybackSyncControls: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            audioAdjustment.cancel()
+        }
+        .onChange(of: viewModel.controls.infoCard.sourceItemID) { _, _ in audioAdjustment.cancel() }
+        .onChange(of: viewModel.controls.infoCard.sourceAccountID) { _, _ in audioAdjustment.cancel() }
+    }
+
+    private func changeAudioDelay(_ value: TimeInterval) {
+        audioAdjustment.change(to: value, current: viewModel.controls.audioDelaySeconds,
+                               applyLive: viewModel.setAudioDelayLive, commit: viewModel.setAudioDelay)
     }
 }
 

@@ -506,6 +506,7 @@ public final class PlayerControlsModel {
     public var playbackSpeed: Double = 1.0
     /// Audio offset in seconds (positive = audio later than video).
     public var audioDelaySeconds: TimeInterval = 0
+    public let audioSyncAdjustment = PlayerAudioSyncEditor()
     public static let audioDelayRange = PlayerAudioSyncAdjustment.range
     public var audioSyncHint: LocalizedStringResource {
         Self.audioSyncHint(for: audioDelaySeconds)

@@ -1373,6 +1373,7 @@ public final class PlayerViewModel {
     /// `resumeOverride` carries the position the failed attempt reached so the
     /// retry resumes there instead of the provider's stale resume point.
     private func startPlayback(forceTranscode: Bool, resumeOverride: TimeInterval?) async {
+        controls.audioSyncAdjustment.cancel()
         beginDiagnosticAttempt()
         let attempt = diagnosticAttempt
         diagnosticFacts = .init(
@@ -2863,6 +2864,7 @@ public final class PlayerViewModel {
     /// Call when leaving playback: report a final stop so the server records the
     /// resume point, then tear the engine down.
     public func stop(preserveDisplayMode: Bool = false) async {
+        controls.audioSyncAdjustment.cancel()
         if let stopTask {
             await stopTask.value
             return

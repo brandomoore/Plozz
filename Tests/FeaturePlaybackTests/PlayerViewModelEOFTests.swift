@@ -150,10 +150,138 @@ final class PlayerViewModelEOFTests: XCTestCase {
         XCTAssertNil(adjustment.finish(cancelled: true))
         XCTAssertNil(adjustment.value)
         XCTAssertEqual(adjustment.nudge(from: 2, forward: true, repeating: false), 2)
+        _ = adjustment.finish(cancelled: true)
         XCTAssertEqual(adjustment.nudge(from: -2, forward: false, repeating: false), -2)
         adjustment.set(.nan)
         adjustment.set(.infinity)
         XCTAssertEqual(adjustment.finish(), -2)
+    }
+
+    func testAudioSyncRapidReleasesCommitOnceAfterQuietPeriodPlayingOrPaused() async {
+        for paused in [false, true] {
+            let (model, engine, _) = makeViewModel()
+            await model.load()
+            engine.capabilities.insert(.audioDelay)
+            if paused { engine.pause() } else { engine.play() }
+            let baseline = engine.audioDelayChanges
+            let clock = AudioSyncTestClock()
+            let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+
+            editor.nudge(from: 0, forward: false, repeating: false,
+                         applyLive: model.setAudioDelayLive, commit: model.setAudioDelay)
+            editor.endEditing(commit: model.setAudioDelay)
+            let first = editor.commitTask
+            await clock.waitForSleeps(1)
+            clock.advance(by: .milliseconds(300))
+            editor.nudge(from: model.controls.audioDelaySeconds, forward: false, repeating: false,
+                         applyLive: model.setAudioDelayLive, commit: model.setAudioDelay)
+            editor.endEditing(commit: model.setAudioDelay)
+            let last = editor.commitTask
+            await clock.waitForSleeps(2)
+            XCTAssertEqual(editor.value, -0.02, "Separate presses accumulate the pending value, not engine readback.")
+            XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+            clock.advance(by: .milliseconds(300))
+            await first?.value
+            XCTAssertEqual(engine.audioDelayChanges, baseline, "The superseded deadline cannot apply.")
+            clock.advance(by: .milliseconds(299))
+            XCTAssertEqual(engine.audioDelayChanges, baseline)
+            clock.advance(by: .milliseconds(1))
+            await last?.value
+            XCTAssertEqual(engine.audioDelayChanges, baseline + [-0.02])
+            XCTAssertNil(editor.value)
+            XCTAssertEqual(engine.isPaused, paused)
+            await model.stop()
+        }
+    }
+
+    func testAudioSyncHoldDoesNotReloadDuringInitialGapOrAtBound() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        editor.nudge(from: 1.99, forward: true, repeating: false, applyLive: { _ in false }, commit: commit)
+        clock.advance(by: .seconds(1))
+        XCTAssertNil(editor.commitTask, "An active hold has no reload deadline, including its initial gap.")
+        for _ in 0..<20 {
+            editor.nudge(from: 1.99, forward: true, repeating: true, applyLive: { _ in false }, commit: commit)
+            clock.advance(by: .milliseconds(80))
+        }
+        XCTAssertEqual(editor.value, 2)
+        XCTAssertTrue(applied.isEmpty)
+        editor.endEditing(commit: commit)
+        await clock.waitForSleeps(1)
+        let pending = editor.commitTask
+        clock.advance(by: .milliseconds(600))
+        await pending?.value
+        XCTAssertEqual(applied, [2])
+    }
+
+    func testAudioSyncLiveCorrectionAndReturnToActualValueNeedNoReload() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var actual = 0.0
+        var reloads: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { reloads.append($0) }
+        editor.nudge(from: actual, forward: true, repeating: false, applyLive: { actual = $0; return true },
+                     commit: commit)
+        editor.endEditing(commit: commit)
+        XCTAssertEqual(actual, 0.01)
+        XCTAssertNil(editor.commitTask)
+        editor.change(to: -0.2, current: actual, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(1)
+        let obsolete = editor.commitTask
+        editor.change(to: actual, current: actual, applyLive: { _ in XCTFail("Already applied"); return false },
+                      commit: commit)
+        clock.advance(by: .seconds(1))
+        await obsolete?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(reloads.isEmpty)
+    }
+
+    func testAudioSyncResetAndCancellationSupersedePendingChanges() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        editor.change(to: 0.5, current: 0.2, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(1)
+        let obsolete = editor.commitTask
+        editor.cancel()
+        editor.change(to: 0, current: 0.2, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(2)
+        let reset = editor.commitTask
+        clock.advance(by: .milliseconds(600))
+        await obsolete?.value
+        await reset?.value
+        XCTAssertEqual(applied, [0])
+
+        editor.change(to: 0.1, current: 0, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(3)
+        let cancelled = editor.commitTask
+        editor.cancel()
+        clock.advance(by: .seconds(1))
+        await cancelled?.value
+        XCTAssertEqual(applied, [0])
+        XCTAssertNil(editor.value)
+    }
+
+    func testAudioSyncPendingCommitIsCancelledBeforeNewPlaybackAndStop() async {
+        let (model, engine, _) = makeViewModel()
+        engine.capabilities.insert(.audioDelay)
+        let editor = model.controls.audioSyncAdjustment
+        var applied: [TimeInterval] = []
+        editor.change(to: 0.5, current: 0, applyLive: { _ in false }, commit: { applied.append($0) })
+        let beforeLoad = editor.commitTask
+        await model.load()
+        await beforeLoad?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(applied.isEmpty)
+        editor.change(to: 0.2, current: 0, applyLive: { _ in false }, commit: { applied.append($0) })
+        let beforeStop = editor.commitTask
+        await model.stop()
+        await beforeStop?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(applied.isEmpty)
     }
 
     func testProfileUpscalingChoiceIsAppliedBeforeEngineLoadAcrossProviders() async throws {
@@ -3124,6 +3252,36 @@ final class PlayerViewModelEOFTests: XCTestCase {
             nowPlayingPublisher: nowPlayingPublisher
         )
         return (viewModel, engine, provider)
+    }
+}
+
+@MainActor
+private final class AudioSyncTestClock {
+    private var now: Duration = .zero
+    private var sleeps: [(deadline: Duration, continuation: CheckedContinuation<Void, Never>)] = []
+    private var observers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var count = 0
+
+    func sleep(for duration: Duration) async {
+        await withCheckedContinuation { continuation in
+            sleeps.append((now + duration, continuation))
+            count += 1
+            let ready = observers.filter { $0.count <= count }
+            observers.removeAll { $0.count <= count }
+            ready.forEach { $0.continuation.resume() }
+        }
+    }
+
+    func waitForSleeps(_ count: Int) async {
+        guard self.count < count else { return }
+        await withCheckedContinuation { observers.append((count, $0)) }
+    }
+
+    func advance(by duration: Duration) {
+        now += duration
+        let ready = sleeps.filter { $0.deadline <= now }
+        sleeps.removeAll { $0.deadline <= now }
+        ready.forEach { $0.continuation.resume() }
     }
 }
 

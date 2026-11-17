@@ -26,6 +26,9 @@ public struct SettingsStepper<Value: Hashable>: View {
     private let rangeLabels: (LocalizedStringResource, LocalizedStringResource)?
     private let rangeMidpointLabel: LocalizedStringResource?
     private let inlineRange: Bool
+    private var sizingOptions: [Value]?
+    private var directionalAdjustment: ((_ forward: Bool, _ repeating: Bool) -> Void)?
+    private var editingEnded: ((_ cancelled: Bool) -> Void)?
 
     @Environment(\.themePalette) private var palette
     @FocusState private var focusedButton: StepperButton?
@@ -112,6 +115,24 @@ public struct SettingsStepper<Value: Hashable>: View {
     }
 
     private var index: Int { options.firstIndex(of: selection) ?? 0 }
+
+    /// Opt in to custom TV hold behavior without installing a second input scope.
+    public func onDirectionalAdjustment(
+        _ action: @escaping (_ forward: Bool, _ repeating: Bool) -> Void,
+        onEditingEnded: @escaping (_ cancelled: Bool) -> Void
+    ) -> Self {
+        var result = self
+        result.directionalAdjustment = action
+        result.editingEnded = onEditingEnded
+        return result
+    }
+
+    /// Numeric ranges can reserve their widest values without laying out every step.
+    public func reservingValueWidth(for values: [Value]) -> Self {
+        var result = self
+        result.sizingOptions = values
+        return result
+    }
     private var rangePositions: [Int] {
         guard options.count > 21 else { return Array(options.indices) }
         return (0...20).map { Int((Double($0) * Double(options.count - 1) / 20).rounded()) }
@@ -154,10 +175,15 @@ public struct SettingsStepper<Value: Hashable>: View {
             content: televisionControl,
             screen: options,
             adjustableRow: { isFocused ? 0 : nil },
-            onMove: { direction, _ in
+            onEditingEnded: { editingEnded?($0) },
+            onMove: { direction, repeating in
                 switch direction {
-                case .left: step(by: -1)
-                case .right: step(by: 1)
+                case .left, .right:
+                    if let directionalAdjustment {
+                        directionalAdjustment(direction == .right, repeating)
+                    } else {
+                        step(by: direction == .right ? 1 : -1)
+                    }
                 default: break
                 }
             }
@@ -318,10 +344,11 @@ public struct SettingsStepper<Value: Hashable>: View {
     #endif
 
     private var value: some View {
-        ZStack {
+        let sizingOptions = sizingOptions ?? options
+        return ZStack {
             // Reserve the widest option without exposing hidden sizing labels to VoiceOver.
-            ForEach(options.indices, id: \.self) { i in
-                valueLabel(title(options[i])).hidden().accessibilityHidden(true)
+            ForEach(sizingOptions.indices, id: \.self) { i in
+                valueLabel(title(sizingOptions[i])).hidden().accessibilityHidden(true)
             }
             valueLabel(title(selection))
                 .transaction { $0.animation = nil }

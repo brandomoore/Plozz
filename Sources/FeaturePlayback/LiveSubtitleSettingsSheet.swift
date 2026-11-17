@@ -63,8 +63,9 @@ struct LiveSubtitleSettingsSheet: View {
 struct LiveAudioSyncSheet: View {
     let tracks: LiveChannelPlayerModel
     let controls: PlayerControlsModel
+    let apply: (TimeInterval) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var adjustment = PlayerAudioSyncAdjustment()
+    private var adjustment: PlayerAudioSyncEditor { controls.audioSyncAdjustment }
     private var offset: Double { adjustment.value ?? controls.audioDelaySeconds }
 
     var body: some View {
@@ -74,11 +75,12 @@ struct LiveAudioSyncSheet: View {
                     Section("Audio Delay") {
                         Stepper(value: Binding(
                             get: { offset },
-                            set: { adjustment.set($0) }
+                            set: change
                         ), in: PlayerControlsModel.audioDelayRange,
                             step: PlayerAudioSyncAdjustment.step,
                             onEditingChanged: { editing in
-                                if !editing, let value = adjustment.finish() { apply(value) }
+                                if editing { adjustment.beginEditing() }
+                                else { adjustment.endEditing(commit: apply) }
                             }
                         ) {
                             Text(offset, format: .number.precision(.fractionLength(2))) + Text(" s")
@@ -86,8 +88,8 @@ struct LiveAudioSyncSheet: View {
                         .accessibilityLabel("Audio Delay")
                         Text(PlayerControlsModel.audioSyncHint(for: offset)).foregroundStyle(.secondary)
                         Button("Reset") {
-                            _ = adjustment.finish(cancelled: true)
-                            apply(0)
+                            adjustment.cancel()
+                            change(0)
                         }.disabled(offset == 0)
                     }
                 }
@@ -101,13 +103,16 @@ struct LiveAudioSyncSheet: View {
             }
         }
         .presentationDetents([.medium])
-        .onDisappear { _ = adjustment.finish(cancelled: true) }
+        .onDisappear { adjustment.cancel() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            adjustment.cancel()
+        }
+        .onChange(of: controls.infoCard.sourceItemID) { _, _ in adjustment.cancel() }
+        .onChange(of: controls.infoCard.sourceAccountID) { _, _ in adjustment.cancel() }
     }
 
-    private func apply(_ value: TimeInterval) {
-        guard tracks.engine.capabilities.contains(.audioDelay) else { return }
-        tracks.engine.setAudioDelay(value)
-        controls.audioDelaySeconds = tracks.engine.audioDelaySeconds
+    private func change(_ value: TimeInterval) {
+        adjustment.change(to: value, current: controls.audioDelaySeconds, applyLive: { _ in false }, commit: apply)
     }
 }
 #endif

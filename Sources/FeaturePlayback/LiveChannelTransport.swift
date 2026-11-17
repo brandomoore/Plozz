@@ -236,10 +236,12 @@ struct LiveChannelOverlay: View {
             }
         }
         .onChange(of: channelID) { _, _ in
+            trackOptions.audioSyncAdjustment.cancel()
             resetScrub()
             invalidateMobileMenu()
         }
         .onChange(of: input) { _, _ in
+            trackOptions.audioSyncAdjustment.cancel()
             resetScrub()
             invalidateMobileMenu()
         }
@@ -247,6 +249,7 @@ struct LiveChannelOverlay: View {
             if unavailable { resetScrub() }
         }
         .onDisappear {
+            trackOptions.audioSyncAdjustment.cancel()
             invalidateMobileMenu()
             resetScrub()
             onTracksPresentationChange(false)
@@ -266,7 +269,8 @@ struct LiveChannelOverlay: View {
             switch sheet {
             case .zoom: PlayerZoomSettingsSheet(model: tracks.videoZoom)
             case .subtitles: LiveSubtitleSettingsSheet(tracks: tracks, controls: trackOptions)
-            case .audioSync: LiveAudioSyncSheet(tracks: tracks, controls: trackOptions)
+            case .audioSync:
+                LiveAudioSyncSheet(tracks: tracks, controls: trackOptions, apply: trackActions.setAudioDelay)
             }
         }
         #endif

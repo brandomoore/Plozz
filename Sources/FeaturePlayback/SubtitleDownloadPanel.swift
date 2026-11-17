@@ -343,39 +343,55 @@ struct AudioSyncScreen: View {
     let model: PlayerControlsModel
     let actions: PlayerOptionsActions
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
-    @State private var adjustment = PlayerAudioSyncAdjustment()
+    private var adjustment: PlayerAudioSyncEditor { model.audioSyncAdjustment }
 
     private var value: TimeInterval { adjustment.value ?? model.audioDelaySeconds }
 
     var body: some View {
-        #if os(tvOS)
-        SettingsAdjustmentFocusScope(
-            content: controls,
-            screen: "audio-sync",
-            adjustableRow: { focus == .row(0) || focus == .row(1) ? 0 : nil },
-            idealWidth: PlayerOptionsPanel.standardWidth,
-            onEditingEnded: { cancelled in
-                if let value = adjustment.finish(cancelled: cancelled) { actions.setAudioDelay(value) }
-            },
-            onMove: { direction, repeating in
-                let value = adjustment.nudge(from: model.audioDelaySeconds,
-                                             forward: direction == .right, repeating: repeating)
-                _ = actions.setAudioDelayLive(value)
+        VStack(spacing: 20) {
+            SettingsStepper(
+                options: Array(-200...200),
+                selection: Binding(
+                    get: { Int((value * 100).rounded()) },
+                    set: { change(Double($0) / 100) }
+                ),
+                compact: true,
+                onFocusChange: { if $0 { focus = .row(0) } },
+                verbatimTitle: { PlayerControls.delayLabel(Double($0) / 100) }
+            )
+            .reservingValueWidth(for: [-200, 200])
+            .onDirectionalAdjustment({ forward, repeating in
+                adjustment.nudge(from: model.audioDelaySeconds, forward: forward, repeating: repeating,
+                                 applyLive: actions.setAudioDelayLive, commit: actions.setAudioDelay)
+            }, onEditingEnded: {
+                adjustment.endEditing(cancelled: $0, commit: actions.setAudioDelay)
+            })
+            .accessibilityLabel("Audio Delay")
+            Text(PlayerControlsModel.audioSyncHint(for: value))
+                .font(.callout)
+                .foregroundStyle(Color.primary.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+            Button("Reset") {
+                adjustment.cancel()
+                change(0)
             }
-        )
-        #else
-        controls
-        #endif
+            .focused($focus, equals: .row(1))
+            .disabled(value == 0)
+        }
+        .padding(28)
+        .onDisappear { adjustment.cancel() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            adjustment.cancel()
+        }
+        .onChange(of: model.infoCard.sourceItemID) { _, _ in adjustment.cancel() }
+        .onChange(of: model.infoCard.sourceAccountID) { _, _ in adjustment.cancel() }
     }
 
-    private var controls: some View {
-        PlaybackSyncScreen(
-            value: value, hint: PlayerControlsModel.audioSyncHint(for: value),
-            range: PlayerControlsModel.audioDelayRange, showsReset: true,
-            step: PlayerAudioSyncAdjustment.step,
-            keepsFocusAtBounds: true,
-            onChange: actions.setAudioDelay, focus: $focus
-        )
+    private func change(_ value: TimeInterval) {
+        adjustment.change(to: value, current: model.audioDelaySeconds,
+                          applyLive: actions.setAudioDelayLive, commit: actions.setAudioDelay)
     }
 }
 #endif

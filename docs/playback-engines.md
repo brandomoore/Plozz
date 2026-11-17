@@ -900,8 +900,9 @@ Audio Sync connects `setAudioDelay(_:)` on seekable software/loopback routes,
 with 10 ms steps and the engine's +/-2 second limit. Buffered
 interleaved PCM on the direct-rendering route can replace only queued audio,
 preserving video and the master clock. `setAudioDelayLive(_:)` reports refusal
-without reloading; held adjustments commit the latest preview once on release
-when live application is unavailable. Unsupported audio formats and native
+without reloading; when live application is unavailable, adjustments commit the
+latest preview once after 600 ms without input, never during a hold. Rapid
+presses coalesce whether playback is playing or paused. Unsupported audio formats and native
 loopback retain playhead-preserving re-anchoring. No video or audio format is
 changed to obtain support. Remote bypass and non-rewindable live streams hide it.
 

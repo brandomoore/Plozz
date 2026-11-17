@@ -392,7 +392,11 @@ Keep it in the header's full-width focus section and scroll the header with the
 page; do not add a separate action strip or shrink the native button.
 
 `SettingsStepper` retains every adjustment stop while limiting dense range tracks
-to 21 visual ticks. `ThemeMusicPreviewControlling` is the Settings-to-runtime
+to 21 visual ticks. `onDirectionalAdjustment` lets a caller own TV hold acceleration
+and release/cancellation handling while retaining the stepper's single native focus
+target and input scope. Dense numeric values can reserve width using representative
+extremes through `reservingValueWidth(for:)` rather than hidden labels for every stop.
+`ThemeMusicPreviewControlling` is the Settings-to-runtime
 preview seam; it carries ownership, availability, and errors without coupling
 Settings to the Home feature or a concrete audio player.
 The shared TV adjustment scope defaults to its standard hold-repeat speed.

@@ -56,13 +56,17 @@ subtitle selection or styling; readiness triggers reconciliation with the
 replacement tracks.
 
 Audio Sync is available on AetherEngine routes that can retime audio and
-re-anchor playback. TV's Audio header opens the shared subtitle-style timing
+re-anchor playback. TV's Audio header opens the shared single-focus settings
 control; mobile exposes Audio Sync in the Audio menu. Both use 10 ms steps,
 a two-second limit in each direction and Reset. Positive means audio later,
 negative earlier. TV Left/Right holds repeat and accelerate to 50 ms steps.
 Buffered direct-rendering PCM changes the audio queue without seeking or moving
-the video clock. Holds preview locally and commit once on release when live
-correction is unavailable; cancellation discards unapplied previews. Native
+the video clock. When live correction is unavailable, the shared audio editor
+previews immediately and waits 600 ms after input settles before committing.
+Rapid taps and successive holds accumulate one pending value; no commit is
+scheduled during a hold, including at the bounds. This is independent of play/
+pause state. Reset supersedes pending work; cancellation, dismissal, backgrounding
+and a new playback session discard unapplied previews. Native
 loopback and other unsupported formats still seek/reload on that final commit.
 Audio may briefly skip/repeat during a correction; output latency still applies.
 No format or route is downgraded to enable the feature. Offsets reset with a new stream. Native AVPlayer, remote bypass,
