@@ -1497,7 +1497,7 @@ struct PlozziOSTabShell: View {
                 onShowSettings: showSettings,
                 keepsNavigationBar: keepsNavigationBar
             )
-            .plozziOSItemNavigation(appModel: appModel)
+            .plozziOSItemNavigation(appModel: appModel, resetsOnSearchRootRequest: true)
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
         case .allLibraries:

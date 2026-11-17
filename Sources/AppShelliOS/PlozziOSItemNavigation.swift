@@ -34,6 +34,10 @@ struct PlozziOSArtworkItemRoute: Hashable {
 private struct PlozziOSItemNavigationModifier: ViewModifier {
     let appModel: PlozziOSAppModel
     var registersScreenshotRouting = false
+    /// Only the Search stack answers the shell's Search-root request. Applying
+    /// the same counter to every tab cleared pushed pages in Home, Library and
+    /// Downloads when the viewer only meant to leave Search.
+    var resetsOnSearchRootRequest = false
     @State private var navigatedItem: MediaItem?
     @State private var navigatedArtwork: PlozziOSArtworkItemRoute?
     @State private var navigatedPerson: PlozziOSPersonRoute?
@@ -46,6 +50,7 @@ private struct PlozziOSItemNavigationModifier: ViewModifier {
             // so the viewer lands in the search field instead of staying on the detail
             // page they had opened from a result.
             .onChange(of: navigationRootRequest) { _, _ in
+                guard resetsOnSearchRootRequest else { return }
                 navigatedItem = nil
                 navigatedPerson = nil
                 navigatedArtwork = nil
@@ -260,11 +265,13 @@ extension View {
     /// stack does not overwrite the seams the capture run drives.
     func plozziOSItemNavigation(
         appModel: PlozziOSAppModel,
-        registersScreenshotRouting: Bool = false
+        registersScreenshotRouting: Bool = false,
+        resetsOnSearchRootRequest: Bool = false
     ) -> some View {
         modifier(PlozziOSItemNavigationModifier(
             appModel: appModel,
-            registersScreenshotRouting: registersScreenshotRouting
+            registersScreenshotRouting: registersScreenshotRouting,
+            resetsOnSearchRootRequest: resetsOnSearchRootRequest
         ))
     }
 }
