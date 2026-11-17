@@ -37,6 +37,12 @@ public extension EnvironmentValues {
     }
 }
 
+public extension EnvironmentValues {
+    /// Home rows scroll back to their first card once focus has moved to another
+    /// row. Off outside Home and unless the profile turns it on.
+    @Entry var resetsMediaRowOnFocusExit: Bool = false
+}
+
 public struct MediaRowHeader: View {
     private let title: Text
     private let leadingInset: CGFloat
@@ -210,6 +216,7 @@ public struct MediaRowView: View {
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     #if os(tvOS)
     @Environment(\.mediaRowHeaderTrailingInset) private var pageTrailingSafeInset
+    @Environment(\.resetsMediaRowOnFocusExit) private var resetsOnFocusExit
     @State private var portraitViewportWidth: CGFloat = 0
     @Environment(\.mediaRowSizingViewportWidth) private var sizingViewportWidth
     @State private var trailingSafeInset: CGFloat = 0
@@ -638,12 +645,16 @@ public struct MediaRowView: View {
                                     },
                                     onFocusChange: { focused in
                                         leadingBrowseFocused = focused
+                                        if focused { activity.browseReturnPending = false }
+                                        if !focused { scheduleResetAfterFocusExit(using: proxy) }
                                         scheduleLeadingCardTuck(using: proxy)
                                     },
                                     action: {
                                         // The system hands focus back to this card when the
                                         // See all page closes; remember that so it can be redirected.
                                         activity.returningFromLeadingBrowse = true
+                                        activity.browseReturnPending = true
+                                        activity.focusExitReset?.cancel()
                                         onBrowse()
                                     }
                                 )
@@ -703,7 +714,21 @@ public struct MediaRowView: View {
                                         activity.pendingReport = nil
                                         onFocusEntered?()
                                         onFocusChange?(nil)
-                                    }, action: onBrowse
+                                    },
+                                    onFocusChange: { focused in
+                                        activity.browseCardHasFocus = focused
+                                        if focused { activity.browseReturnPending = false }
+                                        // Card focus doesn't change when leaving from a See all
+                                        // card, so the row's own focus handler never sees this exit.
+                                        if !focused { scheduleResetAfterFocusExit(using: proxy) }
+                                    },
+                                    action: {
+                                        // The See all page covers Home; focus comes back to this
+                                        // card, so the row must not scroll away meanwhile.
+                                        activity.browseReturnPending = true
+                                        activity.focusExitReset?.cancel()
+                                        onBrowse()
+                                    }
                                 )
                             }
                             #endif
@@ -1504,6 +1529,26 @@ public struct MediaRowView: View {
         }
     }
 
+    /// Scrolls the row back to its first title once focus has really left it.
+    ///
+    /// Focus reads as `nil` for a frame between cards during a fast horizontal
+    /// hold, so a reset only fires if it is still `nil` after a short settle.
+    /// Rows whose focus lives outside the card focus (See all, Live TV, loading
+    /// placeholders, an episode row, or a page covered by a detail screen) are
+    /// left alone: moving them would scroll the focused card out of view.
+    private func scheduleResetAfterFocusExit(using proxy: ScrollViewProxy) {
+        guard resetsOnFocusExit, episodeEntry == nil, liveChannels.isEmpty,
+              let first = items.first?.stablePresentationID else { return }
+        activity.focusExitReset = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled,
+                  activity.focus?.wrappedValue == nil,
+                  !activity.browseCardHasFocus, !leadingBrowseFocused, !activity.browseReturnPending,
+                  !isCovered, coveredFocusID == nil, !loadingCardFocused else { return }
+            withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo(first, anchor: .leading) }
+        }
+    }
+
     /// The pending focus request, for the row's first title only.
     private func focusRequest(for item: MediaItem) -> UUID? {
         guard showsLeadingBrowseCard, item.stablePresentationID == items.first?.stablePresentationID else {
@@ -1536,6 +1581,11 @@ public struct MediaRowView: View {
     /// untouched; leaving the row (debounced) re-arms entry targeting on the card
     /// you were last on.
     private func handleFocusChange(to newValue: String?, using proxy: ScrollViewProxy) {
+        #if os(tvOS)
+        activity.focusExitReset?.cancel()
+        activity.focusExitReset = nil
+        if newValue == nil { scheduleResetAfterFocusExit(using: proxy) }
+        #endif
         // A fast horizontal hold constantly blips focus to `nil` between cards (the
         // focused card is recycled out of the lazy stack for a frame). Ignore it
         // entirely: re-arming here is what used to disable every card mid-scroll and
@@ -1764,6 +1814,12 @@ private final class MediaRowActivity {
     var hasBrowsedSinceTargetChange = false
 
     @ObservationIgnored var didApplyInitialFocus = false
+    /// The pending scroll-back after focus left the row, and whether a See all
+    /// card (which the card focus doesn't track) currently holds focus.
+    @ObservationIgnored var focusExitReset: Task<Void, Never>?
+    @ObservationIgnored var browseCardHasFocus = false
+    /// A See all page is open over this row; focus returns to its card when it closes.
+    @ObservationIgnored var browseReturnPending = false
     @ObservationIgnored var visibleIDs: Set<String> = []
     @ObservationIgnored var pendingReport: DispatchWorkItem?
     @ObservationIgnored var prefetchedIDs: Set<String> = []
