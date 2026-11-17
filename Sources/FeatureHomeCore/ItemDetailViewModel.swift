@@ -42,6 +42,9 @@ public final class ItemDetailViewModel {
     /// when the page opened. Only then does its page offer Drop Show.
     /// Set once at open and never mutated, so it is not observed.
     @ObservationIgnored public var isOnDroppableRow = false
+    /// Whether this movie is on Home's Continue Watching row when the page opened.
+    /// Only then does its page offer Remove from Continue Watching.
+    @ObservationIgnored public var isInContinueWatching = false
 
     public struct Detail: Equatable, Sendable {
         public var item: MediaItem

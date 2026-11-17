@@ -25,6 +25,16 @@ final class EpisodeColumnPresentationTests: XCTestCase {
         }
     }
 
+    func testAirDateComesFromTheEpisodeReleaseDateInUTC() {
+        var dated = episode()
+        dated.releaseDate = Date(timeIntervalSince1970: 1_699_920_000)
+        let presentation = EpisodeColumnPresentation(item: dated, spoilerSettings: .default)
+        XCTAssertEqual(presentation.airDateText, dated.releaseDateLabel)
+        XCTAssertNotNil(presentation.airDateText)
+        XCTAssertTrue(presentation.accessibilityLabel.contains("Aired "))
+        XCTAssertNil(EpisodeColumnPresentation(item: episode(), spoilerSettings: .default).airDateText)
+    }
+
     func testUnwatchedEpisodeShowsIdentityRuntimeAndOverview() {
         let presentation = EpisodeColumnPresentation(
             item: episode(runtime: 2_700),

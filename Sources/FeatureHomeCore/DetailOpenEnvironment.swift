@@ -355,6 +355,7 @@ public struct DetailOpenEnvironment {
             localizedDetailMetadataResolver: localizedDetailMetadataResolver
         )
         if !isDiscovery {
+            model.isInContinueWatching = item.kind == .movie && resume != nil
             model.isOnDroppableRow = !Set(DroppedShowKeys.keys(for: item))
                 .isDisjoint(with: droppableShowKeys())
         }

@@ -278,7 +278,7 @@ struct DetailHeroView: View, Equatable {
     /// to the hero top" correction (see ``onHeroActionFocused``); the per-button
     /// bool focus states above still own their local colour/behaviour tweaks.
     private enum HeroRowAction: Hashable {
-        case play, trailer, watchlist, watched, drop, refresh, more, request, parent
+        case play, trailer, watchlist, watched, drop, removeContinue, refresh, more, request, parent
     }
 
     /// The action-row control that currently holds focus, or `nil` when focus is
@@ -516,6 +516,24 @@ struct DetailHeroView: View, Equatable {
         heroActions.first { $0 == .dropShow || $0 == .undropShow }
     }
 
+    /// Set once the viewer removes the movie from Continue Watching, so the button
+    /// goes away without waiting for the page to reload.
+    @State private var removedFromContinueWatching = false
+
+    /// Remove from Continue Watching, for a movie.
+    ///
+    /// Gated on the action the handler actually offers, not on a Continue
+    /// Watching-row context flag: the row membership used to be re-derived here
+    /// from a page-open snapshot lookup, and when that lookup missed (empty
+    /// snapshot, account mismatch, deep link) the button vanished while the
+    /// long-press menu — which asks the same handler — still offered the action.
+    /// The catalog offers it wherever the movie has a resume point or the context
+    /// is the row, and a movie with a resume point is what the row is made of.
+    private var heroRemoveContinueAction: MediaItemAction? {
+        guard item.kind == .movie, !removedFromContinueWatching else { return nil }
+        return heroActions.first { $0 == .removeFromContinueWatching }
+    }
+
     /// Whether to show the Refresh Metadata button (provider conforms to
     /// `MetadataRefreshing`).
     private var heroOffersRefresh: Bool { heroActions.contains(.refreshMetadata) }
@@ -539,7 +557,10 @@ struct DetailHeroView: View, Equatable {
     }
 
     private var heroContextMenuActions: [MediaItemAction] {
-        heroMenuActions.filter { !$0.isPrimaryDetailAction && $0 != heroParentNavigationAction }
+        heroMenuActions.filter {
+            !$0.isPrimaryDetailAction && $0 != heroParentNavigationAction
+                && !($0 == .removeFromContinueWatching && heroRemoveContinueAction != nil)
+        }
     }
 
     /// The navigation action shown as its own button in the action row, so an
@@ -656,6 +677,7 @@ struct DetailHeroView: View, Equatable {
     /// whether the action row appears even when there's no Play/Trailer/Version.
     private var hasHeroActionButtons: Bool {
         heroWatchlistAction != nil || heroWatchedAction != nil || heroDropAction != nil
+            || heroRemoveContinueAction != nil
             || heroParentNavigationAction != nil
             || showsMoreMenu
     }
@@ -1046,6 +1068,9 @@ struct DetailHeroView: View, Equatable {
                     }
                     if let heroDropAction {
                         dropButton(action: heroDropAction)
+                    }
+                    if let heroRemoveContinueAction {
+                        removeContinueButton(action: heroRemoveContinueAction)
                     }
                     // The breadcrumb above the title carries this on an episode
                     // page; the icon button is the fallback for any other hero
@@ -1915,6 +1940,27 @@ struct DetailHeroView: View, Equatable {
         .accessibilityValue(isDropped ? "Dropped" : "Not dropped")
     }
 
+    /// Remove from Continue Watching. Pressing it takes the movie off the row and
+    /// the button leaves the page.
+    @ViewBuilder
+    private func removeContinueButton(action: MediaItemAction) -> some View {
+        Button {
+            performHeroAction(action)
+            removedFromContinueWatching = true
+            heroActionRowFocus = nil
+        } label: {
+            Image(systemName: action.systemImage)
+                .font(.system(size: heroGlyphSize))
+                .foregroundStyle(Color.primary)
+                .frame(width: heroIconSize, height: heroIconSize)
+        }
+        .modifier(HeroActionButtonStyle(prominent: false, circular: true))
+        .focused($heroActionRowFocus, equals: .removeContinue)
+        .overlay(alignment: .bottom) { heroHint(for: .removeContinue) }
+        .accessibilityIdentifier("detail-hero-remove-continue")
+        .accessibilityLabel(action.title)
+    }
+
     // MARK: Icon hints
 
     /// What the icon-only buttons in the action row mean, shown as a small bubble
@@ -1930,6 +1976,7 @@ struct DetailHeroView: View, Equatable {
         case .watchlist: return heroWatchlistAction?.title
         case .watched: return heroWatchedAction?.title
         case .drop: return heroDropAction?.title
+        case .removeContinue: return heroRemoveContinueAction?.title
         case .more:
             return LocalizedStringResource("More Options", comment: "Hint above the ellipsis icon on a details page.")
         case .play, .refresh, .request, .parent: return nil

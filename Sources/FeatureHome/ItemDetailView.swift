@@ -820,6 +820,9 @@ public struct ItemDetailView: View {
                             ? { seasonRequestRetryToken &+= 1 }
                             : nil
                     )
+                    // A movie on Continue Watching offers Remove from Continue
+                    // Watching on its own page.
+                    .mediaItemActionContext(viewModel.isInContinueWatching ? .continueWatching : .none)
                     .id(Self.topAnchorID)
                     if !detail.children.isEmpty {
                         MediaRowView(
