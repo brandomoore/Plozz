@@ -71,10 +71,14 @@ Stop the broker and log out its owned server session in `finally`.
 The test uses the production layout preparation and Home aggregator with real
 Jellyfin transport. Each sample starts fresh provider/layout state, concurrently
 discovers navigation libraries, loads Home, then refreshes Home with the same
-provider. It reports requests, duplicates, decoded response bytes, and time to
-first nonempty content row and all requested data. It does not render Home,
+provider. It reports logical HTTP calls, duplicates, decoded response bytes per
+caller, and time to first nonempty content row and all requested data. Coalesced
+readers still count as separate calls; these counters are not wire-transfer counts.
+Real loopback transport regressions separately verify transfer sharing and
+authentication, redirect and cancellation isolation. The workload does not render Home,
 download artwork, time login, restart the server, or measure scroll smoothness.
-“Cold” means fresh client state, not cold server caches. Only numerical summaries
+“Cold” means fresh provider/layout state, not a fresh process, a new shared
+transport pool or cold server caches. Only numerical summaries
 are attached; authenticated payloads and media identities stay in memory.
 
 Use the same server, viewer, dataset, runtime, toolchain, and workload for both
@@ -1402,6 +1406,62 @@ an instant first sorted preview or physical-device UI smoothness. Median
 per-sample maximum main-actor wake-up gaps were 3.5–5.0 ms; those are simulator
 scheduling observations, not frame measurements. Results do not cover every server
 version, network condition, provider, or larger library.
+
+#### Selective networking and Jellyfin scheduling comparison
+
+The non-UI adaptation of [#457](https://github.com/brandomoore/Plozz/pull/457)
+was measured against main at `086c8d5365cb6e208638832f17dd919bf5d82aab`.
+It retains shared foreground connection pools, independently cancellable
+overlapping GETs, lightweight collection-existence queries, and four-slot
+refilling collection/recency work. Stateful GETs, including Plex mutations and
+authentication challenges, remain independent. Discovery cookie stores stay
+isolated; finite Next Up paging retains the requested prefix and unlimited
+requests remain exhaustive. No presentation changes are included.
+
+The same optimized iPhone simulator, Xcode 27.1, live internal server accounts,
+scenario order, one warmup and five retained samples were used in each run:
+baseline `5ce17a52d9054235a819ece1aa806ece`, initial candidate
+`4d885bb04cfe40f185c0ee3f4794e134`, and corrected candidate
+`e5272f4a4a4d4df7b48e445b24237c28`. The correction prevents sharing state-changing
+GETs; these live scenarios only read server data.
+
+| Complete workload | Main median | Initial candidate | Corrected candidate | Corrected change |
+| --- | ---: | ---: | ---: | ---: |
+| Jellyfin Home load and refresh | 2,974 ms | 3,041 ms | 3,006 ms | +1.1% |
+| Jellyfin saved-query acceptance | 3,538 ms | 3,689 ms | 3,473 ms | -1.8% |
+| Plex saved-query acceptance | 5,640 ms | 5,573 ms | 5,697 ms | +1.0% |
+
+| Workload | CPU median, main / initial / corrected | Physical footprint, main / corrected | RSS, main / corrected |
+| --- | ---: | ---: | ---: |
+| Jellyfin Home | 211 / 222 / 161 ms | 121.4 / 122.8 MiB | 256.5 / 258.1 MiB |
+| Jellyfin queries | 718 / 744 / 659 ms | 170.2 / 172.5 MiB | 429.1 / 473.2 MiB |
+| Plex queries | 921 / 918 / 884 ms | 180.3 / 180.2 MiB | 535.8 / 562.8 MiB |
+
+There is **no demonstrated overall speedup** in these workloads. Machine load
+varied substantially, server caches were not reset, and the two candidate runs
+do not establish a stable CPU improvement. Eight warm sorts were slower in the
+corrected run: Jellyfin 32.98 to 36.71 ms, Plex 40.24 to 47.29 ms. Their query
+implementation is unchanged; these observations do not identify a cause.
+Higher RSS is mostly accompanied by higher reusable memory, while physical
+footprint is close to baseline; neither snapshot proves long-term retention.
+
+All samples preserve 71 Home items, six libraries and four rows; Jellyfin queries
+retain 1,526 items across 14 pages, Plex 1,820 across 16, with unchanged
+date/year/runtime coverage and six sources each. Home still makes 20 cold and
+19 refresh logical calls with zero duplicate calls. Collection probing removes
+670 decoded response bytes per Home pass, not an entire request. Thus this live
+case does not demonstrate a coalescing benefit. Separate controlled regressions
+prove that overlapping identical reads use one transfer, cancellation remains
+independent, interleaved writes are not dropped, and the four-slot windows refill
+without changing membership or authoritative recency.
+
+The strict comparator refuses these runs because added correctness tests change
+the whole-Tests fingerprint. Scenario definitions, environments and the selected
+live workload/probe sources are unchanged; the tables are descriptive evidence,
+not a fingerprint-matched lab pass. The measured Home path loads data, not artwork
+or rendered screens, and does not establish physical-device responsiveness.
+The retained changes provide bounded work and explicit transport ownership, not
+a claimed user-visible speed improvement at these library sizes.
 
 #### Bounded full-inventory fetching
 

@@ -381,7 +381,7 @@ public struct PlexClient: Sendable {
             (data, response) = try await http.sendRaw(
                 Endpoint(
                     method: method, path: path, queryItems: query, headers: liveHeaders,
-                    redirectPolicy: .sameOrigin
+                    redirectPolicy: .sameOrigin, allowsRequestCoalescing: false
                 ),
                 baseURL: await resolvedBaseURL()
             )
@@ -1324,7 +1324,10 @@ public struct PlexClient: Sendable {
         if let playSessionID, !playSessionID.isEmpty {
             requestHeaders["X-Plex-Session-Identifier"] = playSessionID
         }
-        let endpoint = Endpoint(path: "/:/timeline", queryItems: query, headers: requestHeaders)
+        let endpoint = Endpoint(
+            path: "/:/timeline", queryItems: query, headers: requestHeaders,
+            allowsRequestCoalescing: false
+        )
         _ = try await send(endpoint)
     }
 
@@ -1345,7 +1348,8 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "state", value: state),
                 URLQueryItem(name: "X-Plex-Token", value: token)
             ],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: false
         )
         _ = try await send(endpoint)
     }
@@ -1385,7 +1389,8 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library"),
                 URLQueryItem(name: "X-Plex-Token", value: token)
             ],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: false
         )
         _ = try await send(endpoint)
     }
@@ -1399,7 +1404,8 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "rating", value: rating.map { String($0) } ?? "-1"),
                 URLQueryItem(name: "X-Plex-Token", value: token)
             ],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: false
         )
         _ = try await send(endpoint)
     }
@@ -2127,7 +2133,7 @@ public struct PlexClient: Sendable {
             path: "/video/:/transcode/universal/ping",
             queryItems: [.init(name: "session", value: sessionID)],
             headers: pingHeaders,
-            redirectPolicy: .sameOrigin
+            redirectPolicy: .sameOrigin, allowsRequestCoalescing: false
         ))
         try Task.checkCancellation()
     }
@@ -2139,7 +2145,7 @@ public struct PlexClient: Sendable {
             _ = try await send(Endpoint(
                 path: "/video/:/transcode/universal/stop",
                 queryItems: [.init(name: "session", value: sessionID)],
-                headers: headers
+                headers: headers, allowsRequestCoalescing: false
             ))
         }.value
     }

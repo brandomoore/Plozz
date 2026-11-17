@@ -1055,7 +1055,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CoreNetworkingTests",
-            dependencies: ["CoreNetworking", "CoreModels"]
+            dependencies: ["CoreNetworking", "CoreModels", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "MetadataKitTests",
@@ -1083,7 +1083,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ProviderPlexTests",
-            dependencies: ["ProviderPlex", "CoreModels", "CoreNetworking"]
+            dependencies: ["ProviderPlex", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "RatingsServiceTests",
@@ -1100,6 +1100,10 @@ let package = Package(
         .testTarget(
             name: "SimklServiceTests",
             dependencies: ["SimklService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
+        ),
+        .testTarget(
+            name: "LastFmServiceTests",
+            dependencies: ["LastFmService", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "AniListServiceTests",

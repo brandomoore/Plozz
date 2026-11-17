@@ -110,6 +110,15 @@ locator. Extraction uses the subtitle endpoint, not another video conversion.
 
 ## Home browsing
 
+Collection-directory availability uses an unsorted, image-free one-row BoxSet
+probe, not a fully enriched collection page. At most four probes run at once;
+each completion frees a slot, library order is retained, and failed probes leave
+availability unknown rather than pretending the directory is empty.
+Series-recency lookups use the same four-slot scheduling pattern without changing
+membership, resume positions or the precedence of authoritative server dates.
+Next Up requests above 100 use validated bounded pages, including finite prefixes;
+small previews remain one request and unlimited browsing remains exhaustive.
+
 Exact-ID Related card reads use `LibraryItemBatchProviding` on both Jellyfin and
 Emby. Each bounded batch uses the authenticated viewer's Items endpoint, includes
 provider identity, images and user data, and rejects duplicate or unrequested

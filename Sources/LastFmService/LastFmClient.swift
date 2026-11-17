@@ -30,7 +30,8 @@ struct LastFmClient: Sendable {
         let endpoint = Endpoint(
             method: .get,
             path: Self.apiPath,
-            queryItems: params.map { URLQueryItem(name: $0.key, value: $0.value) }
+            queryItems: params.map { URLQueryItem(name: $0.key, value: $0.value) },
+            allowsRequestCoalescing: false
         )
         let json = try await sendJSON(endpoint)
         if let token = json["token"] as? String { return token }
@@ -44,7 +45,8 @@ struct LastFmClient: Sendable {
         let endpoint = Endpoint(
             method: .get,
             path: Self.apiPath,
-            queryItems: params.map { URLQueryItem(name: $0.key, value: $0.value) }
+            queryItems: params.map { URLQueryItem(name: $0.key, value: $0.value) },
+            allowsRequestCoalescing: false
         )
         let json = try await sendJSON(endpoint)
         if let session = json["session"] as? [String: Any],

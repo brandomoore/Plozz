@@ -25,6 +25,10 @@ first-class backends; co-equal with `ProviderJellyfin`.
 
 ## Invariants
 
+- Watched, rating, progress/timeline and transcode-session GET operations opt out
+  of HTTP sharing. An older response still in flight cannot stand in for a later
+  write or session action, even when their URLs match. Ordinary metadata reads
+  remain eligible; address-retry behavior is unchanged.
 - Manually verified alternate addresses supplement, rather than replace, Plex's
   advertised local/remote/relay candidates. Discovery refresh retains the manual
   set, and removed aliases cannot be resurrected by a last-reachable seed.
