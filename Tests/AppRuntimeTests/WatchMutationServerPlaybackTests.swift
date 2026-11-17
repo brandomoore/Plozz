@@ -1,10 +1,12 @@
 import CoreModels
 import CoreNetworking
 import Foundation
+import ProviderJellyfin
 import ProviderPlex
 import Synchronization
 import XCTest
 @testable import AppRuntime
+@testable import TestSupportNetworking
 
 final class WatchMutationServerPlaybackTests: XCTestCase {
     private let captured = Date(timeIntervalSince1970: 10_000)
@@ -82,6 +84,70 @@ final class WatchMutationServerPlaybackTests: XCTestCase {
             let pending = await queue.pendingCount
             XCTAssertFalse(writes.isEmpty, "Fresh actions must not be discarded with stale ones.")
             XCTAssertEqual(pending, 0)
+        }
+    }
+
+    func testJellyfinResetDoesNotJoinAnOlderPendingDetailRead() async throws {
+        try await assertResetPreservesNewerPlayback(kind: .jellyfin)
+    }
+
+    func testEmbyResetDoesNotJoinAnOlderPendingDetailRead() async throws {
+        try await assertResetPreservesNewerPlayback(kind: .emby)
+    }
+
+    func testPlexResetDoesNotJoinAnOlderPendingDetailRead() async throws {
+        try await assertResetPreservesNewerPlayback(kind: .plex)
+    }
+
+    private func assertResetPreservesNewerPlayback(kind: ProviderKind) async throws {
+        let wire = PendingWatchMetadata(kind: kind, lastPlayedAt: captured.addingTimeInterval(-1))
+        let server = try LoopbackHTTPServer { await wire.response($0) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 5
+        configuration.timeoutIntervalForResource = 5
+        let transport = URLSession(configuration: configuration)
+        addTeardownBlock {
+            await wire.release()
+            await server.stop()
+            transport.invalidateAndCancel()
+        }
+        let session = UserSession(
+            server: .init(id: UUID().uuidString, name: "Fixture", baseURL: try await server.start(), provider: kind),
+            userID: "viewer", userName: "Fixture", deviceID: "device", accessToken: "fixture"
+        )
+        let http = URLSessionHTTPClient(session: transport)
+        let provider: any MediaProvider = kind == .plex
+            ? PlexProvider(session: session, accountID: "account", http: http, interactiveHTTP: http)
+            : JellyfinProvider(session: session, accountID: "account", http: http, interactiveHTTP: http)
+        let oldDetail = Task { try await provider.item(id: "item") }
+        defer { oldDetail.cancel() }
+        try await waitForMetadata { await wire.reads == 1 }
+        await wire.recordPlayback(at: captured.addingTimeInterval(1))
+
+        let queue = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier(provider))
+        await queue.enqueue(mutation(false))
+        let drain = Task { await queue.drain() }
+        defer { drain.cancel() }
+        // The stale reset must be rejected before the older response is released.
+        try await waitForMetadata { await wire.reads == 2 }
+        await drain.value
+        let writes = await wire.writes
+        let pending = await queue.pendingCount
+        XCTAssertTrue(writes.isEmpty, "A stale reset must not erase newer server playback: \(writes)")
+        XCTAssertEqual(pending, 0)
+        await wire.release()
+        let old = try await oldDetail.value
+        XCTAssertEqual(old.lastPlayedAt, captured.addingTimeInterval(-1))
+    }
+
+    private func waitForMetadata(_ condition: () async -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !(await condition()) {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("The freshness check must start its own metadata transfer")
+                throw CancellationError()
+            }
+            try await Task.sleep(for: .milliseconds(1))
         }
     }
 
@@ -296,6 +362,53 @@ private actor PlaybackProbeProvider: MediaProvider, PlayedStateWriting, ResumeSt
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     nonisolated func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private actor PendingWatchMetadata {
+    let kind: ProviderKind
+    private var lastPlayedAt: Date
+    private var pending: CheckedContinuation<Void, Never>?
+    private var released = false
+    private(set) var reads = 0
+    private(set) var writes: [String] = []
+
+    init(kind: ProviderKind, lastPlayedAt: Date) {
+        self.kind = kind
+        self.lastPlayedAt = lastPlayedAt
+    }
+
+    func recordPlayback(at date: Date) { lastPlayedAt = date }
+
+    func response(_ request: LoopbackHTTPServer.Request) async -> LoopbackHTTPServer.Response {
+        let path = URLComponents(string: "http://localhost" + request.target)?.path
+        let detail = kind == .plex ? "/library/metadata/item" : "/Users/viewer/Items/item"
+        guard request.method == "GET", path == detail else {
+            writes.append(request.target)
+            return .json("{}")
+        }
+        reads += 1
+        let observed = lastPlayedAt
+        if reads == 1, !released {
+            await withCheckedContinuation { pending = $0 }
+        }
+        if kind == .plex {
+            return .json("""
+                {"MediaContainer":{"Metadata":[{"ratingKey":"item","type":"episode","title":"Fixture",
+                "duration":1800000,"viewOffset":900000,"lastViewedAt":\(Int(observed.timeIntervalSince1970))}]}}
+                """)
+        }
+        return .json("""
+            {"Id":"item","Name":"Fixture","Type":"Episode","RunTimeTicks":18000000000,
+            "UserData":{"PlaybackPositionTicks":9000000000,"LastPlayedDate":"\(observed.ISO8601Format())"}}
+            """)
+    }
+
+    func release() {
+        released = true
+        let waiter = pending
+        pending = nil
+        waiter?.resume()
+    }
 }
 
 private actor PlexWatchStateHTTP: HTTPClient {

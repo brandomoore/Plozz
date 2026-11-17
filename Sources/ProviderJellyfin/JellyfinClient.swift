@@ -332,7 +332,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Views",
             queryItems: [URLQueryItem(name: "IncludeExternalContent", value: "false")],
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await userViewRequests.run(key: userID) {
             try await http.decode(UserViewsResponse.self, from: endpoint, baseURL: baseURL).Items
@@ -379,7 +380,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Items/Resume",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.resumeItems) {
             try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
@@ -402,8 +404,8 @@ public struct JellyfinClient: Sendable {
     func nextUpItems(
         userID: String, limit: Int, parentID: String? = nil, seriesID: String? = nil
     ) async throws -> [BaseItemDto] {
-        if limit == Int.max {
-            return try await exhaustiveItems { startIndex, pageSize in
+        if limit > 100 {
+            return try await exhaustiveItems(limit: limit) { startIndex, pageSize in
                 return try await nextUpItemsPage(
                     userID: userID,
                     startIndex: startIndex,
@@ -450,7 +452,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Shows/NextUp",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.nextUp) {
             try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
@@ -463,6 +466,7 @@ public struct JellyfinClient: Sendable {
     /// Duplicate/non-advancing pages fail closed instead of hanging or presenting
     /// a silently truncated "unlimited" row.
     private func exhaustiveItems(
+        limit: Int = .max,
         page: (Int, Int) async throws -> ItemsResponse
     ) async throws -> [BaseItemDto] {
         let pageSize = 100
@@ -473,8 +477,9 @@ public struct JellyfinClient: Sendable {
 
         while true {
             try Task.checkCancellation()
-            let response = try await page(startIndex, pageSize)
-            guard response.Items.count <= pageSize else {
+            let requestedCount = min(pageSize, limit - collected.count)
+            let response = try await page(startIndex, requestedCount)
+            guard response.Items.count <= requestedCount else {
                 throw AppError.invalidResponse
             }
             if let total = response.TotalRecordCount {
@@ -509,6 +514,7 @@ public struct JellyfinClient: Sendable {
                 }
             }
 
+            if collected.count == limit { return collected }
             let (nextStart, overflow) = startIndex.addingReportingOverflow(response.Items.count)
             guard !overflow, nextStart > startIndex else {
                 throw AppError.invalidResponse
@@ -665,7 +671,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Items/Latest",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         // /Items/Latest returns a bare array, not an Items envelope.
         let items: [BaseItemDto] = try await http.decode([BaseItemDto].self, from: endpoint, baseURL: baseURL)
@@ -745,7 +752,9 @@ public struct JellyfinClient: Sendable {
                 // people and media sources.
                 URLQueryItem(name: "ImageTypeLimit", value: "4")
             ],
-            headers: authHeaders
+            headers: authHeaders,
+            // Reset arbitration also uses this read; it must not join an older response.
+            allowsRequestCoalescing: false
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.itemDetail) {
             try await interactiveHTTP.decode(BaseItemDto.self, from: endpoint, baseURL: baseURL)
@@ -931,7 +940,10 @@ public struct JellyfinClient: Sendable {
         if !useServerCollections {
             queryItems.append(collectionGroupingDisabled)
         }
-        let endpoint = Endpoint(path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders)
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders,
+            allowsRequestCoalescing: true
+        )
         return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
     }
 
@@ -975,6 +987,25 @@ public struct JellyfinClient: Sendable {
             baseURL: baseURL
         )
         return LibraryQueryFacets(genres: response.Genres ?? [], years: response.Years ?? [])
+    }
+
+    /// Existence needs one identity, not sorted card metadata or artwork.
+    func collectionDirectoryHasItems(userID: String, libraryID: String?) async throws -> ItemsResponse {
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "IncludeItemTypes", value: "BoxSet"),
+                URLQueryItem(name: "Recursive", value: "true"),
+                URLQueryItem(name: "StartIndex", value: "0"),
+                URLQueryItem(name: "Limit", value: "1"),
+                URLQueryItem(name: "EnableImages", value: "false"),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "true")
+            ] + (libraryID.map { [URLQueryItem(name: "ParentId", value: $0)] } ?? []),
+            headers: authHeaders
+        )
+        return try await HTTPResponseDiagnostics.$route.withValue(.collectionCandidates) {
+            try await readCollectionPage(endpoint)
+        }
     }
 
     /// Match the native client: the server decides whether ParentId scopes BoxSets.

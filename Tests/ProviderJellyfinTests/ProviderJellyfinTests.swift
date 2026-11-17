@@ -383,6 +383,35 @@ final class JellyfinProviderMappingTests: XCTestCase {
                        "NextUp must exclude resumable items so it complements, not duplicates, Resume")
     }
 
+    func testNextUpPrefixesAndUnlimitedBrowsingPreserveAllBoundedPages() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            for limit in [100, 120, 235, Int.max] {
+                let expectedCount = min(limit, 300)
+                let stub = StubHTTPClient()
+                let pages = stride(from: 0, to: expectedCount, by: 100).map { start in
+                    let items = (start..<min(start + 100, expectedCount)).map {
+                        #"{"Id":"next-\#($0)","Type":"Episode"}"#
+                    }.joined(separator: ",")
+                    return #"{"Items":[\#(items)],"TotalRecordCount":300}"#
+                }
+                stub.stubSequence(pathSuffix: "/Shows/NextUp", jsons: pages)
+                var session = makeSession()
+                session.server.provider = kind
+                let provider = JellyfinProvider(session: session, http: stub)
+                let items = try await provider.homeNextUp(libraryID: "shows", limit: limit)
+                XCTAssertEqual(items.map(\.id), (0..<expectedCount).map { "next-\($0)" })
+                XCTAssertEqual(stub.sentPaths.count, pages.count)
+                XCTAssertTrue(stub.sentQueryItems.allSatisfy {
+                    $0.first { $0.name == "ParentId" }?.value == "shows"
+                })
+                XCTAssertEqual(
+                    stub.sentQueryItems.compactMap { $0.first { $0.name == "Limit" }?.value },
+                    stride(from: 0, to: expectedCount, by: 100).map { String(min(100, limit - $0)) }
+                )
+            }
+        }
+    }
+
     func testContinueWatchingDedupesItemPresentInBothResumeAndNextUp() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: """

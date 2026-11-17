@@ -110,22 +110,45 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
                 id: collectionDirectoryID, title: "Collections", kind: .collection, synthesizedName: .collections
             ))
         }
-        for index in libraries.indices where libraries[index].kind == .collection {
-            do {
-                libraries[index].hasCollections = try await collectionDirectoryHasItems(
-                    in: libraries[index].id
-                )
-            } catch {
-                let failure = (error as? AppError) ?? .invalidResponse
-                if Task.isCancelled || error is CancellationError || failure == .cancelled {
-                    throw CancellationError()
-                }
-                PlozzLog.networking.error(
-                    "Collection availability failed provider=\(kind.rawValue) error=\(HandoffDiagnostics.errorCode(failure))"
-                )
+        let probes = libraries.enumerated().filter { $0.element.kind == .collection }
+            .map { (index: $0.offset, id: $0.element.id) }
+        let availability = try await withThrowingTaskGroup(of: (Int, Bool?).self) { group in
+            try Task.checkCancellation()
+            var next = min(4, probes.count)
+            for probe in probes.prefix(next) {
+                group.addTask { (probe.index, try await collectionAvailability(in: probe.id)) }
             }
+            var result: [Int: Bool] = [:]
+            for try await (index, available) in group {
+                try Task.checkCancellation()
+                if let available { result[index] = available }
+                if next < probes.count {
+                    let probe = probes[next]
+                    next += 1
+                    group.addTask { (probe.index, try await collectionAvailability(in: probe.id)) }
+                }
+            }
+            return result
+        }
+        for (index, available) in availability {
+            libraries[index].hasCollections = available
         }
         return libraries
+    }
+
+    private func collectionAvailability(in libraryID: String) async throws -> Bool? {
+        do {
+            return try await collectionDirectoryHasItems(in: libraryID)
+        } catch {
+            let failure = (error as? AppError) ?? .invalidResponse
+            if Task.isCancelled || error is CancellationError || failure == .cancelled {
+                throw CancellationError()
+            }
+            PlozzLog.networking.error(
+                "Collection availability failed provider=\(kind.rawValue) error=\(HandoffDiagnostics.errorCode(failure))"
+            )
+            return nil
+        }
     }
 
     public func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
@@ -441,7 +464,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
 
     /// Best-effort map of `seriesID → series last-played date`, used to stamp
     /// NextUp episodes with their series' true recency. Only series referenced by
-    /// this feed are fetched, in bounded batches, so an exhaustive Continue
+    /// this feed are fetched, with at most four concurrent requests, so an exhaustive Continue
     /// Watching load never becomes an exhaustive library scan.
     private func seriesLastPlayedDatesBestEffort(
         for items: [BaseItemDto]
@@ -476,36 +499,43 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
             result[dto.Id] = date
         }
         let missing = seriesIDs.filter { result[$0] == nil }
-        for start in stride(from: 0, to: missing.count, by: 4) {
+        let dates = try await withThrowingTaskGroup(of: (String, Date?).self) { group in
             try Task.checkCancellation()
-            let batch = missing[start..<min(start + 4, missing.count)]
-            let dates = try await withThrowingTaskGroup(of: (String, Date?).self) { group in
-                for seriesID in batch {
-                    group.addTask {
-                        do {
-                            let episode = try await client.lastPlayedEpisode(userID: session.userID, seriesID: seriesID)
-                            return (seriesID, Self.parseDate(episode?.UserData?.LastPlayedDate))
-                        } catch let error as AppError where error == .cancelled {
-                            throw error
-                        } catch is CancellationError {
-                            throw CancellationError()
-                        } catch {
-                            PlozzLog.networking.error(
-                                "Continue Watching episode-recency lookup failed; keeping undated Next Up: \(String(describing: error))"
-                            )
-                            return (seriesID, nil)
-                        }
-                    }
-                }
-                var dates: [String: Date] = [:]
-                for try await (seriesID, date) in group {
-                    dates[seriesID] = date
-                }
-                return dates
+            var next = min(4, missing.count)
+            for seriesID in missing.prefix(next) {
+                group.addTask { try await lastPlayedDate(forSeriesID: seriesID) }
             }
-            result.merge(dates) { existing, _ in existing }
+            var dates: [String: Date] = [:]
+            for try await (seriesID, date) in group {
+                try Task.checkCancellation()
+                dates[seriesID] = date
+                if next < missing.count {
+                    let seriesID = missing[next]
+                    next += 1
+                    group.addTask { try await lastPlayedDate(forSeriesID: seriesID) }
+                }
+            }
+            return dates
         }
+        result.merge(dates) { existing, _ in existing }
         return result
+    }
+
+    private func lastPlayedDate(forSeriesID seriesID: String) async throws -> (String, Date?) {
+        do {
+            let episode = try await client.lastPlayedEpisode(userID: session.userID, seriesID: seriesID)
+            return (seriesID, Self.parseDate(episode?.UserData?.LastPlayedDate))
+        } catch let error as AppError where error == .cancelled {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            PlozzLog.networking.error(
+                "Continue Watching episode-recency lookup failed; keeping undated Next Up: \(String(describing: error))"
+            )
+            return (seriesID, nil)
+        }
     }
 
     /// Stamps a Continue Watching item that carries no play timestamp of its own —

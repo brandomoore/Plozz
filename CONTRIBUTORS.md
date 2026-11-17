@@ -82,6 +82,14 @@ that every change in that PR was adopted.
   This credits only that accepted part, not the broader Home, networking,
   Search or transition changes in the PR. The integration also contains
   separately requested Related/Cast sizing and native-gesture handling.
+- Non-UI networking and Jellyfin scheduling ideas from the same
+  [#457](https://github.com/brandomoore/Plozz/pull/457), originally in
+  [8e3a47fd3e](https://github.com/brandomoore/Plozz/commit/8e3a47fd3e81118f311e33e7225a23e44bee94a4):
+  shared foreground session pools, independently cancellable GET sharing,
+  lightweight collection probes and bounded recency scheduling. This adaptation
+  reuses the reviewed primary and alternative candidate repairs, preserves
+  exhaustive Next Up, keeps discovery cookie stores isolated, and does not adopt
+  the broader UI changes.
 
 The #457 source-to-integration reference above was added retrospectively:
 the published integration commit omitted it. Its history has not been rewritten.
