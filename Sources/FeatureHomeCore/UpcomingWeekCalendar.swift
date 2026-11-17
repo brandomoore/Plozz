@@ -51,6 +51,9 @@ struct UpcomingWeekCalendar: View {
                 )
                 ForEach(week.days, id: \.self) { day in
                     control(dayButton(day))
+                        .modifier(UpcomingDateSelectionBackground(
+                            isSelected: calendar.isDate(day, inSameDayAs: selectedDay)
+                        ))
                         .disabled(day < interval.start || day >= interval.end)
                 }
                 control(
@@ -100,9 +103,6 @@ struct UpcomingWeekCalendar: View {
                         .accessibilityHidden(true)
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                if isSelected { UpcomingDateSelectionMark() }
-            }
         }
         .buttonBorderShape(.roundedRectangle(radius: 16))
         .plozzActionButton(role: .secondary)
@@ -124,12 +124,15 @@ struct UpcomingWeekCalendar: View {
     }
 }
 
-struct UpcomingDateSelectionMark: View {
-    var body: some View {
-        Image(systemName: "checkmark")
-            .font(.system(size: 14, weight: .semibold))
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+struct UpcomingDateSelectionBackground: ViewModifier {
+    let isSelected: Bool
+    @Environment(\.themePalette) private var palette
+
+    func body(content: Content) -> some View {
+        content.background(
+            palette.primaryText.opacity(isSelected ? 0.14 : 0),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
     }
 }
 #endif

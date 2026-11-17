@@ -851,6 +851,9 @@
         private func calendarCell(_ day: Date) -> some View {
             let calendar = Calendar.current
             return calendarControl(dayButton(day))
+                .modifier(UpcomingDateSelectionBackground(
+                    isSelected: calendar.isDate(day, inSameDayAs: selectedDay)
+                ))
                 .disabled(day < interval.start || day >= interval.end)
                 .accessibilityAddTraits(calendar.isDate(day, inSameDayAs: selectedDay) ? .isSelected : [])
                 .accessibilityLabel(Text(day, format: .dateTime.weekday().month().day()))
@@ -871,7 +874,6 @@
 
         private func dayButton(_ day: Date) -> some View {
             let isToday = Calendar.current.isDateInToday(day)
-            let isSelected = Calendar.current.isDate(day, inSameDayAs: selectedDay)
             return Button {
                 selectedDay = day
                 dismiss()
@@ -891,9 +893,6 @@
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
                         }
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        if isSelected { UpcomingDateSelectionMark().offset(x: 18, y: -8) }
                     }
             }
             .buttonBorderShape(.roundedRectangle(radius: 16))

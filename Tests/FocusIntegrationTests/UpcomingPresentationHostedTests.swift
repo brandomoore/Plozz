@@ -52,6 +52,8 @@ final class UpcomingPresentationHostedTests: XCTestCase {
                 let last = try XCTUnwrap(items.last)
                 let arrow = week ? last.item : items[1].item
                 let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                var restingSurface: Double?
+                var selectionDifference: Double?
                 for focused in [false, true] {
                     let target = focused ? selected : arrow
                     controller.target = target
@@ -79,16 +81,24 @@ final class UpcomingPresentationHostedTests: XCTestCase {
                     let light = ink[ink.count * 98 / 100]
                     let contrast = (light + 0.05) / (dark + 0.05)
                     XCTAssertGreaterThanOrEqual(contrast, 4.5, "\(week ? "Week" : "Month"), \(scheme), focused: \(focused)")
+                    func surface(_ bounds: CGRect) throws -> Double {
+                        let values = try samples(CGRect(
+                            x: bounds.minX + bounds.width * 0.8, y: bounds.midY, width: 4, height: 4
+                        ))
+                        return values.reduce(0, +) / Double(values.count)
+                    }
                     if !focused {
                         let other = window.convert(try XCTUnwrap(NativeFocusRegion.frame(of: neighbor, in: root)), from: root)
-                        func surface(_ bounds: CGRect) throws -> Double {
-                            let values = try samples(CGRect(
-                                x: bounds.minX + bounds.width * 0.8, y: bounds.midY, width: 4, height: 4
-                            ))
-                            return values.reduce(0, +) / Double(values.count)
-                        }
-                        XCTAssertEqual(try surface(frame), try surface(other), accuracy: 0.05,
-                                       "Selection must not give an unfocused date a focus-like fill.")
+                        let selectedSurface = try surface(frame)
+                        let difference = abs(selectedSurface - (try surface(other)))
+                        restingSurface = selectedSurface
+                        selectionDifference = difference
+                        XCTAssertGreaterThan(difference, 0.01, "Selection needs a visible background change.")
+                        XCTAssertLessThan(difference, 0.2, "Selection must stay subdued rather than imitate focus.")
+                    } else {
+                        let focusDifference = abs(try surface(frame) - XCTUnwrap(restingSurface))
+                        XCTAssertGreaterThan(focusDifference, try XCTUnwrap(selectionDifference) * 3,
+                                             "Native focus must remain much stronger than selection.")
                     }
                 }
             }

@@ -200,9 +200,9 @@ focus returns to the fixed Calendar control while the chosen date stays visible.
 The full month picker remains available and synchronizes the displayed week.
 Week starts follow the system calendar; unavailable dates and week directions
 are disabled. Calendar arithmetic preserves local dates across daylight-saving changes.
-Both TV calendars mark selection with a small checkmark and Today with bold text
-and a dot. Only actual native focus brightens a date control; selecting a date
-does not give it a focus-like fill.
+Both TV calendars mark selection with a subtle neutral background and Today with
+bold text and a dot. The selection background sits beneath the native control;
+actual focus retains the much stronger native highlight and contrasting text.
 
 The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and
 `--upcoming-capture-fixture --capture-home` (the production Home screen with
