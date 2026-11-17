@@ -212,16 +212,19 @@ struct PlozziOSItemDetailView: View {
 /// is stretching this exact image, so the detail hero should start from it rather
 /// than paint a flat background until a 2000px backdrop is fetched and decoded again.
 private func plozziOSHeroSeedArtwork(_ items: MediaItem...) -> UIImage? {
+    // Only landscape pictures may seed the detail stage. A portrait poster
+    // scaled-to-fill a landscape hero visibly stretches/re-crops before the real
+    // backdrop lands, which reads as the hero resizing or sliding into place.
     let variants: [ArtworkImageVariant] = [
-        .heroBackdrop, .heroPreview, .landscapeCard, .posterCard, .posterPreview, .original
+        .heroBackdrop, .heroPreview, .landscapeCard, .original
     ]
     for item in items {
         let urls = [item.backdropURL, item.heroBackdropURL, item.posterURL, item.seriesPosterURL]
         for url in urls.compactMap({ $0 }) {
             for variant in variants {
-                if let image = ArtworkImageCache.shared.cachedImage(for: url, variant: variant) {
-                    return image
-                }
+                guard let image = ArtworkImageCache.shared.cachedImage(for: url, variant: variant),
+                      image.size.width >= image.size.height * 1.2 else { continue }
+                return image
             }
         }
     }

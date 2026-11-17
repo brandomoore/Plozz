@@ -1300,11 +1300,13 @@ private struct PlozziOSHeroBackdrop: View {
             seedArtwork == nil ? palette.backgroundBase : Color.clear
         }
         .reportingHeroArtwork(id: presentation.itemID)
-        // Fade the first real picture over the grey/seed base instead of letting
-        // it pop in when the async resolve lands. This is a plain opacity
-        // animation, not a redraw of the image.
-        .opacity(seedArtwork != nil || backdropResolved ? 1 : 0)
-        .animation(.easeOut(duration: 0.25), value: backdropResolved)
+        // Fade the first detail backdrop over the grey/seed base instead of
+        // letting it pop in when the async resolve lands. Home hero slides must
+        // not fade: their image is normally already warm, and coupling the fade to
+        // the slide change made every swipe dim the artwork and could flash black
+        // during a pull. This is a plain opacity animation, not a redraw.
+        .opacity(surfaceRole != .detail || seedArtwork != nil || backdropResolved ? 1 : 0)
+        .animation(surfaceRole == .detail ? .easeOut(duration: 0.25) : nil, value: backdropResolved)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .onChange(of: presentation.itemID) { _, _ in
