@@ -31,13 +31,7 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [
         .iOS(.v18),
-        .tvOS(.v18),
-        // The package's own code uses macOS 13/14 APIs and AetherEngine requires 15 (LocalizedStringResource,
-        // Observable). Without a macOS minimum SwiftPM assumes a legacy default, so
-        // `swift build` and `swift test` fail locally on hosts where the platform is
-        // not declared — CI builds through xcodebuild and never hit it. This changes
-        // nothing for the apps, which target iOS/tvOS 18.
-        .macOS(.v15)
+        .tvOS(.v18)
     ],
     products: [
         .library(name: "CoreModels", targets: ["CoreModels"]),
@@ -260,15 +254,16 @@ let package = Package(
         // Shared SDR/HDR active-picture measurements include host-owned native players.
         // 7.53.1 corrects remote-HLS buffering, short forward seeks and tvOS MetalFX
         // availability. FFmpegBuild 3.11.1 adds AV1 forward-keyframe detection.
-        // Audio shaping and low-resolution upscaling remain opt-in and disabled.
+        // Audio shaping stays off; the host selects profile-scoped SDR upscaling.
         // Resume preroll backfill no longer opens a false native-scrub landing watch.
         // 7.66.0 includes AAC/PCE, subtitle-seek and packet-wait fixes.
         // FEL curve folding is available for beta on-demand playback; engine-owned Now Playing stays off.
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
+        // Buffered direct-rendering PCM supports audio-only sync correction without seeking.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "cc3cb49f4014a208f841bde8d1e0a5af0ff885e9",
+            revision: "bba604e1ee381958e568a4ec407a22a766d521ab",
             traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision
@@ -835,6 +830,7 @@ let package = Package(
             dependencies: [
                 "CoreModels",
                 "CoreNetworking",
+                "MetadataKit",
                 "MediaTransportCore",
                 "FeaturePlayback",
                 .product(name: "AetherEngine", package: "AetherEngine"),

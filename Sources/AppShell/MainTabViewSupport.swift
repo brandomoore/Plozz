@@ -819,6 +819,7 @@ extension View {
                         continuation: continuation,
                         versionPreferences: versionPreferences
                     )
+                    model.controls.videoZoom.bindAutoCropFraming(to: playbackSettingsModel, platform: .current)
                     // Set here rather than inside the factory: leaving the film
                     // is a navigation concern, and navigation lives with the
                     // shell that presented the player, not with the code that

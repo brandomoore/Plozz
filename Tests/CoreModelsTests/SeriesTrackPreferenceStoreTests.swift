@@ -170,7 +170,8 @@ final class SeriesTrackPreferenceStoreTests: XCTestCase {
         XCTAssertEqual(store.preference(forKey: "a:show")?.audioLanguage, "fr")
         XCTAssertEqual(store.preference(forKey: "a:show")?.subtitle, .off)
         XCTAssertNil(store.preference(forKey: "a:show")?.videoZoom)
-        for zoom in [VideoZoomPreference(mode: .custom, customPercent: 117), .init(mode: .fit), .init(mode: .picture)] {
+        for zoom in [VideoZoomPreference(mode: .custom, customPercent: 117), .init(mode: .fit),
+                     .init(mode: .picture), .init(mode: .picture, pictureFitsInsideSafeArea: true)] {
             store.setVideoZoom(zoom, forKey: "a:show")
             let reopened = SeriesTrackPreferenceStore(defaults: defaults)
             XCTAssertEqual(reopened.preference(forKey: "a:show"),
@@ -199,6 +200,15 @@ final class SeriesTrackPreferenceStoreTests: XCTestCase {
             let zoom = try JSONDecoder().decode(VideoZoomPreference.self, from: data)
             XCTAssertEqual(zoom, .init(mode: .custom, customPercent: expected))
         }
+    }
+
+    func testLegacyAutoCropDefaultsToScreenEdgesAndSafeChoiceRoundTrips() throws {
+        let legacy = try JSONDecoder().decode(VideoZoomPreference.self, from: Data(#"{"mode":4}"#.utf8))
+        XCTAssertEqual(legacy, .onDemandDefault)
+        XCTAssertFalse(legacy.pictureFitsInsideSafeArea)
+        let safe = VideoZoomPreference(mode: .picture, pictureFitsInsideSafeArea: true)
+        let encoded = try JSONEncoder().encode(safe)
+        XCTAssertEqual(try JSONDecoder().decode(VideoZoomPreference.self, from: encoded), safe)
     }
 
     func testPersistsAcrossStoreInstances() {

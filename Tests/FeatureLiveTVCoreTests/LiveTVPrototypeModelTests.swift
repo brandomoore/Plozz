@@ -5,6 +5,86 @@ import XCTest
 
 @MainActor
 final class LiveTVPrototypeModelTests: XCTestCase {
+    func testALineupPreparedInTheBackgroundPublishesWhatAMainActorBuildWould() async throws {
+        let lineup = (1...300).map { index in
+            LiveTVPrototypeChannel(
+                id: "c\(index)", number: 301 - index, name: "  US|  Channel \(index)  H D", category: "G\(index % 7)",
+                symbol: "tv", accent: 0, source: .iptv, tagline: "", configuredSourceID: "s",
+                language: index.isMultiple(of: 2) ? "en" : "fr", country: "US", groups: ["G\(index % 7)", "All"]
+            )
+        }
+        func assertSame(_ lhs: LiveTVPrototypeModel, _ rhs: LiveTVPrototypeModel, line: UInt = #line) {
+            XCTAssertEqual(lhs.channels, rhs.channels, line: line)
+            XCTAssertEqual(lhs.visibleChannels, rhs.visibleChannels, line: line)
+            XCTAssertEqual(lhs.guideChannels, rhs.guideChannels, line: line)
+            XCTAssertEqual(lhs.guideRowIDs, rhs.guideRowIDs, line: line)
+            XCTAssertEqual(lhs.browsingCategories, rhs.browsingCategories, line: line)
+            XCTAssertEqual(lhs.categoryChannelCount(nil), rhs.categoryChannelCount(nil), line: line)
+            XCTAssertEqual(lhs.categorySummaries, rhs.categorySummaries, line: line)
+            XCTAssertEqual(lhs.hiddenChannelEntries, rhs.hiddenChannelEntries, line: line)
+            XCTAssertEqual(lhs.languages, rhs.languages, line: line)
+            XCTAssertEqual(lhs.countries, rhs.countries, line: line)
+            XCTAssertEqual(lhs.organizationCountries, rhs.organizationCountries, line: line)
+            XCTAssertEqual(lhs.favoriteIDs, rhs.favoriteIDs, line: line)
+        }
+
+        func cleaning() -> LiveTVPrototypeModel {
+            let model = LiveTVPrototypeModel(channels: [])
+            model.cleanChannelNames = true
+            return model
+        }
+
+        let direct = cleaning()
+        try direct.replaceCatalog(channels: lineup, programs: [])
+        XCTAssertEqual(direct.preparedInstallCount, 0)
+        XCTAssertEqual(direct.channel(id: "c1")?.name, "US | Channel 1 HD")
+
+        let prepared = cleaning()
+        await prepared.prepareCatalog(channels: lineup)
+        try prepared.replaceCatalog(channels: lineup, programs: [])
+        XCTAssertEqual(prepared.preparedInstallCount, 1)
+        assertSame(prepared, direct)
+
+        // A build prepared before browsing changed is not what the guide should show.
+        let changed = cleaning()
+        await changed.prepareCatalog(channels: lineup)
+        changed.category = "G3"
+        changed.sort = .name
+        try changed.replaceCatalog(channels: lineup, programs: [])
+        XCTAssertEqual(changed.preparedInstallCount, 0)
+        let reference = cleaning()
+        reference.category = "G3"
+        reference.sort = .name
+        try reference.replaceCatalog(channels: lineup, programs: [])
+        assertSame(changed, reference)
+        XCTAssertEqual(changed.visibleChannels.count, 43)
+
+        // Nor is one prepared for a different lineup.
+        let other = cleaning()
+        await other.prepareCatalog(channels: Array(lineup.dropLast()))
+        try other.replaceCatalog(channels: lineup, programs: [])
+        XCTAssertEqual(other.preparedInstallCount, 0)
+        assertSame(other, direct)
+    }
+
+    func testReturningToLiveTVWithNothingChangedKeepsTheDerivedLists() throws {
+        let lineup = (1...20).map { searchChannel("c\($0)", $0, "Channel \($0)", category: "G\($0 % 3)") }
+        let model = LiveTVPrototypeModel(channels: [])
+        try model.replaceCatalog(channels: lineup, programs: [])
+        let revision = model.catalogRevision
+        let rows = model.guideChannels
+
+        model.reloadPreferences()
+        XCTAssertEqual(model.catalogRevision, revision)
+        XCTAssertEqual(model.guideChannels, rows)
+
+        // Guide-only rows follow listings, so they are always derived again.
+        model.guideOnly = true
+        let guideOnly = model.catalogRevision
+        model.reloadPreferences()
+        XCTAssertNotEqual(model.catalogRevision, guideOnly)
+    }
+
     func testCategoryCountsIgnoreCurrentCategoryAndQueryButHonorEligibility() {
         let grouped = LiveTVPrototypeChannel(
             id: "shared", number: 1, name: "Arena", category: "Sports", symbol: "tv", accent: 0,
@@ -744,6 +824,30 @@ final class LiveTVPrototypeModelTests: XCTestCase {
         try model.replaceChannels(channels)
         XCTAssertTrue(model.visibleChannels.contains { $0.id == hidden.id })
         XCTAssertTrue(model.categories.contains(hidden.category))
+    }
+
+    func testReloadRestoresHiddenChannelWithoutChangingCatalogOrFilters() throws {
+        let store = HiddenChannelsFixtureStore()
+        let channels = hiddenChannelFixtures
+        let hidden = channels[0]
+        let model = LiveTVPrototypeModel(channels: channels, preferencesStore: store)
+        let originalRows = model.guideChannels
+        let originalCategories = model.categories
+
+        XCTAssertTrue(model.hideChannel(hidden))
+        XCTAssertFalse(model.visibleChannels.contains { $0.id == hidden.id })
+        XCTAssertFalse(model.categories.contains(hidden.category))
+        try store.save(store.value.restoringChannel(id: hidden.id))
+
+        model.reloadPreferences()
+
+        XCTAssertTrue(model.hiddenChannels.isEmpty)
+        XCTAssertEqual(model.visibleChannels, channels)
+        XCTAssertEqual(model.guideChannels, originalRows)
+        XCTAssertEqual(model.categories, originalCategories)
+        let revision = model.catalogRevision
+        model.reloadPreferences()
+        XCTAssertEqual(model.catalogRevision, revision)
     }
 
     func testReloadRestoresHiddenChannelSubjectToCurrentFilters() throws {

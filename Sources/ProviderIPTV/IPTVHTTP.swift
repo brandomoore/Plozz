@@ -5,6 +5,27 @@ import os
 
 final class IPTVHTTP: Sendable {
     @TaskLocal static var performanceMetrics: IPTVPerformanceMetrics?
+
+    /// One guide operation's latest response policy, without changing thrown error kinds.
+    final class ResponseMetadata: Sendable {
+        private let state = OSAllocatedUnfairLock<(status: Int, retryAfter: TimeInterval?)?>(initialState: nil)
+
+        func received(_ response: HTTPURLResponse) {
+            let retryAfter = HTTPDate.retryAfter(response.value(forHTTPHeaderField: "Retry-After"))
+            state.withLock { $0 = (response.statusCode, retryAfter) }
+        }
+
+        func retryAfter(for error: any Error) -> TimeInterval? {
+            let status: Int
+            switch error {
+            case AppError.rateLimited: status = 429
+            case IPTVError.httpStatus(let code): status = code
+            default: return nil
+            }
+            return state.withLock { $0?.status == status ? $0?.retryAfter : nil }
+        }
+    }
+
     private let session: URLSession
     private let redirects: IPTVRedirects
     private typealias RequestTask = Task<(URLSession.AsyncBytes, URLResponse), Error>

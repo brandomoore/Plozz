@@ -4,6 +4,7 @@ import CoreModels
 import CoreUI
 import CrashReporting
 import FeatureHomeCore
+import FeatureLiveTV
 import FeatureMusic
 import FeatureProfiles
 import FeatureSettings
@@ -364,6 +365,7 @@ public struct PlozziOSRootView: View {
         setupPresentationContent
         .plozzOpaqueNavigationChrome()
         .environment(contentRefreshCoordinator)
+        .environment(appModel.settings.playback)
         .background(ContentRefreshLifecycleReader(coordinator: contentRefreshCoordinator))
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
         .detailPlaybackPreparationEnvironment(
@@ -1676,6 +1678,13 @@ struct PlozziOSTabShell: View {
         .task(id: homeContentIdentity, priority: .utility) {
             await refreshNavigationLibraries()
         }
+        .liveTVGuideAutoUpdate(
+            accountIDs: appModel.accountsProviders.activeAccountIDs.sorted(),
+            authorizationID: appModel.accountsProviders.liveTVAuthorizationID,
+            isAuthorized: tabDestinations.contains(.liveTV) && appModel.isLiveTVProfileAuthorized,
+            namespace: appModel.profiles.activeNamespace,
+            resolver: appModel.accountsProviders.liveTVProviderResolver()
+        )
     }
 
     private var usesOpaqueBottomBar: Bool {

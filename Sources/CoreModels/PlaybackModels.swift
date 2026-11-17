@@ -352,6 +352,8 @@ public struct PlaybackServerDecision: Codable, Hashable, Sendable {
 public struct PlaybackRequest: Hashable, Sendable {
     /// Host-selected policy for this playback, not provider metadata. Preview/live callers stay conservative.
     public var dolbyVisionFELConversion: Bool = false
+    /// Host preference; nil leaves the choice to the engine's playback context.
+    public var videoUpscaling: VideoUpscaling?
     public var discPlayback: DiscPlaybackBehavior = .playVideo
     public var discRegionOverride: UInt32? = nil
     public var discPlaylistOverride: Int? = nil

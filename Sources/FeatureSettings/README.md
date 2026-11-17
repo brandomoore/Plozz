@@ -12,6 +12,15 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Playback's **Default zoom** uses the shared native menu on TV and mobile.
+Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
+control edits only its own choice. Custom exposes the existing 50-200% range.
+Saved movie/series mode overrides take priority. Auto-crop's pinch-selected
+screen-edge/cutout-safe framing instead carries across all videos for that device
+type and profile. Changing Custom's percentage preserves that shared framing.
+The playback settings payload carries all three defaults through profile switching,
+transfer and sync.
+
 Live TV's **Clean channel names** switch is profile-scoped and off by default.
 The shared TV/mobile section previews up to three distinct original names from
 the authorized loaded IPTV catalog, preferring names affected by cleanup.
@@ -59,9 +68,12 @@ Version selection offers Ask every time, Choose automatically, and Use first fro
 on both platforms and at first use. Use first from server uses the selected server's first
 version and ignores remembered choices; a manual file selection still wins.
 
+Version selection is one native menu row showing its label and current value,
+not an expanded list. Unconfigured profiles show Choose on first play without
+changing the saved preference; the three choices are inside the menu.
 Automatic version selection has a shared information button beside the TV
-description below the choices, beside the selected mobile value, and beside the
-first-use description. TV choice rows keep their full-width checkmark layout.
+description below the menu, beside the selected mobile value, and beside the
+first-use description.
 The native help dialog explains remembered series choices and metadata-based
 ranking with examples; opening or dismissing it never selects a playback mode.
 
@@ -89,6 +101,18 @@ scope footer.
 Playback groups its five optional **Player tabs** in one shared control surface
 on TV and mobile. Labels match the player tabs, Info stays always available, and
 visibility preferences are independent of autoplay and Up Next behavior.
+
+Playback's **Video upscaling** control is shared by TV and mobile and is
+profile-scoped. Automatic is the default, including profiles saved before the
+setting existed; Off, Standard and Animation are explicit alternatives.
+Automatic chooses Animation from anime identities or animation genres/tags,
+otherwise Standard. Standard enhances supported 8-bit SDR below 1920x1080 in
+both dimensions; Animation accepts drawn 8/10-bit SDR up to 1920x1080 inclusive.
+Both require a larger display and exclude HDR/Dolby Vision and 4K.
+The description distinguishes these limits and metadata-based selection.
+The setting applies to new playback through AetherEngine, including Live TV;
+native and external players
+are unchanged. Engine eligibility and performance fallbacks still apply.
 
 Movie & show details → Trailers & music is the shared destination for trailer
 availability, independent Home autoplay and detail background playback. Home →

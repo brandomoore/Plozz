@@ -356,6 +356,54 @@ public final class PlayerViewModel {
     private let playbackSettings: PlaybackSettings
     public var volumeBrightnessGesturesEnabled: Bool { playbackSettings.volumeBrightnessGestures }
     @ObservationIgnored private var dolbyVisionFELOverride: Bool?
+    @ObservationIgnored private var videoUpscalingOverride: VideoUpscaling?
+    @ObservationIgnored private(set) var videoUpscalingTask: Task<Void, Never>?
+
+    public func setVideoUpscaling(_ selection: VideoUpscaling) {
+        guard !didStop, phase == .ready, videoUpscalingTask == nil,
+              engine.canChangeVideoUpscaling, let request,
+              controls.upscaling.selection != selection else { return }
+        let token = engineToken
+        let generation = dynamicRangeLoadGeneration
+        let currentEngine = engine
+        controls.upscaling.isChanging = true
+        controls.upscaling.error = nil
+        videoUpscalingTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if engineToken == token, dynamicRangeLoadGeneration == generation {
+                    controls.upscaling.isChanging = false
+                    videoUpscalingTask = nil
+                }
+            }
+            do {
+                guard let resolved = await resolvedVideoUpscaling(for: request, preference: selection) else { return }
+                try Task.checkCancellation()
+                guard !didStop, engineToken == token, dynamicRangeLoadGeneration == generation else { return }
+                try await currentEngine.setVideoUpscaling(resolved)
+                try Task.checkCancellation()
+                guard !didStop, engineToken == token, dynamicRangeLoadGeneration == generation else { return }
+                videoUpscalingOverride = selection
+                controls.upscaling.selection = selection
+                controls.engineCapabilities = currentEngine.capabilities
+            } catch is CancellationError {
+                // A new load or player teardown owns the session.
+            } catch {
+                guard !didStop, !Task.isCancelled, engineToken == token,
+                      dynamicRangeLoadGeneration == generation else { return }
+                PlozzLog.playback.error("Could not change video upscaling during playback.")
+                controls.upscaling.error = "Couldn't change upscaling. Try again."
+            }
+        }
+    }
+
+    private func cancelVideoUpscalingChange() {
+        videoUpscalingTask?.cancel()
+        videoUpscalingTask = nil
+        controls.upscaling.isChanging = false
+        controls.upscaling.isAvailable = false
+        controls.upscaling.error = nil
+    }
 
     public func setDolbyVisionFELConversion(_ enabled: Bool) {
         guard !didStop, phase == .ready, controls.felConversion.isAvailable,
@@ -975,6 +1023,11 @@ public final class PlayerViewModel {
         }
         engine.onProgress = { [weak self] in
             guard let self, self.engineToken == callbackEngineToken else { return }
+            if self.engine.status == .ready, !self.engine.isSessionReloading,
+               !self.controls.upscaling.isChanging {
+                self.controls.engineCapabilities = self.engine.capabilities
+                self.controls.upscaling.isAvailable = self.engine.canChangeVideoUpscaling
+            }
             self.engineHandoff.notePresentedFrame()
             guard self.request?.usesUnidentifiedDiscTimeline != true else { return }
             // Jellyfin (non-idempotent) next-episode prefetch fires once the
@@ -1027,7 +1080,9 @@ public final class PlayerViewModel {
         // also the moment Plozzigen's tracks first become known, so it's where we
         // route its load-time default subtitle through the overlay.
         engine.onTracksChanged = { [weak self] in
-            guard let self, self.engineToken == callbackEngineToken else { return }
+            guard let self, !self.didStop, self.engineToken == callbackEngineToken,
+                  !self.engine.isSessionReloading else { return }
+            self.controls.engineCapabilities = self.engine.capabilities
             self.subtitleController.loadTrackOptions()
             self.subtitleController.applyImportedAudioIfPossible()
             if let request = self.request {
@@ -1318,6 +1373,7 @@ public final class PlayerViewModel {
     /// `resumeOverride` carries the position the failed attempt reached so the
     /// retry resumes there instead of the provider's stale resume point.
     private func startPlayback(forceTranscode: Bool, resumeOverride: TimeInterval?) async {
+        controls.audioSyncAdjustment.cancel()
         beginDiagnosticAttempt()
         let attempt = diagnosticAttempt
         diagnosticFacts = .init(
@@ -2037,7 +2093,8 @@ public final class PlayerViewModel {
         #if canImport(UIKit)
         if let zoom = outcome.importedVideoZoom {
             controls.videoZoom.restoreForPlayback(
-                zoom, automaticDefault: true, supportsActivePicture: engine.supportsActivePictureAnalysis
+                zoom, defaultPreference: playbackSettings.videoZoom[.current],
+                supportsActivePicture: engine.supportsActivePictureAnalysis
             )
         }
         #endif
@@ -2050,11 +2107,52 @@ public final class PlayerViewModel {
         let remembered = eligible
             ? manuallySelectedVideoZoom ?? seriesMemory.rememberedVideoZoom(for: request.item) : nil
         controls.videoZoom.restoreForPlayback(
-            remembered, automaticDefault: eligible,
+            remembered, defaultPreference: request.usesUnidentifiedDiscTimeline
+                ? PlayerVideoZoom() : playbackSettings.videoZoom[.current],
             supportsActivePicture: engine.supportsActivePictureAnalysis
         )
     }
     #endif
+
+    /// A cancelled metadata lookup returns nil rather than admitting another load.
+    private func resolvedVideoUpscaling(
+        for request: PlaybackRequest, preference: VideoUpscaling? = nil
+    ) async -> VideoUpscaling? {
+        let preference = preference ?? videoUpscalingOverride ?? playbackSettings.videoUpscaling
+        let selection = ContentClassifier.videoUpscaling(preference, for: request.item)
+        guard preference == .automatic, selection == .standard,
+              request.discPlayback != .openMenu, request.externalAudioURL == nil,
+              request.item.kind == .episode, let seriesID = request.item.seriesID,
+              !seriesID.isEmpty else { return selection }
+        let provider = provider
+        do {
+            let series = try await withThrowingTaskGroup(of: MediaItem.self) { group in
+                group.addTask { try await provider.item(id: seriesID) }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(2))
+                    throw URLError(.timedOut)
+                }
+                defer { group.cancelAll() }
+                guard let first = try await group.next() else { throw CancellationError() }
+                return first
+            }
+            try Task.checkCancellation()
+            guard series.kind == .series, series.id == seriesID,
+                  series.sourceAccountID == request.item.sourceAccountID else {
+                PlozzLog.playback.error("Upscaling received unrelated series metadata; using Standard.")
+                return .standard
+            }
+            return ContentClassifier.videoUpscaling(preference, for: request.item, series: series)
+        } catch {
+            if Task.isCancelled || error is CancellationError
+                || (error as? AppError) == .cancelled
+                || (error as? URLError)?.code == .cancelled {
+                return nil
+            }
+            PlozzLog.playback.error("Upscaling series metadata unavailable; using Standard.")
+            return .standard
+        }
+    }
 
     /// Loads an already-resolved request on the routed engine and finishes the
     /// bring-up (ready state, start report, track menu). Shared by the initial
@@ -2069,10 +2167,18 @@ public final class PlayerViewModel {
         stopSongWatch()
         var request = request
         request.dolbyVisionFELConversion = dolbyVisionFELOverride ?? playbackSettings.dolbyVisionFELConversion
+        cancelVideoUpscalingChange()
+        request.videoUpscaling = videoUpscalingOverride ?? playbackSettings.videoUpscaling
         controls.felConversion.isEnabled = request.dolbyVisionFELConversion
         controls.felConversion.isAvailable = false
         dynamicRangeLoadGeneration &+= 1
         let rangeLoadGeneration = dynamicRangeLoadGeneration
+        if engineKind == .plozzigen {
+            guard let selection = await resolvedVideoUpscaling(for: request) else { return }
+            guard !Task.isCancelled, !didStop,
+                  dynamicRangeLoadGeneration == rangeLoadGeneration else { return }
+            request.videoUpscaling = selection
+        }
         controls.infoCard.chapters = MediaChapter.normalized(request.chapters, duration: request.item.runtime)
         inheritedPreservedDynamicRange =
             engineKind != .native ? pendingPreservedDynamicRange : nil
@@ -2155,6 +2261,8 @@ public final class PlayerViewModel {
         // not after an awaited provider report. System elapsed time extrapolates
         // from this rate, so advertising a rate the engine clamps would drift.
         controls.engineCapabilities = engine.capabilities
+        controls.upscaling.isAvailable = engine.canChangeVideoUpscaling
+        controls.upscaling.selection = videoUpscalingOverride ?? playbackSettings.videoUpscaling
         controls.felConversion.isAvailable = engine.canChangeDolbyVisionFELConversion
         if engine.capabilities.contains(.playbackSpeed) {
             controls.playbackSpeed = min(controls.playbackSpeed, engine.maximumPlaybackSpeed)
@@ -2613,9 +2721,27 @@ public final class PlayerViewModel {
     }
 
     public func setAudioDelay(_ seconds: TimeInterval) {
-        let clamped = max(-10, min(10, seconds))
-        controls.audioDelaySeconds = clamped
+        guard !didStop, engine.capabilities.contains(.audioDelay) else { return }
+        guard seconds.isFinite else {
+            PlozzLog.playback.error("Ignoring non-finite audio sync offset.")
+            return
+        }
+        let range = PlayerControlsModel.audioDelayRange
+        let clamped = max(range.lowerBound, min(range.upperBound, seconds))
         engine.setAudioDelay(clamped)
+        controls.audioDelaySeconds = engine.audioDelaySeconds
+    }
+
+    public func setAudioDelayLive(_ seconds: TimeInterval) -> Bool {
+        guard !didStop, engine.capabilities.contains(.audioDelay) else { return false }
+        guard seconds.isFinite else {
+            PlozzLog.playback.error("Ignoring non-finite live audio sync offset.")
+            return false
+        }
+        let range = PlayerControlsModel.audioDelayRange
+        guard engine.setAudioDelayLive(max(range.lowerBound, min(range.upperBound, seconds))) else { return false }
+        controls.audioDelaySeconds = engine.audioDelaySeconds
+        return true
     }
 
     public func setSubtitleDelay(_ seconds: TimeInterval) {
@@ -2740,6 +2866,7 @@ public final class PlayerViewModel {
     /// Call when leaving playback: report a final stop so the server records the
     /// resume point, then tear the engine down.
     public func stop(preserveDisplayMode: Bool = false) async {
+        controls.audioSyncAdjustment.cancel()
         if let stopTask {
             await stopTask.value
             return
@@ -2760,6 +2887,7 @@ public final class PlayerViewModel {
         // shows happening on iOS.
         PlaybackTrace.note("stop() teardown curr=\(String(format: "%.2f", engine.currentTime)) shouldDismiss=\(shouldDismiss) pendingNext=\(pendingNextEpisode != nil) isSeeking=\(controls.isSeeking)")
         didStop = true
+        cancelVideoUpscalingChange()
         continueWatchingSnapshot = { [] }
         controls.infoCard.chapters = []
         let maintenance = streamingSessionMaintenance.cancel()

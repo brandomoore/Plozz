@@ -64,6 +64,7 @@ public extension View {
 /// caller owns any server-specific live session. Video still runs through Plozz's production
 /// AetherEngine adapter and its existing video surface.
 public struct LiveChannelPlayerView: View {
+    @Environment(PlaybackSettingsModel.self) private var playbackSettingsModel: PlaybackSettingsModel?
     private let channelID: String
     private let title: String // l10n:content — provider-supplied channel name
     private let input: LiveChannelInput
@@ -1019,8 +1020,12 @@ public struct LiveChannelPlayerView: View {
             engine: engine, channelID: channelID, input: input,
             outputGroup: outputGroup, outputID: outputID ?? UUID(), isAudible: isAudible,
             allowsDisplayMatching: allowsDisplayMatching,
-            trackPreferences: trackPreferences
+            trackPreferences: trackPreferences,
+            defaultVideoZoom: { displayTransitionSettings().videoZoom[.current] }
         )
+        if let playbackSettingsModel {
+            playerModel.videoZoom.bindAutoCropFraming(to: playbackSettingsModel, platform: .current)
+        }
         model = playerModel
         playerModel.onExternalContinuationChanged = onExternalContinuationChanged
         playerModel.setPermitsExternalPresentation(permitsExternalPresentation)
@@ -1348,7 +1353,7 @@ public struct LiveChannelPlayerView: View {
                     TouchFeedback.shared.emit(.selection)
                 },
                 onBoostChanged: { _ in },
-                onZoom: { model.videoZoom.settings.mode = $0 ? .fill : .fit },
+                onZoom: { model.videoZoom.setPinchZoom(fillsScreen: $0) },
                 onGestureStarted: dismissControls
             )
             .ignoresSafeArea()
@@ -1918,6 +1923,7 @@ final class LiveChannelPlayerModel {
     }
 
     private var source: Source
+    private let defaultVideoZoom: @MainActor () -> VideoZoomPreference
     private let uptime: @MainActor () -> TimeInterval
     private let idleSleepGuard = DisplayWakeLease()
     @ObservationIgnored private var monitorTask: Task<Void, Never>?
@@ -1962,10 +1968,13 @@ final class LiveChannelPlayerModel {
         isAudible: Bool = true,
         allowsDisplayMatching: Bool = true,
         trackPreferences: LiveChannelTrackPreferences? = nil,
+        defaultVideoZoom: @escaping @MainActor () -> VideoZoomPreference = { .onDemandDefault },
         playbackJournal: PlaybackDiagnosticJournal = .shared
     ) {
         self.engine = engine
-        videoZoom.supportsActivePicture = engine.supportsActivePictureAnalysis
+        self.defaultVideoZoom = defaultVideoZoom
+        videoZoom.restoreForPlayback(nil, defaultPreference: defaultVideoZoom(),
+                                     supportsActivePicture: engine.supportsActivePictureAnalysis)
         self.playbackJournal = playbackJournal
         self.outputGroup = outputGroup
         self.outputID = outputID
@@ -2336,7 +2345,10 @@ final class LiveChannelPlayerModel {
         setSessionReporting(reporting, reset: changed)
         guard changed else { return }
 
-        if nextSource != source { videoZoom.settings = PlayerVideoZoom() }
+        if nextSource != source {
+            videoZoom.restoreForPlayback(nil, defaultPreference: defaultVideoZoom(),
+                                         supportsActivePicture: engine.supportsActivePictureAnalysis)
+        }
         source = nextSource
         sourceDynamicRange = nil
         resetProgrammeTracks()

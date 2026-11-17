@@ -3,6 +3,7 @@ import AniListService
 import AppRuntime
 import CoreModels
 import CoreNetworking
+import CoreSecureStore
 import CoreUI
 import CrashReporting
 import EnginePlozzigen
@@ -240,6 +241,13 @@ final class PlozziOSAppModel {
     /// `PlozziOSAppModel+CloudSync`.
     @ObservationIgnored
     private(set) lazy var cloudSync: CloudConfigSyncService? = Self.makeCloudSync(for: self)
+
+    #if DEBUG
+    /// Replaces only the remote request in hosted tests; local erasure and the
+    /// profile/parental authorization checks still execute in the real entry point.
+    @ObservationIgnored
+    var cloudServerErasureForTesting: (@MainActor @Sendable () async -> CloudSyncRecoveryResult)?
+    #endif
 
     @ObservationIgnored
     private(set) lazy var liveTVPortableSync: LiveTVPortableSyncBridge? =
@@ -1377,6 +1385,15 @@ final class PlozziOSAppModel {
         pendingSyncedServerPrompt = nil
         accountsProviders.reloadAccounts()
         guard accountsProviders.accounts.isEmpty else { return false }
+        do {
+            try LiveTVLastSeenStore.erase(
+                profileIDs: profiles.profiles.map(\.id), secureStore: LiveTVSourceStorage.catalogSecrets()
+            )
+        } catch {
+            PlozzLog.app.error("First-run reset could not erase Live TV last-seen rows")
+            accountError = error.localizedDescription
+            return false
+        }
         plexHomeUsers.resetAllForDebug()
         do {
             if afterSyncErasure { try profiles.resetToPristineDefaultAfterSyncErasure() }

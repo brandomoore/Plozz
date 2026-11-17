@@ -80,6 +80,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     public var volumeBrightnessGestures: Bool
     /// iPhone full-screen player preference. iPad follows system rotation.
     public var orientation: PlaybackOrientation
+    public var videoZoom: VideoZoomDefaults
     public var streaming: StreamingQualitySettings
     /// Legacy profile selection, decoded only for migration to device settings.
     public var externalPlayer: ExternalPlayerSettings
@@ -175,6 +176,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// player's Info card (#351). Per profile, ON by default.
     public var identifySongs: Bool
     public var dolbyVisionFELConversion: Bool
+    public var videoUpscaling: VideoUpscaling
 
     /// Optional player tabs, per profile. Availability still depends on content.
     public var chaptersInPlayer: Bool
@@ -223,6 +225,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         rememberSubtitleTrackPerSeries: Bool = true,
         identifySongs: Bool = true,
         dolbyVisionFELConversion: Bool = true,
+        videoUpscaling: VideoUpscaling = .default,
         chaptersInPlayer: Bool = true,
         castInPlayer: Bool = true,
         episodesInPlayer: Bool = true,
@@ -233,6 +236,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         backgroundAudio: Bool = false,
         volumeBrightnessGestures: Bool = true,
         orientation: PlaybackOrientation = .landscape,
+        videoZoom: VideoZoomDefaults = .init(),
         streaming: StreamingQualitySettings = .default,
         versionSelectionMode: PlaybackVersionSelectionMode? = nil,
         rememberVersionPerSeries: Bool = true,
@@ -268,6 +272,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.rememberSubtitleTrackPerSeries = rememberSubtitleTrackPerSeries
         self.identifySongs = identifySongs
         self.dolbyVisionFELConversion = dolbyVisionFELConversion
+        self.videoUpscaling = videoUpscaling
         self.chaptersInPlayer = chaptersInPlayer
         self.castInPlayer = castInPlayer
         self.episodesInPlayer = episodesInPlayer
@@ -278,6 +283,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.backgroundAudio = backgroundAudio
         self.volumeBrightnessGestures = volumeBrightnessGestures
         self.orientation = orientation
+        self.videoZoom = videoZoom
         self.streaming = streaming
         self.versionSelectionMode = versionSelectionMode
         self.rememberVersionPerSeries = rememberVersionPerSeries
@@ -435,6 +441,7 @@ public extension PlaybackSettings {
         case backgroundAudio
         case volumeBrightnessGestures
         case orientation
+        case videoZoom
         case streaming
         case externalPlayer
         case versionSelectionMode
@@ -453,6 +460,7 @@ public extension PlaybackSettings {
         case rememberSubtitleTrackPerSeries
         case identifySongs
         case dolbyVisionFELConversion
+        case videoUpscaling
         case chaptersInPlayer
         case castInPlayer
         case episodesInPlayer
@@ -548,6 +556,8 @@ public extension PlaybackSettings {
             ?? defaults.volumeBrightnessGestures
         self.orientation = (try? container.decode(PlaybackOrientation.self, forKey: .orientation))
             ?? defaults.orientation
+        self.videoZoom = try container.decodeIfPresent(VideoZoomDefaults.self, forKey: .videoZoom)
+            ?? defaults.videoZoom
         self.streaming = (try? container.decode(StreamingQualitySettings.self, forKey: .streaming)) ?? .default
         self.externalPlayer = (try? container.decodeIfPresent(ExternalPlayerSettings.self, forKey: .externalPlayer)) ?? .init()
         self.versionSelectionMode = try? container.decode(PlaybackVersionSelectionMode.self, forKey: .versionSelectionMode)
@@ -596,6 +606,8 @@ public extension PlaybackSettings {
         self.dolbyVisionFELConversion =
             (try? container.decodeIfPresent(Bool.self, forKey: .dolbyVisionFELConversion))
             .flatMap { $0 } ?? defaults.dolbyVisionFELConversion
+        self.videoUpscaling = try container.decodeIfPresent(VideoUpscaling.self, forKey: .videoUpscaling)
+            ?? defaults.videoUpscaling
         self.chaptersInPlayer =
             (try? container.decodeIfPresent(Bool.self, forKey: .chaptersInPlayer))
             .flatMap { $0 } ?? defaults.chaptersInPlayer
@@ -654,6 +666,7 @@ public extension PlaybackSettings {
         try container.encode(backgroundAudio, forKey: .backgroundAudio)
         try container.encode(volumeBrightnessGestures, forKey: .volumeBrightnessGestures)
         try container.encode(orientation, forKey: .orientation)
+        try container.encode(videoZoom, forKey: .videoZoom)
         try container.encode(streaming, forKey: .streaming)
         try container.encodeIfPresent(versionSelectionMode, forKey: .versionSelectionMode)
         try container.encode(rememberVersionPerSeries, forKey: .rememberVersionPerSeries)
@@ -668,6 +681,7 @@ public extension PlaybackSettings {
         try container.encode(rememberSubtitleTrackPerSeries, forKey: .rememberSubtitleTrackPerSeries)
         try container.encode(identifySongs, forKey: .identifySongs)
         try container.encode(dolbyVisionFELConversion, forKey: .dolbyVisionFELConversion)
+        try container.encode(videoUpscaling, forKey: .videoUpscaling)
         try container.encode(chaptersInPlayer, forKey: .chaptersInPlayer)
         try container.encode(castInPlayer, forKey: .castInPlayer)
         try container.encode(episodesInPlayer, forKey: .episodesInPlayer)

@@ -271,16 +271,26 @@ public final class AccountsProvidersModel {
             else { return nil }
             return LiveTVAuthorizedServerProvider(
                 accountID: accountID, authorizationID: self.liveTVAuthorizationID(for: account),
-                kind: kind, provider: provider
+                kind: kind, provider: provider, viewerScopeID: self.liveTVViewerScopeID(for: account)
             )
         }
+    }
+
+    private func liveTVViewerScopeID(for account: Account) -> String? {
+        let identity = WatchMutationServerScope.AccountIdentity(account: account, profile: profilesModel.activeProfile)
+        guard !identity.accountID.isEmpty, !identity.serverID.isEmpty, !identity.userID.isEmpty,
+              identity.plexHomeUserID?.isEmpty != true else { return nil }
+        let fields = [profilesModel.activeProfileID, identity.accountID, identity.downloadUserID]
+        let fingerprint = fields.map { "\($0.utf8.count):\($0)" }.joined()
+        return SHA256.hash(data: Data(fingerprint.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     private func liveTVAuthorizationID(for account: Account) -> String {
         let fields = [
             profilesModel.activeProfileID, account.id, account.server.id,
             account.server.provider.rawValue, account.server.baseURL.absoluteString,
-            account.userID, account.deviceID, credentialRevision(account).rawValue.uuidString
+            account.userID, account.deviceID, credentialRevision(account).rawValue.uuidString,
+            liveTVViewerScopeID(for: account) ?? "unscoped"
         ] + (account.server.connectionURLs ?? []).map(\.absoluteString)
         let fingerprint = fields.map { "\($0.utf8.count):\($0)" }.joined()
         if let cached = liveTVAuthorizationCache[account.id],

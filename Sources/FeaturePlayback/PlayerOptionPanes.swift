@@ -255,8 +255,8 @@ struct SpeedPaneView: View {
     }
 }
 
-/// The A/V Sync menu: Audio Delay and Subtitle Delay coarse steppers (±50 /
-/// ±500 ms + Reset), each gated on the running engine's capabilities. Extracted
+/// The A/V Sync menu: shared Audio Sync and coarse Subtitle Delay steppers,
+/// each gated on the running engine's capabilities. Extracted
 /// from `PlayerControls`; the shared `delayLabel` formatter stays on
 /// `PlayerControls` (the subtitle-sync screen uses it too).
 struct SyncPaneView: View {
@@ -267,13 +267,7 @@ struct SyncPaneView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             if model.engineCapabilities.contains(.audioDelay) {
-                delayRow(
-                    title: "Audio Delay",
-                    value: model.audioDelaySeconds,
-                    firstSlot: 0,
-                    onAdjust: { actions.setAudioDelay(model.audioDelaySeconds + $0) },
-                    onReset: { actions.setAudioDelay(0) }
-                )
+                AudioSyncScreen(model: model, actions: actions, focus: $focus)
             }
             if model.engineCapabilities.contains(.subtitleDelay) {
                 delayRow(

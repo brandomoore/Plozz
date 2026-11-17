@@ -63,22 +63,34 @@ struct LiveSubtitleSettingsSheet: View {
 struct LiveAudioSyncSheet: View {
     let tracks: LiveChannelPlayerModel
     let controls: PlayerControlsModel
+    let apply: (TimeInterval) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var offset: Double
-
-    init(tracks: LiveChannelPlayerModel, controls: PlayerControlsModel) {
-        self.tracks = tracks
-        self.controls = controls
-        _offset = State(initialValue: controls.audioDelaySeconds)
-    }
+    private var adjustment: PlayerAudioSyncEditor { controls.audioSyncAdjustment }
+    private var offset: Double { adjustment.value ?? controls.audioDelaySeconds }
 
     var body: some View {
         NavigationStack {
             Form {
                 if tracks.engine.capabilities.contains(.audioDelay) {
                     Section("Audio Delay") {
-                        Slider(value: $offset, in: -2...2, step: 0.05).accessibilityLabel("Audio Delay")
-                        Text(offset, format: .number.precision(.fractionLength(2))).monospacedDigit()
+                        Stepper(value: Binding(
+                            get: { offset },
+                            set: change
+                        ), in: adjustment.range,
+                            step: PlayerAudioSyncAdjustment.step,
+                            onEditingChanged: { editing in
+                                if editing { adjustment.beginEditing() }
+                                else { adjustment.endEditing(commit: apply) }
+                            }
+                        ) {
+                            Text(offset, format: .number.precision(.fractionLength(2))) + Text(" s")
+                        }
+                        .accessibilityLabel("Audio Delay")
+                        Text(PlayerControlsModel.audioSyncHint(for: offset)).foregroundStyle(.secondary)
+                        Button("Reset") {
+                            adjustment.cancel()
+                            change(0)
+                        }.disabled(offset == 0)
                     }
                 }
             }
@@ -91,11 +103,16 @@ struct LiveAudioSyncSheet: View {
             }
         }
         .presentationDetents([.medium])
-        .onChange(of: offset) { _, value in
-            guard tracks.engine.capabilities.contains(.audioDelay) else { return }
-            tracks.engine.setAudioDelay(value)
-            controls.audioDelaySeconds = value
+        .onDisappear { adjustment.cancel() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            adjustment.cancel()
         }
+        .onChange(of: controls.infoCard.sourceItemID) { _, _ in adjustment.cancel() }
+        .onChange(of: controls.infoCard.sourceAccountID) { _, _ in adjustment.cancel() }
+    }
+
+    private func change(_ value: TimeInterval) {
+        adjustment.change(to: value, current: controls.audioDelaySeconds, applyLive: { _ in false }, commit: apply)
     }
 }
 #endif

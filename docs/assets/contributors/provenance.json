@@ -1,0 +1,80 @@
+{
+  "purpose": "README community contributor portraits, displayed at 64 pixels.",
+  "treatment": "Centered circular crops with transparent, antialiased edges; no other artwork changes.",
+  "rights": "Profile images belong to their respective owners. Plozz's license does not relicense these images.",
+  "retrievedOn": "2026-11-16",
+  "images": [
+    {
+      "file": "kristofferR.png",
+      "label": "kristofferR",
+      "profile": "https://github.com/kristofferR",
+      "source": "https://avatars.githubusercontent.com/u/481270?v=4&s=256",
+      "sourceSha256": "76b653b32aad25c47596553c48f6fb3c1c12954cb815253eaf8490056c1c2f4a",
+      "sha256": "dfdd67200ead587a0c7546b9b28baafd52f0f5e95e8e57cd4fc4001487e53856",
+      "dimensions": [
+        128,
+        128
+      ]
+    },
+    {
+      "file": "MargeyShah.png",
+      "label": "MargeyShah",
+      "profile": "https://github.com/MargeyShah",
+      "source": "https://avatars.githubusercontent.com/u/101950039?v=4&s=256",
+      "sourceSha256": "2be2ef364bdcd2c4450e4e7f4f839f1f3395f952506cc0b6e3dacd4b1b68be17",
+      "sha256": "f3c91c738070144f0e991327046b09d70f4e6220cb03e5f4eede0ebace70a78b",
+      "dimensions": [
+        128,
+        128
+      ]
+    },
+    {
+      "file": "moofone.png",
+      "label": "moofone",
+      "profile": "https://github.com/moofone",
+      "source": "https://avatars.githubusercontent.com/u/35233167?v=4&s=256",
+      "sourceSha256": "d57fd6ca6e4ffb2421e897b85a1bfc4dbbfa44775e1217f161ed7452578cc39e",
+      "sha256": "6f088484620c5d7ddb57b476d1900ebd1f93fc0c06d7796b1d95213738b155d7",
+      "dimensions": [
+        128,
+        128
+      ]
+    },
+    {
+      "file": "mossline.png",
+      "label": "mossline",
+      "profile": "https://github.com/mossline",
+      "source": "https://avatars.githubusercontent.com/u/50888611?v=4&s=256",
+      "sourceSha256": "25d0742914e8d7b26d801b4aa4c81cbd80579fdd166cc19f90853b072296aab7",
+      "sha256": "45247eb6539ae68e5554b9b71f4432fb744ed971e24bbe444da4c379608b0696",
+      "dimensions": [
+        128,
+        128
+      ]
+    },
+    {
+      "file": "teymourb.png",
+      "label": "teymourb",
+      "profile": "https://github.com/teymourb",
+      "source": "https://avatars.githubusercontent.com/u/53331006?v=4&s=256",
+      "sourceSha256": "7478c4b57c17d107990c082084f9c1d57b8e7f7b8fa86ff52da750e0d5a1f193",
+      "sha256": "d8216597619fff0086b1aa0273a0897b4665b3d4eea21aea5001eb75cb6b5c06",
+      "dimensions": [
+        128,
+        128
+      ]
+    },
+    {
+      "file": "tresby.png",
+      "label": "tresby",
+      "profile": "https://github.com/tresby",
+      "source": "https://avatars.githubusercontent.com/u/67149553?v=4&s=256",
+      "sourceSha256": "e2c6fa4847a3b8b91bbdd258ddbeea87d566e7e2b254d4dcc5a924d1761d5925",
+      "sha256": "15f253af8009024dcb1c11c595c3daec599c305d3c3c03859f94a6acbe85fe3c",
+      "dimensions": [
+        128,
+        128
+      ]
+    }
+  ]
+}

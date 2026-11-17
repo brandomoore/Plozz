@@ -442,6 +442,8 @@ public enum SettingsSearchCatalog {
               keywords: "shazam music song soundtrack what song is playing apple music"),
         .init("read-ahead", page: .playback, title: "Video buffer",
               keywords: "buffering streaming cache ahead slow network stuttering loading memory"),
+        .init("video-upscaling", page: .playback, title: "Video upscaling",
+              keywords: "picture resolution SDR automatic standard animation anime4k super resolution metalfx"),
         .init("live-buffer", page: .playback, title: "Live TV buffer",
               keywords: "live channel buffering cache ahead slow network memory"),
         .init("skip-intros", page: .playback, title: "Skip intros, credits & more",

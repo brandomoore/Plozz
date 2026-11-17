@@ -19,6 +19,24 @@ private final class LiveChannelObservationChanges: @unchecked Sendable {
 
 @MainActor
 final class LiveChannelPlayerModelTests: XCTestCase {
+    func testNewChannelsRestoreThePlatformDefaultRatherThanThePreviousChannelZoom() async {
+        let engine = LiveEngineSpy()
+        let input = LiveChannelInput.stream(url: URL(string: "https://example.invalid/live.m3u8")!, httpHeaders: [:])
+        var expected = VideoZoomPreference(mode: .custom, customPercent: 117)
+        let model = LiveChannelPlayerModel(
+            engine: engine, channelID: "one", input: input, defaultVideoZoom: { expected }
+        )
+        defer { model.stop() }
+        XCTAssertEqual(model.videoZoom.settings, expected)
+        await model.start()
+        model.videoZoom.settings.mode = .fill
+        await model.changeSource(channelID: "two", input: input)
+        XCTAssertEqual(model.videoZoom.settings, expected)
+        expected = .init(mode: .stretch)
+        await model.changeSource(channelID: "three", input: input)
+        XCTAssertEqual(model.videoZoom.settings, expected, "New channels use the latest settings.")
+    }
+
     func testPreviewPublishesSourceRangeAndChangesOutputWithoutRetuning() async {
         let engine = LiveEngineSpy()
         let model = LiveChannelPlayerModel(
@@ -42,6 +60,31 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         XCTAssertTrue(engine.outputPolicy.suppressesDisplayMatching)
         XCTAssertEqual(engine.liveLoads, 1)
         XCTAssertEqual(engine.stopCount, 0)
+    }
+
+    func testAutoCropFramingCarriesBetweenLiveChannelsAndOtherVideos() async throws {
+        let suite = "LiveAutoCrop-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        let engine = LiveEngineSpy()
+        engine.supportsActivePictureAnalysis = true
+        let input = LiveChannelInput.stream(url: URL(string: "https://example.invalid/live.m3u8")!, httpHeaders: [:])
+        let model = LiveChannelPlayerModel(engine: engine, channelID: "one", input: input)
+        defer { model.stop() }
+        model.videoZoom.bindAutoCropFraming(to: settings, platform: .phone)
+        await model.start()
+        model.videoZoom.setPinchZoom(fillsScreen: false)
+        XCTAssertTrue(settings.settings.videoZoom.phone.pictureFitsInsideSafeArea)
+        await model.changeSource(channelID: "two", input: input)
+        XCTAssertTrue(model.videoZoom.settings.pictureFitsInsideSafeArea)
+        let movie = PlayerVideoZoomModel()
+        movie.bindAutoCropFraming(to: settings, platform: .phone)
+        movie.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertTrue(movie.settings.pictureFitsInsideSafeArea)
+        movie.setPinchZoom(fillsScreen: true)
+        await model.changeSource(channelID: "three", input: input)
+        XCTAssertFalse(model.videoZoom.settings.pictureFitsInsideSafeArea)
     }
 
     func testLocalJournalCapturesLiveFailuresWithoutServerSessionReporting() async throws {
@@ -1922,6 +1965,7 @@ private struct LiveFullscreenHarness: View {
 
 @MainActor
 final class LiveEngineSpy: LiveChannelEngine {
+    var supportsActivePictureAnalysis = false
     var probedSourceFacts: EngineProbedSourceFacts?
     var videoAspectRatio: Double?
     var liveStartupBuffer: LivePlaybackBuffer = .automatic

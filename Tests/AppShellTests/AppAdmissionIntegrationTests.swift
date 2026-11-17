@@ -6,6 +6,7 @@ import XCTest
 import TopShelfKit
 @testable import AppRuntime
 @testable import AppShell
+@testable import FeatureLiveTVCore
 
 private struct OnboardingLibraryProvider: MediaProvider {
     let session: UserSession
@@ -759,13 +760,142 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         XCTAssertFalse(harness.state.profileFlow.isProfileSelectionCancelable)
     }
 
-    func testDiagnosticFirstRunResetClearsStandaloneChoice() throws {
-        let harness = try makeHarness(standalone: true, profileSetupComplete: true)
+    func testDiagnosticFirstRunResetClearsStandaloneChoice() async throws {
+        let harness = try makeHarness(
+            standalone: true, profileSetupComplete: true, profileSecrets: InMemorySecureStore()
+        )
+        let fixture = try await makeLastSeenResetFixture(harness: harness)
+        let preResetProfileIDs = harness.profiles.profiles.map(\.id)
+        var erasedProfileIDs: [[String]] = []
+        harness.state.eraseLiveTVLastSeen = { profileIDs in
+            erasedProfileIDs.append(profileIDs)
+            try LiveTVLastSeenStore.erase(
+                profileIDs: profileIDs, directory: fixture.directory, secureStore: fixture.secrets
+            )
+        }
         harness.state.bootstrap()
-        harness.state.resetToFirstRunForDebugging()
+
+        XCTAssertTrue(harness.state.resetToFirstRunForDebugging())
+
+        XCTAssertEqual(erasedProfileIDs, [preResetProfileIDs])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.path))
+        for key in fixture.keys { XCTAssertNil(try fixture.secrets.readString(for: key)) }
+        XCTAssertEqual(try fixture.secrets.readString(for: "unrelated.catalog.key"), "keep")
+        XCTAssertEqual(harness.profiles.profiles.count, 1)
+        XCTAssertEqual(harness.profiles.activeProfileID, ProfileStore.defaultProfileID)
+        XCTAssertFalse(harness.profiles.firstRunProfileSetupComplete)
+        XCTAssertFalse(AppAdmissionStore(defaults: harness.defaults).loadStandaloneChoice())
         XCTAssertFalse(harness.state.canEnterApp)
         XCTAssertFalse(harness.state.allowsStandalonePlayback)
         XCTAssertFalse(harness.state.pendingStandaloneLiveTVEntry)
         XCTAssertEqual(harness.state.state, .onboarding(.selectingServer, canReturnToApp: false))
+    }
+
+    func testDiagnosticFirstRunResetPreservesAdmissionWhenLastSeenErasureThrows() async throws {
+        let harness = try makeHarness(
+            standalone: true, profileSetupComplete: true, withAccount: true, profileSecrets: InMemorySecureStore()
+        )
+        let fixture = try await makeLastSeenResetFixture(harness: harness)
+        let preResetProfileIDs = harness.profiles.profiles.map(\.id)
+        let activeProfileID = harness.profiles.activeProfileID
+        var erasedProfileIDs: [[String]] = []
+        harness.state.eraseLiveTVLastSeen = { profileIDs in
+            erasedProfileIDs.append(profileIDs)
+            try LiveTVLastSeenStore.erase(
+                profileIDs: profileIDs, directory: fixture.directory, secureStore: fixture.secrets
+            )
+        }
+        fixture.secrets.rejectRemovals = true
+        harness.state.bootstrap()
+
+        XCTAssertFalse(harness.state.resetToFirstRunForDebugging())
+
+        XCTAssertEqual(erasedProfileIDs, [preResetProfileIDs])
+        XCTAssertEqual(fixture.secrets.rejectedRemovalCount, 1)
+        // File deletion precedes key deletion. A partial erasure is NOT a successful reset.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.path))
+        for key in fixture.keys { XCTAssertNotNil(try fixture.secrets.readString(for: key)) }
+        XCTAssertEqual(try fixture.secrets.readString(for: "unrelated.catalog.key"), "keep")
+        XCTAssertTrue(harness.state.accountsProviders.accounts.isEmpty)
+        XCTAssertEqual(harness.profiles.profiles.map(\.id), preResetProfileIDs)
+        XCTAssertEqual(harness.profiles.activeProfileID, activeProfileID)
+        XCTAssertTrue(harness.profiles.firstRunProfileSetupComplete)
+        XCTAssertTrue(AppAdmissionStore(defaults: harness.defaults).loadStandaloneChoice())
+        XCTAssertTrue(harness.state.canEnterApp)
+        XCTAssertTrue(harness.state.allowsStandalonePlayback)
+        XCTAssertEqual(harness.state.state, .ready)
+    }
+
+    private func makeLastSeenResetFixture(harness: Harness) async throws -> (
+        directory: URL, secrets: AdmissionCatalogSecrets, keys: [String]
+    ) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppAdmissionLastSeen.\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+        }
+        let secrets = AdmissionCatalogSecrets()
+        try secrets.setString("keep", for: "unrelated.catalog.key")
+        let retained = harness.profiles.add(name: "Retained snapshot")
+        let evicted = harness.profiles.add(name: "Evicted snapshot")
+        harness.profiles.select(retained.id)
+        let channel = LiveTVPrototypeChannel(
+            id: "fixture-channel", number: 1, name: "Fixture channel", category: "News",
+            symbol: "tv", accent: 0, source: .iptv, tagline: ""
+        )
+        let snapshot = LiveTVLastSeenSnapshot(
+            sources: [.init(
+                sourceID: "fixture-source", accountID: "fixture-account", kind: .iptv,
+                entries: [.init(nativeID: "native-channel", channel: channel)], viewerScopeID: "fixture-viewer"
+            )],
+            browse: .init(categories: ["News"], categoryCounts: ["News": 1], totalCount: 1)
+        )
+        var files: [URL] = []
+        var keys: [String] = []
+        for profileID in [retained.id, evicted.id] {
+            let store = LiveTVLastSeenStore(profileID: profileID, directory: directory, secureStore: secrets)
+            await store.save(snapshot)
+            let loaded = await store.load()
+            XCTAssertEqual(loaded, snapshot, "A failed save must not make erasure pass vacuously")
+            let contents = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            let file = try XCTUnwrap(contents.first { !files.contains($0) })
+            let key = "liveTV.lastSeen." + file.deletingPathExtension().lastPathComponent + ".key"
+            XCTAssertNotNil(try secrets.readString(for: key))
+            files.append(file)
+            keys.append(key)
+        }
+        // Only the pre-reset roster can find this nondefault profile's remaining key.
+        try FileManager.default.removeItem(at: files[1])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: files[0].path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files[1].path))
+        return (directory, secrets, keys)
+    }
+}
+
+private final class AdmissionCatalogSecrets: SecureStoring, @unchecked Sendable {
+    private let storage = InMemorySecureStore()
+    private let lock = NSLock()
+    private var rejectsRemoval = false
+    private var rejectedRemovals = 0
+
+    var rejectRemovals: Bool {
+        get { lock.withLock { rejectsRemoval } }
+        set { lock.withLock { rejectsRemoval = newValue } }
+    }
+    var rejectedRemovalCount: Int { lock.withLock { rejectedRemovals } }
+
+    func setString(_ value: String, for key: String) throws { try storage.setString(value, for: key) }
+    func string(for key: String) -> String? { storage.string(for: key) }
+    func readString(for key: String) throws -> String? { try storage.readString(for: key) }
+    func removeValue(for key: String) throws {
+        try lock.withLock {
+            if rejectsRemoval {
+                rejectedRemovals += 1
+                throw CocoaError(.fileWriteNoPermission)
+            }
+            try storage.removeValue(for: key)
+        }
     }
 }

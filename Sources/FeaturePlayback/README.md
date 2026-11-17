@@ -33,6 +33,66 @@ for the initial compatibility and track-selection limits.
 
 ## Responsibility
 
+Automatic video upscaling uses the shared metadata classifier before engine
+load. An episode without animation hints may query its exact series through
+the current provider, with a two-second cooperative timeout and source-account validation.
+Unavailable or unrelated metadata is logged and selects Standard; cancellation
+does not continue loading. Explicit Standard/Animation/Off skip this lookup.
+Native playback is unchanged. The engine still owns decoded-format, resolution,
+display and route eligibility; metadata never enables HDR or 4K enhancement.
+
+The player also offers a session-only upscaling override on seekable, reloadable,
+URL-backed AetherEngine video. TV uses Playback > Upscaling; mobile uses
+Video > Upscaling. Switching reuses the engine's session-preserving reload,
+not a fresh provider load, retaining the playhead, pause intent, track choices,
+subtitle timing and audio offset. This is not a seamless A/B switch.
+Automatic uses the same source-scoped metadata classification as initial load.
+Only one change runs at a time; stop/new-load cancellation fences stale results,
+and failures leave the selected control unchanged with visible feedback.
+Custom-reader shares, interactive disc menus, separate audio and Live TV do
+not offer this switch. The saved profile default is never changed.
+Transient empty track lists during session reloads do not clear secondary
+subtitle selection or styling; readiness triggers reconciliation with the
+replacement tracks.
+
+Audio Sync is available on AetherEngine routes that can retime audio and
+re-anchor playback. TV's Audio header opens the shared single-focus settings
+control; mobile exposes Audio Sync in the Audio menu. Both use 10 ms steps
+and Reset. On-demand playback allows ten seconds in each direction, matching
+Kodi's default range. Live TV retains its two-second limit because the wider
+read-ahead and restart preroll apply only to on-demand sources.
+Positive means audio later,
+negative earlier. TV Left/Right holds repeat and accelerate to 50 ms steps.
+Buffered direct-rendering PCM changes the audio queue without seeking or moving
+the video clock. When live correction is unavailable, the shared audio editor
+previews immediately and waits 600 ms after input settles before committing.
+Rapid taps, successive swipes and holds accumulate one pending value; no commit is
+scheduled during an active swipe or hold, including at the bounds. This is independent of play/
+pause state. Reset supersedes pending work; cancellation, dismissal, backgrounding
+and a new playback session discard unapplied previews. Native
+loopback and other unsupported formats still seek/reload on that final commit.
+Audio may briefly skip/repeat during a correction; output latency still applies.
+Large offsets can require a reload and temporary silence when the required
+samples are not buffered; the wider range does not imply live coverage of every value.
+No format or route is downgraded to enable the feature. Offsets reset with a new stream. Native AVPlayer, remote bypass,
+audio-only sources and live streams without an engine rewind window do not
+advertise this control. Live controls use the same engine capability and offset;
+their editor, TV stepper, mobile stepper and final setter share the narrower range.
+
+TV Subtitle Sync uses the same single-focus settings stepper and Reset. Its
+existing 50 ms steps and +/-10 second range are unchanged; held Left/Right repeats
+without losing focus at the limits. Subtitle offsets apply immediately to the
+overlay timeline, with no audio-style reload debounce.
+Both sync controls opt into distance-based remote swipes: a short swipe keeps
+the fine step, and continued travel adds a step per 20 points without requiring
+another gesture. Longer swipes move farther, with no momentum after lift.
+Taps, held-arrow timing, value limits and compact styling remain unchanged.
+Both sync panels give the compact stepper a full-width native focus section so
+Back, the control and Reset remain vertically reachable. On submenu entry,
+Back and Reset become eligible only after the stepper reports actual native
+focus; writing the panel's row FocusState does not focus a separately hosted
+stepper. This entry gate resets on reopening, not on ordinary Up/Down movement.
+
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and
 offline playback. Prefer SDH falls back to regular subtitles in the chosen
@@ -268,8 +328,9 @@ On iPhone and iPad, the Live TV guide's inline preview uses the shared
 previous/play-pause/next controls and an in-place fullscreen action.
 Fullscreen also exposes a bottom-trailing inward-arrow action to return to the
 preview, matching the expand control's placement; the top-left Close remains.
-Mobile fullscreen video fits the full player bounds, independently of the safe
-area used by controls and subtitles. Showing or hiding controls does not resize
+Mobile fullscreen video uses the full player bounds, with Normal and the cutout-safe
+Auto-crop level respecting horizontal cutout insets independently of controls and subtitles.
+Showing or hiding controls does not resize
 the picture. The status bar and persistent system overlays hide with the
 fullscreen controls and return when controls are revealed or fullscreen ends.
 The mobile fullscreen playback cover opts out of iOS 27.1's vertical system bar,
@@ -1067,15 +1128,17 @@ style together, keeping symbols proportional to their labels as text size change
 They do not intercept touches. Live TV supports skips only inside an available
 rewind window, not speed boosting.
 
-Pinch inward for Normal fitting clear of the display cutout. Landscape video
-uses the full display height behind the home indicator instead of reserving a
-bottom strip; portrait keeps the full safe-area inset. Controls and ordinary
-captions retain their safe-area placement. Pinch outward for edge-to-edge Crop. This
-uses the existing session-only zoom state without reloading video or revealing
-the timeline. Authored subtitle geometry follows the displayed picture; ordinary
-captions retain their screen-relative placement. Inline, tvOS, and external
-playback keep their existing geometry. Horizontal seeking on the video surface
-is not implemented.
+In Auto-crop, pinch inward for cutout-safe active-picture fitting and outward for
+screen-edge active-picture fitting. Neither deliberately trims detected picture
+content, though the screen-edge level can extend behind the notch. Outside Auto-crop,
+pinch outward for explicit Crop and inward for Normal's whole-frame safe-area fit.
+Landscape safe fitting uses the full height behind the home indicator; portrait
+keeps the full safe-area inset. Controls and ordinary captions retain their safe-area
+placement. These choices use the existing zoom preference path without reloading video
+or revealing the timeline. Authored subtitle geometry follows the displayed picture;
+ordinary captions retain their screen-relative placement. Inline, tvOS, and external
+playback keep their existing geometry. Horizontal seeking on the video surface is
+not implemented.
 
 Vertical, one-finger swipes in the outer 30% of the video adjust screen brightness
 on the left and **system** volume on the right. The center, horizontal movement,
@@ -1460,8 +1523,12 @@ which can retain duplicate highlights. Mobile adds Zoom Mode to its existing
 native playback menu. Live TV offers the same zoom controls without playback-speed
 changes.
 
-The picker labels Normal as the default; concise names follow Infuse's Zoom Mode
-terminology. Crop enlarges proportionally, Stretch fills both axes without
+Normal fits the entire encoded frame inside the cutout-safe viewport without
+cropping picture content. It uses the largest proportional fit, so height-limited
+videos can leave space before the cutout. Safe bounds come from current view/window
+insets rather than device-model or notch-size constants. TV, inline and external
+surfaces retain their whole-frame fitting; Normal is not every player's default.
+Crop enlarges proportionally, Stretch fills both axes without
 preserving proportions, and Custom scales relative to Normal. For these manual
 modes, `VideoPresentationView` transforms and clips only the stable video surface,
 without restarting playback, changing the engine layer's gravity, or processing frames.
@@ -1473,16 +1540,25 @@ back to coded dimensions.
 Authored bitmap clearance maps the image, lower-region envelope, and protected
 artwork boundary through that same zoom/stretch geometry before moving a region.
 
-Movies and episodes default to Auto Crop when the engine supports analysis.
+The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
+It applies to movies, episodes, extras, trailers and Live TV; each platform starts
+with Auto-crop black bars. Unsupported engines fall back to Normal without changing
+the saved choice. Unidentified disc-menu timelines retain Normal framing.
 An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
-per profile and movie/series using the existing title preference store. Only the
-mode and percentage are saved, never detected rectangles. Defaults and temporary
+per profile and movie/series using the existing title preference store. Auto-crop's
+screen-edge/cutout-safe pinch level instead updates the profile's shared framing
+preference for the current device type. It carries across movies, shows and live
+channels, including titles with an older saved Auto-crop level. It does not change
+the default zoom mode or another device type's framing. Player composition binds
+the profile's existing `PlaybackSettingsModel` to `PlayerVideoZoomModel`; Live TV
+receives that same model through the shell environment. Only presentation choices
+are saved, never detected rectangles. Until the first shared pinch choice, Auto-crop
+defaults to screen-edge fitting. Defaults and temporary
 unsupported-engine fallbacks do not write preferences. Series choices follow later
 episodes and shared external IDs across servers; movie keys use strong external
 IDs with an account-scoped fallback, never title matching. Existing series keys
-and profile-transfer storage remain compatible. Trailers, extras, unidentified
-disc timelines and Live TV retain their existing defaults; a different live
-channel still starts at Normal. PiP and AirPlay retain
+and profile-transfer storage remain compatible. Changing a live channel restores
+the platform default rather than the previous channel's manual choice. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
 Both production playback engines offer **Auto-crop black bars**, with no
 menu subtext. A shared, cancellable
@@ -1490,11 +1566,20 @@ AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
 Dolby Vision output, using existing frames
 and no additional decoder or stream. It scales and translates the original surface
 uniformly, including asymmetric borders, and caps automatic magnification at 2x.
-The detected picture fits the full player bounds, not the safe area, preserving
-its aspect ratio without deliberately trimming picture content. Video may extend
-behind the Dynamic Island or other display cutouts; controls retain their safe-area
-placement. Aspect-ratio differences can still leave bars.
-Before the first confirmed measurement, Auto Crop uses Normal. Once confirmed,
+The detected picture maximizes the screen-edge viewport by default, preserving its
+aspect ratio without deliberately trimming picture content; the notch/Dynamic Island
+can obscure part of that larger picture. In Auto-crop, pinching inward fits the same
+active picture inside the cutout-safe viewport; pinching outward restores screen-edge
+fitting without switching to Crop. Both levels preserve the entire detected picture,
+including on videos without encoded bars. Height-limited videos can have the same size
+at both levels. In landscape, the home-indicator strip does not reduce video height.
+Encoded black borders do not consume usable width. Outside Auto-crop, pinching outward
+selects explicit Crop and pinching inward restores Normal, never Auto-crop.
+Controls and subtitles keep their existing placement.
+On TV and inline surfaces without safe-area fitting, the picture uses the full viewport.
+Aspect-ratio differences can still leave bars.
+Before the first confirmed measurement, Auto-crop fits the whole frame to its selected
+viewport. Once confirmed,
 framing survives seeks, buffering and unavailable/expired detector evidence for
 the same source and display aspect ratio. Fresh confirmed measurements, including
 full-frame evidence, replace it without an intermediate Normal zoom. A separate
