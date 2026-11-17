@@ -239,8 +239,8 @@ private struct SubtitleFileMatchPreviewFooter: View {
 
 /// The compact subtitle **timing** screen reached from the header Sync chip:
 /// nudge the primary subtitle earlier/later to line it up with the audio. A
-/// single − / value / + stepper in 50 ms steps (matching the Speed stepper's
-/// look), with a dynamic hint stating the current earlier/later result. Only
+/// single-focus settings stepper in 50 ms steps, with held Left/Right and Reset.
+/// Changes apply immediately to the subtitle timeline. Only
 /// offered when the app's overlay owns the active subtitle, so the chip that
 /// opens it is gated the same way. Extracted from `PlayerControls`; the shared
 /// `delayLabel` / `subtitleSyncHint` formatters stay on `PlayerControls` because
@@ -249,65 +249,141 @@ struct SubtitleSyncScreen: View {
     let model: PlayerControlsModel
     let actions: PlayerOptionsActions
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    var allowsResetFocus = true
+    var onControlFocus: () -> Void = {}
+
+    var body: some View {
+        PlaybackSyncScreen(
+            value: model.subtitleDelaySeconds,
+            hint: PlayerControls.subtitleSyncHint(model.subtitleDelaySeconds),
+            range: -10...10, showsReset: true,
+            onChange: actions.setSubtitleDelay, focus: $focus,
+            allowsResetFocus: allowsResetFocus, onControlFocus: onControlFocus
+        )
+    }
+}
+
+struct PlaybackSyncScreen: View {
+    let value: TimeInterval
+    let hint: LocalizedStringResource
+    let range: ClosedRange<TimeInterval>
+    var showsReset = false
+    var step: TimeInterval = 0.05
+    let onChange: (TimeInterval) -> Void
+    @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    var allowsResetFocus = true
+    var onControlFocus: () -> Void = {}
+
+    private var indices: ClosedRange<Int> {
+        Int((range.lowerBound / step).rounded())...Int((range.upperBound / step).rounded())
+    }
 
     var body: some View {
         VStack(spacing: 20) {
-            delayStepper(
-                value: model.subtitleDelaySeconds,
-                minusSlot: 0,
-                plusSlot: 1,
-                step: 0.05,
-                onAdjust: { actions.setSubtitleDelay(model.subtitleDelaySeconds + $0) }
+            SettingsStepper(
+                options: Array(indices),
+                selection: Binding(
+                    get: { Int((value / step).rounded()) },
+                    set: { onChange(Double($0) * step) }
+                ),
+                compact: true,
+                onFocusChange: {
+                    if $0 {
+                        focus = .row(0)
+                        onControlFocus()
+                    }
+                },
+                verbatimTitle: { PlayerControls.delayLabel(Double($0) * step) }
             )
-            Text(PlayerControls.subtitleSyncHint(model.subtitleDelaySeconds))
+            .reservingValueWidth(for: [indices.lowerBound, indices.upperBound])
+            .swipeToAdjust()
+            .accessibilityLabel("Subtitle Delay")
+            .frame(maxWidth: .infinity)
+            .plozzFocusSection()
+            Text(hint)
                 .font(.callout)
                 .foregroundStyle(Color.primary.opacity(0.6))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
-                .animation(.easeInOut(duration: 0.15), value: model.subtitleDelaySeconds)
+                .animation(.easeInOut(duration: 0.15), value: value)
+            if showsReset {
+                Button("Reset") { onChange(0) }
+                    .focused($focus, equals: .row(1))
+                    .disabled(value == 0 || !allowsResetFocus)
+            }
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 28)
     }
+}
 
-    /// A compact − / value / + stepper for the subtitle-sync screen. The ± are
-    /// discrete focusable chips (bound to `minusSlot` / `plusSlot`) that reuse the
-    /// Speed stepper's circular `StepperButtonStyle`; the live value sits centred
-    /// between them in ms.
-    private func delayStepper(
-        value: TimeInterval,
-        minusSlot: Int,
-        plusSlot: Int,
-        step: TimeInterval,
-        onAdjust: @escaping (TimeInterval) -> Void
-    ) -> some View {
-        HStack(spacing: 24) {
-            Button { onAdjust(-step) } label: {
-                Image(systemName: "minus")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 56, height: 56)
+struct AudioSyncScreen: View {
+    let model: PlayerControlsModel
+    let actions: PlayerOptionsActions
+    @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    var allowsResetFocus = true
+    var onControlFocus: () -> Void = {}
+    private var adjustment: PlayerAudioSyncEditor { model.audioSyncAdjustment }
+
+    private var value: TimeInterval { adjustment.value ?? model.audioDelaySeconds }
+    private var steps: ClosedRange<Int> {
+        Int((adjustment.range.lowerBound * 100).rounded())...Int((adjustment.range.upperBound * 100).rounded())
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            SettingsStepper(
+                options: Array(steps),
+                selection: Binding(
+                    get: { Int((value * 100).rounded()) },
+                    set: { change(Double($0) / 100) }
+                ),
+                compact: true,
+                onFocusChange: {
+                    if $0 {
+                        focus = .row(0)
+                        onControlFocus()
+                    }
+                },
+                verbatimTitle: { PlayerControls.delayLabel(Double($0) / 100) }
+            )
+            .reservingValueWidth(for: [steps.lowerBound, steps.upperBound])
+            .onDirectionalAdjustment({ forward, repeating in
+                adjustment.nudge(from: model.audioDelaySeconds, forward: forward, repeating: repeating,
+                                 applyLive: actions.setAudioDelayLive, commit: actions.setAudioDelay)
+            }, onEditingEnded: {
+                adjustment.endEditing(cancelled: $0, commit: actions.setAudioDelay)
+            })
+            .swipeToAdjust(onEditingBegan: { adjustment.beginEditing() })
+            .accessibilityLabel("Audio Delay")
+            .frame(maxWidth: .infinity)
+            .plozzFocusSection()
+            Text(PlayerControlsModel.audioSyncHint(for: value))
+                .font(.callout)
+                .foregroundStyle(Color.primary.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+            Button("Reset") {
+                adjustment.cancel()
+                change(0)
             }
-            .buttonStyle(StepperButtonStyle())
-            .focused($focus, equals: .row(minusSlot))
-
-            Text(PlayerControls.delayLabel(value))
-                .font(.title3.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(Color.primary)
-                .contentTransition(.numericText())
-                .animation(.easeOut(duration: 0.16), value: value)
-                .frame(minWidth: 104)
-
-            Button { onAdjust(step) } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 56, height: 56)
-            }
-            .buttonStyle(StepperButtonStyle())
-            .focused($focus, equals: .row(plusSlot))
+            .focused($focus, equals: .row(1))
+            .disabled(value == 0 || !allowsResetFocus)
         }
-        .padding(.vertical, 4)
+        .padding(28)
+        .onDisappear { adjustment.cancel() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            adjustment.cancel()
+        }
+        .onChange(of: model.infoCard.sourceItemID) { _, _ in adjustment.cancel() }
+        .onChange(of: model.infoCard.sourceAccountID) { _, _ in adjustment.cancel() }
+    }
+
+    private func change(_ value: TimeInterval) {
+        adjustment.change(to: value, current: model.audioDelaySeconds,
+                          applyLive: actions.setAudioDelayLive, commit: actions.setAudioDelay)
     }
 }
 #endif

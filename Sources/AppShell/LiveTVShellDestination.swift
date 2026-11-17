@@ -192,7 +192,10 @@ struct LiveTVShellDestination: View {
                     library.makeEngine(
                         engine: try PlozzigenVideoEngine(
                             authenticatedHTTPResolver: playback.authenticatedHTTPResolver,
-                            liveBufferPreference: { LivePlaybackBufferStore().load() }
+                            liveBufferPreference: { LivePlaybackBufferStore().load() },
+                            videoUpscalingPreference: { [preferencesNamespace] in
+                                PlaybackSettingsStore(namespace: preferencesNamespace).load().videoUpscaling
+                            }
                         ),
                         onCompleted: completeLibraryChannelPlayback
                     )

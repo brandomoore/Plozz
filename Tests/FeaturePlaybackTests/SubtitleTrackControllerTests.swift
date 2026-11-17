@@ -607,6 +607,38 @@ final class SubtitleTrackControllerTests: XCTestCase {
         XCTAssertEqual(engine.subtitleTracks.map(\.displayTitle), ["French", "French"])
     }
 
+    func testSessionReloadPreservesSecondaryUntilReplacementTracksAreReady() {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
+        let primary = embeddedText(7)
+        let secondary = embeddedText(8, language: "ja")
+        engine.subtitleTracks = [primary, secondary]
+        sut.selectSubtitleOption(id: primary.id)
+        sut.selectSecondarySubtitleOption(id: secondary.id)
+        let style = host.style
+        let secondarySelections = engine.secondarySelections.count
+        let options = host.controls.secondarySubtitleOptions
+
+        engine.isSessionReloading = true
+        engine.subtitleTracks = []
+        sut.loadTrackOptions()
+        XCTAssertEqual(sut.selectedSecondarySubtitleTrackID, secondary.id)
+        XCTAssertEqual(host.style, style)
+        XCTAssertEqual(engine.secondarySelections.count, secondarySelections)
+        XCTAssertEqual(host.controls.secondarySubtitleOptions, options)
+
+        engine.subtitleTracks = [primary, secondary]
+        engine.isSessionReloading = false
+        sut.loadTrackOptions()
+        XCTAssertEqual(sut.selectedSecondarySubtitleTrackID, secondary.id)
+        XCTAssertEqual(host.style, style)
+        XCTAssertEqual(host.controls.secondarySubtitleOptions.filter(\.isSelected).map(\.id), [secondary.id])
+
+        engine.subtitleTracks = [primary]
+        sut.loadTrackOptions()
+        XCTAssertNil(sut.selectedSecondarySubtitleTrackID)
+        XCTAssertNil(host.style.secondary)
+    }
+
     func testSelectSecondaryEnablesStylingAndLoadingStatus() {
         let (sut, host, engine) = makeSUT(engineKind: .native)   // non-dual engine → sidecar overlay
         let secondary = textSidecar(8, language: "ja")
@@ -743,6 +775,7 @@ private final class SpyTrackHost: SubtitleTrackControllerHost, SubtitleOverlayLo
 private final class SpyTrackEngine: VideoEngine {
     let displayName = "track-spy"
     var status: VideoEngineStatus = .ready
+    var isSessionReloading = false
     var isPaused = false
     var preventsDisplaySleep = false
     var currentTime: TimeInterval = 0

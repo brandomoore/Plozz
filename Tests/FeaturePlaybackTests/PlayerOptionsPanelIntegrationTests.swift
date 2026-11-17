@@ -11,6 +11,30 @@ import XCTest
 final class PlayerOptionsPanelIntegrationTests: XCTestCase {
     private typealias Screen = PlayerControls.SubtitleScreen
 
+    func testAudioSyncAndUpscalingUseTheExistingOptionsNavigation() {
+        let model = PlayerControlsModel()
+        XCTAssertFalse(model.hasAudioControls)
+        model.engineCapabilities = [.audioDelay]
+        XCTAssertTrue(model.hasAudioControls)
+        XCTAssertEqual(
+            PlayerOptionsPanel.preferredFocus(for: .audio, subtitleScreen: .tracks, model: model, audioScreen: .sync),
+            .row(0)
+        )
+        model.upscaling.isAvailable = true
+        model.upscaling.selection = .animation
+        XCTAssertTrue(model.trackControlCategories.contains(.playback))
+        let rows = PlaybackOptionsPane.rows(
+            model: model, zoom: model.videoZoom, actions: .init(), openScreen: { _ in }
+        )
+        XCTAssertTrue(rows.contains { $0.id == PlaybackOptionsPane.upscalingSlot })
+        XCTAssertEqual(
+            PlayerOptionsPanel.preferredFocus(
+                for: .playback, subtitleScreen: .tracks, model: model, playbackScreen: .upscaling
+            ),
+            .row(3)
+        )
+    }
+
     func testChaptersUseTheBottomCardAndEnterOnTheirTab() {
         let model = PlayerControlsModel()
         XCTAssertTrue(PlayerControls.usesBottomCard(.chapters))

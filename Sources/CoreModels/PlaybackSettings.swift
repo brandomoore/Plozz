@@ -176,6 +176,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// player's Info card (#351). Per profile, ON by default.
     public var identifySongs: Bool
     public var dolbyVisionFELConversion: Bool
+    public var videoUpscaling: VideoUpscaling
 
     /// Optional player tabs, per profile. Availability still depends on content.
     public var chaptersInPlayer: Bool
@@ -224,6 +225,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         rememberSubtitleTrackPerSeries: Bool = true,
         identifySongs: Bool = true,
         dolbyVisionFELConversion: Bool = true,
+        videoUpscaling: VideoUpscaling = .default,
         chaptersInPlayer: Bool = true,
         castInPlayer: Bool = true,
         episodesInPlayer: Bool = true,
@@ -270,6 +272,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.rememberSubtitleTrackPerSeries = rememberSubtitleTrackPerSeries
         self.identifySongs = identifySongs
         self.dolbyVisionFELConversion = dolbyVisionFELConversion
+        self.videoUpscaling = videoUpscaling
         self.chaptersInPlayer = chaptersInPlayer
         self.castInPlayer = castInPlayer
         self.episodesInPlayer = episodesInPlayer
@@ -457,6 +460,7 @@ public extension PlaybackSettings {
         case rememberSubtitleTrackPerSeries
         case identifySongs
         case dolbyVisionFELConversion
+        case videoUpscaling
         case chaptersInPlayer
         case castInPlayer
         case episodesInPlayer
@@ -602,6 +606,8 @@ public extension PlaybackSettings {
         self.dolbyVisionFELConversion =
             (try? container.decodeIfPresent(Bool.self, forKey: .dolbyVisionFELConversion))
             .flatMap { $0 } ?? defaults.dolbyVisionFELConversion
+        self.videoUpscaling = try container.decodeIfPresent(VideoUpscaling.self, forKey: .videoUpscaling)
+            ?? defaults.videoUpscaling
         self.chaptersInPlayer =
             (try? container.decodeIfPresent(Bool.self, forKey: .chaptersInPlayer))
             .flatMap { $0 } ?? defaults.chaptersInPlayer
@@ -675,6 +681,7 @@ public extension PlaybackSettings {
         try container.encode(rememberSubtitleTrackPerSeries, forKey: .rememberSubtitleTrackPerSeries)
         try container.encode(identifySongs, forKey: .identifySongs)
         try container.encode(dolbyVisionFELConversion, forKey: .dolbyVisionFELConversion)
+        try container.encode(videoUpscaling, forKey: .videoUpscaling)
         try container.encode(chaptersInPlayer, forKey: .chaptersInPlayer)
         try container.encode(castInPlayer, forKey: .castInPlayer)
         try container.encode(episodesInPlayer, forKey: .episodesInPlayer)

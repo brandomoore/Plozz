@@ -933,6 +933,238 @@
         }
       }
     },
+    " s" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " ث"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " сек."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " সেক."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " sek."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " δευτ."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " ث"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " שנ׳"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " से॰"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " mp"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " dtk"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " 秒"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " 초"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " с"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " วิ."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " sn"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " с"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " سیکنڈ"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " s"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " 秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : " 秒"
+          }
+        }
+      }
+    },
     "%@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -151005,6 +151237,238 @@
         }
       }
     },
+    "Adjust audio earlier or later to match the video." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "قدّم الصوت أو أخّره ليتزامن مع الفيديو."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Изместете звука по-рано или по-късно, за да съвпада с картината."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ভিডিওর সঙ্গে মেলাতে অডিও এগিয়ে বা পিছিয়ে দিন।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avança o retarda l'àudio perquè coincideixi amb el vídeo."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Posuňte zvuk dopředu nebo dozadu, aby odpovídal obrazu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Juster lyden, så den afspilles tidligere eller senere og passer til billedet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verschiebe den Ton zeitlich nach vorn oder hinten, damit er zum Bild passt."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Μετακινήστε τον ήχο νωρίτερα ή αργότερα ώστε να συγχρονίζεται με την εικόνα."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Adelanta o retrasa el audio para sincronizarlo con la imagen."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "صدا را جلوتر یا عقب‌تر ببرید تا با تصویر هماهنگ شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aikaista tai viivästä ääntä niin, että se on tahdissa kuvan kanssa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avancez ou retardez le son pour le synchroniser avec l’image."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "יש להקדים או לאחר את השמע כדי להתאים אותו לווידאו."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वीडियो से मिलाने के लिए ऑडियो को पहले या बाद में चलाएँ।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pomaknite zvuk ranije ili kasnije kako biste ga uskladili s videom."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Időzítse a hangot korábbra vagy későbbre, hogy illeszkedjen a videóhoz."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Majukan atau tunda audio agar selaras dengan video."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anticipa o ritarda l'audio per sincronizzarlo con il video."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "音声の再生タイミングを早めたり遅らせたりして、映像に合わせます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "오디오 재생 시점을 앞당기거나 늦춰 영상과 맞춥니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Laraskan audio supaya dimainkan lebih awal atau lewat agar sepadan dengan video."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Juster lyden slik at den spilles av tidligere eller senere og er synkronisert med bildet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Laat de audio eerder of later afspelen om deze met de video te synchroniseren."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ustaw wcześniejsze lub późniejsze odtwarzanie dźwięku, aby dopasować go do obrazu."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Adiante ou atrase o áudio para sincronizá-lo com o vídeo."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reglați sunetul să se redea mai devreme sau mai târziu, pentru a-l sincroniza cu imaginea."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сместите звук на более раннее или позднее время, чтобы синхронизировать его с видео."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Posuňte zvuk na skorší alebo neskorší čas, aby sa zhodoval s obrazom."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Predvajanje zvoka premaknite na zgodnejši ali poznejši čas, da ga uskladite s sliko."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Podesite da se zvuk reprodukuje ranije ili kasnije kako biste ga uskladili sa slikom."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Justera ljudet så att det spelas upp tidigare eller senare och stämmer med bilden."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ปรับเวลาเล่นเสียงให้เร็วขึ้นหรือช้าลงเพื่อให้ตรงกับภาพ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sesin görüntüyle eşleşmesi için sesi daha erken veya daha geç oynatılacak şekilde ayarlayın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Відтворюйте звук раніше або пізніше, щоб синхронізувати його із зображенням."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "آواز کو تصویر سے ہم آہنگ کرنے کے لیے اسے پہلے یا بعد میں چلائیں۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Điều chỉnh âm thanh phát sớm hơn hoặc muộn hơn để khớp với hình ảnh."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "将音频提前或延后，使其与画面同步。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "將音訊提前或延後，使其與畫面同步。"
+          }
+        }
+      }
+    },
     "Admin" : {
       "localizations" : {
         "ar" : {
@@ -168435,6 +168899,238 @@
         }
       }
     },
+    "Applying…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "جارٍ التطبيق…"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Прилагане…"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "প্রয়োগ করা হচ্ছে…"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "S'està aplicant…"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Provádění změny…"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anvender…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wird angewendet…"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Γίνεται εφαρμογή…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aplicando…"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "در حال اعمال…"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otetaan käyttöön…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Application en cours…"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מחיל שינויים…"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "लागू किया जा रहा है…"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Primjena…"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alkalmazás…"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menerapkan…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Applicazione in corso…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "適用中…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "적용 중…"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menggunakan tetapan…"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tar i bruk…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toepassen…"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stosowanie…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aplicando…"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se aplică…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Применение…"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aplikuje sa…"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uveljavljanje…"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Primena…"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tillämpar…"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "กำลังนำไปใช้…"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uygulanıyor…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Застосування…"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لاگو ہو رہا ہے…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đang áp dụng…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在应用…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "套用中…"
+          }
+        }
+      }
+    },
     "Approve & Continue" : {
       "localizations" : {
         "ar" : {
@@ -179361,6 +180057,470 @@
         }
       }
     },
+    "Audio plays earlier than the video." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الصوت يسبق الصورة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Звукът изпреварва картината."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ভিডিওর তুলনায় অডিও আগে বাজে।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L'àudio va avançat respecte al vídeo."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvuk se přehrává dříve než obraz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lyden afspilles før billedet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Ton eilt dem Bild voraus."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ο ήχος ακούγεται νωρίτερα από την αντίστοιχη εικόνα."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El audio va por delante de la imagen."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "صدا زودتر از تصویر پخش می‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ääni kuuluu ennen vastaavaa kuvaa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le son est en avance sur l’image."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "השמע מקדים את התמונה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ऑडियो वीडियो से आगे चल रहा है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvuk se reproducira prije slike."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A hang a kép előtt szólal meg."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Audio mendahului gambar."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L'audio viene riprodotto in anticipo rispetto al video."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "音声が映像より先に再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "오디오가 영상보다 먼저 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Audio dimainkan lebih awal daripada video."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lyden spilles av tidligere enn bildet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De audio wordt eerder afgespeeld dan de video."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dźwięk jest odtwarzany wcześniej niż obraz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O áudio está adiantado em relação ao vídeo."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sunetul se redă mai devreme decât imaginea."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Звук опережает изображение."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvuk sa prehráva skôr ako obraz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvok prehiteva sliko."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvuk se reprodukuje ranije u odnosu na sliku."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ljudet spelas upp före bilden."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เสียงมาก่อนภาพ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ses, görüntüden önce oynatılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Звук випереджає зображення."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "آواز تصویر سے پہلے چلتی ہے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Âm thanh phát trước hình ảnh."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "音频先于画面播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "音訊先於畫面播放。"
+          }
+        }
+      }
+    },
+    "Audio plays later than the video." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الصوت يتأخر عن الصورة."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Звукът изостава от картината."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ভিডিওর তুলনায় অডিও পরে বাজে।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L'àudio va endarrerit respecte al vídeo."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvuk se přehrává později než obraz."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lyden afspilles efter billedet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Ton läuft dem Bild hinterher."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ο ήχος ακούγεται αργότερα από την αντίστοιχη εικόνα."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El audio va por detrás de la imagen."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "صدا دیرتر از تصویر پخش می‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ääni kuuluu vastaavan kuvan jälkeen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le son est en retard sur l’image."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "השמע מאחר ביחס לתמונה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ऑडियो वीडियो से पीछे चल रहा है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvuk se reproducira nakon slike."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A hang a kép után szólal meg."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Audio tertinggal dari gambar."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L'audio viene riprodotto in ritardo rispetto al video."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "音声が映像より遅れて再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "오디오가 영상보다 늦게 재생됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Audio dimainkan lebih lewat daripada video."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lyden spilles av senere enn bildet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De audio wordt later afgespeeld dan de video."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dźwięk jest odtwarzany później niż obraz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O áudio está atrasado em relação ao vídeo."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sunetul se redă mai târziu decât imaginea."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Звук отстаёт от изображения."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvuk sa prehráva neskôr ako obraz."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvok zaostaja za sliko."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvuk se reprodukuje kasnije u odnosu na sliku."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ljudet spelas upp efter bilden."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เสียงมาหลังภาพ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ses, görüntüden sonra oynatılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Звук відстає від зображення."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "آواز تصویر کے بعد چلتی ہے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Âm thanh phát sau hình ảnh."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "音频晚于画面播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "音訊晚於畫面播放。"
+          }
+        }
+      }
+    },
     "Audio track" : {
       "comment" : "VoiceOver label for the waveform button beneath the player's scrub bar; opens the audio-track menu.",
       "extractionState" : "stale",
@@ -183781,6 +184941,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "自動報告不含登入憑證、伺服器位址或媒體標題。"
+          }
+        }
+      }
+    },
+    "Automatic selects Animation for anime or animation metadata, otherwise Standard. Standard enhances 8-bit SDR below 1080p; Animation enhances drawn SDR up to 1080p. Requires AetherEngine, supported hardware and a larger display. No HDR or 4K enhancement. Applies to new playback." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يختار وضع «تلقائي» وضع «رسوم متحركة» إذا أشارت البيانات الوصفية إلى الأنمي أو الرسوم المتحركة، وإلا فيختار «قياسي». يحسّن وضع «قياسي» فيديو SDR بعمق 8 بت وبدقة أقل من 1080p؛ ويحسّن وضع «رسوم متحركة» المحتوى المرسوم بتقنية SDR بدقة تصل إلى 1080p. يتطلب AetherEngine وأجهزة مدعومة وشاشة أكبر. لا يحسّن محتوى HDR أو 4K. يُطبّق عند بدء تشغيل جديد."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Режимът „Автоматично“ избира „Анимация“, ако метаданните посочват аниме или анимация, а в останалите случаи — „Стандартно“. „Стандартно“ подобрява 8-битово SDR видео с резолюция под 1080p; „Анимация“ подобрява рисувано SDR видео с резолюция до 1080p включително. Изисква AetherEngine, поддържан хардуер и по-голям екран. Не подобрява HDR или 4K. Прилага се при ново възпроизвеждане."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "‘স্বয়ংক্রিয়’ মোড মেটাডেটায় অ্যানিমে বা অ্যানিমেশনের উল্লেখ থাকলে ‘অ্যানিমেশন’, অন্যথায় ‘মানক’ বেছে নেয়। ‘মানক’ 1080p-এর নিচের রেজোলিউশনের 8-বিট SDR ভিডিওর মান উন্নত করে; ‘অ্যানিমেশন’ 1080p পর্যন্ত রেজোলিউশনের আঁকা SDR ভিডিওর মান উন্নত করে। AetherEngine, সমর্থিত হার্ডওয়্যার ও বড় ডিসপ্লে প্রয়োজন। HDR বা 4K-এর মান উন্নত করা হয় না। নতুন প্লেব্যাক শুরু হলে প্রযোজ্য।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El mode Automàtic tria Animació si les metadades indiquen anime o animació; si no, tria Estàndard. Estàndard millora el vídeo SDR de 8 bits amb una resolució inferior a 1080p; Animació millora el contingut dibuixat en SDR amb una resolució de fins a 1080p. Requereix AetherEngine, maquinari compatible i una pantalla més gran. No millora el contingut HDR ni 4K. S'aplica a les reproduccions noves."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Režim „Automaticky“ vybere „Animace“, pokud metadata uvádějí anime nebo animaci, jinak „Standardní“. Režim „Standardní“ vylepšuje 8bitové SDR video s rozlišením nižším než 1080p; režim „Animace“ vylepšuje kreslené SDR video s rozlišením až 1080p. Vyžaduje AetherEngine, podporovaný hardware a větší displej. Nevylepšuje HDR ani 4K. Platí pro nově spuštěné přehrávání."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatisk vælger Animation, hvis metadata angiver anime eller animation, ellers Standard. Standard forbedrer 8-bit SDR-video med en opløsning under 1080p; Animation forbedrer tegnet SDR-indhold med en opløsning op til 1080p. Kræver AetherEngine, understøttet hardware og en større skærm. Ingen forbedring af HDR eller 4K. Gælder for nye afspilninger."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "„Automatisch“ wählt „Animation“, wenn die Metadaten Anime oder Animation angeben, sonst „Standard“. „Standard“ verbessert 8-Bit-SDR unter 1080p; „Animation“ verbessert gezeichnete SDR-Inhalte bis einschließlich 1080p. Erfordert AetherEngine, unterstützte Hardware und ein größeres Display. Keine Verbesserung von HDR oder 4K. Gilt für neu gestartete Wiedergaben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Η λειτουργία «Αυτόματο» επιλέγει τη λειτουργία «Κινούμενα σχέδια» όταν τα μεταδεδομένα δηλώνουν anime ή κινούμενα σχέδια, διαφορετικά τη λειτουργία «Τυπικό». Η λειτουργία «Τυπικό» βελτιώνει περιεχόμενο SDR 8 bit με ανάλυση κάτω από 1080p· η λειτουργία «Κινούμενα σχέδια» βελτιώνει κινούμενα σχέδια σε SDR με ανάλυση έως και 1080p. Απαιτούνται AetherEngine, υποστηριζόμενο υλικό και μεγαλύτερη οθόνη. Δεν βελτιώνει περιεχόμενο HDR ή 4K. Ισχύει για νέες αναπαραγωγές."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "«Automático» selecciona «Animación» si los metadatos indican anime o animación; en caso contrario, selecciona «Estándar». «Estándar» mejora el contenido SDR de 8 bits con una resolución inferior a 1080p; «Animación» mejora los dibujos animados en SDR hasta 1080p inclusive. Requiere AetherEngine, hardware compatible y una pantalla de mayor tamaño. No mejora contenido HDR ni 4K. Se aplica a las nuevas reproducciones."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "حالت «خودکار» اگر فراداده نشان دهد محتوا انیمه یا پویانمایی است، «پویانمایی» و در غیر این صورت «استاندارد» را انتخاب می‌کند. «استاندارد» محتوای SDR هشت‌بیتی با وضوح کمتر از 1080p را بهبود می‌دهد؛ «پویانمایی» محتوای نقاشی‌شدهٔ SDR با وضوح حداکثر 1080p را بهبود می‌دهد. به AetherEngine، سخت‌افزار پشتیبانی‌شده و نمایشگر بزرگ‌تر نیاز دارد. محتوای HDR یا 4K بهبود نمی‌یابد. برای پخش‌های جدید اعمال می‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automaattinen-tila valitsee Animaatio-tilan, jos metatiedot kertovat sisällön olevan animea tai animaatiota, ja muutoin Vakio-tilan. Vakio-tila parantaa 8-bittistä SDR-sisältöä, jonka tarkkuus on alle 1080p; Animaatio-tila parantaa piirrettyä SDR-sisältöä, jonka tarkkuus on enintään 1080p. Edellyttää AetherEngine-moottoria, tuettua laitteistoa ja suurempaa näyttöä. Ei paranna HDR- tai 4K-sisältöä. Koskee uusia toistokertoja."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le mode « Automatique » choisit « Animation » si les métadonnées indiquent un anime ou une animation, sinon « Standard ». « Standard » améliore les contenus SDR 8 bits d’une résolution inférieure à 1080p ; « Animation » améliore les dessins animés en SDR jusqu’à 1080p inclus. Nécessite AetherEngine, un matériel compatible et un écran de plus grande taille. Aucune amélioration des contenus HDR ou 4K. S’applique aux nouvelles lectures."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "במצב אוטומטי נבחר מצב אנימציה אם המטא־נתונים מציינים אנימה או אנימציה, ואחרת נבחר מצב רגיל. מצב רגיל משפר תוכן SDR בעומק של 8 סיביות ברזולוציה הנמוכה מ־1080p; מצב אנימציה משפר תוכן SDR מצויר ברזולוציה של עד 1080p. נדרשים AetherEngine, חומרה נתמכת ומסך גדול יותר. אין שיפור של HDR או 4K. ההגדרה חלה על הפעלות ניגון חדשות."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "स्वचालित मोड मेटाडेटा में एनीमे या एनिमेशन होने पर एनिमेशन चुनता है, अन्यथा मानक। मानक मोड 1080p से कम रिज़ॉल्यूशन वाली 8-बिट SDR सामग्री को बेहतर बनाता है; एनिमेशन मोड 1080p तक की चित्रित SDR सामग्री को बेहतर बनाता है। इसके लिए AetherEngine, समर्थित हार्डवेयर और बड़ा डिस्प्ले आवश्यक है। HDR या 4K सामग्री को बेहतर नहीं बनाया जाता। यह नए प्लेबैक सत्रों पर लागू होता है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Način „Automatski” odabire „Animacija” ako metapodaci označavaju anime ili animaciju, a inače „Standardno”. Način „Standardno” poboljšava 8-bitni SDR sadržaj razlučivosti niže od 1080p; način „Animacija” poboljšava crtani SDR sadržaj razlučivosti do uključivo 1080p. Potrebni su AetherEngine, podržani hardver i veći zaslon. Nema poboljšanja HDR-a ni 4K sadržaja. Primjenjuje se pri novom pokretanju reprodukcije."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az Automatikus mód az Animáció beállítást választja, ha a metaadatok animét vagy animációt jeleznek; egyébként a Normál beállítást. A Normál a 1080p alatti felbontású, 8 bites SDR-tartalmakat javítja; az Animáció a legfeljebb 1080p felbontású, rajzolt SDR-tartalmakat. AetherEngine, támogatott hardver és nagyobb kijelző szükséges. A HDR- és 4K-tartalmakat nem javítja. Az új lejátszásokra érvényes."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mode Otomatis memilih Animasi jika metadata menunjukkan anime atau animasi; jika tidak, mode Standar dipilih. Mode Standar meningkatkan kualitas konten SDR 8-bit dengan resolusi di bawah 1080p; mode Animasi meningkatkan kualitas konten SDR yang digambar dengan resolusi hingga 1080p. Memerlukan AetherEngine, perangkat keras yang didukung, dan layar yang lebih besar. Tidak meningkatkan kualitas HDR atau 4K. Berlaku untuk pemutaran baru."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatico seleziona Animazione se i metadati indicano anime o animazione, altrimenti Standard. Standard migliora i contenuti SDR a 8 bit con risoluzione inferiore a 1080p; Animazione migliora i contenuti di animazione disegnata in SDR con risoluzione massima di 1080p. Richiede AetherEngine, hardware supportato e uno schermo più grande. Nessun miglioramento per HDR o 4K. Si applica alle nuove riproduzioni."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「自動」では、メタデータがアニメやアニメーションを示す場合は「アニメーション」、それ以外は「標準」が選択されます。「標準」は1080p未満の8ビットSDR映像の解像度や精細感を高めます。「アニメーション」は1080p以下の作画によるSDR映像の解像度や精細感を高めます。AetherEngine、対応ハードウェア、より大きなディスプレイが必要です。HDRや4K映像は高画質化されません。新たに開始する再生に適用されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "‘자동’은 메타데이터에 일본 애니메이션 또는 애니메이션으로 표시된 경우 ‘애니메이션’을, 그 외에는 ‘표준’을 선택합니다. ‘표준’은 1080p 미만의 8비트 SDR 영상의 해상도와 디테일을 개선하며, ‘애니메이션’은 그림으로 제작된 1080p 이하의 SDR 영상의 해상도와 디테일을 개선합니다. AetherEngine, 지원되는 하드웨어 및 더 큰 디스플레이가 필요합니다. HDR 또는 4K 영상은 개선하지 않습니다. 새로 시작하는 재생에 적용됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatik memilih Animasi jika metadata menunjukkan anime atau animasi; jika tidak, Standard dipilih. Standard meningkatkan resolusi dan perincian video SDR 8-bit di bawah 1080p; Animasi meningkatkan resolusi dan perincian video SDR berasaskan lukisan sehingga 1080p. Memerlukan AetherEngine, perkakasan yang disokong dan paparan yang lebih besar. Tiada peningkatan untuk HDR atau 4K. Terpakai apabila memulakan main balik baharu."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatisk velger Animasjon når metadataene angir anime eller animasjon, ellers Standard. Standard forbedrer oppløsningen og detaljene i 8-bits SDR under 1080p; Animasjon forbedrer tegnet SDR-innhold opptil 1080p. Krever AetherEngine, støttet maskinvare og en større skjerm. Ingen forbedring av HDR eller 4K. Gjelder når du starter en ny avspilling."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatisch kiest Animatie als de metadata anime of animatie aangeven, anders Standaard. Standaard verbetert de resolutie en details van 8-bits SDR met een resolutie lager dan 1080p; Animatie verbetert getekende SDR-beelden tot en met 1080p. Vereist AetherEngine, ondersteunde hardware en een groter scherm. Geen verbetering van HDR of 4K. Geldt voor nieuwe afspeelsessies."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ustawienie „Automatyczne” wybiera tryb „Animacja”, gdy metadane wskazują anime lub animację, a w pozostałych przypadkach tryb „Standardowy”. Tryb „Standardowy” poprawia rozdzielczość i szczegółowość 8-bitowego obrazu SDR poniżej 1080p; tryb „Animacja” ulepsza rysunkowe materiały SDR do 1080p włącznie. Wymaga AetherEngine, obsługiwanego sprzętu i większego ekranu. Nie ulepsza materiałów HDR ani 4K. Ma zastosowanie do nowo rozpoczętego odtwarzania."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O modo Automático seleciona Animação quando os metadados indicam anime ou animação; caso contrário, seleciona Padrão. Padrão melhora vídeos SDR de 8 bits abaixo de 1080p; Animação melhora conteúdo desenhado em SDR de até 1080p. Requer AetherEngine, hardware compatível e uma tela maior. Não melhora HDR nem 4K. Aplica-se às próximas reproduções."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Modul Automat selectează Animație dacă metadatele indică anime sau animație, altfel selectează Standard. Standard îmbunătățește conținutul SDR pe 8 biți cu rezoluție sub 1080p; Animație îmbunătățește conținutul desenat SDR cu rezoluție de până la 1080p inclusiv. Necesită AetherEngine, hardware compatibil și un ecran mai mare. Nu îmbunătățește conținutul HDR sau 4K. Se aplică redărilor începute ulterior."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "В режиме «Автоматически» выбирается «Анимация», если в метаданных указано аниме или анимация; в остальных случаях — «Стандартный». Режим «Стандартный» улучшает 8-битное видео SDR с разрешением ниже 1080p; «Анимация» — рисованное видео SDR с разрешением до 1080p включительно. Требуются AetherEngine, поддерживаемое оборудование и экран большего размера. Улучшение HDR или 4K не поддерживается. Применяется при новом запуске воспроизведения."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Možnosť Automaticky vyberie režim Animácia, ak metadáta označujú anime alebo animáciu, inak vyberie režim Štandardný. Režim Štandardný vylepšuje 8-bitové video SDR s rozlíšením nižším ako 1080p; režim Animácia vylepšuje kreslené video SDR s rozlíšením do 1080p vrátane. Vyžaduje AetherEngine, podporovaný hardvér a väčší displej. Nevylepšuje HDR ani 4K. Použije sa pri novom spustení prehrávania."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Možnost Samodejno izbere način Animacija, če metapodatki označujejo anime ali animacijo, sicer izbere način Standardno. Način Standardno izboljša 8-bitni video SDR z ločljivostjo pod 1080p; način Animacija izboljša risani video SDR z ločljivostjo do vključno 1080p. Zahteva AetherEngine, podprto strojno opremo in večji zaslon. Ne izboljša vsebin HDR ali 4K. Velja za na novo začeta predvajanja."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Režim Automatski bira režim Animacija ako metapodaci označavaju anime ili animaciju, a u suprotnom bira režim Standardni. Režim Standardni poboljšava 8-bitni SDR video rezolucije niže od 1080p; režim Animacija poboljšava crtani SDR video rezolucije do zaključno sa 1080p. Zahteva AetherEngine, podržani hardver i veći ekran. Ne poboljšava HDR ni 4K sadržaj. Primenjuje se na novo započete reprodukcije."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatisk väljer Animerat när metadata anger anime eller animerat innehåll, annars Standard. Standard förbättrar 8-bitars SDR med lägre upplösning än 1080p; Animerat förbättrar tecknat SDR-innehåll med upplösning upp till 1080p. Kräver AetherEngine, maskinvara som stöds och en större skärm. Förbättrar inte HDR eller 4K. Gäller när ny uppspelning startas."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "โหมดอัตโนมัติเลือกแอนิเมชันเมื่อข้อมูลเมตาระบุว่าเป็นอนิเมะหรือแอนิเมชัน มิฉะนั้นจะเลือกมาตรฐาน โหมดมาตรฐานปรับปรุงภาพ SDR 8 บิตที่มีความละเอียดต่ำกว่า 1080p ส่วนโหมดแอนิเมชันปรับปรุงเนื้อหา SDR ที่เป็นภาพวาดและมีความละเอียดไม่เกิน 1080p ต้องใช้ AetherEngine ฮาร์ดแวร์ที่รองรับ และจอแสดงผลที่ใหญ่ขึ้น ไม่ปรับปรุงภาพ HDR หรือ 4K มีผลเฉพาะกับการเล่นที่เริ่มใหม่"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otomatik mod, meta verilerde anime veya animasyon belirtiliyorsa Animasyon modunu, aksi takdirde Standart modunu seçer. Standart mod, 1080p altındaki 8 bit SDR içeriği; Animasyon modu ise 1080p ve altındaki çizim tabanlı SDR içeriği iyileştirir. AetherEngine, desteklenen donanım ve daha büyük bir ekran gerektirir. HDR veya 4K içerik iyileştirilmez. Yeni başlatılan oynatmalarda geçerlidir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Режим «Автоматично» вибирає «Анімація», якщо метадані вказують на аніме або анімацію, інакше — «Стандартний». Режим «Стандартний» покращує 8-бітний SDR із роздільністю нижче 1080p; «Анімація» покращує мальований SDR-вміст із роздільністю до 1080p включно. Потрібні AetherEngine, підтримуване обладнання та більший екран. Покращення HDR і 4K не підтримується. Застосовується до нових сеансів відтворення."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "خودکار موڈ، میٹا ڈیٹا میں انیمے یا اینیمیشن کی نشاندہی ہونے پر اینیمیشن موڈ، ورنہ معیاری موڈ منتخب کرتا ہے۔ معیاری موڈ 1080p سے کم ریزولیوشن والے 8-بٹ SDR مواد کو بہتر بناتا ہے؛ اینیمیشن موڈ 1080p یا اس سے کم ریزولیوشن والے ڈرائنگ پر مبنی SDR مواد کو بہتر بناتا ہے۔ AetherEngine، مطابقت رکھنے والا ہارڈویئر اور زیادہ بڑی اسکرین درکار ہیں۔ HDR یا 4K کو بہتر نہیں بناتا۔ صرف نئے شروع ہونے والے پلے بیک پر لاگو ہوتا ہے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tự động chọn Hoạt hình khi siêu dữ liệu cho biết nội dung là anime hoặc hoạt hình; nếu không, chọn Tiêu chuẩn. Tiêu chuẩn cải thiện nội dung SDR 8 bit có độ phân giải dưới 1080p; Hoạt hình cải thiện nội dung SDR dạng hình vẽ có độ phân giải từ 1080p trở xuống. Yêu cầu AetherEngine, phần cứng được hỗ trợ và màn hình lớn hơn. Không cải thiện HDR hoặc 4K. Áp dụng cho các lượt phát mới."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“自动”会在元数据标记为动漫或动画时选择“动画”，否则选择“标准”。“标准”增强分辨率低于 1080p 的 8 位 SDR 画面；“动画”增强分辨率不超过 1080p 的绘画风格 SDR 画面。需要 AetherEngine、受支持的硬件及较大的显示屏。不支持 HDR 或 4K 增强。仅对新开始的播放生效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「自動」會在中繼資料標示為動漫或動畫時選擇「動畫」，否則選擇「標準」。「標準」增強解析度低於 1080p 的 8 位元 SDR 畫面；「動畫」增強解析度不超過 1080p 的繪畫風格 SDR 畫面。需要 AetherEngine、支援的硬體及較大的螢幕。不支援 HDR 或 4K 增強。僅對新開始的播放生效。"
           }
         }
       }
@@ -288069,6 +289461,470 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "無法更改音訊設定"
+          }
+        }
+      }
+    },
+    "Couldn't change upscaling" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذّر تغيير إعداد رفع الدقة"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Настройката за повишаване на резолюцията не можа да се промени"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "রেজোলিউশন বৃদ্ধির সেটিং বদলানো যায়নি"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No s'ha pogut canviar l'augment de la resolució"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodařilo se změnit nastavení zvýšení rozlišení"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke ændre opskalering"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hochskalierung konnte nicht geändert werden"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν ήταν δυνατή η αλλαγή της ρύθμισης αύξησης ανάλυσης"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo cambiar el reescalado"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تغییر تنظیم افزایش وضوح ممکن نشد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ylöspäinskaalauksen muuttaminen epäonnistui"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible de modifier la mise à l’échelle"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא ניתן לשנות את שיפור הרזולוציה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "अपस्केलिंग नहीं बदली जा सकी"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nije moguće promijeniti postavku povećanja razlučivosti"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nem sikerült módosítani a felskálázást"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat mengubah peningkatan resolusi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile modificare l'upscaling"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "アップスケーリングを変更できませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "업스케일링을 변경하지 못했습니다"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat menukar tetapan peningkatan resolusi"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke endre oppskaleringen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kon opschaling niet wijzigen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się zmienić skalowania w górę"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível alterar o aumento de resolução"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nu s-a putut modifica mărirea rezoluției"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось изменить настройки повышения разрешения"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodarilo sa zmeniť nastavenie zvýšenia rozlíšenia"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povečanja ločljivosti ni bilo mogoče spremeniti"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nije bilo moguće promeniti podešavanje povećanja rezolucije"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunde inte ändra uppskalningen"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เปลี่ยนการอัปสเกลไม่ได้"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Çözünürlük yükseltme ayarı değiştirilemedi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося змінити режим підвищення роздільності"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اپ اسکیلنگ تبدیل نہیں ہو سکی"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể thay đổi chế độ nâng độ phân giải"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法更改分辨率提升设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法更改解析度提升設定"
+          }
+        }
+      }
+    },
+    "Couldn't change upscaling. Try again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذّر تغيير إعداد رفع الدقة. حاول مجددًا."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Настройката за повишаване на резолюцията не можа да се промени. Опитайте отново."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "রেজোলিউশন বৃদ্ধির সেটিং বদলানো যায়নি। আবার চেষ্টা করুন।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No s'ha pogut canviar l'augment de la resolució. Torna-ho a provar."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodařilo se změnit nastavení zvýšení rozlišení. Zkuste to znovu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke ændre opskalering. Prøv igen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hochskalierung konnte nicht geändert werden. Versuche es erneut."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Δεν ήταν δυνατή η αλλαγή της ρύθμισης αύξησης ανάλυσης. Δοκιμάστε ξανά."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo cambiar el reescalado. Inténtalo de nuevo."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تغییر تنظیم افزایش وضوح ممکن نشد. دوباره تلاش کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ylöspäinskaalauksen muuttaminen epäonnistui. Yritä uudelleen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible de modifier la mise à l’échelle. Réessayez."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "לא ניתן לשנות את שיפור הרזולוציה. יש לנסות שוב."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "अपस्केलिंग नहीं बदली जा सकी। फिर से कोशिश करें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nije moguće promijeniti postavku povećanja razlučivosti. Pokušajte ponovno."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nem sikerült módosítani a felskálázást. Próbálja újra."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat mengubah peningkatan resolusi. Coba lagi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile modificare l'upscaling. Riprova."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "アップスケーリングを変更できませんでした。もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "업스케일링을 변경하지 못했습니다. 다시 시도해 주세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tidak dapat menukar tetapan peningkatan resolusi. Cuba lagi."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunne ikke endre oppskaleringen. Prøv igjen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kon opschaling niet wijzigen. Probeer het opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się zmienić skalowania w górę. Spróbuj ponownie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível alterar o aumento de resolução. Tente novamente."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nu s-a putut modifica mărirea rezoluției. Încercați din nou."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось изменить настройки повышения разрешения. Повторите попытку."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nepodarilo sa zmeniť nastavenie zvýšenia rozlíšenia. Skúste to znova."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povečanja ločljivosti ni bilo mogoče spremeniti. Poskusite znova."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nije bilo moguće promeniti podešavanje povećanja rezolucije. Pokušajte ponovo."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kunde inte ändra uppskalningen. Försök igen."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เปลี่ยนการอัปสเกลไม่ได้ ลองอีกครั้ง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Çözünürlük yükseltme ayarı değiştirilemedi. Tekrar deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося змінити режим підвищення роздільності. Спробуйте ще раз."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اپ اسکیلنگ تبدیل نہیں ہو سکی۔ دوبارہ کوشش کریں۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể thay đổi chế độ nâng độ phân giải. Hãy thử lại."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法更改分辨率提升设置。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法更改解析度提升設定。請再試一次。"
           }
         }
       }
@@ -916394,6 +918250,238 @@
         }
       }
     },
+    "Standard" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "قياسي"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Стандартно"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "মানক"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Estàndard"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardní"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standard"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standard"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Τυπικό"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Estándar"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "استاندارد"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vakio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standard"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "רגיל"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "मानक"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardno"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Normál"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standard"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "標準"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "표준"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standard"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standard"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standaard"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardowy"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Padrão"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standard"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Стандартный"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Štandardný"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardno"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardni"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standard"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "มาตรฐาน"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standart"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Стандартний"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "معیاری"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tiêu chuẩn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "标准"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "標準"
+          }
+        }
+      }
+    },
     "Starring" : {
       "comment" : "Credit-line label on movie and series hero artwork for the main cast names.",
       "localizations" : {
@@ -1084275,6 +1086363,238 @@
         }
       }
     },
+    "Upscaling" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "رفع الدقة"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Повишаване на резолюцията"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "রেজোলিউশন বৃদ্ধি"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Augment de la resolució"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvýšení rozlišení"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opskalering"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hochskalierung"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αύξηση ανάλυσης"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reescalado"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "افزایش وضوح"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ylöspäinskaalaus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mise à l’échelle"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שיפור רזולוציה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "अपस्केलिंग"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povećanje razlučivosti"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Felskálázás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Peningkatan resolusi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Upscaling"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "アップスケーリング"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "업스케일링"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Peningkatan resolusi"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oppskalering"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opschaling"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skalowanie w górę"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aumento de resolução"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mărirea rezoluției"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Повышение разрешения"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvýšenie rozlíšenia"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povečanje ločljivosti"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povećanje rezolucije"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uppskalning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การอัปสเกล"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Çözünürlük yükseltme"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Підвищення роздільності"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اپ اسکیلنگ"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nâng độ phân giải"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "分辨率提升"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "解析度提升"
+          }
+        }
+      }
+    },
     "Use API key" : {
       "localizations" : {
         "ar" : {
@@ -1108225,6 +1110545,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "影片播放器圖片"
+          }
+        }
+      }
+    },
+    "Video upscaling" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "رفع دقة الفيديو"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Повишаване на резолюцията на видеото"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ভিডিওর রেজোলিউশন বৃদ্ধি"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Augment de la resolució del vídeo"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvýšení rozlišení videa"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opskalering af video"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video-Hochskalierung"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αύξηση ανάλυσης βίντεο"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reescalado de vídeo"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "افزایش وضوح ویدیو"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Videon ylöspäinskaalaus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mise à l’échelle vidéo"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שיפור רזולוציית הווידאו"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "वीडियो अपस्केलिंग"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povećanje razlučivosti videa"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Videó felskálázása"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Peningkatan resolusi video"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Upscaling video"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "映像のアップスケーリング"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "동영상 업스케일링"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Peningkatan resolusi video"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oppskalering av video"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video-opschaling"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skalowanie obrazu w górę"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aumento de resolução do vídeo"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mărirea rezoluției video"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Повышение разрешения видео"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zvýšenie rozlíšenia videa"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povečanje ločljivosti videa"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Povećanje rezolucije videa"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Videouppskalning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การอัปสเกลวิดีโอ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Video çözünürlüğünü yükseltme"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Підвищення роздільності відео"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ویڈیو اپ اسکیلنگ"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nâng độ phân giải video"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "视频分辨率提升"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "影片解析度提升"
           }
         }
       }
@@ -1227808,6 +1230360,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "你的媒體庫中"
+          }
+        }
+      }
+    },
+    "picture resolution SDR automatic standard animation anime4k super resolution metalfx" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "صورة دقة SDR تلقائي قياسي رسوم متحركة anime4k دقة فائقة metalfx"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "картина резолюция SDR автоматично стандартно анимация anime4k суперрезолюция metalfx"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ছবি রেজোলিউশন SDR স্বয়ংক্রিয় মানক অ্যানিমেশন anime4k সুপার রেজোলিউশন metalfx"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "imatge resolució SDR automàtic estàndard animació anime4k superresolució metalfx"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "obraz rozlišení SDR automaticky standardní animace anime4k superrozlišení metalfx"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "billede opløsning SDR automatisk standard animation anime4k superopløsning metalfx"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "bild auflösung SDR automatisch standard animation anime4k superauflösung metalfx"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "εικόνα ανάλυση SDR αυτόματο τυπικό κινούμενα σχέδια anime4k υπερανάλυση metalfx"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "imagen resolución SDR automático estándar animación anime4k superresolución metalfx"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تصویر وضوح SDR خودکار استاندارد پویانمایی anime4k فراوضوح metalfx"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "kuva tarkkuus SDR automaattinen vakio animaatio anime4k superresoluutio metalfx"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "image résolution SDR automatique standard animation anime4k super-résolution metalfx"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "תמונה רזולוציה SDR אוטומטי רגיל אנימציה anime4k רזולוציית על metalfx"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "चित्र रिज़ॉल्यूशन SDR स्वचालित मानक एनिमेशन anime4k सुपर रिज़ॉल्यूशन metalfx"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "slika razlučivost SDR automatski standardno animacija anime4k super razlučivost metalfx"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "kép felbontás SDR automatikus normál animáció anime4k szuperfelbontás metalfx"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "gambar resolusi SDR otomatis standar animasi anime4k resolusi super metalfx"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "immagine risoluzione SDR automatico standard animazione anime4k super risoluzione metalfx"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "画像 解像度 SDR 自動 標準 アニメーション anime4k 超解像 metalfx"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "영상 해상도 SDR 자동 표준 애니메이션 anime4k 초해상도 metalfx"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "gambar resolusi SDR automatik standard animasi anime4k resolusi super metalfx"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "bilde oppløsning SDR automatisk standard animasjon anime4k superoppløsning metalfx"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "beeld resolutie SDR automatisch standaard animatie anime4k superresolutie metalfx"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "obraz rozdzielczość SDR automatyczne standardowy animacja anime4k superrozdzielczość metalfx"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "imagem resolução SDR automático padrão animação anime4k super-resolução metalfx"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "imagine rezoluție SDR automat standard animație anime4k super-rezoluție metalfx"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "изображение разрешение SDR автоматически стандартный анимация anime4k сверхразрешение metalfx"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "obraz rozlíšenie SDR automaticky štandardný animácia anime4k superrozlíšenie metalfx"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "slika ločljivost SDR samodejno standardno animacija anime4k superločljivost metalfx"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "slika rezolucija SDR automatski standardni animacija anime4k superrezolucija metalfx"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "bild upplösning SDR automatisk standard animerat anime4k superupplösning metalfx"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ภาพ ความละเอียด SDR อัตโนมัติ มาตรฐาน แอนิเมชัน anime4k เพิ่มความละเอียด metalfx"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "görüntü çözünürlük SDR otomatik standart animasyon anime4k süper çözünürlük metalfx"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "зображення роздільність SDR автоматично стандартний анімація anime4k надроздільність metalfx"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تصویر ریزولیوشن SDR خودکار معیاری اینیمیشن anime4k سپر ریزولیوشن metalfx"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "hình ảnh độ phân giải SDR tự động tiêu chuẩn hoạt hình anime4k siêu phân giải metalfx"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "画面 分辨率 SDR 自动 标准 动画 anime4k 超分辨率 metalfx"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "畫面 解析度 SDR 自動 標準 動畫 anime4k 超解析度 metalfx"
           }
         }
       }

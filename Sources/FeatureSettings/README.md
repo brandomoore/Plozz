@@ -102,6 +102,18 @@ Playback groups its five optional **Player tabs** in one shared control surface
 on TV and mobile. Labels match the player tabs, Info stays always available, and
 visibility preferences are independent of autoplay and Up Next behavior.
 
+Playback's **Video upscaling** control is shared by TV and mobile and is
+profile-scoped. Automatic is the default, including profiles saved before the
+setting existed; Off, Standard and Animation are explicit alternatives.
+Automatic chooses Animation from anime identities or animation genres/tags,
+otherwise Standard. Standard enhances supported 8-bit SDR below 1920x1080 in
+both dimensions; Animation accepts drawn 8/10-bit SDR up to 1920x1080 inclusive.
+Both require a larger display and exclude HDR/Dolby Vision and 4K.
+The description distinguishes these limits and metadata-based selection.
+The setting applies to new playback through AetherEngine, including Live TV;
+native and external players
+are unchanged. Engine eligibility and performance fallbacks still apply.
+
 Movie & show details → Trailers & music is the shared destination for trailer
 availability, independent Home autoplay and detail background playback. Home →
 Hero links to the same controls. Off suppresses trailer lookups, manual actions,

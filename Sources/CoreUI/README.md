@@ -1,5 +1,15 @@
 # CoreUI
 
+`SettingsAdjustmentFocusScope` optionally reports `onEditingEnded(cancelled:)`.
+Arrow release commits an adjustment; focus loss, disappearance, app deactivation
+and recognizer cancellation discard pending input. Swipes default to one step;
+`SettingsStepper.swipeToAdjust` opts into continuous distance-based adjustment.
+The same native input owner tracks the gesture through lift or cancellation,
+including the final sample of a fast flick. The control accumulates whole steps
+and clamps each update, allowing immediate reversal at either bound. Its editing
+callback begins before the first value update and ends only on lift/cancellation.
+Existing immediate settings adjustments do not need the callbacks.
+
 `ProfileSettingsCategory.localizedTitle` contains app copy only. Branded categories
 such as Seerr have no localized title; their platform rows render the name verbatim.
 
@@ -387,7 +397,11 @@ Keep it in the header's full-width focus section and scroll the header with the
 page; do not add a separate action strip or shrink the native button.
 
 `SettingsStepper` retains every adjustment stop while limiting dense range tracks
-to 21 visual ticks. `ThemeMusicPreviewControlling` is the Settings-to-runtime
+to 21 visual ticks. `onDirectionalAdjustment` lets a caller own TV hold acceleration
+and release/cancellation handling while retaining the stepper's single native focus
+target and input scope. Dense numeric values can reserve width using representative
+extremes through `reservingValueWidth(for:)` rather than hidden labels for every stop.
+`ThemeMusicPreviewControlling` is the Settings-to-runtime
 preview seam; it carries ownership, availability, and errors without coupling
 Settings to the Home feature or a concrete audio player.
 The shared TV adjustment scope defaults to its standard hold-repeat speed.

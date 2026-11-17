@@ -1,10 +1,12 @@
 #if canImport(SwiftUI) && canImport(UIKit)
 import CoreUI
+import CoreModels
 import SwiftUI
 
 struct PlaybackOptionsPane: View {
     static let zoomSlot = 0
     static let speedSlot = 2
+    static let upscalingSlot = 4
     static var customSlot: Int { modeSlot(.custom) }
 
     static func modeSlot(_ mode: PlayerVideoZoom.Mode) -> Int { 10 + mode.rawValue }
@@ -29,6 +31,22 @@ struct PlaybackOptionsPane: View {
     @ViewBuilder
     private func content(rows: [PlayerOptionsRowSpec]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
+            if screen == .upscaling {
+                PlayerMenuRowStack(rows: VideoUpscaling.allCases.enumerated().map { index, selection in
+                    PlayerControls.TrackRow(
+                        id: index, header: nil, title: Text(selection.title), subtitle: nil,
+                        isSelected: model.upscaling.selection == selection, isToggle: false,
+                        action: { actions.setVideoUpscaling(selection) }
+                    )
+                }, palette: palette, focus: $focus)
+                .disabled(model.upscaling.isChanging)
+                if model.upscaling.isChanging {
+                    Text("Applying…")
+                        .font(.caption)
+                        .plozzForeground(.secondary)
+                        .padding(16)
+                }
+            }
             if screen == .zoom {
                 PlayerMenuRowStack(rows: zoom.availableModes.filter { $0 != .custom }.map { mode in
                     PlayerControls.TrackRow(
@@ -64,6 +82,7 @@ struct PlaybackOptionsPane: View {
         offersPlaybackSpeed: Bool = true,
         openScreen: @escaping (PlayerControls.PlaybackScreen) -> Void
     ) -> [PlayerOptionsRowSpec] {
+        if screen == .upscaling { return [] }
         if screen == .zoom {
             return [.init(slot: Self.customSlot, title: "Custom", kind: .number(
                 value: Text(Double(zoom.settings.customPercent) / 100, format: .percent.precision(.fractionLength(0))),
@@ -71,6 +90,11 @@ struct PlaybackOptionsPane: View {
             ), isSelected: zoom.settings.mode == .custom)]
         }
         var rows: [PlayerOptionsRowSpec] = []
+        if model.upscaling.isAvailable {
+            rows.append(.init(slot: Self.upscalingSlot, title: "Upscaling", kind: .submenu(
+                summary: Text(model.upscaling.selection.title), open: { openScreen(.upscaling) }
+            )))
+        }
         if model.felConversion.isAvailable {
             rows.append(.init(slot: 3, title: "P7 FEL → P8.1 conversion", kind: .toggle(
                 isOn: model.felConversion.isEnabled,
