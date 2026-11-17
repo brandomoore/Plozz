@@ -122,6 +122,8 @@ public enum SettingsRoute: Hashable {
     /// The household's Parental PIN settings (Everyone › Parental PIN).
     case parentalPIN
     case topShelf
+    /// Features still being tested (Manage Plozz › Experimental).
+    case experimental
     case servers
     case myLibraries
     case appearance
@@ -180,7 +182,7 @@ extension SettingsRoute {
             guard let entry = SettingsSearchCatalog.entry(id: id) else { return .allowed }
             if entry.requiresAdultProfile { return .adultProfile }
             return entry.page.requiresParentalAuthorization && isParentalSealed ? .parentalPIN : .allowed
-        case .profile, .servers, .server, .parentalPIN, .topShelf,
+        case .profile, .servers, .server, .parentalPIN, .topShelf, .experimental,
              .metadata, .metadataDiagnostics, .seerr, .seerUserPicker,
              .syncSetup, .syncTroubleshooting:
             return .adultProfile

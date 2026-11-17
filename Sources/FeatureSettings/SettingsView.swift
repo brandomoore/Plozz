@@ -629,6 +629,9 @@ public struct SettingsView: View {
                            value: nil,
                            route: .metadata)
                 }
+                // Last, apart from the setup rows above: features still being
+                // tested, which come with limited or no support.
+                sectionRow("Experimental", icon: "flask", route: .experimental)
             }
             .padding(SettingsFormMetrics.groupInset)
         }
@@ -1029,6 +1032,8 @@ public struct SettingsView: View {
             ParentalPINDetailView(context: context)
         case .topShelf:
             TopShelfSettingsView(model: .shared)
+        case .experimental:
+            ExperimentalSettingsView()
         case let .profileSettings(profileID):
             ProfileSettingsDetailView(context: context, profileID: profileID, syncEnabled: syncEnabled)
         case .myLibraries:

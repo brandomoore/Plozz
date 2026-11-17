@@ -481,6 +481,14 @@ with schematic Home Screen previews. A slightly larger solid-white tile marks
 the focused app, without an icon. Posters stays the default; full-screen explains
 tvOS's swipe-up expansion and retains the same two item limits.
 
+On tvOS, **Manage Plozz → Experimental** is the last household row. It is the
+place for features that are still being tested and come with limited or no
+support, and it requires an adult profile. The page opens on a notice saying
+so. The notice is focusable and is the page's entry focus: a page with nothing
+focusable leaves the remote nowhere to land and its Back button locked. No
+feature is listed yet, so one line under the notice says there is nothing to
+try. The page has no Settings search entry and no iPhone/iPad counterpart.
+
 Playback > Advanced retains the device-wide external-player choice on TV,
 iPhone and iPad. The experimental Dolby Vision FEL control is removed, and the
 engine's dual-layer reconstruction component is disabled. Old saved or transferred
