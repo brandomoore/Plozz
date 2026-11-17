@@ -24,6 +24,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
     private let authenticatedStreamProber: (any AuthenticatedHTTPStreamProbing)?
     private let probeDescriptors: MediaBrowserProbeDescriptorStore
     private let hybridEngineEnabled: Bool
+    let continueWatchingDismissals: JellyfinContinueWatchingDismissals
     public var authenticatedHTTPOrigin: URL { client.baseURL }
 
     private var connectionAddresses: [URL] { client.addressResolver?.addresses ?? [session.server.baseURL] }
@@ -40,6 +41,8 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         session: UserSession,
         accountID: String? = nil,
         credentialRevision: CredentialRevision = CredentialRevision(),
+        localMediaContext: LocalMediaContext? = nil,
+        durableStore: DurableLocalStateStore? = nil,
         http: HTTPClient = URLSessionHTTPClient(),
         interactiveHTTP: HTTPClient? = nil,
         hybridEngineEnabled: Bool = false,
@@ -60,6 +63,9 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         self.authenticatedStreamProber = authenticatedStreamProber
         self.hybridEngineEnabled = hybridEngineEnabled
         self.probeDescriptors = MediaBrowserProbeDescriptorStore()
+        self.continueWatchingDismissals = JellyfinContinueWatchingDismissals(
+            localMediaContext: localMediaContext, session: session, durableStore: durableStore
+        )
         self.client = JellyfinClient(
             baseURL: session.server.baseURL,
             deviceProfile: JellyfinDeviceProfile(deviceID: session.deviceID),
@@ -235,7 +241,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
                 return parentID.map { item.taggingLibrary($0) } ?? item
             }
         }
-        let ordered = orderedByEffectiveRecency(items)
+        let ordered = continueWatchingDismissals.filtering(orderedByEffectiveRecency(items))
         return limit == .max ? ordered : Array(ordered.prefix(limit))
     }
 
@@ -243,7 +249,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         let items = try await client.nextUpItems(
             userID: session.userID, limit: limit, parentID: libraryID
         )
-        return items.map(map(item:))
+        return continueWatchingDismissals.filtering(items.map(map(item:)))
     }
 
     /// Continue Watching = in-progress items (`/Items/Resume`) followed by the
@@ -279,7 +285,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         // first (r6-jf-precap).
         let stamped = merged.map(map(item:)).map { stampingSeriesRecency($0, using: seriesDates) }
         logContinueWatchingFeed(merged, endpoint: "Items/Resume + Shows/NextUp")
-        let ordered = orderedByEffectiveRecency(stamped)
+        let ordered = continueWatchingDismissals.filtering(orderedByEffectiveRecency(stamped))
         return limit == Int.max ? ordered : Array(ordered.prefix(limit))
     }
 
@@ -685,7 +691,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         )
         // Order by effective recency, then cap once — same rationale as the unscoped
         // path: a just-finished show's stamped next episode must survive the cut.
-        let ordered = orderedByEffectiveRecency(result)
+        let ordered = continueWatchingDismissals.filtering(orderedByEffectiveRecency(result))
         return limit == Int.max ? ordered : Array(ordered.prefix(limit))
     }
 
@@ -793,14 +799,17 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         async let localTask = client.localTrailers(userID: session.userID, id: itemID)
         async let remoteTask = client.remoteTrailers(userID: session.userID, id: itemID)
 
-        // Local trailer files play through the normal provider path; server
-        // remote trailers are links that open in YouTube. Both are best-effort
-        // so one failing doesn't hide the
-        // other.
+        // Local trailer files play through the normal provider path. Server
+        // remote trailers are either YouTube links (open in YouTube) or direct
+        // video URLs (e.g. AIOMetadata / Trailer.io), which play in-app. Both
+        // are best-effort so one failing doesn't hide the other. Server order is
+        // kept; the detail view decides source priority.
         let local = ((try? await localTask) ?? []).map { map(item: $0).markingAsTrailer() }
         let remote = ((try? await remoteTask) ?? []).compactMap { link -> MediaItem? in
             guard let url = link.Url else { return nil }
-            return MediaItem.youTubeTrailer(fromURL: url, title: link.Name ?? "Trailer")
+            let title = link.Name ?? "Trailer"
+            return MediaItem.youTubeTrailer(fromURL: url, title: title)
+                ?? MediaItem.directTrailer(fromURL: url, title: title)
         }
         return local + remote
     }
@@ -3123,6 +3132,81 @@ extension JellyfinProvider: ResumeStateWriting {
             )
             try await reportPlayback(progress, event: .stop, origin: "resume-convergence-fallback")
         }
+    }
+}
+
+extension JellyfinProvider: ContinueWatchingRemovable {
+    /// Takes a title off Continue Watching without marking it watched.
+    ///
+    /// Jellyfin has no dismissal of its own, so this does the two things that
+    /// together amount to one:
+    ///  1. Clears a saved position, which takes the title off `Items/Resume` here
+    ///     and in every other client. The write leaves `LastPlayedDate` alone —
+    ///     stamping it "now" would push the series to the front of Next Up, the
+    ///     opposite of what was asked. Emby resets omitted fields rather than
+    ///     merging them, so it is sent back the stamp it already had.
+    ///  2. Remembers the dismissal locally, because `Shows/NextUp` would otherwise
+    ///     offer the same episode straight back. See
+    ///     ``JellyfinContinueWatchingDismissals``.
+    ///
+    /// The last-played stamp is read *after* the write, so a pre-10.9 server whose
+    /// fallback stop report bumps it cannot make the title reappear.
+    public func removeFromContinueWatching(itemID: String) async throws {
+        var dto = try await client.libraryItems(userID: session.userID, ids: [itemID]).first
+        if let current = dto, (current.UserData?.PlaybackPositionTicks ?? 0) > 0 {
+            try await clearResumePosition(
+                itemID: itemID,
+                existingLastPlayedAt: kind == .emby ? Self.parseDate(current.UserData?.LastPlayedDate) : nil
+            )
+            dto = try await client.libraryItems(userID: session.userID, ids: [itemID]).first
+        }
+        try Task.checkCancellation()
+        var lastPlayedAt: Date?
+        if let dto {
+            let seriesDates = try await seriesLastPlayedDatesBestEffort(for: [dto])
+            lastPlayedAt = stampingSeriesRecency(map(item: dto), using: seriesDates).lastPlayedAt
+        }
+        try await WatchMutationDeliveryAuthorization.check()
+        continueWatchingDismissals.dismiss(itemID: itemID, lastPlayedAt: lastPlayedAt)
+    }
+
+    private func clearResumePosition(itemID: String, existingLastPlayedAt: Date?) async throws {
+        do {
+            try await client.updatePlaybackPosition(
+                0, userID: session.userID, itemID: itemID, lastPlayedAt: existingLastPlayedAt
+            )
+        } catch AppError.notFound where kind == .jellyfin {
+            let progress = PlaybackProgress(itemID: itemID, playSessionID: nil, positionSeconds: 0, isPaused: true)
+            try await reportPlayback(progress, event: .stop, origin: "remove-continue-watching-fallback")
+        }
+    }
+}
+
+extension JellyfinProvider: ShowDropSyncing {
+    /// Records a dropped show as a dislike on the series.
+    ///
+    /// The rating is always written to the SERIES: Jellyfin keeps a dislike on
+    /// whatever item it is sent to, so one sent to an episode would leave the
+    /// show itself untouched. AIOMetadata would resolve an episode to its show on
+    /// its own, but a plain server would not.
+    public func setShowDropped(_ dropped: Bool, itemID: String, seriesID: String?) async throws {
+        let target: String
+        if let seriesID, !seriesID.isEmpty {
+            target = seriesID
+        } else {
+            guard let dto = try await client.libraryItems(userID: session.userID, ids: [itemID]).first else {
+                throw AppError.notFound
+            }
+            if dto.Type == "Series" {
+                target = dto.Id
+            } else if let seriesID = dto.SeriesId, !seriesID.isEmpty {
+                target = seriesID
+            } else {
+                throw AppError.invalidResponse
+            }
+        }
+        try Task.checkCancellation()
+        try await client.setDisliked(dropped, userID: session.userID, itemID: target)
     }
 }
 

@@ -53,6 +53,8 @@ public enum ManagedProviderRegistry {
                 session: context.session,
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision,
+                localMediaContext: context.localMediaContext,
+                durableStore: durableStore,
                 interactiveHTTP: URLSessionHTTPClient(session: .plozzInteractive),
                 hybridEngineEnabled: hybridEngineEnabled
             )
@@ -62,6 +64,8 @@ public enum ManagedProviderRegistry {
                 session: context.session,
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision,
+                localMediaContext: context.localMediaContext,
+                durableStore: durableStore,
                 interactiveHTTP: URLSessionHTTPClient(session: .plozzInteractive),
                 hybridEngineEnabled: hybridEngineEnabled
             )

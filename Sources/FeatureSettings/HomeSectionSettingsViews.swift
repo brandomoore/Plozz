@@ -677,6 +677,7 @@ struct HomeRowStyleSettingsView: View {
     let libraries: [AggregatedLibrary]
     let accounts: [ResolvedAccount]
     @Environment(HeroSettingsModel.self) private var hero
+    @Environment(LibraryPresentationSettingsModel.self) private var presentation: LibraryPresentationSettingsModel?
     @State private var navigation = SettingsDetailNavigation()
 
     var body: some View {
@@ -688,6 +689,15 @@ struct HomeRowStyleSettingsView: View {
                     logoSize: hero.settings.showcaseLogoSize,
                     textSize: hero.settings.showcaseTextSize
                 )
+                if let presentation {
+                    SettingsControlGroup { SeeAllPopupSettingsControls(model: presentation) }
+                }
+                SettingsControlGroup {
+                    Toggle("Reset rows when leaving", isOn: $hero.settings.resetsHomeRowOnFocusExit)
+                        .accessibilityIdentifier("home-row-reset-on-exit")
+                        .settingsSearchAnchor("home-row-reset-on-exit")
+                }
+                Text("A row scrolls back to its first title when you move to another row.").settingsHelperText()
                 if hero.settings.immersiveRows {
                     SettingsControlGroup {
                         HeroLogoSizeControl(

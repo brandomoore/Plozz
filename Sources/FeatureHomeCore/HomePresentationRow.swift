@@ -21,6 +21,18 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         supportsBrowsing()
     }
 
+    /// The context-menu context for a server's or library's own Continue
+    /// Watching and Next Up rows, so their cards offer the same row actions as
+    /// the global Continue Watching row (which supplies its own).
+    public var actionContext: MediaItemActionContext {
+        switch choice.serverRow?.section.kind {
+        case .continueWatching: return .continueWatching
+        case .nextUp: return .nextUp
+        default: break
+        }
+        return choice.id.libraryKind == .nextUp ? .nextUp : .none
+    }
+
     /// A loaded-count threshold changes the browse action, not the rail's items or paging.
     public func supportsBrowsing(loadedItemThreshold: Int? = nil) -> Bool {
         switch source {
@@ -34,6 +46,19 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         case .liveTV:
             return false
         }
+    }
+
+    /// Whether the "cards per row" setting caps this row. Continue Watching (and Next
+    /// Up, which merges into it), Coming Soon and the Libraries tiles keep every card.
+    static func limitsCards(_ choice: HomeRowChoice) -> Bool {
+        switch choice.id {
+        case .global(.continueWatching), .global(.comingSoon), .libraries, .liveTV: return false
+        default: break
+        }
+        if let kind = choice.serverRow?.section.kind, kind == .continueWatching || kind == .nextUp {
+            return false
+        }
+        return choice.id.libraryKind != .nextUp
     }
 
     public static func hasLiveTVRows(
@@ -239,9 +264,14 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
         return ordered.compactMap { byID[$0] }.map { entry in
             let name = visibility.homeRowName(for: entry.id)
             let choice = name.map { entry.choice.renamed(to: $0) } ?? entry.choice
+            let limit = Self.limitsCards(entry.choice) ? visibility.cardsPerRow.count : nil
             switch entry.source {
             case var .home(row):
                 row.customTitle = name
+                if let limit, row.items.count > limit {
+                    row.items = Array(row.items.prefix(limit))
+                    row.hasMore = true
+                }
                 return Self(choice: choice, source: .home(row))
             case .liveTV:
                 return Self(choice: choice, source: entry.source)
@@ -255,6 +285,10 @@ public struct HomePresentationRow: Identifiable, Equatable, Sendable {
                         isHomeDefault: section.isHomeDefault, isLegacyHomeDefault: section.isLegacyHomeDefault,
                         browseID: section.browseID, hasMore: section.hasMore
                     )
+                }
+                if let limit, section.items.count > limit {
+                    section.items = Array(section.items.prefix(limit))
+                    section.hasMore = true
                 }
                 let issue = row.issue.map {
                     HomeSectionIssue(

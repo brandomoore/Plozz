@@ -9,7 +9,19 @@ private struct PlozzCardFocusStyleKey: EnvironmentKey {
     static let defaultValue: CardFocusStyle = .default
 }
 
+private struct PlozzCardFocusReporterKey: EnvironmentKey {
+    static let defaultValue: (@MainActor (MediaItem, Bool) -> Void)? = nil
+}
+
 public extension EnvironmentValues {
+    /// Told when a poster card gains or loses focus. A grid that shows extra
+    /// detail for the resting title sets it; cards report through it without
+    /// the grid having to read their private focus state.
+    var plozzCardFocusReporter: (@MainActor (MediaItem, Bool) -> Void)? {
+        get { self[PlozzCardFocusReporterKey.self] }
+        set { self[PlozzCardFocusReporterKey.self] = newValue }
+    }
+
     /// The live, per-profile System, custom Highlight or custom Outline effect.
     /// Set once at the app root; read by
     /// `plozzCardFocusLift`, `plozzCardFocusTransition` and `plozzFocusHalo`.

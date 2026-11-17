@@ -8,6 +8,7 @@ public struct HomeRowBrowseView<Card: View>: View {
     @Bindable private var model: HomeRowBrowseModel
     private let columns: [GridItem]
     private let card: (MediaItem) -> Card
+    private let popup: SeeAllPopup?
     @Environment(\.locale) private var locale
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationInset
@@ -15,6 +16,7 @@ public struct HomeRowBrowseView<Card: View>: View {
     #if os(tvOS)
     @Namespace private var entryFocusScope
     @State private var hasResolvedEntryFocus = false
+    @State private var popupModel = SeeAllPopupModel()
     #endif
     private struct LoadKey: Equatable {
         let query: HomeRowBrowseQuery
@@ -22,9 +24,10 @@ public struct HomeRowBrowseView<Card: View>: View {
     }
 
     public init(
-        model: HomeRowBrowseModel, columns: [GridItem],
+        model: HomeRowBrowseModel, columns: [GridItem], popup: SeeAllPopup? = nil,
         @ViewBuilder card: @escaping (MediaItem) -> Card
     ) {
+        self.popup = popup
         self.model = model
         self.columns = columns
         self.card = card
@@ -52,6 +55,13 @@ public struct HomeRowBrowseView<Card: View>: View {
                         ForEach(model.items, id: \.stablePresentationID) { item in
                             card(item)
                                 #if os(tvOS)
+                                .background {
+                                    if popupModel.focusedKey == item.stablePresentationID {
+                                        Color.clear.onGeometryChange(for: CGRect.self) {
+                                            $0.frame(in: .named("homeRowGrid"))
+                                        } action: { popupModel.anchor = $0 }
+                                    }
+                                }
                                 .disabled(!hasResolvedEntryFocus && item.stablePresentationID != model.items.first?.stablePresentationID)
                                 .prefersDefaultFocus(
                                     !hasResolvedEntryFocus && item.stablePresentationID == model.items.first?.stablePresentationID,
@@ -96,6 +106,21 @@ public struct HomeRowBrowseView<Card: View>: View {
             .padding(.vertical, 24)
         }
         .scrollClipDisabled()
+        #if os(tvOS)
+        .coordinateSpace(name: "homeRowGrid")
+        .environment(\.plozzCardFocusReporter, popup.map { popup in
+            { [popupModel] item, focused in
+                popupModel.focusChanged(
+                    key: item.stablePresentationID, focused: focused, delay: popup.delay,
+                    hideAfter: popup.hideAfter
+                ) {
+                    SeeAllPopupContent(item: await popup.detail(item), spoilers: popup.spoilers)
+                }
+            }
+        })
+        .overlay { SeeAllPopupOverlay(model: popupModel) }
+        .onDisappear { popupModel.hide() }
+        #endif
         .accessibilityIdentifier("home-row-browser")
         .task(id: LoadKey(query: model.query, snapshot: model.liveSnapshot)) { await model.load() }
         .task(id: moreRequest) {

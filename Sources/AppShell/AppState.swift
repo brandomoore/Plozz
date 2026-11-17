@@ -374,6 +374,9 @@ public final class AppState {
             },
             seedLegacyUniversalWatchlist: { [weak self] _ in
                 try? await self?.seedLegacyUniversalWatchlist()
+            },
+            droppedShows: { [unowned self] in
+                DroppedShowsModel.shared(namespace: self.profilesModel.activeNamespace)
             }
         )
 
@@ -1529,6 +1532,8 @@ public final class AppState {
                 session: context.session,
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision,
+                localMediaContext: context.localMediaContext,
+                durableStore: durableLocalStateStore,
                 interactiveHTTP: URLSessionHTTPClient(session: .plozzInteractive),
                 hybridEngineEnabled: HybridPlayback.enabled
             )
@@ -1538,6 +1543,8 @@ public final class AppState {
                 session: context.session,
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision,
+                localMediaContext: context.localMediaContext,
+                durableStore: durableLocalStateStore,
                 interactiveHTTP: URLSessionHTTPClient(session: .plozzInteractive),
                 hybridEngineEnabled: HybridPlayback.enabled,
                 authenticatedStreamProber: PlozzigenAuthenticatedHTTPStreamProber(

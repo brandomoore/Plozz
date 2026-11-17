@@ -33,6 +33,9 @@ public struct EpisodeColumnPresentation: Equatable, Sendable, CustomDebugStringC
     /// changing together).
     private let titleLinePlain: String
     public let metadataText: String?
+    /// The episode's original air date, abbreviated and locale-aware, or `nil`
+    /// when the server never dated it. A calendar day, so formatted in UTC.
+    public let airDateText: String?
     public let progress: Double?
     public let isWatched: Bool
     public let artworkTreatment: ArtworkTreatment
@@ -83,6 +86,8 @@ public struct EpisodeColumnPresentation: Equatable, Sendable, CustomDebugStringC
         } else {
             metadataText = nil
         }
+        airDateText = item.releaseDateLabel
+            ?? item.scheduledAirDate?.formatted(date: .abbreviated, time: .omitted)
         progress = item.resumeProgressFraction
         isWatched = item.isPlayed && progress == nil
 
@@ -106,6 +111,7 @@ public struct EpisodeColumnPresentation: Equatable, Sendable, CustomDebugStringC
         }
 
         var accessibilityParts = [titleLinePlain]
+        if let airDateText { accessibilityParts.append("Aired \(airDateText)") }
         if let metadataText { accessibilityParts.append(metadataText) }
         if let progress {
             accessibilityParts.append("\(Int((progress * 100).rounded())) percent watched")

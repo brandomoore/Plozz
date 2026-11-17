@@ -4348,6 +4348,81 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertFalse(verifyCalled.value, "Local trailer should not be verification-extracted")
     }
 
+    private func directTrailerVM(
+        provided: [MediaItem],
+        policy: TrailerSourcePolicy = .serverAndYouTube,
+        verifyCalled: LockedFlag = LockedFlag()
+    ) -> ItemDetailViewModel {
+        let provider = FakeMediaProvider(allItems: [MediaItem(id: "m1", title: "Dune", kind: .movie, productionYear: 2021)])
+        provider.trailersByItem = ["m1": provided]
+        return ItemDetailViewModel(
+            provider: provider,
+            itemID: "m1",
+            sourceAccountID: "acct-9",
+            onlineTrailerResolver: { _ in [] },
+            playableVideoIDResolver: { _ in verifyCalled.set(); return nil },
+            trailerCache: TrailerResolutionCache(),
+            trailerSettings: HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+                HeroBackgroundSettings(trailerSources: policy)
+            ))
+        )
+    }
+
+    func testDirectRemoteTrailerPlaysInAppAndOutranksYouTube() async {
+        let direct = MediaItem.directTrailer(fromURL: "https://cdn.trailer.example/dune.mp4", title: "Official Trailer")!
+        let youtube = MediaItem.youTubeTrailer(videoID: "dQw4w9WgXcQ", title: "YT")
+        let verifyCalled = LockedFlag()
+        // The server lists YouTube first here: the direct link must still win.
+        let vm = directTrailerVM(provided: [youtube, direct], verifyCalled: verifyCalled)
+
+        await vm.load()
+
+        XCTAssertEqual(vm.trailers.count, 1)
+        XCTAssertEqual(vm.trailers.first?.directTrailerURL?.absoluteString, "https://cdn.trailer.example/dune.mp4")
+        XCTAssertFalse(vm.trailers.first?.isYouTubeTrailer ?? true)
+        XCTAssertEqual(vm.trailers.first?.sourceAccountID, "acct-9")
+        XCTAssertEqual(vm.trailers.first?.parentTitle, "Dune")
+        XCTAssertEqual(vm.trailers.first?.productionYear, 2021)
+        XCTAssertFalse(verifyCalled.value, "A direct trailer must not trigger YouTube verification")
+    }
+
+    func testLocalTrailerOutranksDirectRemoteTrailer() async {
+        let direct = MediaItem.directTrailer(fromURL: "https://cdn.trailer.example/dune.mp4", title: "T")!
+        let local = MediaItem(id: "t1", title: "Local", kind: .video)
+        let vm = directTrailerVM(provided: [direct, local])
+
+        await vm.load()
+
+        XCTAssertEqual(vm.trailers.map(\.id), ["t1"])
+    }
+
+    func testYouTubeIsUsedOnlyWhenNoDirectOrLocalTrailerExists() async {
+        let youtube = MediaItem.youTubeTrailer(videoID: "dQw4w9WgXcQ", title: "YT")
+        let provider = FakeMediaProvider(allItems: [MediaItem(id: "m1", title: "Dune", kind: .movie)])
+        provider.trailersByItem = ["m1": [youtube]]
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: "m1",
+            onlineTrailerResolver: { _ in [] },
+            playableVideoIDResolver: { $0.first },
+            trailerCache: TrailerResolutionCache()
+        )
+
+        await vm.load()
+
+        XCTAssertEqual(vm.trailers.map(\.youTubeTrailerVideoID), ["dQw4w9WgXcQ"])
+    }
+
+    func testDirectRemoteTrailerSurvivesServerOnlyPolicyButNotOff() async {
+        let direct = MediaItem.directTrailer(fromURL: "https://cdn.trailer.example/dune.m3u8", title: "HLS")!
+        let serverOnly = directTrailerVM(provided: [direct], policy: .serverOnly)
+        await serverOnly.load()
+        XCTAssertEqual(serverOnly.trailers.count, 1)
+
+        let off = directTrailerVM(provided: [direct], policy: .off)
+        await off.load()
+        XCTAssertTrue(off.trailers.isEmpty)
+    }
+
     func testLoadLeavesTrailersEmptyWhenNoLocalOrOnline() async {
         let provider = FakeMediaProvider(allItems: [MediaItem(id: "m1", title: "Dune", kind: .movie)])
         let vm = ItemDetailViewModel(

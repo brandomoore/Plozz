@@ -15,13 +15,64 @@ public struct MediaItemActionContext: Sendable, Equatable {
     /// action span seasons: marking up to S2E3 also clears all of season 1.
     public var precedingContainerIDs: [String]
 
-    public init(orderedSiblings: [MediaItem] = [], precedingContainerIDs: [String] = []) {
+    /// Whether the target is shown on a Continue Watching row. Every card there
+    /// can be removed from it — including a Next Up suggestion that has no
+    /// saved position, which is otherwise indistinguishable from any other
+    /// unstarted episode.
+    public var isContinueWatchingRow: Bool
+
+    /// Whether the target is shown on a Next Up row.
+    public var isNextUpRow: Bool
+
+    /// Whether the target is a show on a Coming Soon row or in the Upcoming
+    /// agenda. Nothing there is playable yet, so Drop Show is the one action.
+    public var isUpcomingRow: Bool
+
+    /// Whether the target is the show a series details page is about AND that
+    /// show sits on Continue Watching, Next Up or Upcoming. Those rows are the
+    /// only places a show is dropped from, so its page offers Drop Show only then.
+    public var isDroppableShowPage: Bool
+
+    public init(
+        orderedSiblings: [MediaItem] = [],
+        precedingContainerIDs: [String] = [],
+        isContinueWatchingRow: Bool = false,
+        isNextUpRow: Bool = false,
+        isUpcomingRow: Bool = false,
+        isDroppableShowPage: Bool = false
+    ) {
         self.orderedSiblings = orderedSiblings
         self.precedingContainerIDs = precedingContainerIDs
+        self.isContinueWatchingRow = isContinueWatchingRow
+        self.isNextUpRow = isNextUpRow
+        self.isUpcomingRow = isUpcomingRow
+        self.isDroppableShowPage = isDroppableShowPage
+    }
+
+    /// Whether the target is on a row that suggests what to watch next, the
+    /// places a show can be dropped from, along with Coming Soon and the page of
+    /// a show that is on one of those rows.
+    public var offersShowDrop: Bool {
+        isContinueWatchingRow || isNextUpRow || isUpcomingRow || isDroppableShowPage
     }
 
     /// No surrounding-list context — the default for standalone cards.
     public static let none = MediaItemActionContext()
+
+    /// Cards on a Continue Watching row.
+    public static let continueWatching = MediaItemActionContext(isContinueWatchingRow: true)
+
+    /// Cards on a Next Up row.
+    public static let nextUp = MediaItemActionContext(isNextUpRow: true)
+
+    /// Cards on the Coming Soon row and in the Upcoming agenda.
+    public static let upcoming = MediaItemActionContext(isUpcomingRow: true)
+
+    /// A series details page's hero. Drop Show is offered only when the show is
+    /// on Continue Watching, Next Up or Upcoming.
+    public static func showDetail(onDroppableRow: Bool) -> MediaItemActionContext {
+        MediaItemActionContext(isDroppableShowPage: onDroppableRow)
+    }
 }
 
 /// Pure, UI-independent rules for which `MediaItemAction`s an item offers and
@@ -58,6 +109,11 @@ public enum MediaItemActionCatalog {
     ///   - downloadState: the item's current offline-download state, or `nil` on
     ///     a surface with no download capability (tvOS today). `.some(nil)` means
     ///     downloads ARE available and this item has none yet.
+    ///   - isShowDropped: whether the show this item belongs to is dropped, or
+    ///     `nil` where dropping is unavailable. Drop Show is offered only on
+    ///     Continue Watching and Next Up rows (see `context`); Undrop Show
+    ///     wherever the show is dropped. Either replaces Remove from Continue
+    ///     Watching on an episode.
     public static func actions(
         for item: MediaItem,
         supportsWatchState: Bool,
@@ -65,6 +121,7 @@ public enum MediaItemActionCatalog {
         isWatchlisted: Bool? = nil,
         supportsMetadataRefresh: Bool = false,
         downloadState: MediaItemDownloadState?? = nil,
+        isShowDropped: Bool? = nil,
         context: MediaItemActionContext = .none
     ) -> [MediaItemAction] {
         var actions: [MediaItemAction] = []
@@ -143,8 +200,23 @@ public enum MediaItemActionCatalog {
         // on the Continue Watching row. The row is the reason to want it, but what
         // is being undone is the resume point itself, and meeting the same title in
         // a library or on its own page is no reason to withhold it.
-        if supportsWatchState, isWatchStateEligible(item), hasResumePoint(item) {
+        //
+        // On the row itself it is offered for every card, progress or not: a Next
+        // Up suggestion is just as unwanted there as an abandoned film, and the
+        // row is the one place where "remove" unambiguously means "from here".
+        //
+        // On Continue Watching and Next Up an episode drops its show instead:
+        // removing the one episode only has the next take its place, so what the
+        // viewer is turning down is the show. Elsewhere a show isn't something
+        // being suggested, so there is nothing to drop it from. A dropped show
+        // never reaches those rows, so it can be taken back wherever it appears.
+        let showDrop = showDropAction(for: item, isShowDropped: isShowDropped, context: context)
+        if !(showDrop != nil && item.kind == .episode), supportsWatchState, isWatchStateEligible(item),
+           hasResumePoint(item) || (context.isContinueWatchingRow && isPlayableTitle(item)) {
             actions.append(.removeFromContinueWatching)
+        }
+        if let showDrop {
+            actions.append(showDrop)
         }
 
         return actions
@@ -215,6 +287,32 @@ public enum MediaItemActionCatalog {
             return (item.resumePosition ?? 0) > 0
         case .season, .series, .folder, .collection, .playlist, .unknown:
             return false
+        }
+    }
+
+    private static func showDropAction(
+        for item: MediaItem, isShowDropped: Bool?, context: MediaItemActionContext
+    ) -> MediaItemAction? {
+        guard let isShowDropped, isShowDropEligible(item) else { return nil }
+        if isShowDropped { return .undropShow }
+        return context.offersShowDrop ? .dropShow : nil
+    }
+
+    /// Whether `item` is part of a show it can drop: a series, or a season or
+    /// episode that knows its series.
+    private static func isShowDropEligible(_ item: MediaItem) -> Bool {
+        switch item.kind {
+        case .series: return true
+        case .season, .episode: return !(item.seriesID ?? "").isEmpty
+        case .movie, .video, .folder, .collection, .playlist, .unknown: return false
+        }
+    }
+
+    /// The kinds the Continue Watching row can hold: a single playable title.
+    private static func isPlayableTitle(_ item: MediaItem) -> Bool {
+        switch item.kind {
+        case .movie, .episode, .video: return true
+        case .season, .series, .folder, .collection, .playlist, .unknown: return false
         }
     }
 

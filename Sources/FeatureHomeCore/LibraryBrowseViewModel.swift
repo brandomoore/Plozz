@@ -357,6 +357,23 @@ public final class LibraryBrowseViewModel {
         return loaded[index].item
     }
 
+    @ObservationIgnored private var popupDetails: [String: MediaItem] = [:]
+
+    /// The record the See all pop-up describes: the owning server's detail for
+    /// `item`, falling back to the listed item when the server can't supply one.
+    /// The aggregate provider can't resolve a bare id to the right server (see
+    /// ``AggregatedLibraryProvider/item(id:)``), so it always uses the listed item.
+    public func popupDetail(for item: MediaItem) async -> MediaItem {
+        if let cached = popupDetails[item.id] { return cached }
+        guard !(provider is AggregatedLibraryProvider) else { return item }
+        guard let detail = try? await provider.item(id: item.id), detail.id == item.id else { return item }
+        guard !Task.isCancelled else { return item }
+        let resolved = sourceAccountID.map { detail.taggingSource($0) } ?? detail
+        if popupDetails.count >= 64 { popupDetails.removeAll(keepingCapacity: true) }
+        popupDetails[item.id] = resolved
+        return resolved
+    }
+
     /// The observable slot backing `index`, or `nil` when out of range. The grid
     /// passes this into a per-cell view that observes only `slot.item`, so filling
     /// one slot re-renders just that cell. Reading `loaded` here registers a

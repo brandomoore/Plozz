@@ -502,7 +502,14 @@ struct SeriesDetailView: View {
                     // closures otherwise made it compare unequal every time — so
                     // it rebuilt while masked out behind the episode browser.
                     .equatable()
+                    // The show's page offers Drop Show only when the show is on
+                    // Continue Watching, Next Up or Upcoming — the rows a drop
+                    // removes it from. (Undrop is offered whenever it is dropped.)
+                    .mediaItemActionContext(.showDetail(onDroppableRow: viewModel.isOnDroppableRow))
                     .id(Self.topAnchorID)
+                    // Draws above the episode rail below it, so an icon's hint
+                    // bubble is not covered by the cards it overlaps.
+                    .zIndex(1)
                     .task(id: viewModel.episodeBadgeEnrichmentKey(for: playTarget)) {
                         guard let target = playTarget else { return }
                         _ = await viewModel.enrichEpisodeBadgesIfNeeded(target)

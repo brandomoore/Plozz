@@ -48,7 +48,7 @@ enum FocusHeroLayout {
     /// What shows of the next row under the pinned one: its title and the top
     /// edge of its cards. Keep real artwork visible below the heading and its
     /// spacing so the native focus engine can reach it with Down.
-    static let nextRowPeek: CGFloat = 96
+    static let nextRowPeek: CGFloat = 0
     /// Keeps the hero column usable if a row ever measures unexpectedly tall.
     static let lowestSlotTop: CGFloat = 360
     /// A backdrop's own shape. The art is sized to it rather than cropped to the
@@ -578,7 +578,7 @@ private struct FocusHeroDetailsFootprint: View {
                 .frame(height: logoHeight)
                 .padding(.bottom, 6)
             Text(verbatim: " ").font(.system(size: PlozzTypography.heroMetadata.scaled(by: textScale).pointSize, weight: .medium))
-            Text(verbatim: " \n \n ")
+            Text(verbatim: " \n \n \n ")
                 .font(.system(size: PlozzTypography.heroDescription.scaled(by: textScale).pointSize))
                 .lineSpacing(PlozzTypography.heroDescription.scaled(by: textScale).lineSpacing)
         }
@@ -1557,6 +1557,8 @@ struct FocusHeroColumn: View {
         let navigationTop = hasCustomSizing ? navigationMinimumTop : navigationVisibleTop ?? navigationMinimumTop
         if let minimumDetailsTop = navigationTop ?? minimumDetailsTop {
             constrainedColumn(minimumTop: minimumDetailsTop)
+        } else if hasCustomSizing {
+            fittedColumn
         } else {
             standardColumn
         }
@@ -1597,6 +1599,56 @@ struct FocusHeroColumn: View {
         .frame(height: max(0, reference - FocusHeroLayout.columnGap - top), alignment: .bottomLeading)
         .padding(.top, top)
         // The TV's safe area and the rail's inset, exactly as the classic hero.
+        .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding + navigationContentInset)
+        .allowsHitTesting(false)
+    }
+
+    /// Custom sizing on Home. The text keeps its full size on every row, so the
+    /// synopsis never shrinks on a tall poster row, and the logo is never shrunk
+    /// either: the block simply grows upward from the pinned row.
+    private var fittedColumn: some View {
+        let bottom = FocusHeroLayout.lowestSlotTop - FocusHeroLayout.columnGap
+        // Taller than any logo plus text, so nothing is trimmed to fit a ceiling.
+        let height: CGFloat = 800
+        let top = bottom - height
+        return Group {
+            if let subject = model.details {
+                Group {
+                    switch subject {
+                    case .item(let raw):
+                        let item = metadata.item(for: raw)
+                        let box = HeroLogoSizing.box(for: .showcase, size: settings.showcaseLogoSize)
+                        FocusHeroLogoLastLayout(logoHeight: box.height) {
+                            if HeroScheduleLines.canShowLine(for: item) {
+                                // Reserve the native badge height before its data arrives.
+                                HeroScheduleBadge(text: "Upcoming")
+                                    .lineLimit(1)
+                                    .hidden()
+                                    .accessibilityHidden(true)
+                            } else {
+                                Color.clear.frame(height: 0)
+                            }
+                            GeometryReader { geometry in
+                                let scale = min(1, geometry.size.height / box.height)
+                                itemLogo(item, box: CGSize(width: box.width * scale, height: box.height * scale))
+                            }
+                            itemDetails(item, descriptionLines: 4)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    default:
+                        content(for: subject)
+                            .frame(maxHeight: .infinity, alignment: .bottomLeading)
+                    }
+                }
+                .frame(width: FocusHeroLayout.columnWidth, height: height, alignment: .bottomLeading)
+                .id(subject.id)
+                .transition(.opacity)
+            }
+        }
+        .transaction(value: model.details?.id) { transaction in
+            if model.detailsSwapWithRow { transaction.animation = nil }
+        }
+        .padding(.top, top)
         .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding + navigationContentInset)
         .allowsHitTesting(false)
     }
@@ -1659,6 +1711,8 @@ struct FocusHeroColumn: View {
                 itemLogo(item, box: CGSize(width: box.width * scale, height: box.height * scale))
             }
             ViewThatFits(in: .vertical) {
+                itemDetails(item, descriptionLines: 4)
+                    .fixedSize(horizontal: false, vertical: true)
                 itemDetails(item, descriptionLines: 3)
                     .fixedSize(horizontal: false, vertical: true)
                 itemDetails(item, descriptionLines: 1)
@@ -1747,30 +1801,42 @@ struct FocusHeroColumn: View {
         .frame(height: reservesHeight ? box.height : nil, alignment: .bottomLeading)
     }
 
-    @ViewBuilder private func itemDetails(_ item: MediaItem, descriptionLines: Int = 3) -> some View {
+    @ViewBuilder private func itemDetails(_ item: MediaItem, descriptionLines: Int = 4) -> some View {
         let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
         let detailed = enrich == nil || metadata.hasDetails(for: item)
         VStack(alignment: .leading, spacing: 12) {
             if detailed {
-                HeroMetadataLine(item: item)
-                    .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
-
                 let ratings = ratingsRow(for: item)
                 let showsRatings = ratings.map { !$0.ratings.isEmpty || $0.age != nil } ?? false
-                if descriptionLines > 0, let description = HeroContentPolicy.homeDescription(for: presentation) {
-                    // The ratings row takes the room of two description lines.
-                    Text(description.overviewPlainText)
-                        .accessibilityIdentifier("showcase-description")
-                        .font(.system(size: PlozzTypography.heroDescription.scaled(by: textScale).pointSize))
-                        .foregroundStyle(.primary)
-                        .lineSpacing(PlozzTypography.heroDescription.scaled(by: textScale).lineSpacing)
-                        .lineLimit(showsRatings ? 1 : descriptionLines)
-                        .frame(maxWidth: 820, alignment: .topLeading)
-                        .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+                // Ratings share the genre line; they drop below it only when the
+                // genres leave no room.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 28 * textScale) {
+                        HeroMetadataLine(item: item)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+                        if showsRatings, let ratings {
+                            RatingsBadgeRow(ratings: ratings.ratings, familyGuidanceAge: ratings.age)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 12) {
+                        HeroMetadataLine(item: item)
+                            .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+                        if showsRatings, let ratings {
+                            RatingsBadgeRow(ratings: ratings.ratings, familyGuidanceAge: ratings.age)
+                        }
+                    }
                 }
-
-                if showsRatings, let ratings {
-                    RatingsBadgeRow(ratings: ratings.ratings, familyGuidanceAge: ratings.age)
+                if descriptionLines > 0, let description = HeroContentPolicy.homeDescription(for: presentation) {
+                    HeroScrollingSynopsis(
+                        text: description.overviewPlainText,
+                        fontSize: PlozzTypography.heroDescription.scaled(by: textScale).pointSize,
+                        lineSpacing: PlozzTypography.heroDescription.scaled(by: textScale).lineSpacing,
+                        lines: descriptionLines
+                    )
+                    .accessibilityIdentifier("showcase-description")
+                    .frame(maxWidth: 820, alignment: .topLeading)
+                    .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
                 }
             }
         }
@@ -1813,6 +1879,32 @@ struct FocusHeroContentFit: ViewModifier {
         } action: { height in
             motion.recordColumnContentHeight(height)
         }
+    }
+}
+
+/// The details keep their natural size; the logo takes the room above them, up to
+/// its full height, so text never shrinks to make way for it.
+private struct FocusHeroLogoLastLayout: Layout {
+    let logoHeight: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        CGSize(width: proposal.width ?? FocusHeroLayout.columnWidth, height: proposal.height ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 3 else { return }
+        let badge = subviews[0].sizeThatFits(.init(width: bounds.width, height: nil))
+        let badgeGap: CGFloat = badge.height > 0 ? 16 : 0
+        let detailsGap: CGFloat = 18
+        let details = subviews[2].sizeThatFits(.init(width: bounds.width, height: nil))
+        let height = max(0, min(
+            logoHeight, bounds.height - badge.height - badgeGap - details.height - detailsGap))
+        var y = bounds.maxY - badge.height - badgeGap - height - detailsGap - details.height
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: y), proposal: .init(badge))
+        y += badge.height + badgeGap
+        subviews[1].place(at: CGPoint(x: bounds.minX, y: y), proposal: .init(width: bounds.width, height: height))
+        y += height + detailsGap
+        subviews[2].place(at: CGPoint(x: bounds.minX, y: y), proposal: .init(width: bounds.width, height: details.height))
     }
 }
 
@@ -2158,4 +2250,56 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
     }
 }
 
+
+/// A synopsis that shows a fixed number of lines and, when the text is longer,
+/// scrolls up after a short pause so the rest can be read.
+private struct HeroScrollingSynopsis: View {
+    let text: String
+    let fontSize: CGFloat
+    let lineSpacing: CGFloat
+    let lines: Int
+    @State private var fullHeight: CGFloat = 0
+    @State private var offset: CGFloat = 0
+    @State private var atEnd = false
+
+    private var visibleHeight: CGFloat {
+        let lineHeight = UIFont.systemFont(ofSize: fontSize).lineHeight.rounded(.up)
+        return CGFloat(lines) * lineHeight + CGFloat(max(0, lines - 1)) * lineSpacing
+    }
+
+    private var overflow: CGFloat { max(0, fullHeight - visibleHeight - 1) }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: fontSize))
+            .foregroundStyle(.primary)
+            .lineSpacing(lineSpacing)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+            .offset(y: offset)
+            .frame(height: fullHeight > 0 ? min(visibleHeight, fullHeight) : visibleHeight, alignment: .top)
+            .clipped()
+            .mask {
+                // Soften the cut line while there is more to read below.
+                VStack(spacing: 0) {
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: overflow > 0 && !atEnd ? 18 : 0)
+                }
+            }
+            .task(id: "\(text)|\(fullHeight)") {
+                offset = 0
+                atEnd = false
+                guard overflow > 0 else { return }
+                try? await Task.sleep(for: .seconds(2.5))
+                guard !Task.isCancelled else { return }
+                let duration = max(1.2, Double(overflow) / 26)
+                withAnimation(.linear(duration: duration)) { offset = -overflow }
+                try? await Task.sleep(for: .seconds(duration))
+                guard !Task.isCancelled else { return }
+                atEnd = true
+            }
+    }
+}
 #endif

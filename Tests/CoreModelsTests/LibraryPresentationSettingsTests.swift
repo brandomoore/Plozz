@@ -2,6 +2,23 @@ import XCTest
 @testable import CoreModels
 
 final class LibraryPresentationSettingsTests: XCTestCase {
+    func testPopupDurationStepsFromZeroToTenAndZeroNeverTimesOut() {
+        XCTAssertEqual(LibraryPresentationSettings.popupDurationChoices, [0, 2, 4, 6, 8, 10])
+        var settings = LibraryPresentationSettings()
+        XCTAssertEqual(settings.seeAllPopupDuration, 0, "Existing profiles keep pop-ups until focus moves")
+        XCTAssertNil(settings.popupHideAfter)
+        settings.seeAllPopupDuration = 6
+        XCTAssertEqual(settings.popupHideAfter, .seconds(6))
+        XCTAssertEqual(LibraryPresentationSettings(seeAllPopupDuration: 99).seeAllPopupDuration, 10)
+        XCTAssertEqual(LibraryPresentationSettings(seeAllPopupDuration: 3.1).seeAllPopupDuration, 4)
+        let decoded = try? JSONDecoder().decode(
+            LibraryPresentationSettings.self,
+            from: JSONEncoder().encode(LibraryPresentationSettings(seeAllPopupDuration: 8)))
+        XCTAssertEqual(decoded?.seeAllPopupDuration, 8)
+        let legacy = try? JSONDecoder().decode(LibraryPresentationSettings.self, from: Data("{}".utf8))
+        XCTAssertEqual(legacy?.seeAllPopupDuration, 0)
+    }
+
     func testDefaultsAndMissingFieldsPreserveExistingLibraryPresentation() throws {
         let settings = try JSONDecoder().decode(LibraryPresentationSettings.self, from: Data("{}".utf8))
         XCTAssertEqual(settings, .default)
@@ -9,6 +26,28 @@ final class LibraryPresentationSettingsTests: XCTestCase {
         XCTAssertEqual(settings.logoSize, .default)
         let rows = [LibrarySection(id: "recent", title: "Recent"), .init(id: "hub", title: "Discovery")]
         XCTAssertEqual(settings.visibleRows(rows, at: "library"), rows)
+    }
+
+    func testSeeAllPopupDefaultsToPlainGridAndClampsDelayToOneThroughFive() throws {
+        let settings = LibraryPresentationSettings.default
+        XCTAssertEqual(settings.seeAllLayout, .grid)
+        XCTAssertEqual(settings.seeAllPopupDelay, 2.0)
+        XCTAssertNil(settings.seeAllPopupDelayIfEnabled)
+
+        var popup = LibraryPresentationSettings(seeAllLayout: .gridWithPopup, seeAllPopupDelay: 9)
+        XCTAssertEqual(popup.seeAllPopupDelay, 5)
+        XCTAssertEqual(popup.seeAllPopupDelayIfEnabled, .seconds(5))
+        popup.seeAllPopupDelay = 0
+        XCTAssertEqual(popup.seeAllPopupDelayIfEnabled, .seconds(0.5))
+        popup.seeAllPopupDelay = 1.3
+        XCTAssertEqual(popup.seeAllPopupDelayIfEnabled, .seconds(1.5))
+        XCTAssertEqual(LibraryPresentationSettings.popupDelayChoices.count, 10)
+
+        let decoded = try JSONDecoder().decode(
+            LibraryPresentationSettings.self, from: JSONEncoder().encode(LibraryPresentationSettings(
+                seeAllLayout: .gridWithPopup, seeAllPopupDelay: 4.5)))
+        XCTAssertEqual(decoded.seeAllLayout, .gridWithPopup)
+        XCTAssertEqual(decoded.seeAllPopupDelay, 4.5)
     }
 
     func testSharedNavigationPreservesUnsupportedIntentAndAlwaysLeavesAnExit() {

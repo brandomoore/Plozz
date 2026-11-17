@@ -1320,6 +1320,7 @@ struct MainTabView: View {
                 watchBridge: watchBridge,
                 identitySources: identitySources,
                 continueWatchingSnapshot: { runtime.continueWatchingForDetail },
+                droppableShowKeys: { runtime.droppableShowKeys },
                 onSubtitleStyleChanged: { subtitleStyleModel.style = $0 },
                 playRequest: $playRequest,
                 resumePrompt: $resumePrompt,

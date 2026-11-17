@@ -1584,6 +1584,11 @@ public final class PlayerViewModel {
         attempt: UUID = UUID()
     ) async throws -> PrefetchedPlayback {
         let streamingGeneration = streamingLoadGeneration
+        if let trailer = Self.directTrailerPrefetch(
+            item: offlineCandidate ?? initialPlaybackItem, itemID: itemID, kind: { routeEngine(for: $0) }
+        ) {
+            return trailer
+        }
         if let offlineItem = offlineCandidate ?? self.offlineItem,
            Self.shouldUseOfflineFastPath(
                offlineItem: offlineItem,
@@ -1746,6 +1751,18 @@ public final class PlayerViewModel {
         )
         let kind = routeEngine(for: request)
         return PrefetchedPlayback(itemID: itemID, request: request, engineKind: kind)
+    }
+
+    /// Playback for a direct remote trailer (AIOMetadata / Trailer.io URL): the
+    /// request is built from the URL itself and bypasses the provider, so no
+    /// Jellyfin/Plex credentials or playback session are attached to a
+    /// third-party host. `nil` for every other item.
+    nonisolated static func directTrailerPrefetch(
+        item: MediaItem?, itemID: String, kind: (PlaybackRequest) -> PlaybackEngineKind
+    ) -> PrefetchedPlayback? {
+        guard let item, item.id == itemID, let url = item.directTrailerURL else { return nil }
+        let request = PlaybackRequest(item: item, streamURL: url, startPosition: 0)
+        return PrefetchedPlayback(itemID: itemID, request: request, engineKind: kind(request))
     }
 
     static func shouldUseOfflineFastPath(

@@ -2117,3 +2117,49 @@ final class JellyfinConnectionLocalityTests: XCTestCase {
                        "A 404 proves the server answered; confirmed locality must persist")
     }
 }
+
+final class JellyfinDirectRemoteTrailersTests: XCTestCase {
+    private func makeProvider(_ stub: StubHTTPClient) -> JellyfinProvider {
+        JellyfinProvider(
+            session: UserSession(
+                server: MediaServer(id: "s", name: "AIO", baseURL: URL(string: "http://host:3232")!, provider: .jellyfin),
+                userID: "u1", userName: "Alice", deviceID: "d1", accessToken: "TOKEN"
+            ),
+            http: stub
+        )
+    }
+
+    /// Mirrors AIOMetadata: direct links first, then YouTube, plus an unusable page URL.
+    func testAIOMetadataDirectAndYouTubeTrailersAreBothSurfacedInServerOrder() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/i1", json: """
+        {"Id":"i1","Name":"Dune","Type":"Movie","RemoteTrailers":[
+          {"Url":"https://cdn.trailer.example/dune.mp4?expire=1893456000","Name":"Official Trailer"},
+          {"Url":"https://cdn.trailer.example/dune/master.m3u8","Name":"HLS"},
+          {"Url":"https://example.test/dune.html","Name":"Page"},
+          {"Url":"youtube://www.youtube.com/watch?v=dQw4w9WgXcQ","Name":"YT"}]}
+        """)
+        let trailers = try await makeProvider(stub).trailers(for: "i1")
+
+        XCTAssertEqual(trailers.count, 3, "The webpage URL must be dropped")
+        XCTAssertEqual(trailers.map(\.isDirectTrailer), [true, true, false])
+        XCTAssertEqual(trailers.first?.directTrailerURL?.absoluteString,
+                       "https://cdn.trailer.example/dune.mp4?expire=1893456000")
+        XCTAssertEqual(trailers.first?.title, "Official Trailer")
+        XCTAssertEqual(trailers.last?.youTubeTrailerVideoID, "dQw4w9WgXcQ")
+    }
+
+    func testLocalTrailerStillComesAlongsideDirectRemote() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/i1/LocalTrailers", json: """
+        [{"Id":"local1","Name":"Local Trailer","Type":"Trailer"}]
+        """)
+        stub.stub(pathSuffix: "/Users/u1/Items/i1", json: """
+        {"Id":"i1","Name":"Dune","Type":"Movie",
+         "RemoteTrailers":[{"Url":"https://cdn.trailer.example/dune.mp4","Name":"T"}]}
+        """)
+        let trailers = try await makeProvider(stub).trailers(for: "i1")
+        XCTAssertEqual(trailers.filter(\.isServerItemTrailer).map(\.id), ["local1"])
+        XCTAssertEqual(trailers.filter(\.isDirectTrailer).count, 1)
+    }
+}

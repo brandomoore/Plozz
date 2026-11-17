@@ -189,6 +189,16 @@ public struct HomeView: View {
     /// rendering its classic rows unchanged.
     private var heroSettings: HeroSettingsModel?
 
+    /// Whether a row scrolls back to its first card when focus moves to another
+    /// row, from Settings > Home > Row style (Apple TV only).
+    private var resetsRowsOnFocusExit: Bool {
+        #if os(tvOS)
+        heroSettings?.settings.resetsHomeRowOnFocusExit ?? false
+        #else
+        false
+        #endif
+    }
+
     /// The carousel's settings, or `nil` when Home isn't showing the carousel.
     /// That includes a hero that follows focus: its titles are the rows, so none
     /// of the carousel's curation, caching or refresh has anything to do.
@@ -422,6 +432,7 @@ public struct HomeView: View {
             screen
                 .environment(\.mediaRowHeaderTrailingInset,
                              navigationStyle == .rail ? geometry.safeAreaInsets.trailing : 0)
+                .environment(\.resetsMediaRowOnFocusExit, resetsRowsOnFocusExit)
         }
     }
 
@@ -691,11 +702,16 @@ public struct HomeView: View {
                                             )
                                         case let .library(row):
                                             if presentation.id == .global(.comingSoon) {
-                                                UpcomingHomeRow(title: row.section.displayName, releases: viewModel.upcoming.homeReleases) {
+                                                UpcomingHomeRow(
+                                                    title: row.section.displayName, releases: viewModel.upcoming.homeReleases,
+                                                    style: visibility.continueWatchingLayout.cardStyle,
+                                                    showsSeriesArtwork: visibility.continueWatchingUsesSeriesArtwork
+                                                ) {
                                                     onBrowse(.upcoming)
                                                 }
                                             } else {
                                                 libraryRowView(row, onBrowse: browseAction(for: presentation))
+                                                .mediaItemActionContext(presentation.actionContext)
                                                 .environment(
                                                     \.plozzLandscapeTitleLogo,
                                                     presentation.choice.collectionSection?.titleLogo ?? .off
@@ -1459,6 +1475,7 @@ public struct HomeView: View {
             )
             .browsingRow(row.items.isEmpty ? nil : onBrowse)
             .environment(\.plozzArtworkArea, .continueWatching)
+            .mediaItemActionContext(.continueWatching)
         case .watchlist:
             MediaRowView(
                 title: row.displayName,
@@ -1799,6 +1816,7 @@ public struct HomeView: View {
                     )
                     .browsingRow(row.items.isEmpty ? nil : onBrowse)
                     .environment(\.plozzArtworkArea, .continueWatching)
+                    .mediaItemActionContext(.continueWatching)
                 case .watchlist:
                     MediaRowView(
                         title: row.displayName,
@@ -1872,6 +1890,8 @@ public struct HomeView: View {
             if presentation.id == .global(.comingSoon) {
                 UpcomingHomeRow(
                     title: section.displayName, releases: viewModel.upcoming.homeReleases,
+                    style: visibility.continueWatchingLayout.cardStyle,
+                    showsSeriesArtwork: visibility.continueWatchingUsesSeriesArtwork,
                     onFocusEntered: reporter.entered, onFocusChange: onFocusChange,
                     onCardFocused: reporter.cardFocused
                 ) { onBrowse?() }
@@ -1898,6 +1918,7 @@ public struct HomeView: View {
                     onSelect: playsOnSelect ? onPlayItem : onSelectItem
                 )
                 .browsingRow(row.isLoading ? nil : onBrowse)
+                .mediaItemActionContext(presentation.actionContext)
             }
         }
     }

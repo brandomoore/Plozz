@@ -278,7 +278,7 @@ struct DetailHeroView: View, Equatable {
     /// to the hero top" correction (see ``onHeroActionFocused``); the per-button
     /// bool focus states above still own their local colour/behaviour tweaks.
     private enum HeroRowAction: Hashable {
-        case play, trailer, watchlist, watched, refresh, more, request, parent
+        case play, trailer, watchlist, watched, drop, removeContinue, refresh, more, request, parent
     }
 
     /// The action-row control that currently holds focus, or `nil` when focus is
@@ -286,6 +286,10 @@ struct DetailHeroView: View, Equatable {
     /// `.focused($heroActionRowFocus, equals:)`; a non-nil change fires
     /// ``onHeroActionFocused``.
     @FocusState private var heroActionRowFocus: HeroRowAction?
+
+    /// The button whose hint bubble is showing, if any.
+    @State private var hintTarget: HeroRowAction?
+    @State private var hintTask: Task<Void, Never>?
 
     /// Scopes the hero action row (Play, Trailer, …) so the Play button can be its
     /// preferred default focus. When focus moves UP into this section from a season
@@ -505,6 +509,31 @@ struct DetailHeroView: View, Equatable {
         watchedActionCandidates.first { $0 == .markWatched || $0 == .markUnwatched }
     }
 
+    /// Drop Show, or Undrop Show once the show is dropped. Acts on the show the
+    /// page is about, so it resolves against the hero item like the other
+    /// show-level actions.
+    private var heroDropAction: MediaItemAction? {
+        heroActions.first { $0 == .dropShow || $0 == .undropShow }
+    }
+
+    /// Set once the viewer removes the movie from Continue Watching, so the button
+    /// goes away without waiting for the page to reload.
+    @State private var removedFromContinueWatching = false
+
+    /// Remove from Continue Watching, for a movie.
+    ///
+    /// Gated on the action the handler actually offers, not on a Continue
+    /// Watching-row context flag: the row membership used to be re-derived here
+    /// from a page-open snapshot lookup, and when that lookup missed (empty
+    /// snapshot, account mismatch, deep link) the button vanished while the
+    /// long-press menu — which asks the same handler — still offered the action.
+    /// The catalog offers it wherever the movie has a resume point or the context
+    /// is the row, and a movie with a resume point is what the row is made of.
+    private var heroRemoveContinueAction: MediaItemAction? {
+        guard item.kind == .movie, !removedFromContinueWatching else { return nil }
+        return heroActions.first { $0 == .removeFromContinueWatching }
+    }
+
     /// Whether to show the Refresh Metadata button (provider conforms to
     /// `MetadataRefreshing`).
     private var heroOffersRefresh: Bool { heroActions.contains(.refreshMetadata) }
@@ -528,7 +557,10 @@ struct DetailHeroView: View, Equatable {
     }
 
     private var heroContextMenuActions: [MediaItemAction] {
-        heroMenuActions.filter { !$0.isPrimaryDetailAction && $0 != heroParentNavigationAction }
+        heroMenuActions.filter {
+            !$0.isPrimaryDetailAction && $0 != heroParentNavigationAction
+                && !($0 == .removeFromContinueWatching && heroRemoveContinueAction != nil)
+        }
     }
 
     /// The navigation action shown as its own button in the action row, so an
@@ -644,7 +676,8 @@ struct DetailHeroView: View, Equatable {
     /// Whether any visible item-action button should render — used to decide
     /// whether the action row appears even when there's no Play/Trailer/Version.
     private var hasHeroActionButtons: Bool {
-        heroWatchlistAction != nil || heroWatchedAction != nil
+        heroWatchlistAction != nil || heroWatchedAction != nil || heroDropAction != nil
+            || heroRemoveContinueAction != nil
             || heroParentNavigationAction != nil
             || showsMoreMenu
     }
@@ -1024,6 +1057,7 @@ struct DetailHeroView: View, Equatable {
                         }
                         .modifier(HeroActionButtonStyle(prominent: false, circular: true))
                         .focused($heroActionRowFocus, equals: .trailer)
+                        .overlay(alignment: .bottom) { heroHint(for: .trailer) }
                         .accessibilityIdentifier("detail-hero-trailer")
                     }
                     if let heroWatchlistAction {
@@ -1031,6 +1065,12 @@ struct DetailHeroView: View, Equatable {
                     }
                     if let heroWatchedAction {
                         watchedButton(action: heroWatchedAction)
+                    }
+                    if let heroDropAction {
+                        dropButton(action: heroDropAction)
+                    }
+                    if let heroRemoveContinueAction {
+                        removeContinueButton(action: heroRemoveContinueAction)
                     }
                     // The breadcrumb above the title carries this on an episode
                     // page; the icon button is the fallback for any other hero
@@ -1044,6 +1084,7 @@ struct DetailHeroView: View, Equatable {
                     }
                 }
                 .padding(.top, 8)
+                .onChange(of: heroActionRowFocus) { _, focus in showHeroHint(for: focus) }
                 // Stretch the focus section the full content width (buttons stay
                 // leading-aligned) so pressing "up" from a season chip parked far
                 // to the RIGHT reliably lands on the action row. tvOS only enters a
@@ -1738,6 +1779,7 @@ struct DetailHeroView: View, Equatable {
         }
         .modifier(HeroActionButtonStyle(prominent: false, circular: true))
         .focused($heroActionRowFocus, equals: .more)
+        .overlay(alignment: .bottom) { heroHint(for: .more) }
         .accessibilityIdentifier("detail-hero-more")
         .accessibilityLabel("More actions")
     }
@@ -1815,6 +1857,7 @@ struct DetailHeroView: View, Equatable {
         .modifier(HeroActionButtonStyle(prominent: false, circular: true))
         .animation(.easeInOut(duration: 0.2), value: isWatchlisted)
         .focused($heroActionRowFocus, equals: .watchlist)
+        .overlay(alignment: .bottom) { heroHint(for: .watchlist) }
         .accessibilityIdentifier("detail-hero-watchlist")
         .accessibilityLabel(action.title)
         .accessibilityValue(
@@ -1868,9 +1911,122 @@ struct DetailHeroView: View, Equatable {
         }
         .modifier(HeroActionButtonStyle(prominent: false, circular: true))
         .focused($heroActionRowFocus, equals: .watched)
+        .overlay(alignment: .bottom) { heroHint(for: .watched) }
         .accessibilityIdentifier("detail-hero-watched")
         .accessibilityLabel(action.title)
         .accessibilityValue(watchedActionItem.isPlayed ? "Watched" : "Not watched")
+    }
+
+    /// Drop Show / Undrop Show. A thumbs-down that fills in the accent colour
+    /// while the show is dropped, mirroring the watchlist bookmark. The state
+    /// comes from the observable dropped-shows model via `heroActions`, so the
+    /// glyph follows the drop the moment it is made.
+    @ViewBuilder
+    private func dropButton(action: MediaItemAction) -> some View {
+        let isDropped = action == .undropShow
+        Button { performHeroAction(action) } label: {
+            Image(systemName: isDropped ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                .font(.system(size: heroGlyphSize))
+                .foregroundStyle(isDropped ? Color.accentColor : Color.primary)
+                .contentTransition(.opacity)
+                .frame(width: heroIconSize, height: heroIconSize)
+        }
+        .modifier(HeroActionButtonStyle(prominent: false, circular: true))
+        .animation(.easeInOut(duration: 0.2), value: isDropped)
+        .focused($heroActionRowFocus, equals: .drop)
+        .overlay(alignment: .bottom) { heroHint(for: .drop) }
+        .accessibilityIdentifier("detail-hero-drop")
+        .accessibilityLabel(action.title)
+        .accessibilityValue(isDropped ? "Dropped" : "Not dropped")
+    }
+
+    /// Remove from Continue Watching. Pressing it takes the movie off the row and
+    /// the button leaves the page.
+    @ViewBuilder
+    private func removeContinueButton(action: MediaItemAction) -> some View {
+        Button {
+            performHeroAction(action)
+            removedFromContinueWatching = true
+            heroActionRowFocus = nil
+        } label: {
+            Image(systemName: action.systemImage)
+                .font(.system(size: heroGlyphSize))
+                .foregroundStyle(Color.primary)
+                .frame(width: heroIconSize, height: heroIconSize)
+        }
+        .modifier(HeroActionButtonStyle(prominent: false, circular: true))
+        .focused($heroActionRowFocus, equals: .removeContinue)
+        .overlay(alignment: .bottom) { heroHint(for: .removeContinue) }
+        .accessibilityIdentifier("detail-hero-remove-continue")
+        .accessibilityLabel(action.title)
+    }
+
+    // MARK: Icon hints
+
+    /// What the icon-only buttons in the action row mean, shown as a small bubble
+    /// above the focused button. The row has no labels of its own, so the bubble
+    /// names the icon when focus lands on it and leaves after a moment.
+    private static let hintHeight: CGFloat = 34
+    private static let hintGap: CGFloat = 19
+
+    private func heroHintText(for focus: HeroRowAction) -> LocalizedStringResource? {
+        switch focus {
+        case .trailer:
+            return LocalizedStringResource("Play Trailer", comment: "Hint above the trailer icon on a details page.")
+        case .watchlist: return heroWatchlistAction?.title
+        case .watched: return heroWatchedAction?.title
+        case .drop: return heroDropAction?.title
+        case .removeContinue: return heroRemoveContinueAction?.title
+        case .more:
+            return LocalizedStringResource("More Options", comment: "Hint above the ellipsis icon on a details page.")
+        case .play, .refresh, .request, .parent: return nil
+        }
+    }
+
+    /// The bubble for `focus`, drawn only while it is the button being described.
+    /// Overlaid, so it never moves the row.
+    @ViewBuilder
+    private func heroHint(for focus: HeroRowAction) -> some View {
+        if hintTarget == focus, let text = heroHintText(for: focus) {
+            Text(text)
+                .font(.system(size: 20 * textScale, weight: .medium))
+                .foregroundStyle(Color.primary)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 14 * textScale)
+                .frame(height: Self.hintHeight * textScale)
+                .background(.regularMaterial, in: Capsule())
+                // Overlaid at the button's bottom edge, then pushed down by its own
+                // height plus a gap that clears the glass focus circle, which is
+                // drawn outside the button's layout frame.
+                .offset(y: (Self.hintHeight + Self.hintGap) * textScale)
+                .transition(.opacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Shows the bubble for the newly focused button and hides it again after a
+    /// couple of seconds. Moving on cancels the pending hide, so each button gets
+    /// its own full display time.
+    private func showHeroHint(for focus: HeroRowAction?) {
+        hintTask?.cancel()
+        guard let focus, heroHintText(for: focus) != nil else {
+            withAnimation(.easeOut(duration: 0.25)) { hintTarget = nil }
+            return
+        }
+        // Nothing shows while focus is only passing over the icon; the bubble comes
+        // in after a short wait, fades up slowly, holds for 2.5 seconds, then
+        // fades out.
+        withAnimation(.easeOut(duration: 0.15)) { hintTarget = nil }
+        hintTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.8))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.7)) { hintTarget = focus }
+            try? await Task.sleep(for: .seconds(0.7 + 2.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.7)) { hintTarget = nil }
+        }
     }
 
     /// Visible Refresh Metadata button, shown when the provider conforms to

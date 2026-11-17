@@ -95,6 +95,9 @@ public struct LibraryBrowseView: View {
     @State private var railHasRevealed = false
     @FocusState private var focusedGridIndex: Int?
     #if os(tvOS)
+    @State private var seeAllPopup = SeeAllPopupModel()
+    #endif
+    #if os(tvOS)
     @State private var nativeScrollTarget = NativeLibraryScrollTarget()
     #endif
     /// Pre-built so a synthesized library name ("Movies" on a file share) is
@@ -532,6 +535,19 @@ public struct LibraryBrowseView: View {
         }
     }
 
+    #if os(tvOS)
+    private func seeAllPopupFocus(index: Int, focused: Bool) {
+        guard let item = viewModel.item(at: index) else { return }
+        seeAllPopup.focusChanged(
+            key: item.stablePresentationID, focused: focused,
+            delay: viewModel.presentation.settings.seeAllPopupDelayIfEnabled,
+            hideAfter: viewModel.presentation.settings.popupHideAfter
+        ) { [spoilerSettings, viewModel] in
+            SeeAllPopupContent(item: await viewModel.popupDetail(for: item), spoilers: spoilerSettings)
+        }
+    }
+    #endif
+
     private func swiftUIGrid(total: Int, generation: Int, columns: [GridItem]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
@@ -550,6 +566,11 @@ public struct LibraryBrowseView: View {
                                 },
                                 onFocusRequestHandled: viewModel.alphabet.completeDestination,
                                 onSelect: { select($0, at: index) },
+                                onFocusChange: { focused in
+                                    #if os(tvOS)
+                                    seeAllPopupFocus(index: index, focused: focused)
+                                    #endif
+                                },
                                 onAppear: { idx in
                                     await viewModel.itemAppeared(at: idx, generation: generation)
                                     guard !Task.isCancelled, generation == viewModel.contentGeneration else { return }
@@ -561,6 +582,16 @@ public struct LibraryBrowseView: View {
                             // `scrollTo(startIndex)` lands on the right row.
                             .id(index)
                             .focused($focusedGridIndex, equals: index)
+                            #if os(tvOS)
+                            .background {
+                                if let key = viewModel.item(at: index)?.stablePresentationID,
+                                   seeAllPopup.focusedKey == key {
+                                    Color.clear.onGeometryChange(for: CGRect.self) {
+                                        $0.frame(in: .named("seeAllGrid"))
+                                    } action: { seeAllPopup.anchor = $0 }
+                                }
+                            }
+                            #endif
                             .navigationEntryFocus(.content)
                         }
 
@@ -589,6 +620,11 @@ public struct LibraryBrowseView: View {
             }
             // Never clip a focused card's lift, shadow or border.
             .scrollClipDisabled()
+            #if os(tvOS)
+            .coordinateSpace(name: "seeAllGrid")
+            .overlay { SeeAllPopupOverlay(model: seeAllPopup) }
+            .onDisappear { seeAllPopup.hide() }
+            #endif
             .scrollsTopNavigation()
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
@@ -870,6 +906,7 @@ private struct LibraryGridCell: View {
     let focusRequest: UUID?
     let onFocusRequestHandled: (UUID) -> Void
     let onSelect: (MediaItem) -> Void
+    var onFocusChange: ((Bool) -> Void)? = nil
     let onAppear: (Int) async -> Void
     let onDisappear: (Int) -> Void
 
@@ -888,7 +925,8 @@ private struct LibraryGridCell: View {
                         focusRequest: focusRequest,
                         onFocusRequestHandled: {
                             if let focusRequest { onFocusRequestHandled(focusRequest) }
-                        }
+                        },
+                        onFocusChange: onFocusChange
                     ) {
                         onSelect(item)
                     }

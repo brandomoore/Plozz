@@ -89,6 +89,16 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
     /// they abandoned corrupts exactly the history that decides what to suggest
     /// next. This clears the resume point and leaves the watched state alone.
     case removeFromContinueWatching
+    /// Give up on the show this item belongs to: every episode of it leaves
+    /// Continue Watching, Next Up and Upcoming, on every server, until the viewer
+    /// watches it again. See ``DroppedShow``.
+    ///
+    /// On an episode this stands in for ``removeFromContinueWatching``: what is
+    /// unwanted there is the show, and removing one episode only has the next one
+    /// take its place.
+    case dropShow
+    /// Take a drop back, returning the show to the rows it left.
+    case undropShow
 
     public var id: String { rawValue }
 
@@ -160,6 +170,18 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
                 defaultValue: "Remove from Continue Watching",
                 comment: "Context-menu action taking a title off the Continue Watching row without marking it watched."
             )
+        case .dropShow:
+            return LocalizedStringResource(
+                "mediaAction.dropShow",
+                defaultValue: "Drop Show",
+                comment: "Context-menu action giving up on a TV show, hiding it from Continue Watching, Next Up and Upcoming until it is watched again."
+            )
+        case .undropShow:
+            return LocalizedStringResource(
+                "mediaAction.undropShow",
+                defaultValue: "Undrop Show",
+                comment: "Context-menu action taking back a dropped TV show so it returns to Continue Watching, Next Up and Upcoming."
+            )
         case .startDownload:
             return LocalizedStringResource(
                 "mediaAction.startDownload",
@@ -205,6 +227,8 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
         case .resumeDownload: return "arrow.clockwise.circle"
         case .removeDownload: return "trash"
         case .removeFromContinueWatching: return "minus.circle"
+        case .dropShow: return "hand.thumbsdown"
+        case .undropShow: return "arrow.uturn.backward"
         }
     }
 
@@ -237,7 +261,7 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
         case .markWatched, .markUnwatched, .markWatchedUpToHere,
              .addToWatchlist, .removeFromWatchlist, .refreshMetadata,
              .startDownload, .pauseDownload, .resumeDownload, .removeDownload,
-             .removeFromContinueWatching:
+             .removeFromContinueWatching, .dropShow, .undropShow:
             return false
         }
     }
@@ -251,7 +275,7 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
         case .goToSeason, .browseFiles, .markWatched, .markUnwatched, .markWatchedUpToHere,
              .addToWatchlist, .removeFromWatchlist, .refreshMetadata,
              .startDownload, .pauseDownload, .resumeDownload, .removeDownload,
-             .removeFromContinueWatching:
+             .removeFromContinueWatching, .dropShow, .undropShow:
             return false
         }
     }
@@ -265,7 +289,12 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
     /// the one item on this menu worth a beat of separation from the entry above
     /// it: reaching for "Mark as Watched" and landing on it by accident is exactly
     /// the mistake the row's own accidents made people want this action for.
-    public var isSetApartInMenu: Bool { self == .removeFromContinueWatching }
+    ///
+    /// Dropping a show is the same kind of choice, and replaces removal on an
+    /// episode, so it takes the same place.
+    public var isSetApartInMenu: Bool {
+        self == .removeFromContinueWatching || self == .dropShow || self == .undropShow
+    }
 
     /// Whether the platform should style the action as destructive (red). No
     /// current watched-state action loses data irreversibly; this exists so a
@@ -290,6 +319,10 @@ public enum MediaItemAction: String, CaseIterable, Sendable, Identifiable {
         switch self {
         case .markWatched, .markUnwatched,
              .addToWatchlist, .removeFromWatchlist:
+            return true
+        // A show's own page is where someone drops it, or takes the drop back, so
+        // both are visible there rather than behind a long press.
+        case .dropShow, .undropShow:
             return true
         case .markWatchedUpToHere, .goToSeason, .goToMovie, .goToEpisode, .browseFiles,
              .refreshMetadata, .startDownload, .pauseDownload,

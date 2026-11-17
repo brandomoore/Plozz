@@ -581,7 +581,7 @@ extension MediaItem {
         case .markWatched, .markUnwatched, .markWatchedUpToHere,
              .addToWatchlist, .removeFromWatchlist, .refreshMetadata,
              .startDownload, .pauseDownload, .resumeDownload, .removeDownload,
-             .removeFromContinueWatching:
+             .removeFromContinueWatching, .dropShow, .undropShow:
             return nil
         }
     }

@@ -107,6 +107,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     public var showcaseLogoSize: HeroLogoSize
     public var textSize: HeroTextSize
     public var showcaseTextSize: HeroTextSize
+    /// Scrolls a Home row back to its first card whenever focus moves to another
+    /// row, instead of leaving it wherever it was browsed to. Off by default.
+    public var resetsHomeRowOnFocusExit: Bool
 
     /// Legacy migration input. CardCaptionSettings now owns visual card labels.
     public var showsCardCaptions: Bool
@@ -155,6 +158,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         showcaseLogoSize: HeroLogoSize = .default,
         textSize: HeroTextSize = .default,
         showcaseTextSize: HeroTextSize = .default,
+        resetsHomeRowOnFocusExit: Bool = false,
         showsCardCaptions: Bool = false,
         showsDiscoverRow: Bool = false,
         collections: [HeroCollectionSelection] = [],
@@ -183,6 +187,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         self.showcaseLogoSize = showcaseLogoSize
         self.textSize = textSize
         self.showcaseTextSize = showcaseTextSize
+        self.resetsHomeRowOnFocusExit = resetsHomeRowOnFocusExit
         self.showsCardCaptions = showsCardCaptions
         self.showsDiscoverRow = showsDiscoverRow
     }
@@ -197,6 +202,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         case style, showsCardCaptions, showsDiscoverRow
         case logoSize, showcaseLogoSize
         case textSize, showcaseTextSize
+        case resetsHomeRowOnFocusExit
         case offeredSourcesVersion
         case collections, collection
     }
@@ -240,6 +246,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             showcaseLogoSize: value(HeroLogoSize.self, .showcaseLogoSize, d.showcaseLogoSize),
             textSize: value(HeroTextSize.self, .textSize, d.textSize),
             showcaseTextSize: value(HeroTextSize.self, .showcaseTextSize, d.showcaseTextSize),
+            resetsHomeRowOnFocusExit: value(Bool.self, .resetsHomeRowOnFocusExit, d.resetsHomeRowOnFocusExit),
             showsCardCaptions: value(Bool.self, .showsCardCaptions, d.showsCardCaptions),
             showsDiscoverRow: value(Bool.self, .showsDiscoverRow, d.showsDiscoverRow),
             collections: c.contains(.collections)
@@ -311,6 +318,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         try c.encode(showcaseLogoSize, forKey: .showcaseLogoSize)
         try c.encode(textSize, forKey: .textSize)
         try c.encode(showcaseTextSize, forKey: .showcaseTextSize)
+        try c.encode(resetsHomeRowOnFocusExit, forKey: .resetsHomeRowOnFocusExit)
         try c.encode(showsCardCaptions, forKey: .showsCardCaptions)
         try c.encode(showsDiscoverRow, forKey: .showsDiscoverRow)
         try c.encode(Self.currentOfferedSourcesVersion, forKey: .offeredSourcesVersion)
