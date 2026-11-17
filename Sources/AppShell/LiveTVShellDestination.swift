@@ -10,20 +10,33 @@ import FeaturePlayback
 import SwiftUI
 
 /// Match native tabs: construct Live TV on its first visit, then retain its state.
+///
+/// With `preloads`, it is constructed shortly after launch instead, hidden and inactive, so its
+/// lineup is already in place when it is first opened.
 struct RetainedLiveTVDestination<Content: View>: View {
+    static var preloadDelay: Duration { .seconds(2) }
     let isActive: Bool
+    let preloads: Bool
     private let content: () -> Content
     @State private var hasAppeared = false
 
-    init(isActive: Bool, @ViewBuilder content: @escaping () -> Content) {
+    init(isActive: Bool, preloads: Bool = false, @ViewBuilder content: @escaping () -> Content) {
         self.isActive = isActive
+        self.preloads = preloads
         self.content = content
     }
 
     var body: some View {
-        if isActive || hasAppeared {
-            content()
-                .onAppear { hasAppeared = true }
+        ZStack {
+            if LiveTVCatalogActivation.mountsDestination(isActive: isActive, hasAppeared: hasAppeared) {
+                content()
+                    .onAppear { hasAppeared = true }
+            }
+        }
+        .task(id: preloads) {
+            guard LiveTVCatalogActivation.shouldPreload(preloads: preloads, hasAppeared: hasAppeared) else { return }
+            try? await Task.sleep(for: Self.preloadDelay)
+            if !Task.isCancelled { hasAppeared = true }
         }
     }
 }
@@ -36,6 +49,7 @@ struct RetainedLiveTVDestination<Content: View>: View {
 struct LiveTVShellDestination: View {
     let isActive: Bool
     let profileID: String
+    let preloadsCatalog: Bool
     let usesNativeNavigation: Bool
     let onExpandedChange: (Bool) -> Void
 
@@ -61,6 +75,7 @@ struct LiveTVShellDestination: View {
 
     init(
         isActive: Bool,
+        preloadsCatalog: Bool = false,
         profileID: String,
         preferencesNamespace: String?,
         accountsProviders: AccountsProvidersModel? = nil,
@@ -74,6 +89,7 @@ struct LiveTVShellDestination: View {
         onOpenTitle: ((MediaItem) -> Void)? = nil
     ) {
         self.isActive = isActive
+        self.preloadsCatalog = preloadsCatalog
         self.profileID = profileID
         self.usesNativeNavigation = usesNativeNavigation
         self.onExpandedChange = onExpandedChange
@@ -131,6 +147,7 @@ struct LiveTVShellDestination: View {
     private func liveTVContent(cache: LiveTVIndexedCache, library: LiveTVLibraryRuntime) -> some View {
         LiveTVPrototypeView(
             isActive: isActive,
+            preloadsCatalog: preloadsCatalog,
             usesNativeFullscreen: usesNativeNavigation,
             preferencesStore: preferencesStore,
             viewSettingsStore: viewSettingsStore,
@@ -147,6 +164,9 @@ struct LiveTVShellDestination: View {
             didConfigurePlaylist: didConfigurePlaylist,
             onExpandedChange: updateExpandedState,
             catalogCache: cache,
+            lastSeenStore: LiveTVLastSeenStore(
+                profileID: profileID, secureStore: LiveTVSourceStorage.catalogSecrets()
+            ),
             sourceLoader: LiveTVCatalogStorage.loader(profileID: profileID, namespace: preferencesNamespace),
             profileID: profileID,
             preferencesNamespace: preferencesNamespace,
@@ -172,7 +192,10 @@ struct LiveTVShellDestination: View {
                     library.makeEngine(
                         engine: try PlozzigenVideoEngine(
                             authenticatedHTTPResolver: playback.authenticatedHTTPResolver,
-                            liveBufferPreference: { LivePlaybackBufferStore().load() }
+                            liveBufferPreference: { LivePlaybackBufferStore().load() },
+                            videoUpscalingPreference: { [preferencesNamespace] in
+                                PlaybackSettingsStore(namespace: preferencesNamespace).load().videoUpscaling
+                            }
                         ),
                         onCompleted: completeLibraryChannelPlayback
                     )

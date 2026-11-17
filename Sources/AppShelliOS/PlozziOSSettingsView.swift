@@ -2482,6 +2482,10 @@ struct PlozziOSPlaybackSettingsView: View {
                 support: streamingSupport,
                 onShowAdvanced: { showsAdvancedStreaming = true }
             )
+            SettingsSectionGroup {
+                VideoUpscalingControl(selection: $model.settings.videoUpscaling)
+                    .settingsSearchAnchor("video-upscaling")
+            }
             PlaybackReadAheadControl()
                 .settingsSearchAnchor("read-ahead")
             LivePlaybackBufferControl()

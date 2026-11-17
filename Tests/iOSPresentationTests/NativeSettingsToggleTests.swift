@@ -12,6 +12,46 @@ import XCTest
 
 @MainActor
 final class NativeSettingsToggleTests: XCTestCase {
+    func testVideoUpscalingShowsProfileSelectionOnPhoneAndTablet() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let suite = "VideoUpscalingMobile-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let model = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        for width: CGFloat in [390, 834] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 1000)
+            window.rootViewController = UIHostingController(rootView:
+                SettingsSectionGroup {
+                    VideoUpscalingControl(selection: Binding(
+                        get: { model.settings.videoUpscaling },
+                        set: { model.settings.videoUpscaling = $0 }
+                    ))
+                }
+                .padding(16)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.colorScheme, .dark)
+                .background(.black)
+            )
+            window.makeKeyAndVisible()
+            for mode in [VideoUpscaling.automatic, .off] {
+                model.settings.videoUpscaling = mode
+                try await settle(window)
+                let text = try captureText(window, name: "Video-upscaling-\(width)-\(mode.rawValue)")
+                XCTAssertTrue(text.contains("Video upscaling"), text)
+                XCTAssertTrue(text.contains(mode == .automatic ? "Automatic" : "Off"), text)
+            }
+        }
+    }
+
     func testDescribedControlsKeepPlainRowClearanceAndOneTrailingDivider() async throws {
         final class Frames {
             var plain = CGRect.zero

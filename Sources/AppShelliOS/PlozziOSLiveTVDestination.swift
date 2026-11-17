@@ -79,6 +79,7 @@ struct PlozziOSLiveTVDestination: View {
     private func liveTVContent(cache: LiveTVIndexedCache, runtime: LiveTVLibraryRuntime) -> some View {
         LiveTVPrototypeView(
             isActive: isActive,
+            preloadsCatalog: false,
             preferencesStore: preferencesStore,
             viewSettingsStore: viewSettingsStore,
             sourceStore: sourceStore,
@@ -97,6 +98,9 @@ struct PlozziOSLiveTVDestination: View {
             playbackUnavailableReason: effectiveNetworkBlock?.playbackMessage,
             restoreDestination: restoreDestination,
             catalogCache: cache,
+            lastSeenStore: LiveTVLastSeenStore(
+                profileID: profileID, secureStore: LiveTVSourceStorage.catalogSecrets()
+            ),
             sourceLoader: LiveTVCatalogStorage.loader(profileID: profileID, namespace: preferencesNamespace),
             importModel: importModel,
             profileID: profileID,
@@ -124,7 +128,10 @@ struct PlozziOSLiveTVDestination: View {
                     runtime.makeEngine(
                         engine: try PlozzigenVideoEngine(
                             authenticatedHTTPResolver: playback.authenticatedHTTPResolver,
-                            liveBufferPreference: { LivePlaybackBufferStore().load() }
+                            liveBufferPreference: { LivePlaybackBufferStore().load() },
+                            videoUpscalingPreference: { [preferencesNamespace] in
+                                PlaybackSettingsStore(namespace: preferencesNamespace).load().videoUpscaling
+                            }
                         ),
                         onCompleted: { [profiles, profileID, preferencesNamespace,
                                         completeLibraryChannelPlayback, weak runtime] item, token in

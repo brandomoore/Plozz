@@ -7,6 +7,7 @@ import CoreUI
 import CrashReporting
 import FeatureHomeCore
 import FeatureHome
+import FeatureLiveTV
 import FeatureMusic
 import FeaturePlayback
 import MediaTransportCore
@@ -1628,9 +1629,13 @@ struct MainTabView: View {
                 .allowsHitTesting(!showsLiveTV)
                 .accessibilityHidden(showsLiveTV)
 
-            RetainedLiveTVDestination(isActive: showsLiveTV) {
+            RetainedLiveTVDestination(
+                isActive: showsLiveTV,
+                preloads: activeNavigationDestinations.contains(.liveTV) && isLiveTVProfileAuthorized()
+            ) {
                 LiveTVShellDestination(
                     isActive: showsLiveTV,
+                    preloadsCatalog: activeNavigationDestinations.contains(.liveTV) && isLiveTVProfileAuthorized(),
                     profileID: activeProfile.id,
                     preferencesNamespace: liveTVPreferencesNamespace,
                     accountsProviders: accountsProviders,
@@ -2093,6 +2098,13 @@ struct MainTabView: View {
             )
         }
         .mediaItemActionHandler(mediaItemActionHandler)
+        .liveTVGuideAutoUpdate(
+            accountIDs: accounts.map(\.account.id),
+            authorizationID: accountsProviders.liveTVAuthorizationID,
+            isAuthorized: activeNavigationDestinations.contains(.liveTV) && isLiveTVProfileAuthorized(),
+            namespace: liveTVPreferencesNamespace,
+            resolver: accountsProviders.liveTVProviderResolver()
+        )
     }
 
     @MainActor

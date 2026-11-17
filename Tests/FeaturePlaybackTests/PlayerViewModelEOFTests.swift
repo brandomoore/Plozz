@@ -11,6 +11,379 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    func testPlayerUpscalingChangesResolveAutomaticWithoutReloadingThePlayerModel() async {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let item = MediaItem(id: "animation", title: "Animation fixture", kind: .movie, genres: ["Animation"])
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!),
+                kind: kind
+            )
+            let engine = SpyVideoEngine()
+            engine.canChangeVideoUpscaling = true
+            engine.capabilities.insert(.audioDelay)
+            let model = PlayerViewModel(
+                provider: provider, itemID: item.id,
+                playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: .standard),
+                engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+            )
+            await model.load()
+            engine.currentTime = 137
+            engine.pause()
+            model.setSubtitleDelay(0.25)
+            model.setAudioDelay(-0.15)
+            for selection in [VideoUpscaling.off, .animation, .automatic] {
+                model.setVideoUpscaling(selection)
+                await model.videoUpscalingTask?.value
+                XCTAssertEqual(model.controls.upscaling.selection, selection)
+                XCTAssertNil(model.controls.upscaling.error)
+            }
+            XCTAssertEqual(engine.upscalingChanges, [.off, .animation, .animation])
+            XCTAssertEqual(engine.loadCount, 1)
+            XCTAssertEqual(engine.currentTime, 137)
+            XCTAssertTrue(engine.isPaused)
+            XCTAssertEqual(model.controls.subtitleDelaySeconds, 0.25)
+            XCTAssertEqual(model.controls.audioDelaySeconds, -0.15)
+            XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, .standard)
+            await model.stop()
+        }
+    }
+
+    func testUpscalingFailureAndStoppedReloadDoNotPublishAnUnappliedSelection() async {
+        let item = MediaItem(id: "upscale", title: "Fixture", kind: .movie)
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!)
+        )
+        let engine = SpyVideoEngine()
+        engine.canChangeVideoUpscaling = true
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(useCommunityMarkers: false),
+            engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+        )
+        await model.load()
+        engine.upscalingError = .serverUnreachable
+        model.setVideoUpscaling(.off)
+        await model.videoUpscalingTask?.value
+        XCTAssertEqual(model.controls.upscaling.selection, .automatic)
+        XCTAssertNotNil(model.controls.upscaling.error)
+        engine.upscalingError = nil
+        let gate = PreCommitYieldGate()
+        engine.upscalingGate = gate
+        let entered = expectation(description: "Upscaling correction entered")
+        engine.upscalingStarted = { entered.fulfill() }
+        model.setVideoUpscaling(.animation)
+        let pending = model.videoUpscalingTask
+        await fulfillment(of: [entered], timeout: 3)
+        model.setVideoUpscaling(.off)
+        XCTAssertEqual(gate.entryCount, 1, "Only one correction may rebuild the session at a time.")
+        await model.stop()
+        gate.releaseNext()
+        await pending?.value
+        XCTAssertEqual(model.controls.upscaling.selection, .automatic)
+        XCTAssertNil(model.controls.upscaling.error)
+        XCTAssertFalse(model.controls.upscaling.isChanging)
+    }
+
+    func testAudioSyncHonorsEngineSupportRangeAndReset() async {
+        let (model, engine, _) = makeViewModel()
+        await model.load()
+        model.setAudioDelay(1)
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        engine.capabilities.insert(.audioDelay)
+        for (requested, expected) in [(0.05, 0.05), (-0.05, -0.05), (3.0, 3.0), (-3.0, -3.0),
+                                      (10.0, 10.0), (-10.0, -10.0), (11.0, 10.0), (-11.0, -10.0), (0.0, 0.0)] {
+            model.setAudioDelay(requested)
+            XCTAssertEqual(engine.audioDelaySeconds, expected)
+            XCTAssertEqual(model.controls.audioDelaySeconds, expected)
+        }
+        engine.onTracksChanged?()
+        engine.isSessionReloading = true
+        engine.capabilities = []
+        engine.onTracksChanged?()
+        engine.onProgress?()
+        XCTAssertTrue(model.controls.engineCapabilities.contains(.audioDelay))
+        model.setAudioDelay(1)
+        XCTAssertEqual(engine.audioDelaySeconds, 0, "A visible control still checks current engine support.")
+        engine.isSessionReloading = false
+        engine.onTracksChanged?()
+        XCTAssertFalse(model.controls.engineCapabilities.contains(.audioDelay))
+        engine.capabilities.insert(.audioDelay)
+        model.setAudioDelay(.nan)
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        await model.stop()
+        model.setAudioDelay(1)
+        XCTAssertEqual(engine.audioDelaySeconds, 0)
+    }
+
+    func testLiveAudioSyncNeverFallsBackToTheReloadingSetter() async {
+        let (model, engine, _) = makeViewModel()
+        await model.load()
+        engine.capabilities.insert(.audioDelay)
+        let initialChanges = engine.audioDelayChanges
+        XCTAssertFalse(model.setAudioDelayLive(0.01))
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        XCTAssertEqual(engine.audioDelayChanges, initialChanges)
+        engine.acceptsLiveAudioDelay = true
+        for (requested, expected) in [(0.01, 0.01), (-0.01, -0.01), (3.0, 3.0), (-3.0, -3.0),
+                                      (11.0, 10.0), (-11.0, -10.0), (0, 0)] {
+            XCTAssertTrue(model.setAudioDelayLive(requested))
+            XCTAssertEqual(model.controls.audioDelaySeconds, expected)
+        }
+        XCTAssertFalse(model.setAudioDelayLive(.nan))
+        engine.capabilities = []
+        XCTAssertFalse(model.setAudioDelayLive(1))
+        engine.capabilities.insert(.audioDelay)
+        await model.stop()
+        XCTAssertFalse(model.setAudioDelayLive(1))
+        XCTAssertEqual(engine.audioDelayChanges, initialChanges)
+    }
+
+    func testAudioSyncHoldUsesFineStepsAcceleratesAndCommitsOnlyOnce() {
+        var adjustment = PlayerAudioSyncAdjustment()
+        XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: false), 0.01)
+        for index in 1...11 {
+            XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: true),
+                           Double(index + 1) / 100, accuracy: 0.000001)
+        }
+        XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: true), 0.17)
+        XCTAssertEqual(adjustment.finish(), 0.17)
+        XCTAssertNil(adjustment.finish(), "Release and recognizer reset must not apply twice.")
+        XCTAssertEqual(adjustment.nudge(from: 0.17, forward: false, repeating: false), 0.16)
+        XCTAssertNil(adjustment.finish(cancelled: true))
+        XCTAssertNil(adjustment.value)
+        XCTAssertEqual(adjustment.nudge(from: 2, forward: true, repeating: false), 2.01)
+        _ = adjustment.finish(cancelled: true)
+        XCTAssertEqual(adjustment.nudge(from: 10, forward: true, repeating: false), 10)
+        _ = adjustment.finish(cancelled: true)
+        XCTAssertEqual(adjustment.nudge(from: -10, forward: false, repeating: false), -10)
+        adjustment.set(.nan)
+        adjustment.set(.infinity)
+        XCTAssertEqual(adjustment.finish(), -10)
+    }
+
+    func testLiveTVAudioSyncPreservesItsLimitForPreviewAndCommit() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(range: PlayerAudioSyncAdjustment.liveRange,
+                                          sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        for (index, requested) in [10.0, -10.0].enumerated() {
+            editor.beginEditing()
+            editor.change(to: requested, current: 0, applyLive: { _ in false }, commit: commit)
+            XCTAssertEqual(editor.value, requested > 0 ? 2 : -2)
+            XCTAssertNil(editor.commitTask)
+            editor.endEditing(commit: commit)
+            await clock.waitForSleeps(index + 1)
+            let pending = editor.commitTask
+            clock.advance(by: .milliseconds(600))
+            await pending?.value
+        }
+        XCTAssertEqual(applied, [2, -2])
+    }
+
+    func testAudioSyncRapidReleasesCommitOnceAfterQuietPeriodPlayingOrPaused() async {
+        for paused in [false, true] {
+            let (model, engine, _) = makeViewModel()
+            await model.load()
+            engine.capabilities.insert(.audioDelay)
+            if paused { engine.pause() } else { engine.play() }
+            let baseline = engine.audioDelayChanges
+            let clock = AudioSyncTestClock()
+            let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+
+            editor.nudge(from: 0, forward: false, repeating: false,
+                         applyLive: model.setAudioDelayLive, commit: model.setAudioDelay)
+            editor.endEditing(commit: model.setAudioDelay)
+            let first = editor.commitTask
+            await clock.waitForSleeps(1)
+            clock.advance(by: .milliseconds(300))
+            editor.nudge(from: model.controls.audioDelaySeconds, forward: false, repeating: false,
+                         applyLive: model.setAudioDelayLive, commit: model.setAudioDelay)
+            editor.endEditing(commit: model.setAudioDelay)
+            let last = editor.commitTask
+            await clock.waitForSleeps(2)
+            XCTAssertEqual(editor.value, -0.02, "Separate presses accumulate the pending value, not engine readback.")
+            XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+            clock.advance(by: .milliseconds(300))
+            await first?.value
+            XCTAssertEqual(engine.audioDelayChanges, baseline, "The superseded deadline cannot apply.")
+            clock.advance(by: .milliseconds(299))
+            XCTAssertEqual(engine.audioDelayChanges, baseline)
+            clock.advance(by: .milliseconds(1))
+            await last?.value
+            XCTAssertEqual(engine.audioDelayChanges, baseline + [-0.02])
+            XCTAssertNil(editor.value)
+            XCTAssertEqual(engine.isPaused, paused)
+            await model.stop()
+        }
+    }
+
+    func testAudioSyncHoldDoesNotReloadDuringInitialGapOrAtBound() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        editor.nudge(from: 9.99, forward: true, repeating: false, applyLive: { _ in false }, commit: commit)
+        clock.advance(by: .seconds(1))
+        XCTAssertNil(editor.commitTask, "An active hold has no reload deadline, including its initial gap.")
+        for _ in 0..<20 {
+            editor.nudge(from: 9.99, forward: true, repeating: true, applyLive: { _ in false }, commit: commit)
+            clock.advance(by: .milliseconds(80))
+        }
+        XCTAssertEqual(editor.value, 10)
+        XCTAssertTrue(applied.isEmpty)
+        editor.endEditing(commit: commit)
+        await clock.waitForSleeps(1)
+        let pending = editor.commitTask
+        clock.advance(by: .milliseconds(600))
+        await pending?.value
+        XCTAssertEqual(applied, [10])
+    }
+
+    func testAudioSyncLiveCorrectionAndReturnToActualValueNeedNoReload() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var actual = 0.0
+        var reloads: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { reloads.append($0) }
+        editor.nudge(from: actual, forward: true, repeating: false, applyLive: { actual = $0; return true },
+                     commit: commit)
+        editor.endEditing(commit: commit)
+        XCTAssertEqual(actual, 0.01)
+        XCTAssertNil(editor.commitTask)
+        editor.change(to: -0.2, current: actual, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(1)
+        let obsolete = editor.commitTask
+        editor.change(to: actual, current: actual, applyLive: { _ in XCTFail("Already applied"); return false },
+                      commit: commit)
+        clock.advance(by: .seconds(1))
+        await obsolete?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(reloads.isEmpty)
+    }
+
+    func testAudioSyncResetAndCancellationSupersedePendingChanges() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        editor.change(to: 0.5, current: 0.2, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(1)
+        let obsolete = editor.commitTask
+        editor.cancel()
+        editor.change(to: 0, current: 0.2, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(2)
+        let reset = editor.commitTask
+        clock.advance(by: .milliseconds(600))
+        await obsolete?.value
+        await reset?.value
+        XCTAssertEqual(applied, [0])
+
+        editor.change(to: 0.1, current: 0, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(3)
+        let cancelled = editor.commitTask
+        editor.cancel()
+        clock.advance(by: .seconds(1))
+        await cancelled?.value
+        XCTAssertEqual(applied, [0])
+        XCTAssertNil(editor.value)
+    }
+
+    func testAudioSyncPendingCommitIsCancelledBeforeNewPlaybackAndStop() async {
+        let (model, engine, _) = makeViewModel()
+        engine.capabilities.insert(.audioDelay)
+        let editor = model.controls.audioSyncAdjustment
+        var applied: [TimeInterval] = []
+        editor.change(to: 0.5, current: 0, applyLive: { _ in false }, commit: { applied.append($0) })
+        let beforeLoad = editor.commitTask
+        await model.load()
+        await beforeLoad?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(applied.isEmpty)
+        editor.change(to: 0.2, current: 0, applyLive: { _ in false }, commit: { applied.append($0) })
+        let beforeStop = editor.commitTask
+        await model.stop()
+        await beforeStop?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(applied.isEmpty)
+    }
+
+    func testProfileUpscalingChoiceIsAppliedBeforeEngineLoadAcrossProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for mode in VideoUpscaling.allCases {
+                let item = MediaItem(id: "upscaling", title: "Upscaling fixture", kind: .movie)
+                var request = PlaybackRequest(
+                    item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!
+                )
+                request.videoUpscaling = .animation
+                let provider = RecordingPlaybackProvider(request: request, kind: kind)
+                let engine = SpyVideoEngine()
+                let model = PlayerViewModel(
+                    provider: provider, itemID: item.id,
+                    playbackSettings: .init(videoUpscaling: mode),
+                    engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+                )
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(
+                    engine.lastLoadedRequest?.videoUpscaling,
+                    mode == .automatic ? .standard : mode
+                )
+                await model.stop()
+            }
+        }
+    }
+
+    func testAutomaticUpscalingUsesTheEpisodeParentWithoutOverridingStandard() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for mode in [VideoUpscaling.automatic, .standard] {
+                var episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: "series")
+                episode.sourceAccountID = "account"
+                var series = MediaItem(id: "series", title: "Series", kind: .series, genres: ["Animation"])
+                series.sourceAccountID = "account"
+                let url = URL(string: "https://fixture.invalid/video.mkv")!
+                let provider = RecordingPlaybackProvider(
+                    request: .init(item: episode, streamURL: url), kind: kind,
+                    requestsByItemID: ["series": .init(item: series, streamURL: url)]
+                )
+                let engine = SpyVideoEngine()
+                let model = PlayerViewModel(
+                    provider: provider, itemID: episode.id,
+                    playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: mode),
+                    engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+                )
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, mode == .automatic ? .animation : .standard)
+                await model.stop()
+            }
+        }
+    }
+
+    func testAutomaticUpscalingFallsBackForMissingSeriesButDoesNotLoadAfterCancellation() async {
+        for error in [AppError.notFound, .cancelled] {
+            let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: "series")
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: episode, streamURL: URL(string: "https://fixture.invalid/video.mkv")!)
+            )
+            await provider.setItemError(error)
+            let engine = SpyVideoEngine()
+            let model = PlayerViewModel(
+                provider: provider, itemID: episode.id,
+                playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: .automatic),
+                engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+            )
+            await model.load()
+            if error == .cancelled {
+                XCTAssertNil(engine.lastLoadedRequest)
+            } else {
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, .standard)
+            }
+            await model.stop()
+        }
+    }
+
     func testPostCreditsTailPreservesOrdinaryEOFAutoplayAcrossProviders() async throws {
         for kind in [ProviderKind.jellyfin, .plex] {
             for autoplay in [true, false] {
@@ -2907,6 +3280,36 @@ final class PlayerViewModelEOFTests: XCTestCase {
 }
 
 @MainActor
+private final class AudioSyncTestClock {
+    private var now: Duration = .zero
+    private var sleeps: [(deadline: Duration, continuation: CheckedContinuation<Void, Never>)] = []
+    private var observers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var count = 0
+
+    func sleep(for duration: Duration) async {
+        await withCheckedContinuation { continuation in
+            sleeps.append((now + duration, continuation))
+            count += 1
+            let ready = observers.filter { $0.count <= count }
+            observers.removeAll { $0.count <= count }
+            ready.forEach { $0.continuation.resume() }
+        }
+    }
+
+    func waitForSleeps(_ count: Int) async {
+        guard self.count < count else { return }
+        await withCheckedContinuation { observers.append((count, $0)) }
+    }
+
+    func advance(by duration: Duration) {
+        now += duration
+        let ready = sleeps.filter { $0.deadline <= now }
+        sleeps.removeAll { $0.deadline <= now }
+        ready.forEach { $0.continuation.resume() }
+    }
+}
+
+@MainActor
 private final class PreCommitYieldGate {
     private var continuations: [CheckedContinuation<Void, Never>] = []
     private(set) var entryCount = 0
@@ -3142,6 +3545,32 @@ private struct LocalPlaybackFixture: OfflinePlaybackResolving {
 
 @MainActor
 private final class SpyVideoEngine: VideoEngine {
+    var isSessionReloading = false
+    var capabilities: PlayerEngineCapabilities = []
+    var canChangeVideoUpscaling = false
+    var upscalingChanges: [VideoUpscaling] = []
+    var upscalingError: AppError?
+    var upscalingGate: PreCommitYieldGate?
+    var upscalingStarted: (() -> Void)?
+    var audioDelaySeconds: TimeInterval = 0
+    var audioDelayChanges: [TimeInterval] = []
+    var acceptsLiveAudioDelay = false
+    func setAudioDelay(_ seconds: TimeInterval) {
+        audioDelayChanges.append(seconds)
+        audioDelaySeconds = seconds
+    }
+    func setAudioDelayLive(_ seconds: TimeInterval) -> Bool {
+        guard acceptsLiveAudioDelay else { return false }
+        audioDelaySeconds = seconds
+        return true
+    }
+    func setVideoUpscaling(_ selection: VideoUpscaling) async throws {
+        upscalingStarted?()
+        await upscalingGate?.suspend()
+        try Task.checkCancellation()
+        if let upscalingError { throw upscalingError }
+        upscalingChanges.append(selection)
+    }
     var supportsActivePictureAnalysis = false
     var onLoad: (() -> Void)?
     #if canImport(UIKit)

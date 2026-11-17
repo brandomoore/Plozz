@@ -109,6 +109,63 @@ public struct LiveTVXMLTVParser: Sendable {
         )
     }
 
+    /// No-store account responses use the same station selection as the saved reader.
+    func accountPrograms(
+        data: Data, channels: [LiveTVPrototypeChannel], range: DateInterval, trustsGuideIDs: Bool
+    ) throws -> [LiveTVPrototypeProgram] {
+        if !trustsGuideIDs {
+            let guide = try data.starts(with: [0x1f, 0x8b])
+                ? parse(gzipData: data, channels: channels, now: range.start)
+                : parseXML(data: data, channels: channels, now: range.start)
+            return guide.programs.filter { $0.start < range.end && $0.end > range.start }
+        }
+        var stations: [String: [LiveTVPrototypeProgram]] = [:]
+        var seen = Set<String>()
+        var count = 0
+        var textBytes = 0
+        let guide = try parseIndexed(
+            data: data, channels: channels, now: range.start, indexGuideStations: true
+        ) { program in
+            guard program.start < range.end, program.end > range.start,
+                  seen.insert(program.id).inserted else { return }
+            count += 1
+            textBytes += program.title.utf8.count + program.subtitle.utf8.count
+                + (program.details?.retainedTextBytes ?? 0)
+            guard count <= Self.maximumRetainedPrograms, textBytes <= Self.maximumRetainedTextBytes else {
+                throw LiveTVSourceImportError.guideTooLarge
+            }
+            stations[program.channelID, default: []].append(program)
+        }
+        let matches = LiveTVGuideMatcher(provider: provider).match(
+            channels: channels, guideChannels: guide.guideChannels, trustsGuideIDs: true
+        )
+        var served = Set<String>()
+        var result: [LiveTVPrototypeProgram] = []
+        textBytes = 0
+        for (guideID, candidates) in LiveTVGuideMatcher.stationReads(matches: matches, trustsGuideIDs: true) {
+            try checkCancellation()
+            guard let rows = stations[guideID], !rows.isEmpty else { continue }
+            for channel in candidates where served.insert(channel.id).inserted {
+                for program in rows {
+                    textBytes += program.title.utf8.count + program.subtitle.utf8.count
+                        + (program.details?.retainedTextBytes ?? 0)
+                    guard result.count < Self.maximumRetainedPrograms,
+                          textBytes <= Self.maximumRetainedTextBytes else {
+                        throw LiveTVSourceImportError.guideTooLarge
+                    }
+                    result.append(LiveTVPrototypeProgram(
+                        id: Self.stableProgramID(
+                            channelID: channel.id, guideChannelID: guideID, title: program.title,
+                            subtitle: program.subtitle, start: program.start, end: program.end
+                        ), channelID: channel.id, title: program.title, subtitle: program.subtitle,
+                        start: program.start, end: program.end, details: program.details
+                    ))
+                }
+            }
+        }
+        return result.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
+    }
+
     public func parseIndexed(
         data: Data, channels: [LiveTVPrototypeChannel], now: Date,
         overrides: [String: String] = [:], lookbackDays: Int = 1, lookaheadDays: Int = 7,
@@ -174,9 +231,11 @@ public struct LiveTVXMLTVParser: Sendable {
             // Matching depends on the requested batch. Retain potential stations,
             // then apply the unchanged matcher to that exact batch at query time.
             let ids = Set(channels.compactMap(\.guideID))
+            let foldedIDs = Set(ids.map(LiveTVGuideMatcher.foldedGuideID))
             let names = Set(channels.map { matcher.normalizedDisplayName($0.guideName ?? $0.name) })
             channelsByGuideID = [:]
             for (id, stationNames) in guideChannels where ids.contains(id)
+                || foldedIDs.contains(LiveTVGuideMatcher.foldedGuideID(id))
                 || stationNames.contains(where: { names.contains(matcher.normalizedDisplayName($0)) }) {
                 channelsByGuideID[id] = [LiveTVPrototypeChannel(
                     id: id, number: 0, name: stationNames.first ?? id, category: "Live TV",

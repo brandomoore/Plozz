@@ -165,8 +165,10 @@ extension LiveTVPrototypeImportModel {
                 $0.guidePhase = .idle
             }
             do {
+                let started = Date()
                 let availability = try await forceRefresh
                     ? context.provider.refreshLiveTVAvailability() : context.provider.liveTVAvailability()
+                let availabilityElapsed = HandoffDiagnostics.ms(started)
                 try Task.checkCancellation()
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model
@@ -198,6 +200,7 @@ extension LiveTVPrototypeImportModel {
                     break
                 }
                 let channels = try await context.provider.liveTVChannels()
+                let lineupElapsed = HandoffDiagnostics.ms(started)
                 try Task.checkCancellation()
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model
@@ -208,6 +211,13 @@ extension LiveTVPrototypeImportModel {
                 var catalog = try await withTaskCancellationHandler {
                     try await mapping.value
                 } onCancel: { mapping.cancel() }
+                let mappingElapsed = HandoffDiagnostics.ms(started)
+                try Task.checkCancellation()
+                guard acceptServerResult(
+                    source, context: context, request: request, sourceRevision: sourceRevision, into: model
+                ) else { continue }
+                await preparePublication(replacing: source.id, with: catalog, into: model)
+                let preparedElapsed = HandoffDiagnostics.ms(started)
                 try Task.checkCancellation()
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model
@@ -234,6 +244,12 @@ extension LiveTVPrototypeImportModel {
                     cachedServerCatalogs[source.id] = previous
                     throw LiveTVServerImportError.invalidCatalog
                 }
+                // Cumulative stage times: where a slow first lineup spends its wait.
+                HandoffDiagnostics.emit(
+                    "LIVE_TV event=serverLineupReady kind=\(context.kind.rawValue) channels=\(channels.count)"
+                        + " availability=\(availabilityElapsed) lineup=\(lineupElapsed)"
+                        + " mapped=\(mappingElapsed) prepared=\(preparedElapsed) published=\(HandoffDiagnostics.ms(started))")
+                saveLastSeen(from: model)
                 retainServerGuideChannels(Set(catalog.channels.map(\.id)), sourceID: source.id)
                 updateServerStatus(source.id) {
                     $0.phase = .loaded

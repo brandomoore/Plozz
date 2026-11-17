@@ -660,7 +660,7 @@ struct PlaybackDetailView: View {
                         ForEach(upNextRows) { $0.detail() }
                     }
                 }.groupedContent()
-            ] + playerTabRows + versionSelectionRows + readAheadRows + skipIntroRows + [
+            ] + playerTabRows + versionSelectionRows + videoUpscalingRows + readAheadRows + skipIntroRows + [
                 SettingsSplitRow(id: "seeking", title: "Seeking") {
                     SettingsControlRows {
                         ForEach(skipIntervalRows) { $0.detail() }
@@ -681,6 +681,7 @@ struct PlaybackDetailView: View {
         return subtitleRows
             + audioRows
             + versionSelectionRows
+            + videoUpscalingRows
             + skipIntroRows
             + skipIntervalRows
             + resumeRows
@@ -697,6 +698,13 @@ struct PlaybackDetailView: View {
         [SettingsSplitRow(id: "player-tabs", title: "Player tabs") {
             PlayerTabSettingsControls(model: playback)
         }]
+    }
+
+    var videoUpscalingRows: [SettingsSplitRow] {
+        [SettingsSplitRow(id: "video-upscaling", title: "Video upscaling") {
+            VideoUpscalingControl(selection: $playback.settings.videoUpscaling)
+                .settingsSearchAnchor("video-upscaling")
+        }.labeledControl()]
     }
 
     private var advancedRows: [SettingsSplitRow] {

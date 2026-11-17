@@ -884,7 +884,51 @@ without reopening media or replacing the player item. Previews explicitly use
 host-owned fixed output; HDR pipeline changes retain the reload path. Late native
 HLS format callbacks honor the current policy, and an outgoing display owner
 cannot clear a newer engine's criteria.
-New audio shaping and low-resolution SDR upscaling remain disabled by default.
+Audio shaping remains disabled. Video upscaling defaults to Automatic for new
+and existing profiles, with Off, Standard and Animation alternatives
+in Playback settings on TV and mobile. The preference is passed at load time
+for on-demand playback, IPTV and library channels; a change takes effect on
+the next load. Standalone background previews without a playback preference,
+separate-audio sources and interactive disc menus keep enhancement off.
+Apple's native player and external players do not use this engine setting.
+
+Seekable, reloadable URL-backed on-demand playback also exposes an in-player override.
+It uses `reloadAtCurrentPosition(applying:)`, preserving the session rather than
+re-resolving the provider or changing profile defaults. A brief playback reload
+is expected; custom-reader and live sources do not expose this switch.
+Audio Sync connects `setAudioDelay(_:)` on seekable software/loopback routes,
+with 10 ms steps and a +/-10 second limit for on-demand playback. Live TV keeps
+its existing +/-2 second limit; the wider range's read-ahead and restart preroll
+do not apply to the live/DVR pipeline. Buffered
+interleaved PCM on the direct-rendering route can replace only queued audio,
+preserving video and the master clock. `setAudioDelayLive(_:)` reports refusal
+without reloading; when live application is unavailable, adjustments commit the
+latest preview once after 600 ms without input, never during a hold. Rapid
+presses coalesce whether playback is playing or paused. Unsupported audio formats and native
+loopback retain playhead-preserving re-anchoring. No video or audio format is
+changed to obtain support. Remote bypass and non-rewindable live streams hide it.
+Large offsets do not imply full-range live PCM coverage; unavailable samples
+still require the deferred seek/reload. Advanced on-demand audio reads farther
+ahead without moving the video/subtitle clock or expanding the PCM replay cap.
+
+Automatic selects Animation for anime identities or animation genres/tags,
+otherwise Standard. Episodes can use their exact same-account series metadata;
+the ordinary player uses a two-second cooperative timeout for that lookup and logs a
+Standard fallback if unavailable. Classification uses metadata, not visual
+analysis, and cannot reliably distinguish drawn animation from CGI. Explicit
+Standard and Animation override classification. Raw IPTV without item metadata
+uses Standard in Automatic; library channels use the playing item's metadata.
+Bitrate is not used as a quality threshold for this selection.
+
+Standard uses VideoToolbox super resolution where supported, followed by
+MetalFX spatial scaling where available, for 8-bit SDR whose coded width is
+below 1920 and height below 1080. Animation requests Anime4K for drawn content
+up to 1920x1080 inclusive, including 10-bit SDR. Neither mode enhances 4K.
+The engine retains responsibility for OS/GPU support, larger-display checks,
+HDR/Dolby Vision and wireless AirPlay exclusions, source-route eligibility,
+and frame-budget degradation or disablement. OS 26 is required; MetalFX on TV
+also requires tvOS 27.1. Enabling the preference does not guarantee enhancement
+on every source or prove physical-device picture quality or performance.
 The engine uses upstream's single privacy manifest, including local-media file
 timestamps; FFmpeg's applicable frameworks now carry their own manifests.
 The update retains overlapped VOD/HDR preparation and adds the upstream

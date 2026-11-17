@@ -83,6 +83,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var sources: LiveTVSourceManagementModel?
     @State private var sourceApplicationFailed = false
     @State private var reloadRequest = 0
+    @State private var hasBeenActive = false
     @State private var pendingServerRefresh = false
     @State private var sheet: PrototypeSheet?
     @State private var isPortraitCanvas = false
@@ -159,6 +160,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @Environment(\.retainedFullscreenWorkspace) private var workspace
     #endif
     private let isActive: Bool
+    /// Reads the lineup while the destination is mounted but not yet shown.
+    private let preloadsCatalog: Bool
     private let profileID: String
     private let allowsPlayback: Bool
     private let playbackUnavailableReason: LocalizedStringResource?
@@ -190,6 +193,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     public init(
         isActive: Bool = true,
+        preloadsCatalog: Bool = false,
         usesNativeFullscreen: Bool = false,
         preferencesStore: (any LiveTVPreferencesStoring)? = nil,
         viewSettingsStore: (any LiveTVViewSettingsStoring)? = nil,
@@ -206,6 +210,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         playbackUnavailableReason: LocalizedStringResource? = nil,
         restoreDestination: @escaping @MainActor () async -> Bool = { false },
         catalogCache: LiveTVIndexedCache? = nil,
+        lastSeenStore: (any LiveTVLastSeenStoring)? = nil,
         sourceLoader: (any LiveTVSourceLoading)? = nil,
         importModel: LiveTVPrototypeImportModel? = nil,
         profileID: String = ProfileStore.defaultProfileID,
@@ -225,6 +230,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         @ViewBuilder player: @escaping (LiveTVPrototypePlayback) -> PlayerContent
     ) {
         self.isActive = isActive
+        self.preloadsCatalog = preloadsCatalog
         self.profileID = profileID
         _portableIdentityHold = State(initialValue: LiveTVPlaybackIdentityHold(profileID: profileID))
         self.allowsPlayback = allowsPlayback
@@ -274,7 +280,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         _sources = State(initialValue: sources)
         let imports = importModel ?? LiveTVPrototypeImportModel(
             configuration: .empty, loader: sourceLoader ?? LiveTVSourceLoader(),
-            serverProviderResolver: currentResolver, cache: catalogCache
+            serverProviderResolver: currentResolver, cache: catalogCache, lastSeen: lastSeenStore
         )
         _imports = State(initialValue: imports)
         self.onExpandedChange = onExpandedChange
@@ -1005,7 +1011,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         }
         .onChange(of: model.channels.count) { _, _ in recordSourceDiagnostics(.guideState) }
         .onChange(of: sheet != nil) { _, _ in recordSourceDiagnostics(.sheetChanged) }
-        .task(id: isActive && isProfileAuthorized() ? reloadRequest : -1) {
+        // Opening Live TV while a hidden preload is under way joins that load; it does not
+        // cancel and repeat it.
+        .task(id: catalogActivation.taskID(reloadRequest: reloadRequest)) {
             await reloadCatalog()
         }
         .task(id: preview.pendingRequest) {
@@ -1223,7 +1231,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         .onChange(of: isActive, initial: true) { wasActive, active in
             recordSourceDiagnostics(.guideState)
             if !active {
-                if wasActive { homeModel?.cancelRequest() }
+                if wasActive {
+                    homeModel?.cancelRequest()
+                    // Where browsing was left is what the next open shows first.
+                    if !model.channels.isEmpty { imports.saveLastSeen(from: model) }
+                }
                 enrollment.invalidate()
                 loadedRequest = nil
                 pendingServerConnection = false
@@ -1238,7 +1250,15 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     playback.stop()
                 }
             }
+            HandoffDiagnostics.emit("LIVE_TV event=destinationActive active=\(active) channels=\(model.channels.count)")
             if active {
+                hasBeenActive = true
+                // The view may have been created long before it is shown; start from now.
+                model.synchronizeClock()
+                if guideOffset == 0, timelineOffset == 0 {
+                    let current = Date(timeIntervalSince1970: floor(model.now.timeIntervalSince1970 / 1_800) * 1_800)
+                    if timeAnchor != current { timeAnchor = current }
+                }
                 model.reloadPreferences()
                 applyViewSettings()
             }
@@ -1589,10 +1609,21 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         tune(request.route.channelID)
     }
 
+    /// Before its first visit a preloading destination reads the lineup once; after that only
+    /// the visible destination loads, as before.
+    private var catalogActivation: LiveTVCatalogActivation {
+        LiveTVCatalogActivation(
+            isActive: isActive, hasBeenActive: hasBeenActive,
+            preloadsCatalog: preloadsCatalog, isAuthorized: isProfileAuthorized()
+        )
+    }
+
+    private var loadsCatalog: Bool { catalogActivation.loadsCatalog }
+
     private func reloadCatalog() async {
         recordSourceDiagnostics(.guideReload)
         defer { recordSourceDiagnostics(.guideReloaded) }
-        guard isActive, isProfileAuthorized(), loadedRequest != reloadRequest else { return }
+        guard loadsCatalog, isProfileAuthorized(), loadedRequest != reloadRequest else { return }
         installCatalogHooks()
         let request = reloadRequest
         if let sources {
@@ -1614,6 +1645,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         if !Task.isCancelled, request == reloadRequest {
             loadedRequest = request
             pendingServerRefresh = false
+            imports.saveLastSeen(from: model)
         }
     }
 

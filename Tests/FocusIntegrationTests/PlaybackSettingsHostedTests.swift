@@ -18,6 +18,51 @@ private final class PlayerSupportFocusController<Content: View>: UIHostingContro
 
 @MainActor
 final class PlaybackSettingsHostedTests: XCTestCase {
+    func testUpscalingRowShowsAutomaticAndReflectsProfileChoiceWithNativeFocus() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let suite = "VideoUpscalingTV-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let store = PlaybackSettingsStore(defaults: defaults)
+        let playback = PlaybackSettingsModel(store: store)
+        let page = PlaybackDetailView(
+            playback: playback,
+            subtitleBehavior: SubtitleBehaviorModel(store: SubtitleBehaviorStore(defaults: defaults)),
+            subtitleStyle: SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults)),
+            subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
+            audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView:
+            SettingsFormLayout(title: Text("Playback"), rows: page.videoUpscalingRows)
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .frame(width: SettingsFormMetrics.pageWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        let initial = try visibleText(in: window, attachment: "Video-upscaling-default-TV")
+        XCTAssertTrue(initial.contains("Video upscaling"), initial)
+        XCTAssertTrue(initial.contains("Automatic"), initial)
+        XCTAssertEqual(profileFocusFrames(in: window).count, 1)
+        XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+        playback.settings.videoUpscaling = .off
+        try await Task.sleep(for: .milliseconds(250))
+        let disabled = try visibleText(in: window, attachment: "Video-upscaling-off-TV")
+        XCTAssertTrue(disabled.contains("Off"), disabled)
+        XCTAssertEqual(store.load().videoUpscaling, .off)
+    }
+
     func testVersionSelectionIsOneLabeledMenuForEverySavedMode() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

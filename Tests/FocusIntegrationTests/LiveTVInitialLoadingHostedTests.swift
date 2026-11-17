@@ -23,6 +23,48 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         try await exerciseLoading(pinned: true, changesSafeArea: true)
     }
 
+    func testRetainedDestinationPreloadsOnlyWhenAllowedAndRetainsOnReentry() async throws {
+        let scene = try await foregroundScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        for preloads in [false, true] {
+            let state = RetainedLiveTVMountState()
+            let window = UIWindow(windowScene: scene)
+            window.rootViewController = UIHostingController(rootView: RetainedLiveTVMountFixture(
+                state: state, preloads: preloads
+            ))
+            window.makeKeyAndVisible()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            if preloads {
+                try await waitForMounts(1, state: state)
+            } else {
+                // Wait past the real adapter's preload delay to prove it stays unmounted.
+                try await Task.sleep(for: RetainedLiveTVDestination<Color>.preloadDelay + .milliseconds(100))
+                XCTAssertEqual(state.mounts, 0)
+            }
+            state.isActive = true
+            try await waitForMounts(1, state: state)
+            state.isActive = false
+            await Task.yield()
+            window.layoutIfNeeded()
+            state.isActive = true
+            await Task.yield()
+            window.layoutIfNeeded()
+            XCTAssertEqual(state.mounts, 1, "Re-entry must retain the mounted destination")
+        }
+    }
+
+    private func waitForMounts(_ expected: Int, state: RetainedLiveTVMountState) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while state.mounts != expected, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(state.mounts, expected)
+    }
+
     private func exerciseLoading(pinned: Bool, changesSafeArea: Bool = false) async throws {
         let profileID = ProfileStore.defaultProfileID
         let definitions = InitialLibraryDefinitions()
@@ -323,4 +365,21 @@ private struct InitialLibraryProvider: LibraryChannelCatalogProviding {
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+@MainActor @Observable
+private final class RetainedLiveTVMountState {
+    var isActive = false
+    var mounts = 0
+}
+
+private struct RetainedLiveTVMountFixture: View {
+    let state: RetainedLiveTVMountState
+    let preloads: Bool
+
+    var body: some View {
+        RetainedLiveTVDestination(isActive: state.isActive, preloads: preloads) {
+            Color.black.onAppear { state.mounts += 1 }
+        }
+    }
 }

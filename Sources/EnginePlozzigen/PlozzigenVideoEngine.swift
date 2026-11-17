@@ -5,6 +5,7 @@ import Combine
 import CoreModels
 import CoreNetworking
 import FeaturePlayback
+import MetadataKit
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -389,12 +390,62 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public var displayName: String { "AetherEngine v\(AEEngine.version)" } // l10n:content — engine brand and runtime version
 
     public var capabilities: PlayerEngineCapabilities {
-        engine.videoRoute == .remoteBypass
+        var result: PlayerEngineCapabilities = engine.videoRoute == .remoteBypass
             ? [.playbackSpeed, .videoZoom]
             : [.playbackSpeed, .dualSubtitleDecode, .videoZoom]
+        if Self.supportsAudioDelay(
+            route: engine.videoRoute, hasAudio: !engine.audioTracks.isEmpty,
+            canReanchor: engine.canSeek,
+            canReload: engine.sessionReloadRefusal == nil
+        ) { result.insert(.audioDelay) }
+        return result
+    }
+
+    nonisolated static func supportsAudioDelay(
+        route: VideoRoute, hasAudio: Bool, canReanchor: Bool, canReload: Bool
+    ) -> Bool {
+        hasAudio && canReanchor && (route == .software || (route == .loopback && canReload))
     }
 
     private var allowsFELConversionOverride = false
+    private var allowsVideoUpscalingOverride = false
+
+    public var canChangeVideoUpscaling: Bool {
+        allowsVideoUpscalingOverride && status == .ready && engine.isSessionReady && engine.canSeek
+            && !engine.isLive && !engine.isSeeking && !outputLoadInProgress
+            && outputPolicyReload == nil && engine.sessionReloadRefusal == nil
+    }
+
+    nonisolated static func supportsVideoUpscalingChanges(for request: PlaybackRequest) -> Bool {
+        !request.suppressOrdinaryWatchReporting && request.externalAudioURL == nil
+            && request.discPlayback != .openMenu
+            && request.playbackSource?.requiresNetworkFileResolver != true
+    }
+
+    public func setVideoUpscaling(_ selection: VideoUpscaling) async throws {
+        guard canChangeVideoUpscaling else {
+            throw AppError.unknown("This playback route cannot change upscaling.")
+        }
+        let generation = outputLoadGeneration
+        outputLoadInProgress = true
+        defer {
+            if outputLoadGeneration == generation {
+                outputLoadInProgress = false
+                reconcileLiveDisplayPolicy()
+            }
+        }
+        do {
+            try await reloadSession(outputPolicy: liveOutputPolicy, videoUpscaling: selection)
+            try Task.checkCancellation()
+            guard outputLoadGeneration == generation else { throw CancellationError() }
+        } catch {
+            if outputLoadGeneration == generation, !Task.isCancelled,
+               case .failed(let failure) = status {
+                onFailure?(failure)
+            }
+            throw error
+        }
+    }
 
     public var canChangeDolbyVisionFELConversion: Bool {
         allowsFELConversionOverride && AppReleaseChannel.current.isBeta
@@ -442,6 +493,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private let readAheadPreference: @MainActor () -> PlaybackReadAhead
     private let liveBufferPreference: @MainActor () -> LivePlaybackBuffer
     private let losslessAudioPreference: @MainActor () -> Bool
+    private let videoUpscalingPreference: @MainActor () -> VideoUpscaling
     private var liveOutputPolicy = LiveChannelOutputPolicy()
     private var outputPolicyReload: Task<Void, Never>?
     private var outputLoadGeneration = UUID()
@@ -492,7 +544,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)? = nil,
         readAheadPreference: @escaping @MainActor () -> PlaybackReadAhead = { .default },
         liveBufferPreference: @escaping @MainActor () -> LivePlaybackBuffer = { .default },
-        losslessAudioPreference: @escaping @MainActor () -> Bool = { LosslessAudioSettingsStore().load() }
+        losslessAudioPreference: @escaping @MainActor () -> Bool = { LosslessAudioSettingsStore().load() },
+        videoUpscalingPreference: @escaping @MainActor () -> VideoUpscaling = { .off }
     ) throws {
         self.engine = try AEEngine()
         // Plozz owns its audio session, and on an E-AC-3/Atmos bitstream-passthrough route the HDMI sink
@@ -505,6 +558,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         self.readAheadPreference = readAheadPreference
         self.liveBufferPreference = liveBufferPreference
         self.losslessAudioPreference = losslessAudioPreference
+        self.videoUpscalingPreference = videoUpscalingPreference
         #if canImport(UIKit)
         let surface = AetherPlayerView()
         engine.bind(view: surface)
@@ -582,6 +636,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         guard let outputGeneration = await beginOutputLoad() else { return }
         allowsFELConversionOverride = Self.supportsFELConversion(for: request)
+        allowsVideoUpscalingOverride = Self.supportsVideoUpscalingChanges(for: request)
         #if canImport(DiscNavigation) && canImport(UIKit)
         let outgoingDisc = discSession
         outgoingDisc?.stop()
@@ -1031,6 +1086,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func beginOutputLoad() async -> UUID? {
+        allowsVideoUpscalingOverride = false
         outputLoadGeneration = UUID()
         let generation = outputLoadGeneration
         outputLoadInProgress = true
@@ -1120,6 +1176,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             losslessAudioEnabled: losslessAudioPreference(),
             dolbyVisionFELConversion: request.dolbyVisionFELConversion
                 && Self.supportsFELConversion(for: request),
+            videoUpscaling: request.discPlayback == .openMenu || request.externalAudioURL != nil
+                ? .off : ContentClassifier.videoUpscaling(
+                    request.videoUpscaling ?? videoUpscalingPreference(), for: request.item
+                ),
             outputPolicy: outputPolicy,
             readAhead: isLocalFile || request.suppressOrdinaryWatchReporting
                 ? .default : readAheadPreference()
@@ -1130,6 +1190,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     nonisolated static func onDemandLoadOptions(
         losslessAudioEnabled: Bool = LosslessAudioSettingsStore.defaultEnabled,
         dolbyVisionFELConversion: Bool = false,
+        videoUpscaling: VideoUpscaling = .default,
         outputPolicy: LiveChannelOutputPolicy = .init(),
         readAhead: PlaybackReadAhead = .default
     ) -> LoadOptions {
@@ -1143,6 +1204,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             && AEEngine.OptionalComponent.dolbyVisionFelCurves.isBuiltIn
         options.foldsDolbyVisionFEL = convertsFEL
         options.dolbyVisionHandling = convertsFEL ? .profile7KnownLayers : .profile7MELOnly
+        applyVideoUpscaling(videoUpscaling, to: &options)
         // Aether uses approximately four-second segments and clamps the maximum
         // to 2,700, retaining its free-space budget and producer backpressure.
         switch readAhead {
@@ -1167,7 +1229,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         liveStartupBuffer = buffer
         return Self.liveLoadOptions(
             httpHeaders: httpHeaders, url: url, sourceFormat: sourceFormat,
-            buffer: buffer, losslessAudioEnabled: losslessAudioPreference()
+            buffer: buffer, losslessAudioEnabled: losslessAudioPreference(),
+            videoUpscaling: videoUpscalingPreference()
         )
     }
 
@@ -1175,7 +1238,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         httpHeaders: [String: String], url: URL? = nil,
         sourceFormat: PlozzigenLiveSourceProbe.Format? = nil,
         buffer: LivePlaybackBuffer = .default,
-        losslessAudioEnabled: Bool = LosslessAudioSettingsStore.defaultEnabled
+        losslessAudioEnabled: Bool = LosslessAudioSettingsStore.defaultEnabled,
+        videoUpscaling: VideoUpscaling = .default
     ) -> LoadOptions {
         let suffix = url?.pathExtension.lowercased() ?? ""
         let format = sourceFormat ?? (["ts", "m2ts", "mts"].contains(suffix)
@@ -1197,7 +1261,13 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         )
         options.foldsDolbyVisionFEL = false
         options.dolbyVisionHandling = .profile7MELOnly
+        applyVideoUpscaling(videoUpscaling, to: &options)
         return options
+    }
+
+    private nonisolated static func applyVideoUpscaling(_ selection: VideoUpscaling, to options: inout LoadOptions) {
+        options.upscalesLowResolutionVideo = selection != .off
+        options.upscaleScaler = selection == .animation ? .lineArt : .automatic
     }
 
     nonisolated static func applyLiveOutputPolicy(_ policy: LiveChannelOutputPolicy, to options: inout LoadOptions) {
@@ -1427,7 +1497,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
     }
 
-    private func reloadSession(outputPolicy: LiveChannelOutputPolicy) async throws {
+    private func reloadSession(
+        outputPolicy: LiveChannelOutputPolicy, videoUpscaling: VideoUpscaling? = nil
+    ) async throws {
         try Task.checkCancellation()
         let probeGeneration = probePublicationGate.currentGeneration
         guard probePublicationGate.accepts(probeGeneration) else { return }
@@ -1443,6 +1515,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             let resumesPlaying = !intendsPause
             let correction = try await engine.reloadAtCurrentPosition { options in
                 Self.applyLiveOutputPolicy(outputPolicy, to: &options)
+                if let videoUpscaling { Self.applyVideoUpscaling(videoUpscaling, to: &options) }
                 options.autoplay = resumesPlaying
             }
             // Autoplay alone can be session-owned and return without rebuilding.
@@ -1515,6 +1588,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     private func stopEngine(resetDisplayCriteria: Bool) {
         allowsFELConversionOverride = false
+        allowsVideoUpscalingOverride = false
         #if canImport(DiscNavigation) && canImport(UIKit)
         discSession?.stop()
         discMenuPresentation.isActive = false
@@ -1578,7 +1652,16 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public var maximumPlaybackSpeed: Double { Double(engine.maxSupportedRate) }
 
-    public func setAudioDelay(_ seconds: TimeInterval) {}
+    public func setAudioDelay(_ seconds: TimeInterval) {
+        guard capabilities.contains(.audioDelay) else { return }
+        engine.setAudioDelay(seconds)
+    }
+    public var audioDelaySeconds: TimeInterval { engine.audioDelaySeconds }
+    public func setAudioDelayLive(_ seconds: TimeInterval) -> Bool {
+        guard capabilities.contains(.audioDelay), engine.canAdjustAudioDelayLive,
+              !engine.isSeeking, !outputLoadInProgress, outputPolicyReload == nil else { return false }
+        return engine.setAudioDelayLive(seconds)
+    }
     public func setSubtitleDelay(_ seconds: TimeInterval) {}
     public func setDialogEnhanceEnabled(_ enabled: Bool) {}
 
@@ -1803,6 +1886,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public var previewFrameGeneration: UInt64? { engine.softwareVideoFrameGeneration }
     #endif
     public var needsBackgroundReload: Bool { hasReachedSessionReadiness && !engine.isSessionReady }
+    public var isSessionReloading: Bool { needsBackgroundReload }
 
     private var backgroundAudioEnabled = false
 
@@ -2183,6 +2267,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             .sink { [weak self] _ in
                 guard let self, self.engine.isSessionReady else { return }
                 self.hasReachedSessionReadiness = true
+                self.syncTracks()
                 self.applyNativeSubtitleSelection()
                 self.applyAVPlayerSubtitleStyle(to: self.engine.currentAVPlayer)
                 self.reconcileLiveDisplayPolicy()

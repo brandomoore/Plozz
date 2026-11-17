@@ -9,6 +9,7 @@ import CoreNetworking
 import FeatureSyncSetup
 import FeatureSyncCloud
 import FeatureWatchlistCore
+import FeatureLiveTVCore
 import UIKit
 
 // MARK: - PlozziOSAppModel + CloudKit config auto-sync
@@ -968,13 +969,34 @@ extension PlozziOSAppModel {
         }
     }
 
-    func eraseCloudSyncData() {
+    @discardableResult
+    func eraseCloudSyncData() -> Task<Void, Never> {
         let profileID = profiles.activeProfileID
-        Task { @MainActor in
+        return Task { @MainActor in
             await CloudSyncRecoveryFeedback.run(.erase, status: cloudSyncStatus, presenter: transientStatusPresenter) {
                 await self.performCloudSyncErasure(profileID: profileID)
             }
         }
+    }
+
+    private func eraseCloudServerData(
+        authorized: @escaping @Sendable () async -> Bool
+    ) async -> CloudSyncRecoveryResult {
+        #if DEBUG
+        // CloudConfigSyncService deliberately refuses real CloudKit erasure under
+        // XCTest. Keep that guard intact and replace only its remote boundary.
+        if Self.isRunningUnitTests, let cloudServerErasureForTesting {
+            return await cloudServerErasureForTesting()
+        }
+        #endif
+        guard let config = cloudSync else { return .unavailable }
+        return await config.eraseAllServerData(
+            trackerStores: TrackerTokenSyncBridge.erasureStores(profileNamespaces: profiles.profiles.map {
+                $0.settingsNamespace(isDefault: profiles.isDefault($0))
+            }),
+            authorized: authorized,
+            stopSync: { @MainActor in self.setSyncSetupEnabled(false) }
+        )
     }
 
     private func performCloudSyncErasure(profileID: String) async -> CloudSyncRecoveryResult {
@@ -983,14 +1005,8 @@ extension PlozziOSAppModel {
             return self.profiles.activeProfileID == profileID
                 && !self.profiles.activeProfile.isKids && !self.managementRequiresParentalPIN
         }
-        guard await authorized(), let config = cloudSync else { return .unavailable }
-        let result = await config.eraseAllServerData(
-            trackerStores: TrackerTokenSyncBridge.erasureStores(profileNamespaces: profiles.profiles.map {
-                $0.settingsNamespace(isDefault: profiles.isDefault($0))
-            }),
-            authorized: authorized,
-            stopSync: { @MainActor in self.setSyncSetupEnabled(false) }
-        )
+        guard await authorized() else { return .unavailable }
+        let result = await eraseCloudServerData(authorized: authorized)
         guard result == .completed else { return result }
         guard await authorized() else { return .interrupted }
         do {
@@ -999,6 +1015,9 @@ extension PlozziOSAppModel {
             try await removeAllPortableCredentials()
             guard await authorized() else { return .interrupted }
             try LiveTVSourceStorage.eraseAllSources()
+            try LiveTVLastSeenStore.erase(
+                profileIDs: profiles.profiles.map(\.id), secureStore: LiveTVSourceStorage.catalogSecrets()
+            )
             for id in profiles.profiles.map(\.id) {
                 guard await authorized() else { return .interrupted }
                 try await mediaAliasLedger.removeProfile(id)

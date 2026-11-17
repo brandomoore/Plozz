@@ -98,6 +98,19 @@ public struct XMLTVGuideCacheMetadata: Codable, Equatable, Sendable {
             && now.timeIntervalSince(checkedAt) < Self.maximumAge
     }
 
+    /// Whether the server gave this response a lifetime of its own.
+    public var statesLifetime: Bool {
+        expiresHeader != nil || !directiveNames.isDisjoint(with: ["max-age", "no-cache"])
+    }
+
+    /// Freshness under a chosen update interval in place of the built-in ceiling. The
+    /// interval may outlast the default lifetime, but never one the server stated.
+    public func isFresh(at now: Date, updateInterval: TimeInterval) -> Bool {
+        guard permitsPersistence, now >= checkedAt,
+              now.timeIntervalSince(checkedAt) < updateInterval else { return false }
+        return !statesLifetime || now < expiresAt
+    }
+
     /// Redirected resources own their validators; even another path on the same
     /// host must not receive them or validate the original index.
     public func applying(to request: URLRequest) -> URLRequest {

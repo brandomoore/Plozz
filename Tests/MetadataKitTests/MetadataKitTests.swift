@@ -46,6 +46,40 @@ final class MetadataKitTests: XCTestCase {
         XCTAssertEqual(ContentClassifier.classify(item(kind: .episode)), .tvShow)
     }
 
+    func testAutomaticUpscalingUsesAnimationMetadataAndHonorsExplicitChoices() {
+        var tagged = item()
+        tagged.tags = [" Animation "]
+        for animated in [
+            item(genres: ["Animation"]), item(genres: ["Anime"]),
+            item(providerIDs: ["AniList": "21"]), item(providerIDs: ["SeriesMal": "1"]), tagged
+        ] {
+            XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: animated), .animation)
+            XCTAssertEqual(ContentClassifier.videoUpscaling(.standard, for: animated), .standard)
+            XCTAssertEqual(ContentClassifier.videoUpscaling(.off, for: animated), .off)
+        }
+        let unknown = item(title: "Anime in the title is not metadata")
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: unknown), .standard)
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: item(genres: ["Reanimation"])), .standard)
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.animation, for: unknown), .animation)
+    }
+
+    func testAutomaticUpscalingUsesOnlyTheEpisodesSourceScopedParent() {
+        var episode = item(kind: .episode)
+        episode.seriesID = "series"
+        episode.sourceAccountID = "account"
+        var series = MediaItem(id: "series", title: "Series", kind: .series, genres: ["Animation"])
+        series.sourceAccountID = "account"
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: episode, series: series), .animation)
+        series.sourceAccountID = "other-account"
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: episode, series: series), .standard)
+        series.sourceAccountID = "account"
+        episode.seriesID = "other-series"
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: episode, series: series), .standard)
+        episode.seriesID = "series"
+        series.kind = .season
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: episode, series: series), .standard)
+    }
+
     func testOriginalAudioLanguageHeuristic() {
         // Anime → Japanese original; everything else is unknown (nil) so the
         // prefer-original policy defers to the container default.

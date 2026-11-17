@@ -193,6 +193,8 @@ final class SubtitleTrackController {
     /// menu behaves identically across engines.
     func loadTrackOptions() {
         guard let host else { return }
+        // A session rebuild temporarily empties tracks; those aren't removed selections.
+        guard !host.trackEngine.isSessionReloading else { return }
         host.trackControls.primarySubtitleIsBurnedIn = host.trackRequest?.burnedInSubtitleTrackID != nil
         registerProviderSidecars()
         let engine = host.trackEngine

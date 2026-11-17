@@ -313,6 +313,14 @@ struct PlozziOSPlayerControlsOverlay: View {
                 PlozziOSStreamingQualitySheet(viewModel: viewModel)
             }
         }
+        .alert("Couldn't change upscaling", isPresented: Binding(
+            get: { viewModel.controls.upscaling.error != nil },
+            set: { if !$0 { viewModel.controls.upscaling.error = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.controls.upscaling.error = nil }
+        } message: {
+            if let error = viewModel.controls.upscaling.error { Text(error) }
+        }
         .ignoresSafeArea()
     }
 
@@ -918,6 +926,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         actions.setDialogueEnhancement = { viewModel.setDialogEnhanceEnabled($0); onInteraction() }
         actions.setSpeed = { viewModel.setPlaybackSpeed($0); onInteraction() }
         actions.setDolbyVisionFELConversion = { viewModel.setDolbyVisionFELConversion($0); onInteraction() }
+        actions.setVideoUpscaling = { viewModel.setVideoUpscaling($0); onInteraction() }
         return actions
     }
 
@@ -1315,27 +1324,40 @@ private struct PlozziOSPlaybackSyncControls: View {
     let viewModel: PlayerViewModel
     var includesAudio = true
     var includesSubtitles = true
+    private var audioAdjustment: PlayerAudioSyncEditor { viewModel.controls.audioSyncAdjustment }
+
+    private var audioDelay: TimeInterval { audioAdjustment.value ?? viewModel.controls.audioDelaySeconds }
 
     var body: some View {
         Group {
             if includesAudio, viewModel.controls.engineCapabilities.contains(.audioDelay) {
                 Section("Audio Delay") {
-                    Slider(
+                    Stepper(
                         value: Binding(
-                            get: { viewModel.controls.audioDelaySeconds },
-                            set: { viewModel.setAudioDelay($0) }
+                            get: { audioDelay },
+                            set: changeAudioDelay
                         ),
-                        in: -2...2,
-                        step: 0.05
-                    )
+                        in: PlayerControlsModel.audioDelayRange,
+                        step: PlayerAudioSyncAdjustment.step,
+                        onEditingChanged: { editing in
+                            if editing { audioAdjustment.beginEditing() }
+                            else { audioAdjustment.endEditing(commit: viewModel.setAudioDelay) }
+                        }
+                    ) {
+                        Text(audioDelay,
+                             format: .number.precision(.fractionLength(2)))
+                            + Text(" s")
+                    }
                     .accessibilityLabel("Audio Delay")
                     .accessibilityIdentifier("player-audio-delay")
-                    Text(
-                        viewModel.controls.audioDelaySeconds,
-                        format: .number.precision(.fractionLength(2))
-                    )
-                    .plozzForeground(.secondary)
+                    Text(PlayerControlsModel.audioSyncHint(for: audioDelay)).plozzForeground(.secondary)
+                    Button("Reset") {
+                        audioAdjustment.cancel()
+                        changeAudioDelay(0)
+                    }
+                        .disabled(audioDelay == 0)
                 }
+                .onDisappear { audioAdjustment.cancel() }
             }
 
             if includesSubtitles, viewModel.controls.subtitleDelayAdjustable {
@@ -1358,6 +1380,16 @@ private struct PlozziOSPlaybackSyncControls: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            audioAdjustment.cancel()
+        }
+        .onChange(of: viewModel.controls.infoCard.sourceItemID) { _, _ in audioAdjustment.cancel() }
+        .onChange(of: viewModel.controls.infoCard.sourceAccountID) { _, _ in audioAdjustment.cancel() }
+    }
+
+    private func changeAudioDelay(_ value: TimeInterval) {
+        audioAdjustment.change(to: value, current: viewModel.controls.audioDelaySeconds,
+                               applyLive: viewModel.setAudioDelayLive, commit: viewModel.setAudioDelay)
     }
 }
 

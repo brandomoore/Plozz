@@ -33,6 +33,66 @@ for the initial compatibility and track-selection limits.
 
 ## Responsibility
 
+Automatic video upscaling uses the shared metadata classifier before engine
+load. An episode without animation hints may query its exact series through
+the current provider, with a two-second cooperative timeout and source-account validation.
+Unavailable or unrelated metadata is logged and selects Standard; cancellation
+does not continue loading. Explicit Standard/Animation/Off skip this lookup.
+Native playback is unchanged. The engine still owns decoded-format, resolution,
+display and route eligibility; metadata never enables HDR or 4K enhancement.
+
+The player also offers a session-only upscaling override on seekable, reloadable,
+URL-backed AetherEngine video. TV uses Playback > Upscaling; mobile uses
+Video > Upscaling. Switching reuses the engine's session-preserving reload,
+not a fresh provider load, retaining the playhead, pause intent, track choices,
+subtitle timing and audio offset. This is not a seamless A/B switch.
+Automatic uses the same source-scoped metadata classification as initial load.
+Only one change runs at a time; stop/new-load cancellation fences stale results,
+and failures leave the selected control unchanged with visible feedback.
+Custom-reader shares, interactive disc menus, separate audio and Live TV do
+not offer this switch. The saved profile default is never changed.
+Transient empty track lists during session reloads do not clear secondary
+subtitle selection or styling; readiness triggers reconciliation with the
+replacement tracks.
+
+Audio Sync is available on AetherEngine routes that can retime audio and
+re-anchor playback. TV's Audio header opens the shared single-focus settings
+control; mobile exposes Audio Sync in the Audio menu. Both use 10 ms steps
+and Reset. On-demand playback allows ten seconds in each direction, matching
+Kodi's default range. Live TV retains its two-second limit because the wider
+read-ahead and restart preroll apply only to on-demand sources.
+Positive means audio later,
+negative earlier. TV Left/Right holds repeat and accelerate to 50 ms steps.
+Buffered direct-rendering PCM changes the audio queue without seeking or moving
+the video clock. When live correction is unavailable, the shared audio editor
+previews immediately and waits 600 ms after input settles before committing.
+Rapid taps, successive swipes and holds accumulate one pending value; no commit is
+scheduled during an active swipe or hold, including at the bounds. This is independent of play/
+pause state. Reset supersedes pending work; cancellation, dismissal, backgrounding
+and a new playback session discard unapplied previews. Native
+loopback and other unsupported formats still seek/reload on that final commit.
+Audio may briefly skip/repeat during a correction; output latency still applies.
+Large offsets can require a reload and temporary silence when the required
+samples are not buffered; the wider range does not imply live coverage of every value.
+No format or route is downgraded to enable the feature. Offsets reset with a new stream. Native AVPlayer, remote bypass,
+audio-only sources and live streams without an engine rewind window do not
+advertise this control. Live controls use the same engine capability and offset;
+their editor, TV stepper, mobile stepper and final setter share the narrower range.
+
+TV Subtitle Sync uses the same single-focus settings stepper and Reset. Its
+existing 50 ms steps and +/-10 second range are unchanged; held Left/Right repeats
+without losing focus at the limits. Subtitle offsets apply immediately to the
+overlay timeline, with no audio-style reload debounce.
+Both sync controls opt into distance-based remote swipes: a short swipe keeps
+the fine step, and continued travel adds a step per 20 points without requiring
+another gesture. Longer swipes move farther, with no momentum after lift.
+Taps, held-arrow timing, value limits and compact styling remain unchanged.
+Both sync panels give the compact stepper a full-width native focus section so
+Back, the control and Reset remain vertically reachable. On submenu entry,
+Back and Reset become eligible only after the stepper reports actual native
+focus; writing the panel's row FocusState does not focus a separately hosted
+stepper. This entry gate resets on reopening, not on ordinary Up/Down movement.
+
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and
 offline playback. Prefer SDH falls back to regular subtitles in the chosen
