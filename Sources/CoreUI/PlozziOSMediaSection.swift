@@ -141,6 +141,7 @@ public struct PlozziOSPosterGridLayout {
 
 public struct PlozziOSMediaSection<Content: View>: View {
     @Environment(\.homeRowEditAction) private var editAction
+    @Environment(\.themePalette) private var palette
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozzMetrics) private var metrics
@@ -180,6 +181,11 @@ public struct PlozziOSMediaSection<Content: View>: View {
                     else { title }
                 }
                     .font(PlozziOSMediaRailLayout.headingFont)
+                    // Resolve from the active theme, not the hosting view's
+                    // inherited primary colour: the offscreen Mac snapshot hosted
+                    // this section with a light primary while the rest of the page
+                    // was dark, leaving the heading nearly invisible.
+                    .foregroundStyle(palette.primaryText)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)

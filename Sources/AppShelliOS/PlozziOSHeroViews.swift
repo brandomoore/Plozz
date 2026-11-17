@@ -80,19 +80,19 @@ enum PlozziOSHeroMetrics {
         // has to reach far enough down that the metadata sits in the lower part
         // of the screen, while still leaving the next row peeking. See
         // `HeroStageMetrics`.
-        if style == .compactPortrait && surfaceRole == .home {
+        // Home and detail use the same stage height so opening a title does not
+        // animate the hero to a different size. The detail page used to be
+        // 420/760pt against Home's 641/680pt, which read as the hero resizing
+        // under the tap.
+        if style == .compactPortrait {
             return HeroStageMetrics.portraitHomeHeight(
                 windowHeight: containerHeight,
                 fallback: 610,
                 accessibilityExtra: accessibilityExtra
             )
         }
-        let base: CGFloat = style == .compactPortrait
-            ? (surfaceRole == .detail ? 420 : 610)
-            : (surfaceRole == .detail ? 760 : 680)
-        // Grow the layout instead of offsetting it so the sections below move with the hero.
-        let detailExtra = surfaceRole == .detail ? detailContentTopInset : 0
-        return base + accessibilityExtra + detailExtra
+        let base: CGFloat = 680
+        return base + accessibilityExtra
     }
 
 }

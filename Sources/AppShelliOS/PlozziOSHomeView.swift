@@ -174,6 +174,12 @@ struct PlozziOSHomeView: View {
     /// curation instead of folding into the old one.
     @State private var heroCuratedConfiguration: HeroConfigurationKey?
     @State private var heroCompletedLoadKey: HeroCurationLoadKey?
+    /// Whether the first live curation has replaced the launch snapshot. Until it
+    /// has, `heroItems` is last session's lineup: it is useful for the first frame,
+    /// but one refresh fold must replace it rather than aging its titles through
+    /// `HeroLiveMerge.retentionGrace`, which kept dead or unplayable cached slides
+    /// in the carousel for several refreshes after relaunch.
+    @State private var heroHasCompletedLiveCuration = false
     /// Whether the hero stage has ever painted real content this session. Once it
     /// has, the band must stay reserved: `heroActive` drives BOTH the conditional
     /// hero in `PlozziOSHomeScrollView` and its `ignoresSafeArea(edges: .top)`, so
@@ -1401,6 +1407,7 @@ struct PlozziOSHomeView: View {
         heroPinnedItemIDs = []
         heroRetainedMisses = [:]
         heroCompletedLoadKey = nil
+        heroHasCompletedLiveCuration = false
         // A different profile/viewer starts from scratch: its hero stage must be
         // allowed to resolve to `.hidden` until it paints content of its own.
         featuredItems = []
@@ -1640,7 +1647,9 @@ struct PlozziOSHomeView: View {
             featuredDiscoveryEnabled: !settings.discoverySources.isEmpty,
             collectionState: result.collectionState
         )
-        let foldsIntoLoadedSet = heroCuratedConfiguration == configuration
+        let isLaunchCuration = !heroHasCompletedLiveCuration
+        let foldsIntoLoadedSet = !isLaunchCuration
+            && heroCuratedConfiguration == configuration
             && heroCuratedDisabledLibraryKeys == disabledLibraryKeys
         let updatedPool = result.candidatePool.updatingItems(enriched)
         let sourceEligibility = heroSourceEligibility(
@@ -1658,17 +1667,35 @@ struct PlozziOSHomeView: View {
                 verifiedWatchItems: enriched
             )
             : []
-        let merge = HeroLiveMerge.merge(
-            showing: showing,
-            fresh: curated,
-            limit: settings.maxItems,
-            pinnedItemIDs: heroPinnedItemIDs,
-            misses: foldsIntoLoadedSet ? heroRetainedMisses : [:],
-            freshIsAuthoritative: freshIsAuthoritative,
-            preservesPinnedItems: true,
-            preservesRequestStatus: heroStatusContext == appModel.plozziOSSeasonRequestContextID,
-            sourceEligibility: sourceEligibility
-        )
+        let merge: HeroLiveMerge.Outcome
+        if isLaunchCuration {
+            // The launch snapshot is provisional. Replace it with the first live
+            // curation instead of letting every cached title age through
+            // `retentionGrace`, which kept last session's lineup (including dead or
+            // unplayable slides) for several refreshes after relaunch.
+            merge = HeroLiveMerge.replaceLaunchSnapshot(
+                showing: heroItems,
+                fresh: sourceEligibility.filtering(curated),
+                limit: settings.maxItems,
+                pinnedItemIDs: heroPinnedItemIDs,
+                freshIsAuthoritative: freshIsAuthoritative
+            )
+            if !merge.items.isEmpty || freshIsAuthoritative {
+                heroHasCompletedLiveCuration = true
+            }
+        } else {
+            merge = HeroLiveMerge.merge(
+                showing: showing,
+                fresh: curated,
+                limit: settings.maxItems,
+                pinnedItemIDs: heroPinnedItemIDs,
+                misses: foldsIntoLoadedSet ? heroRetainedMisses : [:],
+                freshIsAuthoritative: freshIsAuthoritative,
+                preservesPinnedItems: true,
+                preservesRequestStatus: heroStatusContext == appModel.plozziOSSeasonRequestContextID,
+                sourceEligibility: sourceEligibility
+            )
+        }
         heroEligibility = sourceEligibility
         heroCandidatePool = sourceEligibility.filtering(updatedPool)
         heroCuratedConfiguration = configuration
