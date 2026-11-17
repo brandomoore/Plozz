@@ -1068,8 +1068,10 @@ style together, keeping symbols proportional to their labels as text size change
 They do not intercept touches. Live TV supports skips only inside an available
 rewind window, not speed boosting.
 
-Pinch inward to fit the detected active picture clear of the display cutout,
-without keeping encoded black bars. Engines without analysis use Normal. Landscape video
+On iPhone, pinch inward for Normal: in landscape it fills the available width
+up to the display cutout, preserving proportions and cropping the top/bottom
+when necessary, even without black-bar detection. iPad retains detected-picture
+fitting, with Normal as the fallback for engines without analysis. Landscape video
 uses the full display height behind the home indicator instead of reserving a
 bottom strip; portrait keeps the full safe-area inset. Controls and ordinary
 captions retain their safe-area placement. Pinch outward for edge-to-edge Crop. This
@@ -1462,7 +1464,10 @@ which can retain duplicate highlights. Mobile adds Zoom Mode to its existing
 native playback menu. Live TV offers the same zoom controls without playback-speed
 changes.
 
-Normal fits the entire encoded frame; it is not every player's default.
+On a fullscreen landscape iPhone, Normal fills the cutout-safe width, preserving
+proportions even when this crops actual picture at the top and bottom. It does
+not wait for black-bar detection. Portrait, iPad, TV, inline and external surfaces
+retain whole-frame fitting; Normal is not every player's default.
 Crop enlarges proportionally, Stretch fills both axes without
 preserving proportions, and Custom scales relative to Normal. For these manual
 modes, `VideoPresentationView` transforms and clips only the stable video surface,
@@ -1478,7 +1483,7 @@ artwork boundary through that same zoom/stretch geometry before moving a region.
 The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
 It applies to movies, episodes, extras, trailers and Live TV; each platform starts
 with Auto-crop black bars. Unsupported engines fall back to Normal without changing
-the saved choice. Unidentified disc-menu timelines retain uncropped Normal framing.
+the saved choice. Unidentified disc-menu timelines retain Normal framing.
 An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
 per profile and movie/series using the existing title preference store. Only the
 mode and percentage are saved, never detected rectangles. Defaults and temporary
@@ -1498,7 +1503,8 @@ The detected picture maximizes the cutout-safe video viewport, preserving its as
 ratio without deliberately trimming picture content. In landscape, the home-indicator
 strip does not reduce video height. Encoded black borders do not consume usable width.
 Pinching outward keeps the explicit edge-to-edge Crop mode; pinching inward returns
-to safe active-picture fitting. Controls and subtitles keep their existing placement.
+to Normal on iPhone and safe active-picture fitting on iPad. Auto-crop remains a
+separate detector-driven mode. Controls and subtitles keep their existing placement.
 On TV and inline surfaces without safe-area fitting, the picture uses the full viewport.
 Aspect-ratio differences can still leave bars.
 Before the first confirmed measurement, Auto Crop uses Normal. Once confirmed,

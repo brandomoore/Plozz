@@ -106,32 +106,71 @@ final class PlayerVideoZoomTests: XCTestCase {
         XCTAssertEqual(edgePicture.maxX, bounds.maxX, accuracy: 0.001)
     }
 
-    func testPinchStopsAtSafePictureThenScreenEdgesAndReturnsToSafePicture() throws {
+    func testPhonePinchStopsAtNormalSafeWidthThenScreenEdgesWithoutNeedingDetection() throws {
         let model = PlayerVideoZoomModel()
         model.supportsActivePicture = true
         let bounds = CGRect(x: 0, y: 0, width: 874, height: 402)
         let safe = bounds.insetBy(dx: 59, dy: 0)
         let active = CGRect(x: 0, y: 0.125, width: 1, height: 0.75)
-        model.setPinchZoom(fillsScreen: false)
-        XCTAssertEqual(model.settings.mode, .picture)
+        model.setPinchZoom(fillsScreen: false, platform: .phone)
+        XCTAssertEqual(model.settings.mode, .fit)
         let safeVideo = try XCTUnwrap(model.settings.videoRect(
-            in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: active
+            in: bounds, aspectRatio: 16 / 9, fitBounds: safe, fillsWidth: true
         ))
         let safePicture = VideoActivePictureGeometry.map(active, into: safeVideo)
         XCTAssertEqual(safePicture.width, safe.width, accuracy: 0.001)
-        model.setPinchZoom(fillsScreen: true)
+        model.setPinchZoom(fillsScreen: true, platform: .phone)
         XCTAssertEqual(model.settings.mode, .fill)
         let fullVideo = try XCTUnwrap(model.settings.videoRect(
             in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: active
         ))
         XCTAssertEqual(fullVideo.width, bounds.width, accuracy: 0.001)
-        model.setPinchZoom(fillsScreen: false)
+        model.setPinchZoom(fillsScreen: false, platform: .phone)
         assertRect(try XCTUnwrap(model.settings.videoRect(
-            in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: active
+            in: bounds, aspectRatio: 16 / 9, fitBounds: safe, fillsWidth: true
         )), equals: safeVideo)
+        model.setPinchZoom(fillsScreen: false, platform: .tablet)
+        XCTAssertEqual(model.settings.mode, .picture)
         model.supportsActivePicture = false
         model.setPinchZoom(fillsScreen: false)
         XCTAssertEqual(model.settings.mode, .fit)
+    }
+
+    func testNormalWidthFillingCropsHeightProportionallyButLeavesOtherModesAndPortraitAlone() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 874, height: 402)
+        for safe in [bounds, bounds.insetBy(dx: 59, dy: 0),
+                     CGRect(x: 59, y: 0, width: 815, height: 402)] {
+            for aspect in [4.0 / 3, 16.0 / 9, 2.4] {
+                let video = try XCTUnwrap(PlayerVideoZoom().videoRect(
+                    in: bounds, aspectRatio: aspect, fitBounds: safe, fillsWidth: true
+                ))
+                XCTAssertEqual(video.minX, safe.minX, accuracy: 0.001)
+                XCTAssertEqual(video.maxX, safe.maxX, accuracy: 0.001)
+                XCTAssertEqual(video.height, safe.width / aspect, accuracy: 0.001)
+                XCTAssertEqual(video.midY, bounds.midY, accuracy: 0.001)
+                if aspect < safe.width / safe.height {
+                    XCTAssertLessThan(video.minY, bounds.minY)
+                    XCTAssertGreaterThan(video.maxY, bounds.maxY)
+                }
+                let custom = try XCTUnwrap(PlayerVideoZoom(mode: .custom, customPercent: 117).videoRect(
+                    in: bounds, aspectRatio: aspect, fitBounds: safe, fillsWidth: true
+                ))
+                XCTAssertEqual(custom.width, video.width * 1.17, accuracy: 0.001)
+                XCTAssertEqual(custom.height, video.height * 1.17, accuracy: 0.001)
+                for mode in [PlayerVideoZoom.Mode.picture, .fill, .stretch] {
+                    let zoom = PlayerVideoZoom(mode: mode)
+                    XCTAssertEqual(
+                        zoom.videoRect(in: bounds, aspectRatio: aspect, fitBounds: safe,
+                                       activePicture: CGRect(x: 0, y: 0, width: 1, height: 1), fillsWidth: true),
+                        zoom.videoRect(in: bounds, aspectRatio: aspect, fitBounds: safe,
+                                       activePicture: CGRect(x: 0, y: 0, width: 1, height: 1))
+                    )
+                }
+            }
+        }
+        let portrait = CGRect(x: 0, y: 0, width: 402, height: 874)
+        XCTAssertEqual(PlayerVideoZoom().videoRect(in: portrait, aspectRatio: 16 / 9, fillsWidth: true),
+                       PlayerVideoZoom().videoRect(in: portrait, aspectRatio: 16 / 9))
     }
 
     func testUnknownAndUnsafePictureGeometryPreserveNormalSafeAreaFitting() {

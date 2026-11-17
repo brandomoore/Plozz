@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class VideoSafeAreaPresentationTests: XCTestCase {
-    func testAutoCropUsesAllSafeWidthAndPinchReturnsFromScreenEdges() async throws {
+    func testAutoCropUsesAllSafeWidthAndRetainsItsSeparatePictureFitting() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
@@ -20,7 +20,7 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
         engine.supportsActivePictureAnalysis = true
         let zoom = PlayerVideoZoomModel()
         zoom.supportsActivePicture = true
-        zoom.setPinchZoom(fillsScreen: false)
+        zoom.settings.mode = .picture
         let viewport = VideoSubtitleViewport()
         let host = UIHostingController(rootView: VideoSafeAreaFixture(engine: engine, zoom: zoom, viewport: viewport))
         host.safeAreaRegions = []
@@ -44,7 +44,7 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
             window.frame = CGRect(origin: .zero, size: size)
             host.view.frame = window.bounds
             video.safeAreaInsetsDidChange()
-            zoom.setPinchZoom(fillsScreen: false)
+            zoom.settings.mode = .picture
             try await waitUntil {
                 window.layoutIfNeeded()
                 guard video.bounds.size == size, let safe = video.fitBounds,
@@ -76,7 +76,7 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
                 return rect.insetBy(dx: -0.001, dy: -0.001).contains(video.bounds)
                     && abs(min(rect.width / size.width, rect.height / size.height) - 1) < 0.001
             }
-            zoom.setPinchZoom(fillsScreen: false)
+            zoom.settings.mode = .picture
             try await waitUntil {
                 window.layoutIfNeeded()
                 return video.activePictureRect.map { self.rect($0, matches: picture) } ?? false
@@ -146,8 +146,8 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
         ))
         let initialPicture = engine.output.convert(source, to: video)
         assertRect(initialPicture, equals: expected)
-        video.update(zoom: PlayerVideoZoom(mode: .fill), fitsInsideSafeArea: true)
-        video.update(zoom: PlayerVideoZoom(), fitsInsideSafeArea: true)
+        video.update(zoom: PlayerVideoZoom(mode: .fill), fitsInsideSafeArea: false)
+        video.update(zoom: PlayerVideoZoom(), fitsInsideSafeArea: false)
         assertRect(engine.output.convert(source, to: video), equals: initialPicture)
         XCTAssertTrue(engine.output.layer === layer)
         XCTAssertEqual(engine.transportCalls, initialCalls)
@@ -193,6 +193,7 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
             (CGSize(width: 1366, height: 1024), UIEdgeInsets(top: 24, left: 0, bottom: 20, right: 0))
         ]
         for (size, insets) in cases {
+            host.traitOverrides.userInterfaceIdiom = size.width >= 1000 ? .pad : .phone
             window.testInsets = insets
             window.frame = CGRect(origin: .zero, size: size)
             host.view.frame = window.bounds
@@ -209,14 +210,19 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
                 PlayerVideoZoom(mode: .custom, customPercent: 100),
                 PlayerVideoZoom(mode: .custom, customPercent: 150)
             ] {
-                zoom.settings = setting
+                if setting.mode == .fit {
+                    zoom.setPinchZoom(fillsScreen: false, platform: size.width >= 1000 ? .tablet : .phone)
+                } else {
+                    zoom.settings = setting
+                }
                 var safe = video.convert(window.bounds.inset(by: insets), from: window)
                     .intersection(video.bounds.inset(by: video.safeAreaInsets))
                 if size.width > size.height {
                     safe = CGRect(x: safe.minX, y: 0, width: safe.width, height: size.height)
                 }
                 let expected = try XCTUnwrap(setting.videoRect(
-                    in: video.bounds, aspectRatio: engine.videoAspectRatio, fitBounds: safe
+                    in: video.bounds, aspectRatio: engine.videoAspectRatio, fitBounds: safe,
+                    fillsWidth: size.width < 1000
                 ))
                 try await waitUntil {
                     window.layoutIfNeeded()
@@ -254,12 +260,17 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
                 XCTAssertEqual(engine.currentTime, 10)
                 XCTAssertEqual(engine.output.bounds.size, video.bounds.size)
                 if setting.mode == .fit {
-                    XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(expected))
+                    if size.width > size.height && size.width < 1000 {
+                        XCTAssertEqual(expected.minX, safe.minX, accuracy: 0.001)
+                        XCTAssertEqual(expected.maxX, safe.maxX, accuracy: 0.001)
+                        XCTAssertEqual(expected.height, safe.width * 9 / 16, accuracy: 0.001)
+                        XCTAssertLessThan(expected.minY, video.bounds.minY)
+                        XCTAssertGreaterThan(expected.maxY, video.bounds.maxY)
+                    } else {
+                        XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(expected))
+                    }
                     if size.width > size.height {
                         XCTAssertEqual(expected.midY, video.bounds.midY, accuracy: 0.001)
-                        if safe.width >= video.bounds.height * 16 / 9 {
-                            XCTAssertEqual(expected.height, video.bounds.height, accuracy: 0.001)
-                        }
                     }
                 }
                 if setting.mode == .fill {

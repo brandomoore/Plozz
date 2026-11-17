@@ -1,6 +1,7 @@
 #if canImport(UIKit)
 import CoreGraphics
 import CoreModels
+import CoreUI
 import Foundation
 import Observation
 
@@ -8,9 +9,10 @@ public typealias PlayerVideoZoom = VideoZoomPreference
 
 extension VideoZoomPreference {
     /// `fitBounds` constrains Normal, the detected active picture, and Custom's base.
+    /// Fullscreen landscape phones can fill its width instead of fitting its height.
     /// Both rectangles use the presentation view's coordinate space.
     func scaleFactors(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
-                      activePicture: CGRect? = nil) -> CGVector {
+                      activePicture: CGRect? = nil, fillsWidth: Bool = false) -> CGVector {
         if let transform = pictureTransform(in: bounds, fitBounds: fitBounds,
                                             aspectRatio: aspectRatio, activePicture: activePicture) {
             return CGVector(dx: transform.scale, dy: transform.scale)
@@ -19,12 +21,14 @@ extension VideoZoomPreference {
         case .fit, .custom, .picture:
             let viewport = fittingBounds(in: bounds, fitBounds: fitBounds)
             let custom = mode == .custom ? CGFloat(customPercent) / 100 : 1
-            guard viewport != bounds else { return CGVector(dx: custom, dy: custom) }
+            let widthOnly = fillsWidth && bounds.width > bounds.height
+            guard viewport != bounds || widthOnly else { return CGVector(dx: custom, dy: custom) }
             let fitted = SubtitleOverlayGeometry.aspectFitRect(
                 in: bounds, aspectRatio: aspectRatio.map { CGFloat($0) }
             ) ?? bounds
             guard fitted.width > 0, fitted.height > 0 else { return CGVector(dx: 1, dy: 1) }
-            let normal = min(viewport.width / fitted.width, viewport.height / fitted.height)
+            let normal = widthOnly ? viewport.width / fitted.width
+                : min(viewport.width / fitted.width, viewport.height / fitted.height)
             let scale = normal * custom
             return CGVector(dx: scale, dy: scale)
         case .fill, .stretch:
@@ -40,20 +44,22 @@ extension VideoZoomPreference {
     }
 
     func surfaceFrame(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
-                      activePicture: CGRect? = nil) -> CGRect {
+                      activePicture: CGRect? = nil, fillsWidth: Bool = false) -> CGRect {
         scaled(bounds, around: bounds, to: surfaceCenter(in: bounds, fitBounds: fitBounds,
                                                         aspectRatio: aspectRatio, activePicture: activePicture),
-               by: scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds, activePicture: activePicture))
+               by: scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds,
+                                activePicture: activePicture, fillsWidth: fillsWidth))
     }
 
     func videoRect(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
-                   activePicture: CGRect? = nil) -> CGRect? {
+                   activePicture: CGRect? = nil, fillsWidth: Bool = false) -> CGRect? {
         guard let fitted = SubtitleOverlayGeometry.aspectFitRect(
             in: bounds, aspectRatio: aspectRatio.map { CGFloat($0) }
         ) else { return nil }
         return scaled(fitted, around: bounds, to: surfaceCenter(in: bounds, fitBounds: fitBounds,
                                                               aspectRatio: aspectRatio, activePicture: activePicture),
-                      by: scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds, activePicture: activePicture))
+                      by: scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds,
+                                       activePicture: activePicture, fillsWidth: fillsWidth))
     }
 
     func surfaceCenter(in bounds: CGRect, fitBounds: CGRect? = nil,
@@ -137,8 +143,9 @@ public final class PlayerVideoZoomModel {
         settings = PlayerVideoZoom(mode: .custom, customPercent: percent)
     }
 
-    public func setPinchZoom(fillsScreen: Bool) {
-        settings.mode = fillsScreen ? .fill : (supportsActivePicture ? .picture : .fit)
+    public func setPinchZoom(fillsScreen: Bool, platform: VideoZoomDefaults.Platform? = nil) {
+        let platform = platform ?? .current
+        settings.mode = fillsScreen ? .fill : (platform != .phone && supportsActivePicture ? .picture : .fit)
     }
 }
 #endif
