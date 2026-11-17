@@ -251,21 +251,43 @@ struct SubtitleSyncScreen: View {
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
 
     var body: some View {
+        PlaybackSyncScreen(
+            value: model.subtitleDelaySeconds,
+            hint: PlayerControls.subtitleSyncHint(model.subtitleDelaySeconds),
+            range: -10...10, onChange: actions.setSubtitleDelay, focus: $focus
+        )
+    }
+}
+
+struct PlaybackSyncScreen: View {
+    let value: TimeInterval
+    let hint: LocalizedStringResource
+    let range: ClosedRange<TimeInterval>
+    var showsReset = false
+    let onChange: (TimeInterval) -> Void
+    @FocusState.Binding var focus: PlayerControls.FocusSlot?
+
+    var body: some View {
         VStack(spacing: 20) {
             delayStepper(
-                value: model.subtitleDelaySeconds,
+                value: value,
                 minusSlot: 0,
                 plusSlot: 1,
                 step: 0.05,
-                onAdjust: { actions.setSubtitleDelay(model.subtitleDelaySeconds + $0) }
+                onAdjust: { onChange(min(range.upperBound, max(range.lowerBound, value + $0))) }
             )
-            Text(PlayerControls.subtitleSyncHint(model.subtitleDelaySeconds))
+            Text(hint)
                 .font(.callout)
                 .foregroundStyle(Color.primary.opacity(0.6))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
-                .animation(.easeInOut(duration: 0.15), value: model.subtitleDelaySeconds)
+                .animation(.easeInOut(duration: 0.15), value: value)
+            if showsReset {
+                Button("Reset") { onChange(0) }
+                    .focused($focus, equals: .row(2))
+                    .disabled(value == 0)
+            }
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 28)
@@ -289,6 +311,8 @@ struct SubtitleSyncScreen: View {
                     .frame(width: 56, height: 56)
             }
             .buttonStyle(StepperButtonStyle())
+            .accessibilityLabel("Earlier")
+            .disabled(value <= range.lowerBound)
             .focused($focus, equals: .row(minusSlot))
 
             Text(PlayerControls.delayLabel(value))
@@ -305,6 +329,8 @@ struct SubtitleSyncScreen: View {
                     .frame(width: 56, height: 56)
             }
             .buttonStyle(StepperButtonStyle())
+            .accessibilityLabel("Later")
+            .disabled(value >= range.upperBound)
             .focused($focus, equals: .row(plusSlot))
         }
         .padding(.vertical, 4)

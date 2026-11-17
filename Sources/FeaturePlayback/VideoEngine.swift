@@ -80,6 +80,8 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
 @MainActor
 public protocol VideoEngine: AnyObject {
     var canChangeDolbyVisionFELConversion: Bool { get }
+    var canChangeVideoUpscaling: Bool { get }
+    func setVideoUpscaling(_ selection: VideoUpscaling) async throws
     #if canImport(UIKit)
     var discMenu: DiscMenuPlaybackState? { get }
     func discVideos() async throws -> [DiscVideo]
@@ -107,6 +109,8 @@ public protocol VideoEngine: AnyObject {
     /// iOS opt-in for audio to continue without PiP or an external display.
     func setBackgroundAudioEnabled(_ enabled: Bool)
     var needsBackgroundReload: Bool { get }
+    /// An established session's tracks and capabilities are temporarily unavailable.
+    var isSessionReloading: Bool { get }
     var maximumPlaybackSpeed: Double { get }
     var streamingFailure: StreamingPlaybackFailure? { get }
     var streamingOutputDynamicRange: SourceDynamicRange? { get }
@@ -180,6 +184,7 @@ public protocol VideoEngine: AnyObject {
     /// negative = audio earlier). No-op when the engine doesn't advertise
     /// `.audioDelay`.
     func setAudioDelay(_ seconds: TimeInterval)
+    var audioDelaySeconds: TimeInterval { get }
 
     /// Shifts subtitles relative to video by `seconds` (positive = subs later,
     /// negative = subs earlier). No-op when the engine doesn't advertise
@@ -392,6 +397,10 @@ public protocol VideoEngine: AnyObject {
 
 public extension VideoEngine {
     var canChangeDolbyVisionFELConversion: Bool { false }
+    var canChangeVideoUpscaling: Bool { false }
+    func setVideoUpscaling(_ selection: VideoUpscaling) async throws {
+        throw AppError.unknown("This playback route cannot change upscaling.")
+    }
     #if canImport(UIKit)
     var discMenu: DiscMenuPlaybackState? { nil }
     func discVideos() async throws -> [DiscVideo] { throw CocoaError(.featureUnsupported) }
@@ -415,6 +424,7 @@ public extension VideoEngine {
         set {}
     }
     var needsBackgroundReload: Bool { true }
+    var isSessionReloading: Bool { false }
     var maximumPlaybackSpeed: Double { 4 }
     var nowPlayingPlayer: AVPlayer? { nil }
     #if os(iOS) || os(tvOS)
@@ -495,6 +505,7 @@ public extension VideoEngine {
     var capabilities: PlayerEngineCapabilities { [] }
     func setPlaybackSpeed(_ rate: Double) {}
     func setAudioDelay(_ seconds: TimeInterval) {}
+    var audioDelaySeconds: TimeInterval { 0 }
     func setSubtitleDelay(_ seconds: TimeInterval) {}
     func updateSubtitleStyle(_ style: SubtitleStyle) {}
     func setDialogEnhanceEnabled(_ enabled: Bool) {}

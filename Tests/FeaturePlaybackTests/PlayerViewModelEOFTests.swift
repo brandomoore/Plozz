@@ -11,6 +11,109 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    func testPlayerUpscalingChangesResolveAutomaticWithoutReloadingThePlayerModel() async {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let item = MediaItem(id: "animation", title: "Animation fixture", kind: .movie, genres: ["Animation"])
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!),
+                kind: kind
+            )
+            let engine = SpyVideoEngine()
+            engine.canChangeVideoUpscaling = true
+            engine.capabilities.insert(.audioDelay)
+            let model = PlayerViewModel(
+                provider: provider, itemID: item.id,
+                playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: .standard),
+                engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+            )
+            await model.load()
+            engine.currentTime = 137
+            engine.pause()
+            model.setSubtitleDelay(0.25)
+            model.setAudioDelay(-0.15)
+            for selection in [VideoUpscaling.off, .animation, .automatic] {
+                model.setVideoUpscaling(selection)
+                await model.videoUpscalingTask?.value
+                XCTAssertEqual(model.controls.upscaling.selection, selection)
+                XCTAssertNil(model.controls.upscaling.error)
+            }
+            XCTAssertEqual(engine.upscalingChanges, [.off, .animation, .animation])
+            XCTAssertEqual(engine.loadCount, 1)
+            XCTAssertEqual(engine.currentTime, 137)
+            XCTAssertTrue(engine.isPaused)
+            XCTAssertEqual(model.controls.subtitleDelaySeconds, 0.25)
+            XCTAssertEqual(model.controls.audioDelaySeconds, -0.15)
+            XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, .standard)
+            await model.stop()
+        }
+    }
+
+    func testUpscalingFailureAndStoppedReloadDoNotPublishAnUnappliedSelection() async {
+        let item = MediaItem(id: "upscale", title: "Fixture", kind: .movie)
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!)
+        )
+        let engine = SpyVideoEngine()
+        engine.canChangeVideoUpscaling = true
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(useCommunityMarkers: false),
+            engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+        )
+        await model.load()
+        engine.upscalingError = .serverUnreachable
+        model.setVideoUpscaling(.off)
+        await model.videoUpscalingTask?.value
+        XCTAssertEqual(model.controls.upscaling.selection, .automatic)
+        XCTAssertNotNil(model.controls.upscaling.error)
+        engine.upscalingError = nil
+        let gate = PreCommitYieldGate()
+        engine.upscalingGate = gate
+        let entered = expectation(description: "Upscaling correction entered")
+        engine.upscalingStarted = { entered.fulfill() }
+        model.setVideoUpscaling(.animation)
+        let pending = model.videoUpscalingTask
+        await fulfillment(of: [entered], timeout: 3)
+        model.setVideoUpscaling(.off)
+        XCTAssertEqual(gate.entryCount, 1, "Only one correction may rebuild the session at a time.")
+        await model.stop()
+        gate.releaseNext()
+        await pending?.value
+        XCTAssertEqual(model.controls.upscaling.selection, .automatic)
+        XCTAssertNil(model.controls.upscaling.error)
+        XCTAssertFalse(model.controls.upscaling.isChanging)
+    }
+
+    func testAudioSyncHonorsEngineSupportRangeAndReset() async {
+        let (model, engine, _) = makeViewModel()
+        await model.load()
+        model.setAudioDelay(1)
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        engine.capabilities.insert(.audioDelay)
+        for (requested, expected) in [(0.05, 0.05), (-0.05, -0.05), (3.0, 2.0), (-3.0, -2.0), (0.0, 0.0)] {
+            model.setAudioDelay(requested)
+            XCTAssertEqual(engine.audioDelaySeconds, expected)
+            XCTAssertEqual(model.controls.audioDelaySeconds, expected)
+        }
+        engine.onTracksChanged?()
+        engine.isSessionReloading = true
+        engine.capabilities = []
+        engine.onTracksChanged?()
+        engine.onProgress?()
+        XCTAssertTrue(model.controls.engineCapabilities.contains(.audioDelay))
+        model.setAudioDelay(1)
+        XCTAssertEqual(engine.audioDelaySeconds, 0, "A visible control still checks current engine support.")
+        engine.isSessionReloading = false
+        engine.onTracksChanged?()
+        XCTAssertFalse(model.controls.engineCapabilities.contains(.audioDelay))
+        engine.capabilities.insert(.audioDelay)
+        model.setAudioDelay(.nan)
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        await model.stop()
+        model.setAudioDelay(1)
+        XCTAssertEqual(engine.audioDelaySeconds, 0)
+    }
+
     func testProfileUpscalingChoiceIsAppliedBeforeEngineLoadAcrossProviders() async throws {
         for kind in [ProviderKind.jellyfin, .plex] {
             for mode in VideoUpscaling.allCases {
@@ -3218,6 +3321,22 @@ private struct LocalPlaybackFixture: OfflinePlaybackResolving {
 
 @MainActor
 private final class SpyVideoEngine: VideoEngine {
+    var isSessionReloading = false
+    var capabilities: PlayerEngineCapabilities = []
+    var canChangeVideoUpscaling = false
+    var upscalingChanges: [VideoUpscaling] = []
+    var upscalingError: AppError?
+    var upscalingGate: PreCommitYieldGate?
+    var upscalingStarted: (() -> Void)?
+    var audioDelaySeconds: TimeInterval = 0
+    func setAudioDelay(_ seconds: TimeInterval) { audioDelaySeconds = seconds }
+    func setVideoUpscaling(_ selection: VideoUpscaling) async throws {
+        upscalingStarted?()
+        await upscalingGate?.suspend()
+        try Task.checkCancellation()
+        if let upscalingError { throw upscalingError }
+        upscalingChanges.append(selection)
+    }
     var supportsActivePictureAnalysis = false
     var onLoad: (() -> Void)?
     #if canImport(UIKit)

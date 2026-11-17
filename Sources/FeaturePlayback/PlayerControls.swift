@@ -16,6 +16,7 @@ struct PlayerOptionsActions {
     var selectSecondarySubtitle: (Int) -> Void = { _ in }
     var setPlaybackSpeed: (Double) -> Void = { _ in }
     var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
+    var setVideoUpscaling: (VideoUpscaling) -> Void = { _ in }
     var setAudioDelay: (TimeInterval) -> Void = { _ in }
     var setSubtitleDelay: (TimeInterval) -> Void = { _ in }
     var setDialogEnhance: (Bool) -> Void = { _ in }
@@ -188,7 +189,7 @@ struct PlayerControls: View {
     }
 
     enum AudioScreen: Equatable {
-        case options, dialogue
+        case options, dialogue, sync
     }
 
     /// Sub-screens of the Subtitles panel. `tracks` is the default list; the
@@ -219,7 +220,7 @@ struct PlayerControls: View {
     }
 
     enum PlaybackScreen: Equatable {
-        case options, zoom
+        case options, zoom, upscaling
 
         var parent: Self { .options }
     }
@@ -1734,7 +1735,7 @@ extension PlayerControlsModel {
         if versions.isAvailable {
             result.append(.version)
         }
-        if !engineCapabilities.intersection([.playbackSpeed, .videoZoom]).isEmpty {
+        if upscaling.isAvailable || !engineCapabilities.intersection([.playbackSpeed, .videoZoom]).isEmpty {
             result.append(.playback)
         }
         if hasAudioControls {

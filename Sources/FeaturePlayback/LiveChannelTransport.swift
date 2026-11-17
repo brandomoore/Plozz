@@ -566,6 +566,7 @@ struct LiveChannelOverlay: View {
     /// The channel's tracks as the VOD menus list them (`TrackMenuBuilder`: the
     /// same labels, and an Off row for subtitles), with the live style.
     private func syncTrackOptions(_ source: TrackOptionsSource) {
+        guard !tracks.engine.isSessionReloading else { return }
         trackOptions.audioOptions = TrackMenuBuilder.audioOptions(
             tracks: source.audio, selectedID: source.selectedAudio, preferred: [], locale: locale
         )
@@ -575,6 +576,7 @@ struct LiveChannelOverlay: View {
         trackOptions.subtitleStyle = source.style
         trackOptions.subtitlesRenderHDR = source.isHDR
         trackOptions.engineCapabilities = source.capabilities
+        trackOptions.audioDelaySeconds = tracks.engine.audioDelaySeconds
         trackOptions.secondarySubtitleImagePrimaryFormat = TrackMenuBuilder.imagePrimaryFormat(
             selectedPrimaryID: source.selectedSubtitle, engineTracks: source.subtitles, providerTracks: []
         )
@@ -598,6 +600,13 @@ struct LiveChannelOverlay: View {
             )
         }
         actions.setSubtitleStyle = { tracks.setSubtitleStyle($0) }
+        actions.setAudioDelay = { value in
+            guard tracks.matchesSource(channelID: channelID, input: input),
+                  tracks.engine.capabilities.contains(.audioDelay), value.isFinite else { return }
+            let range = PlayerControlsModel.audioDelayRange
+            tracks.engine.setAudioDelay(min(range.upperBound, max(range.lowerBound, value)))
+            trackOptions.audioDelaySeconds = tracks.engine.audioDelaySeconds
+        }
         actions.togglePlayPause = onPlayPause
         return actions
     }
@@ -634,10 +643,11 @@ struct LiveChannelOverlay: View {
     // MARK: Badges
 
     private var showsAudio: Bool {
+        if trackOptions.engineCapabilities.contains(.audioDelay) { return true }
         #if os(tvOS)
-        Self.showsAudio(trackCount: tracks.audioTracks.count, systemAudio: trackOptions.systemAudio)
+        return Self.showsAudio(trackCount: tracks.audioTracks.count, systemAudio: trackOptions.systemAudio)
         #else
-        !tracks.audioTracks.isEmpty
+        return !tracks.audioTracks.isEmpty
         #endif
     }
 

@@ -411,6 +411,7 @@ public struct PlayerView: View {
                 selectSecondarySubtitle: { viewModel.selectSecondarySubtitleOption(id: $0) },
                 setPlaybackSpeed: { viewModel.setPlaybackSpeed($0) },
                 setDolbyVisionFELConversion: { viewModel.setDolbyVisionFELConversion($0) },
+                setVideoUpscaling: { viewModel.setVideoUpscaling($0) },
                 setAudioDelay: { viewModel.setAudioDelay($0) },
                 setSubtitleDelay: { viewModel.setSubtitleDelay($0) },
                 setDialogEnhance: { viewModel.setDialogEnhanceEnabled($0) },

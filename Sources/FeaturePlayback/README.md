@@ -41,6 +41,29 @@ does not continue loading. Explicit Standard/Animation/Off skip this lookup.
 Native playback is unchanged. The engine still owns decoded-format, resolution,
 display and route eligibility; metadata never enables HDR or 4K enhancement.
 
+The player also offers a session-only upscaling override on seekable, reloadable,
+URL-backed AetherEngine video. TV uses Playback > Upscaling; mobile uses
+Video > Upscaling. Switching reuses the engine's session-preserving reload,
+not a fresh provider load, retaining the playhead, pause intent, track choices,
+subtitle timing and audio offset. This is not a seamless A/B switch.
+Automatic uses the same source-scoped metadata classification as initial load.
+Only one change runs at a time; stop/new-load cancellation fences stale results,
+and failures leave the selected control unchanged with visible feedback.
+Custom-reader shares, interactive disc menus, separate audio and Live TV do
+not offer this switch. The saved profile default is never changed.
+Transient empty track lists during session reloads do not clear secondary
+subtitle selection or styling; readiness triggers reconciliation with the
+replacement tracks.
+
+Audio Sync is available on AetherEngine routes that can retime audio and
+re-anchor playback. TV's Audio header opens the shared subtitle-style timing
+control; mobile exposes Audio Sync in the Audio menu. Both use 50 ms steps,
+a two-second limit in each direction and Reset. Positive means audio later,
+negative earlier. Changes may briefly hold the picture while the engine seeks
+or rebuilds; offsets reset with a new stream. Native AVPlayer, remote bypass,
+audio-only sources and live streams without an engine rewind window do not
+advertise this control. Live controls use the same engine capability and offset.
+
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and
 offline playback. Prefer SDH falls back to regular subtitles in the chosen

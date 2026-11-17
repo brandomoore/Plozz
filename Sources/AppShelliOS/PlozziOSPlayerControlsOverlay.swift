@@ -313,6 +313,14 @@ struct PlozziOSPlayerControlsOverlay: View {
                 PlozziOSStreamingQualitySheet(viewModel: viewModel)
             }
         }
+        .alert("Couldn't change upscaling", isPresented: Binding(
+            get: { viewModel.controls.upscaling.error != nil },
+            set: { if !$0 { viewModel.controls.upscaling.error = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.controls.upscaling.error = nil }
+        } message: {
+            if let error = viewModel.controls.upscaling.error { Text(error) }
+        }
         .ignoresSafeArea()
     }
 
@@ -918,6 +926,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         actions.setDialogueEnhancement = { viewModel.setDialogEnhanceEnabled($0); onInteraction() }
         actions.setSpeed = { viewModel.setPlaybackSpeed($0); onInteraction() }
         actions.setDolbyVisionFELConversion = { viewModel.setDolbyVisionFELConversion($0); onInteraction() }
+        actions.setVideoUpscaling = { viewModel.setVideoUpscaling($0); onInteraction() }
         return actions
     }
 
@@ -1320,21 +1329,23 @@ private struct PlozziOSPlaybackSyncControls: View {
         Group {
             if includesAudio, viewModel.controls.engineCapabilities.contains(.audioDelay) {
                 Section("Audio Delay") {
-                    Slider(
+                    Stepper(
                         value: Binding(
                             get: { viewModel.controls.audioDelaySeconds },
                             set: { viewModel.setAudioDelay($0) }
                         ),
-                        in: -2...2,
+                        in: PlayerControlsModel.audioDelayRange,
                         step: 0.05
-                    )
+                    ) {
+                        Text(viewModel.controls.audioDelaySeconds,
+                             format: .number.precision(.fractionLength(2)))
+                            + Text(" s")
+                    }
                     .accessibilityLabel("Audio Delay")
                     .accessibilityIdentifier("player-audio-delay")
-                    Text(
-                        viewModel.controls.audioDelaySeconds,
-                        format: .number.precision(.fractionLength(2))
-                    )
-                    .plozzForeground(.secondary)
+                    Text(viewModel.controls.audioSyncHint).plozzForeground(.secondary)
+                    Button("Reset") { viewModel.setAudioDelay(0) }
+                        .disabled(viewModel.controls.audioDelaySeconds == 0)
                 }
             }
 

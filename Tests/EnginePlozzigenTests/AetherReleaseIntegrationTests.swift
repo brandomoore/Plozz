@@ -5,6 +5,43 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class AetherReleaseIntegrationTests: XCTestCase {
+    func testAudioSyncOnlyAdvertisesRoutesThatCanApplyTheOffset() {
+        for route in [VideoRoute.software, .loopback, .remoteBypass, .audio, .none] {
+            XCTAssertEqual(
+                PlozzigenVideoEngine.supportsAudioDelay(route: route, hasAudio: true, canReanchor: true, canReload: true),
+                route == .software || route == .loopback
+            )
+            XCTAssertFalse(PlozzigenVideoEngine.supportsAudioDelay(
+                route: route, hasAudio: false, canReanchor: true, canReload: true
+            ))
+            XCTAssertFalse(PlozzigenVideoEngine.supportsAudioDelay(
+                route: route, hasAudio: true, canReanchor: false, canReload: true
+            ))
+        }
+        XCTAssertFalse(PlozzigenVideoEngine.supportsAudioDelay(
+            route: .loopback, hasAudio: true, canReanchor: true, canReload: false
+        ))
+        XCTAssertTrue(PlozzigenVideoEngine.supportsAudioDelay(
+            route: .software, hasAudio: true, canReanchor: true, canReload: false
+        ))
+    }
+
+    func testInPlayerUpscalingExcludesPreviewDiscMenusAndSeparateAudio() {
+        var request = PlaybackRequest(
+            item: MediaItem(id: "fixture", title: "Fixture", kind: .movie),
+            streamURL: URL(string: "https://fixture.invalid/movie.mkv")!
+        )
+        XCTAssertTrue(PlozzigenVideoEngine.supportsVideoUpscalingChanges(for: request))
+        request.suppressOrdinaryWatchReporting = true
+        XCTAssertFalse(PlozzigenVideoEngine.supportsVideoUpscalingChanges(for: request))
+        request.suppressOrdinaryWatchReporting = false
+        request.discPlayback = .openMenu
+        XCTAssertFalse(PlozzigenVideoEngine.supportsVideoUpscalingChanges(for: request))
+        request.discPlayback = .playVideo
+        request.externalAudioURL = URL(string: "https://fixture.invalid/audio.m4a")!
+        XCTAssertFalse(PlozzigenVideoEngine.supportsVideoUpscalingChanges(for: request))
+    }
+
     func testUpscalingSelectionReachesOnDemandAndLiveOptionsWithoutChangingOtherPolicies() {
         for mode in VideoUpscaling.allCases {
             let options = [

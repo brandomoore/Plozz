@@ -93,6 +93,14 @@ struct PlayerOptionsPanel: View {
 
     var body: some View {
         morphingPanel(for: category)
+            .alert("Couldn't change upscaling", isPresented: Binding(
+                get: { model.upscaling.error != nil },
+                set: { if !$0 { model.upscaling.error = nil } }
+            )) {
+                Button("OK", role: .cancel) { model.upscaling.error = nil }
+            } message: {
+                if let error = model.upscaling.error { Text(error) }
+            }
             .onAppear { reconcileSubtitleScreen() }
             #if os(tvOS)
             .onAppear {
@@ -203,6 +211,9 @@ struct PlayerOptionsPanel: View {
                 return .row(0)
             }
         case .playback:
+            if playbackScreen == .upscaling {
+                return .row(VideoUpscaling.allCases.firstIndex(of: model.upscaling.selection) ?? 0)
+            }
             if playbackScreen == .zoom {
                 let mode = zoomMode ?? model.videoZoom.settings.mode
                 return .row(PlaybackOptionsPane.modeSlot(mode))
@@ -211,8 +222,10 @@ struct PlayerOptionsPanel: View {
             if offersPlaybackSpeed, model.engineCapabilities.contains(.playbackSpeed) {
                 return .row(PlaybackOptionsPane.speedSlot)
             }
+            if model.upscaling.isAvailable { return .row(PlaybackOptionsPane.upscalingSlot) }
             return nil
         case .audio:
+            if audioScreen == .sync { return .row(0) }
             #if os(tvOS)
             if audioScreen == .dialogue {
                 return dialogueRows(model: model).first(where: \.isSelected).map { .row($0.id) } ?? .subBack
@@ -501,6 +514,15 @@ struct PlayerOptionsPanel: View {
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(Color.primary)
             Spacer(minLength: 12)
+            if category == .audio, audioScreen == .options, model.engineCapabilities.contains(.audioDelay) {
+                Button { openAudioScreen(.sync) } label: {
+                    Image(systemName: "clock")
+                        .accessibilityLabel("Audio Sync")
+                }
+                .buttonStyle(PlozzPanelHeaderButtonStyle())
+                .focusEffectDisabled()
+                .focused($focus, equals: .subSync)
+            }
             if category == .subtitles && subtitleScreen == .tracks {
                 // Timing (Sync) chip — only when the app's overlay owns the active
                 // subtitle, so the app-side offset can actually shift it. Sits left
@@ -555,10 +577,12 @@ struct PlayerOptionsPanel: View {
         audioScreen: AudioScreen = .options
     ) -> LocalizedStringResource {
         if category == .audio, audioScreen == .dialogue { return "Enhance Dialogue" }
+        if category == .audio, audioScreen == .sync { return "Audio Sync" }
         if category == .playback {
             switch playbackScreen {
             case .options: return category.title
             case .zoom: return "Zoom Mode"
+            case .upscaling: return "Upscaling"
             }
         }
         guard category == .subtitles else { return category.title }
@@ -683,25 +707,33 @@ struct PlayerOptionsPanel: View {
 
     @ViewBuilder
     private var audioBody: some View {
-        #if os(tvOS)
-        if audioScreen == .dialogue {
-            PlayerMenuRowStack(
-                rows: Self.dialogueRows(model: model, selected: {
-                    if audioScreen == .dialogue { openAudioScreen(.options) }
-                }),
-                palette: palette, focus: $focus
+        if audioScreen == .sync {
+            PlaybackSyncScreen(
+                value: model.audioDelaySeconds, hint: model.audioSyncHint,
+                range: PlayerControlsModel.audioDelayRange, showsReset: true,
+                onChange: actions.setAudioDelay, focus: $focus
             )
-            .padding(.horizontal, 14)
         } else {
-            let rows = Self.audioRows(model: model, actions: actions, openDialogue: { openAudioScreen(.dialogue) })
-            PlayerOptionsInputScope(
-                screen: audioScreen, rows: rows.compactMap(\.submenu), focus: $focus,
-                content: AudioPaneView(rows: rows, palette: palette, focus: $focus, close: close)
-            )
+            #if os(tvOS)
+            if audioScreen == .dialogue {
+                PlayerMenuRowStack(
+                    rows: Self.dialogueRows(model: model, selected: {
+                        if audioScreen == .dialogue { openAudioScreen(.options) }
+                    }),
+                    palette: palette, focus: $focus
+                )
+                .padding(.horizontal, 14)
+            } else {
+                let rows = Self.audioRows(model: model, actions: actions, openDialogue: { openAudioScreen(.dialogue) })
+                PlayerOptionsInputScope(
+                    screen: audioScreen, rows: rows.compactMap(\.submenu), focus: $focus,
+                    content: AudioPaneView(rows: rows, palette: palette, focus: $focus, close: close)
+                )
+            }
+            #else
+            AudioPaneView(rows: Self.audioRows(model: model, actions: actions), palette: palette, focus: $focus, close: close)
+            #endif
         }
-        #else
-        AudioPaneView(rows: Self.audioRows(model: model, actions: actions), palette: palette, focus: $focus, close: close)
-        #endif
     }
 
     #if os(tvOS)

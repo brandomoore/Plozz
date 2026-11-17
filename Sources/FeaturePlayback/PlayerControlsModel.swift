@@ -8,6 +8,17 @@ import CoreUI
 
 @MainActor
 @Observable
+public final class PlayerUpscalingModel {
+    public var selection: VideoUpscaling = .default
+    public var isAvailable = false
+    public var isChanging = false
+    public var error: LocalizedStringResource?
+
+    public init() {}
+}
+
+@MainActor
+@Observable
 public final class SubtitleAppearanceModel {
     public var style: SubtitleStyle = .default
     public var rendersHDR = false
@@ -495,6 +506,13 @@ public final class PlayerControlsModel {
     public var playbackSpeed: Double = 1.0
     /// Audio offset in seconds (positive = audio later than video).
     public var audioDelaySeconds: TimeInterval = 0
+    public static let audioDelayRange: ClosedRange<TimeInterval> = -2...2
+    public var audioSyncHint: LocalizedStringResource {
+        if audioDelaySeconds < 0 { return "Audio plays earlier than the video." }
+        if audioDelaySeconds > 0 { return "Audio plays later than the video." }
+        return "Adjust audio earlier or later to match the video."
+    }
+    public let upscaling = PlayerUpscalingModel()
     /// Subtitle offset in seconds (positive = subs later than video).
     public var subtitleDelaySeconds: TimeInterval = 0
     /// Whether subtitle timing can actually be shifted right now: true when the
@@ -604,7 +622,7 @@ public final class PlayerControlsModel {
         #if os(tvOS)
         if !systemAudio.availableSettings.isEmpty { return true }
         #endif
-        return hasSelectableAudio || engineCapabilities.contains(.dialogEnhance)
+        return hasSelectableAudio || !engineCapabilities.intersection([.dialogEnhance, .audioDelay]).isEmpty
     }
     public var hasSelectableSubtitles: Bool { !subtitleOptions.isEmpty }
 

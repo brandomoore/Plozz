@@ -134,6 +134,7 @@ public struct PlayerMoreMenuActions {
     public var setDialogueEnhancement: (Bool) -> Void = { _ in }
     public var setSpeed: (Double) -> Void = { _ in }
     public var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
+    public var setVideoUpscaling: (VideoUpscaling) -> Void = { _ in }
     public var request: (PlayerMenuDestination) -> Void = { _ in }
     public init() {}
 }
@@ -152,7 +153,7 @@ public enum PlayerMoreMenu {
         if !model.audioOptions.isEmpty || model.engineCapabilities.contains(.dialogEnhance)
             || model.engineCapabilities.contains(.audioDelay) { sections.append(.audio) }
         if availability.maximumSpeed != nil, model.engineCapabilities.contains(.playbackSpeed) { sections.append(.speed) }
-        if availability.quality || model.felConversion.isAvailable
+        if availability.quality || model.felConversion.isAvailable || model.upscaling.isAvailable
             || (availability.video && model.engineCapabilities.contains(.videoZoom)) {
             sections.append(.video)
         }
@@ -223,6 +224,22 @@ public enum PlayerMoreMenu {
             ])
         }
         var video: [UIMenuElement] = []
+        if model.upscaling.isAvailable {
+            video.append(UIMenu(
+                title: localized("Upscaling"),
+                subtitle: localized("Reloads at the current position. This playback only."),
+                children: VideoUpscaling.allCases.map { selection in
+                    UIAction(
+                        title: localized(selection.title),
+                        attributes: model.upscaling.isChanging ? [.disabled] : [],
+                        state: model.upscaling.selection == selection ? .on : .off
+                    ) { _ in
+                        guard actions.isCurrent() else { return }
+                        actions.setVideoUpscaling(selection)
+                    }
+                }
+            ))
+        }
         if model.felConversion.isAvailable {
             let enabled = model.felConversion.isEnabled
             video.append(UIAction(title: localized("P7 FEL → P8.1 conversion"), state: enabled ? .on : .off) { _ in
@@ -350,6 +367,7 @@ private struct PlayerNativeSectionMenu: View {
                 guarded.selectSubtitle = { if isCurrent() { actions.selectSubtitle($0) } }
                 guarded.setDialogueEnhancement = { if isCurrent() { actions.setDialogueEnhancement($0) } }
                 guarded.setSpeed = { if isCurrent() { actions.setSpeed($0) } }
+                guarded.setVideoUpscaling = { if isCurrent() { actions.setVideoUpscaling($0) } }
                 guarded.request = { if isCurrent() { presentation.request($0, generation: generation) } }
                 return PlayerMoreMenu.make(
                     model: model, availability: availability, locale: locale, section: section, actions: guarded

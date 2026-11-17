@@ -77,8 +77,12 @@ struct LiveAudioSyncSheet: View {
             Form {
                 if tracks.engine.capabilities.contains(.audioDelay) {
                     Section("Audio Delay") {
-                        Slider(value: $offset, in: -2...2, step: 0.05).accessibilityLabel("Audio Delay")
-                        Text(offset, format: .number.precision(.fractionLength(2))).monospacedDigit()
+                        Stepper(value: $offset, in: PlayerControlsModel.audioDelayRange, step: 0.05) {
+                            Text(offset, format: .number.precision(.fractionLength(2))) + Text(" s")
+                        }
+                        .accessibilityLabel("Audio Delay")
+                        Text(controls.audioSyncHint).foregroundStyle(.secondary)
+                        Button("Reset") { offset = 0 }.disabled(offset == 0)
                     }
                 }
             }
@@ -94,7 +98,7 @@ struct LiveAudioSyncSheet: View {
         .onChange(of: offset) { _, value in
             guard tracks.engine.capabilities.contains(.audioDelay) else { return }
             tracks.engine.setAudioDelay(value)
-            controls.audioDelaySeconds = value
+            controls.audioDelaySeconds = tracks.engine.audioDelaySeconds
         }
     }
 }
