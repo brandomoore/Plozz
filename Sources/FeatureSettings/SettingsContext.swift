@@ -265,7 +265,13 @@ public final class SettingsNavigationModel {
         isSearching = false
         #endif
         resetPages()
+        #if os(tvOS)
+        select(.screensNavigation)
+        pages.push(.customizeHome)
+        enterDetail()
+        #else
         reveal(.customizeHome)
+        #endif
     }
 
     private func reveal(_ route: SettingsRoute) {

@@ -11,6 +11,249 @@ import XCTest
 
 @MainActor
 final class UpcomingPresentationHostedTests: XCTestCase {
+    func testSelectionStaysDistinctFromFocusAndLegibleInBothCalendars() async throws {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let interval = DateInterval(
+            start: try XCTUnwrap(calendar.date(byAdding: .month, value: -1, to: today)),
+            end: try XCTUnwrap(calendar.date(byAdding: .month, value: 3, to: today))
+        )
+        for scheme in [ColorScheme.dark, .light] {
+            for week in [true, false] {
+                let content = week
+                    ? AnyView(UpcomingWeekCalendar(
+                        selectedDay: .constant(today), displayedWeek: .constant(today), interval: interval
+                    ).frame(width: 1600))
+                    : AnyView(UpcomingCalendar(selectedDay: .constant(today), interval: interval))
+                let controller = UpcomingFocusController(rootView: AnyView(content
+                    .padding(48)
+                    .background(scheme == .dark ? Color.black : Color.white)
+                    .environment(\.themePalette, scheme == .dark ? .dark : .light)
+                    .environment(\.colorScheme, scheme)
+                    .environment(\.locale, Locale(identifier: "en_US"))))
+                let window = try host(controller: controller)
+                defer { close(window) }
+                let expectedCount = week ? 9 : try XCTUnwrap(calendar.range(of: .day, in: .month, for: today)).count + 3
+                try await waitUntil { self.focusItems(in: window).count == expectedCount }
+                let root = try XCTUnwrap(controller.view)
+                let unsorted: [(item: any UIFocusItem, frame: CGRect)] = try focusItems(in: window).map {
+                    ($0, try XCTUnwrap(NativeFocusRegion.frame(of: $0, in: root)))
+                }
+                let items = unsorted.sorted { left, right in
+                    if abs(left.frame.midY - right.frame.midY) < 1 { return left.frame.midX < right.frame.midX }
+                    return left.frame.midY < right.frame.midY
+                }
+                let dates = Array(items.dropFirst(week ? 1 : 2).dropLast())
+                let index = week
+                    ? (calendar.component(.weekday, from: today) - calendar.firstWeekday + 7) % 7
+                    : calendar.component(.day, from: today) - 1
+                let selected = dates[index].item
+                let neighbor = dates[(index + 1) % dates.count].item
+                let last = try XCTUnwrap(items.last)
+                let arrow = week ? last.item : items[1].item
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                for focused in [false, true] {
+                    let target = focused ? selected : arrow
+                    controller.target = target
+                    system.requestFocusUpdate(to: controller)
+                    system.updateFocusIfNeeded()
+                    try await waitUntil {
+                        guard let frame = NativeFocusRegion.frame(of: system.focusedItem, in: root),
+                              let targetFrame = NativeFocusRegion.frame(of: target, in: root) else { return false }
+                        return targetFrame.contains(CGPoint(x: frame.midX, y: frame.midY))
+                    }
+                    try await Task.sleep(for: .milliseconds(600))
+                    let image = snapshot(window)
+                    try saveCapture(image, name: "upcoming-\(week ? "week" : "month")-today-\(scheme)-\(focused ? "focused" : "selected")")
+                    let cgImage = try XCTUnwrap(image.cgImage)
+                    let frame = window.convert(try XCTUnwrap(NativeFocusRegion.frame(of: selected, in: root)), from: root)
+                    let scale = CGFloat(cgImage.width) / window.bounds.width
+                    func samples(_ rect: CGRect) throws -> [Double] {
+                        try luminances(cgImage, in: rect.applying(.init(scaleX: scale, y: scale)))
+                    }
+                    let ink: [Double] = try samples(CGRect(
+                        x: frame.midX - 25, y: week ? frame.midY + 2 : frame.midY - 14,
+                        width: 50, height: week ? 34 : 28
+                    ))
+                    let dark = ink[ink.count * 2 / 100]
+                    let light = ink[ink.count * 98 / 100]
+                    let contrast = (light + 0.05) / (dark + 0.05)
+                    XCTAssertGreaterThanOrEqual(contrast, 4.5, "\(week ? "Week" : "Month"), \(scheme), focused: \(focused)")
+                    if !focused {
+                        let other = window.convert(try XCTUnwrap(NativeFocusRegion.frame(of: neighbor, in: root)), from: root)
+                        func surface(_ bounds: CGRect) throws -> Double {
+                            let values = try samples(CGRect(
+                                x: bounds.minX + bounds.width * 0.8, y: bounds.midY, width: 4, height: 4
+                            ))
+                            return values.reduce(0, +) / Double(values.count)
+                        }
+                        XCTAssertEqual(try surface(frame), try surface(other), accuracy: 0.05,
+                                       "Selection must not give an unfocused date a focus-like fill.")
+                    }
+                }
+            }
+        }
+    }
+
+    func testWeeksFollowLocaleAndCalendarDaysAcrossDST() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        for (month, day, hours) in [(3, 8, 167), (11, 1, 169)] {
+            calendar.firstWeekday = 1
+            let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: month, day: day)))
+            let week = UpcomingCalendarWeek(containing: date, calendar: calendar)
+            XCTAssertEqual(week.days.count, 7)
+            XCTAssertEqual(Set(week.days.map { calendar.component(.weekday, from: $0) }), Set(1...7))
+            XCTAssertTrue(week.days.allSatisfy { calendar.component(.hour, from: $0) == 0 })
+            XCTAssertEqual(week.next.timeIntervalSince(week.days[0]), Double(hours * 3600))
+            calendar.firstWeekday = 2
+            let mondayWeek = UpcomingCalendarWeek(containing: date, calendar: calendar)
+            XCTAssertEqual(calendar.component(.weekday, from: mondayWeek.days[0]), 2)
+            XCTAssertEqual(mondayWeek.days[6], date)
+        }
+    }
+
+    func testWeekNavigationStopsAtAvailableIntervalAndCrossesYears() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.firstWeekday = 1
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 12, day: 30)))
+        let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2027, month: 1, day: 9)))
+        let interval = DateInterval(start: start, end: end)
+        let first = UpcomingCalendarWeek(containing: start, calendar: calendar)
+        XCTAssertFalse(first.canMoveBackward(in: interval))
+        XCTAssertTrue(first.canMoveForward(in: interval))
+        XCTAssertEqual(calendar.component(.year, from: first.days[0]), 2026)
+        XCTAssertEqual(calendar.component(.year, from: first.days[6]), 2027)
+        let last = UpcomingCalendarWeek(containing: first.next, calendar: calendar)
+        XCTAssertTrue(last.canMoveBackward(in: interval))
+        XCTAssertFalse(last.canMoveForward(in: interval))
+        XCTAssertEqual(last.previous, first.days[0])
+        XCTAssertFalse(first.canMoveForward(in: .init(start: start, end: first.next)),
+                       "The available interval's end is exclusive.")
+    }
+
+    func testWeekStripHasSevenNativeDatesAndFitsRTL() async throws {
+        for (locale, direction) in [("en_US", LayoutDirection.leftToRight), ("de_DE", .leftToRight), ("ar", .rightToLeft)] {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.locale = Locale(identifier: locale)
+            let selected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 12, day: 30)))
+            let interval = DateInterval(
+                start: try XCTUnwrap(calendar.date(byAdding: .month, value: -1, to: selected)),
+                end: try XCTUnwrap(calendar.date(byAdding: .month, value: 1, to: selected))
+            )
+            let controller = UpcomingFocusController(rootView: AnyView(
+                UpcomingWeekCalendar(
+                    selectedDay: .constant(selected), displayedWeek: .constant(selected), interval: interval
+                )
+                    .environment(\.calendar, calendar)
+                    .environment(\.locale, Locale(identifier: locale))
+                    .environment(\.layoutDirection, direction)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .frame(width: 1600)
+            ))
+            let window = try host(controller: controller)
+            defer { close(window) }
+            try await waitUntil { self.focusItems(in: window).count == 9 }
+            let root = try XCTUnwrap(window.rootViewController?.view)
+            let frames = try focusItems(in: window).map { item in
+                try XCTUnwrap(NativeFocusRegion.frame(of: item, in: root))
+            }.sorted { $0.minX < $1.minX }
+            let dates = Array(frames.dropFirst().dropLast())
+            XCTAssertEqual(dates.count, 7)
+            let first = try XCTUnwrap(dates.first)
+            for frame in dates {
+                XCTAssertEqual(frame.width, first.width, accuracy: 1)
+                XCTAssertEqual(frame.midY, first.midY, accuracy: 1)
+                XCTAssertTrue(window.bounds.contains(frame))
+                XCTAssertGreaterThan(frame.height, 60)
+            }
+            for (left, right) in zip(frames, frames.dropFirst()) {
+                XCTAssertLessThan(left.maxX, right.minX, "Native week controls must not overlap.")
+            }
+            _ = try capture(window, name: "upcoming-week-\(locale)")
+            if direction == .leftToRight {
+                let target = try XCTUnwrap(focusItems(in: window).max {
+                    (NativeFocusRegion.frame(of: $0, in: root)?.midX ?? 0)
+                        < (NativeFocusRegion.frame(of: $1, in: root)?.midX ?? 0)
+                })
+                let targetFrame = try XCTUnwrap(NativeFocusRegion.frame(of: target, in: root))
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                controller.target = target
+                system.requestFocusUpdate(to: controller)
+                system.updateFocusIfNeeded()
+                try await waitUntil {
+                    guard let frame = NativeFocusRegion.frame(of: system.focusedItem, in: root) else { return false }
+                    return targetFrame.contains(CGPoint(x: frame.midX, y: frame.midY))
+                }
+                try await Task.sleep(for: .milliseconds(600))
+                _ = try capture(window, name: "upcoming-week-arrow-focused-\(locale)")
+            }
+        }
+    }
+
+    func testDateSelectionFocusesItsFirstReleaseAfterScrolling() async throws {
+        let suite = "UpcomingWeekFocus.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = UpcomingFeedModel(defaults: defaults)
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let releases = (0..<12).map { offset in
+            let item = MediaItem(id: "week-\(offset)", title: "Week release \(offset)", kind: .movie)
+            return UpcomingRelease(
+                id: item.id, titleKey: UpcomingRelease.titleKey(for: item), item: item,
+                date: calendar.date(byAdding: .day, value: offset, to: today)!,
+                datePrecision: .dateOnly, kind: .digital, interests: [.watchlist]
+            )
+        }
+        await model.refresh(scope: UUID().uuidString, namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        let destination = releases[9]
+        let request = UUID()
+        let jump = UpcomingDateJumpState(day: today)
+        var handled: UUID?
+        var weekFrame = CGRect.zero
+        let window = try host(
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack {
+                        UpcomingWeekCalendar(
+                            selectedDay: Binding(get: { jump.day }, set: { jump.day = $0 }),
+                            displayedWeek: .constant(today),
+                            interval: .init(start: today, end: calendar.date(byAdding: .month, value: 3, to: today)!)
+                        )
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { weekFrame = $0 }
+                        UpcomingAgenda(
+                            model: model, selectedDay: jump.day, minimumLastDayHeight: 900, contentWidth: 1600,
+                            focusRequest: jump.request, onFocusRequestHandled: { handled = $0 }
+                        )
+                    }
+                }
+                .task(id: jump.request) {
+                    guard jump.request != nil else { return }
+                    await Task.yield()
+                    proxy.scrollTo(jump.day, anchor: .top)
+                }
+            }
+            .environment(\.plozzCardStyle, .borderless)
+            .environment(\.plozzCardFocusStyle, .system)
+        )
+        defer { close(window) }
+        try await waitUntil { weekFrame.height > 0 && UIFocusSystem.focusSystem(for: window)?.focusedItem != nil }
+        jump.day = destination.date
+        jump.request = request
+        try await waitUntil {
+            let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem as? NativePosterButton
+            return focused?.accessibilityLabel == destination.item.title && handled == request
+                && weekFrame.height > 0 && weekFrame.maxY < window.bounds.minY
+        }
+        _ = try capture(window, name: "upcoming-week-date-jump")
+        XCTAssertEqual(model.visibleReleases.count, releases.count, "A date jump must not filter the agenda.")
+    }
+
     func testDateRailPreservesDistinctReleasesAndTheirOriginalNavigationItem() async throws {
         let suite = "UpcomingPresentationHostedTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -116,7 +359,7 @@ final class UpcomingPresentationHostedTests: XCTestCase {
         XCTAssertGreaterThan(agenda.contentOffset.y, agenda.bounds.height * 2)
     }
 
-    func testPinnedUpcomingInitiallyFocusesAReleaseRatherThanTheToolbar() async throws {
+    func testPinnedUpcomingStartsAtWeekAndKeepsFocusedReleaseBelowItsHeading() async throws {
         let suite = "UpcomingPresentationHostedTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -131,22 +374,34 @@ final class UpcomingPresentationHostedTests: XCTestCase {
             ])
         }
         for style in CardStyle.allCases {
-            let window = try host(PinnedUpcoming(model: model, interval: .init(start: today, duration: 90 * 86_400))
+            let controller = UpcomingFocusController(rootView: AnyView(
+                PinnedUpcoming(model: model, interval: .init(start: today, duration: 90 * 86_400))
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .environment(\.plozzCardStyle, style)
-                .environment(\.plozzCardFocusStyle, .system))
+                .environment(\.plozzCardFocusStyle, .system)
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)))
+            let window = try host(controller: controller)
             defer { close(window) }
-            let deadline = ContinuousClock.now + .seconds(5)
-            func contentHasFocus() -> Bool {
-                let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem
-                return descendants(window).compactMap { $0 as? NavigationEntryFocusRegionView }.contains {
-                    $0.preference == .content && NativeFocusRegion.contains(focused, in: $0)
-                }
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            try await waitUntil {
+                let firstEntry = self.descendants(window).compactMap { $0 as? NavigationEntryFocusRegionView }
+                    .filter { $0.preference == .content }
+                    .min { $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY }
+                return firstEntry.map { NativeFocusRegion.contains(system.focusedItem, in: $0) } == true
             }
-            while !contentHasFocus(), ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            XCTAssertTrue(contentHasFocus(), "Native focus must enter the sparse release grid, not Calendar.")
+            try await Task.sleep(for: .milliseconds(600))
+            let initial = try capture(window, name: "upcoming-week-entry-\(style.rawValue)")
+            let year = Date().formatted(.dateTime.year())
+            XCTAssertTrue(initial.contains { $0.topCandidates(1).first?.string.contains(year) == true },
+                          "The week range must remain visible on entry.")
+            let first = try XCTUnwrap(descendants(window).first {
+                $0.canBecomeFocused && $0.accessibilityLabel == item.title
+            })
+            controller.target = first
+            system.requestFocusUpdate(to: controller)
+            system.updateFocusIfNeeded()
+            try await waitUntil { system.focusedItem === first }
             try await Task.sleep(for: .milliseconds(600))
             let observations = try capture(window, name: "upcoming-first-focus-\(style.rawValue)")
             let heading = try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string == "Tomorrow" })
@@ -326,7 +581,7 @@ final class UpcomingPresentationHostedTests: XCTestCase {
 
     @MainActor
     private final class UpcomingFocusController: UIHostingController<AnyView> {
-        var target: UIView?
+        var target: (any UIFocusEnvironment)?
 
         override var preferredFocusEnvironments: [any UIFocusEnvironment] {
             target.map { [$0] } ?? super.preferredFocusEnvironments
@@ -348,16 +603,18 @@ final class UpcomingPresentationHostedTests: XCTestCase {
         return Array(items.values)
     }
 
-    private func capture(_ window: UIWindow, name: String) throws -> [VNRecognizedTextObservation] {
+    private func snapshot(_ window: UIWindow) -> UIImage {
         window.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = true
-        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+        return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
-        if let directory = ProcessInfo.processInfo.environment["PLOZZ_UPCOMING_CAPTURE_DIR"] {
-            try XCTUnwrap(image.pngData()).write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
-        }
+    }
+
+    private func capture(_ window: UIWindow, name: String) throws -> [VNRecognizedTextObservation] {
+        let image = snapshot(window)
+        try saveCapture(image, name: name)
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
@@ -366,6 +623,40 @@ final class UpcomingPresentationHostedTests: XCTestCase {
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
         return request.results ?? []
     }
+
+    private func saveCapture(_ image: UIImage, name: String) throws {
+        if let directory = ProcessInfo.processInfo.environment["PLOZZ_UPCOMING_CAPTURE_DIR"] {
+            try XCTUnwrap(image.pngData()).write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
+        }
+    }
+
+    private func luminances(_ image: CGImage, in rect: CGRect) throws -> [Double] {
+        let crop = try XCTUnwrap(image.cropping(to: rect.integral))
+        var pixels = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+        try pixels.withUnsafeMutableBytes {
+            let context = try XCTUnwrap(CGContext(
+                data: $0.baseAddress, width: crop.width, height: crop.height,
+                bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        }
+        func linear(_ byte: UInt8) -> Double {
+            let value = Double(byte) / 255
+            return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        return stride(from: 0, to: pixels.count, by: 4).map {
+            0.2126 * linear(pixels[$0]) + 0.7152 * linear(pixels[$0 + 1]) + 0.0722 * linear(pixels[$0 + 2])
+        }.sorted()
+    }
+}
+
+@MainActor
+@Observable
+private final class UpcomingDateJumpState {
+    var day: Date
+    var request: UUID?
+    init(day: Date) { self.day = day }
 }
 
 private struct PinnedUpcoming: View {

@@ -14,6 +14,9 @@
             @Environment(\.plozzNavigationContentInset) private var navigationInset
             @Environment(\.plozzTopNavigationContentInsets) private var topNavigationInsets
             @State private var didChooseCalendarDate = false
+            @State private var dateFocusRequest: UUID?
+            @State private var displayedWeek = Calendar.current.startOfDay(for: Date())
+            @FocusState private var calendarIsFocused: Bool
         #elseif os(iOS)
             @Environment(\.horizontalSizeClass) private var sizeClass
             @Environment(\.plozzCardStyle) private var cardStyle
@@ -27,7 +30,6 @@
         #endif
         @State private var selectedDay = Calendar.current.startOfDay(for: Date())
         @State private var showingCalendar = false
-        @State private var didScrollInitially = false
         private let interval: DateInterval
         private let trailingToolbar: TrailingToolbar
 
@@ -65,6 +67,21 @@
                     #endif
                     HStack(alignment: .top, spacing: 0) {
                         ScrollView {
+                            #if os(tvOS)
+                            UpcomingTVAgenda(
+                                model: model,
+                                selectedDay: Binding(get: { selectedDay }, set: requestDateScroll),
+                                displayedWeek: $displayedWeek,
+                                interval: calendarInterval, hasReleases: !visibleReleases.isEmpty,
+                                minimumLastDayHeight: agendaHeight, contentWidth: agendaContentWidth,
+                                focusRequest: dateFocusRequest,
+                                onFocusRequestHandled: { request in
+                                    if dateFocusRequest == request { dateFocusRequest = nil }
+                                }
+                            )
+                            .padding(.vertical)
+                            .padding(.horizontal, PlozzTheme.Metrics.screenPadding + metrics.railShadowClearance)
+                            #else
                             UpcomingAgenda(
                                 model: model, selectedDay: selectedDay,
                                 minimumLastDayHeight: agendaHeight, contentWidth: agendaContentWidth
@@ -83,11 +100,9 @@
                             #endif
                             .opacity(visibleReleases.isEmpty ? 0 : 1)
                             .accessibilityHidden(visibleReleases.isEmpty)
-                            #if os(tvOS)
-                            .padding(.vertical)
-                            .padding(.horizontal, PlozzTheme.Metrics.screenPadding + metrics.railShadowClearance)
                             #endif
                         }
+                        #if os(iOS)
                         .overlay {
                             if visibleReleases.isEmpty {
                                 UpcomingFeedStatus(model: model)
@@ -95,7 +110,6 @@
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
                         }
-                        #if os(iOS)
                         .frame(minWidth: 0, maxWidth: .infinity)
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { agendaSize = $0 }
                         .contentMargins(.horizontal, agendaInset, for: .scrollContent)
@@ -140,14 +154,6 @@
                                 proxy.scrollTo(selectedDay, anchor: .top)
                             }
                         }
-                        .task(id: visibleReleases.isEmpty) {
-                            if !visibleReleases.isEmpty, !didScrollInitially {
-                                await Task.yield()
-                                guard !Task.isCancelled else { return }
-                                didScrollInitially = true
-                                proxy.scrollTo(selectedDay, anchor: .top)
-                            }
-                        }
                         #endif
                         #if os(iOS)
                         if showsInlineCalendar {
@@ -189,7 +195,7 @@
                 .sheet(isPresented: $showingCalendar, onDismiss: {
                     if didChooseCalendarDate {
                         didChooseCalendarDate = false
-                        dateScrollRequest = UUID()
+                        requestDateScroll(to: selectedDay)
                     }
                 }) {
                     UpcomingCalendar(selectedDay: Binding(
@@ -198,10 +204,7 @@
                             selectedDay = Calendar.current.startOfDay(for: $0)
                             didChooseCalendarDate = true
                         }
-                    ), interval: DateInterval(
-                        start: min(interval.end, max(interval.start, Calendar.current.startOfDay(for: Date()))),
-                        end: interval.end
-                    ))
+                    ), interval: calendarInterval)
                 }
                 #endif
             }
@@ -226,6 +229,9 @@
             .accessibilityValue(Text(selectedDay, format: .dateTime.month().day()))
             .accessibilityIdentifier("upcoming.calendar")
             .help(calendarActionTitle)
+            #if os(tvOS)
+            .focused($calendarIsFocused)
+            #endif
             #if os(iOS)
             .accessibilityAddTraits(showsInlineCalendar ? .isSelected : [])
             .popover(isPresented: $showingCalendar) {
@@ -247,6 +253,32 @@
             #endif
         }
 
+        private func requestDateScroll(to day: Date) {
+            #if os(iOS)
+            todayDetent.prepareForDateScroll()
+            scrollPosition.isPositionedByUser = true
+            #endif
+            selectedDay = Calendar.current.startOfDay(for: day)
+            #if os(tvOS)
+            displayedWeek = selectedDay
+            let hasDestination = model.visibleReleases.contains { $0.date >= selectedDay }
+            dateFocusRequest = hasDestination ? UUID() : nil
+            if !hasDestination { calendarIsFocused = true }
+            #else
+            hasScrolledAgenda = false
+            #endif
+            dateScrollRequest = UUID()
+        }
+
+        #if os(tvOS)
+        private var calendarInterval: DateInterval {
+            DateInterval(
+                start: min(interval.end, max(interval.start, Calendar.current.startOfDay(for: Date()))),
+                end: interval.end
+            )
+        }
+        #endif
+
         #if os(iOS)
         private var calendarSelection: Binding<Date> {
             Binding(
@@ -256,14 +288,6 @@
                     showingCalendar = false
                 }
             )
-        }
-
-        private func requestDateScroll(to day: Date) {
-            todayDetent.prepareForDateScroll()
-            scrollPosition.isPositionedByUser = true
-            selectedDay = Calendar.current.startOfDay(for: day)
-            hasScrolledAgenda = false
-            dateScrollRequest = UUID()
         }
 
         private var agendaMetrics: PlozzMetrics {
@@ -321,6 +345,42 @@
             }
         #endif
     }
+
+    #if os(tvOS)
+    private struct UpcomingTVAgenda: View {
+        let model: UpcomingFeedModel
+        @Binding var selectedDay: Date
+        @Binding var displayedWeek: Date
+        let interval: DateInterval
+        let hasReleases: Bool
+        let minimumLastDayHeight: CGFloat
+        let contentWidth: CGFloat
+        let focusRequest: UUID?
+        let onFocusRequestHandled: (UUID) -> Void
+        @Environment(\.plozzMetrics) private var metrics
+        @State private var weekHeight: CGFloat = 0
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                UpcomingWeekCalendar(selectedDay: $selectedDay, displayedWeek: $displayedWeek, interval: interval)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { weekHeight = $0 }
+                if hasReleases {
+                    UpcomingAgenda(
+                        model: model, selectedDay: selectedDay,
+                        minimumLastDayHeight: minimumLastDayHeight, contentWidth: contentWidth,
+                        focusRequest: focusRequest, onFocusRequestHandled: onFocusRequestHandled
+                    )
+                } else {
+                    UpcomingFeedStatus(model: model)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: max(0, minimumLastDayHeight - weekHeight - metrics.rowSpacing)
+                        )
+                }
+            }
+        }
+    }
+    #endif
 
     private func upcomingAgendaReleases(_ releases: [UpcomingRelease]) -> [UpcomingRelease] {
         #if os(tvOS)
@@ -425,6 +485,8 @@
         let selectedDay: Date
         let minimumLastDayHeight: CGFloat
         let contentWidth: CGFloat
+        var focusRequest: UUID?
+        var onFocusRequestHandled: ((UUID) -> Void)?
         @Environment(\.plozzMetrics) private var metrics
         @Environment(\.plozzCardStyle) private var cardStyle
 
@@ -499,7 +561,8 @@
             _ days: [Date], groups: [Date: [UpcomingRelease]],
             columns: [GridItem], metrics: PlozzMetrics, width: CGFloat
         ) -> some View {
-            ForEach(days, id: \.self) { day in
+            let focusTargetID = model.visibleReleases.first { $0.date >= selectedDay }?.id
+            return ForEach(days, id: \.self) { day in
                 Group {
                     #if os(tvOS)
                     MediaRowSection(title: dayTitle(day), leadingInset: 0) {
@@ -510,7 +573,11 @@
                                 trailingInset: PlozzTheme.Metrics.screenPadding
                             ) {
                                 ForEach(releases) { release in
-                                    UpcomingReleaseCard(release: release)
+                                    UpcomingReleaseCard(
+                                        release: release,
+                                        focusRequest: release.id == focusTargetID ? focusRequest : nil,
+                                        onFocusRequestHandled: onFocusRequestHandled
+                                    )
                                         .frame(width: width)
                                         .contextMenu { Button("Hide title") { model.hide(release) } }
                                         .navigationEntryFocus(day >= selectedDay ? .content : nil)
@@ -661,6 +728,8 @@
 
     private struct UpcomingReleaseCard: View {
         let release: UpcomingRelease
+        var focusRequest: UUID?
+        var onFocusRequestHandled: ((UUID) -> Void)?
         @Environment(\.mediaItemNavigator) private var navigate
         #if os(iOS)
             @Environment(\.mediaItemArtworkNavigator) private var navigateArtwork
@@ -680,7 +749,11 @@
 
         private var card: some View {
             PosterCardView(
-                item: release.item, style: .poster, captionSubtitle: release.posterSubtitle
+                item: release.item, style: .poster, captionSubtitle: release.posterSubtitle,
+                focusRequest: focusRequest,
+                onFocusRequestHandled: {
+                    if let focusRequest { onFocusRequestHandled?(focusRequest) }
+                }
             ) { navigate?(release.item) }
         }
     }
@@ -819,10 +892,13 @@
                                 .accessibilityHidden(true)
                         }
                     }
+                    .overlay(alignment: .topTrailing) {
+                        if isSelected { UpcomingDateSelectionMark().offset(x: 18, y: -8) }
+                    }
             }
             .buttonBorderShape(.roundedRectangle(radius: 16))
-            .plozzActionButton(role: isSelected ? .primary : .secondary)
-            .tint(palette.primaryText.opacity(isSelected ? 0.3 : 1))
+            .plozzActionButton(role: .secondary)
+            .tint(palette.primaryText)
         }
         #endif
     }

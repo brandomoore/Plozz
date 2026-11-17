@@ -190,6 +190,20 @@ or changes to the underlying detail-navigation item. Coming Soon uses full-size 
 media cards on both platforms, with the shared Home headings, spacing, captions
 and mobile row footprint. Dates and episode information use the shared artwork
 status cue rather than a separate compact-row design.
+
+On TV, a seven-day calendar sits above the date rails and scrolls away with them.
+Initial entry focuses the selected day so the strip remains visible.
+Week arrows browse across month/year boundaries without changing the agenda.
+Choosing a date jumps to that date without filtering other releases, handing
+native focus to the first release on or after it. If no later release exists,
+focus returns to the fixed Calendar control while the chosen date stays visible.
+The full month picker remains available and synchronizes the displayed week.
+Week starts follow the system calendar; unavailable dates and week directions
+are disabled. Calendar arithmetic preserves local dates across daylight-saving changes.
+Both TV calendars mark selection with a small checkmark and Today with bold text
+and a dot. Only actual native focus brightens a date control; selecting a date
+does not give it a focus-like fill.
+
 The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and
 `--upcoming-capture-fixture --capture-home` (the production Home screen with
 Continue Watching, Coming Soon and Recently Added). These previews use sample

@@ -2,11 +2,44 @@ import XCTest
 
 @MainActor
 final class UpcomingNavigationTests: XCTestCase {
+    func testWeekStripPagesAndJumpsWithoutFilteringTheAgenda() throws {
+        let app = launch(sparse: false, extraArguments: ["--capture-thirty", "--capture-many-days"])
+        defer { app.terminate() }
+        let first = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "01. ")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 20), app.debugDescription)
+        assertFocused(today(in: app), in: app)
+        let nextWeek = app.buttons["upcoming.week.next"]
+        for _ in 0..<8 where !nextWeek.hasFocus { XCUIRemote.shared.press(.right) }
+        assertFocused(nextWeek, in: app)
+        XCUIRemote.shared.press(.select)
+        assertFocused(nextWeek, in: app)
+        XCUIRemote.shared.press(.select)
+        assertFocused(nextWeek, in: app)
+        for _ in 0..<7 { XCUIRemote.shared.press(.left) }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US")
+        let today = calendar.startOfDay(for: Date())
+        let initialWeek = try XCTUnwrap(calendar.dateInterval(of: .weekOfYear, for: today))
+        let day = try XCTUnwrap(calendar.date(byAdding: .weekOfYear, value: 2, to: initialWeek.start))
+        assertFocused(app.buttons["upcoming.week.day.\(Int(day.timeIntervalSinceReferenceDate))"], in: app)
+        XCUIRemote.shared.press(.select)
+        let offset = try XCTUnwrap(calendar.dateComponents([.day], from: today, to: day).day)
+        assertFocused(app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Upcoming day \(offset)"
+        )).firstMatch, in: app)
+        XCTAssertFalse(nextWeek.isHittable, "The week strip must scroll away rather than stay pinned.")
+        XCUIRemote.shared.press(.up)
+        assertFocused(app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Upcoming day \(offset - 1)"
+        )).firstMatch, in: app)
+    }
+
     func testDenseDateScrollsHorizontallyAndDownThroughOffscreenDates() {
         let app = launch(sparse: false, extraArguments: ["--capture-thirty", "--capture-many-days"])
         defer { app.terminate() }
         let first = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "01. ")).firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 20), app.debugDescription)
+        moveFocus(to: first, in: app)
         assertFocused(first, in: app)
         for number in 2...9 {
             XCUIRemote.shared.press(.right)
@@ -34,11 +67,13 @@ final class UpcomingNavigationTests: XCTestCase {
         attach(app, name: "Upcoming deep agenda return")
     }
 
-    func testPinnedEntryPrefersFirstReleaseAndRestoresItFromNavigation() {
+    func testPinnedEntryStartsAtWeekAndRestoresReleaseFromNavigation() {
         let app = launch()
         defer { app.terminate() }
         let first = firstRelease(in: app)
         XCTAssertTrue(first.waitForExistence(timeout: 20), app.debugDescription)
+        assertFocused(today(in: app), in: app)
+        XCUIRemote.shared.press(.down)
         assertFocused(first, in: app)
         XCUIRemote.shared.press(.left)
         assertFocused(app.buttons["Upcoming"], in: app)
@@ -61,14 +96,19 @@ final class UpcomingNavigationTests: XCTestCase {
         defer { app.terminate() }
         let first = firstRelease(in: app)
         XCTAssertTrue(first.waitForExistence(timeout: 20), app.debugDescription)
-        assertFocused(first, in: app)
-        XCUIRemote.shared.press(.up)
-        assertFocused(app.buttons["upcoming.calendar"], in: app)
         XCUIRemote.shared.press(.down)
         assertFocused(first, in: app)
         XCUIRemote.shared.press(.up)
+        XCUIRemote.shared.press(.up)
+        assertFocused(app.buttons["upcoming.calendar"], in: app)
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.down)
+        assertFocused(first, in: app)
+        XCUIRemote.shared.press(.up)
+        XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.right)
         assertFocused(app.buttons["upcoming.filters"], in: app)
+        XCUIRemote.shared.press(.down)
         XCUIRemote.shared.press(.down)
         assertFocused(first, in: app)
         XCUIRemote.shared.press(.down)
@@ -84,8 +124,7 @@ final class UpcomingNavigationTests: XCTestCase {
         defer { app.terminate() }
         let first = firstRelease(in: app)
         XCTAssertTrue(first.waitForExistence(timeout: 20))
-        assertFocused(first, in: app)
-        XCUIRemote.shared.press(.up)
+        moveFocus(to: app.buttons["upcoming.calendar"], in: app)
         XCUIRemote.shared.press(.select)
         let month = app.staticTexts["upcoming.calendar.month"]
         XCTAssertTrue(month.waitForExistence(timeout: 5))
@@ -112,7 +151,6 @@ final class UpcomingNavigationTests: XCTestCase {
             later.exists && later.frame.minY > 0 && later.frame.minY < app.frame.height / 2
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [aligned], timeout: 5), .completed, app.debugDescription)
-        XCUIRemote.shared.press(.down)
         assertFocused(later, in: app)
         attach(app, name: "Upcoming selected date")
         XCUIRemote.shared.press(.up)
@@ -150,6 +188,11 @@ final class UpcomingNavigationTests: XCTestCase {
 
     private func firstRelease(in app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "First upcoming movie")).firstMatch
+    }
+
+    private func today(in app: XCUIApplication) -> XCUIElement {
+        let day = Calendar.current.startOfDay(for: Date())
+        return app.buttons["upcoming.week.day.\(Int(day.timeIntervalSinceReferenceDate))"]
     }
 
     private func assertFocused(
