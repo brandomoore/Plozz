@@ -41,7 +41,9 @@ struct PlaybackReadAheadFixture: View {
             )
             Group {
                 if ProcessInfo.processInfo.arguments.contains("--zoom-settings-fixture") {
-                    SettingsFormLayout(title: Text("Playback"), rows: page.zoomRows)
+                    SettingsSearchLanding(targetID: "default-video-zoom") {
+                        page
+                    }
                 } else {
                     page
                 }

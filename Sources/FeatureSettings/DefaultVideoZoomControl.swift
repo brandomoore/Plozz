@@ -96,9 +96,9 @@ public struct DefaultVideoZoomControl: View {
 
     private var help: Text {
         switch platform {
-        case .phone: Text("Applies to iPhone. Saved title choices take priority.")
-        case .tablet: Text("Applies to iPad. Saved title choices take priority.")
-        case .television: Text("Applies to Apple TV. Saved title choices take priority.")
+        case .phone: Text("For iPhone. Movies and series keep any zoom you've chosen.")
+        case .tablet: Text("For iPad. Movies and series keep any zoom you've chosen.")
+        case .television: Text("For Apple TV. Movies and series keep any zoom you've chosen.")
         }
     }
 }
