@@ -74,6 +74,7 @@ struct NowPlayingMorphContainer: View {
     /// The display's pixels-per-point, so prefetches ask for the pixels this
     /// screen will actually draw rather than a @2x assumption.
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     /// 0 = docked island, 1 = full drawer. Animated by the open/collapse springs.
     @State private var p: CGFloat = 0
@@ -448,8 +449,8 @@ struct NowPlayingMorphContainer: View {
                 }
                 // Warm the current + upcoming covers at the player's pixel size so
                 // skipping finds the artwork already cached — no placeholder flash.
-                .onChange(of: prefetchToken, initial: true) { _, _ in
-                    prefetchNearbyArtwork(side: m.expArtSide)
+                .task(id: "\(prefetchToken)|\(artworkPolicy.forArea(.music).identity)") {
+                    await prefetchNearbyArtwork(side: m.expArtSide)
                 }
                 // Live finger translation for drag-to-dismiss, applied as ONE
                 // container offset here — isolated behind a binding so reading
@@ -470,12 +471,15 @@ struct NowPlayingMorphContainer: View {
     /// `side` is the expanded player's artwork size, and it has to be: a prefetch
     /// at any other size warms a URL nothing asks for, which costs a download and
     /// buys nothing.
-    private func prefetchNearbyArtwork(side: CGFloat) {
+    private func prefetchNearbyArtwork(side: CGFloat) async {
         guard let backend = env.active?.backend else { return }
         let pixels = ArtworkResolution.rung(forPoints: side, scale: displayScale)
         let tracks = [playback.currentTrack].compactMap { $0 } + playback.upNext.prefix(3)
         for track in tracks {
-            if let artwork = track.artwork, let url = backend.artworkURL(for: artwork, size: pixels) {
+            await env.loadArtwork(for: track, policy: artworkPolicy.forArea(.music))
+            guard !Task.isCancelled else { return }
+            if let artwork = playback.track(track.source).artwork,
+               let url = backend.artworkURL(for: artwork, size: pixels) {
                 ArtworkImageLoader.shared.prefetch(url)
             }
         }

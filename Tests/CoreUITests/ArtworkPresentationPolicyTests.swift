@@ -9,6 +9,33 @@ import UIKit
 
 @MainActor
 final class ArtworkPresentationPolicyTests: XCTestCase {
+    func testDisplayIdentityRetainsCandidatesButNotSubjectPolicyOrCredentialChanges() throws {
+        let first = ArtworkReference.remote(URL(string: "https://example.test/first.jpg")!)
+        let second = ArtworkReference.remote(URL(string: "https://example.test/second.jpg")!)
+        func identity(
+            _ references: [ArtworkReference], subject: String? = "account:item", policy: String = "library"
+        ) -> ArtworkDisplayIdentity {
+            .init(subject: subject, policy: policy, references: references, variant: .posterCard)
+        }
+        XCTAssertEqual(identity([first]), identity([second, first]))
+        XCTAssertNotEqual(identity([first]), identity([first], subject: "other-account:item"))
+        XCTAssertNotEqual(identity([first]), identity([first], policy: "online"))
+        XCTAssertNotEqual(identity([first], subject: nil), identity([second], subject: nil))
+        func network(_ revision: CredentialRevision) throws -> ArtworkReference {
+            .networkFile(try NetworkArtworkReference(
+                accountID: "share", credentialRevision: revision, catalogArtworkID: "poster",
+                representation: RemoteFileRepresentation(
+                    size: 1024, identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: .distantPast),
+                    consistency: .changeDetecting
+                ), sourceRevision: "1"
+            ))
+        }
+        XCTAssertNotEqual(
+            identity([try network(CredentialRevision())]),
+            identity([try network(CredentialRevision())])
+        )
+    }
+
     #if canImport(UIKit)
     func testLandscapeHeroesKeepSourcePreferenceBetweenUsableBackdrops() async {
         let library = ArtworkReference.remote(URL(string: "https://example.test/library.jpg")!)
@@ -229,7 +256,15 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         XCTAssertEqual(hero.metadataSettings.disabledOrder, ["tmdb"])
         XCTAssertNotEqual(hero.identity, cards.identity)
         XCTAssertEqual(hero.metadataSettings.artworkPolicyIdentity, logo.metadataSettings.artworkPolicyIdentity)
-        XCTAssertEqual(logo.identity, "\(hero.identity)|logo-language:\(logo.logoLanguage)")
+        XCTAssertNotEqual(logo.identity, hero.identity)
+        XCTAssertNotEqual(
+            hero.identity,
+            ArtworkPresentationPolicy(area: .details, providers: providers, placement: .detailBackdrop, logoLanguage: "fr").identity
+        )
+        XCTAssertNotEqual(
+            hero.identity,
+            ArtworkPresentationPolicy(area: .details, settings: .init(preference: .online), providers: providers, placement: .detailBackdrop).identity
+        )
         XCTAssertFalse(hero.forPlacement(.poster).prefersOnlineArtwork)
         XCTAssertFalse(hero.forArea(.episodes).prefersOnlineArtwork)
         let item = MediaItem(id: "detail", title: "Detail", kind: .movie)

@@ -38,6 +38,34 @@ private struct DetailRecommendations: RelatedTitlesProviding {
 
 @MainActor
 final class ItemDetailViewModelTests: XCTestCase {
+    func testArtworkWaitsForAuthoritativeItemButNotChildren() async {
+        let itemStarted = expectation(description: "Native detail started")
+        let childrenStarted = expectation(description: "Children started")
+        let itemGate = AsyncGate()
+        let childrenGate = AsyncGate()
+        let seed = MediaItem(id: "artwork-series", title: "Series", kind: .series)
+        var authoritative = seed
+        authoritative.backdropURL = URL(string: "https://example.test/curated.jpg")
+        let provider = FakeMediaProvider(allItems: [authoritative])
+        provider.itemGate = [seed.id: { itemStarted.fulfill(); await itemGate.wait() }]
+        provider.childrenGate = [seed.id: { _ in childrenStarted.fulfill(); await childrenGate.wait() }]
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: seed.id, initialItem: seed, onlineTrailerResolver: { _ in [] }
+        )
+        defer { vm.suspendEnrichment() }
+        let task = Task { await vm.load() }
+        await fulfillment(of: [itemStarted], timeout: 2)
+        XCTAssertFalse(vm.artworkSourceIsReady)
+        XCTAssertNotNil(vm.state.value, "The page remains usable while only artwork waits.")
+        itemGate.open()
+        await fulfillment(of: [childrenStarted], timeout: 2)
+        XCTAssertTrue(vm.artworkSourceIsReady)
+        XCTAssertEqual(vm.state.value?.item.backdropURL, authoritative.backdropURL)
+        XCTAssertEqual(vm.state.value?.childrenLoaded, false)
+        childrenGate.open()
+        await task.value
+    }
+
     func testRecommendationsOverlapPrimaryDetailWithoutStartingLibrarySearches() async {
         let primaryStarted = expectation(description: "Primary request started")
         let recommendationsStarted = expectation(description: "Recommendations started before primary completes")
@@ -1801,6 +1829,8 @@ final class ItemDetailViewModelTests: XCTestCase {
     }
 
     func testDiscoveryRechecksLibraryAfterExternalMetadataSuppliesMissingIDs() async {
+        let nativeStarted = expectation(description: "Resolved library item started")
+        let nativeGate = AsyncGate()
         let seed = MediaItem(
             id: "orphan-alias", title: "Star Wars: Skeleton Crew", kind: .series,
             productionYear: 2024, availability: .unknown, locallyValidatedPlayableSource: false
@@ -1810,6 +1840,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             productionYear: 2024, providerIDs: ["Tmdb": "202879", "Tvdb": "420600"]
         )
         let provider = FakeMediaProvider(allItems: [owned], kind: .silo)
+        provider.itemGate = [owned.id: { nativeStarted.fulfill(); await nativeGate.wait() }]
         provider.childrenByParent = [owned.id: [season("s1", "Season 1")]]
         let vm = ItemDetailViewModel(
             provider: nil, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
@@ -1829,7 +1860,12 @@ final class ItemDetailViewModelTests: XCTestCase {
                 return .init(sources: [MediaSourceRef(accountID: "silo", itemID: owned.id, kind: .series, providerKind: .silo)])
             }
         )
-        await vm.load()
+        let load = Task { await vm.load() }
+        await fulfillment(of: [nativeStarted], timeout: 2)
+        XCTAssertFalse(vm.artworkSourceIsReady, "Discovery art must not paint before the matching library source settles.")
+        nativeGate.open()
+        await load.value
+        XCTAssertTrue(vm.artworkSourceIsReady)
         XCTAssertFalse(vm.isDiscoveryItem)
         XCTAssertEqual(vm.state.value?.item.id, owned.id)
         XCTAssertEqual(vm.state.value?.children.map(\.id), ["s1"])

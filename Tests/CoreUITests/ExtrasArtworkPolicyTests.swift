@@ -268,7 +268,7 @@ final class ExtrasArtworkPolicyTests: XCTestCase {
             let genericKey = ArtworkResolveKey.make(
                 references: standardReferences, variant: .landscapeCard, maxAspectRatio: nil,
                 pinIdentity: CardArtworkPolicy.standard.pinIdentity(for: item),
-                providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+                providerPolicyIdentity: ArtworkPresentationPolicy(providers: settings).identity
             )
             ArtworkSeedMemo.store(
                 FirstPaintArtwork(image: image(.red), reference: .remote(url("wrong-online.jpg")), variant: .landscapeCard),

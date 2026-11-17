@@ -575,6 +575,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     presentsEpisodeStill: showsEpisodeSubjectHero(detail.item),
                     pullDistance: heroPullDistance
                 )
+                .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
 
                 if detail.item.kind == .series, !isDiscoveryItem {
                     PlozziOSInlineSeriesBrowser(

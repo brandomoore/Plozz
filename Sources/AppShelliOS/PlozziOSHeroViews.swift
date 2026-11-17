@@ -23,15 +23,10 @@ enum PlozziOSHeroArtworkFallback {
         surfaceRole: HeroTrailerSurfaceRole,
         router: ArtworkRouter = .shared
     ) async -> URL? {
-        if style == .compactPortrait {
-            return await router.portraitHeroArtworkURL(
-                for: item, placement: surfaceRole == .home ? .homeHero : .detailBackdrop
-            )
-        }
-        return await router.artworkURL(
-            for: item,
-            placements: placements(surfaceRole: surfaceRole)
-        )
+        await MediaArtworkSource.heroFallback(
+            for: item, placement: surfaceRole == .home ? .homeHero : .detailBackdrop,
+            prefersPortrait: style == .compactPortrait, router: router
+        )?()
     }
 
     static func placements(
@@ -667,7 +662,6 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         let pullOffset = max(pullDistance - (pullScale - 1) * height / 2, 0)
             + (pullDistance > 0 ? 2 : 0)
         let artworkItem = item
-        let artworkPlacement: ArtworkPlacement = surfaceRole == .home ? .homeHero : .detailBackdrop
         let onlineArtworkFallback: @Sendable () async -> URL? = { [style, surfaceRole] in
             await PlozziOSHeroArtworkFallback.resolve(
                 for: artworkItem, style: style, surfaceRole: surfaceRole
@@ -699,7 +693,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
                         asyncFallbackURL: onlineArtworkFallback,
                         sharedResolutionIdentity: artworkAppearanceID,
                         itemID: item.id,
-                        artworkPinIdentity: "\(artworkPlacement.rawValue):\(item.id)",
+                        artworkPinIdentity: "\(surfaceRole == .home ? "home" : "detail"):\(item.stablePresentationID)",
                         width: reflectionWidth,
                         contentWidth: contentWidth,
                         height: height,
@@ -1204,7 +1198,7 @@ private struct PlozziOSHeroBackdrop: View {
             artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
-                "\(surfaceRole == .home ? "home" : "detail"):\(presentation.itemID)", style: style
+                "\(surfaceRole == .home ? "home" : "detail"):\(presentation.artworkIdentity)", style: style
             ),
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
@@ -1488,7 +1482,7 @@ struct PlozziOSHomeWipeBackdrop: View {
                 asyncFallbackURL: onlineArtworkFallback,
                 sharedResolutionIdentity: artworkAppearanceID,
                 itemID: item.id,
-                artworkPinIdentity: "home:\(item.id)",
+                artworkPinIdentity: "home:\(item.stablePresentationID)",
                 width: reflectionWidth,
                 contentWidth: contentWidth,
                 height: height,
@@ -1600,7 +1594,7 @@ struct PlozziOSHomeStaticBackdrop: View {
                 asyncFallbackURL: onlineArtworkFallback,
                 sharedResolutionIdentity: artworkAppearanceID,
                 itemID: item.id,
-                artworkPinIdentity: "home:\(item.id)",
+                artworkPinIdentity: "home:\(item.stablePresentationID)",
                 width: reflectionWidth,
                 contentWidth: contentWidth,
                 height: height,
@@ -1688,7 +1682,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
             previewVariant: .heroPreview,
             artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
-            pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(presentation.itemID)", style: style),
+            pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(presentation.artworkIdentity)", style: style),
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
@@ -1711,7 +1705,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
             previewVariant: .heroPreview,
             artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
-            pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(presentation.itemID)", style: style),
+            pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity("home:\(presentation.artworkIdentity)", style: style),
             sharedResolutionIdentity: sharedResolutionIdentity.map {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
@@ -2066,6 +2060,7 @@ struct PlozziOSHomeHeroForeground: View {
 }
 
 struct PlozziOSDetailHeroForeground: View {
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @State private var isVersionPickerPresented = false
     @State var sourceMenu = PlaybackSourceMenuState()
     @Environment(\.colorScheme) private var colorScheme
@@ -2173,11 +2168,15 @@ struct PlozziOSDetailHeroForeground: View {
     /// The episode's own 16:9 still, shown above its details on an episode page.
     /// Same artwork chain and spoiler policy as the episode cards.
     private var episodeStill: some View {
-        FallbackAsyncImage(
-            references: item.artworkReferences(for: .episodeThumbnail),
+        let source = MediaArtworkSource(
+            item: item, placement: .episodeThumbnail, policy: artworkPolicy.forArea(.episodes)
+        )
+        return FallbackAsyncImage(
+            references: source.references,
             variant: .landscapeCard,
-            asyncFallbackURL: { await ArtworkRouter.shared.artworkURL(.thumbnail, for: item) },
-            pinIdentity: item.stablePresentationID
+            artworkPolicy: source.policy,
+            asyncFallbackURL: source.fallbackURL,
+            pinIdentity: source.itemIdentity
         ) {
             MediaArtworkPlaceholder(
                 symbol: .init(for: item), cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius

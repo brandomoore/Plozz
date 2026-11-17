@@ -204,6 +204,14 @@ Album/artist actions retain their originating account when opening the Music
 stack. Mozz downloads, radio, library synchronization and account storage are
 not imported.
 
+Player covers, queue rows and the bounded nearby-cover prefetch resolve through
+`MusicArtworkFallback` and the shared first-paint policy before exposing a URL.
+They do not briefly show the raw library cover while an online preference resolves.
+The adapter retains that selection for an account-qualified track and artwork
+policy; policy/profile changes invalidate it, and late results cannot restore a
+previous scope. Music playback and the existing player motion remain independent
+of artwork readiness.
+
 Mobile browsing reuses the tvOS view models and provider aggregation with
 touch-sized cards and vertically scrolling detail pages. The landing page uses
 20-point content margins, Dynamic Type section headings, and one horizontally

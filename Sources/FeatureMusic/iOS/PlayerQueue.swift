@@ -858,7 +858,7 @@ struct PlayerQueuePanel<Card: View, Controls: View>: View {
                 onSelect(orderPosition)
             } label: {
                 HStack(spacing: 12) {
-                    ArtworkView(artwork: track.artwork,
+                    ArtworkView(track: track,
                                 seed: track.albumTitle ?? track.title,
                                 size: 44, cornerRadius: 6)
                     VStack(alignment: .leading, spacing: 2) {

@@ -502,6 +502,7 @@ struct SeriesDetailView: View {
                     // closures otherwise made it compare unequal every time — so
                     // it rebuilt while masked out behind the episode browser.
                     .equatable()
+                    .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
                     .id(Self.topAnchorID)
                     .task(id: viewModel.episodeBadgeEnrichmentKey(for: playTarget)) {
                         guard let target = playTarget else { return }

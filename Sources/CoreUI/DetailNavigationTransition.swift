@@ -635,10 +635,6 @@ public enum DetailTransitionNavigation {
         pending[key] = entry
         if preservingVideo {
             entry.preserveVideo()
-        } else {
-            entry.overlay.destination.image = source?.artworkPolicy.flatMap {
-                cachedDestinationArtwork(for: item, policy: $0)
-            }
         }
         entry.start()
         // A direct-play route must never leave a prepared navigation cover behind.
@@ -675,29 +671,6 @@ public enum DetailTransitionNavigation {
         guard !entry.preservesVideo, let policy = entry.source?.artworkPolicy,
               let request = DetailBackdropArtworkRequest(item: item, policy: policy) else { return }
         entry.backdropRequest = request
-        entry.backdropDelivery = Task { @MainActor [weak entry] in
-            guard let artwork = await request.task.value, !Task.isCancelled else { return }
-            entry?.overlay.destination.image = artwork.image
-            entry?.start()
-        }
-    }
-
-    private static func cachedDestinationArtwork(for item: MediaItem, policy: ArtworkPresentationPolicy) -> UIImage? {
-        guard item.kind == .movie || item.kind == .series else { return nil }
-        let source = DetailBackdropArtworkSource(item: item, policy: policy)
-        if let prepared = ArtworkSeedMemo.prepared(for: source.key, variant: .heroBackdrop)
-            ?? ArtworkSeedMemo.prepared(for: source.previewKey, variant: .heroPreview) {
-            return prepared.image
-        }
-        guard !source.settings.preferOnlineArtwork else { return nil }
-        for reference in source.references {
-            if let image = ArtworkImageCache.shared.cachedImage(for: reference, variant: .heroBackdrop)
-                ?? ArtworkImageCache.shared.cachedImage(for: reference, variant: .heroPreview),
-               image.size.height > 0, image.size.width / image.size.height <= 3 {
-                return image
-            }
-        }
-        return nil
     }
 }
 
@@ -720,7 +693,6 @@ final class PendingDetailEntrance {
     let windowSize: CGSize
     let scrollPositions: [DetailTransitionScrollPosition]
     var backdropRequest: DetailBackdropArtworkRequest?
-    var backdropDelivery: Task<Void, Never>?
 
     init(
         window: UIWindow, itemKey: String, source: DetailTransitionSourceReference?,
@@ -757,14 +729,11 @@ final class PendingDetailEntrance {
             animator = nil
             onLanded?()
         }
-        // Submit motion before the router constructs or loads the destination.
         CATransaction.flush()
     }
 
     func preserveVideo() {
         preservesVideo = true
-        backdropDelivery?.cancel()
-        backdropDelivery = nil
         backdropRequest?.cancel()
         backdropRequest = nil
         animator?.stopAnimation(true)
@@ -773,8 +742,6 @@ final class PendingDetailEntrance {
     }
 
     func discard() {
-        backdropDelivery?.cancel()
-        backdropDelivery = nil
         backdropRequest?.cancel()
         backdropRequest = nil
         expiry?.cancel()
@@ -1012,7 +979,6 @@ public final class TVDetailEntranceSession {
         artworkHasLanded = true
         artworkLandedAt = opening?.landedAt ?? CACurrentMediaTime()
         opening?.onLanded = nil
-        opening?.backdropDelivery?.cancel()
         opening = nil
         animator = nil
         startForegroundIfReady()
@@ -1167,7 +1133,6 @@ public final class TVDetailEntranceSession {
             : DetailTransitionSurface()
         screen.alpha = 1
         opening?.onLanded = nil
-        opening?.backdropDelivery?.cancel()
         opening?.animator?.stopAnimation(true)
         opening = nil
         animator?.stopAnimation(true)
@@ -1345,7 +1310,6 @@ public final class TVDetailEntranceSession {
         sequence?.cancel()
         sequence = nil
         opening?.onLanded = nil
-        opening?.backdropDelivery?.cancel()
         opening?.animator?.stopAnimation(true)
         opening = nil
         animator?.stopAnimation(true)

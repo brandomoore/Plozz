@@ -56,6 +56,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     private let onResolveReference: ((ArtworkReference?) -> Void)?
     private let pinIdentity: String?
     private let sharedResolutionIdentity: String?
+    private let lookupIdentity: String?
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
     private var showsPlaceholderWhileLoading = false
@@ -72,6 +73,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
         onResolveReference: ((ArtworkReference?) -> Void)? = nil,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
+        lookupIdentity: String? = nil,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
@@ -86,31 +88,37 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
         self.onResolveReference = onResolveReference
         self.pinIdentity = pinIdentity
         self.sharedResolutionIdentity = sharedResolutionIdentity
+        self.lookupIdentity = lookupIdentity
         self.content = content
         self.placeholder = placeholder
     }
 
     public var body: some View {
         #if canImport(UIKit)
-        ArtworkPolicyReader(policy: artworkPolicy) { policy in
-            FilteredArtworkImage(
-                references: references,
-                prefersPrimaryReference: prefersPrimaryReference,
-                prefersLandscape: prefersLandscape,
-                maxAspectRatio: maxAspectRatio,
-                variant: variant,
-                previewVariant: previewVariant,
-                asyncFallbackURL: asyncFallbackURL,
-                prefersOnlineArtwork: policy.prefersOnlineArtwork,
-                providerPolicyIdentity: policy.identity,
-                onResolveReference: onResolveReference,
-                pinIdentity: pinIdentity,
-                sharedResolutionIdentity: sharedResolutionIdentity,
-                showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
-                content: .image(content),
-                placeholder: placeholder
-            )
-            .id(policy.identity)
+        ArtworkPolicyReader(policy: artworkPolicy) { policy, sourceReady in
+            if sourceReady {
+                FilteredArtworkImage(
+                    references: references,
+                    prefersPrimaryReference: prefersPrimaryReference,
+                    prefersLandscape: prefersLandscape,
+                    maxAspectRatio: maxAspectRatio,
+                    variant: variant,
+                    previewVariant: previewVariant,
+                    asyncFallbackURL: asyncFallbackURL,
+                    prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                    providerPolicyIdentity: policy.identity,
+                    onResolveReference: onResolveReference,
+                    pinIdentity: pinIdentity,
+                    sharedResolutionIdentity: sharedResolutionIdentity,
+                    lookupIdentity: lookupIdentity,
+                    showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
+                    content: .image(content),
+                    placeholder: placeholder
+                )
+                .id(displayIdentity(policy))
+            } else {
+                placeholder()
+            }
         }
         #else
         SequentialAsyncImage(
@@ -136,26 +144,31 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     #if canImport(UIKit)
     /// Reports the bitmap actually painted, including cached seeds and upgrades.
     public func reportingHeroArtwork(id: String?) -> some View {
-        ArtworkPolicyReader(policy: artworkPolicy) { policy in
-            FilteredArtworkImage(
-                references: references,
-                prefersPrimaryReference: prefersPrimaryReference,
-                prefersLandscape: prefersLandscape,
-                maxAspectRatio: maxAspectRatio,
-                variant: variant,
-                previewVariant: previewVariant,
-                asyncFallbackURL: asyncFallbackURL,
-                prefersOnlineArtwork: policy.prefersOnlineArtwork,
-                providerPolicyIdentity: policy.identity,
-                onResolveReference: onResolveReference,
-                pinIdentity: pinIdentity,
-                sharedResolutionIdentity: sharedResolutionIdentity,
-                reportedHeroID: id,
-                showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
-                content: .image(content),
-                placeholder: placeholder
-            )
-            .id(policy.identity)
+        ArtworkPolicyReader(policy: artworkPolicy) { policy, sourceReady in
+            if sourceReady {
+                FilteredArtworkImage(
+                    references: references,
+                    prefersPrimaryReference: prefersPrimaryReference,
+                    prefersLandscape: prefersLandscape,
+                    maxAspectRatio: maxAspectRatio,
+                    variant: variant,
+                    previewVariant: previewVariant,
+                    asyncFallbackURL: asyncFallbackURL,
+                    prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                    providerPolicyIdentity: policy.identity,
+                    onResolveReference: onResolveReference,
+                    pinIdentity: pinIdentity,
+                    sharedResolutionIdentity: sharedResolutionIdentity,
+                    lookupIdentity: lookupIdentity,
+                    reportedHeroID: id,
+                    showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
+                    content: .image(content),
+                    placeholder: placeholder
+                )
+                .id(displayIdentity(policy))
+            } else {
+                placeholder()
+            }
         }
     }
 
@@ -165,26 +178,39 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     func resolvedBitmap<ResolvedContent: View>(
         @ViewBuilder content: @escaping (UIImage?, String?) -> ResolvedContent
     ) -> some View {
-        ArtworkPolicyReader(policy: artworkPolicy) { policy in
-            FilteredArtworkImage(
-                references: references,
-                prefersPrimaryReference: prefersPrimaryReference,
-                prefersLandscape: prefersLandscape,
-                maxAspectRatio: maxAspectRatio,
-                variant: variant,
-                previewVariant: previewVariant,
-                asyncFallbackURL: asyncFallbackURL,
-                prefersOnlineArtwork: policy.prefersOnlineArtwork,
-                providerPolicyIdentity: policy.identity,
-                onResolveReference: onResolveReference,
-                pinIdentity: pinIdentity,
-                sharedResolutionIdentity: sharedResolutionIdentity,
-                showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
-                content: .bitmap(content),
-                placeholder: { EmptyView() }
-            )
-            .id(policy.identity)
+        ArtworkPolicyReader(policy: artworkPolicy) { policy, sourceReady in
+            if sourceReady {
+                FilteredArtworkImage(
+                    references: references,
+                    prefersPrimaryReference: prefersPrimaryReference,
+                    prefersLandscape: prefersLandscape,
+                    maxAspectRatio: maxAspectRatio,
+                    variant: variant,
+                    previewVariant: previewVariant,
+                    asyncFallbackURL: asyncFallbackURL,
+                    prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                    providerPolicyIdentity: policy.identity,
+                    onResolveReference: onResolveReference,
+                    pinIdentity: pinIdentity,
+                    sharedResolutionIdentity: sharedResolutionIdentity,
+                    lookupIdentity: lookupIdentity,
+                    showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
+                    content: .bitmap(content),
+                    placeholder: { EmptyView() }
+                )
+                .id(displayIdentity(policy))
+            } else {
+                content(nil, nil)
+            }
         }
+    }
+
+    private func displayIdentity(_ policy: ArtworkPresentationPolicy) -> ArtworkDisplayIdentity {
+        ArtworkDisplayIdentity(
+            subject: pinIdentity, policy: policy.identity, references: references,
+            variant: variant, maxAspectRatio: maxAspectRatio,
+            prefersPrimaryReference: prefersPrimaryReference, prefersLandscape: prefersLandscape
+        )
     }
     #endif
 }
@@ -220,6 +246,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
+        lookupIdentity: String? = nil,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.init(
@@ -233,6 +260,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
             onResolveReference: nil,
             pinIdentity: pinIdentity,
             sharedResolutionIdentity: sharedResolutionIdentity,
+            lookupIdentity: lookupIdentity,
             content: ArtworkFillImage.init,
             placeholder: placeholder
         )
@@ -248,6 +276,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
+        lookupIdentity: String? = nil,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.init(
@@ -261,6 +290,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
             onResolveReference: nil,
             pinIdentity: pinIdentity,
             sharedResolutionIdentity: sharedResolutionIdentity,
+            lookupIdentity: lookupIdentity,
             content: ArtworkFillImage.init,
             placeholder: placeholder
         )
@@ -329,10 +359,6 @@ private struct SequentialAsyncImage<Content: View, Placeholder: View>: View {
 /// poster. The provider, alias and presentation layers all had distinct identities
 /// and correct URLs; the collision existed only here, at the final image state.
 enum ArtworkResolveKey {
-    static func policyIdentity(_ settings: MetadataProviderSettings) -> String {
-        settings.artworkPolicyIdentity
-    }
-
     static func make(
         references: [ArtworkReference],
         variant: ArtworkImageVariant,
@@ -340,7 +366,8 @@ enum ArtworkResolveKey {
         pinIdentity: String?,
         providerPolicyIdentity: String = "default",
         prefersPrimaryReference: Bool = false,
-        prefersLandscape: Bool = false
+        prefersLandscape: Bool = false,
+        lookupIdentity: String? = nil
     ) -> String {
         (
             [
@@ -351,6 +378,7 @@ enum ArtworkResolveKey {
             ]
             + (prefersPrimaryReference ? ["primary-reference-first"] : [])
             + (prefersLandscape ? ["landscape-first"] : [])
+            + (lookupIdentity.map { ["lookup:\($0)"] } ?? [])
             + references.map(\.privacySafeIdentity)
         )
         .joined(separator: "\n")
@@ -459,12 +487,11 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     let onResolveReference: ((ArtworkReference?) -> Void)?
     /// Identity this view's picture belongs to (a show, a track).
     ///
-    /// Used to tell "better art for what is already up" apart from "a different
-    /// subject entirely". The first keeps its current picture on screen while the
-    /// replacement loads; the second must blank, or a recycled view would leave
-    /// the previous show's art showing under the new one's title.
+    /// Compatible enrichment retains the selected asset. A different subject or
+    /// policy receives a fresh display identity before its first frame.
     let pinIdentity: String?
     let sharedResolutionIdentity: String?
+    let lookupIdentity: String?
     let reportedHeroID: String?
     let showsPlaceholderWhileLoading: Bool
     let content: ResolvedArtworkContent<Content>
@@ -513,6 +540,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         onResolveReference: ((ArtworkReference?) -> Void)? = nil,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
+        lookupIdentity: String? = nil,
         reportedHeroID: String? = nil,
         showsPlaceholderWhileLoading: Bool = false,
         content: ResolvedArtworkContent<Content>,
@@ -530,6 +558,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         self.onResolveReference = onResolveReference
         self.pinIdentity = pinIdentity
         self.sharedResolutionIdentity = sharedResolutionIdentity
+        self.lookupIdentity = lookupIdentity
         self.reportedHeroID = reportedHeroID
         self.showsPlaceholderWhileLoading = showsPlaceholderWhileLoading
         self.content = content
@@ -552,7 +581,8 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             pinIdentity: pinIdentity,
             providerPolicyIdentity: providerPolicyIdentity,
             prefersPrimaryReference: prefersPrimaryReference,
-            prefersLandscape: prefersLandscape
+            prefersLandscape: prefersLandscape,
+            lookupIdentity: lookupIdentity
         )
         let prepared = ArtworkSeedMemo.prepared(for: memoKey, variant: variant)
         let preparedPreview = previewVariant.flatMap { preview in
@@ -561,7 +591,8 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     references: references, variant: preview, maxAspectRatio: maxAspectRatio,
                     pinIdentity: pinIdentity, providerPolicyIdentity: providerPolicyIdentity,
                     prefersPrimaryReference: prefersPrimaryReference,
-                    prefersLandscape: prefersLandscape
+                    prefersLandscape: prefersLandscape,
+                    lookupIdentity: lookupIdentity
                 ),
                 variant: preview
             )
@@ -615,7 +646,8 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             pinIdentity: pinIdentity,
             providerPolicyIdentity: providerPolicyIdentity,
             prefersPrimaryReference: prefersPrimaryReference,
-            prefersLandscape: prefersLandscape
+            prefersLandscape: prefersLandscape,
+            lookupIdentity: lookupIdentity
         )
     }
 
@@ -678,6 +710,22 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             onResolveReference?(displayedReference)
             return
         }
+        let isSameSubject = pinIdentity != nil && pinnedIdentity == pinIdentity && hasSamePriority
+        if isSameSubject, image != nil, let displayedReference {
+            onResolveReference?(displayedReference)
+            if isPreviewQuality {
+                let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
+                guard !Task.isCancelled else { return }
+                if let loaded, Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
+                    image = loaded
+                    isPreviewQuality = false
+                    if let loadedKey {
+                        ArtworkSeedMemo.store(loaded, reference: displayedReference, for: loadedKey)
+                    }
+                }
+            }
+            return
+        }
         if let prepared = ArtworkSeedMemo.prepared(for: key, variant: variant) {
             image = prepared.image
             resolved = true
@@ -688,36 +736,8 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             onResolveReference?(prepared.reference)
             return
         }
-        let isSameSubject = pinIdentity != nil && pinnedIdentity == pinIdentity && hasSamePriority
-        if loadedKey == key, isSameSubject, image != nil, isPreviewQuality,
-           let displayedReference {
-            let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
-            guard !Task.isCancelled else { return }
-            if let loaded, Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
-                image = loaded
-                isPreviewQuality = false
-                ArtworkSeedMemo.store(loaded, reference: displayedReference, for: key)
-            }
-            loadedKey = key
-            return
-        }
-        // Same show, different candidates: a better picture has been found for
-        // what is already on screen. Take it.
-        //
-        // This deliberately does NOT bail out. It used to, on the reasoning that
-        // replacing a painted card is the "art changes as I scroll past" fault —
-        // but that reasoning had the cost backwards. A card only reaches here when
-        // something better exists, and a show first seen this session has no cached
-        // answer, so it paints the server's titled art and would then be forbidden
-        // from ever correcting. The result was a visibly doubled title that sat
-        // there until the viewer happened to scroll far enough to destroy and
-        // rebuild the card. "Wrong until you scroll" is far worse than a swap.
-        //
-        // The swap costs nothing visually because the replacement is only ever
-        // published after it has been fetched and decoded, so it is already in
-        // cache: it lands in a single frame, with no loading state in between.
-        // The urls changed (or this is the first run). Prefer a synchronous cache
-        // hit for the *new* urls so a warmed image shows with no flash.
+        // No selection has painted for this display identity. Cache hits remain
+        // subordinate to the configured source order.
         let seeded = prefersOnlineArtwork && asyncFallbackURL != nil && !prefersPrimaryReference
             ? nil
             : Self.cachedUsableImage(
@@ -741,14 +761,6 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 return
             }
         }
-        // No cached image for the new inputs: drop any stale art so we never leave
-        // a previous track's cover on screen, and show the loading state instead.
-        //
-        // Unless it is the same subject, in which case what is on screen is not
-        // stale, just second-best: keep it up and swap only once the replacement
-        // has actually loaded. This is what makes correcting a painted card free —
-        // the card is never blanked to fetch something it is already showing an
-        // acceptable version of.
         if seeded == nil, !isPreviewQuality, !isSameSubject {
             // This is the visible flash: whatever was painted is dropped and the
             // layer goes flat until a reload lands. Trace the clear itself — the
@@ -782,7 +794,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     prefersLandscape: true,
                     asyncOnlineURL: asyncFallbackURL,
                     prefersOnlineArtwork: prefersOnlineArtwork,
-                    sharedKey: sharedResolutionIdentity.map { "\($0)|\(providerPolicyIdentity)" }
+                    sharedKey: sharedResolutionIdentity.map { "\($0)|\(key)" }
                 ) {
                     await adoptFirstPaint(firstPaint, for: key)
                     return
@@ -806,7 +818,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 maxAspectRatio: maxAspectRatio,
                 asyncOnlineURL: asyncFallbackURL,
                 prefersOnlineArtwork: true,
-                sharedKey: sharedResolutionIdentity.map { "\($0)|\(providerPolicyIdentity)" }
+                sharedKey: sharedResolutionIdentity.map { "\($0)|\(key)" }
             ) {
                 await adoptFirstPaint(firstPaint, for: key)
                 return

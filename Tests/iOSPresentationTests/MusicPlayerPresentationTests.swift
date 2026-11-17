@@ -3,6 +3,7 @@ import AVFoundation
 @testable import AppShelliOS
 import CoreModels
 import CoreNetworking
+import CoreUI
 @testable import FeatureMusic
 import ProviderPlex
 import SwiftUI
@@ -12,6 +13,39 @@ import XCTest
 
 @MainActor
 final class MusicPlayerPresentationTests: XCTestCase {
+    func testPlayerWaitsForSelectedArtworkAndKeepsItDuringTrackEnrichment() async throws {
+        let session = MusicPlayerSession()
+        defer { session.stop() }
+        let user = UserSession(
+            server: MediaServer(id: "server", name: "Music", baseURL: URL(string: "https://music.invalid")!, provider: .plex),
+            userID: "user", userName: "Listener", deviceID: "device", accessToken: "fixture-token"
+        )
+        session.configure(
+            accounts: [.init(account: Account(id: "account", from: user), provider: PlexProvider(session: user, http: MusicFeedbackHTTP()))],
+            authorizationID: "artwork", isAuthorized: { true }
+        )
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        try XCTUnwrap(image.pngData()).write(to: url)
+        defer {
+            do { try FileManager.default.removeItem(at: url) }
+            catch { XCTFail("Could not remove owned artwork fixture: \(error)") }
+        }
+        var source = CoreModels.MusicTrack(id: "song", title: "Song", artworkURL: url, sourceAccountID: "account")
+        XCTAssertNil(session.playback.track(source).artwork, "The raw library cover must not flash before policy resolution.")
+        let policy = ArtworkPresentationPolicy(area: .music, settings: .init(preference: .library))
+        await session.environment.loadArtwork(for: session.playback.track(source), policy: policy)
+        XCTAssertEqual(session.playback.track(source).artwork?.url, url)
+        source.artworkURL = URL(string: "https://example.test/late-cover.png")
+        await session.environment.loadArtwork(for: session.playback.track(source), policy: policy)
+        XCTAssertEqual(session.playback.track(source).artwork?.url, url)
+        session.configure(accounts: [], authorizationID: "removed", isAuthorized: { false })
+        XCTAssertNil(session.playback.track(source).artwork)
+    }
+
     func testPlayerAccentMatchesMozzInLightAndDarkAppearance() {
         let cases: [(UIUserInterfaceStyle, [CGFloat])] = [
             (.light, [28 / 255, 28 / 255, 30 / 255]),

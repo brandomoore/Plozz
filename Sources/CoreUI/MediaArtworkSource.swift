@@ -8,6 +8,20 @@ public struct MediaArtworkSource: Sendable {
     public let policy: ArtworkPresentationPolicy
     public let itemIdentity: String
 
+    public static func heroFallback(
+        for item: MediaItem, placement: ArtworkPlacement, prefersPortrait: Bool = false,
+        router: ArtworkRouter = .shared
+    ) -> (@Sendable () async -> URL?)? {
+        guard item.supportsExternalArtworkLookup,
+              ![.folder, .collection, .unknown].contains(item.kind) else { return nil }
+        return {
+            if prefersPortrait {
+                return await router.portraitHeroArtworkURL(for: item, placement: placement)
+            }
+            return await router.heroArtworkURL(for: item, placement: placement)
+        }
+    }
+
     public init(item: MediaItem, placement: ArtworkPlacement, policy: ArtworkPresentationPolicy) {
         self.init(item: item, placements: [placement], policy: policy)
     }

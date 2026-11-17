@@ -19,6 +19,7 @@ struct Track: Equatable {
     var feedback: MusicFeedback?
     var quality: PlaybackQuality?
     var artworkOverride: URL?
+    var artworkNeedsResolution = false
 
     var id: String {
         let account = source.sourceAccountID ?? ""
@@ -28,7 +29,10 @@ struct Track: Equatable {
     var artistName: String { source.artistName ?? "" }
     var albumTitle: String? { source.albumTitle }
     var albumID: String? { source.albumID }
-    var artwork: ArtworkRef? { (artworkOverride ?? source.artworkURL).map { ArtworkRef(key: id, url: $0) } }
+    var artwork: ArtworkRef? {
+        (artworkOverride ?? (artworkNeedsResolution ? nil : source.artworkURL))
+            .map { ArtworkRef(key: id, url: $0) }
+    }
     var isFavorite: Bool {
         if case let .favorite(value) = feedback { return value }
         return false
@@ -50,6 +54,7 @@ final class MusicPlayerAdapter {
     let controller: AudioPlaybackController
     var feedback: [String: MusicFeedback] = [:]
     var artwork: [String: URL] = [:]
+    var artworkPolicyIdentity: String?
 
     init(controller: AudioPlaybackController) {
         self.controller = controller
@@ -88,6 +93,7 @@ final class MusicPlayerAdapter {
         var value = Track(source: source)
         value.feedback = feedback[value.id]
         value.artworkOverride = artwork[value.id]
+        value.artworkNeedsResolution = true
         if source.isSameQueueEntry(as: controller.currentTrack ?? source) {
             value.quality = controller.currentQuality
         }
@@ -175,6 +181,7 @@ final class MusicPlayerEnvironment: ObservableObject {
         isAuthorized = { false }
         playback.feedback = [:]
         playback.artwork = [:]
+        playback.artworkPolicyIdentity = nil
         playback.controller.stop()
         navigation.reset()
         ui.isFullPresented = false
@@ -206,11 +213,23 @@ final class MusicPlayerEnvironment: ObservableObject {
     }
 
     func loadArtwork(policy: ArtworkPresentationPolicy) async {
-        guard isAuthorized(), let track = playback.currentTrack,
+        guard let track = playback.currentTrack else { return }
+        await loadArtwork(for: track, policy: policy)
+    }
+
+    func loadArtwork(for track: Track, policy: ArtworkPresentationPolicy) async {
+        guard !Task.isCancelled, isAuthorized(),
               accounts.contains(where: { $0.account.id == track.source.sourceAccountID }) else { return }
+        if playback.artworkPolicyIdentity != policy.identity {
+            playback.artwork = [:]
+            playback.artworkPolicyIdentity = policy.identity
+        }
+        guard playback.artwork[track.id] == nil else { return }
         let generation = generation
         let resolved = await MusicArtworkFallback.resolveTrack(track.source, policy: policy)
-        guard !Task.isCancelled, isAuthorized(), self.generation == generation else { return }
+        guard !Task.isCancelled, isAuthorized(), self.generation == generation,
+              playback.artworkPolicyIdentity == policy.identity,
+              playback.artwork[track.id] == nil else { return }
         if case let .remote(url) = resolved?.reference { playback.artwork[track.id] = url }
     }
 

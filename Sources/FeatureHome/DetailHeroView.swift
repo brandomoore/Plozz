@@ -877,7 +877,7 @@ struct DetailHeroView: View, Equatable {
                 HeroLogoArtwork(
                     references: backdrop.artworkReferences(for: .logo),
                     asyncFallbackURL: tmdbLogoFallback,
-                    displayedArtworkID: "detail:\(backdrop.id)",
+                    displayedArtworkID: "detail:\(backdrop.stablePresentationID)",
                     // Cap the WIDTH as well as the height, matching the Home hero.
                     // With only a height cap a wide, short wordmark fits against an
                     // unbounded width and then floats inside the full 200pt frame,
@@ -1123,7 +1123,7 @@ struct DetailHeroView: View, Equatable {
             // opposite the text instead.
             if !presentsEpisodeStill {
                 heroBackdrop()
-                    .heroArtworkSource(id: "detail:\(backdrop.id)")
+                    .heroArtworkSource(id: "detail:\(backdrop.stablePresentationID)")
                     // Re-key on the backdrop identity so a server switch (the only
                     // thing that changes the backdrop — episode focus deliberately
                     // keeps the show-level backdrop) cross-fades the old artwork out
@@ -1355,11 +1355,15 @@ struct DetailHeroView: View, Equatable {
     @ViewBuilder
     private func episodeStill() -> some View {
         let width = Self.screenWidth * 0.40
+        let source = MediaArtworkSource(
+            item: item, placement: .episodeThumbnail, policy: artworkPolicy.forArea(.episodes)
+        )
         FallbackAsyncImage(
-            references: item.artworkReferences(for: .episodeThumbnail),
+            references: source.references,
             variant: .landscapeCard,
-            asyncFallbackURL: episodeStillFallback,
-            pinIdentity: item.stablePresentationID
+            artworkPolicy: source.policy,
+            asyncFallbackURL: source.fallbackURL,
+            pinIdentity: source.itemIdentity
         ) {
             MediaArtworkPlaceholder(
                 symbol: .init(for: item), cornerRadius: PlozzMetrics.standard.landscapeCardCornerRadius
@@ -1377,12 +1381,6 @@ struct DetailHeroView: View, Equatable {
         .id(item.id)
         .transition(.opacity)
         .accessibilityHidden(true)
-    }
-
-    /// Resolves a still from the external artwork router when the server has none.
-    private var episodeStillFallback: (@Sendable () async -> URL?)? {
-        let snapshot = item
-        return { await ArtworkRouter.shared.artworkURL(.thumbnail, for: snapshot) }
     }
 
     /// The full-bleed backdrop image with its legibility scrim and bottom
@@ -1408,6 +1406,8 @@ struct DetailHeroView: View, Equatable {
             references: ladder,
             asyncFallbackURL: tmdbBackdropFallback,
             itemID: backdrop.id,
+            artworkIdentity: backdrop.stablePresentationID,
+            lookupIdentity: MetadataQuery(backdrop).seriesScoped.enrichmentCacheKey,
             width: Self.screenWidth,
             height: Self.screenHeight * heroHeightFraction,
             scrimTone: scrimTone,
@@ -2038,7 +2038,7 @@ struct DetailHeroView: View, Equatable {
     /// when pinned) and its TMDb id when that id refers to the show itself; for an
     /// episode/season backdrop it queries by series title. Inert without a token.
     private var tmdbBackdropFallback: (@Sendable () async -> URL?)? {
-        DetailBackdropArtwork.fallback(for: backdrop, isDiscoveryItem: isDiscoveryItem)
+        MediaArtworkSource.heroFallback(for: backdrop, placement: .detailBackdrop)
     }
 
     /// Last-resort title art for the hero: look the show/movie up on TMDb and use
@@ -2259,6 +2259,8 @@ private struct SeriesDetailHeroBackdrop: View {
     let references: [ArtworkReference]
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let itemID: String
+    let artworkIdentity: String
+    let lookupIdentity: String
     let width: CGFloat
     let height: CGFloat
     let scrimTone: Color
@@ -2280,7 +2282,8 @@ private struct SeriesDetailHeroBackdrop: View {
             verticalOffset: 0,
             ignoresOverscan: false,
             stillImageOpacity: showsTrailer ? 0 : 1,
-            pinIdentity: "detail:\(itemID)"
+            pinIdentity: "detail:\(artworkIdentity)",
+            lookupIdentity: lookupIdentity
         ) {
             if showsTrailer {
                 ZStack {
