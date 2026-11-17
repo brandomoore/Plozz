@@ -77,6 +77,11 @@ TV Subtitle Sync uses the same single-focus settings stepper and Reset. Its
 existing 50 ms steps and +/-10 second range are unchanged; held Left/Right repeats
 without losing focus at the limits. Subtitle offsets apply immediately to the
 overlay timeline, with no audio-style reload debounce.
+Both sync panels give the compact stepper a full-width native focus section so
+Back, the control and Reset remain vertically reachable. On submenu entry,
+Back and Reset become eligible only after the stepper reports actual native
+focus; writing the panel's row FocusState does not focus a separately hosted
+stepper. This entry gate resets on reopening, not on ordinary Up/Down movement.
 
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and

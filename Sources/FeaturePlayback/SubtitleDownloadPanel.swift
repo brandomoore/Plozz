@@ -249,13 +249,16 @@ struct SubtitleSyncScreen: View {
     let model: PlayerControlsModel
     let actions: PlayerOptionsActions
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    var allowsResetFocus = true
+    var onControlFocus: () -> Void = {}
 
     var body: some View {
         PlaybackSyncScreen(
             value: model.subtitleDelaySeconds,
             hint: PlayerControls.subtitleSyncHint(model.subtitleDelaySeconds),
             range: -10...10, showsReset: true,
-            onChange: actions.setSubtitleDelay, focus: $focus
+            onChange: actions.setSubtitleDelay, focus: $focus,
+            allowsResetFocus: allowsResetFocus, onControlFocus: onControlFocus
         )
     }
 }
@@ -268,6 +271,8 @@ struct PlaybackSyncScreen: View {
     var step: TimeInterval = 0.05
     let onChange: (TimeInterval) -> Void
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    var allowsResetFocus = true
+    var onControlFocus: () -> Void = {}
 
     private var indices: ClosedRange<Int> {
         Int((range.lowerBound / step).rounded())...Int((range.upperBound / step).rounded())
@@ -282,11 +287,18 @@ struct PlaybackSyncScreen: View {
                     set: { onChange(Double($0) * step) }
                 ),
                 compact: true,
-                onFocusChange: { if $0 { focus = .row(0) } },
+                onFocusChange: {
+                    if $0 {
+                        focus = .row(0)
+                        onControlFocus()
+                    }
+                },
                 verbatimTitle: { PlayerControls.delayLabel(Double($0) * step) }
             )
             .reservingValueWidth(for: [indices.lowerBound, indices.upperBound])
             .accessibilityLabel("Subtitle Delay")
+            .frame(maxWidth: .infinity)
+            .plozzFocusSection()
             Text(hint)
                 .font(.callout)
                 .foregroundStyle(Color.primary.opacity(0.6))
@@ -297,7 +309,7 @@ struct PlaybackSyncScreen: View {
             if showsReset {
                 Button("Reset") { onChange(0) }
                     .focused($focus, equals: .row(1))
-                    .disabled(value == 0)
+                    .disabled(value == 0 || !allowsResetFocus)
             }
         }
         .padding(.horizontal, 28)
@@ -309,6 +321,8 @@ struct AudioSyncScreen: View {
     let model: PlayerControlsModel
     let actions: PlayerOptionsActions
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    var allowsResetFocus = true
+    var onControlFocus: () -> Void = {}
     private var adjustment: PlayerAudioSyncEditor { model.audioSyncAdjustment }
 
     private var value: TimeInterval { adjustment.value ?? model.audioDelaySeconds }
@@ -322,7 +336,12 @@ struct AudioSyncScreen: View {
                     set: { change(Double($0) / 100) }
                 ),
                 compact: true,
-                onFocusChange: { if $0 { focus = .row(0) } },
+                onFocusChange: {
+                    if $0 {
+                        focus = .row(0)
+                        onControlFocus()
+                    }
+                },
                 verbatimTitle: { PlayerControls.delayLabel(Double($0) / 100) }
             )
             .reservingValueWidth(for: [-200, 200])
@@ -333,6 +352,8 @@ struct AudioSyncScreen: View {
                 adjustment.endEditing(cancelled: $0, commit: actions.setAudioDelay)
             })
             .accessibilityLabel("Audio Delay")
+            .frame(maxWidth: .infinity)
+            .plozzFocusSection()
             Text(PlayerControlsModel.audioSyncHint(for: value))
                 .font(.callout)
                 .foregroundStyle(Color.primary.opacity(0.6))
@@ -344,7 +365,7 @@ struct AudioSyncScreen: View {
                 change(0)
             }
             .focused($focus, equals: .row(1))
-            .disabled(value == 0)
+            .disabled(value == 0 || !allowsResetFocus)
         }
         .padding(28)
         .onDisappear { adjustment.cancel() }

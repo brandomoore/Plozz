@@ -22,6 +22,16 @@ struct SubtitleStyleInputFixture: View {
             model.engineCapabilities = [.videoZoom, .playbackSpeed]
             model.playbackSpeed = 1.5
         }
+        if ProcessInfo.processInfo.arguments.contains("--sync-controls") {
+            model.engineCapabilities = [.audioDelay, .subtitleDelay]
+            model.audioOptions = [
+                PlayerTrackOption(id: 0, title: Text("Stereo"), isSelected: true),
+                PlayerTrackOption(id: 1, title: Text("Surround"), isSelected: false)
+            ]
+            model.subtitleDelayAdjustable = true
+            model.audioDelaySeconds = 0.2
+            model.subtitleDelaySeconds = 0.2
+        }
         model.subtitleOptions = [PlayerTrackOption(id: PlayerTrackOption.offID, title: Text("Off"), isSelected: true)]
         model.subtitleStyle = .default
         if ProcessInfo.processInfo.arguments.contains("--minimum-text-size") {
@@ -64,6 +74,8 @@ struct SubtitleStyleInputFixture: View {
                     actions: PlayerActions(
                         togglePlayPause: { playPauseCommands += 1 },
                         setPlaybackSpeed: { model.playbackSpeed = $0 },
+                        setAudioDelay: { model.audioDelaySeconds = $0 },
+                        setSubtitleDelay: { model.subtitleDelaySeconds = $0 },
                         setSubtitleStyle: { model.subtitleStyle = $0 }
                     ),
                     scrubPreview: nil, authenticatedHTTPResolver: nil,
@@ -97,6 +109,12 @@ struct SubtitleStyleInputFixture: View {
                     .accessibilityIdentifier("subtitle-text-size-value")
                 Text(verbatim: String(navigationOpenAttempts))
                     .accessibilityIdentifier("subtitle-navigation-open-attempts")
+                if ProcessInfo.processInfo.arguments.contains("--sync-controls") {
+                    Text(verbatim: String(Int(((model.audioSyncAdjustment.value ?? model.audioDelaySeconds) * 1000).rounded())))
+                        .accessibilityIdentifier("audio-sync-milliseconds")
+                    Text(verbatim: String(Int((model.subtitleDelaySeconds * 1000).rounded())))
+                        .accessibilityIdentifier("subtitle-sync-milliseconds")
+                }
                 if ProcessInfo.processInfo.arguments.contains("--playback-options") {
                     Text(verbatim: String(describing: model.videoZoom.settings.mode))
                         .accessibilityIdentifier("player-zoom-mode")

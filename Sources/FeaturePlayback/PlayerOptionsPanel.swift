@@ -54,6 +54,7 @@ struct PlayerOptionsPanel: View {
     /// Which menu `bodyHeight` was last measured for: a first measurement snaps,
     /// a later one within the same menu (tracks ↔ Style) animates.
     @State private var measuredFor: Category?
+    @State private var syncControlHasReceivedFocus = false
 
     init(
         category: Category, model: PlayerControlsModel, palette: ThemePalette,
@@ -152,6 +153,12 @@ struct PlayerOptionsPanel: View {
         category == .subtitles && subtitleScreen.isStyleFamily
     }
 
+    private var awaitingSyncControlFocus: Bool {
+        ((category == .audio && audioScreen == .sync)
+            || (category == .subtitles && subtitleScreen == .sync))
+            && !syncControlHasReceivedFocus
+    }
+
     /// Where focus lands in this menu as it opens or changes screen.
     var preferredFocus: FocusSlot? {
         Self.preferredFocus(
@@ -192,8 +199,6 @@ struct PlayerOptionsPanel: View {
                 if case .results = model.subtitleDownload.state { return .row(0) }
                 return .subBack
             case .sync:
-                // Land on the − nudge (leftmost control); the value and + sit to
-                // its right.
                 return .row(0)
             case .style:
                 return .row(0)
@@ -504,6 +509,8 @@ struct PlayerOptionsPanel: View {
                 .buttonStyle(PlozzPanelHeaderButtonStyle())
                 .focusEffectDisabled()
                 .focused($focus, equals: .subBack)
+                .accessibilityIdentifier("player-options-back")
+                .disabled(awaitingSyncControlFocus)
                 // Pull the chip past the header gutter so it hugs the panel's
                 // leading edge, concentric with the rounded corner.
                 .padding(.leading, -10)
@@ -623,7 +630,12 @@ struct PlayerOptionsPanel: View {
             // (the enclosing morphingBody caps + scrolls at this same height).
             SubtitleDownloadScreen(model: model, actions: actions, focus: $focus)
                 .frame(minHeight: maximumBodyHeight, alignment: .top)
-        case .sync: SubtitleSyncScreen(model: model, actions: actions, focus: $focus)
+        case .sync:
+            SubtitleSyncScreen(
+                model: model, actions: actions, focus: $focus,
+                allowsResetFocus: !awaitingSyncControlFocus,
+                onControlFocus: { syncControlHasReceivedFocus = true }
+            )
         case .style, .styleFont, .styleSystemFont, .styleOutline, .styleBackground, .styleDual, .styleFileFormatting:
             SubtitleStylePanel(
                 screen: subtitleScreen,
@@ -695,7 +707,11 @@ struct PlayerOptionsPanel: View {
     }
 
     private func openAudioScreen(_ screen: AudioScreen) {
+        syncControlHasReceivedFocus = false
         withAnimation(.easeInOut(duration: 0.28)) { audioScreen = screen }
+        // The stepper owns a native hosting boundary, not the panel's FocusState.
+        // Keep competing controls ineligible until it reports actual entry.
+        if screen == .sync { return }
         #if os(tvOS)
         if screen == .options, model.systemAudio.values[.enhanceDialogue] != nil {
             restoreFocus(.row(SystemPlaybackAudioSetting.enhanceDialogue.rawValue))
@@ -708,7 +724,11 @@ struct PlayerOptionsPanel: View {
     @ViewBuilder
     private var audioBody: some View {
         if audioScreen == .sync {
-            AudioSyncScreen(model: model, actions: actions, focus: $focus)
+            AudioSyncScreen(
+                model: model, actions: actions, focus: $focus,
+                allowsResetFocus: !awaitingSyncControlFocus,
+                onControlFocus: { syncControlHasReceivedFocus = true }
+            )
         } else {
             #if os(tvOS)
             if audioScreen == .dialogue {
@@ -774,6 +794,7 @@ struct PlayerOptionsPanel: View {
         let screen = Self.availableSubtitleScreen(
             screen, model: model, offersDualSubtitles: offersDualSubtitles
         )
+        syncControlHasReceivedFocus = false
         // Entering the Style editor from the (non-style) track list flips the body
         // from the compact list cap to the larger Style viewport. At this point
         // `bodyHeight` still holds the track list's full measured content height,
@@ -800,6 +821,7 @@ struct PlayerOptionsPanel: View {
         withAnimation(.easeInOut(duration: 0.28)) {
             subtitleScreen = screen
         }
+        if screen == .sync { return }
         // Defer the focus write to the next runloop tick (same mechanism as
         // panel-open, via `restoreFocus`). Swapping the header chips + rows for the
         // new sub-screen makes tvOS's focus engine run its own default pass in this
