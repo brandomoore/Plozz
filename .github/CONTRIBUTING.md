@@ -24,6 +24,12 @@ every design will be the right fit. For bigger redesigns, sharing an idea or
 mockup early can help avoid spending time on an approach I might take in a
 different direction.
 
+Hero and tab-navigation continuity rules are part of the UX contract: read the
+[SwiftUI guidelines](../docs/swiftui-guidelines.md#hero-continuity) before
+changing hero artwork, wordmark reveals, action rows, or tab root requests.
+Those changes need rendered/hosted coverage and a device check, not only a
+compile.
+
 ### Before opening a PR
 
 Review the final diff yourself. **Independent agent review before submission
@@ -193,6 +199,11 @@ The package runner takes test target names; omitting them runs its full matrix.
 Both examples target tvOS simulators. iOS presentation coverage is separate;
 see the [testing policy](../docs/testing-policy.md) for runners and selection.
 Do not use desktop `swift test` for this Apple-platform package.
+
+Changes to hero first paint, shared animation, or cross-tab navigation state
+need a regression that exercises the surface (rendered/hosted fixture or an
+app-hosted interaction), plus a manual device/simulator recipe. A guard that
+only scans source text is not behavior coverage.
 
 Report exact commands and pass/fail/skip results, plus a short manual recipe:
 source, OS/device or simulator, settings, steps, and expected/actual behavior.
