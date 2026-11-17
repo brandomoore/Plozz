@@ -73,6 +73,11 @@ No format or route is downgraded to enable the feature. Offsets reset with a new
 audio-only sources and live streams without an engine rewind window do not
 advertise this control. Live controls use the same engine capability and offset.
 
+TV Subtitle Sync uses the same single-focus settings stepper and Reset. Its
+existing 50 ms steps and +/-10 second range are unchanged; held Left/Right repeats
+without losing focus at the limits. Subtitle offsets apply immediately to the
+overlay timeline, with no audio-style reload debounce.
+
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and
 offline playback. Prefer SDH falls back to regular subtitles in the chosen

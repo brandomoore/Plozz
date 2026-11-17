@@ -10,6 +10,71 @@ import XCTest
 
 @MainActor
 final class SettingsStepperHostedTests: XCTestCase {
+    func testSubtitleSyncRepeatsImmediatelyAndKeepsFocusAtBounds() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = PlayerControlsModel()
+        var applied: [TimeInterval] = []
+        let actions = PlayerOptionsActions(setSubtitleDelay: {
+            applied.append($0)
+            model.subtitleDelaySeconds = $0
+        })
+        let host = UIHostingController(rootView: SubtitleSyncFixture(model: model, actions: actions))
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil { self.inputController(in: host) != nil }
+        let input = try XCTUnwrap(inputController(in: host))
+        defer { input.stopRepeating() }
+        let system = try XCTUnwrap(UIFocusSystem(for: window))
+        system.requestFocusUpdate(to: input)
+        system.updateFocusIfNeeded()
+        try await waitUntil { input.ownsHorizontalNavigationInput }
+        let focused = try XCTUnwrap(system.focusedItem)
+        input.beginPress(.right)
+        XCTAssertEqual(model.subtitleDelaySeconds, 0.05, accuracy: 0.000001)
+        try await waitUntil { applied.count >= 3 }
+        input.endPress()
+        for (index, expected) in [0.05, 0.10, 0.15].enumerated() {
+            XCTAssertEqual(applied[index], expected, accuracy: 0.000001)
+        }
+        XCTAssertTrue(system.focusedItem === focused)
+        for (start, direction) in [(9.95, SettingsMoveCommandDirection.right), (-9.95, .left)] {
+            model.subtitleDelaySeconds = start
+            try await Task.sleep(for: .milliseconds(100))
+            input.beginPress(direction)
+            XCTAssertEqual(abs(model.subtitleDelaySeconds), 10, accuracy: 0.000001)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(system.focusedItem === focused)
+            input.endPress()
+            input.beginPress(start < 0 ? .right : .left)
+            XCTAssertEqual(model.subtitleDelaySeconds, start, accuracy: 0.000001)
+            input.endPress()
+        }
+        XCTAssertEqual(model.audioDelaySeconds, 0)
+    }
+
+    private struct SubtitleSyncFixture: View {
+        let model: PlayerControlsModel
+        let actions: PlayerOptionsActions
+        @FocusState private var focus: PlayerControls.FocusSlot?
+
+        var body: some View {
+            SubtitleSyncScreen(model: model, actions: actions, focus: $focus)
+                .environment(\.themePalette, .dark)
+                .frame(width: 580, height: 360)
+        }
+    }
+
     func testAudioSyncKeepsSingleFocusAtBoundsAndCoalescesReleases() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
