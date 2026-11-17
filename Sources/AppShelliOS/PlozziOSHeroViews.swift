@@ -80,19 +80,23 @@ enum PlozziOSHeroMetrics {
         // has to reach far enough down that the metadata sits in the lower part
         // of the screen, while still leaving the next row peeking. See
         // `HeroStageMetrics`.
-        // Home and detail use the same stage height so opening a title does not
-        // animate the hero to a different size. The detail page used to be
-        // 420/760pt against Home's 641/680pt, which read as the hero resizing
-        // under the tap.
-        if style == .compactPortrait {
+        // The portrait Home hero is sized to the phone, not to a constant: it
+        // has to reach far enough down that the metadata sits in the lower part
+        // of the screen, while still leaving the next row peeking. Detail keeps
+        // its shorter stage: stretching it to the Home height moved the artwork
+        // and foreground out of their intended alignment.
+        if style == .compactPortrait && surfaceRole == .home {
             return HeroStageMetrics.portraitHomeHeight(
                 windowHeight: containerHeight,
                 fallback: 610,
                 accessibilityExtra: accessibilityExtra
             )
         }
-        let base: CGFloat = 680
-        return base + accessibilityExtra
+        let base: CGFloat = style == .compactPortrait
+            ? (surfaceRole == .detail ? 420 : 610)
+            : (surfaceRole == .detail ? 760 : 680)
+        let detailExtra = surfaceRole == .detail ? detailContentTopInset : 0
+        return base + accessibilityExtra + detailExtra
     }
 
 }
@@ -1267,10 +1271,7 @@ private struct PlozziOSHeroBackdrop: View {
         FallbackAsyncImage(
             references: activeReferences,
             prefersLandscape: style != .compactPortrait,
-            // Reject ultra-wide assets (commonly a wordmark or a cropped still)
-            // that fill the band with a letterbox-wide sliver. Normal cinema
-            // backdrops are at most 2.39:1 and remain eligible.
-            maxAspectRatio: surfaceRole == .detail ? 2.6 : 3,
+            maxAspectRatio: 3,
             variant: .heroBackdrop,
             // Put a real picture up while the 2000px pass decodes, rather
             // than a flat colour. The 768px frame is what warming caches for
@@ -3044,11 +3045,12 @@ struct PlozziOSHeroMetadata: View {
                         displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
                         maxHeight: logoBox.height,
-                        // Show the readable title immediately and crossfade the
-                        // wordmark in when it resolves. Waiting for an optional
-                        // logo (which may need a network fetch) hid the title,
-                        // Play and Watchlist and made the page feel slower.
-                        presentationPolicy: .whenReady,
+                        // Home must show its readable title and actions on the
+                        // first frame. Detail is a single page whose hero and
+                        // wordmark should arrive together, so it keeps the
+                        // resolved-only reveal instead of swapping text for a
+                        // logo underneath the viewer.
+                        presentationPolicy: mode == .home ? .whenReady : .whenResolved,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
                         Text(titlePresentation.title)

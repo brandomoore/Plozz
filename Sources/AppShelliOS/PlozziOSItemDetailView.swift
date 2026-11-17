@@ -60,9 +60,6 @@ struct PlozziOSItemDetailView: View {
 
     var body: some View {
         detailBody
-            // Match the [PlozziOSHeroStage] to the window it is standing in, so the
-            // detail hero opens at the same size as the Home hero that was tapped.
-            .plozziOSTracksHeroContainerHeight()
             // Detail-path telemetry anchor (PLZXFAN-gated; kind only). Deliberately
             // at the page body: the episode browser sits inside a lazy container, so
             // an anchor there never fires unless the viewer scrolls it into view —

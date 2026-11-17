@@ -339,26 +339,6 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
         }
     }
 
-    func testHomeAndDetailHeroesUseTheSameStageHeight() {
-        for (style, containerHeight) in [
-            (HeroArtworkStyle.compactPortrait, CGFloat(844)),
-            (.landscape, CGFloat(768))
-        ] {
-            let home = PlozziOSHeroMetrics.height(
-                style: style, surfaceRole: .home,
-                dynamicTypeSize: .large, containerHeight: containerHeight
-            )
-            let detail = PlozziOSHeroMetrics.height(
-                style: style, surfaceRole: .detail,
-                dynamicTypeSize: .large, containerHeight: containerHeight
-            )
-            XCTAssertEqual(
-                home, detail, accuracy: 0.5,
-                "Opening a title must not animate the hero to a different size (\(style))."
-            )
-        }
-    }
-
     func testHomeHeroShowsTitleAndPlayBeforeASlowLogoResolves() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID
