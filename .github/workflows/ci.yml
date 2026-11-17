@@ -100,7 +100,7 @@ jobs:
 
       - name: Retain preflight diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: guards-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: .build/ci-scratch/plozz-l10n-delta.json
@@ -155,7 +155,7 @@ jobs:
 
       - name: Retain build diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: .build/ci-logs/app-build
@@ -204,7 +204,7 @@ jobs:
 
       - name: Retain test diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: package-tests-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
@@ -258,7 +258,7 @@ jobs:
 
       - name: Retain test diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hosted-focus-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
