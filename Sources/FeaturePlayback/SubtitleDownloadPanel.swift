@@ -327,11 +327,14 @@ struct AudioSyncScreen: View {
     private var adjustment: PlayerAudioSyncEditor { model.audioSyncAdjustment }
 
     private var value: TimeInterval { adjustment.value ?? model.audioDelaySeconds }
+    private var steps: ClosedRange<Int> {
+        Int((adjustment.range.lowerBound * 100).rounded())...Int((adjustment.range.upperBound * 100).rounded())
+    }
 
     var body: some View {
         VStack(spacing: 20) {
             SettingsStepper(
-                options: Array(-200...200),
+                options: Array(steps),
                 selection: Binding(
                     get: { Int((value * 100).rounded()) },
                     set: { change(Double($0) / 100) }
@@ -345,7 +348,7 @@ struct AudioSyncScreen: View {
                 },
                 verbatimTitle: { PlayerControls.delayLabel(Double($0) / 100) }
             )
-            .reservingValueWidth(for: [-200, 200])
+            .reservingValueWidth(for: [steps.lowerBound, steps.upperBound])
             .onDirectionalAdjustment({ forward, repeating in
                 adjustment.nudge(from: model.audioDelaySeconds, forward: forward, repeating: repeating,
                                  applyLive: actions.setAudioDelayLive, commit: actions.setAudioDelay)

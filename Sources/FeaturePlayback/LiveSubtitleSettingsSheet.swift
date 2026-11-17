@@ -76,7 +76,7 @@ struct LiveAudioSyncSheet: View {
                         Stepper(value: Binding(
                             get: { offset },
                             set: change
-                        ), in: PlayerControlsModel.audioDelayRange,
+                        ), in: adjustment.range,
                             step: PlayerAudioSyncAdjustment.step,
                             onEditingChanged: { editing in
                                 if editing { adjustment.beginEditing() }

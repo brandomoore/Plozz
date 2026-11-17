@@ -506,7 +506,7 @@ public final class PlayerControlsModel {
     public var playbackSpeed: Double = 1.0
     /// Audio offset in seconds (positive = audio later than video).
     public var audioDelaySeconds: TimeInterval = 0
-    public let audioSyncAdjustment = PlayerAudioSyncEditor()
+    public let audioSyncAdjustment: PlayerAudioSyncEditor
     public static let audioDelayRange = PlayerAudioSyncAdjustment.range
     public var audioSyncHint: LocalizedStringResource {
         Self.audioSyncHint(for: audioDelaySeconds)
@@ -598,10 +598,12 @@ public final class PlayerControlsModel {
 
     init(systemAudio: SystemPlaybackAudio) {
         self.systemAudio = systemAudio
+        audioSyncAdjustment = PlayerAudioSyncEditor()
     }
     #endif
 
-    public init() {
+    public init(audioDelayRange: ClosedRange<TimeInterval> = PlayerAudioSyncAdjustment.range) {
+        audioSyncAdjustment = PlayerAudioSyncEditor(range: audioDelayRange)
         #if os(tvOS)
         systemAudio = .shared
         #endif

@@ -122,11 +122,11 @@ final class SettingsStepperHostedTests: XCTestCase {
         XCTAssertTrue(system.focusedItem === focused)
         try await Task.sleep(for: .milliseconds(100))
         try sendSwipe(.began, translation: -8, to: input)
-        try sendSwipe(.changed, translation: -10_008, to: input)
-        XCTAssertEqual(model.audioSyncAdjustment.value, -2)
-        try sendSwipe(.changed, translation: -9_988, to: input)
-        XCTAssertEqual(model.audioSyncAdjustment.value, -1.99)
-        try sendSwipe(.cancelled, translation: -9_988, to: input)
+        try sendSwipe(.changed, translation: -30_008, to: input)
+        XCTAssertEqual(model.audioSyncAdjustment.value, -10)
+        try sendSwipe(.changed, translation: -29_988, to: input)
+        XCTAssertEqual(model.audioSyncAdjustment.value, -9.99)
+        try sendSwipe(.cancelled, translation: -29_988, to: input)
         XCTAssertNil(model.audioSyncAdjustment.value)
         XCTAssertNil(model.audioSyncAdjustment.commitTask)
         XCTAssertEqual(applied, [0.22])
@@ -193,7 +193,7 @@ final class SettingsStepperHostedTests: XCTestCase {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
-        for start in [-1.99, 1.99] {
+        for start in [-9.99, 9.99] {
             let model = PlayerControlsModel()
             model.audioDelaySeconds = start
             var applied: [TimeInterval] = []
@@ -228,7 +228,7 @@ final class SettingsStepperHostedTests: XCTestCase {
             XCTAssertTrue(system.focusedItem === focused)
             XCTAssertTrue(applied.isEmpty)
             try await waitUntil { applied.count == 1 }
-            XCTAssertEqual(applied, [start < 0 ? -2 : 2])
+            XCTAssertEqual(applied, [start < 0 ? -10 : 10])
             input.endPress()
             XCTAssertEqual(applied.count, 1)
             input.beginPress(start < 0 ? .right : .left)

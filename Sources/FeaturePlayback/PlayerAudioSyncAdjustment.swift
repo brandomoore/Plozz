@@ -4,19 +4,23 @@ import Observation
 
 /// A held adjustment previews locally when the engine cannot apply it without seeking.
 public struct PlayerAudioSyncAdjustment {
-    public static let range: ClosedRange<TimeInterval> = -2...2
+    public static let range: ClosedRange<TimeInterval> = -10...10
+    public static let liveRange: ClosedRange<TimeInterval> = -2...2
     public static let step: TimeInterval = 0.01
     public private(set) var value: TimeInterval?
+    private let allowedRange: ClosedRange<TimeInterval>
     private var repeats = 0
 
-    public init() {}
+    public init(range: ClosedRange<TimeInterval> = Self.range) {
+        allowedRange = range
+    }
 
     public mutating func set(_ seconds: TimeInterval) {
         guard seconds.isFinite else {
             PlozzLog.playback.error("Ignoring non-finite audio sync adjustment.")
             return
         }
-        value = min(Self.range.upperBound, max(Self.range.lowerBound, (seconds * 100).rounded() / 100))
+        value = min(allowedRange.upperBound, max(allowedRange.lowerBound, (seconds * 100).rounded() / 100))
     }
 
     @discardableResult
@@ -45,7 +49,8 @@ public struct PlayerAudioSyncAdjustment {
 /// Keeps feedback immediate while coalescing any seek/reload until input settles.
 @MainActor @Observable
 public final class PlayerAudioSyncEditor {
-    private var adjustment = PlayerAudioSyncAdjustment()
+    public let range: ClosedRange<TimeInterval>
+    private var adjustment: PlayerAudioSyncAdjustment
     private var editing = false
     private var needsCommit = false
     @ObservationIgnored private(set) var commitTask: Task<Void, Never>?
@@ -53,7 +58,10 @@ public final class PlayerAudioSyncEditor {
 
     public var value: TimeInterval? { adjustment.value }
 
-    public init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+    public init(range: ClosedRange<TimeInterval> = PlayerAudioSyncAdjustment.range,
+                sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+        self.range = range
+        adjustment = PlayerAudioSyncAdjustment(range: range)
         self.sleep = sleep
     }
 

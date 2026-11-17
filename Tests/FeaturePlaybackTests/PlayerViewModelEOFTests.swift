@@ -90,7 +90,8 @@ final class PlayerViewModelEOFTests: XCTestCase {
         model.setAudioDelay(1)
         XCTAssertEqual(model.controls.audioDelaySeconds, 0)
         engine.capabilities.insert(.audioDelay)
-        for (requested, expected) in [(0.05, 0.05), (-0.05, -0.05), (3.0, 2.0), (-3.0, -2.0), (0.0, 0.0)] {
+        for (requested, expected) in [(0.05, 0.05), (-0.05, -0.05), (3.0, 3.0), (-3.0, -3.0),
+                                      (10.0, 10.0), (-10.0, -10.0), (11.0, 10.0), (-11.0, -10.0), (0.0, 0.0)] {
             model.setAudioDelay(requested)
             XCTAssertEqual(engine.audioDelaySeconds, expected)
             XCTAssertEqual(model.controls.audioDelaySeconds, expected)
@@ -123,7 +124,8 @@ final class PlayerViewModelEOFTests: XCTestCase {
         XCTAssertEqual(model.controls.audioDelaySeconds, 0)
         XCTAssertEqual(engine.audioDelayChanges, initialChanges)
         engine.acceptsLiveAudioDelay = true
-        for (requested, expected) in [(0.01, 0.01), (-0.01, -0.01), (3.0, 2.0), (-3.0, -2.0), (0, 0)] {
+        for (requested, expected) in [(0.01, 0.01), (-0.01, -0.01), (3.0, 3.0), (-3.0, -3.0),
+                                      (11.0, 10.0), (-11.0, -10.0), (0, 0)] {
             XCTAssertTrue(model.setAudioDelayLive(requested))
             XCTAssertEqual(model.controls.audioDelaySeconds, expected)
         }
@@ -149,12 +151,34 @@ final class PlayerViewModelEOFTests: XCTestCase {
         XCTAssertEqual(adjustment.nudge(from: 0.17, forward: false, repeating: false), 0.16)
         XCTAssertNil(adjustment.finish(cancelled: true))
         XCTAssertNil(adjustment.value)
-        XCTAssertEqual(adjustment.nudge(from: 2, forward: true, repeating: false), 2)
+        XCTAssertEqual(adjustment.nudge(from: 2, forward: true, repeating: false), 2.01)
         _ = adjustment.finish(cancelled: true)
-        XCTAssertEqual(adjustment.nudge(from: -2, forward: false, repeating: false), -2)
+        XCTAssertEqual(adjustment.nudge(from: 10, forward: true, repeating: false), 10)
+        _ = adjustment.finish(cancelled: true)
+        XCTAssertEqual(adjustment.nudge(from: -10, forward: false, repeating: false), -10)
         adjustment.set(.nan)
         adjustment.set(.infinity)
-        XCTAssertEqual(adjustment.finish(), -2)
+        XCTAssertEqual(adjustment.finish(), -10)
+    }
+
+    func testLiveTVAudioSyncPreservesItsLimitForPreviewAndCommit() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(range: PlayerAudioSyncAdjustment.liveRange,
+                                          sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        for (index, requested) in [10.0, -10.0].enumerated() {
+            editor.beginEditing()
+            editor.change(to: requested, current: 0, applyLive: { _ in false }, commit: commit)
+            XCTAssertEqual(editor.value, requested > 0 ? 2 : -2)
+            XCTAssertNil(editor.commitTask)
+            editor.endEditing(commit: commit)
+            await clock.waitForSleeps(index + 1)
+            let pending = editor.commitTask
+            clock.advance(by: .milliseconds(600))
+            await pending?.value
+        }
+        XCTAssertEqual(applied, [2, -2])
     }
 
     func testAudioSyncRapidReleasesCommitOnceAfterQuietPeriodPlayingOrPaused() async {
@@ -199,21 +223,21 @@ final class PlayerViewModelEOFTests: XCTestCase {
         let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
         var applied: [TimeInterval] = []
         let commit: (TimeInterval) -> Void = { applied.append($0) }
-        editor.nudge(from: 1.99, forward: true, repeating: false, applyLive: { _ in false }, commit: commit)
+        editor.nudge(from: 9.99, forward: true, repeating: false, applyLive: { _ in false }, commit: commit)
         clock.advance(by: .seconds(1))
         XCTAssertNil(editor.commitTask, "An active hold has no reload deadline, including its initial gap.")
         for _ in 0..<20 {
-            editor.nudge(from: 1.99, forward: true, repeating: true, applyLive: { _ in false }, commit: commit)
+            editor.nudge(from: 9.99, forward: true, repeating: true, applyLive: { _ in false }, commit: commit)
             clock.advance(by: .milliseconds(80))
         }
-        XCTAssertEqual(editor.value, 2)
+        XCTAssertEqual(editor.value, 10)
         XCTAssertTrue(applied.isEmpty)
         editor.endEditing(commit: commit)
         await clock.waitForSleeps(1)
         let pending = editor.commitTask
         clock.advance(by: .milliseconds(600))
         await pending?.value
-        XCTAssertEqual(applied, [2])
+        XCTAssertEqual(applied, [10])
     }
 
     func testAudioSyncLiveCorrectionAndReturnToActualValueNeedNoReload() async {

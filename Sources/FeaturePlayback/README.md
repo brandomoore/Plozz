@@ -57,8 +57,11 @@ replacement tracks.
 
 Audio Sync is available on AetherEngine routes that can retime audio and
 re-anchor playback. TV's Audio header opens the shared single-focus settings
-control; mobile exposes Audio Sync in the Audio menu. Both use 10 ms steps,
-a two-second limit in each direction and Reset. Positive means audio later,
+control; mobile exposes Audio Sync in the Audio menu. Both use 10 ms steps
+and Reset. On-demand playback allows ten seconds in each direction, matching
+Kodi's default range. Live TV retains its two-second limit because the wider
+read-ahead and restart preroll apply only to on-demand sources.
+Positive means audio later,
 negative earlier. TV Left/Right holds repeat and accelerate to 50 ms steps.
 Buffered direct-rendering PCM changes the audio queue without seeking or moving
 the video clock. When live correction is unavailable, the shared audio editor
@@ -69,9 +72,12 @@ pause state. Reset supersedes pending work; cancellation, dismissal, backgroundi
 and a new playback session discard unapplied previews. Native
 loopback and other unsupported formats still seek/reload on that final commit.
 Audio may briefly skip/repeat during a correction; output latency still applies.
+Large offsets can require a reload and temporary silence when the required
+samples are not buffered; the wider range does not imply live coverage of every value.
 No format or route is downgraded to enable the feature. Offsets reset with a new stream. Native AVPlayer, remote bypass,
 audio-only sources and live streams without an engine rewind window do not
-advertise this control. Live controls use the same engine capability and offset.
+advertise this control. Live controls use the same engine capability and offset;
+their editor, TV stepper, mobile stepper and final setter share the narrower range.
 
 TV Subtitle Sync uses the same single-focus settings stepper and Reset. Its
 existing 50 ms steps and +/-10 second range are unchanged; held Left/Right repeats

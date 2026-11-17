@@ -116,7 +116,7 @@ struct LiveChannelOverlay: View {
     /// The VOD player's options panel, fed the channel's tracks: its model, the
     /// Subtitles screen it shows, its remembered heights, the Menu press that
     /// steps it back, and the focus inside it.
-    @State private var trackOptions = PlayerControlsModel()
+    @State private var trackOptions = PlayerControlsModel(audioDelayRange: PlayerAudioSyncAdjustment.liveRange)
     @State private var subtitleScreen: PlayerControls.SubtitleScreen = .tracks
     @State private var playbackScreen: PlayerControls.PlaybackScreen = .options
     @State private var audioScreen: PlayerControls.AudioScreen = .options
@@ -607,7 +607,7 @@ struct LiveChannelOverlay: View {
         actions.setAudioDelay = { value in
             guard tracks.matchesSource(channelID: channelID, input: input),
                   tracks.engine.capabilities.contains(.audioDelay), value.isFinite else { return }
-            let range = PlayerControlsModel.audioDelayRange
+            let range = trackOptions.audioSyncAdjustment.range
             tracks.engine.setAudioDelay(min(range.upperBound, max(range.lowerBound, value)))
             trackOptions.audioDelaySeconds = tracks.engine.audioDelaySeconds
         }

@@ -897,7 +897,9 @@ It uses `reloadAtCurrentPosition(applying:)`, preserving the session rather than
 re-resolving the provider or changing profile defaults. A brief playback reload
 is expected; custom-reader and live sources do not expose this switch.
 Audio Sync connects `setAudioDelay(_:)` on seekable software/loopback routes,
-with 10 ms steps and the engine's +/-2 second limit. Buffered
+with 10 ms steps and a +/-10 second limit for on-demand playback. Live TV keeps
+its existing +/-2 second limit; the wider range's read-ahead and restart preroll
+do not apply to the live/DVR pipeline. Buffered
 interleaved PCM on the direct-rendering route can replace only queued audio,
 preserving video and the master clock. `setAudioDelayLive(_:)` reports refusal
 without reloading; when live application is unavailable, adjustments commit the
@@ -905,6 +907,9 @@ latest preview once after 600 ms without input, never during a hold. Rapid
 presses coalesce whether playback is playing or paused. Unsupported audio formats and native
 loopback retain playhead-preserving re-anchoring. No video or audio format is
 changed to obtain support. Remote bypass and non-rewindable live streams hide it.
+Large offsets do not imply full-range live PCM coverage; unavailable samples
+still require the deferred seek/reload. Advanced on-demand audio reads farther
+ahead without moving the video/subtitle clock or expanding the PCM replay cap.
 
 Automatic selects Animation for anime identities or animation genres/tags,
 otherwise Standard. Episodes can use their exact same-account series metadata;
