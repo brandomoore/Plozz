@@ -34,6 +34,7 @@ public extension EnvironmentValues {
 @MainActor
 public protocol SettingsAdjustmentRemoteInput: AnyObject, HorizontalNavigationInputOwning {
     func beginPress(_ direction: SettingsMoveCommandDirection)
+    func endPress()
     func stopRepeating()
 }
 
@@ -45,6 +46,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
     let adjustableRow: () -> Int?
     let submenuRow: () -> Int?
     let onMove: (SettingsMoveCommandDirection, Bool) -> Void
+    let onEditingEnded: (Bool) -> Void
     let idealWidth: CGFloat
     let axis: Axis
 
@@ -55,6 +57,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         submenuRow: @escaping () -> Int? = { nil },
         idealWidth: CGFloat = SettingsFormMetrics.pageWidth,
         axis: Axis = .horizontal,
+        onEditingEnded: @escaping (_ cancelled: Bool) -> Void = { _ in },
         onMove: @escaping (SettingsMoveCommandDirection, Bool) -> Void
     ) {
         self.content = content
@@ -64,6 +67,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         self.idealWidth = idealWidth
         self.axis = axis
         self.onMove = onMove
+        self.onEditingEnded = onEditingEnded
     }
 
     public func makeUIViewController(context: Context) -> Controller {
@@ -76,6 +80,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         controller.adjustableRow = adjustableRow
         controller.submenuRow = submenuRow
         controller.onMove = onMove
+        controller.onEditingEnded = onEditingEnded
         return controller
     }
 
@@ -87,6 +92,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         controller.adjustableRow = adjustableRow
         controller.submenuRow = submenuRow
         controller.onMove = onMove
+        controller.onEditingEnded = onEditingEnded
         controller.cancelRepeatIfFocusChanged()
     }
 
@@ -121,6 +127,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         var adjustableRow: (() -> Int?)?
         var submenuRow: (() -> Int?)?
         var onMove: ((SettingsMoveCommandDirection, Bool) -> Void)?
+        var onEditingEnded: ((Bool) -> Void)?
         var screen: Screen? {
             didSet {
                 if oldValue != screen { stopRepeating() }
@@ -148,7 +155,9 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
             let press = ArrowPressRecognizer()
             press.delegate = self
             press.began = { [weak self] in self?.beginPress($0) }
-            press.finished = { [weak self] in self?.stopRepeating() }
+            press.finished = { [weak self] cancelled in
+                if cancelled { self?.stopRepeating() } else { self?.endPress() }
+            }
             view.addGestureRecognizer(press)
 
             let pan = DirectionalPanRecognizer(target: self, action: #selector(swiped(_:)))
@@ -264,6 +273,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
             let direction = direction(for: recognizer.velocity(in: view))
             guard recognizer.state == .began, heldRow == nil, accepts(direction) else { return }
             onMove?(direction, false)
+            onEditingEnded?(false)
         }
 
         public func beginPress(_ direction: SettingsMoveCommandDirection) {
@@ -307,18 +317,28 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         }
 
         @objc public func stopRepeating() {
+            finishPress(cancelled: true)
+        }
+
+        public func endPress() {
+            finishPress(cancelled: false)
+        }
+
+        private func finishPress(cancelled: Bool) {
+            let wasEditing = heldRow != nil
             repeatGeneration &+= 1
             repeatWork?.cancel()
             repeatWork = nil
             heldRow = nil
             heldItem = nil
             heldDirection = nil
+            if wasEditing { onEditingEnded?(cancelled) }
         }
     }
 
     private final class ArrowPressRecognizer: UIGestureRecognizer {
         var began: ((SettingsMoveCommandDirection) -> Void)?
-        var finished: (() -> Void)?
+        var finished: ((Bool) -> Void)?
 
         init() {
             super.init(target: nil, action: nil)
@@ -343,17 +363,17 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent) {}
 
         override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent) {
-            finished?()
+            finished?(false)
             state = .ended
         }
 
         override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent) {
-            finished?()
+            finished?(true)
             state = .cancelled
         }
 
         override func reset() {
-            finished?()
+            finished?(true)
             super.reset()
         }
 

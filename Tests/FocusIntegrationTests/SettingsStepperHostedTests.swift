@@ -1,5 +1,6 @@
 @testable import CoreUI
 @testable import FeatureSettings
+@testable import FeaturePlayback
 import CoreModels
 import Observation
 import SwiftUI
@@ -9,6 +10,63 @@ import XCTest
 
 @MainActor
 final class SettingsStepperHostedTests: XCTestCase {
+    func testAudioSyncKeepsFocusAtBoundsAndCommitsOnlyOnRelease() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        for start in [-1.99, 1.99] {
+            let model = PlayerControlsModel()
+            model.audioDelaySeconds = start
+            var applied: [TimeInterval] = []
+            let actions = PlayerOptionsActions(setAudioDelay: {
+                applied.append($0)
+                model.audioDelaySeconds = $0
+            })
+            let host = UIHostingController(rootView: AudioSyncFixture(model: model, actions: actions))
+            let window = UIWindow(windowScene: scene)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            try await waitUntil { self.inputController(in: host) != nil }
+            let input = try XCTUnwrap(inputController(in: host))
+            let system = try XCTUnwrap(UIFocusSystem(for: window))
+            system.requestFocusUpdate(to: input)
+            system.updateFocusIfNeeded()
+            try await waitUntil { input.ownsHorizontalNavigationInput }
+            let focused = try XCTUnwrap(system.focusedItem)
+            input.beginPress(start < 0 ? .left : .right)
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertTrue(system.focusedItem === focused, "The pending bound must not disable its focused control.")
+            XCTAssertTrue(applied.isEmpty)
+            input.endPress()
+            XCTAssertEqual(applied, [start < 0 ? -2 : 2])
+            input.endPress()
+            XCTAssertEqual(applied.count, 1)
+            input.beginPress(start < 0 ? .right : .left)
+            input.stopRepeating()
+            XCTAssertEqual(applied.count, 1, "Cancellation must discard the uncommitted preview.")
+        }
+    }
+
+    private struct AudioSyncFixture: View {
+        let model: PlayerControlsModel
+        let actions: PlayerOptionsActions
+        @FocusState private var focus: PlayerControls.FocusSlot?
+
+        var body: some View {
+            AudioSyncScreen(model: model, actions: actions, focus: $focus)
+                .environment(\.themePalette, .dark)
+                .frame(width: 580, height: 360)
+        }
+    }
+
     func testSkipDelayShowsEachRemoteAdjustmentBeforeTheNextPress() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }

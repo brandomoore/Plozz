@@ -260,9 +260,10 @@ let package = Package(
         // FEL curve folding is available for beta on-demand playback; engine-owned Now Playing stays off.
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
+        // Buffered direct-rendering PCM supports audio-only sync correction without seeking.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "055860a0accaaafa1852d1a65c4f7f505cb7e6ab",
+            revision: "dc64640ccfe43a7cd08f991bd4dcda2398dd7958",
             traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision

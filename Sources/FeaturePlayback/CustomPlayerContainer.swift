@@ -23,6 +23,7 @@ struct PlayerActions {
     var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
     var setVideoUpscaling: (VideoUpscaling) -> Void = { _ in }
     var setAudioDelay: (TimeInterval) -> Void = { _ in }
+    var setAudioDelayLive: (TimeInterval) -> Bool = { _ in false }
     var setSubtitleDelay: (TimeInterval) -> Void = { _ in }
     var setDialogEnhance: (Bool) -> Void = { _ in }
     /// Apply an edited subtitle appearance (in-player Style screen), for live
@@ -605,6 +606,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             setDolbyVisionFELConversion: { [weak self] in self?.actions.setDolbyVisionFELConversion($0) },
             setVideoUpscaling: { [weak self] in self?.actions.setVideoUpscaling($0) },
             setAudioDelay: { [weak self] in self?.actions.setAudioDelay($0) },
+            setAudioDelayLive: { [weak self] in self?.actions.setAudioDelayLive($0) ?? false },
             setSubtitleDelay: { [weak self] in self?.actions.setSubtitleDelay($0) },
             setDialogEnhance: { [weak self] in self?.actions.setDialogEnhance($0) },
             setSubtitleStyle: { [weak self] in self?.actions.setSubtitleStyle($0) },

@@ -264,6 +264,8 @@ struct PlaybackSyncScreen: View {
     let hint: LocalizedStringResource
     let range: ClosedRange<TimeInterval>
     var showsReset = false
+    var step: TimeInterval = 0.05
+    var keepsFocusAtBounds = false
     let onChange: (TimeInterval) -> Void
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
 
@@ -273,7 +275,7 @@ struct PlaybackSyncScreen: View {
                 value: value,
                 minusSlot: 0,
                 plusSlot: 1,
-                step: 0.05,
+                step: step,
                 onAdjust: { onChange(min(range.upperBound, max(range.lowerBound, value + $0))) }
             )
             Text(hint)
@@ -312,7 +314,7 @@ struct PlaybackSyncScreen: View {
             }
             .buttonStyle(StepperButtonStyle())
             .accessibilityLabel("Earlier")
-            .disabled(value <= range.lowerBound)
+            .disabled(!keepsFocusAtBounds && value <= range.lowerBound)
             .focused($focus, equals: .row(minusSlot))
 
             Text(PlayerControls.delayLabel(value))
@@ -330,10 +332,50 @@ struct PlaybackSyncScreen: View {
             }
             .buttonStyle(StepperButtonStyle())
             .accessibilityLabel("Later")
-            .disabled(value >= range.upperBound)
+            .disabled(!keepsFocusAtBounds && value >= range.upperBound)
             .focused($focus, equals: .row(plusSlot))
         }
         .padding(.vertical, 4)
+    }
+}
+
+struct AudioSyncScreen: View {
+    let model: PlayerControlsModel
+    let actions: PlayerOptionsActions
+    @FocusState.Binding var focus: PlayerControls.FocusSlot?
+    @State private var adjustment = PlayerAudioSyncAdjustment()
+
+    private var value: TimeInterval { adjustment.value ?? model.audioDelaySeconds }
+
+    var body: some View {
+        #if os(tvOS)
+        SettingsAdjustmentFocusScope(
+            content: controls,
+            screen: "audio-sync",
+            adjustableRow: { focus == .row(0) || focus == .row(1) ? 0 : nil },
+            idealWidth: PlayerOptionsPanel.standardWidth,
+            onEditingEnded: { cancelled in
+                if let value = adjustment.finish(cancelled: cancelled) { actions.setAudioDelay(value) }
+            },
+            onMove: { direction, repeating in
+                let value = adjustment.nudge(from: model.audioDelaySeconds,
+                                             forward: direction == .right, repeating: repeating)
+                _ = actions.setAudioDelayLive(value)
+            }
+        )
+        #else
+        controls
+        #endif
+    }
+
+    private var controls: some View {
+        PlaybackSyncScreen(
+            value: value, hint: PlayerControlsModel.audioSyncHint(for: value),
+            range: PlayerControlsModel.audioDelayRange, showsReset: true,
+            step: PlayerAudioSyncAdjustment.step,
+            keepsFocusAtBounds: true,
+            onChange: actions.setAudioDelay, focus: $focus
+        )
     }
 }
 #endif

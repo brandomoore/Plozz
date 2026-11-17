@@ -506,10 +506,13 @@ public final class PlayerControlsModel {
     public var playbackSpeed: Double = 1.0
     /// Audio offset in seconds (positive = audio later than video).
     public var audioDelaySeconds: TimeInterval = 0
-    public static let audioDelayRange: ClosedRange<TimeInterval> = -2...2
+    public static let audioDelayRange = PlayerAudioSyncAdjustment.range
     public var audioSyncHint: LocalizedStringResource {
-        if audioDelaySeconds < 0 { return "Audio plays earlier than the video." }
-        if audioDelaySeconds > 0 { return "Audio plays later than the video." }
+        Self.audioSyncHint(for: audioDelaySeconds)
+    }
+    public static func audioSyncHint(for seconds: TimeInterval) -> LocalizedStringResource {
+        if seconds < 0 { return "Audio plays earlier than the video." }
+        if seconds > 0 { return "Audio plays later than the video." }
         return "Adjust audio earlier or later to match the video."
     }
     public let upscaling = PlayerUpscalingModel()

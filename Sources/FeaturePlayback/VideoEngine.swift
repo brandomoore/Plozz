@@ -184,6 +184,8 @@ public protocol VideoEngine: AnyObject {
     /// negative = audio earlier). No-op when the engine doesn't advertise
     /// `.audioDelay`.
     func setAudioDelay(_ seconds: TimeInterval)
+    /// Attempt immediate audio-only correction; false never triggers a seek/reload.
+    func setAudioDelayLive(_ seconds: TimeInterval) -> Bool
     var audioDelaySeconds: TimeInterval { get }
 
     /// Shifts subtitles relative to video by `seconds` (positive = subs later,
@@ -505,6 +507,7 @@ public extension VideoEngine {
     var capabilities: PlayerEngineCapabilities { [] }
     func setPlaybackSpeed(_ rate: Double) {}
     func setAudioDelay(_ seconds: TimeInterval) {}
+    func setAudioDelayLive(_ seconds: TimeInterval) -> Bool { false }
     var audioDelaySeconds: TimeInterval { 0 }
     func setSubtitleDelay(_ seconds: TimeInterval) {}
     func updateSubtitleStyle(_ style: SubtitleStyle) {}

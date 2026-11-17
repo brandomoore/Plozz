@@ -114,6 +114,48 @@ final class PlayerViewModelEOFTests: XCTestCase {
         XCTAssertEqual(engine.audioDelaySeconds, 0)
     }
 
+    func testLiveAudioSyncNeverFallsBackToTheReloadingSetter() async {
+        let (model, engine, _) = makeViewModel()
+        await model.load()
+        engine.capabilities.insert(.audioDelay)
+        let initialChanges = engine.audioDelayChanges
+        XCTAssertFalse(model.setAudioDelayLive(0.01))
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        XCTAssertEqual(engine.audioDelayChanges, initialChanges)
+        engine.acceptsLiveAudioDelay = true
+        for (requested, expected) in [(0.01, 0.01), (-0.01, -0.01), (3.0, 2.0), (-3.0, -2.0), (0, 0)] {
+            XCTAssertTrue(model.setAudioDelayLive(requested))
+            XCTAssertEqual(model.controls.audioDelaySeconds, expected)
+        }
+        XCTAssertFalse(model.setAudioDelayLive(.nan))
+        engine.capabilities = []
+        XCTAssertFalse(model.setAudioDelayLive(1))
+        engine.capabilities.insert(.audioDelay)
+        await model.stop()
+        XCTAssertFalse(model.setAudioDelayLive(1))
+        XCTAssertEqual(engine.audioDelayChanges, initialChanges)
+    }
+
+    func testAudioSyncHoldUsesFineStepsAcceleratesAndCommitsOnlyOnce() {
+        var adjustment = PlayerAudioSyncAdjustment()
+        XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: false), 0.01)
+        for index in 1...11 {
+            XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: true),
+                           Double(index + 1) / 100, accuracy: 0.000001)
+        }
+        XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: true), 0.17)
+        XCTAssertEqual(adjustment.finish(), 0.17)
+        XCTAssertNil(adjustment.finish(), "Release and recognizer reset must not apply twice.")
+        XCTAssertEqual(adjustment.nudge(from: 0.17, forward: false, repeating: false), 0.16)
+        XCTAssertNil(adjustment.finish(cancelled: true))
+        XCTAssertNil(adjustment.value)
+        XCTAssertEqual(adjustment.nudge(from: 2, forward: true, repeating: false), 2)
+        XCTAssertEqual(adjustment.nudge(from: -2, forward: false, repeating: false), -2)
+        adjustment.set(.nan)
+        adjustment.set(.infinity)
+        XCTAssertEqual(adjustment.finish(), -2)
+    }
+
     func testProfileUpscalingChoiceIsAppliedBeforeEngineLoadAcrossProviders() async throws {
         for kind in [ProviderKind.jellyfin, .plex] {
             for mode in VideoUpscaling.allCases {
@@ -3329,7 +3371,17 @@ private final class SpyVideoEngine: VideoEngine {
     var upscalingGate: PreCommitYieldGate?
     var upscalingStarted: (() -> Void)?
     var audioDelaySeconds: TimeInterval = 0
-    func setAudioDelay(_ seconds: TimeInterval) { audioDelaySeconds = seconds }
+    var audioDelayChanges: [TimeInterval] = []
+    var acceptsLiveAudioDelay = false
+    func setAudioDelay(_ seconds: TimeInterval) {
+        audioDelayChanges.append(seconds)
+        audioDelaySeconds = seconds
+    }
+    func setAudioDelayLive(_ seconds: TimeInterval) -> Bool {
+        guard acceptsLiveAudioDelay else { return false }
+        audioDelaySeconds = seconds
+        return true
+    }
     func setVideoUpscaling(_ selection: VideoUpscaling) async throws {
         upscalingStarted?()
         await upscalingGate?.suspend()

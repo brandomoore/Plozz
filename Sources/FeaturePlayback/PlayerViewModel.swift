@@ -2729,6 +2729,18 @@ public final class PlayerViewModel {
         controls.audioDelaySeconds = engine.audioDelaySeconds
     }
 
+    public func setAudioDelayLive(_ seconds: TimeInterval) -> Bool {
+        guard !didStop, engine.capabilities.contains(.audioDelay) else { return false }
+        guard seconds.isFinite else {
+            PlozzLog.playback.error("Ignoring non-finite live audio sync offset.")
+            return false
+        }
+        let range = PlayerControlsModel.audioDelayRange
+        guard engine.setAudioDelayLive(max(range.lowerBound, min(range.upperBound, seconds))) else { return false }
+        controls.audioDelaySeconds = engine.audioDelaySeconds
+        return true
+    }
+
     public func setSubtitleDelay(_ seconds: TimeInterval) {
         let clamped = max(-10, min(10, seconds))
         controls.subtitleDelaySeconds = clamped

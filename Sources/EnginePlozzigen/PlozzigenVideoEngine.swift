@@ -1657,6 +1657,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         engine.setAudioDelay(seconds)
     }
     public var audioDelaySeconds: TimeInterval { engine.audioDelaySeconds }
+    public func setAudioDelayLive(_ seconds: TimeInterval) -> Bool {
+        guard capabilities.contains(.audioDelay), engine.canAdjustAudioDelayLive,
+              !engine.isSeeking, !outputLoadInProgress, outputPolicyReload == nil else { return false }
+        return engine.setAudioDelayLive(seconds)
+    }
     public func setSubtitleDelay(_ seconds: TimeInterval) {}
     public func setDialogEnhanceEnabled(_ enabled: Bool) {}
 

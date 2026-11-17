@@ -1,5 +1,10 @@
 # CoreUI
 
+`SettingsAdjustmentFocusScope` optionally reports `onEditingEnded(cancelled:)`.
+Arrow release commits an adjustment; focus loss, disappearance, app deactivation
+and recognizer cancellation discard pending input. A swipe commits one step.
+Existing immediate settings adjustments do not need the callback.
+
 `ProfileSettingsCategory.localizedTitle` contains app copy only. Branded categories
 such as Seerr have no localized title; their platform rows render the name verbatim.
 

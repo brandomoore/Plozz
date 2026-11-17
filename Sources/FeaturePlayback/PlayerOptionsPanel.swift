@@ -708,11 +708,7 @@ struct PlayerOptionsPanel: View {
     @ViewBuilder
     private var audioBody: some View {
         if audioScreen == .sync {
-            PlaybackSyncScreen(
-                value: model.audioDelaySeconds, hint: model.audioSyncHint,
-                range: PlayerControlsModel.audioDelayRange, showsReset: true,
-                onChange: actions.setAudioDelay, focus: $focus
-            )
+            AudioSyncScreen(model: model, actions: actions, focus: $focus)
         } else {
             #if os(tvOS)
             if audioScreen == .dialogue {

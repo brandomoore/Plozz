@@ -1324,6 +1324,9 @@ private struct PlozziOSPlaybackSyncControls: View {
     let viewModel: PlayerViewModel
     var includesAudio = true
     var includesSubtitles = true
+    @State private var audioAdjustment = PlayerAudioSyncAdjustment()
+
+    private var audioDelay: TimeInterval { audioAdjustment.value ?? viewModel.controls.audioDelaySeconds }
 
     var body: some View {
         Group {
@@ -1331,22 +1334,32 @@ private struct PlozziOSPlaybackSyncControls: View {
                 Section("Audio Delay") {
                     Stepper(
                         value: Binding(
-                            get: { viewModel.controls.audioDelaySeconds },
-                            set: { viewModel.setAudioDelay($0) }
+                            get: { audioDelay },
+                            set: {
+                                audioAdjustment.set($0)
+                                if let value = audioAdjustment.value { _ = viewModel.setAudioDelayLive(value) }
+                            }
                         ),
                         in: PlayerControlsModel.audioDelayRange,
-                        step: 0.05
+                        step: PlayerAudioSyncAdjustment.step,
+                        onEditingChanged: { editing in
+                            if !editing, let value = audioAdjustment.finish() { viewModel.setAudioDelay(value) }
+                        }
                     ) {
-                        Text(viewModel.controls.audioDelaySeconds,
+                        Text(audioDelay,
                              format: .number.precision(.fractionLength(2)))
                             + Text(" s")
                     }
                     .accessibilityLabel("Audio Delay")
                     .accessibilityIdentifier("player-audio-delay")
-                    Text(viewModel.controls.audioSyncHint).plozzForeground(.secondary)
-                    Button("Reset") { viewModel.setAudioDelay(0) }
+                    Text(PlayerControlsModel.audioSyncHint(for: audioDelay)).plozzForeground(.secondary)
+                    Button("Reset") {
+                        _ = audioAdjustment.finish(cancelled: true)
+                        viewModel.setAudioDelay(0)
+                    }
                         .disabled(viewModel.controls.audioDelaySeconds == 0)
                 }
+                .onDisappear { _ = audioAdjustment.finish(cancelled: true) }
             }
 
             if includesSubtitles, viewModel.controls.subtitleDelayAdjustable {
