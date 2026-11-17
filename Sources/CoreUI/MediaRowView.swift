@@ -645,6 +645,7 @@ public struct MediaRowView: View {
                                     },
                                     onFocusChange: { focused in
                                         leadingBrowseFocused = focused
+                                        if focused { activity.browseReturnPending = false }
                                         if !focused { scheduleResetAfterFocusExit(using: proxy) }
                                         scheduleLeadingCardTuck(using: proxy)
                                     },
@@ -652,6 +653,8 @@ public struct MediaRowView: View {
                                         // The system hands focus back to this card when the
                                         // See all page closes; remember that so it can be redirected.
                                         activity.returningFromLeadingBrowse = true
+                                        activity.browseReturnPending = true
+                                        activity.focusExitReset?.cancel()
                                         onBrowse()
                                     }
                                 )
@@ -714,11 +717,18 @@ public struct MediaRowView: View {
                                     },
                                     onFocusChange: { focused in
                                         activity.browseCardHasFocus = focused
+                                        if focused { activity.browseReturnPending = false }
                                         // Card focus doesn't change when leaving from a See all
                                         // card, so the row's own focus handler never sees this exit.
                                         if !focused { scheduleResetAfterFocusExit(using: proxy) }
                                     },
-                                    action: onBrowse
+                                    action: {
+                                        // The See all page covers Home; focus comes back to this
+                                        // card, so the row must not scroll away meanwhile.
+                                        activity.browseReturnPending = true
+                                        activity.focusExitReset?.cancel()
+                                        onBrowse()
+                                    }
                                 )
                             }
                             #endif
@@ -1533,7 +1543,7 @@ public struct MediaRowView: View {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled,
                   activity.focus?.wrappedValue == nil,
-                  !activity.browseCardHasFocus, !leadingBrowseFocused,
+                  !activity.browseCardHasFocus, !leadingBrowseFocused, !activity.browseReturnPending,
                   !isCovered, coveredFocusID == nil, !loadingCardFocused else { return }
             withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo(first, anchor: .leading) }
         }
@@ -1808,6 +1818,8 @@ private final class MediaRowActivity {
     /// card (which the card focus doesn't track) currently holds focus.
     @ObservationIgnored var focusExitReset: Task<Void, Never>?
     @ObservationIgnored var browseCardHasFocus = false
+    /// A See all page is open over this row; focus returns to its card when it closes.
+    @ObservationIgnored var browseReturnPending = false
     @ObservationIgnored var visibleIDs: Set<String> = []
     @ObservationIgnored var pendingReport: DispatchWorkItem?
     @ObservationIgnored var prefetchedIDs: Set<String> = []
