@@ -200,7 +200,6 @@ struct PlozziOSHomeView: View {
             + "loadingRows=\(viewModel.loadingRows.count) heroItems=\(heroItems.count) "
             + "heroShown=\(viewModel.hasCompletedLiveLoad)"
     }
-    @State private var heroHasPainted = false
     @State private var heroCuratedDisabledLibraryKeys: Set<String> = []
     /// How many consecutive curations have failed to offer each retained title,
     /// so a deleted or un-watchlisted one eventually leaves. See `HeroLiveMerge`.
@@ -772,17 +771,6 @@ struct PlozziOSHomeView: View {
             hasItems: heroConfigurationMatches && !displayHeroItems.isEmpty,
             recomputeComplete: !heroLoadKey.isAwaitingSources && heroCompletedLoadKey == heroLoadKey
         )
-        // Sticky stage. A hero that has already painted must never retire to
-        // `.hidden` because one refresh fold momentarily curated an empty set:
-        // `.hidden` removes the band AND switches off the scroll view's top safe
-        // area, so the page re-lays out twice per fold (up, then back down) while
-        // the fold settles. `.placeholder` keeps the band reserved at the real
-        // hero height, so the settled geometry never changes. Genuine retirement
-        // (the viewer switching every source off) changes the configuration, so
-        // `heroConfigurationMatches` is false there and `.hidden` still applies.
-        if heroSlotState == .hidden, heroHasPainted, heroConfigurationMatches {
-            heroSlotState = .placeholder
-        }
         if FanoutDiagnostics.isEnabled, heroSlotState == .placeholder, !heroItems.isEmpty {
             // The anomaly this line exists for: a seeded hero that still renders as
             // a skeleton. Distinguishes "reconcile filtered every slide out" from
@@ -989,7 +977,6 @@ struct PlozziOSHomeView: View {
                 await loadHero(from: heroContent)
                 guard !Task.isCancelled else { return }
                 heroCompletedLoadKey = heroLoadKey
-                if !heroItems.isEmpty { heroHasPainted = true }
             }
     }
 
@@ -1416,7 +1403,6 @@ struct PlozziOSHomeView: View {
         heroCompletedLoadKey = nil
         // A different profile/viewer starts from scratch: its hero stage must be
         // allowed to resolve to `.hidden` until it paints content of its own.
-        heroHasPainted = false
         featuredItems = []
         featuredConfiguration = nil
         featuredDisabledLibraryKeys = []
@@ -1688,7 +1674,7 @@ struct PlozziOSHomeView: View {
         heroCuratedConfiguration = configuration
         heroCuratedDisabledLibraryKeys = disabledLibraryKeys
         heroRetainedMisses = merge.misses
-        // Never blank a painted carousel from a curation that produced nothing.
+        // Never blank a painted carousel from a refresher that is still folding.
         // Measured on device at millisecond resolution: on every launch `heroItems`
         // went 8 → 0 → 8 within ~1.8s, and that empty window is the hero painting its
         // no-image cover between the cached artwork and the live curation — exactly
@@ -1696,10 +1682,12 @@ struct PlozziOSHomeView: View {
         // reloads". The first curation pass can legitimately resolve before the
         // sources it needs are ready (`foldsIntoLoadedSet` is false on the very first
         // pass), so an empty result there proves nothing and must not clear the
-        // slides already on screen. Genuine retirement still happens above: an
-        // inactive hero configuration returns early with `heroItems = []`, and the
-        // slot hides when the viewer switches every source off.
-        if merge.items != heroItems, !(merge.items.isEmpty && !heroItems.isEmpty) {
+        // slides already on screen. A *confirmed* empty curation is different: if the
+        // viewer removed the last eligible title, the hero must retire rather than
+        // leave a skeleton behind. `freshIsAuthoritative` is what separates them.
+        let mayClearPaintedHero =
+            !(merge.items.isEmpty && !heroItems.isEmpty) || freshIsAuthoritative
+        if merge.items != heroItems, mayClearPaintedHero {
             heroItems = merge.items
             // Hero-set trace (PLZXFAN-gated; a hash, never titles). The user-visible
             // symptom "the hero changes images a few times while loading" is exactly

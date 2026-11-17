@@ -136,18 +136,20 @@ extension EnvironmentValues {
 }
 
 private struct PlozziOSHeroContainerHeightModifier: ViewModifier {
-    /// Seeded synchronously from the window scene so the FIRST painted frame already
-    /// uses the real height. Starting `nil` meant the hero (and the loading skeleton
-    /// that reserves its space) laid out at the 610pt fallback and then jumped to
-    /// `0.76 × windowHeight` on the next pass — on a 440×956pt phone that is a 117pt
-    /// shift after content is already on screen: the "same page comes up again with
-    /// the wrong spacing for the hero, then corrects" reflow. `PlozziOSWindowHeightReader`
-    /// still corrects the value if the real window differs (iPad multi-window).
+    /// An ancestor that already knows the stage height (presentation fixtures,
+    /// previews) wins, so tests can exercise a specific window size.
+    @Environment(\.plozziOSHeroContainerHeight) private var inheritedHeight
+    /// Seed the first painted frame from the active screen so a phone never
+    /// starts at the 610pt fallback and jumps once the window is measured.
+    /// `PlozziOSWindowHeightReader` then corrects this to the window this view
+    /// actually lives in (iPad multi-window, rotation, resize).
     @State private var height: CGFloat? = PlozziOSHeroContainerHeightSeed.current
+
+    private var resolvedHeight: CGFloat? { inheritedHeight ?? height }
 
     func body(content: Content) -> some View {
         content
-            .environment(\.plozziOSHeroContainerHeight, height)
+            .environment(\.plozziOSHeroContainerHeight, resolvedHeight)
             .background {
                 PlozziOSWindowHeightReader { measured in
                     guard measured > 0, height != measured else { return }
@@ -159,9 +161,9 @@ private struct PlozziOSHeroContainerHeightModifier: ViewModifier {
     }
 }
 
-/// Synchronous first-frame window height. `PlozziOSWindowHeightReader` only reports
-/// from its next layout pass, which is one frame too late for a full-bleed hero that
-/// must reserve its final height before the first paint.
+/// First-frame height guess before the owning window reports. Only the phone
+/// needs this (full-screen windows); the reader below replaces it with the
+/// owning window's bounds, including a resized iPad window.
 enum PlozziOSHeroContainerHeightSeed {
     @MainActor
     static var current: CGFloat? {
@@ -949,6 +951,7 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
     private static var topBlurLeadIn: CGFloat { 8 }
 
     let height: CGFloat
+    let surfaceRole: HeroTrailerSurfaceRole
     @ViewBuilder let picture: (PlozziOSHeroPictureLayout) -> Picture
 
     var body: some View {
@@ -979,7 +982,7 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
                 }
             }
             .overlay(alignment: .top) {
-                if topHeight > 0, !reduceTransparency {
+                if surfaceRole == .home, topHeight > 0, !reduceTransparency {
                     topReflectionBlur(geometry, width: width, topHeight: topHeight,
                                       radius: topHeight / 6, from: 0, to: 0.55)
                     topReflectionBlur(geometry, width: width, topHeight: topHeight,
@@ -1167,7 +1170,7 @@ private struct PlozziOSHeroBackdrop: View {
     var body: some View {
         ZStack {
             if extendsArtwork {
-                PlozziOSExtendedHeroArtwork(height: height) { layout in
+                PlozziOSExtendedHeroArtwork(height: height, surfaceRole: surfaceRole) { layout in
                     stillArtwork()
                         .frame(width: layout.width, height: layout.height)
                         .clipped()
@@ -1705,7 +1708,7 @@ struct PlozziOSHomeStaticBackdrop: View {
         width: CGFloat
     ) -> some View {
         if extendsArtwork {
-            PlozziOSExtendedHeroArtwork(height: height) { layout in
+            PlozziOSExtendedHeroArtwork(height: height, surfaceRole: .home) { layout in
                 PlozziOSSlidingHeroArtwork(
                     presentation: presentation,
                     style: style,
@@ -2005,16 +2008,7 @@ struct PlozziOSHomeHeroForeground: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     @Environment(\.mediaItemActionHandler) private var actionHandler
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
-    /// One reveal for the whole foreground.
-    ///
-    /// The wordmark, the description and the action row used to appear on three
-    /// independent schedules: the description immediately, the buttons when the play
-    /// target resolved, and the transparent logo last (it is a separate artwork
-    /// fetch). Watching the page assemble itself that way was reported as ugly. Now
-    /// the column waits for the logo it is going to draw and then fades in once, so
-    /// the slowest piece sets the moment for all of them.
-    @State private var foregroundReady = false
-    /// The logo/text choice this slide revealed with. Freezing it prevents a
+    /// The logo/text choice this slide first drew with. Freezing it prevents a
     /// late enrichment logo from swapping a visible title (or a wordmark) for
     /// something else while the viewer is looking at the hero.
     @State private var frozenLogoChoice = false
@@ -2036,6 +2030,9 @@ struct PlozziOSHomeHeroForeground: View {
     /// series fades in as one piece instead of popping the badge in a second later.
     /// Optional so previews and fixtures can keep constructing the foreground.
     var scheduleLines: HeroScheduleLines? = nil
+    /// Test/preview seam for a logo lookup that must stay unresolved. Production
+    /// uses the shared TMDb fallback.
+    var logoFallbackOverride: HeroLogoFallback? = nil
 
     var body: some View {
         // Reading the store in the body is what makes a late cache hit re-render
@@ -2059,7 +2056,7 @@ struct PlozziOSHomeHeroForeground: View {
                 scheduleLine: resolvedScheduleLine,
                 logoFallback: frozenLogoChoice
                     ? frozenLogoFallback
-                    : PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
+                    : (logoFallbackOverride ?? PlozziOSHeroMetadata.tmdbLogoFallback(for: item)),
                 logoReferencesOverride: frozenLogoChoice ? frozenLogoReferences : nil,
                 logoFallbackOverride: frozenLogoChoice ? .some(frozenLogoFallback) : nil,
                 textSize: appModel.settings.hero.settings.textSize
@@ -2090,55 +2087,35 @@ struct PlozziOSHomeHeroForeground: View {
         // Width fill / alignment now come from the shared placement modifier.
         .multilineTextAlignment(style == .compactPortrait ? .center : .leading)
         .environment(\.plozziOSHeroLogoSize, appModel.settings.hero.settings.logoSize)
-        // A prepared slide is visible immediately, before the task runs, so a
-        // returned-to hero never spends a frame at zero opacity.
-        .opacity(foregroundReady || HeroForegroundReadiness.isPrepared(foregroundReadinessKey) ? 1 : 0)
+        // The foreground is never hidden behind artwork. The title, description
+        // and actions paint on the first frame; `HeroLogoArtwork` crossfades the
+        // wordmark over the title when it resolves. Gating the whole column on an
+        // optional logo (which may need a network request) made otherwise
+        // playable content look unavailable.
         .task(id: foregroundReadinessKey) {
-            // Lock the logo/text choice on the first pass, before the reveal.
-            // A later enrichment pass can add a clearer logo, but replacing the
-            // wordmark (or the visible title) after it is on screen reads as a
-            // clear-text flicker.
+            // Lock the logo/text choice on the first pass. A later enrichment
+            // pass can add a clearer logo, but replacing the visible wordmark
+            // (or title) after it is on screen reads as a flicker.
             let sources = logoSources
             if !frozenLogoChoice {
                 frozenLogoChoice = true
                 frozenLogoReferences = sources.references
                 frozenLogoFallback = sources.fallback
             }
-            // Returning from a detail page recreates this view, so the gate ran again and
-            // faded an already-prepared slide in from transparent — a visible redraw on
-            // every pop. A slide whose logo is already prepared reveals immediately, no
-            // animation; only the first preparation fades.
-            if HeroForegroundReadiness.isPrepared(foregroundReadinessKey) {
-                foregroundReady = true
-                return
-            }
-            // Zero-network: publishes any schedule already on disk for this slide, so
-            // the badge is part of the same first frame and fade as the wordmark. A
-            // genuinely unknown schedule still resolves later and fades in on its own.
+            // Zero-network: publishes any schedule already on disk for this slide.
+            // A genuinely unknown schedule still resolves later on its own.
             await scheduleLines?.loadCached([detailItem, item])
-            let hasAnySource = !sources.references.isEmpty || sources.fallback != nil
-            guard hasAnySource else {
-                HeroForegroundReadiness.markPrepared(foregroundReadinessKey)
-                foregroundReady = true
-                return
-            }
-            // `prepare` warms the memo that `HeroLogoArtwork` reads synchronously, so
-            // when this returns the wordmark can draw on the same frame as the rest.
+            guard !sources.references.isEmpty || sources.fallback != nil else { return }
+            // Warm the memo `HeroLogoArtwork` reads synchronously so a returned-to
+            // hero can draw its wordmark on the first frame.
             await HeroLogoPreloader.prepare(
                 references: sources.references,
                 fallback: sources.fallback,
                 policy: artworkPolicy
             )
-            guard !Task.isCancelled else { return }
-            HeroForegroundReadiness.markPrepared(foregroundReadinessKey)
-            withAnimation(.easeOut(duration: 0.28)) { foregroundReady = true }
         }
     }
 
-    /// Waits for the logo this page will draw (the same memo `HeroLogoArtwork`
-    /// reads) and then reveals the whole foreground. No timers: a page without a
-    /// logo — or whose logo is already cached — reveals immediately, and a page with
-    /// one reveals when the artwork is actually ready.
     private var foregroundReadinessKey: String {
         // Identity, not artwork references. An enrichment pass can hand the same
         // slide a new logo reference after its first reveal; keying on the refs made
@@ -2149,7 +2126,7 @@ struct PlozziOSHomeHeroForeground: View {
     }
 
     private var logoSources: (references: [ArtworkReference], fallback: HeroLogoFallback?) {
-        (presentation.logoReferences, PlozziOSHeroMetadata.tmdbLogoFallback(for: item))
+        (presentation.logoReferences, logoFallbackOverride ?? PlozziOSHeroMetadata.tmdbLogoFallback(for: item))
     }
 
     @ViewBuilder
@@ -3064,7 +3041,11 @@ struct PlozziOSHeroMetadata: View {
                         displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
                         maxHeight: logoBox.height,
-                        presentationPolicy: .whenResolved,
+                        // Show the readable title immediately and crossfade the
+                        // wordmark in when it resolves. Waiting for an optional
+                        // logo (which may need a network fetch) hid the title,
+                        // Play and Watchlist and made the page feel slower.
+                        presentationPolicy: .whenReady,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
                         Text(titlePresentation.title)
@@ -3872,25 +3853,3 @@ struct PlozziOSHomeSidebarOverlapProbe: UIViewControllerRepresentable {
 }
 #endif
 
-/// Remembers which hero foregrounds have already had their logo prepared, so a view
-/// recreated by navigation reveals immediately instead of fading in again.
-enum HeroForegroundReadiness {
-    private static let lock = NSLock()
-    private static var prepared: Set<String> = []
-    private static var order: [String] = []
-    private static let limit = 32
-
-    static func isPrepared(_ key: String) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return prepared.contains(key)
-    }
-
-    static func markPrepared(_ key: String) {
-        lock.lock(); defer { lock.unlock() }
-        guard prepared.insert(key).inserted else { return }
-        order.append(key)
-        while order.count > limit {
-            prepared.remove(order.removeFirst())
-        }
-    }
-}
