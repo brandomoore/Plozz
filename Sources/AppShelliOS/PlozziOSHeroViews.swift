@@ -3050,12 +3050,12 @@ struct PlozziOSHeroMetadata: View {
                         displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
                         maxHeight: logoBox.height,
-                        // Home must show its readable title and actions on the
-                        // first frame. Detail is a single page whose hero and
-                        // wordmark should arrive together, so it keeps the
-                        // resolved-only reveal instead of swapping text for a
-                        // logo underneath the viewer.
-                        presentationPolicy: mode == .home ? .whenReady : .whenResolved,
+                        // One reveal across Home and detail: show the wordmark
+                        // when it resolves and crossfade it in, rather than
+                        // letting a text title appear first and swapping it under
+                        // the viewer. Home's Play/Watchlist actions are outside
+                        // this logo gate and remain usable immediately.
+                        presentationPolicy: .whenResolved,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
                         Text(titlePresentation.title)
