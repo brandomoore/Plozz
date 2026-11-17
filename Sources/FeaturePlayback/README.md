@@ -63,8 +63,8 @@ negative earlier. TV Left/Right holds repeat and accelerate to 50 ms steps.
 Buffered direct-rendering PCM changes the audio queue without seeking or moving
 the video clock. When live correction is unavailable, the shared audio editor
 previews immediately and waits 600 ms after input settles before committing.
-Rapid taps and successive holds accumulate one pending value; no commit is
-scheduled during a hold, including at the bounds. This is independent of play/
+Rapid taps, successive swipes and holds accumulate one pending value; no commit is
+scheduled during an active swipe or hold, including at the bounds. This is independent of play/
 pause state. Reset supersedes pending work; cancellation, dismissal, backgrounding
 and a new playback session discard unapplied previews. Native
 loopback and other unsupported formats still seek/reload on that final commit.
@@ -77,6 +77,10 @@ TV Subtitle Sync uses the same single-focus settings stepper and Reset. Its
 existing 50 ms steps and +/-10 second range are unchanged; held Left/Right repeats
 without losing focus at the limits. Subtitle offsets apply immediately to the
 overlay timeline, with no audio-style reload debounce.
+Both sync controls opt into distance-based remote swipes: a short swipe keeps
+the fine step, and continued travel adds a step per 20 points without requiring
+another gesture. Longer swipes move farther, with no momentum after lift.
+Taps, held-arrow timing, value limits and compact styling remain unchanged.
 Both sync panels give the compact stepper a full-width native focus section so
 Back, the control and Reset remain vertically reachable. On submenu entry,
 Back and Reset become eligible only after the stepper reports actual native

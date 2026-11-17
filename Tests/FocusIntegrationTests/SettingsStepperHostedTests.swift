@@ -61,6 +61,117 @@ final class SettingsStepperHostedTests: XCTestCase {
             input.endPress()
         }
         XCTAssertEqual(model.audioDelaySeconds, 0)
+        model.subtitleDelaySeconds = 0
+        try await Task.sleep(for: .milliseconds(100))
+        try sendSwipe(.began, translation: 8, to: input)
+        try sendSwipe(.ended, translation: 208, to: input)
+        XCTAssertEqual(model.subtitleDelaySeconds, 0.55, accuracy: 0.000001,
+                       "The lift sample must apply all eleven steps, not just one swipe event.")
+        XCTAssertTrue(system.focusedItem === focused)
+        try await Task.sleep(for: .milliseconds(100))
+        try sendSwipe(.began, translation: 8, to: input)
+        try sendSwipe(.changed, translation: 10_008, to: input)
+        XCTAssertEqual(model.subtitleDelaySeconds, 10)
+        try sendSwipe(.changed, translation: 9_988, to: input)
+        XCTAssertEqual(model.subtitleDelaySeconds, 9.95, accuracy: 0.000001,
+                       "Reversing at the bound must not undo discarded overshoot first.")
+        try sendSwipe(.cancelled, translation: 9_988, to: input)
+        XCTAssertTrue(system.focusedItem === focused)
+    }
+
+    func testAudioSyncSwipePreviewsItsDistanceAndDefersReloadUntilLift() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = PlayerControlsModel()
+        var applied: [TimeInterval] = []
+        let actions = PlayerOptionsActions(setAudioDelay: {
+            applied.append($0)
+            model.audioDelaySeconds = $0
+        })
+        let host = UIHostingController(rootView: AudioSyncFixture(model: model, actions: actions))
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            model.audioSyncAdjustment.cancel()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil { self.inputController(in: host) != nil }
+        let input = try XCTUnwrap(inputController(in: host))
+        let system = try XCTUnwrap(UIFocusSystem(for: window))
+        system.requestFocusUpdate(to: input)
+        system.updateFocusIfNeeded()
+        try await waitUntil { input.ownsHorizontalNavigationInput }
+        let focused = try XCTUnwrap(system.focusedItem)
+        try sendSwipe(.began, translation: 8, to: input)
+        try sendSwipe(.changed, translation: 408, to: input)
+        XCTAssertEqual(model.audioSyncAdjustment.value, 0.21)
+        try await Task.sleep(for: .milliseconds(750))
+        XCTAssertTrue(applied.isEmpty, "A stationary finger must not trigger the fallback reload.")
+        XCTAssertNil(model.audioSyncAdjustment.commitTask)
+        try sendSwipe(.ended, translation: 428, to: input)
+        XCTAssertEqual(model.audioSyncAdjustment.value, 0.22)
+        XCTAssertTrue(applied.isEmpty)
+        try await waitUntil { applied == [0.22] }
+        XCTAssertTrue(system.focusedItem === focused)
+        try await Task.sleep(for: .milliseconds(100))
+        try sendSwipe(.began, translation: -8, to: input)
+        try sendSwipe(.changed, translation: -10_008, to: input)
+        XCTAssertEqual(model.audioSyncAdjustment.value, -2)
+        try sendSwipe(.changed, translation: -9_988, to: input)
+        XCTAssertEqual(model.audioSyncAdjustment.value, -1.99)
+        try sendSwipe(.cancelled, translation: -9_988, to: input)
+        XCTAssertNil(model.audioSyncAdjustment.value)
+        XCTAssertNil(model.audioSyncAdjustment.commitTask)
+        XCTAssertEqual(applied, [0.22])
+        XCTAssertTrue(system.focusedItem === focused)
+        try await Task.sleep(for: .milliseconds(100))
+        try sendSwipe(.began, translation: 8, to: input)
+        NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: nil)
+        try sendSwipe(.ended, translation: 408, to: input)
+        XCTAssertNil(model.audioSyncAdjustment.value, "Late swipe samples cannot resume cancelled input.")
+        XCTAssertNil(model.audioSyncAdjustment.commitTask)
+        XCTAssertEqual(applied, [0.22])
+    }
+
+    private func sendSwipe(
+        _ phase: UIGestureRecognizer.State, translation: CGFloat,
+        to input: any SettingsAdjustmentRemoteInput
+    ) throws {
+        let controller = try XCTUnwrap(input as? UIViewController)
+        let pan = SampledPan(phase: phase, translation: translation)
+        if phase == .began {
+            let delegate = try XCTUnwrap(controller as? UIGestureRecognizerDelegate)
+            XCTAssertEqual(delegate.gestureRecognizerShouldBegin?(pan), true)
+        }
+        let selector = NSSelectorFromString("swiped:")
+        XCTAssertTrue(controller.responds(to: selector))
+        _ = controller.perform(selector, with: pan)
+    }
+
+    private final class SampledPan: UIPanGestureRecognizer {
+        private var phase: UIGestureRecognizer.State
+        private let travel: CGFloat
+
+        init(phase: UIGestureRecognizer.State, translation: CGFloat) {
+            self.phase = phase
+            travel = translation
+            super.init(target: nil, action: nil)
+        }
+
+        override var state: UIGestureRecognizer.State {
+            get { phase }
+            set { phase = newValue }
+        }
+
+        override func translation(in view: UIView?) -> CGPoint { CGPoint(x: travel, y: 0) }
+        override func velocity(in view: UIView?) -> CGPoint { CGPoint(x: travel < 0 ? -100 : 100, y: 0) }
     }
 
     private struct SubtitleSyncFixture: View {
@@ -205,6 +316,10 @@ final class SettingsStepperHostedTests: XCTestCase {
             XCTAssertTrue(text.contains("\(expected) seconds"), "Value must be visible before the next press: \(text)")
         }
         XCTAssertEqual(model.settings.configuredSkipDelay(for: .intro, category: .anime), 5)
+        try sendSwipe(.began, translation: 8, to: input)
+        try sendSwipe(.ended, translation: 408, to: input)
+        XCTAssertEqual(model.settings.configuredSkipDelay(for: .intro, category: .movie), 14,
+                       "Steppers that have not opted in must retain one step per swipe.")
     }
 
     func testSharedThemeVolumeControlPreviewsOnceUpdatesGainAndStopsOnExit() async throws {

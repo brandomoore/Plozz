@@ -296,6 +296,7 @@ struct PlaybackSyncScreen: View {
                 verbatimTitle: { PlayerControls.delayLabel(Double($0) * step) }
             )
             .reservingValueWidth(for: [indices.lowerBound, indices.upperBound])
+            .swipeToAdjust()
             .accessibilityLabel("Subtitle Delay")
             .frame(maxWidth: .infinity)
             .plozzFocusSection()
@@ -351,6 +352,7 @@ struct AudioSyncScreen: View {
             }, onEditingEnded: {
                 adjustment.endEditing(cancelled: $0, commit: actions.setAudioDelay)
             })
+            .swipeToAdjust(onEditingBegan: { adjustment.beginEditing() })
             .accessibilityLabel("Audio Delay")
             .frame(maxWidth: .infinity)
             .plozzFocusSection()

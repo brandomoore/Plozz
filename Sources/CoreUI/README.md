@@ -2,8 +2,13 @@
 
 `SettingsAdjustmentFocusScope` optionally reports `onEditingEnded(cancelled:)`.
 Arrow release commits an adjustment; focus loss, disappearance, app deactivation
-and recognizer cancellation discard pending input. A swipe commits one step.
-Existing immediate settings adjustments do not need the callback.
+and recognizer cancellation discard pending input. Swipes default to one step;
+`SettingsStepper.swipeToAdjust` opts into continuous distance-based adjustment.
+The same native input owner tracks the gesture through lift or cancellation,
+including the final sample of a fast flick. The control accumulates whole steps
+and clamps each update, allowing immediate reversal at either bound. Its editing
+callback begins before the first value update and ends only on lift/cancellation.
+Existing immediate settings adjustments do not need the callbacks.
 
 `ProfileSettingsCategory.localizedTitle` contains app copy only. Branded categories
 such as Seerr have no localized title; their platform rows render the name verbatim.

@@ -29,11 +29,13 @@ public struct SettingsStepper<Value: Hashable>: View {
     private var sizingOptions: [Value]?
     private var directionalAdjustment: ((_ forward: Bool, _ repeating: Bool) -> Void)?
     private var editingEnded: ((_ cancelled: Bool) -> Void)?
+    private var swipeEditingBegan: (() -> Void)?
 
     @Environment(\.themePalette) private var palette
     @FocusState private var focusedButton: StepperButton?
     #if os(tvOS)
     @FocusState private var isFocused: Bool
+    @State private var swipeIndex: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.settingsFormRowsFlushLeading) private var flushLeading
@@ -133,6 +135,13 @@ public struct SettingsStepper<Value: Hashable>: View {
         result.sizingOptions = values
         return result
     }
+
+    /// Opt in to distance-based TV swipes without changing taps or held arrows.
+    public func swipeToAdjust(onEditingBegan: @escaping () -> Void = {}) -> Self {
+        var result = self
+        result.swipeEditingBegan = onEditingBegan
+        return result
+    }
     private var rangePositions: [Int] {
         guard options.count > 21 else { return Array(options.indices) }
         return (0...20).map { Int((Double($0) * Double(options.count - 1) / 20).rounded()) }
@@ -175,7 +184,11 @@ public struct SettingsStepper<Value: Hashable>: View {
             content: televisionControl,
             screen: options,
             adjustableRow: { isFocused ? 0 : nil },
-            onEditingEnded: { editingEnded?($0) },
+            onSwipe: swipeEditingBegan == nil ? nil : adjustSwipe,
+            onEditingEnded: {
+                swipeIndex = nil
+                editingEnded?($0)
+            },
             onMove: { direction, repeating in
                 switch direction {
                 case .left, .right:
@@ -229,6 +242,21 @@ public struct SettingsStepper<Value: Hashable>: View {
     }
 
     #if os(tvOS)
+    private func adjustSwipe(by steps: Int, began: Bool) {
+        if began {
+            swipeIndex = index
+            swipeEditingBegan?()
+        }
+        guard let current = swipeIndex, !options.isEmpty else { return }
+        let target = current + steps
+        let next = wraps
+            ? (target % options.count + options.count) % options.count
+            : min(options.count - 1, max(0, target))
+        // Keep the gesture's index current even before SwiftUI renders the new binding.
+        swipeIndex = next
+        if next != current { selection = options[next] }
+    }
+
     @ViewBuilder private var televisionControl: some View {
         if label != nil {
             televisionButton
