@@ -632,8 +632,6 @@ public struct MediaRowView: View {
                             metrics: layoutMetrics,
                             leadingInset: cardsLeadingInset, trailingInset: cardsTrailingInset
                         ) {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: layoutMetrics.cardSpacing) {
                             #if os(tvOS)
                             if showsLeadingBrowseCard, let onBrowse {
                                 MediaRowBrowseCard(
