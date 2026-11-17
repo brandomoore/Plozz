@@ -1299,12 +1299,12 @@ private struct PlozziOSHeroBackdrop: View {
             // Keep the seeded card picture visible until the full backdrop lands.
             seedArtwork == nil ? palette.backgroundBase : Color.clear
         }
+        .reportingHeroArtwork(id: presentation.itemID)
         // Fade the first real picture over the grey/seed base instead of letting
         // it pop in when the async resolve lands. This is a plain opacity
         // animation, not a redraw of the image.
         .opacity(seedArtwork != nil || backdropResolved ? 1 : 0)
         .animation(.easeOut(duration: 0.25), value: backdropResolved)
-        .reportingHeroArtwork(id: presentation.itemID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .onChange(of: presentation.itemID) { _, _ in
