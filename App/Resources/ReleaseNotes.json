@@ -11,7 +11,7 @@
         {
           "category": "New",
           "items": [
-            "Video upscaling for supported SDR playback, enabled by default.",
+            "Automatic upscaling for supported SDR below 1080p, or up to 1080p for animation. Enabled by default; HDR and 4K are unchanged.",
             "Audio sync controls for supported playback.",
             "Separate default zoom settings for Apple TV, iPhone and iPad.",
             {
