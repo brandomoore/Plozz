@@ -27,6 +27,10 @@ public final class BorrowedTrailerPlayer: UIViewController {
         model.currentSeconds = engine.currentTime
         model.controlsVisible = true
         model.engineCapabilities = engine.capabilities
+        model.videoZoom.restoreForPlayback(
+            nil, defaultPreference: settings.videoZoom[.television],
+            supportsActivePicture: engine.supportsActivePictureAnalysis
+        )
         model.skipGesture.backwardInterval = settings.skipBackwardInterval
         model.skipGesture.forwardInterval = settings.skipForwardInterval
         model.skipGesture.seekWithoutPausing = settings.seekWithoutPausing

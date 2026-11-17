@@ -18,6 +18,64 @@ private final class PlayerSupportFocusController<Content: View>: UIHostingContro
 
 @MainActor
 final class PlaybackSettingsHostedTests: XCTestCase {
+    func testDefaultZoomUpdatesItsNativeControlsWithoutChangingOtherPlatforms() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let suite = "DefaultVideoZoomTV-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let playback = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        let page = PlaybackDetailView(
+            playback: playback,
+            subtitleBehavior: SubtitleBehaviorModel(store: SubtitleBehaviorStore(defaults: defaults)),
+            subtitleStyle: SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults)),
+            subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
+            audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = PlayerSupportFocusController(rootView:
+            SettingsFormLayout(title: Text("Playback"), rows: page.zoomRows)
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .frame(width: SettingsFormMetrics.pageWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black)
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        try await Task.sleep(for: .milliseconds(350))
+        let initial = try visibleText(in: window, attachment: nil)
+        XCTAssertTrue(initial.contains("Default zoom"), initial)
+        XCTAssertTrue(initial.contains("Auto-crop black bars"), initial)
+        XCTAssertEqual(nativeFocusItems(in: window).count, 1)
+        playback.settings.videoZoom.television = .init(mode: .custom, customPercent: 117)
+        try await Task.sleep(for: .milliseconds(350))
+        let custom = try visibleText(in: window, attachment: nil)
+        XCTAssertTrue(custom.contains("Custom"), custom)
+        XCTAssertTrue(custom.contains("117%"), custom)
+        let targets = nativeFocusItems(in: window).sorted {
+            (nativeFocusFrame($0, in: window)?.minY ?? 0) < (nativeFocusFrame($1, in: window)?.minY ?? 0)
+        }
+        XCTAssertGreaterThan(targets.count, 1)
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        let target = try XCTUnwrap(targets.last)
+        host.target = target
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertTrue(system.focusedItem === target)
+        XCTAssertEqual(playback.settings.videoZoom.phone, .onDemandDefault)
+        XCTAssertEqual(playback.settings.videoZoom.tablet, .onDemandDefault)
+        XCTAssertEqual(playback.settings.videoZoom.television.customPercent, 117, "Focus must not adjust zoom.")
+    }
+
     func testVersionSelectionIsOneLabeledMenuForEverySavedMode() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -701,17 +759,19 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         return nil
     }
 
-    private func visibleText(in window: UIWindow, attachment name: String, crop: CGRect? = nil) throws -> String {
+    private func visibleText(in window: UIWindow, attachment name: String?, crop: CGRect? = nil) throws -> String {
         window.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
-        let attachment = XCTAttachment(image: image)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        if let name {
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         let request = VNRecognizeTextRequest()
         // Character recognition avoids prose-model corrections to numeric layouts.
         request.recognitionLevel = crop == nil ? .accurate : .fast

@@ -84,7 +84,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                 onSkip: touchSkip,
                 onBoostChanged: touchBoostChanged,
                 onZoom: { fillsScreen in
-                    viewModel.controls.videoZoom.settings.mode = fillsScreen ? .fill : .fit
+                    viewModel.controls.videoZoom.setPinchZoom(fillsScreen: fillsScreen)
                 },
                 onGestureStarted: beginTouchInteraction
             )

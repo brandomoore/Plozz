@@ -19,6 +19,24 @@ private final class LiveChannelObservationChanges: @unchecked Sendable {
 
 @MainActor
 final class LiveChannelPlayerModelTests: XCTestCase {
+    func testNewChannelsRestoreThePlatformDefaultRatherThanThePreviousChannelZoom() async {
+        let engine = LiveEngineSpy()
+        let input = LiveChannelInput.stream(url: URL(string: "https://example.invalid/live.m3u8")!, httpHeaders: [:])
+        var expected = VideoZoomPreference(mode: .custom, customPercent: 117)
+        let model = LiveChannelPlayerModel(
+            engine: engine, channelID: "one", input: input, defaultVideoZoom: { expected }
+        )
+        defer { model.stop() }
+        XCTAssertEqual(model.videoZoom.settings, expected)
+        await model.start()
+        model.videoZoom.settings.mode = .fill
+        await model.changeSource(channelID: "two", input: input)
+        XCTAssertEqual(model.videoZoom.settings, expected)
+        expected = .init(mode: .stretch)
+        await model.changeSource(channelID: "three", input: input)
+        XCTAssertEqual(model.videoZoom.settings, expected, "New channels use the latest settings.")
+    }
+
     func testPreviewPublishesSourceRangeAndChangesOutputWithoutRetuning() async {
         let engine = LiveEngineSpy()
         let model = LiveChannelPlayerModel(

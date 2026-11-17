@@ -268,8 +268,9 @@ On iPhone and iPad, the Live TV guide's inline preview uses the shared
 previous/play-pause/next controls and an in-place fullscreen action.
 Fullscreen also exposes a bottom-trailing inward-arrow action to return to the
 preview, matching the expand control's placement; the top-left Close remains.
-Mobile fullscreen video fits the full player bounds, independently of the safe
-area used by controls and subtitles. Showing or hiding controls does not resize
+Mobile fullscreen video uses the full player bounds, with Normal and Auto-crop
+respecting horizontal cutout insets independently of controls and subtitles.
+Showing or hiding controls does not resize
 the picture. The status bar and persistent system overlays hide with the
 fullscreen controls and return when controls are revealed or fullscreen ends.
 The mobile fullscreen playback cover opts out of iOS 27.1's vertical system bar,
@@ -1067,7 +1068,8 @@ style together, keeping symbols proportional to their labels as text size change
 They do not intercept touches. Live TV supports skips only inside an available
 rewind window, not speed boosting.
 
-Pinch inward for Normal fitting clear of the display cutout. Landscape video
+Pinch inward to fit the detected active picture clear of the display cutout,
+without keeping encoded black bars. Engines without analysis use Normal. Landscape video
 uses the full display height behind the home indicator instead of reserving a
 bottom strip; portrait keeps the full safe-area inset. Controls and ordinary
 captions retain their safe-area placement. Pinch outward for edge-to-edge Crop. This
@@ -1460,8 +1462,8 @@ which can retain duplicate highlights. Mobile adds Zoom Mode to its existing
 native playback menu. Live TV offers the same zoom controls without playback-speed
 changes.
 
-The picker labels Normal as the default; concise names follow Infuse's Zoom Mode
-terminology. Crop enlarges proportionally, Stretch fills both axes without
+Normal fits the entire encoded frame; it is not every player's default.
+Crop enlarges proportionally, Stretch fills both axes without
 preserving proportions, and Custom scales relative to Normal. For these manual
 modes, `VideoPresentationView` transforms and clips only the stable video surface,
 without restarting playback, changing the engine layer's gravity, or processing frames.
@@ -1473,16 +1475,18 @@ back to coded dimensions.
 Authored bitmap clearance maps the image, lower-region envelope, and protected
 artwork boundary through that same zoom/stretch geometry before moving a region.
 
-Movies and episodes default to Auto Crop when the engine supports analysis.
+The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
+It applies to movies, episodes, extras, trailers and Live TV; each platform starts
+with Auto-crop black bars. Unsupported engines fall back to Normal without changing
+the saved choice. Unidentified disc-menu timelines retain uncropped Normal framing.
 An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
 per profile and movie/series using the existing title preference store. Only the
 mode and percentage are saved, never detected rectangles. Defaults and temporary
 unsupported-engine fallbacks do not write preferences. Series choices follow later
 episodes and shared external IDs across servers; movie keys use strong external
 IDs with an account-scoped fallback, never title matching. Existing series keys
-and profile-transfer storage remain compatible. Trailers, extras, unidentified
-disc timelines and Live TV retain their existing defaults; a different live
-channel still starts at Normal. PiP and AirPlay retain
+and profile-transfer storage remain compatible. Changing a live channel restores
+the platform default rather than the previous channel's manual choice. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
 Both production playback engines offer **Auto-crop black bars**, with no
 menu subtext. A shared, cancellable
@@ -1490,10 +1494,13 @@ AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
 Dolby Vision output, using existing frames
 and no additional decoder or stream. It scales and translates the original surface
 uniformly, including asymmetric borders, and caps automatic magnification at 2x.
-The detected picture fits the full player bounds, not the safe area, preserving
-its aspect ratio without deliberately trimming picture content. Video may extend
-behind the Dynamic Island or other display cutouts; controls retain their safe-area
-placement. Aspect-ratio differences can still leave bars.
+The detected picture maximizes the cutout-safe video viewport, preserving its aspect
+ratio without deliberately trimming picture content. In landscape, the home-indicator
+strip does not reduce video height. Encoded black borders do not consume usable width.
+Pinching outward keeps the explicit edge-to-edge Crop mode; pinching inward returns
+to safe active-picture fitting. Controls and subtitles keep their existing placement.
+On TV and inline surfaces without safe-area fitting, the picture uses the full viewport.
+Aspect-ratio differences can still leave bars.
 Before the first confirmed measurement, Auto Crop uses Normal. Once confirmed,
 framing survives seeks, buffering and unavailable/expired detector evidence for
 the same source and display aspect ratio. Fresh confirmed measurements, including

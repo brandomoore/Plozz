@@ -18,12 +18,19 @@ struct PlaybackReadAheadFixture: View {
             PlaybackReadAheadStore().save(.default)
             LivePlaybackBufferStore().save(.default)
         }
-        _models = State(initialValue: ProfileSettingsModel(namespace: "read-ahead-fixture"))
+        let models = ProfileSettingsModel(namespace: "read-ahead-fixture")
+        if ProcessInfo.processInfo.arguments.contains("--zoom-settings-fixture") {
+            models.playbackModel.settings.videoZoom.television = .init(
+                mode: ProcessInfo.processInfo.arguments.contains("--custom-zoom-fixture") ? .custom : .picture,
+                customPercent: 117
+            )
+        }
+        _models = State(initialValue: models)
     }
 
     var body: some View {
         NavigationStack {
-            PlaybackDetailView(
+            let page = PlaybackDetailView(
                 playback: models.playbackModel,
                 subtitleBehavior: models.subtitleBehaviorModel,
                 subtitleStyle: models.subtitleStyleModel,
@@ -32,6 +39,13 @@ struct PlaybackReadAheadFixture: View {
                 canDownloadSubtitles: false,
                 section: subtitleWorkspace ? .subtitles : .playback
             )
+            Group {
+                if ProcessInfo.processInfo.arguments.contains("--zoom-settings-fixture") {
+                    SettingsFormLayout(title: Text("Playback"), rows: page.zoomRows)
+                } else {
+                    page
+                }
+            }
             .environment(\.settingsInWorkspace, inWorkspace)
             .frame(maxWidth: inWorkspace ? SettingsFormMetrics.pageWidth : .infinity)
         }
@@ -41,11 +55,13 @@ struct PlaybackReadAheadFixture: View {
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Locale(identifier: "en_US"))
         .overlay(alignment: .bottomLeading) {
-            VStack(alignment: .leading) {
-                Text(verbatim: selection.rawValue)
-                    .accessibilityIdentifier("read-ahead-saved")
-                Text(verbatim: liveSelection.rawValue)
-                    .accessibilityIdentifier("live-buffer-saved")
+            if !ProcessInfo.processInfo.arguments.contains("--zoom-settings-fixture") {
+                VStack(alignment: .leading) {
+                    Text(verbatim: selection.rawValue)
+                        .accessibilityIdentifier("read-ahead-saved")
+                    Text(verbatim: liveSelection.rawValue)
+                        .accessibilityIdentifier("live-buffer-saved")
+                }
             }
         }
     }

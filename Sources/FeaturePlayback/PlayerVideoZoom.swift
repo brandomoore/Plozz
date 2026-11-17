@@ -6,26 +6,13 @@ import Observation
 
 public typealias PlayerVideoZoom = VideoZoomPreference
 
-public extension VideoZoomPreference.Mode {
-    var title: LocalizedStringResource {
-        switch self {
-        case .fit: "Normal"
-        case .fill: "Crop"
-        case .stretch: "Stretch"
-        case .custom: "Custom"
-        case .picture: "Auto-crop black bars"
-        }
-    }
-
-    var menuTitle: LocalizedStringResource { title }
-}
-
 extension VideoZoomPreference {
-    /// `fitBounds` constrains Normal (including auto-crop's fallback) and Custom's base.
+    /// `fitBounds` constrains Normal, the detected active picture, and Custom's base.
     /// Both rectangles use the presentation view's coordinate space.
     func scaleFactors(in bounds: CGRect, aspectRatio: Double?, fitBounds: CGRect? = nil,
                       activePicture: CGRect? = nil) -> CGVector {
-        if let transform = pictureTransform(in: bounds, aspectRatio: aspectRatio, activePicture: activePicture) {
+        if let transform = pictureTransform(in: bounds, fitBounds: fitBounds,
+                                            aspectRatio: aspectRatio, activePicture: activePicture) {
             return CGVector(dx: transform.scale, dy: transform.scale)
         }
         switch mode {
@@ -71,7 +58,8 @@ extension VideoZoomPreference {
 
     func surfaceCenter(in bounds: CGRect, fitBounds: CGRect? = nil,
                        aspectRatio: Double? = nil, activePicture: CGRect? = nil) -> CGPoint {
-        if let transform = pictureTransform(in: bounds, aspectRatio: aspectRatio, activePicture: activePicture) {
+        if let transform = pictureTransform(in: bounds, fitBounds: fitBounds,
+                                            aspectRatio: aspectRatio, activePicture: activePicture) {
             return transform.center
         }
         let viewport = mode == .fit || mode == .custom || mode == .picture
@@ -79,13 +67,13 @@ extension VideoZoomPreference {
         return CGPoint(x: viewport.midX, y: viewport.midY)
     }
 
-    private func pictureTransform(in bounds: CGRect, aspectRatio: Double?,
+    private func pictureTransform(in bounds: CGRect, fitBounds: CGRect?, aspectRatio: Double?,
                                   activePicture: CGRect?) -> (scale: CGFloat, center: CGPoint)? {
         guard mode == .picture, let activePicture, VideoActivePictureGeometry.isValid(activePicture),
               let fitted = SubtitleOverlayGeometry.aspectFitRect(in: bounds, aspectRatio: aspectRatio.map { CGFloat($0) })
         else { return nil }
         let active = VideoActivePictureGeometry.map(activePicture, into: fitted)
-        let viewport = bounds
+        let viewport = fittingBounds(in: bounds, fitBounds: fitBounds)
         let scale = min(viewport.width / active.width, viewport.height / active.height)
         guard scale.isFinite, scale > 0, scale <= 2 else { return nil }
         return (scale, CGPoint(x: viewport.midX - (active.midX - bounds.midX) * scale,
@@ -131,10 +119,10 @@ public final class PlayerVideoZoomModel {
         isRestoring = false
     }
 
-    func restoreForPlayback(_ preference: PlayerVideoZoom?, automaticDefault: Bool,
+    func restoreForPlayback(_ preference: PlayerVideoZoom?, defaultPreference: PlayerVideoZoom,
                             supportsActivePicture: Bool) {
         self.supportsActivePicture = supportsActivePicture
-        var choice = preference ?? (automaticDefault ? .onDemandDefault : PlayerVideoZoom())
+        var choice = preference ?? defaultPreference
         if choice.mode == .picture, !supportsActivePicture { choice.mode = .fit }
         restore(choice)
     }
@@ -147,6 +135,10 @@ public final class PlayerVideoZoomModel {
 
     public func setCustomPercent(_ percent: Int) {
         settings = PlayerVideoZoom(mode: .custom, customPercent: percent)
+    }
+
+    public func setPinchZoom(fillsScreen: Bool) {
+        settings.mode = fillsScreen ? .fill : (supportsActivePicture ? .picture : .fit)
     }
 }
 #endif

@@ -12,6 +12,12 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Playback's **Default zoom** uses the shared native menu on TV and mobile.
+Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
+control edits only its own choice. Custom exposes the existing 50-200% range.
+Saved movie/series overrides take priority. The playback settings payload carries
+all three defaults through profile switching, transfer and sync.
+
 Live TV's **Clean channel names** switch is profile-scoped and off by default.
 The shared TV/mobile section previews up to three distinct original names from
 the authorized loaded IPTV catalog, preferring names affected by cleanup.

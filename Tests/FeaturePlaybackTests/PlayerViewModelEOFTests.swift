@@ -113,12 +113,14 @@ final class PlayerViewModelEOFTests: XCTestCase {
                 engine.supportsActivePictureAnalysis = true
                 engine.audioTracks = tracks
                 let store = SeriesTrackPreferenceStore(defaults: defaults, namespace: visit == 2 ? "other" : nil)
+                var zoomDefaults = VideoZoomDefaults()
+                zoomDefaults[.current] = .init(mode: .stretch)
                 let model = PlayerViewModel(
                     provider: provider, itemID: item.id,
-                    playbackSettings: .init(rememberAudioTrackPerSeries: false),
+                    playbackSettings: .init(rememberAudioTrackPerSeries: false, videoZoom: zoomDefaults),
                     seriesTrackStore: store, engineFactory: .init(makeNative: { _ in engine })
                 )
-                let expected = visit == 1 ? PlayerVideoZoom(mode: .custom, customPercent: 117) : .onDemandDefault
+                let expected = visit == 1 ? PlayerVideoZoom(mode: .custom, customPercent: 117) : .init(mode: .stretch)
                 engine.onLoad = { [weak model] in
                     XCTAssertEqual(model?.controls.videoZoom.settings, expected, "Restore before engine load.")
                 }

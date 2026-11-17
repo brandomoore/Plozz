@@ -172,6 +172,9 @@ struct PlozziOSLiveTVDestination: View {
                 countsAsWatching: playback.countsAsWatching,
                 isMultiview: playback.isMultiview,
                 trackPreferences: runtime.trackPreferences,
+                displayTransitionSettings: {
+                    PlaybackSettingsStore(namespace: preferencesNamespace).load()
+                },
                 touchSkipIntervals: {
                     let settings = PlaybackSettingsStore(namespace: preferencesNamespace).load()
                     return (settings.skipBackwardInterval, settings.skipForwardInterval)

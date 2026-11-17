@@ -80,6 +80,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     public var volumeBrightnessGestures: Bool
     /// iPhone full-screen player preference. iPad follows system rotation.
     public var orientation: PlaybackOrientation
+    public var videoZoom: VideoZoomDefaults
     public var streaming: StreamingQualitySettings
     /// Legacy profile selection, decoded only for migration to device settings.
     public var externalPlayer: ExternalPlayerSettings
@@ -233,6 +234,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         backgroundAudio: Bool = false,
         volumeBrightnessGestures: Bool = true,
         orientation: PlaybackOrientation = .landscape,
+        videoZoom: VideoZoomDefaults = .init(),
         streaming: StreamingQualitySettings = .default,
         versionSelectionMode: PlaybackVersionSelectionMode? = nil,
         rememberVersionPerSeries: Bool = true,
@@ -278,6 +280,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.backgroundAudio = backgroundAudio
         self.volumeBrightnessGestures = volumeBrightnessGestures
         self.orientation = orientation
+        self.videoZoom = videoZoom
         self.streaming = streaming
         self.versionSelectionMode = versionSelectionMode
         self.rememberVersionPerSeries = rememberVersionPerSeries
@@ -435,6 +438,7 @@ public extension PlaybackSettings {
         case backgroundAudio
         case volumeBrightnessGestures
         case orientation
+        case videoZoom
         case streaming
         case externalPlayer
         case versionSelectionMode
@@ -548,6 +552,8 @@ public extension PlaybackSettings {
             ?? defaults.volumeBrightnessGestures
         self.orientation = (try? container.decode(PlaybackOrientation.self, forKey: .orientation))
             ?? defaults.orientation
+        self.videoZoom = try container.decodeIfPresent(VideoZoomDefaults.self, forKey: .videoZoom)
+            ?? defaults.videoZoom
         self.streaming = (try? container.decode(StreamingQualitySettings.self, forKey: .streaming)) ?? .default
         self.externalPlayer = (try? container.decodeIfPresent(ExternalPlayerSettings.self, forKey: .externalPlayer)) ?? .init()
         self.versionSelectionMode = try? container.decode(PlaybackVersionSelectionMode.self, forKey: .versionSelectionMode)
@@ -654,6 +660,7 @@ public extension PlaybackSettings {
         try container.encode(backgroundAudio, forKey: .backgroundAudio)
         try container.encode(volumeBrightnessGestures, forKey: .volumeBrightnessGestures)
         try container.encode(orientation, forKey: .orientation)
+        try container.encode(videoZoom, forKey: .videoZoom)
         try container.encode(streaming, forKey: .streaming)
         try container.encodeIfPresent(versionSelectionMode, forKey: .versionSelectionMode)
         try container.encode(rememberVersionPerSeries, forKey: .rememberVersionPerSeries)

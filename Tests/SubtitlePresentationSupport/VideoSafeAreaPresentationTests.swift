@@ -8,6 +8,84 @@ import XCTest
 
 @MainActor
 final class VideoSafeAreaPresentationTests: XCTestCase {
+    func testAutoCropUsesAllSafeWidthAndPinchReturnsFromScreenEdges() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = VideoSafeAreaTestWindow(windowScene: scene)
+        let engine = SafeAreaVideoEngine()
+        engine.supportsActivePictureAnalysis = true
+        let zoom = PlayerVideoZoomModel()
+        zoom.supportsActivePicture = true
+        zoom.setPinchZoom(fillsScreen: false)
+        let viewport = VideoSubtitleViewport()
+        let host = UIHostingController(rootView: VideoSafeAreaFixture(engine: engine, zoom: zoom, viewport: viewport))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil { viewport.videoRect != nil }
+        let video = try XCTUnwrap(firstView(VideoPresentationView.self, in: host.view))
+        let layer = engine.output.layer
+        for (size, insets) in [
+            (CGSize(width: 874, height: 402), UIEdgeInsets(top: 0, left: 59, bottom: 21, right: 59)),
+            (CGSize(width: 844, height: 390), UIEdgeInsets(top: 0, left: 44, bottom: 21, right: 0)),
+            (CGSize(width: 844, height: 390), UIEdgeInsets(top: 0, left: 0, bottom: 21, right: 44)),
+            (CGSize(width: 1366, height: 1024), UIEdgeInsets(top: 24, left: 0, bottom: 20, right: 0))
+        ] {
+            window.testInsets = insets
+            window.frame = CGRect(origin: .zero, size: size)
+            host.view.frame = window.bounds
+            video.safeAreaInsetsDidChange()
+            zoom.setPinchZoom(fillsScreen: false)
+            try await waitUntil {
+                window.layoutIfNeeded()
+                guard video.bounds.size == size, let safe = video.fitBounds,
+                      let picture = video.activePictureRect else { return false }
+                return abs(picture.width - safe.width) < 0.001
+                    && abs(picture.height / picture.width - 0.75 * 9 / 16) < 0.001
+            }
+            let safe = try XCTUnwrap(video.fitBounds)
+            let picture = try XCTUnwrap(video.activePictureRect)
+            let source = try XCTUnwrap(SubtitleOverlayGeometry.aspectFitRect(
+                in: engine.output.bounds, aspectRatio: 16 / 9
+            ))
+            assertRect(engine.output.convert(source.insetBy(dx: 0, dy: source.height * 0.125), to: video),
+                       equals: picture)
+            XCTAssertEqual(picture.minX, safe.minX, accuracy: 0.001)
+            XCTAssertEqual(picture.maxX, safe.maxX, accuracy: 0.001)
+            XCTAssertEqual(picture.midY, video.bounds.midY, accuracy: 0.001)
+            XCTAssertEqual(video.fitBounds?.height, size.height, "The home indicator must not shrink landscape video.")
+            let normal = try XCTUnwrap(PlayerVideoZoom().videoRect(
+                in: video.bounds, aspectRatio: 16 / 9, fitBounds: safe
+            ))
+            if size.width < 1000 {
+                XCTAssertGreaterThan(picture.width, normal.width)
+            }
+            zoom.setPinchZoom(fillsScreen: true)
+            try await waitUntil {
+                window.layoutIfNeeded()
+                guard let rect = video.videoRect else { return false }
+                return rect.insetBy(dx: -0.001, dy: -0.001).contains(video.bounds)
+                    && abs(min(rect.width / size.width, rect.height / size.height) - 1) < 0.001
+            }
+            zoom.setPinchZoom(fillsScreen: false)
+            try await waitUntil {
+                window.layoutIfNeeded()
+                return video.activePictureRect.map { self.rect($0, matches: picture) } ?? false
+            }
+            XCTAssertTrue(engine.output.layer === layer)
+            XCTAssertTrue(engine.transportCalls.isEmpty)
+        }
+    }
+
     func testFirstLiveFrameUsesItsLateDimensionsWithoutChangingZoom() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -38,10 +116,11 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
         }
         try await waitUntil("Live output must mount before dimensions arrive") {
             window.layoutIfNeeded()
-            return engine.output.superview is VideoPresentationView && engine.output.bounds.width > 0
+            guard let video = self.firstView(VideoPresentationView.self, in: host.view) else { return false }
+            return engine.output.isDescendant(of: video) && engine.output.bounds.width > 0
                 && engine.transportCalls.contains("loadLive")
         }
-        let video = try XCTUnwrap(engine.output.superview as? VideoPresentationView)
+        let video = try XCTUnwrap(firstView(VideoPresentationView.self, in: host.view))
         let layer = engine.output.layer
         let initialCalls = engine.transportCalls
         engine.videoAspectRatio = 16 / 9
@@ -96,10 +175,14 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitUntil { engine.output.superview is VideoPresentationView && viewport.videoRect != nil }
-        let video = try XCTUnwrap(engine.output.superview as? VideoPresentationView)
+        try await waitUntil {
+            guard let video = self.firstView(VideoPresentationView.self, in: host.view) else { return false }
+            return engine.output.isDescendant(of: video) && viewport.videoRect != nil
+        }
+        let video = try XCTUnwrap(firstView(VideoPresentationView.self, in: host.view))
         let marker = try XCTUnwrap(firstView(VideoSubtitleViewportView.self, in: host.view))
         let outputLayer = engine.output.layer
+        let outputParent = try XCTUnwrap(engine.output.superview)
 
         let cases: [(CGSize, UIEdgeInsets)] = [
             (CGSize(width: 390, height: 844), UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)),
@@ -163,7 +246,8 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
                 )
                 XCTAssertEqual(authoredOrigin.x, expectedSubtitle.midX, accuracy: 0.001)
                 XCTAssertEqual(authoredOrigin.y, expectedSubtitle.midY, accuracy: 0.001)
-                XCTAssertTrue(engine.output.superview === video)
+                XCTAssertTrue(engine.output.superview === outputParent)
+                XCTAssertTrue(engine.output.isDescendant(of: video))
                 XCTAssertTrue(engine.output.layer === outputLayer)
                 assertRect(marker.convert(marker.bounds, to: window), equals: subtitleFrame)
                 XCTAssertTrue(engine.transportCalls.isEmpty)
@@ -266,6 +350,12 @@ private final class VideoSafeAreaTestWindow: UIWindow {
 private final class SafeAreaVideoEngine: LiveChannelEngine, PictureInPicturePresentingEngine {
     let output = UIView()
     var videoAspectRatio: Double? = 16 / 9
+    var supportsActivePictureAnalysis = false
+    var activePictureSourceID: UUID? = UUID()
+    func sampleActivePicture() async -> VideoActivePictureState {
+        .measured(normalizedRect: CGRect(x: 0, y: 0.125, width: 1, height: 0.75),
+                  displaySize: CGSize(width: 320, height: 180))
+    }
     var transportCalls: [String] = []
     var status: VideoEngineStatus = .ready
     var isPaused = true

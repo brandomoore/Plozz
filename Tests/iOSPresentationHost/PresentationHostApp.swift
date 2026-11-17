@@ -768,6 +768,10 @@ private struct SettingsInteractionFixture: View {
                 .task {
                     let arguments = ProcessInfo.processInfo.arguments
                     do {
+                        if arguments.contains("--custom-zoom-fixture") {
+                            appModel.settings.playback.settings.videoZoom[.current] =
+                                .init(mode: .custom, customPercent: 117)
+                        }
                         if let index = arguments.firstIndex(of: "--playback-scroll-offset"),
                            arguments.indices.contains(index + 1),
                            let offset = Double(arguments[index + 1]) {

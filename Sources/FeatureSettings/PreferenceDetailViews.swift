@@ -660,7 +660,7 @@ struct PlaybackDetailView: View {
                         ForEach(upNextRows) { $0.detail() }
                     }
                 }.groupedContent()
-            ] + playerTabRows + versionSelectionRows + readAheadRows + skipIntroRows + [
+            ] + zoomRows + playerTabRows + versionSelectionRows + readAheadRows + skipIntroRows + [
                 SettingsSplitRow(id: "seeking", title: "Seeking") {
                     SettingsControlRows {
                         ForEach(skipIntervalRows) { $0.detail() }
@@ -680,6 +680,7 @@ struct PlaybackDetailView: View {
         #endif
         return subtitleRows
             + audioRows
+            + zoomRows
             + versionSelectionRows
             + skipIntroRows
             + skipIntervalRows
@@ -697,6 +698,12 @@ struct PlaybackDetailView: View {
         [SettingsSplitRow(id: "player-tabs", title: "Player tabs") {
             PlayerTabSettingsControls(model: playback)
         }]
+    }
+
+    var zoomRows: [SettingsSplitRow] {
+        [SettingsSplitRow(id: "default-video-zoom", title: "Default zoom") {
+            DefaultVideoZoomControl(model: playback)
+        }.labeledControl()]
     }
 
     private var advancedRows: [SettingsSplitRow] {
