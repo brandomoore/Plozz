@@ -489,14 +489,6 @@ final class VideoPresentationView: UIView {
         #endif
     }
 
-    private var normalFillsWidth: Bool {
-        #if os(iOS)
-        fitBounds != nil && traitCollection.userInterfaceIdiom == .phone && bounds.width > bounds.height
-        #else
-        false
-        #endif
-    }
-
     override func layoutSubviews() {
         super.layoutSubviews()
         if let output = pendingHandoffOutput, output.superview is VideoPresentationHandoff {
@@ -531,7 +523,7 @@ final class VideoPresentationView: UIView {
         let contentBounds = CGRect(origin: .zero, size: bounds.size)
         let center = zoom.surfaceCenter(in: bounds, fitBounds: fitBounds, aspectRatio: aspectRatio, activePicture: activePicture)
         let scale = zoom.scaleFactors(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds,
-                                      activePicture: activePicture, fillsWidth: normalFillsWidth)
+                                      activePicture: activePicture)
         let transform = CGAffineTransform(scaleX: scale.dx, y: scale.dy)
         if surface.bounds != contentBounds || surface.center != center || surface.transform != transform {
             UIView.performWithoutAnimation {
@@ -777,7 +769,7 @@ final class VideoPresentationView: UIView {
 
     var videoRect: CGRect? {
         zoom.videoRect(in: bounds, aspectRatio: aspectRatio, fitBounds: fitBounds,
-                       activePicture: activePicture, fillsWidth: normalFillsWidth)
+                       activePicture: activePicture)
     }
     var activePictureRect: CGRect? {
         videoRect.map { VideoActivePictureGeometry.map(activePicture, into: $0).intersection(bounds) }

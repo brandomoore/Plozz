@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class VideoSafeAreaPresentationTests: XCTestCase {
-    func testAutoCropUsesAllSafeWidthAndRetainsItsSeparatePictureFitting() async throws {
+    func testAutoCropPinchesBetweenScreenAndSafeBoundsWithoutTrimmingPicture() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
@@ -33,53 +33,66 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
         }
         try await waitUntil { viewport.videoRect != nil }
         let video = try XCTUnwrap(firstView(VideoPresentationView.self, in: host.view))
+        let marker = try XCTUnwrap(firstView(VideoSubtitleViewportView.self, in: host.view))
         let layer = engine.output.layer
         for (size, insets) in [
             (CGSize(width: 874, height: 402), UIEdgeInsets(top: 0, left: 59, bottom: 21, right: 59)),
+            (CGSize(width: 956, height: 440), UIEdgeInsets(top: 0, left: 62, bottom: 21, right: 62)),
             (CGSize(width: 844, height: 390), UIEdgeInsets(top: 0, left: 44, bottom: 21, right: 0)),
             (CGSize(width: 844, height: 390), UIEdgeInsets(top: 0, left: 0, bottom: 21, right: 44)),
+            (CGSize(width: 667, height: 375), .zero),
+            (CGSize(width: 390, height: 844), UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)),
             (CGSize(width: 1366, height: 1024), UIEdgeInsets(top: 24, left: 0, bottom: 20, right: 0))
         ] {
+            host.traitOverrides.userInterfaceIdiom = size.width >= 1000 ? .pad : .phone
             window.testInsets = insets
             window.frame = CGRect(origin: .zero, size: size)
             host.view.frame = window.bounds
             video.safeAreaInsetsDidChange()
-            zoom.settings.mode = .picture
             try await waitUntil {
                 window.layoutIfNeeded()
-                guard video.bounds.size == size, let safe = video.fitBounds,
-                      let picture = video.activePictureRect else { return false }
-                return abs(picture.width - safe.width) < 0.001
-                    && abs(picture.height / picture.width - 0.75 * 9 / 16) < 0.001
+                return video.bounds.size == size && video.fitBounds != nil
             }
             let safe = try XCTUnwrap(video.fitBounds)
-            let picture = try XCTUnwrap(video.activePictureRect)
-            let source = try XCTUnwrap(SubtitleOverlayGeometry.aspectFitRect(
-                in: engine.output.bounds, aspectRatio: 16 / 9
-            ))
-            assertRect(engine.output.convert(source.insetBy(dx: 0, dy: source.height * 0.125), to: video),
-                       equals: picture)
-            XCTAssertEqual(picture.minX, safe.minX, accuracy: 0.001)
-            XCTAssertEqual(picture.maxX, safe.maxX, accuracy: 0.001)
-            XCTAssertEqual(picture.midY, video.bounds.midY, accuracy: 0.001)
-            XCTAssertEqual(video.fitBounds?.height, size.height, "The home indicator must not shrink landscape video.")
-            let normal = try XCTUnwrap(PlayerVideoZoom().videoRect(
-                in: video.bounds, aspectRatio: 16 / 9, fitBounds: safe
-            ))
-            if size.width < 1000 {
-                XCTAssertGreaterThan(picture.width, normal.width)
+            if size.width > size.height {
+                XCTAssertEqual(safe.height, size.height, "The home indicator must not shrink landscape video.")
             }
-            zoom.setPinchZoom(fillsScreen: true)
-            try await waitUntil {
-                window.layoutIfNeeded()
-                guard let rect = video.videoRect else { return false }
-                return rect.insetBy(dx: -0.001, dy: -0.001).contains(video.bounds)
-                    && abs(min(rect.width / size.width, rect.height / size.height) - 1) < 0.001
-            }
-            zoom.settings.mode = .picture
-            try await waitUntil {
-                window.layoutIfNeeded()
-                return video.activePictureRect.map { self.rect($0, matches: picture) } ?? false
+            for normalized in [
+                CGRect(x: 0, y: 0, width: 1, height: 1),
+                CGRect(x: 0, y: 0.125, width: 1, height: 0.75),
+                CGRect(x: 0.05, y: 0.1, width: 0.8, height: 0.65)
+            ] {
+                engine.normalizedPicture = normalized
+                engine.activePictureSourceID = UUID()
+                zoom.settings = .onDemandDefault
+                for fillsScreen in [true, false, true] {
+                    zoom.setPinchZoom(fillsScreen: fillsScreen)
+                    XCTAssertEqual(zoom.settings.mode, .picture)
+                    let target = fillsScreen ? video.bounds : safe
+                    let expected = try XCTUnwrap(SubtitleOverlayGeometry.aspectFitRect(
+                        in: target, aspectRatio: (16.0 / 9) * normalized.width / normalized.height
+                    ))
+                    try await waitUntil {
+                        window.layoutIfNeeded()
+                        guard let raster = video.videoRect, let active = video.activePictureRect,
+                              let subtitle = viewport.videoRect,
+                              let source = SubtitleOverlayGeometry.aspectFitRect(
+                                in: engine.output.bounds, aspectRatio: 16 / 9
+                              ) else { return false }
+                        let rendered = engine.output.convert(VideoActivePictureGeometry.map(normalized, into: source), to: video)
+                        return self.rect(rendered, matches: expected)
+                            && self.rect(active, matches: expected)
+                            && self.rect(subtitle, matches: video.convert(raster, to: marker))
+                    }
+                    let source = try XCTUnwrap(SubtitleOverlayGeometry.aspectFitRect(
+                        in: engine.output.bounds, aspectRatio: 16 / 9
+                    ))
+                    let rendered = engine.output.convert(VideoActivePictureGeometry.map(normalized, into: source), to: video)
+                    assertRect(rendered, equals: expected)
+                    XCTAssertTrue(target.insetBy(dx: -0.001, dy: -0.001).contains(rendered),
+                                  "Check the unclipped renderer coordinates, not only its visible intersection.")
+                    assertRect(try XCTUnwrap(video.activePictureRect), equals: rendered)
+                }
             }
             XCTAssertTrue(engine.output.layer === layer)
             XCTAssertTrue(engine.transportCalls.isEmpty)
@@ -189,6 +202,8 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
             (CGSize(width: 844, height: 390), UIEdgeInsets(top: 0, left: 59, bottom: 21, right: 0)),
             (CGSize(width: 844, height: 390), UIEdgeInsets(top: 0, left: 0, bottom: 21, right: 59)),
             (CGSize(width: 844, height: 390), UIEdgeInsets(top: 17, left: 63, bottom: 29, right: 11)),
+            (CGSize(width: 956, height: 440), UIEdgeInsets(top: 0, left: 62, bottom: 21, right: 62)),
+            (CGSize(width: 667, height: 375), .zero),
             (CGSize(width: 1024, height: 1366), .zero),
             (CGSize(width: 1366, height: 1024), UIEdgeInsets(top: 24, left: 0, bottom: 20, right: 0))
         ]
@@ -211,7 +226,7 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
                 PlayerVideoZoom(mode: .custom, customPercent: 150)
             ] {
                 if setting.mode == .fit {
-                    zoom.setPinchZoom(fillsScreen: false, platform: size.width >= 1000 ? .tablet : .phone)
+                    zoom.setPinchZoom(fillsScreen: false)
                 } else {
                     zoom.settings = setting
                 }
@@ -221,8 +236,7 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
                     safe = CGRect(x: safe.minX, y: 0, width: safe.width, height: size.height)
                 }
                 let expected = try XCTUnwrap(setting.videoRect(
-                    in: video.bounds, aspectRatio: engine.videoAspectRatio, fitBounds: safe,
-                    fillsWidth: size.width < 1000
+                    in: video.bounds, aspectRatio: engine.videoAspectRatio, fitBounds: safe
                 ))
                 try await waitUntil {
                     window.layoutIfNeeded()
@@ -260,15 +274,8 @@ final class VideoSafeAreaPresentationTests: XCTestCase {
                 XCTAssertEqual(engine.currentTime, 10)
                 XCTAssertEqual(engine.output.bounds.size, video.bounds.size)
                 if setting.mode == .fit {
-                    if size.width > size.height && size.width < 1000 {
-                        XCTAssertEqual(expected.minX, safe.minX, accuracy: 0.001)
-                        XCTAssertEqual(expected.maxX, safe.maxX, accuracy: 0.001)
-                        XCTAssertEqual(expected.height, safe.width * 9 / 16, accuracy: 0.001)
-                        XCTAssertLessThan(expected.minY, video.bounds.minY)
-                        XCTAssertGreaterThan(expected.maxY, video.bounds.maxY)
-                    } else {
-                        XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(expected))
-                    }
+                    XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(expected))
+                    XCTAssertEqual(max(expected.width / safe.width, expected.height / safe.height), 1, accuracy: 0.001)
                     if size.width > size.height {
                         XCTAssertEqual(expected.midY, video.bounds.midY, accuracy: 0.001)
                     }
@@ -363,8 +370,9 @@ private final class SafeAreaVideoEngine: LiveChannelEngine, PictureInPicturePres
     var videoAspectRatio: Double? = 16 / 9
     var supportsActivePictureAnalysis = false
     var activePictureSourceID: UUID? = UUID()
+    var normalizedPicture = CGRect(x: 0, y: 0.125, width: 1, height: 0.75)
     func sampleActivePicture() async -> VideoActivePictureState {
-        .measured(normalizedRect: CGRect(x: 0, y: 0.125, width: 1, height: 0.75),
+        .measured(normalizedRect: normalizedPicture,
                   displaySize: CGSize(width: 320, height: 180))
     }
     var transportCalls: [String] = []

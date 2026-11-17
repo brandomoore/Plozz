@@ -22,17 +22,20 @@ public struct VideoZoomPreference: Codable, Equatable, Sendable {
     public static let onDemandDefault = VideoZoomPreference(mode: .picture)
     public var mode: Mode
     public let customPercent: Int
+    public var pictureFitsInsideSafeArea: Bool
 
-    public init(mode: Mode = .fit, customPercent: Int = 100) {
+    public init(mode: Mode = .fit, customPercent: Int = 100, pictureFitsInsideSafeArea: Bool = false) {
         self.mode = mode
         self.customPercent = min(max(customPercent, Self.customPercentRange.lowerBound),
                                  Self.customPercentRange.upperBound)
+        self.pictureFitsInsideSafeArea = pictureFitsInsideSafeArea
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         self.init(mode: try values.decode(Mode.self, forKey: .mode),
-                  customPercent: try values.decodeIfPresent(Int.self, forKey: .customPercent) ?? 100)
+                  customPercent: try values.decodeIfPresent(Int.self, forKey: .customPercent) ?? 100,
+                  pictureFitsInsideSafeArea: try values.decodeIfPresent(Bool.self, forKey: .pictureFitsInsideSafeArea) ?? false)
     }
 }
 

@@ -1068,18 +1068,17 @@ style together, keeping symbols proportional to their labels as text size change
 They do not intercept touches. Live TV supports skips only inside an available
 rewind window, not speed boosting.
 
-On iPhone, pinch inward for Normal: in landscape it fills the available width
-up to the display cutout, preserving proportions and cropping the top/bottom
-when necessary, even without black-bar detection. iPad retains detected-picture
-fitting, with Normal as the fallback for engines without analysis. Landscape video
-uses the full display height behind the home indicator instead of reserving a
-bottom strip; portrait keeps the full safe-area inset. Controls and ordinary
-captions retain their safe-area placement. Pinch outward for edge-to-edge Crop. This
-uses the existing session-only zoom state without reloading video or revealing
-the timeline. Authored subtitle geometry follows the displayed picture; ordinary
-captions retain their screen-relative placement. Inline, tvOS, and external
-playback keep their existing geometry. Horizontal seeking on the video surface
-is not implemented.
+In Auto-crop, pinch inward for cutout-safe active-picture fitting and outward for
+screen-edge active-picture fitting. Neither deliberately trims detected picture
+content, though the screen-edge level can extend behind the notch. Outside Auto-crop,
+pinch outward for explicit Crop and inward for Normal's whole-frame safe-area fit.
+Landscape safe fitting uses the full height behind the home indicator; portrait
+keeps the full safe-area inset. Controls and ordinary captions retain their safe-area
+placement. These choices use the existing zoom preference path without reloading video
+or revealing the timeline. Authored subtitle geometry follows the displayed picture;
+ordinary captions retain their screen-relative placement. Inline, tvOS, and external
+playback keep their existing geometry. Horizontal seeking on the video surface is
+not implemented.
 
 Vertical, one-finger swipes in the outer 30% of the video adjust screen brightness
 on the left and **system** volume on the right. The center, horizontal movement,
@@ -1464,10 +1463,11 @@ which can retain duplicate highlights. Mobile adds Zoom Mode to its existing
 native playback menu. Live TV offers the same zoom controls without playback-speed
 changes.
 
-On a fullscreen landscape iPhone, Normal fills the cutout-safe width, preserving
-proportions even when this crops actual picture at the top and bottom. It does
-not wait for black-bar detection. Portrait, iPad, TV, inline and external surfaces
-retain whole-frame fitting; Normal is not every player's default.
+Normal fits the entire encoded frame inside the cutout-safe viewport without
+cropping picture content. It uses the largest proportional fit, so height-limited
+videos can leave space before the cutout. Safe bounds come from current view/window
+insets rather than device-model or notch-size constants. TV, inline and external
+surfaces retain their whole-frame fitting; Normal is not every player's default.
 Crop enlarges proportionally, Stretch fills both axes without
 preserving proportions, and Custom scales relative to Normal. For these manual
 modes, `VideoPresentationView` transforms and clips only the stable video surface,
@@ -1484,9 +1484,11 @@ The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
 It applies to movies, episodes, extras, trailers and Live TV; each platform starts
 with Auto-crop black bars. Unsupported engines fall back to Normal without changing
 the saved choice. Unidentified disc-menu timelines retain Normal framing.
-An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
+An explicit zoom-mode choice, including Normal, a Custom percentage or Auto-crop's
+screen-edge/cutout-safe level, is remembered
 per profile and movie/series using the existing title preference store. Only the
-mode and percentage are saved, never detected rectangles. Defaults and temporary
+mode, percentage and Auto-crop viewport choice are saved, never detected rectangles.
+Older saved Auto-crop choices default to screen-edge fitting. Defaults and temporary
 unsupported-engine fallbacks do not write preferences. Series choices follow later
 episodes and shared external IDs across servers; movie keys use strong external
 IDs with an account-scoped fallback, never title matching. Existing series keys
@@ -1499,15 +1501,20 @@ AetherEngine analysis measures encoded borders in SDR, HDR10/HDR10+, HLG, and
 Dolby Vision output, using existing frames
 and no additional decoder or stream. It scales and translates the original surface
 uniformly, including asymmetric borders, and caps automatic magnification at 2x.
-The detected picture maximizes the cutout-safe video viewport, preserving its aspect
-ratio without deliberately trimming picture content. In landscape, the home-indicator
-strip does not reduce video height. Encoded black borders do not consume usable width.
-Pinching outward keeps the explicit edge-to-edge Crop mode; pinching inward returns
-to Normal on iPhone and safe active-picture fitting on iPad. Auto-crop remains a
-separate detector-driven mode. Controls and subtitles keep their existing placement.
+The detected picture maximizes the screen-edge viewport by default, preserving its
+aspect ratio without deliberately trimming picture content; the notch/Dynamic Island
+can obscure part of that larger picture. In Auto-crop, pinching inward fits the same
+active picture inside the cutout-safe viewport; pinching outward restores screen-edge
+fitting without switching to Crop. Both levels preserve the entire detected picture,
+including on videos without encoded bars. Height-limited videos can have the same size
+at both levels. In landscape, the home-indicator strip does not reduce video height.
+Encoded black borders do not consume usable width. Outside Auto-crop, pinching outward
+selects explicit Crop and pinching inward restores Normal, never Auto-crop.
+Controls and subtitles keep their existing placement.
 On TV and inline surfaces without safe-area fitting, the picture uses the full viewport.
 Aspect-ratio differences can still leave bars.
-Before the first confirmed measurement, Auto Crop uses Normal. Once confirmed,
+Before the first confirmed measurement, Auto-crop fits the whole frame to its selected
+viewport. Once confirmed,
 framing survives seeks, buffering and unavailable/expired detector evidence for
 the same source and display aspect ratio. Fresh confirmed measurements, including
 full-frame evidence, replace it without an intermediate Normal zoom. A separate
