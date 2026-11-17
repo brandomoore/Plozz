@@ -2629,6 +2629,13 @@ struct PlozziOSDetailHeroForeground: View {
                 )
             )
             .accessibilityLabel(Text(trailerItem.trailerActionTitle))
+        } else if onPlayTrailer != nil {
+            // The trailer resolves after the page opens. Reserve its circular slot
+            // from the first frame so Play and the other actions do not shift when
+            // it arrives.
+            Color.clear
+                .frame(width: 48, height: 48)
+                .accessibilityHidden(true)
         }
     }
 

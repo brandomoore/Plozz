@@ -60,6 +60,7 @@ struct PlozziOSItemDetailView: View {
 
     var body: some View {
         detailBody
+            .modifier(PlozziOSDetailScrollEdge())
             // Detail-path telemetry anchor (PLZXFAN-gated; kind only). Deliberately
             // at the page body: the episode browser sits inside a lazy container, so
             // an anchor there never fires unless the viewer scrolls it into view —
@@ -4263,6 +4264,20 @@ struct PlozziOSCastSection: View {
     /// Desktop cast circles stay smaller than posters; mobile retains its poster scale.
     private var tileDiameter: CGFloat {
         metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
+    }
+}
+
+
+/// Detail pages paint their own hero scrim. The native scroll-edge backdrop
+/// appeared a beat after the page and read as a dim popping in over the status
+/// bar; hide it so the page keeps its own, already-stable shading.
+private struct PlozziOSDetailScrollEdge: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            content
+        }
     }
 }
 #endif
