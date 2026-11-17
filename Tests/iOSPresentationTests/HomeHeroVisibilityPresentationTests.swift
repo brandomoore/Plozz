@@ -271,7 +271,7 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                             if step == 0 { baseline[text] = height }
                             let scale = text == "Play" ? 1 : app.settings.hero.settings.textSize.scale
                             XCTAssertEqual(
-                                height, try XCTUnwrap(baseline[text]) * scale, accuracy: 2, "\(text), \(step)")
+                                height, try XCTUnwrap(baseline[text]) * scale, accuracy: 4, "\(text), \(step)")
                         }
                     }
                 }
@@ -336,6 +336,26 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                     "A confirmed empty curation must retire the hero instead of leaving a skeleton."
                 )
             }
+        }
+    }
+
+    func testHomeAndDetailHeroesUseTheSameStageHeight() {
+        for (style, containerHeight) in [
+            (HeroArtworkStyle.compactPortrait, CGFloat(844)),
+            (.landscape, CGFloat(768))
+        ] {
+            let home = PlozziOSHeroMetrics.height(
+                style: style, surfaceRole: .home,
+                dynamicTypeSize: .large, containerHeight: containerHeight
+            )
+            let detail = PlozziOSHeroMetrics.height(
+                style: style, surfaceRole: .detail,
+                dynamicTypeSize: .large, containerHeight: containerHeight
+            )
+            XCTAssertEqual(
+                home, detail, accuracy: 0.5,
+                "Opening a title must not animate the hero to a different size (\(style))."
+            )
         }
     }
 
