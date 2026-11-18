@@ -213,25 +213,22 @@ struct PlozziOSItemDetailView: View {
 
 }
 
-/// The largest picture the tapped card already decoded. The push's zoom transition
-/// is stretching this exact image, so the detail hero should start from it rather
-/// than paint a flat background until a 2000px backdrop is fetched and decoded again.
-private func plozziOSHeroSeedArtwork(_ items: MediaItem...) -> UIImage? {
-    // Any already-decoded card picture is a better first frame than grey. It is
-    // only a cover: upstream's `plozzArtworkSourceReady` gate still owns which
-    // authoritative artwork resolves once the detail source settles, and the
-    // image is drawn scaled-to-fill so a portrait poster cannot slide in from an
-    // edge. Landscape entries are still tried first.
+/// A decoded image for one of the references the detail hero will actually resolve.
+/// Using the same picture on the first frame avoids swapping a card poster for the
+/// authoritative backdrop after the push.
+private func plozziOSHeroSeedArtwork(for presentation: HeroPresentation) -> UIImage? {
+    // Seed only from the references this detail presentation will resolve. A
+    // card's poster is a different picture from the detail backdrop; using it as
+    // a cover guarantees a visible swap a moment later. When none of the
+    // authoritative references is decoded yet, return nil and let the single
+    // detail fade bring the correct image in once.
     let variants: [ArtworkImageVariant] = [
-        .heroBackdrop, .heroPreview, .landscapeCard, .posterCard, .posterPreview, .original
+        .heroBackdrop, .heroPreview, .landscapeCard, .posterCard, .original
     ]
-    for item in items {
-        let urls = [item.backdropURL, item.heroBackdropURL, item.posterURL, item.seriesPosterURL]
-        for url in urls.compactMap({ $0 }) {
-            for variant in variants {
-                if let image = ArtworkImageCache.shared.cachedImage(for: url, variant: variant) {
-                    return image
-                }
+    for variant in variants {
+        for reference in presentation.artworkReferences {
+            if let image = ArtworkImageCache.shared.cachedImage(for: reference, variant: variant) {
+                return image
             }
         }
     }
@@ -592,7 +589,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 PlozziOSDetailHeroSection(
                     item: heroTarget,
                     backdropItem: detail.item,
-                    seedArtwork: plozziOSHeroSeedArtwork(heroTarget, detail.item),
+                    seedArtwork: plozziOSHeroSeedArtwork(for: backdropPresentation),
                     playableItem: playableHeroTarget,
                     showsPlayPlaceholder: showsPlayPlaceholder,
                     onRetryPlaybackInventory: viewModel.hasNoPlaybackStreams(for: versionTarget) ? {
