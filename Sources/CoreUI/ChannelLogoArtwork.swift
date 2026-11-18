@@ -67,8 +67,10 @@ public struct ChannelLogoArtwork: View {
                         && ChannelLogoPlate.rendersInkLight(current?.tone, prefersLight: palette.isLight),
                     isTile: ChannelLogoPlate.showsAsTile(current?.tone),
                     usesControlBackground: usesControlBackground,
-                    usesSemanticInk: usesSemanticInk,
                     sourceBackground: current?.tone?.backgroundPlate,
+                    contrastBackground: ChannelLogoPlate.controlBacking(
+                        current?.tone, prefersLight: isFocused || palette.isLight
+                    ),
                     horizontalArtworkInset: horizontalArtworkInset
                 )
             }
@@ -89,23 +91,15 @@ public struct ChannelLogoArtwork: View {
         .accessibilityHidden(true)
     }
 
-    private var usesSemanticInk: Bool {
-        if current?.isMonochrome == true { return true }
-        // Pale mixed-colour ink needs the native foreground on a bright focused surface.
-        return usesControlBackground && isFocused && (current?.tone?.brightInk ?? 0) > 0.04
-    }
-
     private struct LoadedLogo {
         let url: URL
         let image: UIImage
         let tone: ResolvedLogoTone?
-        let isMonochrome: Bool
 
         init(url: URL, processed: ProcessedLogo) {
             self.url = url
             image = processed.image
             tone = processed.tone
-            isMonochrome = processed.isMonochrome
         }
     }
 }
@@ -182,6 +176,18 @@ struct ChannelLogoPlate: Equatable {
         (tone?.coverage ?? 0) >= 0.85
     }
 
+    static func controlBacking(_ tone: ResolvedLogoTone?, prefersLight: Bool) -> Color? {
+        guard let tone, tone.backgroundPlate == nil, !showsAsTile(tone) else { return nil }
+        let hasPaleInk = tone.brightInk > 0.04 || tone.luminance > 0.7
+        if prefersLight && hasPaleInk {
+            return Color(white: tone.luminance < 0.5 ? 0.4 : 0.15)
+        }
+        if !prefersLight && tone.luminance < 0.42 {
+            return Color(white: hasPaleInk ? 0.4 : 0.92)
+        }
+        return nil
+    }
+
     var color: Color { Color(red: red, green: green, blue: blue) }
     var isLight: Bool { 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.55 }
 }
@@ -197,8 +203,8 @@ struct ChannelLogoPlateContent: View {
     /// Boxed logos fill more of the plate; playback preserves their source corners.
     var isTile = false
     var usesControlBackground = false
-    var usesSemanticInk = false
     var sourceBackground: HeroBackgroundSample?
+    var contrastBackground: Color?
     var horizontalArtworkInset: CGFloat?
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.channelLogoPreservesSourceCorners) private var preservesSourceCorners
@@ -218,13 +224,7 @@ struct ChannelLogoPlateContent: View {
     var body: some View {
         ZStack {
             if let image {
-                if usesControlBackground && usesSemanticInk && !isTile && sourceBackground == nil {
-                    Image(uiImage: image)
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundStyle(.primary)
-                } else if rendersInkLight {
+                if rendersInkLight {
                     Image(uiImage: image)
                         .renderingMode(.template)
                         .resizable()
@@ -241,7 +241,7 @@ struct ChannelLogoPlateContent: View {
                         .renderingMode(.original)
                         .resizable()
                         .scaledToFit()
-                        .padding(usesControlBackground && sourceBackground != nil ? 2 : 0)
+                        .padding(usesControlBackground ? 2 : 0)
                         .background {
                             if usesControlBackground, let sourceBackground {
                                 RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -250,6 +250,9 @@ struct ChannelLogoPlateContent: View {
                                         green: sourceBackground.green,
                                         blue: sourceBackground.blue
                                     ))
+                            } else if usesControlBackground, let contrastBackground {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(contrastBackground)
                             }
                         }
                 }

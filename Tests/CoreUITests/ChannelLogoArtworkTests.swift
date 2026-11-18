@@ -57,32 +57,73 @@ final class ChannelLogoArtworkTests: XCTestCase {
         }
     }
 
-    func testNativeControlMonochromeInkFollowsForegroundWithoutRecolouringBrandArt() throws {
+    func testNativeControlPreservesInkColoursWithSelectiveLocalBacking() throws {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.preferredRange = .standard
-        let logo = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 20), format: format).image { context in
-            UIColor.red.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
-        }
-        for (monochrome, tile) in [(false, false), (true, false), (true, true)] {
-            for scheme in [ColorScheme.light, .dark] {
+        for (color, tone, expected) in [
+            (UIColor.white, ResolvedLogoTone(luminance: 1, coverage: 0.4, brightInk: 1), [255, 255, 255]),
+            (UIColor.black, ResolvedLogoTone(luminance: 0, coverage: 0.4), [0, 0, 0]),
+            (UIColor.red, ResolvedLogoTone(luminance: 0.21, coverage: 0.4, red: 1), [255, 0, 0])
+        ] {
+            let logo = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 20), format: format).image { context in
+                color.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+            }
+            for prefersLight in [false, true] {
+                let backing = ChannelLogoPlate.controlBacking(tone, prefersLight: prefersLight)
                 let renderer = ImageRenderer(content: ChannelLogoPlateContent(
                     name: "", image: logo, plate: ChannelLogoPlate(tone: nil),
                     size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 8,
-                    isTile: tile, usesControlBackground: true, usesSemanticInk: monochrome
-                ).environment(\.colorScheme, scheme))
+                    usesControlBackground: true, contrastBackground: backing
+                ))
                 renderer.scale = 1
                 let image = try XCTUnwrap(renderer.cgImage)
                 let pixels = try rgbaPixels(image)
                 let center = (36 * image.width + 80) * 4
-                let rgb = Array(pixels[center..<(center + 3)])
-                if monochrome && !tile {
-                    XCTAssertEqual(rgb, scheme == .light ? [0, 0, 0] : [255, 255, 255])
-                } else {
-                    XCTAssertEqual(rgb, [255, 0, 0])
-                }
+                XCTAssertEqual(pixels[center..<(center + 3)].map(Int.init), expected)
                 XCTAssertEqual(pixels[(2 * image.width + 80) * 4 + 3], 0)
+                XCTAssertEqual(pixels[(36 * image.width + 4) * 4 + 3], 0)
+                let backingPixels = stride(from: 0, to: pixels.count, by: 4).filter { offset in
+                    pixels[offset + 3] == 255 && (0..<3).contains { channel in
+                        abs(Int(pixels[offset + channel]) - expected[channel]) > 50
+                    }
+                }
+                XCTAssertEqual(backingPixels.isEmpty, backing == nil)
+                XCTAssertLessThan(backingPixels.count, image.width * image.height / 4)
+            }
+        }
+    }
+
+    func testMixedAndBoxedLogosKeepEveryInkColourAcrossFocusSurfaces() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let logo = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 20), format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 20, y: 0, width: 20, height: 20))
+        }
+        for tile in [false, true] {
+            for prefersLight in [false, true] {
+                let tone = ResolvedLogoTone(
+                    luminance: 0.6, coverage: tile ? 1 : 0.4,
+                    red: 1, green: 0.5, blue: 0.5, brightInk: 0.5
+                )
+                let backing = ChannelLogoPlate.controlBacking(tone, prefersLight: prefersLight)
+                XCTAssertEqual(backing != nil, !tile && prefersLight)
+                let renderer = ImageRenderer(content: ChannelLogoPlateContent(
+                    name: "", image: logo, plate: ChannelLogoPlate(tone: tone),
+                    size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 8,
+                    isTile: tile, usesControlBackground: true, contrastBackground: backing
+                ))
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.cgImage)
+                let pixels = try rgbaPixels(image)
+                for (x, expected) in [(60, [255, 255, 255]), (100, [255, 0, 0])] {
+                    let offset = (36 * image.width + x) * 4
+                    XCTAssertEqual(pixels[offset..<(offset + 3)].map(Int.init), expected)
+                }
             }
         }
     }
@@ -97,7 +138,7 @@ final class ChannelLogoArtworkTests: XCTestCase {
         let renderer = ImageRenderer(content: ChannelLogoPlateContent(
             name: "", image: logo, plate: ChannelLogoPlate(tone: nil),
             size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 8,
-            usesControlBackground: true, usesSemanticInk: true,
+            usesControlBackground: true,
             sourceBackground: HeroBackgroundSample(red: 1, green: 0, blue: 0, luminance: 0.21)
         ).environment(\.colorScheme, .light))
         renderer.scale = 1

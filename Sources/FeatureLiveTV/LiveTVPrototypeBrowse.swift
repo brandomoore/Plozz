@@ -920,6 +920,23 @@ struct PrototypeNowMarker: View {
 
 struct PrototypeElapsedProgramFill: View {
     let elapsedWidth: CGFloat
+    @Environment(\.isFocused) private var focused
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
+
+    var body: some View {
+        #if os(tvOS)
+        PrototypeProgramProgressShading(
+            elapsedWidth: elapsedWidth, dimsRemaining: focused && focusStyle.usesSystemEffect
+        )
+        #else
+        PrototypeProgramProgressShading(elapsedWidth: elapsedWidth, dimsRemaining: false)
+        #endif
+    }
+}
+
+struct PrototypeProgramProgressShading: View {
+    let elapsedWidth: CGFloat
+    let dimsRemaining: Bool
     @Environment(\.themePalette) private var palette
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -928,9 +945,13 @@ struct PrototypeElapsedProgramFill: View {
             let width = min(geometry.size.width, max(0, elapsedWidth))
             if width > 0 {
                 Rectangle()
-                    .fill(palette.primaryText.opacity(contrast == .increased ? 0.16 : 0.08))
-                    .frame(width: width, height: geometry.size.height)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .fill(dimsRemaining
+                        ? Color.black.opacity(contrast == .increased ? 0.3 : 0.22)
+                        : palette.primaryText.opacity(contrast == .increased ? 0.16 : 0.08))
+                    .frame(width: dimsRemaining ? geometry.size.width - width : width,
+                           height: geometry.size.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: dimsRemaining ? .trailing : .leading)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.programRadius, style: .continuous))

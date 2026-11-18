@@ -10,6 +10,52 @@ import XCTest
 
 @MainActor
 final class LiveTVGuideFocusTests: XCTestCase {
+    func testNativeProgramFocusKeepsElapsedBrightAndDimsRemainingTime() async throws {
+        try await requireNativeFocus()
+        let window = makeWindow(
+            Button {} label: {
+                Text("Current programme")
+                    .frame(width: 320, height: 72)
+                    .background { PrototypeElapsedProgramFill(elapsedWidth: 160) }
+            }
+            .buttonStyle(PrototypeGuideButtonStyle(surface: .program))
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.themePalette, .dark)
+            .preferredColorScheme(.dark)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
+        )
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        window.rootViewController?.setNeedsFocusUpdate()
+        window.rootViewController?.updateFocusIfNeeded()
+        await waitUntil { system.focusedItem != nil }
+        try await Task.sleep(for: .milliseconds(350))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        func brightness(x: CGFloat) throws -> Int {
+            let strip = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
+                x: x, y: window.bounds.midY - 24, width: 8, height: 4
+            )))
+            var pixel = [UInt8](repeating: 0, count: 4)
+            return try pixel.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(
+                    data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(strip, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                return Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])
+            }
+        }
+        let elapsed = try brightness(x: window.bounds.midX - 80)
+        let remaining = try brightness(x: window.bounds.midX + 80)
+        XCTAssertGreaterThan(elapsed, 600, "Elapsed time must retain the native focus brightness.")
+        XCTAssertGreaterThan(elapsed - remaining, 100, "Remaining time must stay visibly distinct.")
+    }
+
     func testNativeStationFocusFillsOnlyTheFocusedTileWithoutReplacingItsOwner() async throws {
         try await requireNativeFocus()
         let channels = Array(LiveTVPrototypeModel().channels.prefix(2))

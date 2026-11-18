@@ -57,13 +57,19 @@ shading visible over live video. Only the focused control uses regular native
 glass. The button and its style retain their identity across that transition;
 menus receive the native style directly so they do not retain an implicit
 resting glass background. Sidebar controls keep their separate native appearance.
+Focused elapsed time keeps the native focus brightness; a translucent dark
+shading behind the label dims only the remaining time. It follows the time
+direction in RTL, clamps to the cell, and does not invent progress for future
+programmes. Resting progress shading and custom-focus styles are unchanged.
 The TV logo column is 160 points wide, down from 200. Artwork has 20-point side
 clearance and four-point vertical clearance, giving compact marks more height
 without letting wide marks crowd the edges. System-focus logo labels let native glass fill the
 whole cell, rather than covering it with an opaque plate and exposing only a rim.
-Transparent monochrome logos and missing-artwork text use the native foreground;
-pale mixed-colour logos also use that foreground while focused. Source backings
-stay local to their fitted artwork. Large preview artwork, mobile logo sizing,
+Logos retain their original colours, including monochrome and mixed-colour ink.
+A small contrast backing protects transparent pale ink against bright focus,
+or dark ink against a dark resting surface; it never becomes a full-cell plate.
+Source backings take precedence and boxed artwork stays unchanged. Missing-artwork
+text uses the native foreground. Large preview artwork, mobile logo sizing,
 and custom-focus backing treatments keep their existing presentation.
 
 Source details offers **Refresh guide**, which revalidates the guide without
@@ -1412,8 +1418,8 @@ is no prior in-memory history to migrate on the first updated launch.
   transparent margins. Otherwise a restrained, desaturated brand tint sits over
   a light or charcoal plate; even a small bright wordmark can require charcoal.
   A quiet perimeter stroke keeps
-  the standalone plate boundary visible. Native-control artwork instead uses
-  semantic ink for contrast when needed. Boxed source colours remain intact.
+  the standalone plate boundary visible. Native-control artwork instead keeps
+  original ink with a selective local contrast backing. Boxed source colours remain intact.
   The existing shared hero preparation cache and synchronous memo resolve the
   logo and its backing together, so a warmed guide logo appears immediately in
   the player without another fetch. Hero/search/player sizes and plates remain

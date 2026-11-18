@@ -560,6 +560,26 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         XCTAssertEqual(marker.map { $0 > 0 }, [false, true, false])
     }
 
+    func testFocusedProgressDimsOnlyTheRemainingTimeInBothDirections() throws {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            for (elapsed, expected) in [
+                (-40.0, [false, false, false]),
+                (80.0, [false, true, true]),
+                (400.0, [false, false, false])
+            ] {
+                let samples = try alphaSamples(
+                    PrototypeProgramProgressShading(elapsedWidth: elapsed, dimsRemaining: true)
+                        .environment(\.layoutDirection, direction),
+                    size: CGSize(width: 200, height: 100),
+                    points: [(40, 50), (100, 50), (180, 50)]
+                )
+                XCTAssertEqual(samples.map { $0 > 0 },
+                               direction == .leftToRight ? expected : Array(expected.reversed()))
+                XCTAssertTrue(samples.filter { $0 > 0 }.allSatisfy { $0 >= 50 && $0 <= 60 })
+            }
+        }
+    }
+
     func testAlphaSamplerReadsTopToBottomScreenCoordinates() throws {
         let samples = try alphaSamples(
             VStack(spacing: 0) {
