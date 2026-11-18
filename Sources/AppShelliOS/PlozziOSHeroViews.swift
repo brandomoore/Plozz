@@ -1233,7 +1233,7 @@ private struct PlozziOSDetailHeroArtwork<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var frozenReferences: [ArtworkReference]?
     @State private var pageIsVisible = false
-    @State private var showedPlaceholderAfterEntry = false
+    @State private var openedWithoutArtwork = false
     @State private var hasRevealed = false
 
     let presentation: HeroPresentation
@@ -1248,7 +1248,10 @@ private struct PlozziOSDetailHeroArtwork<Content: View>: View {
         PlozziOSHeroArtworkReveal(opacity: hasRevealed ? 1 : 0) { opacity in
             resolvedArtwork(revealOpacity: opacity)
         }
-        .plozzOnPageAppearanceChange { pageIsVisible = $0 }
+        .plozzOnPageAppearanceChange { visible in
+            if pageIsVisible && !visible { hasRevealed = true }
+            pageIsVisible = visible
+        }
     }
 
     private func resolvedArtwork(revealOpacity: Double) -> some View {
@@ -1275,27 +1278,21 @@ private struct PlozziOSDetailHeroArtwork<Content: View>: View {
         ) { _ in EmptyView() } placeholder: { EmptyView() }
         .resolvedBitmap(reportingHeroArtwork: presentation.itemID) { resolved, _ in
             let image = resolved ?? seedArtwork
-            let opacity = showedPlaceholderAfterEntry ? revealOpacity : 1
+            let needsFade = openedWithoutArtwork && !reduceMotion
+            let opacity = needsFade ? revealOpacity : 1
             content(PlozziOSPreparedHeroArtwork(
                 image: image.map(Image.init(uiImage:)),
-                opacity: image == nil && !hasRevealed ? 0 : opacity
+                opacity: image == nil ? 0 : opacity
             ))
-                .task(id: image != nil) {
+                .task(id: image != nil && (!needsFade || pageIsVisible)) {
                     guard image != nil, !hasRevealed, !Task.isCancelled else { return }
-                    let fades = showedPlaceholderAfterEntry && pageIsVisible && !reduceMotion
-                    withAnimation(fades ? .easeOut(duration: 0.15) : nil) {
+                    guard !needsFade || pageIsVisible else { return }
+                    withAnimation(needsFade ? .easeOut(duration: 0.35) : nil) {
                         hasRevealed = true
                     }
                 }
                 .onChange(of: image != nil, initial: true) { _, isReady in
-                    if !isReady, !hasRevealed, pageIsVisible {
-                        showedPlaceholderAfterEntry = true
-                    }
-                }
-                .onChange(of: pageIsVisible) { _, isVisible in
-                    if isVisible, image == nil, !hasRevealed {
-                        showedPlaceholderAfterEntry = true
-                    }
+                    if !isReady, !hasRevealed { openedWithoutArtwork = true }
                 }
         }
     }

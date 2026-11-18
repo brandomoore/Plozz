@@ -2,6 +2,12 @@
 
 [Home task map](../../Sources/FeatureHome/README.md#where-to-look-first)
 
+On iPhone and iPad, switching profiles shows the incoming profile's ready hero
+or rows immediately. Only a Home that was visible without any media fades in
+its first content, together over 350 ms. Skeletons and page controls remain
+visible while waiting. Refreshing, scrolling and returning from detail or
+playback do not start another fade. Reduce Motion skips the animation.
+
 ## Upcoming and Coming Soon
 
 `UpcomingFeedLoader` builds the personal release agenda from the active profile's

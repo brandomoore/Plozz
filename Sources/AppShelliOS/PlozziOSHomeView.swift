@@ -247,6 +247,8 @@ struct PlozziOSHomeView: View {
     @State private var watchlistIntentRevision = 0
     @State private var discoveryIdentityRevision = 0
     @State private var homeHasAppeared = false
+    @State private var homePageIsVisible = false
+    @State private var contentEntrance = PlozziOSHomeContentEntrance.initial
     @State private var rowBrowser: HomeRowBrowseModel?
     @State private var showingHomeCustomization = false
     @State private var showingUpcoming = false
@@ -405,6 +407,13 @@ struct PlozziOSHomeView: View {
             tintSaturation: AmbientGradientBackground.fullscreenHeroTintSaturation
         )
         .onAppear { homeHasAppeared = true }
+        .plozzOnPageAppearanceChange { visible in
+            if homePageIsVisible && !visible { contentEntrance = .revealed }
+            homePageIsVisible = visible
+        }
+        .onChange(of: homePageIsVisible && !hasScrollingContent, initial: true) { _, isEmpty in
+            if isEmpty, contentEntrance == .initial { contentEntrance = .waiting }
+        }
         .environment(\.plozzCardCaptionView, .home)
         .onDisappear { homeHasAppeared = false }
         .navigationDestination(isPresented: $showingUpcoming) { [appModel, viewModel] in
@@ -812,8 +821,14 @@ struct PlozziOSHomeView: View {
             containerHeight: heroContainerHeight,
             isRunningOnMac: isRunningOnMac
         ) / 2
+        let presentationRows = viewModel.presentationRows(
+            rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
+            presentation: appModel.settings.libraryPresentation.settings
+        )
+        let hasMedia = heroSlotState == .content || presentationRows.contains(where: \.showsHomeMedia)
         let scroll = PlozziOSHomeScrollView(
-            heroActive: heroSlotState != .hidden, showsPageActions: usesScrollingPageActions
+            heroActive: heroSlotState != .hidden, showsPageActions: usesScrollingPageActions,
+            mediaOpacity: hasMedia ? contentEntrance.opacity : 1
         ) {
             // Retire a carousel the viewer's own settings just invalidated
             // WITHOUT waiting for the async re-curation, exactly as tvOS's
@@ -891,10 +906,7 @@ struct PlozziOSHomeView: View {
             // `PlozziOSFeaturedRow(items: featuredItems, appModel: appModel)`
             // here — the view itself is left in place.
 
-            ForEach(viewModel.presentationRows(
-                rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
-                presentation: appModel.settings.libraryPresentation.settings
-            )) { presentation in
+            ForEach(presentationRows) { presentation in
                 PlozziOSHomeRowSlot(
                     presentation: presentation, captions: appModel.settings.cardStyle.captions,
                     continueWatchingLayout: visibility.continueWatchingLayout,
@@ -957,6 +969,9 @@ struct PlozziOSHomeView: View {
         }
         return scroll
             .id(ObjectIdentifier(viewModel))
+            .modifier(PlozziOSObserveHomeContent(
+                entrance: $contentEntrance, visibleContent: homePageIsVisible ? hasMedia : nil
+            ))
             .scrollClipDisabled()
             .onScrollPhaseChange { _, phase in homeIsScrolling = phase != .idle }
             .homeResponsivenessDiagnostics(

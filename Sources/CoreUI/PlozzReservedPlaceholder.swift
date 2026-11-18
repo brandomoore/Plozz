@@ -100,7 +100,7 @@ public struct PlozzFadeInOnAppear: ViewModifier {
             .allowsHitTesting(visible)
             .accessibilityHidden(!visible)
             #if os(iOS)
-            .plozzOnPageAppearanceChange(startsDuringTransition: true) { pageHasAppeared = $0 }
+            .plozzOnPageAppearanceChange { pageHasAppeared = $0 }
             #endif
             .task(id: canReveal) {
                 guard canReveal, !visible, !Task.isCancelled else { return }

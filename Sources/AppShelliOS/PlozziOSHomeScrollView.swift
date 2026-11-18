@@ -1,6 +1,45 @@
 #if os(iOS)
 import CoreUI
+import FeatureHomeCore
 import SwiftUI
+
+extension HomePresentationRow {
+    var showsHomeMedia: Bool {
+        switch source {
+        case let .home(row):
+            !row.items.isEmpty || (!row.libraries.isEmpty && row.loadingPlaceholderCount == 0)
+        case let .library(row):
+            row.failure == nil && row.issue == nil && !row.section.items.isEmpty
+                && (!row.isLoading || row.collectionCardStyle == .featured)
+        case let .liveTV(channels):
+            !channels.isEmpty
+        }
+    }
+}
+
+enum PlozziOSHomeContentEntrance {
+    case initial, waiting, revealed
+
+    var opacity: Double { self == .waiting ? 0 : 1 }
+}
+
+struct PlozziOSObserveHomeContent: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Binding var entrance: PlozziOSHomeContentEntrance
+    let visibleContent: Bool?
+
+    func body(content: Content) -> some View {
+        content.onChange(of: visibleContent, initial: true) { _, hasMedia in
+            guard let hasMedia, entrance != .revealed else { return }
+            if hasMedia {
+                let fades = entrance == .waiting && !reduceMotion
+                withAnimation(fades ? .easeOut(duration: 0.35) : nil) { entrance = .revealed }
+            } else {
+                entrance = .waiting
+            }
+        }
+    }
+}
 
 struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     @Environment(\.plozzMetrics) private var metrics
@@ -8,6 +47,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     @State private var safeAreaTop: CGFloat = 0
     let heroActive: Bool
     let showsPageActions: Bool
+    let mediaOpacity: Double
     let hero: Hero
     let rows: Rows
     let pageActions: PageActions
@@ -15,12 +55,14 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     init(
         heroActive: Bool,
         showsPageActions: Bool = false,
+        mediaOpacity: Double = 1,
         @ViewBuilder hero: () -> Hero,
         @ViewBuilder rows: () -> Rows,
         @ViewBuilder pageActions: () -> PageActions = { EmptyView() }
     ) {
         self.heroActive = heroActive
         self.showsPageActions = showsPageActions
+        self.mediaOpacity = mediaOpacity
         self.hero = hero()
         self.rows = rows()
         self.pageActions = pageActions()
@@ -40,7 +82,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
             // Eager vertical sizing avoids estimated heights changing during scrolling.
             VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 if heroActive {
-                    hero.overlay(alignment: .top) {
+                    hero.opacity(mediaOpacity).overlay(alignment: .top) {
                         if showsPageActions {
                             pageActions.padding(.top, safeAreaTop)
                         }
@@ -50,7 +92,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
                 } else if showsPageActions {
                     pageActions
                 }
-                rows
+                rows.opacity(mediaOpacity)
             }
             .padding(.bottom)
             .environment(\.plozziOSHomeViewportWidth, viewportWidth)

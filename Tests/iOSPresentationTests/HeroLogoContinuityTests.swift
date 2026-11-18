@@ -46,7 +46,36 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
-    func testArtworkArrivingDuringNavigationIsImmediatelyOpaque() async throws {
+    func testHomeOnlyFadesTheFirstContentAfterAVisibleEmptyPage() async throws {
+        for (warm, reduced) in [(true, false), (false, true), (false, false)] {
+            let fixture = try Fixture(size: CGSize(width: 390, height: 844))
+            defer { fixture.close() }
+            let state = PlayState()
+            state.isPlaceholder = !warm
+            fixture.host.rootView = AnyView(
+                HomeEntranceFixture(state: state).environment(\._accessibilityReduceMotion, reduced)
+            )
+            if !warm {
+                try await Task.sleep(for: .milliseconds(100))
+                state.isPlaceholder = false
+            }
+            var partial = false
+            try await waitUntil {
+                let (hero, row) = try fixture.homeMediaSample()
+                XCTAssertEqual(hero, row, accuracy: 3)
+                partial = partial || (hero > 10 && hero < 240)
+                return hero > 250
+            }
+            XCTAssertEqual(partial, !warm && !reduced)
+            state.isPlaceholder = true
+            try await Task.sleep(for: .milliseconds(50))
+            state.isPlaceholder = false
+            try await waitUntil { try fixture.homeMediaSample().0 > 0 }
+            XCTAssertGreaterThan(try fixture.homeMediaSample().0, 250, "A refresh must not re-arm Home.")
+        }
+    }
+
+    func testMissingOpeningArtworkWaitsForNavigationToFinish() async throws {
         XCTAssertFalse(UIAccessibility.isReduceMotionEnabled)
         for gated in [true, false] {
             let fixture = try Fixture(navigates: true, size: CGSize(width: 390, height: 844))
@@ -62,32 +91,28 @@ final class HeroLogoContinuityTests: XCTestCase {
             let state = ArtworkState(url: gated ? url : nil, sourceReady: !gated)
             fixture.host.rootView = AnyView(ArtworkFixture(state: state))
             navigation.pushViewController(fixture.host, animated: true)
-            await Task.yield()
-            XCTAssertLessThan(try fixture.artworkSample().values[1], 10)
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertLessThan(try fixture.artworkSample().values[1], 10, "Before resolution (gated: \(gated))")
 
             state.item.posterURL = url
             state.item.backdropURL = url
             state.sourceReady = true
-            try await waitUntil { try fixture.artworkSample().values[1] > 0 }
-            let firstFrame = try fixture.artworkSample()
-            XCTAssertFalse(fixture.host.hasAppeared,
-                           "This case must resolve artwork before native entry completes (gated: \(gated)).")
-            let attachment = XCTAttachment(image: firstFrame.image)
-            attachment.name = "artwork-during-navigation-gated-\(gated)"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-            XCTAssertGreaterThan(firstFrame.values[1], 230,
-                                 "An image arriving during entry must not receive an extra opacity fade.")
-            try await waitUntil { fixture.host.hasAppeared }
-            for _ in 0..<8 {
-                XCTAssertGreaterThan(try fixture.artworkSample().values[1], 230,
-                                     "Completing navigation must not restart the artwork reveal.")
-                try await Task.sleep(for: .milliseconds(16))
+            XCTAssertFalse(fixture.host.hasAppeared)
+            var sawIntermediate = false
+            try await waitUntil {
+                let green = try fixture.artworkSample().values[1]
+                if fixture.host.hasAppeared {
+                    sawIntermediate = sawIntermediate || (green > 10 && green < 230)
+                } else {
+                    XCTAssertLessThan(green, 10, "Before landing (gated: \(gated))")
+                }
+                return green > 250
             }
+            XCTAssertTrue(sawIntermediate, "Missing fade after landing (gated: \(gated))")
         }
     }
 
-    func testLateArtworkAndReflectionsShareTheSameShortReveal() async throws {
+    func testLateArtworkAndReflectionsShareTheSameReveal() async throws {
         XCTAssertFalse(UIAccessibility.isReduceMotionEnabled)
         for gated in [true, false] {
             let fixture = try Fixture(navigates: true, size: CGSize(width: 390, height: 844))
@@ -115,7 +140,7 @@ final class HeroLogoContinuityTests: XCTestCase {
                 let sample = try fixture.artworkSample()
                 frames.append((start.duration(to: .now), sample.values, sample.image))
                 try await Task.sleep(for: .milliseconds(8))
-            } while start.duration(to: .now) < .milliseconds(450)
+            } while start.duration(to: .now) < .milliseconds(650)
             let final = try fixture.artworkSample().values
             XCTAssertGreaterThan(final[1], 230)
             let normalized = frames.map { frame in
@@ -140,7 +165,9 @@ final class HeroLogoContinuityTests: XCTestCase {
                 }
             }
             let completed = try XCTUnwrap(normalized.firstIndex { $0[1] > 0.98 })
-            XCTAssertLessThan(frames[completed].0 - frames[intermediate].0, .milliseconds(250))
+            let visibleTail = frames[completed].0 - frames[intermediate].0
+            XCTAssertGreaterThan(visibleTail, .milliseconds(150))
+            XCTAssertLessThan(visibleTail, .milliseconds(400))
             let attachment = XCTAttachment(image: frames[intermediate].2)
             attachment.name = "synchronized-artwork-reveal-gated-\(gated)"
             attachment.lifetime = .keepAlways
@@ -204,7 +231,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
-    func testCachedReadyEntranceBeginsBeforeNavigationCompletes() async throws {
+    func testReadyMetadataEntranceBeginsWhenNavigationCompletes() async throws {
         XCTAssertFalse(UIAccessibility.isReduceMotionEnabled,
                        "This rendered-animation case requires the simulator's full-motion setting.")
         let fixture = try Fixture(
@@ -242,6 +269,9 @@ final class HeroLogoContinuityTests: XCTestCase {
             .background(.black)
         )
         fixture.host.beginAppearanceTransition(true, animated: true)
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertLessThan(try fixture.redSample().intensity, 25)
+        fixture.host.endAppearanceTransition()
 
         var sawIntermediateFrame = false
         var samples: [String] = []
@@ -266,9 +296,6 @@ final class HeroLogoContinuityTests: XCTestCase {
         add(samplesAttachment)
         XCTAssertTrue(sawIntermediateFrame, "A readiness toggle alone is not proof of a rendered entrance.")
         try await waitUntil { try fixture.hasRedLogo() }
-        XCTAssertTrue(try fixture.hasRedLogo(),
-                      "Ready metadata must appear during navigation, not start after it finishes.")
-        fixture.host.endAppearanceTransition()
         try await waitUntil { try fixture.hasRedLogo() && fixture.hasTitleText() }
     }
 
@@ -808,6 +835,21 @@ final class HeroLogoContinuityTests: XCTestCase {
         var isPlaceholder = true
     }
 
+    private struct HomeEntranceFixture: View {
+        let state: PlayState
+        @State private var entrance = PlozziOSHomeContentEntrance.initial
+
+        var body: some View {
+            PlozziOSHomeScrollView(heroActive: true, mediaOpacity: state.isPlaceholder ? 1 : entrance.opacity) {
+                (state.isPlaceholder ? Color.black : Color(.sRGB, red: 1, green: 0, blue: 0)).frame(height: 180)
+            } rows: {
+                (state.isPlaceholder ? Color.black : Color(.sRGB, red: 0, green: 1, blue: 0)).frame(height: 180)
+            }
+            .modifier(PlozziOSObserveHomeContent(entrance: $entrance, visibleContent: !state.isPlaceholder))
+            .background(.black)
+        }
+    }
+
     private struct PlayFixture: View {
         let state: PlayState
         var body: some View {
@@ -1034,6 +1076,13 @@ final class HeroLogoContinuityTests: XCTestCase {
                 Double(sample.bytes[(y * width + width / 2) * 4 + 1])
             }
             return (sample.image, values)
+        }
+
+        func homeMediaSample() throws -> (Double, Double) {
+            let sample = try pixels()
+            let width = Int(window.bounds.width)
+            return (Double(sample.bytes[(90 * width + width / 2) * 4]),
+                    Double(sample.bytes[(290 * width + width / 2) * 4 + 1]))
         }
 
         func playTextIntensity() throws -> Double {

@@ -194,7 +194,10 @@ Its request still starts during page entry, not when the row scrolls into view.
 Mobile core foreground has one initial entrance after the native navigation
 transition finishes and cached or native detail is
 available. Cached metadata does not wait for live artwork-source resolution.
-Artwork displays without an entrance fade; later enrichment and optional sections
+Artwork handed off from Home or ready on the first frame displays immediately.
+If the page opens without a usable bitmap, the first artwork and its reflections
+fade together over 350 ms, starting no earlier than the end of navigation.
+Reduce Motion shows it immediately. Later enrichment and optional sections
 do not replay separate fades. Logo resolution keeps the existing no-temporary-title
 policy and may finish later, without blocking playback. Reduce Motion removes
 the foreground entrance.
