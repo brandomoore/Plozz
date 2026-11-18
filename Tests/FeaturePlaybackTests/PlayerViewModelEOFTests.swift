@@ -517,14 +517,16 @@ final class PlayerViewModelEOFTests: XCTestCase {
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             // Normal cropping is the shared default for every platform. A title
-            // preference saved before the schema version that introduced the
-            // opt-in is reset too, so no visit may resurrect Auto-crop.
-            let visits: [(id: String, namespace: String?, expectedSafe: Bool, pinchToEdges: Bool?)] = [
-                ("first", nil, false, false),
-                ("second", nil, false, nil),
-                ("old-title", nil, false, true),
-                ("first", nil, false, nil),
-                ("second", "guest", false, nil)
+            // preference saved after the opt-in schema keeps its choice and is
+            // applied before the first frame; a profile with no preference gets
+            // the shared default.
+            let visits: [(id: String, namespace: String?, expectedMode: VideoZoomPreference.Mode,
+                          expectedSafe: Bool, pinchToEdges: Bool?)] = [
+                ("first", nil, .fit, false, false),
+                ("second", nil, .fit, false, nil),
+                ("old-title", nil, .picture, false, true),
+                ("first", nil, .fit, false, nil),
+                ("second", "guest", .fit, false, nil)
             ]
             for visit in visits {
                 let settings = PlaybackSettingsModel(store: PlaybackSettingsStore(
@@ -551,7 +553,7 @@ final class PlayerViewModelEOFTests: XCTestCase {
                 )
                 model.controls.videoZoom.bindAutoCropFraming(to: settings, platform: .current)
                 engine.onLoad = { [weak model] in
-                    XCTAssertEqual(model?.controls.videoZoom.settings.mode, .fit)
+                    XCTAssertEqual(model?.controls.videoZoom.settings.mode, visit.expectedMode)
                     XCTAssertEqual(model?.controls.videoZoom.settings.pictureFitsInsideSafeArea, visit.expectedSafe,
                                    "Apply shared framing before the first frame, including the Auto-crop reset.")
                 }
