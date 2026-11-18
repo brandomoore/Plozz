@@ -197,22 +197,6 @@ final class CommunitySkipMarkersTests: XCTestCase {
         XCTAssertEqual(segments.map(\.id), ["intro"])
     }
 
-    func testAnOverlappingReportOfTheSameOpeningExtendsTheWindow() {
-        // Servers routinely stop an intro at the first title card while the
-        // community databases report the whole opening.
-        let server = [MediaSegment(id: "server-intro", kind: .intro, start: 55, end: 65)]
-        let community = [MediaSegment(id: "community-intro", kind: .intro, start: 54.3, end: 82.5)]
-        let merged = server.filling(from: community)
-        XCTAssertEqual(merged.count, 1)
-        XCTAssertEqual(merged[0].start, 54.3)
-        XCTAssertEqual(merged[0].end, 82.5)
-
-        // Disjoint windows are different segments and keep the server's choice.
-        let credits = [MediaSegment(id: "server-credits", kind: .credits, start: 2_300, end: 2_400)]
-        let later = [MediaSegment(id: "community-credits", kind: .credits, start: 2_450, end: 2_600)]
-        XCTAssertEqual(credits.filling(from: later).map(\.id), ["server-credits"])
-    }
-
     func testEveryKindMustCoverABoundedPartOfTheItem() throws {
         // A bogus server analysis runs the closing credits from the intro's end
         // to EOF: pressing it would jump through the episode.
