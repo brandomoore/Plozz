@@ -850,7 +850,7 @@ public struct PosterCardView: View {
 
     private func cardSubtitle(showsRuntime: Bool) -> String? {
         item.posterCaptionSubtitle(showsRuntime: showsRuntime, continueWatchingSpoilers:
-            presentationArtworkPolicy.area == .continueWatching && showsCaption ? spoilerSettings : nil)
+            presentationArtworkPolicy.area == .continueWatching && showsCaption ? spoilerSettings : nil, locale: locale)
     }
 
     // MARK: Resume chip
@@ -1765,7 +1765,7 @@ public extension MediaItem {
 
     /// Shared provider metadata for SwiftUI cards and native library cells.
     func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true,
-                               continueWatchingSpoilers: SpoilerSettings? = nil) -> String? { // l10n:content
+                               continueWatchingSpoilers: SpoilerSettings? = nil, locale: Locale = .current) -> String? {
         var parts: [String] = []
         if showsSubtitle, let spoilers = continueWatchingSpoilers, kind == .episode, let code = seasonEpisodeLabel {
             parts.append(code)
@@ -1778,7 +1778,8 @@ public extension MediaItem {
             parts.append(subtitle)
         }
         if showsRuntime, let runtime = cardRuntimeText?.trimmingCharacters(in: .whitespacesAndNewlines), !runtime.isEmpty {
-            parts.append(cardRuntimeIsRemaining ? String(localized: "\(runtime) left") : runtime)
+            let remaining = LocalizedStringResource("\(runtime) left", locale: locale)
+            parts.append(cardRuntimeIsRemaining ? String(localized: remaining) : runtime) // l10n:content — final card caption/accessibility string in the view's locale
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }

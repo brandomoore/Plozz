@@ -65,8 +65,9 @@ struct PlayerContinueWatchingCard: View {
     private var slot: PlayerControls.FocusSlot { .continueWatching(item.stablePresentationID) }
     private var isFocused: Bool { focus == slot }
     private var title: Text { item.posterCaptionText(spoilerSettings: spoilerSettings) }
+    @Environment(\.locale) private var locale
     private func subtitle(showsRuntime: Bool) -> String? {
-        item.posterCaptionSubtitle(showsRuntime: showsRuntime, continueWatchingSpoilers: showsCaptions ? spoilerSettings : nil)
+        item.posterCaptionSubtitle(showsRuntime: showsRuntime, continueWatchingSpoilers: showsCaptions ? spoilerSettings : nil, locale: locale)
     }
     private var aspectRatio: CGFloat {
         switch presentation.artworkStyle {
