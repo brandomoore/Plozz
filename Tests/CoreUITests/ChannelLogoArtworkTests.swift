@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class ChannelLogoArtworkTests: XCTestCase {
     func testIndependentInsetsGiveCompactLogosHeightAndWideLogosSideClearance() throws {
-        for sourceSize in [CGSize(width: 20, height: 20), CGSize(width: 80, height: 20)] {
+        for sourceSize in [CGSize(width: 20, height: 20), CGSize(width: 32, height: 20), CGSize(width: 80, height: 20)] {
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1
             let logo = UIGraphicsImageRenderer(size: sourceSize, format: format).image { context in
@@ -17,7 +17,7 @@ final class ChannelLogoArtworkTests: XCTestCase {
             }
             let renderer = ImageRenderer(content: ChannelLogoPlateContent(
                 name: "", image: logo, plate: ChannelLogoPlate(tone: nil),
-                size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 4,
+                size: CGSize(width: 140, height: 72), cornerRadius: 16, artworkInset: 4,
                 isTile: true, usesControlBackground: true, horizontalArtworkInset: 20
             ))
             renderer.scale = 1
@@ -31,8 +31,11 @@ final class ChannelLogoArtworkTests: XCTestCase {
             XCTAssertEqual(width / height, sourceSize.width / sourceSize.height, accuracy: 0.05)
             if sourceSize.width == sourceSize.height {
                 XCTAssertEqual(height, 64, accuracy: 1)
+            } else if sourceSize.width == 32 {
+                XCTAssertEqual(width, 81, accuracy: 1)
+                XCTAssertEqual(height, 51, accuracy: 1)
             } else {
-                XCTAssertEqual(width, 120, accuracy: 1)
+                XCTAssertEqual(width, 100, accuracy: 1)
                 XCTAssertGreaterThanOrEqual(try XCTUnwrap(ink.map(\.x).min()), 20)
             }
         }

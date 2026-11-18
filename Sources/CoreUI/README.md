@@ -429,6 +429,7 @@ Generated Plozz wordmarks use the same backdrop behavior. Standalone artwork
 keeps its existing plate and colours by default.
 Independent `horizontalArtworkInset` lets dense guide cells reserve side clearance
 for wide marks without reducing the height available to square or tall marks.
+Stacked marks also respect a square logo's area budget; the backing plate is unchanged.
 
 `PlozzStartupLogo` starts from a smile and rotates through wink, delight, and
 surprise on successive cold launches. The device-local choice is saved once per

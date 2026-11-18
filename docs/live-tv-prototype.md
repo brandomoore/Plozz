@@ -65,7 +65,9 @@ or buffers, its player supplies a small activity indicator beside the matching
 channel's header metadata, without resizing the title or guide.
 The TV logo column is 140 points wide. Artwork has 20-point side
 clearance and four-point vertical clearance, giving compact marks more height
-without letting wide marks crowd the edges. Logo labels retain their original
+without letting wide marks crowd the edges. Stacked wordmarks fit within the
+same area as a square logo, leaving space above and below their lettering.
+Logo labels retain their original
 full-tile backgrounds, using cached source-background colours or a restrained
 brand tint. Only the plate becomes partly translucent on focus, allowing the
 native control to illuminate it without a white replacement or small nested

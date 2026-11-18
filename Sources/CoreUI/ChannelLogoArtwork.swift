@@ -194,6 +194,14 @@ struct ChannelLogoPlateContent: View {
         isTile ? min(artworkInset, max(4, size.height * 8 / 128)) : artworkInset
     }
 
+    private var fittedWidth: CGFloat {
+        let width = max(1, size.width - (horizontalArtworkInset ?? inset) * 2)
+        guard horizontalArtworkInset != nil, let image, image.size.height > 0 else { return width }
+        // Keep a stacked wordmark's fitted area within that of a square mark.
+        let aspect = image.size.width / image.size.height
+        return min(width, max(1, size.height - inset * 2) * max(1, aspect).squareRoot())
+    }
+
     /// Proportional to the tile itself, not concentric with the plate: a square
     /// tile sits well inside a wide plate, so its corners don't nest in the
     /// plate's, and the concentric remainder (a few points) barely read as round.
@@ -232,7 +240,7 @@ struct ChannelLogoPlateContent: View {
             }
         }
         .frame(
-            width: max(1, size.width - (horizontalArtworkInset ?? inset) * 2),
+            width: fittedWidth,
             height: max(1, size.height - inset * 2)
         )
         .frame(width: size.width, height: size.height)
