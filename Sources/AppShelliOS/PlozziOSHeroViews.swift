@@ -1237,12 +1237,14 @@ private struct PlozziOSHeroBackdrop: View {
 
     private func stillArtwork() -> some View {
         ZStack {
-            if let seedArtwork, !backdropResolved {
+            if let seedArtwork {
                 Image(uiImage: seedArtwork)
                     .resizable()
                     .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
+                    .opacity(backdropResolved ? 0 : 1)
+                    .animation(.easeOut(duration: 0.28), value: backdropResolved)
                     .accessibilityHidden(true)
             }
             backdropImage
@@ -1299,8 +1301,8 @@ private struct PlozziOSHeroBackdrop: View {
         // not fade: their image is normally already warm, and coupling the fade to
         // the slide change made every swipe dim the artwork and could flash black
         // during a pull. This is a plain opacity animation, not a redraw.
-        .opacity(surfaceRole != .detail || seedArtwork != nil || backdropResolved ? 1 : 0)
-        .animation(surfaceRole == .detail ? .easeOut(duration: 0.25) : nil, value: backdropResolved)
+        .opacity(surfaceRole != .detail || backdropResolved ? 1 : 0)
+        .animation(surfaceRole == .detail ? .easeOut(duration: 0.28) : nil, value: backdropResolved)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .onChange(of: presentation.itemID) { _, _ in
