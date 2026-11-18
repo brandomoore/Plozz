@@ -1917,11 +1917,23 @@ struct PlozziOSInlineSeriesBrowser: View {
                     }
                 }
             }
-            .task(id: selectedSeasonID) {
+            // Key the load to the season *and* the season list. The first task can
+            // run before the children publish (the browser is mounted as soon as the
+            // hero does), in which case the container check returns without loading;
+            // the id then never changed, so the rail stayed on its skeleton until the
+            // viewer switched seasons and back. Re-run when the season set lands too.
+            .task(id: seasonEpisodeLoadKey) {
                 if let selectedSeasonID {
                     await viewModel.loadEpisodes(for: selectedSeasonID)
                 }
                 publishPlayTarget()
+            }
+            .onAppear {
+                // Returning from the player (or any covered state) resumes the model
+                // after a season task may already have exited while suspended.
+                if let selectedSeasonID, viewModel.episodes(for: selectedSeasonID) == nil {
+                    Task { await viewModel.loadEpisodes(for: selectedSeasonID) }
+                }
             }
             .onChange(of: displayedEpisodes, initial: true) {
                 publishPlayTarget()
@@ -1965,6 +1977,10 @@ struct PlozziOSInlineSeriesBrowser: View {
                 }
             }
         }
+    }
+
+    private var seasonEpisodeLoadKey: String {
+        "\(selectedSeasonID ?? "-")#\(seasons.map(\.id).joined(separator: ","))"
     }
 
     private var openingSelectionKey: String {
