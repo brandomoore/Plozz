@@ -1778,7 +1778,7 @@ public extension MediaItem {
             parts.append(subtitle)
         }
         if showsRuntime, let runtime = cardRuntimeText?.trimmingCharacters(in: .whitespacesAndNewlines), !runtime.isEmpty {
-            parts.append(cardRuntimeIsRemaining ? "\(runtime) left" : runtime)
+            parts.append(cardRuntimeIsRemaining ? String(localized: "\(runtime) left") : runtime)
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
