@@ -360,6 +360,12 @@ the pane while the guide continues intercepting focus exits.
 Category entry waits for the reveal animation's actual completion before
 requesting focus. An appearance-time request can be lost while the pane is
 still clipped; cancelled or superseded reveals must not steal focus later.
+With pinned navigation, the rendered category/control requests focus through the
+shared native owner containing both the sidebar and the guide's collection-view
+host. A SwiftUI focus binding alone can leave focus inside that nested guide.
+The request is cancelled when its control is disabled or detached and is not
+replayed by later scrolling/layout. Restoring a retained category sends no scroll
+command; only initial entry or an unavailable-category fallback reveals a row.
 With pinned navigation, the moving pane fades through the extra content inset,
 reaching full transparency before the navigation icons. The stationary feather
 does not dim the resting controls or leave a translucent copy behind the rail.

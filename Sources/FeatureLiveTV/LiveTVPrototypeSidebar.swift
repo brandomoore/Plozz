@@ -23,8 +23,12 @@ struct PrototypeBrowseSidebar: View {
     @FocusState private var focused: Control?
     @State private var categoryFade = PrototypeScrollFade()
     @State private var completedCategoryFocusRequest = 0
+    @State private var hasFocusedControl = false
     @ScaledMetric(relativeTo: .subheadline) private var fontSize = PrototypeLayout.guideFontSize
     @Environment(\.layoutDirection) private var layoutDirection
+    #if os(tvOS)
+    @Environment(\.plozzNativeControlFocusRequest) private var requestNativeFocus
+    #endif
 
     enum Control: Hashable {
         case source
@@ -63,6 +67,12 @@ struct PrototypeBrowseSidebar: View {
         restoresCategoryFocus && !isRevealing ? categoryFocusRequest : nil
     }
 
+    @ViewBuilder private func nativeFocusRequest(for control: Control) -> some View {
+        #if os(tvOS)
+        NativeControlFocusRequest(request: isRestoringFocus && control == entryTarget ? readyCategoryFocusRequest : nil)
+        #endif
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: PrototypeLayout.gap) {
             #if os(tvOS)
@@ -75,6 +85,7 @@ struct PrototypeBrowseSidebar: View {
             .padding(PrototypeLayout.controlInset)
             .background { PrototypeControlSurface() }
             .focused($focused, equals: .source)
+            .background { nativeFocusRequest(for: .source) }
             .disabled(isFocusDisabled(.source))
 
             Button(action: search) {
@@ -86,6 +97,7 @@ struct PrototypeBrowseSidebar: View {
             .padding(PrototypeLayout.controlInset)
             .background { PrototypeControlSurface() }
             .focused($focused, equals: .search)
+            .background { nativeFocusRequest(for: .search) }
             .disabled(isFocusDisabled(.search))
             .accessibilityValue(model.query)
             .accessibilityIdentifier("live-tv-search")
@@ -107,6 +119,7 @@ struct PrototypeBrowseSidebar: View {
                     .buttonStyle(.bordered)
                     #endif
                     .focused($focused, equals: .multiviews)
+                    .background { nativeFocusRequest(for: .multiviews) }
                     .disabled(isFocusDisabled(.multiviews))
                     .accessibilityIdentifier("live-tv-multiview-favorites")
             }
@@ -124,6 +137,7 @@ struct PrototypeBrowseSidebar: View {
                     .buttonStyle(.bordered)
                     #endif
                     .focused($focused, equals: .manageChannels)
+                    .background { nativeFocusRequest(for: .manageChannels) }
                     .disabled(isFocusDisabled(.manageChannels))
                     .accessibilityIdentifier("live-tv-manage-channels")
             }
@@ -164,6 +178,7 @@ struct PrototypeBrowseSidebar: View {
                             .buttonStyle(.bordered)
                             #endif
                             .focused($focused, equals: .category(category))
+                            .background { nativeFocusRequest(for: .category(category)) }
                             .disabled(isFocusDisabled(.category(category)))
                             .id(Control.category(category))
                             .accessibilityAddTraits(model.category == category ? .isSelected : [])
@@ -193,8 +208,14 @@ struct PrototypeBrowseSidebar: View {
                     // The pane is still clipped during its reveal transition.
                     guard request != nil else { return }
                     let target = entryTarget
-                    if case .category = target { proxy.scrollTo(target) }
+                    if case .category = target, !hasFocusedControl || target != lastFocusedControl {
+                        proxy.scrollTo(target)
+                    }
+                    #if os(tvOS)
+                    if requestNativeFocus == nil { focused = target }
+                    #else
                     focused = target
+                    #endif
                 }
             }
         }
@@ -225,6 +246,7 @@ struct PrototypeBrowseSidebar: View {
         #endif
         .onChange(of: focused) { _, target in
             guard let target else { return }
+            hasFocusedControl = true
             if target == entryTarget {
                 completedCategoryFocusRequest = categoryFocusRequest
             }
