@@ -902,19 +902,20 @@ final class PlayerViewModelEOFTests: XCTestCase {
         }
     }
 
-    func testAutoSkipNeverChainsIntoAMarkerTheSkipLandedIn() async throws {
-        // A short item keeps the closing credits in the final act while the intro
-        // still ends exactly where they begin.
-        let item = MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 240)
+    func testAutoSkipNeverChainsIntoABogusMarkerAtTheLanding() async throws {
+        let item = MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 2_400)
+        // The server's outro starts at the intro's end and covers the rest of the
+        // item. It is not closing credits and must be absent entirely, so an
+        // automatic intro skip has nothing to chain into.
         let provider = RecordingPlaybackProvider(
             request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
             segments: [
                 .init(id: "intro", kind: .intro, start: 54.346, end: 82.5),
-                .init(id: "credits", kind: .credits, start: 82.5, end: 240)
+                .init(id: "credits", kind: .credits, start: 82.5, end: 2_400)
             ]
         )
         let engine = SpyVideoEngine()
-        engine.duration = 240
+        engine.duration = 2_400
         let model = PlayerViewModel(
             provider: provider, itemID: item.id,
             playbackSettings: .init(
@@ -924,34 +925,21 @@ final class PlayerViewModelEOFTests: XCTestCase {
         )
         await model.load()
         let deadline = ContinuousClock.now + .seconds(3)
-        while model.controls.skipSegments.segments.count < 2, ContinuousClock.now < deadline {
+        while model.controls.skipSegments.segments.isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
-        model.controls.currentSeconds = 60
-        XCTAssertEqual(model.controls.skipMode, .autoInstant)
+        XCTAssertEqual(model.controls.skipSegments.segments.map(\.kind), [.intro],
+                       "The outro that runs from the intro's end to EOF is malformed and absent.")
 
+        model.controls.currentSeconds = 60
         model.autoSkipActiveSegment()
 
         XCTAssertEqual(model.controls.pendingSeekTarget, 82.5)
         XCTAssertEqual(model.controls.skipSegments.skippedLanding, 82.5)
-        XCTAssertEqual(model.controls.skipSegments.seekLanding?.segmentID, "credits")
-        XCTAssertNil(model.controls.activeSkipSegment,
-                     "A skip's landing offers nothing, so a second automatic jump cannot follow it.")
-        // Once playback has moved into the following marker it is reachable, but
-        // only through the manual button the grace-window landing offers.
+        XCTAssertNil(model.controls.activeSkipSegment)
         model.controls.currentSeconds = 88
-        XCTAssertEqual(model.controls.activeSkipSegment?.id, "credits")
-        XCTAssertTrue(model.controls.activeSkipWasSeekEntered)
-        XCTAssertEqual(
-            SkipPresentationDecision.action(
-                skipMode: model.controls.skipMode,
-                wasSeekEntered: model.controls.activeSkipWasSeekEntered,
-                presentingButton: false, focusIsSurface: true, isScrubbing: false,
-                autoDelayDeadlineReached: false
-            ),
-            .presentManual(stealFocus: false),
-            "Auto-skip skips only that segment: the next marker is never another automatic jump."
-        )
+        XCTAssertNil(model.controls.activeSkipSegment,
+                     "A skip only skips its own segment; there is nothing else to chain into.")
         await model.stop()
     }
 
