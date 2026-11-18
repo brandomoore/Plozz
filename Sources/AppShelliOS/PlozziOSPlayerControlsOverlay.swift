@@ -14,7 +14,6 @@ private enum PlozziOSPlayerSheet: String, Identifiable {
     case subtitleSearch
     case audioSync
     case quality
-    case timestamps
 
     var id: Self { self }
 }
@@ -30,8 +29,6 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var controlsVisible = true
     @State private var scrubPreviewCoordinator: ScrubPreviewCoordinator?
     @State private var presentedSheet: PlozziOSPlayerSheet?
-    @State private var timestampBrowser: PlayerCommunityTimestampsModel?
-    @Environment(\.communityPlaybackTimestampSource) private var timestampSource
     @State private var menuPresentation = PlayerMenuPresentation()
     /// Whether the Info / Cast card is expanded. Owned here rather than inside
     /// the strip because dismissing it is this view's job: the tap that closes
@@ -176,7 +173,6 @@ struct PlozziOSPlayerControlsOverlay: View {
                         },
                         supportsVideoZoom: !isPlayingElsewhere
                             && viewModel.controls.engineCapabilities.contains(.videoZoom),
-                        hasTimestamps: timestampSource != nil && viewModel.canBrowseCommunityTimestamps,
                         hasVersions: hasVersions,
                         menuPresentation: menuPresentation,
                         isCardOpen: $isCardOpen,
@@ -315,8 +311,6 @@ struct PlozziOSPlayerControlsOverlay: View {
                 PlozziOSAudioSyncSheet(viewModel: viewModel)
             case .quality:
                 PlozziOSStreamingQualitySheet(viewModel: viewModel)
-            case .timestamps:
-                if let timestampBrowser { PlayerCommunityTimestampsView(model: timestampBrowser) }
             }
         }
         .alert("Couldn't change upscaling", isPresented: Binding(
@@ -345,14 +339,6 @@ struct PlozziOSPlayerControlsOverlay: View {
         case .zoom: presentedSheet = .zoom
         case .quality: presentedSheet = .quality
         case .versions: onShowVersions()
-        case .timestamps:
-            guard let timestampSource, viewModel.canBrowseCommunityTimestamps else {
-                PlozzLog.playback.debug("Ignoring unavailable community timestamps menu selection.")
-                scheduleAutoHide()
-                return
-            }
-            timestampBrowser = viewModel.makeCommunityTimestampBrowser(source: timestampSource)
-            presentedSheet = .timestamps
         case .multiview:
             PlozzLog.playback.error("VOD menu requested unavailable multiview destination.")
         }
@@ -759,7 +745,6 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let onPlayPause: () -> Void
     let onSkipForward: () -> Void
     let supportsVideoZoom: Bool
-    let hasTimestamps: Bool
     let hasVersions: Bool
     let menuPresentation: PlayerMenuPresentation
     @State private var discPresentationOwner = UUID()
@@ -918,7 +903,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                     model: viewModel.controls,
                     availability: .init(
                         maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
-                        quality: viewModel.streamingQualityAvailable, versions: hasVersions, timestamps: hasTimestamps
+                        quality: viewModel.streamingQualityAvailable, versions: hasVersions
                     ),
                     presentation: menuPresentation,
                     layout: .init(size: availableSize),

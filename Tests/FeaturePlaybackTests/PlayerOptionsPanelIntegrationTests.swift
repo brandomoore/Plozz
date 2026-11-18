@@ -11,29 +11,6 @@ import XCTest
 final class PlayerOptionsPanelIntegrationTests: XCTestCase {
     private typealias Screen = PlayerControls.SubtitleScreen
 
-    func testCommunityTimestampActionIsOptInAndNeverAppearsInZoomSubmenu() {
-        let model = PlayerControlsModel()
-        model.upscaling.isAvailable = true
-        let without = PlaybackOptionsPane.rows(
-            model: model, zoom: model.videoZoom, actions: .init(), openScreen: { _ in }
-        )
-        XCTAssertFalse(without.contains { $0.slot == PlaybackOptionsPane.timestampsSlot })
-        var opened = false
-        let with = PlaybackOptionsPane.rows(
-            model: model, zoom: model.videoZoom, actions: .init(), openScreen: { _ in },
-            onCommunityTimestamps: { opened = true }
-        )
-        XCTAssertEqual(Set(with.map(\.id)).count, with.count)
-        let action = with.first { $0.slot == PlaybackOptionsPane.timestampsSlot }
-        if case .action(let run) = action?.kind { run() } else { XCTFail("Missing explicit timestamp action") }
-        XCTAssertTrue(opened)
-        let zoom = PlaybackOptionsPane.rows(
-            model: model, zoom: model.videoZoom, actions: .init(), screen: .zoom,
-            openScreen: { _ in }, onCommunityTimestamps: {}
-        )
-        XCTAssertFalse(zoom.contains { $0.slot == PlaybackOptionsPane.timestampsSlot })
-    }
-
     func testAudioSyncAndUpscalingUseTheExistingOptionsNavigation() {
         let model = PlayerControlsModel()
         XCTAssertFalse(model.hasAudioControls)

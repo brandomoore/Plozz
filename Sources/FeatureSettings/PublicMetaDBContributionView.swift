@@ -273,6 +273,54 @@ private struct PublicMetaDBRatingRecordView: View {
     }
 }
 
+struct PublicMetaDBContributionRecordView<Detail: View>: View {
+    let service: PublicMetaDBService
+    let category: PublicMetaDB.Contribution
+    let recordID: String
+    let delete: @MainActor (UUID) async throws -> Void
+    @ViewBuilder let detail: () -> Detail
+    @State private var operation = PublicMetaDBMutationOperation()
+    @State private var confirming = false
+    @State private var connection: UUID?
+
+    var body: some View {
+        PublicMetaDBPage {
+            SettingsPageHeader("Community contribution")
+            detail()
+            if operation.succeeded {
+                Text("Contribution removed from PublicMetaDB")
+            } else {
+                NavigationLink("Vote on this contribution") {
+                    PublicMetaDBVoteView(service: service, category: category, recordID: recordID)
+                }
+                Text("Only the author can delete a contribution. PublicMetaDB verifies ownership using your API key.")
+                    .foregroundStyle(.secondary)
+                Button("Delete contribution", role: .destructive) {
+                    connection = service.connectionID
+                    confirming = true
+                }
+                .disabled(!operation.permitsWrite || service.phase != .connected)
+            }
+            PublicMetaDBMutationStatus(operation: operation)
+        }
+        .confirmationDialog("Delete this contribution?", isPresented: $confirming) {
+            Button("Delete contribution", role: .destructive) {
+                guard let connection else { return }
+                operation.perform { try await delete(connection) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Requests deletion of this exact contribution. PublicMetaDB rejects the request if it is not yours. Media-server data is unchanged.")
+        }
+        .onChange(of: service.connectionID) { _, _ in
+            confirming = false
+            connection = nil
+            operation.cancel()
+        }
+        .onDisappear { operation.cancel() }
+    }
+}
+
 struct PublicMetaDBVoteView: View {
     let service: PublicMetaDBService
     let category: PublicMetaDB.Contribution

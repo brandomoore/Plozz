@@ -38,15 +38,15 @@ public struct LiveTVSettingsView: View {
 
     @ViewBuilder private var content: some View {
         if searchPage == .liveTVGuide {
-            LiveTVPreferencesPage(title: "Guide preferences") {
+            GroupedSettingsPage(title: "Guide preferences") {
                 LiveTVGuidePreferences(settings: $settings)
             }
         } else if searchPage == .liveTVVisibility {
-            LiveTVPreferencesPage(title: "Channel visibility") {
+            GroupedSettingsPage(title: "Channel visibility") {
                 LiveTVChannelVisibilitySettings(settings: $settings, hiddenChannels: hiddenChannelsModel)
             }
         } else {
-        LiveTVPreferencesPage(title: "Live TV") {
+        GroupedSettingsPage(title: "Live TV") {
             let preferences = AnyView(LiveTVBrowsingSettingsSections(
                 settings: $settings, hiddenChannels: hiddenChannelsModel
             ))
@@ -89,7 +89,7 @@ private struct LiveTVBrowsingSettingsSections: View {
             .accessibilityIdentifier("live-tv-channel-order")
             .settingsSearchAnchor("channel-order")
             SettingsPageLink {
-                LiveTVPreferencesPage(title: "Guide preferences") {
+                GroupedSettingsPage(title: "Guide preferences") {
                     LiveTVGuidePreferences(settings: $settings)
                 }
             } label: {
@@ -99,7 +99,7 @@ private struct LiveTVBrowsingSettingsSections: View {
             .accessibilityIdentifier("live-tv-guide-preferences")
             .settingsSearchAnchor("guide-preferences")
             SettingsPageLink {
-                LiveTVPreferencesPage(title: "Channel visibility") {
+                GroupedSettingsPage(title: "Channel visibility") {
                     LiveTVChannelVisibilitySettings(settings: $settings, hiddenChannels: hiddenChannels)
                 }
             } label: {
@@ -215,7 +215,7 @@ private struct LiveTVChannelVisibilitySettings: View {
         }
         SettingsSectionGroup {
             SettingsPageLink {
-                LiveTVPreferencesPage(title: "Hidden channels") {
+                GroupedSettingsPage(title: "Hidden channels") {
                     LiveTVHiddenChannelsListContent(model: hiddenChannels)
                 }
                 .onAppear { hiddenChannels.reload() }
@@ -228,8 +228,9 @@ private struct LiveTVChannelVisibilitySettings: View {
     }
 }
 
-private struct LiveTVPreferencesPage<Content: View>: View {
+struct GroupedSettingsPage<Content: View>: View {
     let title: LocalizedStringResource
+    var backIdentifier = "live-tv-settings-back"
     @ViewBuilder let content: () -> Content
     #if os(tvOS)
     @SettingsPageDismiss private var dismiss
@@ -243,7 +244,7 @@ private struct LiveTVPreferencesPage<Content: View>: View {
                 SettingsPageHeader(title)
                     .environment(\.settingsPageBackButton, inWorkspace ? AnyView(
                         SettingsBackButton { dismiss() }
-                            .accessibilityIdentifier("live-tv-settings-back")
+                            .accessibilityIdentifier(backIdentifier)
                     ) : nil)
                 content()
                     .settingsPageEntryFocus()

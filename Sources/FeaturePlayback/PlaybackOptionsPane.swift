@@ -7,7 +7,6 @@ struct PlaybackOptionsPane: View {
     static let zoomSlot = 0
     static let speedSlot = 2
     static let upscalingSlot = 4
-    static let timestampsSlot = 5
     static var customSlot: Int { modeSlot(.custom) }
 
     static func modeSlot(_ mode: PlayerVideoZoom.Mode) -> Int { 10 + mode.rawValue }
@@ -20,7 +19,6 @@ struct PlaybackOptionsPane: View {
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
     var offersPlaybackSpeed = true
     let openScreen: (PlayerControls.PlaybackScreen) -> Void
-    var onCommunityTimestamps: (() -> Void)? = nil
 
     var body: some View {
         let rows = rows
@@ -73,8 +71,7 @@ struct PlaybackOptionsPane: View {
     var rows: [PlayerOptionsRowSpec] {
         Self.rows(
             model: model, zoom: zoom, actions: actions, screen: screen,
-            offersPlaybackSpeed: offersPlaybackSpeed, openScreen: openScreen,
-            onCommunityTimestamps: onCommunityTimestamps
+            offersPlaybackSpeed: offersPlaybackSpeed, openScreen: openScreen
         )
     }
 
@@ -83,8 +80,7 @@ struct PlaybackOptionsPane: View {
         actions: PlayerOptionsActions,
         screen: PlayerControls.PlaybackScreen = .options,
         offersPlaybackSpeed: Bool = true,
-        openScreen: @escaping (PlayerControls.PlaybackScreen) -> Void,
-        onCommunityTimestamps: (() -> Void)? = nil
+        openScreen: @escaping (PlayerControls.PlaybackScreen) -> Void
     ) -> [PlayerOptionsRowSpec] {
         if screen == .upscaling { return [] }
         if screen == .zoom {
@@ -120,12 +116,6 @@ struct PlaybackOptionsPane: View {
                     actions.setPlaybackSpeed(PlayerControls.speedGridValue(next))
                 }
             )))
-        }
-        if let onCommunityTimestamps {
-            rows.append(.init(
-                slot: Self.timestampsSlot, title: "Community timestamps",
-                kind: .action(run: onCommunityTimestamps)
-            ))
         }
         return rows
     }

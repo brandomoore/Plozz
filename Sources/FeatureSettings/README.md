@@ -9,7 +9,7 @@ episode numbering must be resolved by the normal show page.
 PublicMetaDB confirmations compose every paragraph into one localized `Text`
 through `publicMetaDBConfirmationMessage`. Native dialogs can omit sibling
 message views, hiding visibility, propagation or publication disclosures.
-Keep the reviewed date, vote or timestamp details in that same message.
+Keep the reviewed date or vote details in that same message.
 
 PublicMetaDB contribution reads belong to the enclosing page's
 `publicMetaDBRead` modifier, never to the lazy rows emitted by
@@ -52,12 +52,10 @@ their confirmed actions have the destructive role.
 The server watch-status setting explains watched status and playback progress
 without repeating its row label or adding a server-count availability message.
 Native media menus, Picks, list entries and history records share title-level
-controls for explicit tracker history, ratings and community timestamps. Publishing
+controls for explicit tracker history and ratings. Publishing
 and deleting contributions require confirmation and fresh readback; votes use
 the authenticated own-vote field rather than inferring ownership from names.
-Timestamp publishing does not enable community skipping or alter server markers.
-Highlights remain hidden until requested. Unsupported identity is explained
-without guessing a match or sending a tracker request.
+Unsupported identity is explained without guessing a match or sending a tracker request.
 External-ID controls retain conflicting contributions and offer reverse lookup,
 explicit publishing after a two-direction conflict review, exact deletion and
 votes. These actions never replace server IDs or episode ordering.

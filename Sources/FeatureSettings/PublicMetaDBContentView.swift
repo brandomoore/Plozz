@@ -20,7 +20,6 @@ public extension View {
         if let service {
             modifier(PublicMetaDBContentPresentation(service: service))
                 .environment(\.publicMetaDBCatalogService, service)
-                .environment(\.communityPlaybackTimestampSource, service.playbackTimestampSource)
         } else {
             self
         }
@@ -64,7 +63,6 @@ struct PublicMetaDBContentView: View {
                 .foregroundStyle(.secondary)
             if content.isPlayable {
                 NavigationLink("Add a watched play") { PublicMetaDBHistoryDateView(service: service, content: content) }
-                NavigationLink("Community timestamps") { PublicMetaDBMarkerView(service: service, content: content) }
             }
             NavigationLink("Watch history") {
                 PublicMetaDBPagedRecords(

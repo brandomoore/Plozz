@@ -1246,7 +1246,7 @@ struct PlayerControls: View {
                     close: { openPanel = nil }, backRequest: panelBackRequest,
                     maximumHeight: max(0, availableHeight - Self.horizontalMargin
                         - (styleEditing ? Self.horizontalMargin : menuBottomInset)),
-                    playbackScreen: $playbackScreen, audioScreen: $audioScreen, player: player
+                    playbackScreen: $playbackScreen, audioScreen: $audioScreen
                 )
                 .reportSubtitleControlsFrame(
                     in: model.subtitleLayout, region: .menu, isVisible: model.controlsVisible && !styleEditing

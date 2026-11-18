@@ -19,71 +19,75 @@ struct TrackerHistorySyncSettingsView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Ongoing sync")
+        GroupedSettingsPage(title: "Ongoing sync", backIdentifier: "tracker-history.sync-back") {
             if sync.isBusy { ProgressView("Syncing…") }
             if let error = sync.error { TrackerHistoryImportFailure(error: error) }
             if sync.isEnabled, let grant = sync.grant {
-                if sync.identity.allowsForegroundChecks {
-                    Text("New tracker history syncs to this profile’s selected media shares. Conflicts stay unchanged.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Use Sync now to import new history. Conflicts stay unchanged.")
-                        .foregroundStyle(.secondary)
-                }
-                if grant.categories == [.watched, .resume] {
-                    Text("Watched and resume points")
-                } else if grant.categories.contains(.watched) {
-                    Text("Watched")
-                } else {
-                    Text("Resume points")
-                }
-                VStack(alignment: .leading, spacing: 8) {
+                SettingsSectionGroup("Media shares") {
                     ForEach(session.destinations.filter { destination in
                         grant.scope.accounts.contains { $0.accountID == destination.id }
                     }) { destination in
                         Text("\(destination.serverName) · \(destination.userName)")
                     }
                 }
-                .accessibilityElement(children: .contain)
-                if grant.reviewCount > 0 {
-                    Text("Some changes need review. Compare histories before retrying.")
+                SettingsSectionGroup("What to sync") {
+                    if grant.categories.contains(.watched) { Text("Watched") }
+                    if grant.categories.contains(.resume) { Text("Resume points") }
                 }
-                if sync.hasMoreChanges { Text("More changes are waiting. Sync again to continue.") }
-                Button("Sync now") { operation = Task { await sync.synchronize() } }
-                    .disabled(sync.isBusy)
-                    .accessibilityIdentifier("tracker-history.sync-now")
-                Button("Turn off sync", role: .destructive) { sync.disable() }
-                    .accessibilityIdentifier("tracker-history.disable-sync")
+                SettingsSectionGroup {
+                    if grant.reviewCount > 0 {
+                        Text("Some changes need review. Compare histories before retrying.")
+                    }
+                    if sync.hasMoreChanges { Text("More changes are waiting. Sync again to continue.") }
+                    Button("Sync now") { operation = Task { await sync.synchronize() } }
+                        .settingsActionRow()
+                        .disabled(sync.isBusy)
+                        .accessibilityIdentifier("tracker-history.sync-now")
+                    Button("Turn off sync", role: .destructive) { sync.disable() }
+                        .settingsActionRow()
+                        .accessibilityIdentifier("tracker-history.disable-sync")
+                } footer: {
+                    if !sync.identity.allowsForegroundChecks { Text("Use Sync now to import new history.") }
+                }
             } else {
                 if sync.grant?.enabled == true {
-                    Text("Your previous permission no longer applies.")
-                    Button("Remove previous permission", role: .destructive) { sync.disable() }
+                    SettingsSectionGroup {
+                        Text("Your previous permission no longer applies.")
+                        Button("Remove previous permission", role: .destructive) { sync.disable() }
+                            .settingsActionRow()
+                    }
                 }
                 if !sync.eligibleAccountIDs.isEmpty {
-                    Text("Choose media shares for this profile. Media servers keep their own history.")
-                        .foregroundStyle(.secondary)
-                    ForEach(session.destinations.filter { sync.eligibleAccountIDs.contains($0.id) }) { destination in
-                        Toggle(
-                            "\(destination.serverName) · \(destination.userName)",
-                            isOn: Binding(
-                                get: { accounts.contains(destination.id) },
-                                set: { if $0 { accounts.insert(destination.id) } else { accounts.remove(destination.id) } }
+                    SettingsSectionGroup("Media shares") {
+                        ForEach(session.destinations.filter { sync.eligibleAccountIDs.contains($0.id) }) { destination in
+                            Toggle(
+                                "\(destination.serverName) · \(destination.userName)",
+                                isOn: Binding(
+                                    get: { accounts.contains(destination.id) },
+                                    set: { if $0 { accounts.insert(destination.id) } else { accounts.remove(destination.id) } }
+                                )
                             )
-                        )
-                        .accessibilityIdentifier("tracker-history.sync-server.\(destination.id)")
+                            .accessibilityIdentifier("tracker-history.sync-server.\(destination.id)")
+                        }
+                    } footer: {
+                        Text("Only this profile’s share history changes. Media servers keep their own history.")
                     }
-                    if sync.supportedCategories.contains(.watched) {
-                        Toggle("Watched", isOn: selection(.watched))
-                            .accessibilityIdentifier("tracker-history.sync-watched")
+                    SettingsSectionGroup("What to sync") {
+                        if sync.supportedCategories.contains(.watched) {
+                            Toggle("Watched", isOn: selection(.watched))
+                                .accessibilityIdentifier("tracker-history.sync-watched")
+                        }
+                        if sync.supportedCategories.contains(.resume) {
+                            Toggle("Resume points", isOn: selection(.resume))
+                                .accessibilityIdentifier("tracker-history.sync-resume")
+                        }
                     }
-                    if sync.supportedCategories.contains(.resume) {
-                        Toggle("Resume points", isOn: selection(.resume))
-                            .accessibilityIdentifier("tracker-history.sync-resume")
+                    SettingsSectionGroup {
+                        Button("Enable sync") { confirming = true }
+                            .settingsActionRow()
+                            .disabled(accounts.isEmpty || categories.isEmpty || reviewedPlan == nil || sync.isBusy)
+                            .accessibilityIdentifier("tracker-history.enable-sync")
                     }
-                    Button("Enable sync") { confirming = true }
-                        .disabled(accounts.isEmpty || categories.isEmpty || reviewedPlan == nil || sync.isBusy)
-                        .accessibilityIdentifier("tracker-history.enable-sync")
                 }
             }
         }

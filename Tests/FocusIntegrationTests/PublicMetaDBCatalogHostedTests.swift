@@ -4,7 +4,6 @@ import CoreNetworking
 import CoreUI
 import Observation
 @testable import FeatureSettings
-@testable import FeaturePlayback
 import PublicMetaDBService
 import SwiftUI
 import UIKit
@@ -159,36 +158,6 @@ final class PublicMetaDBCatalogHostedTests: XCTestCase {
                 XCTAssertFalse(text.contains("Something went wrong"), text)
             }
         }
-    }
-
-    func testManualTimestampBrowserShowsReleaseWarningWithoutSeeking() async throws {
-        let source = HostedTimestampSource()
-        var seeks: [Double] = []
-        let model = PlayerCommunityTimestampsModel(
-            item: .init(id: "movie", title: "Movie", kind: .movie), source: source,
-            duration: { 120 }, isCurrent: { true }, requestSeek: { seeks.append($0) }
-        )
-        try await withWindow(PlayerCommunityTimestampsView(model: model)) { window in
-            try await waitFor { model.loaded }
-            var text = ""
-            for _ in 0..<30 {
-                try await Task.sleep(for: .milliseconds(100))
-                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-                }
-                let request = VNRecognizeTextRequest()
-                request.recognitionLanguages = ["en-US"]
-                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
-                text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-                if text.contains("Physical release") && text.contains("different release") { break }
-            }
-            XCTAssertTrue(text.contains("Physical release"), text)
-            XCTAssertTrue(text.contains("different release"), text)
-            XCTAssertTrue(seeks.isEmpty)
-            XCTAssertEqual(source.includesHighlights, [false])
-        }
-        try await waitFor { !model.loaded }
-        XCTAssertTrue(model.entries.isEmpty)
     }
 
     func testOpeningCatalogTitleDismissesItsRealIntegrationSheetAndDeliversOnce() async throws {
@@ -444,16 +413,5 @@ private struct PairingUIHTTP: HTTPClient {
         return (data, try XCTUnwrap(HTTPURLResponse(
             url: baseURL, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"]
         )))
-    }
-}
-
-@MainActor
-private final class HostedTimestampSource: CommunityPlaybackTimestampProviding {
-    let name = "PublicMetaDB"
-    let isCurrent = true
-    var includesHighlights: [Bool] = []
-    func timestamps(for item: MediaItem, includeHighlights: Bool) async throws -> [CommunityPlaybackTimestamp] {
-        includesHighlights.append(includeHighlights)
-        return [.init(id: "intro-a", kind: .intro, start: 1, end: 5, release: .physical)]
     }
 }

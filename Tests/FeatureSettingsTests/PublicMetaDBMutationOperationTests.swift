@@ -53,24 +53,6 @@ final class PublicMetaDBMutationOperationTests: XCTestCase {
         model.perform { XCTFail("Partial batch replayed") }
     }
 
-    func testCommunitySegmentDraftPreservesMillisecondsAndAbsentPairs() throws {
-        XCTAssertNil(try PublicMetaDBSegmentDraft().segment())
-        let segment = try XCTUnwrap(PublicMetaDBSegmentDraft(start: "1500.5", end: "2500").segment())
-        XCTAssertEqual(segment.startMilliseconds, 1500.5)
-        XCTAssertEqual(segment.endMilliseconds, 2500)
-        for draft in [
-            PublicMetaDBSegmentDraft(start: "1", end: ""),
-            PublicMetaDBSegmentDraft(start: "", end: "2"),
-            PublicMetaDBSegmentDraft(start: "2", end: "1"),
-            PublicMetaDBSegmentDraft(start: "1", end: "1"),
-            PublicMetaDBSegmentDraft(start: "-1", end: "2"),
-            PublicMetaDBSegmentDraft(start: "nan", end: "2"),
-            PublicMetaDBSegmentDraft(start: "1", end: "inf")
-        ] {
-            XCTAssertThrowsError(try draft.segment())
-        }
-    }
-
     func testTVHistoryDatesRequireValidCalendarFieldsAndAnExplicitTimeZone() {
         let expected = PublicMetaDBHistoryDateView.parsedDate("2026-01-15T20:30:00Z")
         XCTAssertNotNil(expected)

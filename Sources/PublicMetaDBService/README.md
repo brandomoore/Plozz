@@ -37,7 +37,7 @@ Outstanding acceptance is grouped below; partial coverage remains useful:
 | --- | --- |
 | Safety and recovery | Actual per-item playback guard, ambiguous/incomplete identity, key/server-user switching, in-flight cancellation, uncertain delivery and coexistence |
 | History routes | Remaining provider/platform, episode/share and lifecycle coverage for imports, exports and ongoing synchronization |
-| Community | Remaining ratings/season ownership, partial-result and lifecycle cases; markers/highlights, votes, external IDs and anime mappings |
+| Community | Remaining ratings/season ownership, partial-result and lifecycle cases; votes, external IDs and anime mappings |
 | Watchlists | Universal-watchlist consent, synchronization and recovery |
 | Existing trackers | Real end-to-end Trakt, Simkl, WeTrakr, AniList, MyAnimeList and Last.fm campaigns |
 | Final audit | Current-source evidence reconciliation and outstanding scoped test-session credential hygiene |
@@ -88,6 +88,8 @@ enable playback tracking, or import history.
 The typed client covers watched plays and dates, resume, dropped titles, ratings,
 episode ratings, skip markers, highlights, mappings, anime mapping groups/chunks,
 lists, Picks, and contribution votes. Public/private list creation is explicit.
+Skip markers and highlights are API-only: neither platform lets users browse,
+jump to, publish, vote on or delete those records.
 The API does not document an OAuth flow or remote key-revocation endpoint;
 disconnect removes Plozz's profile-scoped saved credential, not the website key.
 
@@ -530,9 +532,9 @@ TV/iPad and other-provider episode acceptance remain separate work.
 ## Explicit community contributions
 
 Shared title controls support labeled movie/show/episode rating submissions,
-exact-rating deletion, skip/highlight browsing and publishing, and contribution
-votes. Every mutation requires confirmation, connection fencing and independent
-readback. Ratings invalidate cached aggregate requests after a mutation attempt.
+exact-rating deletion, and contribution votes. Every mutation requires
+confirmation, connection fencing and independent readback. Ratings invalidate
+cached aggregate requests after a mutation attempt.
 Ambiguous creation is not retried. Deletion rechecks the observed value,
 contributor and revision and addresses only that exact record. The server
 authorizes deletion; contributor names and vote state never establish ownership.
@@ -586,21 +588,6 @@ Vote reads request only the authenticated user's records and require an explicit
 `userVote` field. Neutral (zero) and absent (null) remain distinct. A fresh vote
 must match the observation approved on screen before it can be replaced; the
 server's subsequent own-vote read, not aggregate popularity, confirms the result.
-
-Skip reads are bounded to 20 pages of 200 records for one playable identity.
-Foreign IDs, incomplete collections and duplicate records cannot authorize
-mutation. Timestamp forms preserve milliseconds, require explicit release
-selection for skips and a user check of the times, and distinguish absent pairs
-from zero. Highlight descriptions are hidden until explicitly requested. These
-community timestamps are not automatically applied to playback: the API does not
-establish a matching file/release fingerprint. Server markers remain unchanged.
-The playback options on TV and mobile offer an explicit, read-only timestamp
-browser. Highlights require a separate spoiler toggle. Contributions remain
-separate, with their release source and attribution; no vote or runtime fit is
-treated as proof of release compatibility. Each manual jump requires confirmation,
-current playback/connection scope, exact snapshot membership and a finite range
-within the active runtime. End-of-runtime jumps are unavailable. Stop, reload,
-profile/key changes and cancellation revoke stale reads and selections.
 
 Title routes preserve existing server titles and IDs. Missing/conflicting TMDB
 identity, unconfirmed episode numbering and multi-episode files cannot trigger
@@ -739,7 +726,7 @@ Media-server writers and tracker-import routes are not involved.
 The current app surfaces provide connection management, account browsing,
 individual/selected-play management, one-time server-history comparison/import,
 opt-in watchlist/playback/community-rating integration, and explicit rating,
-season/batch-rating, timestamp and voting controls. Catalog results can hydrate
+season/batch-rating and voting controls. Catalog results can hydrate
 and navigate to exactly matched library titles. Mapping management and reviewed
 server-to-PublicMetaDB history export are also implemented. Trakt, Simkl, WeTrakr
 and AniList/MyAnimeList feed the shared history comparison, with provider-specific evidence

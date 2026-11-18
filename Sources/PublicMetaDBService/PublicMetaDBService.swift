@@ -56,7 +56,6 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     public private(set) var watchlistSelection: PublicMetaDBWatchlistSelection?
     public private(set) var playbackConsent: PublicMetaDBPlaybackConsent?
     public private(set) var communityRatingsEnabled = false
-    public private(set) var playbackTimestampSource: (any CommunityPlaybackTimestampProviding)?
     public private(set) var presentedItem: MediaItem?
     public private(set) var catalogNavigation: CatalogNavigation?
     private var deliveredCatalogNavigationID: UUID?
@@ -210,7 +209,6 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
 
     private func invalidate() {
         browserPairing.cancel()
-        playbackTimestampSource = nil
         presentedItem = nil
         catalogNavigation = nil
         deliveredCatalogNavigationID = nil
@@ -446,9 +444,6 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
             connectionID = saved.connectionID
             client = candidate
             phase = .connected
-            playbackTimestampSource = PublicMetaDBPlaybackTimestampSource(
-                service: self, connectionID: saved.connectionID, epoch: captured
-            )
             onConnectionChanged?()
         } catch {
             guard captured.isCurrent else { return }

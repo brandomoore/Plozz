@@ -6,7 +6,7 @@ import SwiftUI
 import UIKit
 
 public enum PlayerMenuDestination: String, Identifiable {
-    case subtitleSearch, subtitleAdvanced, audioSync, speed, zoom, quality, versions, multiview, timestamps
+    case subtitleSearch, subtitleAdvanced, audioSync, speed, zoom, quality, versions, multiview
     public var id: Self { self }
 }
 
@@ -19,7 +19,7 @@ public enum PlayerMenuLayout: Equatable {
 }
 
 public enum PlayerMenuSection: String, CaseIterable, Identifiable {
-    case subtitles, audio, speed = "playback-speed", video, versions, multiview, timestamps
+    case subtitles, audio, speed = "playback-speed", video, versions, multiview
     public var id: Self { self }
 
     var title: LocalizedStringResource {
@@ -30,7 +30,6 @@ public enum PlayerMenuSection: String, CaseIterable, Identifiable {
         case .video: "Video"
         case .versions: "Version"
         case .multiview: "Multiview"
-        case .timestamps: "Community timestamps"
         }
     }
 
@@ -40,7 +39,7 @@ public enum PlayerMenuSection: String, CaseIterable, Identifiable {
         case .audio: .audio
         case .speed: .speed
         case .video: .video
-        case .versions, .multiview, .timestamps: nil
+        case .versions, .multiview: nil
         }
     }
 
@@ -48,7 +47,6 @@ public enum PlayerMenuSection: String, CaseIterable, Identifiable {
         switch self {
         case .versions: .versions
         case .multiview: .multiview
-        case .timestamps: .timestamps
         default: nil
         }
     }
@@ -57,7 +55,6 @@ public enum PlayerMenuSection: String, CaseIterable, Identifiable {
         switch self {
         case .versions: "rectangle.stack"
         case .multiview: "rectangle.split.2x2"
-        case .timestamps: "list.bullet.rectangle"
         default: kind?.symbol ?? "ellipsis"
         }
     }
@@ -115,11 +112,10 @@ public struct PlayerMoreMenuAvailability {
     public var quality: Bool
     public var versions: Bool
     public var multiview: Bool
-    public var timestamps: Bool
 
     public init(
         maximumSpeed: Double? = nil, video: Bool = true, videoModel: PlayerVideoZoomModel? = nil, quality: Bool = false,
-        versions: Bool = false, multiview: Bool = false, timestamps: Bool = false
+        versions: Bool = false, multiview: Bool = false
     ) {
         self.maximumSpeed = maximumSpeed
         self.video = video
@@ -127,7 +123,6 @@ public struct PlayerMoreMenuAvailability {
         self.quality = quality
         self.versions = versions
         self.multiview = multiview
-        self.timestamps = timestamps
     }
 }
 
@@ -164,7 +159,6 @@ public enum PlayerMoreMenu {
         }
         if availability.versions { sections.append(.versions) }
         if availability.multiview { sections.append(.multiview) }
-        if availability.timestamps { sections.append(.timestamps) }
         return sections
     }
 
@@ -266,13 +260,12 @@ public enum PlayerMoreMenu {
         }
         if availability.versions { entries[.versions] = destination(PlayerMenuSection.versions.title, .versions) }
         if availability.multiview { entries[.multiview] = destination(PlayerMenuSection.multiview.title, .multiview) }
-        if availability.timestamps { entries[.timestamps] = destination(PlayerMenuSection.timestamps.title, .timestamps) }
         if let section {
             if let menu = entries[section] as? UIMenu { return menu }
             return UIMenu(children: entries[section].map { [$0] } ?? [])
         }
         var items = [PlayerMenuSection.subtitles, .audio, .speed].compactMap { entries[$0] }
-        let secondary = [PlayerMenuSection.video, .versions, .multiview, .timestamps].compactMap { entries[$0] }
+        let secondary = [PlayerMenuSection.video, .versions, .multiview].compactMap { entries[$0] }
         if !secondary.isEmpty { items.append(UIMenu(options: .displayInline, children: secondary)) }
         return UIMenu(children: items)
     }
