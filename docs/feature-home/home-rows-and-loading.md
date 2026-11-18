@@ -826,6 +826,11 @@ together after pending watch-state reads finish. A partial server failure must
 not replace Continue Watching's focusable loading slot with an error while
 healthy cards are still reconciling. Usable cards retain focus; a settled empty
 failed row still presents its error.
+Continue Watching also uses this independent publication boundary during silent
+refresh. Unrelated row completion cannot republish it. Its heading reserves a
+small refresh/status slot; partial failures disclose details only when selected.
+See [refresh and watch state](refresh-and-watch-state.md) for publication triggers
+and authoritative-empty handling.
 If library visibility changes while a load is in flight, the model replaces the
 obsolete load even when Home's view-owned task is absent. Discarding stale
 results must never strand a row on loading placeholders.

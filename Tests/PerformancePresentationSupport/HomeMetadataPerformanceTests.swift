@@ -9,6 +9,37 @@ import XCTest
 
 @MainActor
 final class HomeMetadataPerformanceTests: XCTestCase {
+    func testPerformanceContinueWatchingRefresh() async throws {
+        try await PerformanceProbe.measure(self, scenario: "home-continue-watching-refresh") {
+            let fixture = try PublicationFixture(itemCount: 8, peoplePerItem: 4, kind: .jellyfin)
+            defer { fixture.model.invalidate() }
+            try await fixture.load()
+            var changed = fixture.snapshots[0]
+            changed[7].resumePosition = 456
+            await fixture.provider.replaceItems(changed)
+            await fixture.provider.delayLatest(by: .milliseconds(400))
+            let requests = await fixture.provider.requestCount
+            let start = ContinuousClock.now
+            let refresh = Task { try await fixture.load() }
+            defer { refresh.cancel() }
+            try await Self.waitUntil {
+                fixture.model.state.value?.continueWatching.last?.resumePosition == 456
+            }
+            let ready = start.duration(to: .now).components
+            try await refresh.value
+            let complete = start.duration(to: .now).components
+            let count = await fixture.provider.requestCount - requests
+            XCTAssertEqual(count, 3)
+            XCTAssertEqual(fixture.model.state.value?.continueWatching.count, 8)
+            XCTAssertEqual(fixture.model.state.value?.latest.last?.resumePosition, 456)
+            return [
+                "providerRequests": count, "continueWatchingItems": 8,
+                "continueWatchingMicroseconds": Int(ready.seconds * 1_000_000 + ready.attoseconds / 1_000_000_000_000),
+                "allContentMicroseconds": Int(complete.seconds * 1_000_000 + complete.attoseconds / 1_000_000_000_000)
+            ]
+        }
+    }
+
     func testPerformanceSeriesArtworkIdentity() async throws {
         try PerformanceProbe.requireEnabled()
         let sources = (0..<408).map { index in
@@ -577,6 +608,7 @@ final class HomeMetadataPerformanceTests: XCTestCase {
         private let snapshots: [[MediaItem]]
         private var items: [MediaItem]
         private var libraryTitle = "Movies"
+        private var latestDelay = Duration.zero
         private(set) var requestCount = 0
 
         init(snapshots: [[MediaItem]], kind: ProviderKind) {
@@ -594,6 +626,7 @@ final class HomeMetadataPerformanceTests: XCTestCase {
         func useSnapshot(_ index: Int) { items = snapshots[index] }
         func replaceItems(_ items: [MediaItem]) { self.items = items }
         func replaceLibraryTitle(_ title: String) { libraryTitle = title }
+        func delayLatest(by duration: Duration) { latestDelay = duration }
         func libraries() async throws -> [MediaLibrary] {
             requestCount += 1
             return [.init(id: "movies", title: libraryTitle, kind: .movie)]
@@ -604,6 +637,7 @@ final class HomeMetadataPerformanceTests: XCTestCase {
         }
         func latest(limit: Int) async throws -> [MediaItem] {
             requestCount += 1
+            if latestDelay > .zero { try await Task.sleep(for: latestDelay) }
             return Array(items.prefix(limit))
         }
         func item(id: String) async throws -> MediaItem { throw AppError.notFound }

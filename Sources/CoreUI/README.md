@@ -35,6 +35,11 @@ the shared rail clearance offsets to preserve heading and inter-row spacing.
 Upcoming retains release identities rather than deduplicating by media identity,
 so different releases of the same series keep their own cards and captions.
 
+`mediaRowRefreshStatus` opts a rail heading into a reserved, subtle refresh/status
+indicator. Both native TV and mobile headings use the same control; card content
+does not inherit it. Failures open recovery details only on selection, never an
+automatic alert. Reduce Motion uses a static refresh symbol.
+
 `PlozziOSPageHeader` owns the mobile scrolling header's 20-point horizontal
 insets, 44-point minimum height and 12-point action spacing. Callers must not
 add another top or horizontal inset. `plozziOSPageAction` gives each button or

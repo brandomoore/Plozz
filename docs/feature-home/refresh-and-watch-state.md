@@ -14,7 +14,12 @@ the item, seasons, and server resume episode so the page can move to the current
 season/episode; an explicit season choice is preserved. An episode return updates
 only the loaded item's watch state — it does not reload children, change seasons,
 or navigate. The parent series page refreshes when revealed after a long absence.
-Home uses a 15-second return threshold; detail uses five minutes on both platforms.
+Home revalidates after every app foreground return, including a fast device
+handoff. In-app navigation retains a 15-second return threshold; detail uses five
+minutes on both platforms. Accepted coordinator requests bypass Home's age gate.
+This intentionally adds a server recheck for short app switches. If the current
+Home load already published resume data, a foreground request queues one follow-up
+pass rather than being lost behind unrelated rows that are still loading.
 First appearance does not duplicate loading. Failed series refreshes preserve the
 previous context, and cancellation/source-generation checks reject late responses.
 Each mounted page owns its registration, including repeated pushes of one title;
@@ -26,6 +31,28 @@ button even when no server picker is shown.
 App activation is delivered by `ContentRefreshLifecycleReader` rather than a
 view-local `scenePhase` check, so suspend/resume and a long-idle return to Home
 use the same path. See [state management](../state-management.md).
+
+Continue Watching publishes once its own sources, library eligibility and series
+identities have settled, including during silent refresh. It does not wait for
+Recently Added, Watchlist or custom rows. Completing those rows cannot replace
+the already-published resume answer or undo a newer local watch action.
+No new cloud playback channel or cloud invalidation hint participates in this path.
+Existing configuration, alias and watchlist cloud synchronization is unchanged.
+
+Background share catalogue changes mark the next Home visit stale rather than
+replacing the visible lineup during an idle pause. Return, explicit refresh and
+local playback/watch actions remain publication triggers. Profile retirement and
+authorization still fence asynchronous results.
+
+A small, reserved indicator beside Continue Watching's heading shows its refresh,
+not the lifetime of unrelated Home requests. Available titles remain usable if
+another source fails. A quiet status button opens error details and retry only
+when selected; it never raises an automatic alert or banner. Existing empty-row
+recovery remains available when no usable titles arrive. A confirmed empty response
+clears Continue Watching instead of restoring yesterday's snapshot, and a failed
+initial refresh cannot reveal cached Continue Watching as current data.
+Provider timeouts and the all-source merge boundary are unchanged: this does not
+promise instantaneous cross-device updates or remove a slow server's own latency.
 
 `ContentRefreshReturnInteractionTests` runs the production movie and series
 detail views in the TV and mobile test hosts. It changes fixture-provider data,
