@@ -60,19 +60,24 @@ class UILoadingStateGuardTests(unittest.TestCase):
         """)
         self.assertTrue(guard.check_reserved_geometry(path))
 
-    def test_title_navigation_stays_fixed_without_a_zoom_morph(self) -> None:
-        # A zoom destination scales the whole page with the interactive back-swipe,
-        # which reads as the hero resizing/bouncing while the finger is still down.
-        # Card routes were changed once but the path destinations kept the morph,
-        # so pin the whole app shell.
-        offenders = sorted(
-            path.relative_to(ROOT).as_posix()
-            for path in (ROOT / "Sources" / "AppShelliOS").rglob("*.swift")
-            if ".mediaArtworkZoomDestination(" in path.read_text()
-        )
-        self.assertEqual(offenders, [], "title routes must use the standard push")
+    def test_title_navigation_uses_the_native_zoom_transition(self) -> None:
+        # Upstream restored the artwork zoom transition for title routes. The
+        # resize/bounce it used to cause is prevented by the invariants below:
+        # the detail hero sizes from its own layout and freezes its pull-stretch
+        # while the interactive pop is active, so every title route opts in.
+        for name in [
+            "PlozziOSHomeView.swift",
+            "PlozziOSItemNavigation.swift",
+            "PlozziOSLibraryView.swift",
+            "PlozziOSLibraryRoute.swift",
+        ]:
+            self.assertIn(
+                ".mediaArtworkZoomDestination(",
+                (ROOT / "Sources" / "AppShelliOS" / name).read_text(),
+                f"{name} must opt into the shared artwork zoom transition",
+            )
         zoom = (ROOT / "Sources" / "CoreUI" / "MediaArtworkZoom.swift").read_text()
-        self.assertIn("usesZoom: Bool = false,", zoom)
+        self.assertIn("navigationTransition(.zoom(sourceID: source.id, in: source.namespace))", zoom)
         # The detail hero additionally freezes its pull-stretch for the duration of
         # the native edge back-swipe: the system pan can deliver a small vertical
         # component to the page's scroll view, which used to bounce the picture.
