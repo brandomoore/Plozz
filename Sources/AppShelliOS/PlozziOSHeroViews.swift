@@ -1148,6 +1148,10 @@ private struct PlozziOSHeroBackdrop: View {
     /// Once the real backdrop has any picture, drop the card seed so the two can
     /// never be visible together (the "two images" on the way into a detail page).
     @State private var backdropResolved = false
+    /// Detail's first-paint fade is independent of whether the bitmap was already
+    /// warm: every detail entry transitions from the page background to the hero,
+    /// so a cached image does not snap in either.
+    @State private var imageRevealed = false
     /// The artwork this surface committed to. Metadata enrichment can add a better
     /// reference a second after entry; swapping it re-lays out and re-tints the
     /// hero, which reads as the hero moving/flickering. Freeze the first resolved
@@ -1301,12 +1305,23 @@ private struct PlozziOSHeroBackdrop: View {
         // not fade: their image is normally already warm, and coupling the fade to
         // the slide change made every swipe dim the artwork and could flash black
         // during a pull. This is a plain opacity animation, not a redraw.
-        .opacity(surfaceRole != .detail || backdropResolved ? 1 : 0)
-        .animation(surfaceRole == .detail ? .easeOut(duration: 0.28) : nil, value: backdropResolved)
+        .opacity(surfaceRole != .detail || imageRevealed ? 1 : 0)
+        .animation(surfaceRole == .detail ? .easeInOut(duration: 0.42) : nil, value: imageRevealed)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        .onAppear {
+            // A warm bitmap is already present on the first frame, so no resolve
+            // callback will fire to start the fade; start it from appearance.
+            guard surfaceRole == .detail, backdropResolved, !imageRevealed else { return }
+            imageRevealed = true
+        }
+        .onChange(of: backdropResolved) { _, resolved in
+            guard surfaceRole == .detail, resolved else { return }
+            imageRevealed = true
+        }
         .onChange(of: presentation.itemID) { _, _ in
             backdropResolved = false
+            imageRevealed = false
             frozenReferences = nil
         }
     }
