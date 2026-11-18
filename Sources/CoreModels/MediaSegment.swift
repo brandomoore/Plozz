@@ -186,6 +186,13 @@ public extension Array where Element == MediaSegment {
                   segment.start >= 0, segment.end > segment.start else { continue }
             if let duration { segment.end = Swift.min(segment.end, duration) }
             guard segment.end > segment.start else { continue }
+            // An opening segment that runs to the final frame is malformed (or an
+            // open-ended community record); treating it as an intro would make
+            // "Skip Intro" seek straight to the episode end.
+            if segment.kind == .intro, let duration, duration > 0,
+               segment.end >= duration - 0.5 {
+                continue
+            }
             if segment.kind == .credits, let protected,
                protected.start < segment.end, protected.end > segment.start {
                 if segment.start < protected.start {

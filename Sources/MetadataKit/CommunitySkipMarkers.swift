@@ -315,9 +315,19 @@ enum TheIntroDBClient {
         return groups.flatMap { kind, segments -> [MediaSegment] in
             (segments ?? []).enumerated().compactMap { index, segment in
                 let start = (segment.start_ms ?? 0) / 1000
-                // An open end runs to the end of the item — unusable without a
-                // known duration (the skip target would be undefined).
-                guard let end = segment.end_ms.map({ $0 / 1000 }) ?? duration,
+                // An open end means "to the end of the item", which is only true
+                // for closing credits. An intro/recap/preview with a missing end
+                // would otherwise become [start, duration] and an auto-skip would
+                // jump to the next episode instead of past the opening.
+                let resolvedEnd: TimeInterval?
+                if let endMS = segment.end_ms {
+                    resolvedEnd = endMS / 1000
+                } else if kind == .credits {
+                    resolvedEnd = duration
+                } else {
+                    resolvedEnd = nil
+                }
+                guard let end = resolvedEnd,
                       start.isFinite, end.isFinite, start >= 0, end > start else { return nil }
                 if let duration, duration.isFinite, duration > 0, end > duration { return nil }
                 return MediaSegment(id: "theintrodb-\(kind.rawValue)-\(index)", kind: kind, start: start, end: end)

@@ -189,6 +189,26 @@ final class CommunitySkipMarkersTests: XCTestCase {
         XCTAssertEqual(withoutDuration.map(\.kind), [.intro, .preview])
     }
 
+    func testAFullLengthIntroMarkerIsRejected() throws {
+        let segments = [
+            MediaSegment(id: "bad-intro", kind: .intro, start: 0, end: 3500),
+            MediaSegment(id: "intro", kind: .intro, start: 10, end: 40)
+        ].normalizedSkipMarkers(duration: 3500)
+        XCTAssertEqual(segments.map(\.id), ["intro"])
+    }
+
+    func testTheIntroDBDropsAnOpenEndedIntroInsteadOfRunningToEpisodeEnd() throws {
+        let response = try JSONDecoder().decode(TheIntroDBClient.Response.self, from: Data(#"""
+        {"intro":[{"start_ms":10000,"end_ms":null}],
+         "recap":[{"start_ms":0,"end_ms":null}],
+         "credits":[{"start_ms":3400000,"end_ms":null}]}
+        """#.utf8))
+        let segments = TheIntroDBClient.segments(from: response, duration: 3500)
+        XCTAssertEqual(segments.map(\.kind), [.credits])
+        XCTAssertEqual(segments.first?.end, 3500,
+                       "Only closing credits may run to the end of the item.")
+    }
+
     func testTVDBSeriesAndEpisodeIdentityStaySeparate() throws {
         let item = episode(providerIDs: ["Tvdb": "349232", "SeriesTvdb": "81189"])
         XCTAssertFalse(CommunitySkipMarkerQuery.needsSeriesIDs(item))
