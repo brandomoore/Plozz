@@ -792,6 +792,11 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
             )
             XCTAssertGreaterThan(resting[Int(contentStart)], 250,
                                  "Resting category controls must not be washed out by the feather.")
+            let overhang = try sidebarAlpha(
+                layout: layout, remainingWidth: layout.sidebarWidth, displacement: -12, direction: direction
+            )
+            XCTAssertGreaterThan(overhang[Int(contentStart + layout.sidebarWidth + 8)], 250,
+                                 "The sidebar viewport must not crop native focus at its trailing edge.")
         }
     }
 

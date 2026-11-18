@@ -36,14 +36,16 @@ add an inline progress block or resize the guide. It briefly shows
 the outcome. Dismissal hides only that request's notification; loading continues
 and its final result remains in Sources. Unrelated transient messages
 take priority. Ordinary background refreshes stay quiet.
-Focused channel rows also keep routine loading and not-yet-requested guide
-windows silent, including their accessibility values. Nearby channel/time
-windows still load in the background; genuine guide failures remain visible.
+Guide rows do not repeat source refresh failures as subtitles or accessibility
+values. Failures remain available in Sources. Nearby channel/time windows still
+load in the background.
 On Apple TV, a standard guide row is one unchanged 26-point text line plus
 20 points above and below (about 72 points total), rather than 128 points.
 Row gaps remain 16 points, and rows still grow with
-Dynamic Type. Channel names can use two lines; a focused guide failure reserves
-the second line for its error. Phone and tablet row sizes are unchanged.
+Dynamic Type. Long channel names can wrap; moving focus never adds a status line.
+The logo-to-timeline gutter matches the programme gutter. A channel without
+listings retains a full-width focus highlight, with progress measured from the
+timeline edge rather than from the native button's inset label.
 TV rows use the shared 16-point content corners rather than the old 32-point
 radius. With System card focus selected, each channel-logo action, channel-name
 button and programme keeps a native button focus owner (bordered on older systems)
@@ -246,8 +248,9 @@ On Apple TV, the categories sidebar places the same source menu above
 **Search**, with icon-only **Multiviews** and **Manage channels** buttons beside
 Search. These use the same native Liquid Glass treatment as detail-page actions,
 with native regular sizing and the detail actions' 30-point icons in 38-point
-labels. Sixteen-point outer gutters leave room for focus without clipping at
-the sidebar viewport. There is no second custom background or focus outline,
+labels. Both control rows span the same width as the categories. The viewport
+leaves room outside those bounds for native shadows while the leading fade
+still ends before pinned navigation icons. There is no second custom background or focus outline,
 and accessible names and help text are retained.
 Directional handling belongs to the originating control, not a parent reading
 the newly focused control. Focus moves across the action row before entering

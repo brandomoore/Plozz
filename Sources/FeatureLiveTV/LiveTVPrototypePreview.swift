@@ -371,15 +371,21 @@ struct PrototypeSidebarViewport: ViewModifier {
     let fadeWidth: CGFloat
 
     func body(content: Content) -> some View {
+        let shadowRoom = PrototypeLayout.inset
+        let leadingRoom = fadeWidth > 0 ? fadeWidth : shadowRoom
         content
-            .padding(.leading, fadeWidth)
+            .padding(.leading, leadingRoom)
+            .padding(.trailing, shadowRoom)
+            .padding(.vertical, shadowRoom)
             .clipped()
             .mask(alignment: .leading) {
                 // Keep the feather stationary in the extra content inset, clear of the nav icons.
                 LeadingEdgeFadeMask(fadeWidth: fadeWidth)
-                    .frame(width: sidebarWidth + fadeWidth)
+                    .frame(width: sidebarWidth + leadingRoom + shadowRoom)
             }
-            .padding(.leading, -fadeWidth)
+            .padding(.vertical, -shadowRoom)
+            .padding(.trailing, -shadowRoom)
+            .padding(.leading, -leadingRoom)
     }
 }
 #endif

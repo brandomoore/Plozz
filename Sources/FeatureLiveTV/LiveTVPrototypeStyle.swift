@@ -10,14 +10,11 @@ enum PrototypeLayout {
     static let radius = PlozzTheme.Metrics.cornerRadius
     static let sectionGap = PlozzTheme.Spacing.large
     static let cellGap = PlozzTheme.Spacing.xSmall
-    // On touch the grid is one even mesh: rows, the logo column and programmes
-    // all sit a programme-gap apart. The TV keeps wider row and column gaps.
+    static let columnGap = cellGap
     #if os(iOS)
     static let rowGap = cellGap
-    static let columnGap = cellGap
     #else
     static let rowGap = PlozzTheme.Spacing.medium
-    static let columnGap = PlozzTheme.Spacing.small
     #endif
     static let rowInset = PlozzTheme.Spacing.medium
     static let logoRadius = PlozzTheme.Metrics.Radius.content
@@ -376,7 +373,6 @@ struct PrototypeNativeGuideLabel<Content: View>: View {
                     palette.fillSubtle.opacity(reduceTransparency || contrast == .increased ? 1 : 0.45)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous))
             // Observe the native label, without introducing another focus binding.
             .onChange(of: focused, initial: true) { _, value in focusChanged?(value) }
     }

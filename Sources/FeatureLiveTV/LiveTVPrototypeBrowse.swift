@@ -1035,6 +1035,7 @@ struct PrototypeGuideRow: View {
                 .disabled(isFocusDisabled(channelFocus))
             if programs.isEmpty {
                 channelContent(
+                    width: timelineWidth,
                     elapsedWidth: timelineWidth * now.timeIntervalSince(start) / viewportSeconds,
                     followsTimeline: true
                 )
@@ -1109,6 +1110,7 @@ struct PrototypeGuideRow: View {
                                 } else {
                                     channelContent(
                                         slotID: slot.id,
+                                        width: cellWidth(slot),
                                         elapsedWidth: timelineWidth * now.timeIntervalSince(slot.start) / viewportSeconds
                                     )
                                         .frame(width: cellWidth(slot))
@@ -1174,7 +1176,7 @@ struct PrototypeGuideRow: View {
     }
 
     private func channelContent(
-        slotID: String? = nil, elapsedWidth: CGFloat = 0, followsTimeline: Bool = false
+        slotID: String? = nil, width: CGFloat, elapsedWidth: CGFloat = 0, followsTimeline: Bool = false
     ) -> some View {
         let target = PrototypeBrowseFocus.channelContent(channel.id, slotID: slotID, section: section)
         return Button {
@@ -1186,28 +1188,29 @@ struct PrototypeGuideRow: View {
             tune()
             #endif
         } label: {
-            PrototypeGuideGap(
-                channelName: channel.name, height: rowHeight,
-                state: guideGapState, showsStatus: focus.wrappedValue?.rowID == channelFocus.rowID
-            )
-                .frame(maxWidth: .infinity)
-                .background {
-                    if followsTimeline {
-                        PrototypeTimelineReader(timeline: timeline) {
-                            PrototypeElapsedProgramFill(elapsedWidth: elapsedWidth - $0)
+            // Let the native button fit its proposal; draw in timeline coordinates,
+            // rather than adding glass label insets to the focus item's width.
+            Color.clear.frame(height: rowHeight).overlay {
+                PrototypeGuideGap(channelName: channel.name, height: rowHeight)
+                    .frame(width: width)
+                    .background {
+                        if followsTimeline {
+                            PrototypeTimelineReader(timeline: timeline) {
+                                PrototypeElapsedProgramFill(elapsedWidth: elapsedWidth - $0)
+                            }
+                        } else {
+                            PrototypeElapsedProgramFill(elapsedWidth: elapsedWidth)
                         }
-                    } else {
-                        PrototypeElapsedProgramFill(elapsedWidth: elapsedWidth)
                     }
-                }
-                .contentShape(Rectangle())
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(PrototypeGuideButtonStyle(
             selected: selectedTarget == target,
             surface: .guide, focusChanged: { focusChanged(target, $0) }
         ))
         #if os(tvOS)
-        .frame(height: rowHeight)
+        .frame(width: width, height: rowHeight)
         .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous))
         #endif
         .focused(focus, equals: target)
@@ -1215,7 +1218,7 @@ struct PrototypeGuideRow: View {
         .disabled(isFocusDisabled(target))
         .accessibilityLabel(Text(channel.name))
         .accessibilityValue(guideGapState.flatMap {
-            $0 == .loading || $0 == .unrequested ? nil : Text($0.title)
+            $0 == .loading || $0 == .unrequested || $0 == .failed ? nil : Text($0.title)
         } ?? Text(verbatim: ""))
         .accessibilityHint(Text(selectionAction ?? "Play channel"))
         .accessibilityAddTraits(selectionMarked ? .isSelected : [])
@@ -1468,39 +1471,21 @@ struct PrototypeProgramLabel: View {
 struct PrototypeGuideGap: View {
     let channelName: String
     let height: CGFloat
-    var state: LiveTVGuideGapState?
-    var showsStatus = false
     @Environment(\.themePalette) private var palette
     @ScaledMetric(relativeTo: .subheadline) private var fontSize = PrototypeLayout.guideFontSize
     var body: some View {
-        VStack(alignment: .leading, spacing: PrototypeLayout.smallGap) {
-            Text(channelName)
-                .font(.system(size: fontSize))
-                #if os(tvOS)
-                .foregroundStyle(.primary)
-                #else
-                .foregroundStyle(palette.primaryText.opacity(0.8))
-                #endif
-                #if os(tvOS)
-                .lineLimit(showsStatus && state == .failed ? 1 : 2)
-                #else
-                .lineLimit(2)
-                #endif
-            if showsStatus, let state, state == .failed {
-                Text(state.title)
-                    .font(.caption)
-                    #if os(tvOS)
-                    .foregroundStyle(.secondary)
-                    #else
-                    .foregroundStyle(palette.secondaryText)
-                    #endif
-                    .lineLimit(1)
-            }
-        }
-        .padding(.horizontal, PrototypeLayout.rowInset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: height)
-        .accessibilityHint("No program listing for this time.")
+        Text(channelName)
+            .font(.system(size: fontSize))
+            #if os(tvOS)
+            .foregroundStyle(.primary)
+            #else
+            .foregroundStyle(palette.primaryText.opacity(0.8))
+            #endif
+            .lineLimit(2)
+            .padding(.horizontal, PrototypeLayout.rowInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: height)
+            .accessibilityHint("No program listing for this time.")
     }
 }
 

@@ -506,6 +506,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         for programs in [[], [program("Later", from: 3_600, to: 21_600)]] {
             let samples = try await hostedAlphaSamples(
                 GuideRowFixture(programs: programs, start: start, nowOffset: 1_800, width: width)
+                    .environment(\.plozzCardFocusStyle, .system)
                     .environment(\.themePalette, ThemePalette.dark),
                 size: CGSize(width: width, height: PrototypeLayout.rowHeight),
                 points: [(Int(lineX - 4), Int(PrototypeLayout.rowHeight - 20)),

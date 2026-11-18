@@ -92,7 +92,6 @@ struct PrototypeBrowseSidebar: View {
             .onMoveCommand { move(from: .source, direction: $0) }
             .background { nativeFocusRequest(for: .source) }
             .disabled(isFocusDisabled(.source))
-            .padding(.horizontal, PrototypeLayout.gap)
             .padding(.top, PrototypeLayout.gap)
 
             HStack(spacing: PrototypeLayout.gap) {
@@ -113,7 +112,6 @@ struct PrototypeBrowseSidebar: View {
 
                 sidebarActions
             }
-            .padding(.horizontal, PrototypeLayout.gap)
             #else
             sidebarActions
             #endif
