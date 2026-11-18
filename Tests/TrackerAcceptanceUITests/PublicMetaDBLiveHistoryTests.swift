@@ -2574,6 +2574,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let destination = app.switches.matching(NSPredicate(
             format: "identifier == %@", "tracker-history.sync-server.\(accountID)"
         )).firstMatch
+        try require(destination.waitForExistence(timeout: 5), "Ongoing import requires an eligible media share")
         let watched = app.switches["tracker-history.sync-watched"]
         XCTAssertEqual(destination.value as? String, "0")
         XCTAssertEqual(watched.value as? String, "0")
@@ -2630,7 +2631,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             predicate: NSPredicate(format: "enabled == true"), object: app.buttons["tracker-history.sync-now"]
         )
         try require(XCTWaiter.wait(for: [completed], timeout: 65) == .completed, "Expected bounded sync completion")
-        XCTAssertEqual(app.staticTexts["Some changes need review. Compare with server history before retrying."].exists,
+        XCTAssertEqual(app.staticTexts["Some changes need review. Compare histories before retrying."].exists,
                        expectingReview, "Review deferral and confirmed ongoing delivery are different outcomes")
     }
 

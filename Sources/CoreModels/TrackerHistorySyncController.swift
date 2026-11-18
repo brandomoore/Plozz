@@ -98,11 +98,19 @@ public final class TrackerHistorySyncController {
         reload()
     }
 
+    public var eligibleAccountIDs: Set<String> {
+        Set(contextScope.accounts.filter { $0.providerKind == .mediaShare }.map(\.accountID))
+    }
+
+    private func permits(_ scope: WatchMutationServerScope) -> Bool {
+        scope.profileID == contextScope.profileID && !scope.accounts.isEmpty
+            && scope.accounts.allSatisfy { $0.providerKind == .mediaShare && contextScope.accounts.contains($0) }
+    }
+
     public var isEnabled: Bool {
         guard let grant, !revocationPending else { return false }
-        return grant.enabled && grant.identity == identity && grant.scope.profileID == contextScope.profileID
+        return grant.enabled && grant.identity == identity && permits(grant.scope)
             && grant.categories.isSubset(of: supportedCategories)
-            && !grant.scope.accounts.isEmpty && Set(grant.scope.accounts).isSubset(of: Set(contextScope.accounts))
     }
 
     public func reload() {
@@ -159,6 +167,8 @@ public final class TrackerHistorySyncController {
                   categories.isSubset(of: supportedCategories) else {
                 throw TrackerHistoryError.scopeChanged
             }
+            let selectedScope = try contextScope.selectingAccounts(accountIDs)
+            guard permits(selectedScope) else { throw TrackerHistoryError.invalidSelection }
             let session = try makeSession(contextScope, isAuthorized)
             defer { session.cancel() }
             let snapshot = try await session.snapshotAfterReview(plan.snapshot)
@@ -169,7 +179,7 @@ public final class TrackerHistorySyncController {
             }
             let previous: TrackerHistorySyncGrant? = try store.load(for: grantKey())
             var next = TrackerHistorySyncGrant(
-                id: UUID(), identity: identity, scope: try contextScope.selectingAccounts(accountIDs),
+                id: UUID(), identity: identity, scope: selectedScope,
                 categories: categories, createdAt: Date(), enabled: false, reviewCount: 0
             )
             // Publish a disabled manifest first. An interrupted enrollment cannot
@@ -483,7 +493,8 @@ public final class TrackerHistorySyncController {
 
     private func requireGrant(_ expected: TrackerHistorySyncGrant, _ current: UUID) throws {
         try requireContext(current)
-        guard !revocationPending, let stored: TrackerHistorySyncGrant = try store.load(for: grantKey()),
+        guard !revocationPending, permits(expected.scope),
+              let stored: TrackerHistorySyncGrant = try store.load(for: grantKey()),
               stored.enabled, stored.id == expected.id, stored.identity == identity,
               stored.scope == expected.scope, stored.categories == expected.categories else {
             throw TrackerHistorySyncError.permissionChanged

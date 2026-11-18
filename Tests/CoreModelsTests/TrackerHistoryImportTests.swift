@@ -393,7 +393,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         )
         let index = IdentityIndexSnapshot(byIdentity: [
             .external(source: "tmdb", value: "550"): [
-                .init(accountID: "account", itemID: "server-item", providerKind: .jellyfin, kind: .movie)
+                .init(accountID: "account", itemID: "server-item", providerKind: provider.kind, kind: .movie)
             ]
         ])
         let reconciler = WatchStateReconciler(
@@ -401,7 +401,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         )
         return (
             TrackerHistoryImportSession(
-                scope: scope(), destinations: [], reconciler: reconciler,
+                scope: scope(provider.kind), destinations: [], reconciler: reconciler,
                 readSnapshot: readSnapshot ?? { snapshot }, index: { index }, resolveProvider: { _ in provider },
                 isAuthorized: isAuthorized
             ),
@@ -703,11 +703,11 @@ final class TrackerHistoryImportTests: XCTestCase {
         supportedCategories: Set<TrackerHistorySyncCategory> = [.watched, .resume],
         allowsForegroundChecks: Bool = true, indexSnapshot: IdentityIndexSnapshot? = nil
     ) -> TrackerHistorySyncController {
-        let scope = serverScope ?? self.scope()
+        let scope = serverScope ?? self.scope(provider.kind)
         let permission = permission ?? ImportPermission()
         let index = indexSnapshot ?? IdentityIndexSnapshot(byIdentity: [
             .external(source: "tmdb", value: "550"): [
-                .init(accountID: "account", itemID: "server-item", providerKind: .jellyfin, kind: .movie)
+                .init(accountID: "account", itemID: "server-item", providerKind: provider.kind, kind: .movie)
             ]
         ])
         let reconciler = existingReconciler ?? WatchStateReconciler(
@@ -747,7 +747,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         _ sync: TrackerHistorySyncController, evidence: ImportEvidence,
         categories: Set<TrackerHistorySyncCategory> = [.watched]
     ) async {
-        let plan = TrackerHistoryImportPlan(snapshot: evidence.snapshot, serverScope: scope(), candidates: [])
+        let plan = TrackerHistoryImportPlan(snapshot: evidence.snapshot, serverScope: sync.contextScope, candidates: [])
         await sync.enable(afterReview: plan, accountIDs: ["account"], categories: categories)
         XCTAssertNil(sync.error)
         XCTAssertTrue(sync.isEnabled)
@@ -757,11 +757,11 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncRejectsUnsupportedCategoriesAndOldBroaderGrants() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(
             provider: provider, evidence: evidence, store: store, supportedCategories: [.watched]
         )
-        let reviewed = TrackerHistoryImportPlan(snapshot: evidence.snapshot, serverScope: scope(), candidates: [])
+        let reviewed = TrackerHistoryImportPlan(snapshot: evidence.snapshot, serverScope: sync.contextScope, candidates: [])
         await sync.enable(afterReview: reviewed, accountIDs: ["account"], categories: [.resume])
         XCTAssertFalse(sync.isEnabled)
         XCTAssertEqual(sync.error as? TrackerHistoryError, .scopeChanged)
@@ -782,7 +782,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
         let sync = syncController(
-            provider: ImportProvider(item: item()), evidence: evidence, store: store, allowsForegroundChecks: false
+            provider: ImportProvider(.mediaShare, item: item()), evidence: evidence, store: store, allowsForegroundChecks: false
         )
         await enable(sync, evidence: evidence)
         evidence.failRead = true
@@ -798,11 +798,11 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testRevokingStoredPermissionPreventsRestoredConnectionFromResuming() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         try TrackerHistorySyncController.revokePermission(
-            store: store, profileID: scope().profileID, trackerID: "test-tracker"
+            store: store, profileID: sync.contextScope.profileID, trackerID: "test-tracker"
         )
         let restored = syncController(provider: provider, evidence: evidence, store: store)
         XCTAssertFalse(restored.isEnabled)
@@ -825,7 +825,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         for initiallyCompleted in [false, true] {
             let evidence = ImportEvidence(try snapshot([movie(initiallyCompleted ? .completed : .planning, edited: false)]))
             let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-            let provider = ImportProvider(item: item())
+            let provider = ImportProvider(.mediaShare, item: item())
             let sync = syncController(provider: provider, evidence: evidence, store: store)
             await enable(sync, evidence: evidence)
             evidence.snapshot = try snapshot([movie(.completed, edited: true)])
@@ -841,7 +841,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         let evidence = ImportEvidence(try snapshot([observation()]))
         let secure = HistorySyncSecureStore()
         let store = try DurableLocalStateStore(secureStore: secure)
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         await sync.synchronize()
@@ -859,7 +859,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         )
         await restored.synchronize()
         writes = await provider.writes
-        XCTAssertEqual(writes, 1, "A server-side reset must not resurrect previously imported history")
+        XCTAssertEqual(writes, 1, "Resetting share watch state must not resurrect previously imported history")
         XCTAssertTrue(restored.isEnabled)
     }
 
@@ -867,7 +867,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncKeepsUncertainTargetsBlockedAcrossRestartAndNewRecords() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item(), losesWriteReply: true, failsReadback: true)
+        let provider = ImportProvider(.mediaShare, item: item(), losesWriteReply: true, failsReadback: true)
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         evidence.snapshot = try snapshot([observation()])
@@ -875,7 +875,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         XCTAssertNotNil(sync.error)
         let initialWrites = await provider.writes
         XCTAssertEqual(initialWrites, 1)
-        let recoveredProvider = ImportProvider(item: item())
+        let recoveredProvider = ImportProvider(.mediaShare, item: item())
         let restored = syncController(provider: recoveredProvider, evidence: evidence, store: store)
         await restored.synchronize()
         evidence.snapshot = try snapshot([observation(), observation(id: "another-record")])
@@ -886,17 +886,18 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
-    func testOngoingSyncConnectionServerUserAndProfileChangesRequireNewConsent() async throws {
+    func testOngoingSyncConnectionShareUserAndProfileChangesRequireNewConsent() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         let otherProfile = WatchMutationServerScope(
-            profile: .init(id: "another-profile", name: "Another"), accounts: [account()]
+            profile: .init(id: "another-profile", name: "Another"), accounts: [account(.mediaShare)]
         )
         for (connection, scope) in [
-            ("reconnected", scope()), ("connection", scope(userID: "another-viewer")), ("connection", otherProfile)
+            ("reconnected", sync.contextScope), ("connection", scope(.mediaShare, userID: "another-viewer")),
+            ("connection", otherProfile), ("connection", scope(.jellyfin))
         ] {
             let changed = syncController(
                 provider: provider, evidence: evidence, store: store, connection: connection, serverScope: scope
@@ -912,7 +913,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncRevocationDuringReadPreventsAllWritesAndPersists() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         evidence.snapshot = try snapshot([observation()])
@@ -931,7 +932,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         let evidence = ImportEvidence(try snapshot([]))
         let secure = HistorySyncSecureStore()
         let store = try DurableLocalStateStore(secureStore: secure)
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         evidence.snapshot = try snapshot([observation()])
@@ -946,7 +947,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncMissingLedgerCannotBecomeAnEmptyBaseline() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         let grant = try XCTUnwrap(sync.grant)
@@ -965,7 +966,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncPreservesConflictsAndIgnoresUnapprovedCategoriesAndAbsence() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item(position: 100))
+        let provider = ImportProvider(.mediaShare, item: item(position: 100))
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         evidence.snapshot = try snapshot([observation()])
@@ -989,7 +990,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         let evidence = ImportEvidence(try snapshot([watched]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
         let original = item()
-        let provider = ImportProvider(item: original)
+        let provider = ImportProvider(.mediaShare, item: original)
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence, categories: [.resume])
         evidence.snapshot = try snapshot([
@@ -1011,9 +1012,9 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncEnrollmentRejectsChangedReviewAndEmptySelections() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
-        let plan = TrackerHistoryImportPlan(snapshot: evidence.snapshot, serverScope: scope(), candidates: [])
+        let plan = TrackerHistoryImportPlan(snapshot: evidence.snapshot, serverScope: sync.contextScope, candidates: [])
         evidence.snapshot = try snapshot([observation()])
         await sync.enable(afterReview: plan, accountIDs: ["account"], categories: [.watched])
         XCTAssertEqual(sync.error as? TrackerHistoryError, .stalePreview)
@@ -1027,12 +1028,76 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
-    func testOngoingSyncDefersLivePlaybackWithFullViewerScopeAndSelectedServerGrant() async throws {
+    func testOngoingEnrollmentRejectsServerAndMixedSelectionsWithoutReadingHistory() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
+        let servers = ProviderKind.allCases.filter { $0 != .mediaShare }.map { account($0, id: $0.rawValue) }
+        let mixedScope = WatchMutationServerScope(
+            profile: .init(id: "profile", name: "Test"),
+            accounts: servers + [account(.mediaShare), account(.mediaShare, id: "another-share")]
+        )
+        let sync = syncController(provider: provider, evidence: evidence, store: store, serverScope: mixedScope)
+        XCTAssertEqual(sync.eligibleAccountIDs, ["account", "another-share"])
+        let reviewed = TrackerHistoryImportPlan(snapshot: evidence.snapshot, serverScope: mixedScope, candidates: [])
+        evidence.nextRead = { XCTFail("Reject ineligible destinations before reading tracker history") }
+        for server in servers {
+            for selection: Set<String> in [[server.id], [server.id, "account"]] {
+                await sync.enable(afterReview: reviewed, accountIDs: selection, categories: [.watched])
+                XCTAssertEqual(sync.error as? TrackerHistoryError, .invalidSelection, "\(selection)")
+                XCTAssertFalse(sync.isEnabled)
+                XCTAssertNil(sync.grant)
+            }
+        }
+        sync.reload()
+        XCTAssertNil(sync.grant, "A rejected selection must not persist a partial grant")
+        evidence.nextRead = nil
+        await enable(sync, evidence: evidence)
+        XCTAssertEqual(sync.grant?.scope.accounts, try mixedScope.selectingAccounts(["account"]).accounts)
+    }
+
+    @MainActor
+    func testOngoingSyncRejectsLegacyServerAndMixedGrantsOnReload() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(.mediaShare, item: item())
+        let context = WatchMutationServerScope(
+            profile: .init(id: "profile", name: "Test"), accounts: [account(.mediaShare), account(.plex, id: "server")]
+        )
+        let sync = syncController(provider: provider, evidence: evidence, store: store, serverScope: context)
+        await enable(sync, evidence: evidence)
+        let valid = try XCTUnwrap(sync.grant)
+        let key = try DurableLocalStateKey(
+            collection: .trackerDeliveryReceipt, scope: .source(profileID: context.profileID, sourceID: valid.identity.trackerID),
+            recordID: "history-sync"
+        )
+        evidence.snapshot = try snapshot([observation()])
+        evidence.nextRead = { XCTFail("A legacy grant must not read the tracker, even for its share subset") }
+        for selection: Set<String> in [["server"], ["account", "server"]] {
+            // Keep the valid baseline and receipts, changing only the persisted destination list.
+            let legacy = TrackerHistorySyncGrant(
+                id: valid.id, identity: valid.identity, scope: try context.selectingAccounts(selection),
+                categories: valid.categories, createdAt: valid.createdAt, enabled: true, reviewCount: 0
+            )
+            try store.save(legacy, for: key)
+            let reopened = syncController(provider: provider, evidence: evidence, store: store, serverScope: context)
+            XCTAssertFalse(reopened.isEnabled, "\(selection)")
+            await reopened.synchronize(manual: false)
+            await reopened.synchronize()
+            XCTAssertNil(reopened.grant?.lastAttemptAt)
+            XCTAssertFalse(reopened.isEnabled)
+            let writes = await provider.writes
+            XCTAssertEqual(writes, 0)
+        }
+    }
+
+    @MainActor
+    func testOngoingSyncDefersLivePlaybackWithFullViewerScopeAndSelectedShareGrant() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(.mediaShare, item: item())
         let fullScope = WatchMutationServerScope(
-            profile: .init(id: "profile", name: "Test"), accounts: [account(), account(.plex, id: "plex")]
+            profile: .init(id: "profile", name: "Test"), accounts: [account(.mediaShare), account(.plex, id: "plex")]
         )
         let reconciler = WatchStateReconciler(
             store: InMemoryWatchMutationStore(), applier: ImportApplier(provider: provider)
@@ -1063,7 +1128,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncContinuesConfirmedResumeAfterRestartAndImportsCompletion() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence, categories: [.resume, .watched])
         evidence.snapshot = try snapshot([
@@ -1104,7 +1169,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         for edit in edits {
             let evidence = ImportEvidence(try snapshot([]))
             let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-            let provider = ImportProvider(item: item())
+            let provider = ImportProvider(.mediaShare, item: item())
             let sync = syncController(provider: provider, evidence: evidence, store: store)
             await enable(sync, evidence: evidence, categories: [.resume])
             evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
@@ -1134,7 +1199,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         for observations in changes {
             let evidence = ImportEvidence(try snapshot([]))
             let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-            let provider = ImportProvider(item: item())
+            let provider = ImportProvider(.mediaShare, item: item())
             let sync = syncController(provider: provider, evidence: evidence, store: store)
             await enable(sync, evidence: evidence, categories: [.watched, .resume])
             evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
@@ -1153,19 +1218,19 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingContinuationStillRechecksLivePlaybackAndDispatchBaseline() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: ImportApplier(provider: provider))
         let sync = syncController(provider: provider, evidence: evidence, store: store, reconciler: reconciler)
         await enable(sync, evidence: evidence, categories: [.resume])
         evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
         await sync.synchronize()
         evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 400, runtime: 1_000, updatedAt: nil))])
-        await reconciler.beginLiveSession(accountID: "account", itemID: "server-item", serverScope: scope())
+        await reconciler.beginLiveSession(accountID: "account", itemID: "server-item", serverScope: sync.contextScope)
         await sync.synchronize()
         var writes = await provider.writes
         XCTAssertEqual(writes, 1)
         XCTAssertEqual(sync.grant?.reviewCount, 0)
-        await reconciler.endLiveSession(accountID: "account", itemID: "server-item", serverScope: scope())
+        await reconciler.endLiveSession(accountID: "account", itemID: "server-item", serverScope: sync.contextScope)
         let changed = item(position: 250)
         await provider.onNextRead {
             await provider.onNextRead { await provider.replace(item: changed) }
@@ -1188,7 +1253,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         }
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence, categories: [.resume])
         evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
@@ -1217,7 +1282,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testManualReviewedImportResolvesHoldAndEstablishesContinuationForStableAccount() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item(position: 100))
+        let provider = ImportProvider(.mediaShare, item: item(position: 100))
         let sync = syncController(provider: provider, evidence: evidence, store: store, connection: "stable-account")
         await enable(sync, evidence: evidence, categories: [.resume])
         evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
@@ -1248,7 +1313,7 @@ final class TrackerHistoryImportTests: XCTestCase {
             let oldWatch = try observation(id: "old-watch")
             let evidence = ImportEvidence(try snapshot([oldWatch]))
             let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-            let provider = ImportProvider(item: item(position: 100))
+            let provider = ImportProvider(.mediaShare, item: item(position: 100))
             let sync = syncController(provider: provider, evidence: evidence, store: store)
             await enable(sync, evidence: evidence, categories: categories)
             await sync.synchronize()
@@ -1300,7 +1365,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncKeepsCompetingNewRecordsBeyondItsBatch() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence, categories: [.resume, .watched])
         var observations = try (1...24).map {
@@ -1336,7 +1401,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         for history in competingHistory {
             let evidence = ImportEvidence(try snapshot([oldWatch]))
             let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-            let provider = ImportProvider(item: item(position: 200))
+            let provider = ImportProvider(.mediaShare, item: item(position: 200))
             let sync = syncController(provider: provider, evidence: evidence, store: store)
             await enable(sync, evidence: evidence, categories: [.resume])
             evidence.snapshot = try snapshot([
@@ -1364,7 +1429,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         let oldWatch = try observation(id: "old-watch")
         let evidence = ImportEvidence(try snapshot([oldWatch]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item(position: 200))
+        let provider = ImportProvider(.mediaShare, item: item(position: 200))
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence, categories: [.resume])
         evidence.snapshot = try snapshot([
@@ -1389,13 +1454,13 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testManualImportCannotTransferProofToReplacementConsent() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item(position: 100))
+        let provider = ImportProvider(.mediaShare, item: item(position: 100))
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence, categories: [.resume])
         evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
         let replaceConsent = ImportPermission()
         replaceConsent.allowed = false
-        let currentScope = scope()
+        let currentScope = sync.contextScope
         let (manual, _) = try session(provider: provider, readSnapshot: {
             if replaceConsent.allowed {
                 replaceConsent.allowed = false
@@ -1428,7 +1493,7 @@ final class TrackerHistoryImportTests: XCTestCase {
             let evidence = ImportEvidence(try snapshot([]))
             let secure = HistorySyncSecureStore()
             let store = try DurableLocalStateStore(secureStore: secure)
-            let provider = ImportProvider(item: item())
+            let provider = ImportProvider(.mediaShare, item: item())
             let sync = syncController(provider: provider, evidence: evidence, store: store)
             await enable(sync, evidence: evidence, categories: [.resume])
             evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
@@ -1456,7 +1521,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         let evidence = ImportEvidence(try snapshot([]))
         let secure = HistorySyncSecureStore()
         let store = try DurableLocalStateStore(secureStore: secure)
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         evidence.snapshot = try snapshot([observation()])
@@ -1478,7 +1543,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncBoundsNewRecordsWithoutDroppingTheRemainder() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         evidence.snapshot = try snapshot((0..<26).map {
@@ -1502,7 +1567,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     func testOngoingSyncRechecksChangedTrackerEvidenceBeforeWriting() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await enable(sync, evidence: evidence)
         evidence.snapshot = try snapshot([observation()])
@@ -1520,10 +1585,10 @@ final class TrackerHistoryImportTests: XCTestCase {
         let records = try (0..<100_001).map { try observation(id: String($0)) }
         let evidence = ImportEvidence(try snapshot(records))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(item: item())
+        let provider = ImportProvider(.mediaShare, item: item())
         let sync = syncController(provider: provider, evidence: evidence, store: store)
         await sync.enable(
-            afterReview: .init(snapshot: evidence.snapshot, serverScope: scope(), candidates: []),
+            afterReview: .init(snapshot: evidence.snapshot, serverScope: sync.contextScope, candidates: []),
             accountIDs: ["account"], categories: [.watched]
         )
         XCTAssertEqual(sync.error as? TrackerHistorySyncError, .historyTooLarge)
@@ -1571,11 +1636,11 @@ final class TrackerHistoryImportTests: XCTestCase {
             id: "server-item", title: "Episode", kind: .episode, seasonNumber: 1, episodeNumber: 2,
             providerIDs: ["Tmdb": "200", "SeriesTmdb": "100"], sourceAccountID: "account"
         )
-        let provider = ImportProvider(item: episode)
+        let provider = ImportProvider(.mediaShare, item: episode)
         let evidence = ImportEvidence(try snapshot([original]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
         let index = IdentityIndexSnapshot(byIdentity: [
-            parent: [.init(accountID: "account", itemID: episode.id, providerKind: .jellyfin, kind: .episode)]
+            parent: [.init(accountID: "account", itemID: episode.id, providerKind: provider.kind, kind: .episode)]
         ])
         let sync = syncController(provider: provider, evidence: evidence, store: store, indexSnapshot: index)
         await enable(sync, evidence: evidence)
@@ -1607,13 +1672,8 @@ private final class ImportOwner: Sendable {}
 @MainActor private final class ImportPermission { var allowed = true }
 
 private actor ImportProvider: MediaProvider, WatchStateProviding, ResumeStateWriting {
-    let kind: ProviderKind = .jellyfin
-    let session = UserSession(
-        server: MediaServer(
-            id: "server", name: "Server", baseURL: URL(string: "https://example.test")!, provider: .jellyfin
-        ),
-        userID: "viewer", userName: "Viewer", deviceID: "device", accessToken: ""
-    )
+    let kind: ProviderKind
+    let session: UserSession
     private var current: MediaItem
     private var relatedItems: [String: MediaItem]
     private let losesWriteReply: Bool
@@ -1622,9 +1682,15 @@ private actor ImportProvider: MediaProvider, WatchStateProviding, ResumeStateWri
     private(set) var writes = 0
     private(set) var itemReads: [String: Int] = [:]
     init(
+        _ kind: ProviderKind = .jellyfin,
         item: MediaItem = MediaItem(id: "server-item", title: "Movie", kind: .movie),
         losesWriteReply: Bool = false, failsReadback: Bool = false, relatedItems: [MediaItem] = []
     ) {
+        self.kind = kind
+        session = UserSession(
+            server: .init(id: "server", name: "Server", baseURL: URL(string: "https://example.test")!, provider: kind),
+            userID: "viewer", userName: "Viewer", deviceID: "device", accessToken: ""
+        )
         current = item
         self.relatedItems = Dictionary(uniqueKeysWithValues: relatedItems.map { ($0.id, $0) })
         self.losesWriteReply = losesWriteReply

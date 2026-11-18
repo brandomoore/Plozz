@@ -448,12 +448,14 @@ The shared interaction suite covers cancellation and cleared selection on page
 reentry, independent Jellyfin/Plex target selection, zero tracker mirrors,
 connection revocation and changed tracker evidence during approval, concurrent
 server progress, and lost write replies verified by readback without repetition.
-The `--history-ongoing-sync` fixture additionally exercises separate server-user
-and watched-state consent, cancellation without a grant, enrollment without
-backfill, a newly observed play delivered only to the selected server, and
-revocation. Its device-local ledger uses isolated in-memory secure storage;
-restart, uncertain-target holds, storage failures and exact batch/snapshot limits
-are covered separately in `TrackerHistoryImportTests`.
+The `--history-ongoing-sync` fixture adds a media share alongside Jellyfin and
+Plex. Only the share is offered for ongoing import. The interaction tests cover
+cancellation without a grant, enrollment without backfill, a new play written to
+the selected share but neither server, and revocation. With `--history-servers-only`,
+the comparison still offers reviewed imports but no ongoing-sync option.
+`TrackerHistoryImportTests` covers rejected mixed selections, persisted server
+and mixed grants, restart, uncertain-target holds, storage failures and exact
+batch/snapshot limits using isolated in-memory secure storage.
 The watched-only/manual fixture variation verifies that unsupported resume
 controls are absent, the manual-check explanation is present, and a new play
 still requires **Sync now**.

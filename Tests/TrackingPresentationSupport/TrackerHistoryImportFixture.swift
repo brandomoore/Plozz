@@ -215,7 +215,11 @@ private final class HistoryImportFixtureModel {
     }
 
     init() {
-        providers = [.init(kind: .jellyfin), .init(kind: .plex)]
+        var kinds: [ProviderKind] = [.jellyfin, .plex]
+        if arguments.contains("--history-ongoing-sync"), !arguments.contains("--history-servers-only") {
+            kinds.append(.mediaShare)
+        }
+        providers = kinds.map { HistoryImportFixtureProvider(kind: $0) }
         scope = WatchMutationServerScope(
             profile: .init(id: "fixture-profile", name: "Fixture"),
             accounts: providers.map(\.account)
@@ -574,10 +578,10 @@ private final class HistoryImportFixtureProvider: MediaProvider, WatchStateProvi
 
     init(kind: ProviderKind) {
         self.kind = kind
-        let name = kind == .plex ? "Plex" : "Jellyfin"
+        let name = kind.displayName
         let server = MediaServer(
             id: kind.rawValue, name: "\(name) fixture",
-            baseURL: URL(string: "https://example.test")!, provider: kind
+            baseURL: URL(string: kind == .mediaShare ? "smb://example.test/media" : "https://example.test")!, provider: kind
         )
         account = Account(
             id: kind.rawValue, server: server, userID: "\(kind.rawValue)-viewer",

@@ -25,7 +25,7 @@ struct TrackerHistorySyncSettingsView: View {
             if let error = sync.error { TrackerHistoryImportFailure(error: error) }
             if sync.isEnabled, let grant = sync.grant {
                 if sync.identity.allowsForegroundChecks {
-                    Text("New history syncs to your selected server users. Conflicts stay unchanged.")
+                    Text("New tracker history syncs to this profile’s selected media shares. Conflicts stay unchanged.")
                         .foregroundStyle(.secondary)
                 } else {
                     Text("Use Sync now to import new history. Conflicts stay unchanged.")
@@ -47,7 +47,7 @@ struct TrackerHistorySyncSettingsView: View {
                 }
                 .accessibilityElement(children: .contain)
                 if grant.reviewCount > 0 {
-                    Text("Some changes need review. Compare with server history before retrying.")
+                    Text("Some changes need review. Compare histories before retrying.")
                 }
                 if sync.hasMoreChanges { Text("More changes are waiting. Sync again to continue.") }
                 Button("Sync now") { operation = Task { await sync.synchronize() } }
@@ -56,37 +56,34 @@ struct TrackerHistorySyncSettingsView: View {
                 Button("Turn off sync", role: .destructive) { sync.disable() }
                     .accessibilityIdentifier("tracker-history.disable-sync")
             } else {
-                if sync.supportedCategories.contains(.resume) {
-                    Text("Import new watched states or resume points on this device. Existing history stays unchanged.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Import new watched states on this device. Existing history stays unchanged.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(session.destinations) { destination in
-                    Toggle(
-                        "\(destination.serverName) · \(destination.userName)",
-                        isOn: Binding(
-                            get: { accounts.contains(destination.id) },
-                            set: { if $0 { accounts.insert(destination.id) } else { accounts.remove(destination.id) } }
-                        )
-                    )
-                    .accessibilityIdentifier("tracker-history.sync-server.\(destination.id)")
-                }
-                if sync.supportedCategories.contains(.watched) {
-                    Toggle("Watched", isOn: selection(.watched))
-                        .accessibilityIdentifier("tracker-history.sync-watched")
-                }
-                if sync.supportedCategories.contains(.resume) {
-                    Toggle("Resume points", isOn: selection(.resume))
-                        .accessibilityIdentifier("tracker-history.sync-resume")
-                }
-                Button("Enable sync") { confirming = true }
-                    .disabled(accounts.isEmpty || categories.isEmpty || reviewedPlan == nil || sync.isBusy)
-                    .accessibilityIdentifier("tracker-history.enable-sync")
                 if sync.grant?.enabled == true {
-                    Text("The connection or server user changed. Review your selection to enable sync again.")
+                    Text("Your previous permission no longer applies.")
                     Button("Remove previous permission", role: .destructive) { sync.disable() }
+                }
+                if !sync.eligibleAccountIDs.isEmpty {
+                    Text("Choose media shares for this profile. Media servers keep their own history.")
+                        .foregroundStyle(.secondary)
+                    ForEach(session.destinations.filter { sync.eligibleAccountIDs.contains($0.id) }) { destination in
+                        Toggle(
+                            "\(destination.serverName) · \(destination.userName)",
+                            isOn: Binding(
+                                get: { accounts.contains(destination.id) },
+                                set: { if $0 { accounts.insert(destination.id) } else { accounts.remove(destination.id) } }
+                            )
+                        )
+                        .accessibilityIdentifier("tracker-history.sync-server.\(destination.id)")
+                    }
+                    if sync.supportedCategories.contains(.watched) {
+                        Toggle("Watched", isOn: selection(.watched))
+                            .accessibilityIdentifier("tracker-history.sync-watched")
+                    }
+                    if sync.supportedCategories.contains(.resume) {
+                        Toggle("Resume points", isOn: selection(.resume))
+                            .accessibilityIdentifier("tracker-history.sync-resume")
+                    }
+                    Button("Enable sync") { confirming = true }
+                        .disabled(accounts.isEmpty || categories.isEmpty || reviewedPlan == nil || sync.isBusy)
+                        .accessibilityIdentifier("tracker-history.enable-sync")
                 }
             }
         }
@@ -100,7 +97,7 @@ struct TrackerHistorySyncSettingsView: View {
             .accessibilityIdentifier("tracker-history.confirm-sync")
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Only new history will sync to the selected server users. Conflicts and removals require review. Profiles sharing those users will see the changes; server plugins may forward them. Other Plozz trackers are not updated.")
+            Text("Only new tracker history will update this profile’s selected shares. Conflicts and removals require review. Media servers and other trackers are not updated.")
         }
         .onAppear { sync.reload() }
         .onDisappear { operation?.cancel() }

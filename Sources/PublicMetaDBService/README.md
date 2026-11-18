@@ -222,7 +222,12 @@ provide a server-side transaction against a concurrent third-party writer.
 ### Ongoing imports
 
 After reviewing a comparison, users can separately enable **Ongoing sync** for
-selected server users and watched state and/or resume points. Consent is local
+selected **media shares** (for example SMB, WebDAV or NFS) and watched state
+and/or resume points. Incoming history updates Plozz's profile-scoped share
+history, not files on the share. Managed servers keep their own history:
+playback reporting and explicitly reviewed one-time imports remain separate.
+Older ongoing permissions containing any managed server cannot run; review
+and enroll shares again instead of silently narrowing a mixed permission. Consent is local
 to this device, profile, and saved-key connection. Connecting, one-time imports,
 playback reporting, and cross-server watch sync do not grant it. Replacing the
 key requires new consent; changing the profile or server user fences delivery.
@@ -231,7 +236,7 @@ Enrollment rechecks the reviewed complete snapshot and stores its one-way
 evidence fingerprints without importing that existing history. Foreground and
 completed-index events may check new evidence, with a fifteen-minute minimum
 between automatic attempts; **Sync now** is explicit. Each attempt is bounded
-to sixty seconds and twenty-five new records per selected server user. There
+to sixty seconds and twenty-five new records per selected share. There
 is no polling timer or work after leaving the foreground. The same controller
 supports other history readers with durable connection identities; see the
 [Settings capability rules](../FeatureSettings/README.md). Simkl remains

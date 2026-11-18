@@ -107,12 +107,14 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         assertExportReport(writes: 0)
     }
 
-    func testOngoingJellyfinConsentCancellationAndNewHistoryStayScoped() {
-        verifyOngoingSync("jellyfin")
+    func testServerOnlyComparisonHasNoOngoingSyncOption() {
+        launch(["--history-ongoing-sync", "--history-servers-only"])
+        XCTAssertFalse(element("tracker-history.ongoing-sync").exists)
+        select("plex")
     }
 
-    func testOngoingPlexConsentCancellationAndNewHistoryStayScoped() {
-        verifyOngoingSync("plex")
+    func testOngoingShareConsentCancellationAndNewHistoryLeaveServersUnchanged() {
+        verifyOngoingShareSync()
     }
 
     #if os(iOS)
@@ -258,10 +260,10 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
     }
 
     func testWatchedOnlyManualSyncUsesSupportedControlsAndExplicitAction() {
-        verifyOngoingSync("jellyfin", additionalArguments: ["--history-watched-only", "--history-manual-sync"])
+        verifyOngoingShareSync(additionalArguments: ["--history-watched-only", "--history-manual-sync"])
     }
 
-    private func verifyOngoingSync(_ server: String, additionalArguments: [String] = []) {
+    private func verifyOngoingShareSync(additionalArguments: [String] = []) {
         launch(["--history-ongoing-sync"] + additionalArguments)
         activate(element("tracker-history.ongoing-sync"))
         let enable = app.buttons["tracker-history.enable-sync"]
@@ -270,32 +272,36 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         if additionalArguments.contains("--history-watched-only") {
             XCTAssertFalse(element("tracker-history.sync-resume").exists)
         }
-        activate(element("tracker-history.sync-server.\(server)"))
+        for server in ["jellyfin", "plex"] {
+            XCTAssertFalse(element("tracker-history.sync-server.\(server)").exists)
+        }
+        let share = element("tracker-history.sync-server.mediaShare")
+        activate(share)
         activate(element("tracker-history.sync-watched"))
         activate(enable)
         XCTAssertTrue(syncConfirmationButton.waitForExistence(timeout: 5))
         cancelConfirmation()
         XCTAssertTrue(app.staticTexts["fixture.history.report"].label.contains(";sync=false;"))
-        assertReport(jellyfin: 0, plex: 0)
+        assertReport(jellyfin: 0, plex: 0, share: 0)
         activate(enable)
         activate(syncConfirmationButton)
         XCTAssertTrue(app.buttons["tracker-history.sync-now"].waitForExistence(timeout: 5), app.debugDescription)
         if additionalArguments.contains("--history-manual-sync") {
             XCTAssertTrue(app.staticTexts["Use Sync now to import new history. Conflicts stay unchanged."].exists)
         }
-        XCTAssertFalse(element("tracker-history.sync-server.\(server)").exists,
+        XCTAssertFalse(share.exists,
                        "Enrollment must replace the editable destination toggle with a read-only summary")
-        XCTAssertTrue(app.staticTexts["fixture.history.report"].label.contains(";destinations=\(server);"))
-        assertReport(jellyfin: 0, plex: 0)
+        XCTAssertTrue(app.staticTexts["fixture.history.report"].label.contains(";destinations=mediaShare;"))
+        assertReport(jellyfin: 0, plex: 0, share: 0)
         activate(app.buttons["fixture.history.new-play"])
         activate(app.buttons["tracker-history.sync-now"])
         let updated = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
-                self.app.staticTexts["fixture.history.report"].label.contains("\(server)=1,played=true")
+                self.app.staticTexts["fixture.history.report"].label.contains("mediaShare=1,played=true")
             }, object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 10), .completed, app.debugDescription)
-        assertReport(jellyfin: server == "jellyfin" ? 1 : 0, plex: server == "plex" ? 1 : 0)
+        assertReport(jellyfin: 0, plex: 0, share: 1)
         activate(app.buttons["tracker-history.disable-sync"])
         XCTAssertTrue(enable.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["fixture.history.report"].label.contains(";sync=false;"))
@@ -352,10 +358,12 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         assertReport(jellyfin: 0, plex: 0)
     }
 
-    private func assertReport(jellyfin: Int, plex: Int) {
+    private func assertReport(jellyfin: Int, plex: Int, share: Int? = nil) {
         let report = app.staticTexts["fixture.history.report"]
         XCTAssertTrue(report.waitForExistence(timeout: 5), app.debugDescription)
-        for (kind, count) in [("jellyfin", jellyfin), ("plex", plex)] {
+        var counts = [("jellyfin", jellyfin), ("plex", plex)]
+        if let share { counts.append(("mediaShare", share)) }
+        for (kind, count) in counts {
             XCTAssertTrue(report.label.contains("\(kind)=\(count),played=\(count > 0),playback=0"), report.label)
         }
         XCTAssertTrue(report.label.contains(";trackers=0;"), report.label)

@@ -103,9 +103,16 @@ final class AccountsProvidersModelTests: XCTestCase {
         XCTAssertTrue(model.activeAccountIDs.isSubset(of: ["a", "b"]))
     }
 
-    func testOngoingHistoryFactoryFencesForegroundConnectionAndProfile() async throws {
-        let (model, _, profiles) = try makeModel(accountIDs: [("a", "a.test")])
+    private func makeHistoryModel() throws -> (AccountsProvidersModel, ProfilesModel) {
+        let (model, store, profiles) = try makeModel(accountIDs: [("server", "server.test")])
+        try store.add(account(id: "a", host: "share.test", provider: .mediaShare), token: "fixture")
+        profiles.setActiveAccountIDs(["a", "server"], for: profiles.activeProfileID)
         model.reloadAccounts()
+        return (model, profiles)
+    }
+
+    func testOngoingHistoryFactoryFencesForegroundConnectionAndProfile() async throws {
+        let (model, profiles) = try makeHistoryModel()
         let tracker = AccountsHistoryReader()
         let store = try DurableLocalStateStore(secureStore: InMemorySecureStore())
         let reconciler = WatchStateReconciler(
@@ -119,7 +126,7 @@ final class AccountsProvidersModelTests: XCTestCase {
             )
         )
         let index = IdentityIndexSnapshot(byIdentity: [
-            .external(source: "tmdb", value: "550"): [.init(accountID: "a", itemID: "movie", kind: .movie)]
+            .external(source: "tmdb", value: "550"): [.init(accountID: "a", itemID: "movie", providerKind: .mediaShare, kind: .movie)]
         ])
         func makeSession() -> TrackerHistoryImportSession {
             model.makeTrackerHistoryImportSession(
@@ -129,6 +136,8 @@ final class AccountsProvidersModelTests: XCTestCase {
         }
         let first = makeSession()
         let sync = try XCTUnwrap(first.ongoingSync)
+        XCTAssertEqual(Set(first.destinations.map(\.id)), ["a", "server"])
+        XCTAssertEqual(sync.eligibleAccountIDs, ["a"])
         XCTAssertTrue(sync === makeSession().ongoingSync)
         let reviewed = TrackerHistoryImportPlan(
             snapshot: try tracker.snapshot(), serverScope: first.scope, candidates: []
@@ -145,9 +154,8 @@ final class AccountsProvidersModelTests: XCTestCase {
         let reads = tracker.reads
         await sync.synchronize(manual: false)
         XCTAssertEqual(tracker.reads, reads, "Repeated foreground/index callbacks obey the interval")
-        let (coldModel, _, _) = try makeModel(accountIDs: [("a", "a.test")])
+        let (coldModel, _) = try makeHistoryModel()
         defer { withExtendedLifetime(coldModel) {} }
-        coldModel.reloadAccounts()
         coldModel.bindTrackerHistorySync(tracker, store: store)
         tracker.historySyncNamespace = "another-profile"
         try XCTUnwrap(tracker.onHistorySyncDisconnect)()
@@ -185,8 +193,7 @@ final class AccountsProvidersModelTests: XCTestCase {
     }
 
     func testUnavailableRevocationStoreBlocksNewControllersUntilRevocationSucceeds() async throws {
-        let (model, _, _) = try makeModel(accountIDs: [("a", "a.test")])
-        model.reloadAccounts()
+        let (model, _) = try makeHistoryModel()
         model.setTrackerHistorySyncForeground(true)
         let tracker = AccountsHistoryReader()
         model.bindTrackerHistorySync(tracker, store: nil)

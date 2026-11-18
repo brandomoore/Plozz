@@ -6,7 +6,10 @@ language every other module speaks.
 ## Ongoing tracker import
 
 `TrackerHistorySyncController` keeps device-local, profile/tracker/server-user
-consent and delivery receipts. Enrollment excludes existing tracker observations;
+consent and delivery receipts. Ongoing imports target `.mediaShare` accounts
+only. Mixed or server-only grants cannot run, including grants saved before
+this restriction. Reviewed one-time imports and playback reporting are independent.
+Enrollment excludes existing tracker observations;
 it does not backfill. New forward resume updates and watched completion may
 continue a previously synchronized resume only when the fresh destination
 baseline exactly matches its persisted confirmed fingerprint. That baseline

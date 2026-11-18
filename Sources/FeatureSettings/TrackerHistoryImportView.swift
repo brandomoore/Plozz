@@ -105,7 +105,7 @@ private struct TrackerHistoryComparisonContent: View {
             operation = Task { await session.compare() }
         }
         .disabled(session.isBusy)
-        if let sync = session.ongoingSync {
+        if let sync = session.ongoingSync, !sync.eligibleAccountIDs.isEmpty || sync.grant?.enabled == true {
             NavigationLink("Ongoing sync") {
                 TrackerHistorySyncSettingsView(session: session, sync: sync)
             }

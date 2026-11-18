@@ -76,7 +76,9 @@ buttons. TV retains its native vertical focus layout. See
 [PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
 
-The separate **Ongoing sync** page requires explicit server-user and
+The separate **Ongoing sync** page offers only profile-scoped media shares, not
+managed servers. Legacy server permissions can be removed but cannot sync.
+The page requires explicit share and
 category selections after that review. Cancelling grants nothing; enabling
 captures existing evidence without backfilling it. **Sync now** and revocation
 use the same controller on TV and mobile. Pushing the page retains the reviewed
