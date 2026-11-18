@@ -14,8 +14,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private var style = PosterCardView.Style.poster
     private var artwork: UIImage?
     private var artworkReferences: [ArtworkReference] = []
-    private var artworkPolicyIdentity: String?
-    private var artworkItemIdentity: String?
+    private var artworkDisplayIdentity: ArtworkDisplayIdentity?
     private var imageTask: Task<Void, Never>?
     private var compositeTask: Task<Void, Never>?
     private var imageRevision = UUID()
@@ -130,9 +129,10 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             accessibilityHint = String(localized: hint) // l10n:content — UIKit boundary; resolved with the current environment locale on every update
         }
         accessibilityElementsHidden = false
+        let hidesThumbnail = item.map { $0.kind == .episode && spoilerSettings.shouldHideThumbnail(for: $0) } ?? false
         let references =
             item.map {
-                spoilerSettings.shouldHideThumbnail(for: $0) && $0.kind == .episode
+                hidesThumbnail
                     ? $0.seriesArtworkReferences(prefersPortrait: true)
                     : CardArtworkPolicy.standard.references(for: $0, style: style)
             } ?? []
@@ -150,13 +150,17 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             CardArtworkPolicy.standard.artworkFallback(for: $0, style: style, policy: inheritedPolicy)
         }
         let policyIdentity = policy.identity + (prefersPrimaryReference ? "|primary-key-art" : "")
+            + (hidesThumbnail ? "|spoiler-hidden" : "")
         let identity = item.map { CardArtworkPolicy.standard.pinIdentity(for: $0) }
-        if styleChanged || references != artworkReferences || artworkPolicyIdentity != policyIdentity
-            || artworkItemIdentity != identity {
-            artworkItemIdentity = identity
+        let displayIdentity = ArtworkDisplayIdentity(
+            subject: identity, policy: policyIdentity, references: references,
+            variant: variant, maxAspectRatio: maxAspect, prefersPrimaryReference: prefersPrimaryReference
+        )
+        let retainsSelection = identity != nil && artwork != nil && displayIdentity == artworkDisplayIdentity
+        if !retainsSelection && (styleChanged || references != artworkReferences || artworkDisplayIdentity != displayIdentity) {
+            artworkDisplayIdentity = displayIdentity
             imageTask?.cancel()
             artworkReferences = references
-            artworkPolicyIdentity = policyIdentity
             // Adopt only the first candidate synchronously. A cached fallback must
             // never overtake a preferred image that has not finished loading.
             if prefersPrimaryReference || !(policy.prefersOnlineArtwork && fallback != nil),
@@ -351,8 +355,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         compositeTask = nil
         imageRevision = UUID()
         artworkReferences = []
-        artworkPolicyIdentity = nil
-        artworkItemIdentity = nil
+        artworkDisplayIdentity = nil
         artwork = nil
         compositedArtwork?.image = nil
         compositedArtwork?.updateIndicator(nil, focused: false)
@@ -384,7 +387,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         // A redisplayed cell must resume a cancelled image request.
         if artwork == nil {
             artworkReferences = []
-            artworkPolicyIdentity = nil
+            artworkDisplayIdentity = nil
         }
     }
 

@@ -263,10 +263,11 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
         let first = EpisodeArtworkSource(item: episode.taggingSource("one"), spoilerSettings: .default)
         let second = EpisodeArtworkSource(item: episode.taggingSource("two"), spoilerSettings: .default)
         XCTAssertNotEqual(key(first), key(second))
-        var settings = MetadataProviderSettings.default
-        let onlineKey = key(first, settings: settings)
-        settings.preferOnlineArtwork = false
-        XCTAssertNotEqual(onlineKey, key(first, settings: settings))
+        let online = EpisodeArtworkSource(
+            item: episode.taggingSource("one"), spoilerSettings: .default,
+            policy: .init(area: .episodes, settings: .init(preference: .online))
+        )
+        XCTAssertNotEqual(key(first), key(online))
     }
 
     func testPreparedImagesStayWithinTheDecodedMemoryBudget() {
@@ -287,15 +288,8 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
         XCTAssertEqual(ArtworkSeedMemo.residentCostBytes, 0)
     }
 
-    private func key(
-        _ source: EpisodeArtworkSource,
-        settings: MetadataProviderSettings? = nil
-    ) -> String {
-        ArtworkResolveKey.make(
-            references: source.references, variant: .landscapeCard, maxAspectRatio: nil,
-            pinIdentity: source.pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings ?? source.policy.metadataSettings)
-        )
+    private func key(_ source: EpisodeArtworkSource) -> String {
+        source.requestIdentity
     }
 
     private func centerPixel(_ image: UIImage) throws -> [UInt8] {

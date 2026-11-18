@@ -4,6 +4,7 @@
 #if os(iOS)
 import SwiftUI
 import CoreModels
+import CoreUI
 
 /// A subtle, theme-aware artwork placeholder: a quiet neutral gray box with a
 /// faint music-note glyph, sized to whatever frame it's given. Shared by every
@@ -67,7 +68,7 @@ struct ArtworkPlaceholder: View {
 /// placeholder (matching the artwork's shape) while loading or when there's no
 /// artwork — e.g. the offline demo, or a server that returns none.
 struct ArtworkView: View {
-    let artwork: ArtworkRef?
+    let track: Track
     let seed: String
     var size: CGFloat = 48
     var cornerRadius: CGFloat = 6
@@ -76,6 +77,7 @@ struct ArtworkView: View {
     var circular: Bool = false
 
     @EnvironmentObject private var env: MusicPlayerEnvironment
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     /// The display's pixels-per-point. Read from the environment rather than
     /// assumed: a @3x iPhone needs half again as many pixels as a @2x one for the
     /// same box, and hardcoding 2 made every cover on those devices a soft upscale.
@@ -91,6 +93,9 @@ struct ArtworkView: View {
         }
         .frame(width: size, height: size)
         .clipShape(shape)
+        .task(id: "\(track.id)|\(artworkPolicy.forArea(.music).identity)") {
+            await env.loadArtwork(for: track, policy: artworkPolicy.forArea(.music))
+        }
     }
 
     private var shape: AnyShape {
@@ -100,7 +105,8 @@ struct ArtworkView: View {
     }
 
     private var resolvedURL: URL? {
-        guard let artwork, let backend = env.active?.backend else { return nil }
+        guard let artwork = env.playback.track(track.source).artwork,
+              let backend = env.active?.backend else { return nil }
         let pixels = ArtworkResolution.rung(forPoints: size, scale: displayScale)
         return backend.artworkURL(for: artwork, size: pixels)
     }

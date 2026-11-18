@@ -2,6 +2,7 @@
 import CoreModels
 @testable import CoreUI
 @testable import FeatureHome
+@testable import FeatureMusic
 import MetadataKit
 import Network
 import Observation
@@ -1702,6 +1703,120 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         try await checkNativeBrowseArtwork(onlineDelay: 1)
     }
 
+    func testNativeBrowseRetainsPaintedArtworkUntilPolicyReuseOrSpoilersChange() async throws {
+        try await checkNativeBrowseArtwork(onlineDelay: 0, enrichesCandidates: true)
+    }
+
+    func testSwiftUINativePosterDiscardsStillWhenEpisodeBecomesProtected() async throws {
+        let server = try LibraryArtworkServer(images: [
+            "still": artworkData(.red, size: CGSize(width: 160, height: 90)),
+            "series": artworkData(.green, size: CGSize(width: 160, height: 90))
+        ])
+        defer { server.stop() }
+        let port = try await server.start()
+        let token = UUID().uuidString
+        let still = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/still/\(token)"))
+        let series = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/series/\(token)"))
+        let model = AttachedStatusModel(item: MediaItem(
+            id: token, title: "Episode", kind: .episode, parentTitle: "Series",
+            isPlayed: true, posterURL: still, seriesPosterURL: series,
+            allowsTitleBasedMetadataMatching: false
+        ))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: SpoilerArtworkFixture(model: model))
+        window.frame = scene.screen.bounds
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        window.layoutIfNeeded()
+        let poster = try XCTUnwrap(descendant(NativePosterButton.self, in: window))
+        func waitForArtwork(red: Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(5)
+            while ContinuousClock.now < deadline {
+                poster.layoutIfNeeded()
+                if let image = poster.image {
+                    let color = try pixel(image, at: CGPoint(
+                        x: image.size.width * image.scale / 2, y: image.size.height * image.scale / 2
+                    ))
+                    if color[red ? 0 : 1] > 180, color[red ? 1 : 0] < 80 { return }
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTFail("The mounted native poster did not paint the expected \(red ? "episode" : "protected") artwork.")
+        }
+        try await waitForArtwork(red: true)
+        model.item.isPlayed = false
+        try await waitForArtwork(red: false)
+        XCTAssertTrue(descendant(NativePosterButton.self, in: window) === poster,
+                      "Protection must update the mounted card, not depend on remounting it.")
+    }
+
+    private struct SpoilerArtworkFixture: View {
+        let model: AttachedStatusModel
+        var body: some View {
+            PosterCardView(
+                item: model.item, style: .landscape,
+                spoilerSettings: .init(isEnabled: true, mode: .placeholder),
+                enablesAsyncArtworkFallback: false, action: {}
+            )
+            .environment(\.plozzCardStyle, .borderless)
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.plozzArtworkArea, .browse)
+            .environment(\.plozzArtworkSettings, .init(preference: .library))
+        }
+    }
+
+    func testTVMusicReplacesCoverWhenAccountChangesWithTheSameTrackID() async throws {
+        let server = try LibraryArtworkServer(images: [
+            "first": artworkData(.red), "second": artworkData(.green)
+        ])
+        defer { server.stop() }
+        let port = try await server.start()
+        let token = UUID().uuidString
+        let first = MusicTrack(
+            id: token, title: "Song", artworkURL: URL(string: "http://127.0.0.1:\(port)/first/\(token)")!,
+            sourceAccountID: "first"
+        )
+        let second = MusicTrack(
+            id: token, title: "Song", artworkURL: URL(string: "http://127.0.0.1:\(port)/second/\(token)")!,
+            sourceAccountID: "second"
+        )
+        let defaultsName = "music-artwork-\(token)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        let settings = MusicPlayerSettingsModel(store: MusicPlayerSettingsStore(defaults: defaults))
+        settings.appearance = .pureBlack
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        for expanded in [false, true] {
+            let controller = AudioPlaybackController()
+            let window = UIWindow(windowScene: scene)
+            let content = expanded
+                ? AnyView(NowPlayingView(controller: controller, musicPlayer: settings))
+                : AnyView(NowPlayingCard(controller: controller).scaleEffect(3))
+            window.rootViewController = UIHostingController(rootView: content
+                .environment(\.plozzArtworkArea, .music)
+                .environment(\.plozzArtworkSettings, .init(preference: .library)))
+            window.makeKeyAndVisible()
+            defer {
+                controller.stop()
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            controller.play(tracks: [first], startIndex: 0, resolveStreamURL: { _ in nil })
+            try await assertBrowseArtwork(in: window, isOnline: false, name: "music-first-account-\(expanded)")
+            controller.play(tracks: [second], startIndex: 0, resolveStreamURL: { _ in nil })
+            try await assertBrowseArtwork(in: window, isOnline: true, name: "music-second-account-\(expanded)")
+        }
+    }
+
     func testSwiftUIBrowseKeepsProviderPreferenceDuringQueuedLookup() async throws {
         try await checkSwiftUIBrowseArtwork(cancelLookup: false)
     }
@@ -1952,7 +2067,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         }.pngData())
     }
 
-    private func checkNativeBrowseArtwork(onlineDelay: TimeInterval) async throws {
+    private func checkNativeBrowseArtwork(onlineDelay: TimeInterval, enrichesCandidates: Bool = false) async throws {
         let settings = MetadataProviderSettingsStore()
         let previous = settings.load()
         settings.save(.default)
@@ -1979,30 +2094,35 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         _ = await ArtworkImageCache.shared.image(for: library, variant: .posterCard)
         let cell = NativeTVLibraryCell(frame: CGRect(x: 0, y: 0, width: 220, height: 400))
         defer { cell.prepareForReuse() }
+        func selectedArtwork() -> UIImage? {
+            cell.updateConfiguration(using: cell.configurationState)
+            cell.layoutIfNeeded()
+            let artwork = descendant(DetailTransitionSourceView.self, in: cell)?.reference?.nativeArtworkView
+            if let imageView = artwork as? UIImageView { return imageView.image }
+            if let content = artwork as? TVMediaItemContentView {
+                return (content.configuration as? TVMediaItemContentConfiguration)?.image
+            }
+            return nil
+        }
+        func waitForArtwork(red: Bool) async throws -> UIImage {
+            let deadline = ContinuousClock.now + .seconds(3)
+            while ContinuousClock.now < deadline {
+                if let image = selectedArtwork() {
+                    let color = try pixel(image, at: CGPoint(
+                        x: image.size.width * image.scale / 2, y: image.size.height * image.scale / 2
+                    ))
+                    if color[red ? 0 : 1] > 180, color[red ? 1 : 0] < 80 { return image }
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            return try XCTUnwrap(nil as UIImage?, "The native cell did not paint the expected artwork.")
+        }
         var environment = EnvironmentValues()
         environment.plozzCardCaptionView = .browse
         for preference in [ArtworkPreference.online, .library, .online] {
             environment.plozzArtworkSettings = .init(preference: preference)
             cell.configure(item: item, spoilerSettings: .default, environment: environment)
-            let deadline = ContinuousClock.now + .seconds(3)
-            var selected: UIImage?
-            while ContinuousClock.now < deadline {
-                cell.updateConfiguration(using: cell.configurationState)
-                cell.layoutIfNeeded()
-                let artwork = descendant(DetailTransitionSourceView.self, in: cell)?.reference?.nativeArtworkView
-                if let imageView = artwork as? UIImageView {
-                    selected = imageView.image
-                } else if let content = artwork as? TVMediaItemContentView {
-                    selected = (content.configuration as? TVMediaItemContentConfiguration)?.image
-                }
-                if let selected {
-                    let color = try pixel(selected, at: CGPoint(
-                        x: selected.size.width * selected.scale / 2, y: selected.size.height * selected.scale / 2))
-                    if color[preference == .library ? 0 : 1] > 180 && color[preference == .library ? 1 : 0] < 80 { break }
-                }
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            let image = try XCTUnwrap(selected)
+            let image = try await waitForArtwork(red: preference == .library)
             XCTAssertGreaterThanOrEqual(image.cgImage?.width ?? 0, 100)
             let pixel = try pixel(image, at: CGPoint(x: image.size.width * image.scale / 2, y: image.size.height * image.scale / 2))
             XCTAssertGreaterThan(pixel[preference == .library ? 0 : 1], 180)
@@ -2012,6 +2132,42 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             attachment.name = "browse-\(preference)-delay-\(onlineDelay)"
             attachment.lifetime = .keepAlways
             add(attachment)
+            if enrichesCandidates, preference == .library {
+                var enriched = item
+                enriched.posterURL = online
+                cell.configure(item: enriched, spoilerSettings: .default, environment: environment)
+                _ = selectedArtwork()
+                try await Task.sleep(for: .milliseconds(200))
+                let retained = try XCTUnwrap(selectedArtwork())
+                XCTAssertTrue(try isRed(retained, at: CGPoint(
+                    x: retained.size.width * retained.scale / 2, y: retained.size.height * retained.scale / 2
+                )))
+                cell.prepareForReuse()
+                cell.configure(item: enriched, spoilerSettings: .default, environment: environment)
+                let reused = try await waitForArtwork(red: false)
+                XCTAssertFalse(try isRed(reused, at: CGPoint(
+                    x: reused.size.width * reused.scale / 2, y: reused.size.height * reused.scale / 2
+                )))
+                var episode = item
+                episode.kind = .episode
+                episode.seriesPosterURL = online
+                _ = await ArtworkImageCache.shared.image(for: library, variant: .landscapeCard)
+                _ = await ArtworkImageCache.shared.image(for: online, variant: .landscapeCard)
+                cell.prepareForReuse()
+                cell.configure(item: episode, spoilerSettings: .default, environment: environment, style: .landscape)
+                let still = try await waitForArtwork(red: true)
+                XCTAssertTrue(try isRed(still, at: CGPoint(
+                    x: still.size.width * still.scale / 2, y: still.size.height * still.scale / 2
+                )))
+                cell.configure(
+                    item: episode, spoilerSettings: .init(isEnabled: true, mode: .placeholder),
+                    environment: environment, style: .landscape
+                )
+                let protected = try await waitForArtwork(red: false)
+                XCTAssertFalse(try isRed(protected, at: CGPoint(
+                    x: protected.size.width * protected.scale / 2, y: protected.size.height * protected.scale / 2
+                )))
+            }
         }
     }
 

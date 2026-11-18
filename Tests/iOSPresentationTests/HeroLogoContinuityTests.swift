@@ -56,8 +56,8 @@ final class HeroLogoContinuityTests: XCTestCase {
             _ item: MediaItem, prefersOnlineArtwork: Bool = false,
             providerPolicyIdentity: String = "default"
         ) -> HeroLogoMemo.Key {
-            HeroLogoMemo.Key(
-                references: [], fallback: HeroLogoFallback(for: item) { nil }.identity,
+            HeroLogoMemo.key(
+                for: [], fallback: HeroLogoFallback(for: item) { nil },
                 prefersOnlineArtwork: prefersOnlineArtwork,
                 providerPolicyIdentity: providerPolicyIdentity
             )
@@ -90,7 +90,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
         var enriched = show
         enriched.providerIDs["AniList"] = "456"
-        XCTAssertNotEqual(key(enriched), key(show), "Richer identity must still trigger a fresh lookup.")
+        XCTAssertNotEqual(key(enriched), key(show), "A fresh presentation may use the richer request.")
         XCTAssertTrue(key(enriched).canRetainImage(from: key(show)))
         XCTAssertFalse(key(show).canRetainImage(from: key(enriched)), "Removing an established ID is not enrichment.")
         var corrected = enriched
@@ -124,7 +124,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
-    func testVisibleLogoSurvivesAdditiveMetadataWhileReplacementResolves() async throws {
+    func testVisibleLogoDoesNotResolveAReplacementForAdditiveMetadata() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
         let url = try fixture.seedLogo()
@@ -139,11 +139,10 @@ final class HeroLogoContinuityTests: XCTestCase {
         let lookup = LookupGate()
         defer { lookup.release(url) }
         state.fallback = HeroLogoFallback(for: enriched) { await lookup.resolve() }
-        try await waitUntil { lookup.calls == 1 }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(lookup.calls, 0)
         XCTAssertTrue(try fixture.hasRedLogo(), "Adding identity metadata must not flash the text fallback.")
-        lookup.release(url)
-        try await waitUntil { state.resolutions == 2 }
-        XCTAssertTrue(try fixture.hasRedLogo())
+        XCTAssertEqual(state.resolutions, 1)
     }
 
     func testEpisodeContextKeepsShowLogoWhenGenresArrive() async throws {
@@ -178,11 +177,10 @@ final class HeroLogoContinuityTests: XCTestCase {
                 state: state, root: enriched, style: style,
                 fallback: HeroLogoFallback(for: enriched) { await lookup.resolve() }
             ))
-            try await waitUntil { lookup.calls == 1 }
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertEqual(lookup.calls, 0)
             XCTAssertTrue(try fixture.hasRedLogo(), "Genre enrichment must not remove the same show's visible logo.")
             XCTAssertFalse(try fixture.hasTitleText())
-            lookup.release(url)
-            try await waitUntil { try fixture.hasRedLogo() }
         }
     }
 
@@ -216,7 +214,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
-    func testConfirmedMissingReplacementFallsBackToText() async throws {
+    func testCorrectedSubjectWithoutLogoFallsBackToText() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
         let url = try fixture.seedLogo()
@@ -224,11 +222,11 @@ final class HeroLogoContinuityTests: XCTestCase {
         let state = LookupState(fallback: HeroLogoFallback(for: original) { url })
         fixture.host.rootView = AnyView(LookupFixture(state: state))
         try await waitUntil { try state.resolutions == 1 && fixture.hasRedLogo() }
-        var enriched = original
-        enriched.providerIDs["Tmdb"] = "123"
+        var corrected = original
+        corrected.id = UUID().uuidString
         let lookup = LookupGate()
         defer { lookup.release(nil) }
-        state.fallback = HeroLogoFallback(for: enriched) { await lookup.resolve() }
+        state.fallback = HeroLogoFallback(for: corrected) { await lookup.resolve() }
         try await waitUntil { lookup.calls == 1 }
         lookup.release(nil)
         try await waitUntil { try !fixture.hasRedLogo() }
