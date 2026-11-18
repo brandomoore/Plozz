@@ -56,6 +56,30 @@ final class PlaybackSourceSelectionTests: XCTestCase {
         XCTAssertEqual(selected.id, "20")
     }
 
+    @MainActor
+    func testChildDetailKeepsItsProviderLocalParentWhilePlaybackCanChooseAnotherCopy() {
+        for kind in [MediaItemKind.episode, .season] {
+            var child = MediaItem(
+                id: "a-child", title: "Child", kind: kind, seriesID: "a-show", seasonID: "a-season",
+                sourceAccountID: "a", versions: [.init(id: "a-file", height: 1080, videoCodec: "h264")]
+            )
+            child.sources = [
+                .init(accountID: "a", itemID: child.id, kind: kind, versions: child.versions),
+                .init(accountID: "b", itemID: "b-child", kind: kind,
+                      versions: [.init(id: "b-file", height: 2160, videoCodec: "h264")])
+            ]
+            let detail = PlaybackSourceSelection.bestDetailItem(child, accounts: [], identitySources: { _ in [] })
+            XCTAssertEqual(detail.id, child.id)
+            XCTAssertEqual(detail.sourceAccountID, "a")
+            XCTAssertEqual(detail.seriesID, "a-show")
+            XCTAssertEqual(detail.seasonID, "a-season")
+            if kind == .episode {
+                let play = PlaybackSourceSelection.bestPlayItem(child, accounts: [], identitySources: { _ in [] })
+                XCTAssertEqual(play.sourceAccountID, "b", "Direct playback still chooses the better episode copy.")
+            }
+        }
+    }
+
     private func editionFixture() -> (MediaItem, [MediaSourceRef]) {
         let item = MediaItem(
             id: "10", title: "Movie", kind: .movie,

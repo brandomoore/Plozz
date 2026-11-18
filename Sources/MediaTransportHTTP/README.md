@@ -55,6 +55,11 @@ and byte-source contracts live in `MediaTransportCore`.
   truncated responses fail instead of being treated as usable media. The explicit
   anonymous-delivery streaming exception below retains range/size checks without
   claiming content-change detection.
+- **Independent delivery**: `validateAnonymousAccess` checks the already-probed
+  HTTPS URL in a separate anonymous media session, including same-origin grants.
+  Its conditional two-byte read retains the exact URL, size and validator;
+  it never inherits account credentials, cookies or trust overrides, and never
+  follows another redirect. This proves independent access, not grant lifetime.
 - **Response buffering**: each task owns one mutable body accumulator under the
   delegate lock. Callback appends must not copy the entire previously received
   body. The byte cap is enforced before appending, and cancellation/errors never

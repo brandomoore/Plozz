@@ -1,3 +1,4 @@
+import CoreNetworking
 import Foundation
 
 protocol HDR10PlusRangeSource: AnyObject, Sendable {
@@ -46,7 +47,7 @@ final class HDR10PlusHTTPRangeSource: NSObject, HDR10PlusRangeSource, URLSession
         let callbacks = OperationQueue()
         callbacks.maxConcurrentOperationCount = 1
         callbacks.qualityOfService = .utility
-        session = URLSession(configuration: configuration, delegate: self, delegateQueue: callbacks)
+        session = OfflineNetworkSession.make(configuration: configuration, delegate: self, delegateQueue: callbacks)
         budget.onCancellation { [weak self] in self?.close() }
     }
 

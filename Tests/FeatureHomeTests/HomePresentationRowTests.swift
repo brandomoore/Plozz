@@ -74,6 +74,10 @@ final class HomePresentationRowTests: XCTestCase {
             ), name: "News", sourceName: "Source", number: 1
         )
         let snapshot = HomeLiveTVSnapshot(recentChannels: [], channels: [card])
+        let upcoming = UpcomingRelease(
+            id: "release", titleKey: "movie", item: item, date: Date(timeIntervalSince1970: 0),
+            datePrecision: .dateOnly, kind: .digital, interests: [.watchlist]
+        )
         for preset: HomeRowCustomization.Defaults in [.matchServer, .combined] {
             var customization = HomeRowCustomization(defaults: preset)
             if preset == .matchServer {
@@ -87,7 +91,7 @@ final class HomePresentationRowTests: XCTestCase {
                 isGlobalRowEnabled: visibility.isGlobalRowEnabled
             )
             let presented = HomePresentationRow.resolve(
-                rows: home, content: content, visibility: visibility, liveTV: snapshot
+                rows: home, content: content, visibility: visibility, liveTV: snapshot, upcoming: [upcoming]
             )
             let arranged = visibility.rowSections(
                 choices: HomeRowChoice.shared + HomeRowChoice.baseRows(for: source)
@@ -124,8 +128,10 @@ final class HomePresentationRowTests: XCTestCase {
             XCTAssertEqual(rows.map(\.id), [unscoped.id])
             guard case let .library(row) = rows.first?.source else { return XCTFail("Missing retained row") }
             XCTAssertEqual(row.section.items.map(\.id), ["shown"])
-            XCTAssertEqual(row.isLoading, failure == nil)
-            XCTAssertEqual(row.failure, failure)
+            XCTAssertFalse(row.isLoading, "Retained usable cards must remain interactive during refresh.")
+            XCTAssertNil(row.failure, "Refresh diagnostics must not replace retained usable cards.")
+            XCTAssertEqual(content.serverRows[1].isLoading, failure == nil)
+            XCTAssertEqual(content.serverRows[1].failure, failure)
         }
         let allHidden = HomeViewModel.Content(serverRows: [.init(definition: unscoped, items: [hidden])])
         XCTAssertTrue(HomePresentationRow.resolve(rows: [], content: allHidden, visibility: visibility).isEmpty)

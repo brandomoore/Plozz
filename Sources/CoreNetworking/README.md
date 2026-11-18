@@ -9,6 +9,25 @@ and every provider/feature that talks to a remote server.
   - serializes an `Endpoint` against a `baseURL`,
   - returns `(Data, HTTPURLResponse)` or throws `AppError`,
   - exposes a typed `decode(_:from:baseURL:)` convenience.
+- Ordinary and foreground HTTP clients reuse separate process-wide session pools.
+  Discovery keeps per-client ephemeral sessions, including isolated cookie stores.
+  Overlapping bodyless GETs share a transfer only when URL, effective request
+  headers, session identity and redirect policy match **and the endpoint opts in**.
+  `allowsRequestCoalescing` defaults to false. Enable it at an audited read
+  definition, never for every GET in a provider or transport wrapper. Unreviewed
+  integrations remain independent; missing an opt-in costs a duplicate read,
+  not a suppressed action. This policy is independent of address retry.
+  Mutations, requests that disable address retry, and requests requiring their
+  own delivery evidence are never shared. This includes Plex write/session GETs
+  and Last.fm/Simkl challenge creation and consumption. Each caller retains its
+  own error mapping and diagnostics.
+  Reads used to authorize writes also need their own transfer: Jellyfin/Emby
+  item detail and Plex metadata stay independent so stale-reset checks cannot
+  join a response captured before newer playback. A bodyless GET is not enough
+  to establish sharing safety, even when completed responses are never cached.
+  `SharedAsyncRequests` provides the same independent-reader cancellation used
+  by Jellyfin discovery: the last cancelled reader retires the transfer, late
+  completions cannot overwrite replacements, and finished values are not cached.
 - `Endpoint`: a transport-agnostic request description (method, path, query,
   headers, body) — providers build these, not raw `URLRequest`s.
   Redirects can follow normally, stay within the original origin, or use
@@ -45,10 +64,25 @@ and every provider/feature that talks to a remote server.
   Manual media-server discovery uses its separate candidate builder; legacy
   normalization of persisted/service URLs is unchanged. Discovery opts into
   typed TLS trust failures so an invalid certificate cannot select HTTP instead.
+  Generic TLS negotiation failures remain transport errors: probing an HTTP-only
+  port with HTTPS does not imply a rejected certificate. Manual Jellyfin/Emby
+  discovery handles those and ordinary connectivity errors before trying its
+  remaining credential-free candidates; explicit HTTPS never tries HTTP.
 - `ProviderIconLoader`: best-effort, origin-only `/favicon.ico` requests for
   provider marks. It strips user information, paths, query strings and fragments,
   uses no credential/cookie storage, rejects redirects and authentication,
   and bounds response bytes/time with a memory-only HTTP cache.
+- `OfflineNetworkSession`: app-owned HTTP sessions share the explicit device
+  offline policy. Foreground sessions reject new HTTP(S) work while it is
+  enabled; mode transitions cancel existing requests. Background download
+  sessions are paused by their download owner rather than a URL protocol.
+  This is not an internet-reachability heuristic: normal mode still permits
+  saved LAN routes when the public internet is unavailable.
+- `SubtitleFileLoader`: bounded, uncached text-subtitle delivery with redirect,
+  byte-limit, cancellation, and network-policy safeguards. Ordinary sidecars use
+  a 30-second request / 60-second resource budget. Embedded-track extraction opts
+  into a separate 120-second request/resource budget for a server's initial scan;
+  it does not add automatic retries or extend ordinary sidecar requests.
 - `PlozzLog` (and the `PlozzLogger` category facade): the **single** logging
   entry point. Backed by `OSLog` on Apple platforms, no-op on non-Apple
   hosts. Must never log tokens, Quick Connect secrets, or full

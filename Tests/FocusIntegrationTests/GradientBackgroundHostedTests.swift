@@ -67,6 +67,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
                     .environment(\.gradientBackgroundsEnabled, gradient)
                     .environment(\.plozzReduceTransparency, reduced)
                     .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.navigationStartupFocusAllowed, false)
                     .transaction { $0.disablesAnimations = true }
                 )
                 window.layoutIfNeeded()
@@ -265,11 +266,14 @@ final class GradientBackgroundHostedTests: XCTestCase {
         for size in [CGSize(width: 1920, height: 1080), CGSize(width: 1280, height: 720)] {
             window.frame.size = size
             let viewport = window.bounds.insetBy(dx: 80, dy: 60)
-            for (palette, saturation) in [
-                (ThemePalette.dark, 1.0), (.pureBlack, 1), (.light, 1), (.dark, 0.5)
+            for (palette, saturation, fillOpacity) in [
+                (ThemePalette.dark, 1.0, 0.05), (.pureBlack, 1, 0.05),
+                (.light, 1, 0.05), (.dark, 0.5, 0.05),
+                (.dark, 1, 0.12), (.light, 1, 0.12)
             ] {
                 state.palette = palette
                 state.tintSaturation = saturation
+                state.fillOpacity = fillOpacity
                 state.enabled = true
                 state.reduceTransparency = false
                 window.layoutIfNeeded()
@@ -279,16 +283,19 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 let texture = try XCTUnwrap(ambient.cardSurface.image)
                 XCTAssertLessThanOrEqual(max(texture.width, texture.height), 480)
                 let scroll = try XCTUnwrap(descendants(UIScrollView.self, in: window).first)
-                let referenceRenderer = ImageRenderer(content:
-                    AmbientGradientBackground(palette: palette, tint: colors)
+                let band = AmbientGradientBackground(palette: palette, tint: colors)
                         .environment(\.artworkGradientTintSaturation, saturation)
                         .overlay(palette.informationSurface.opacity(0.4))
-                        .overlay((palette.isLight ? Color.black : .white).opacity(0.05))
                         .frame(width: viewport.width, height: viewport.height)
                         .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                let referenceRenderer = ImageRenderer(content:
+                    band.overlay((palette.isLight ? Color.black : .white).opacity(fillOpacity))
                 )
                 referenceRenderer.scale = 1
                 let reference = try XCTUnwrap(referenceRenderer.uiImage)
+                let bandRenderer = ImageRenderer(content: band)
+                bandRenderer.scale = 1
+                let bandImage = try XCTUnwrap(bandRenderer.uiImage)
                 let evaluations = counter.evaluations
                 var actualOffsets: [CGFloat] = []
                 for offset in [CGFloat(0), 100, 200] {
@@ -313,6 +320,14 @@ final class GradientBackgroundHostedTests: XCTestCase {
                             for channel in 0..<3 {
                                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 3,
                                     "\(palette), offset=\(offset), \(size), \(point): \(actual) vs \(expected)")
+                            }
+                            if fillOpacity == 0.12 {
+                                let backdrop = try pixel(bandImage, at: CGPoint(
+                                    x: point.x - viewport.minX, y: point.y - viewport.minY
+                                ))
+                                XCTAssertGreaterThanOrEqual(
+                                    (0..<3).map { abs(actual[$0] - backdrop[$0]) }.max() ?? 0, 20,
+                                    "Detail surfaces must visibly separate from the matching local backdrop.")
                             }
                             values.append(actual)
                             sampled += 1
@@ -394,6 +409,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
             .init(source: .tmdb, value: 6.2, scale: .outOfTen)
         ]
         let backdrop = LinearGradient(colors: [.red, .blue], startPoint: .top, endPoint: .bottom)
+        let backdropState = DetailTintBackdropState()
         let ambient = AmbientBackdropModel()
         let referenceURL = try XCTUnwrap(URL(string: "https://gradient.example.test/detail-card.png"))
         await ambient.update(owner: UUID(), key: AmbientArtworkKey(
@@ -410,11 +426,12 @@ final class GradientBackgroundHostedTests: XCTestCase {
             for enabled in [false, true] {
                 for reduceTransparency in [false, true] {
                     let opacity = enabled && !reduceTransparency ? 0.4 : 1.0
+                    backdropState.reversed = false
                     host.rootView = AnyView(
                         ScrollView {
                             DetailInformationSections(item: item, horizontalInset: 60)
                         }
-                        .background(backdrop)
+                        .background(DetailTintBackdrop(state: backdropState))
                         .environment(\.themePalette, palette)
                         .environment(\.plozzCardFocusStyle, .system)
                         .environment(\.plozzNativeFocusSurface, true)
@@ -427,13 +444,35 @@ final class GradientBackgroundHostedTests: XCTestCase {
                     window.layoutIfNeeded()
                     try await Task.sleep(for: .milliseconds(200))
                     let image = try capture(window)
-                    let cardPoints = nativeCards(in: window).filter { !$0.isFocused }.map {
-                        $0.contentView.convert(
-                            CGPoint(x: $0.contentView.bounds.maxX - 12, y: $0.contentView.bounds.midY),
-                            to: window
+                    let cardPoints = try detailSummaryCardPoints(
+                        in: window, cardCount: 1 + item.ratings.count
+                    )
+                    XCTAssertGreaterThanOrEqual(cardPoints.count, 2)
+                    if !enabled || reduceTransparency {
+                        // Compare the same native material, not the retired custom card wash.
+                        let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem
+                        backdropState.reversed = true
+                        window.layoutIfNeeded()
+                        try await Task.sleep(for: .milliseconds(100))
+                        let changedBackdropImage = try capture(window)
+                        let changedPoints = try detailSummaryCardPoints(
+                            in: window, cardCount: 1 + item.ratings.count
                         )
-                    }.filter { window.bounds.insetBy(dx: 1, dy: 1).contains($0) }
-                    XCTAssertGreaterThanOrEqual(cardPoints.count, 4)
+                        XCTAssertEqual(changedPoints, cardPoints, "Backdrop changes must preserve card geometry.")
+                        XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === focused)
+                        for point in cardPoints {
+                            let before = try pixel(image, at: point)
+                            let after = try pixel(changedBackdropImage, at: point)
+                            for channel in 0..<3 {
+                                XCTAssertLessThanOrEqual(
+                                    abs(after[channel] - before[channel]), 2,
+                                    "Backdrop leaked through a native card at \(point): "
+                                        + "\(theme), gradient=\(enabled), reduceTransparency=\(reduceTransparency), "
+                                        + "before=\(before), after=\(after)"
+                                )
+                            }
+                        }
+                    }
                     let top = try pixel(image, at: CGPoint(x: 20, y: 20))
                     let bottom = try pixel(image, at: CGPoint(x: 20, y: 500))
                     host.rootView = AnyView(
@@ -462,25 +501,6 @@ final class GradientBackgroundHostedTests: XCTestCase {
                     } else {
                         XCTAssertLessThanOrEqual(variation, 2)
                     }
-                    host.rootView = AnyView(
-                        (enabled && !reduceTransparency
-                            ? AmbientGradientBackground.meshColors(tint: [.red], palette: palette)[4]
-                                .mix(with: palette.informationSurface, by: 0.4)
-                                .mix(with: palette.isLight ? .black : .white, by: 0.05)
-                            : palette.raised.fill)
-                            .environment(\.colorScheme, palette.isLight ? .light : .dark)
-                    )
-                    window.layoutIfNeeded()
-                    try await Task.sleep(for: .milliseconds(100))
-                    let cardReference = try capture(window)
-                    for point in cardPoints {
-                        let actual = try pixel(image, at: point)
-                        let expected = try pixel(cardReference, at: point)
-                        for channel in 0..<3 {
-                            XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 2,
-                                                     "Card at \(point): \(theme), gradient=\(enabled), reduceTransparency=\(reduceTransparency)")
-                        }
-                    }
                 }
             }
             for tinted in [false, true] {
@@ -508,13 +528,10 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 let below = try pixel(preview, at: CGPoint(x: 20, y: 182))
                 XCTAssertGreaterThan(zip(above, below).map { abs($0 - $1) }.reduce(0, +), 6)
                 if tinted {
-                    let points = nativeCards(in: window).filter { !$0.isFocused }.map {
-                        $0.contentView.convert(
-                            CGPoint(x: $0.contentView.bounds.maxX - 12, y: $0.contentView.bounds.midY),
-                            to: window
-                        )
-                    }.filter { window.bounds.insetBy(dx: 1, dy: 1).contains($0) }
-                    XCTAssertGreaterThanOrEqual(points.count, 4)
+                    let points = try detailSummaryCardPoints(
+                        in: window, cardCount: 1 + item.ratings.count
+                    )
+                    XCTAssertGreaterThanOrEqual(points.count, 2)
                     for point in points {
                         let color = try pixel(preview, at: point)
                         XCTAssertGreaterThan(color[2] - color[0], 4, "Native cards must retain the blue artwork tint.")
@@ -613,6 +630,47 @@ final class GradientBackgroundHostedTests: XCTestCase {
 
     private func nativeCards(in view: UIView) -> [TVCardView] {
         (view as? TVCardView).map { [$0] } ?? view.subviews.flatMap { nativeCards(in: $0) }
+    }
+
+    @Observable
+    fileprivate final class DetailTintBackdropState {
+        var reversed = false
+    }
+
+    private struct DetailTintBackdrop: View {
+        let state: DetailTintBackdropState
+
+        var body: some View {
+            LinearGradient(
+                colors: state.reversed ? [.blue, .red] : [.red, .blue],
+                startPoint: .top, endPoint: .bottom
+            )
+        }
+    }
+
+    private func detailSummaryCardPoints(
+        in window: UIWindow, cardCount: Int
+    ) throws -> [CGPoint] {
+        // The fixed-width fixture starts with a single About/score row.
+        // Later targets are unboxed facts, not resting card surfaces.
+        let items = try DetailTintFocusProbe.nativeFocusItems(in: window)
+        let summary = Array(items.prefix(cardCount))
+        XCTAssertEqual(summary.count, cardCount, "Every About/score target must be present.")
+        let frames = try summary.map {
+            try DetailTintFocusProbe.nativeFocusFrame($0, in: window)
+        }
+        if let first = frames.first {
+            XCTAssertTrue(
+                frames.allSatisfy { $0.midY >= first.minY && $0.midY <= first.maxY },
+                "The sampled targets must belong to the summary row, not lower facts: \(frames)"
+            )
+        }
+        let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem
+        return zip(summary, frames).compactMap { item, frame in
+            guard item !== focused else { return nil }
+            let point = CGPoint(x: frame.maxX - 12, y: frame.midY)
+            return window.bounds.insetBy(dx: 1, dy: 1).contains(point) ? point : nil
+        }
     }
 
     private func descendants<T: UIView>(_ type: T.Type, in view: UIView) -> [T] {
@@ -754,6 +812,7 @@ private struct GradientFixtureCard: View {
 private final class GradientSurfaceFixtureState {
     var palette = ThemePalette.dark
     var tintSaturation = 1.0
+    var fillOpacity = 0.05
     var enabled = true
     var reduceTransparency = false
     var showsCards = false
@@ -794,6 +853,7 @@ private struct GradientSurfaceFixture: View {
         .environment(\.artworkGradientTintSaturation, state.tintSaturation)
         .environment(\.plozzCardFocusStyle, .system)
         .environment(\.plozzGradientCardSurface, state.enabled && !state.reduceTransparency)
+        .environment(\.plozzGradientCardFillOpacity, state.fillOpacity)
         .environment(\.plozzReduceTransparency, state.reduceTransparency)
         .transaction { $0.disablesAnimations = true }
     }

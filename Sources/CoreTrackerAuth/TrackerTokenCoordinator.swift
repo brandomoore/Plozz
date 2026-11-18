@@ -50,11 +50,22 @@ public actor TrackerTokenCoordinator {
         sharedConfiguration ?? TrackerSharedRefresh.shared.current
     }
 
+    private func sharedRefresh(for store: any TrackerTokenStoring) throws -> TrackerSharedRefreshConfiguration? {
+        guard let configuration = sharedRefresh else { return nil }
+        if configuration.allowsDiscovery() { return configuration }
+        let state = try loadSharedState(store.coordinationID, configuration: configuration)
+        if state?.localAuthentication == true { return nil }
+        // Previously shared grants still require their single refresh owner.
+        // Fresh, opted-out sign-ins neither discover nor publish cloud grants.
+        return state?.accepted != nil || state?.pending != nil ? configuration : nil
+    }
+
     public func accessToken(store: any TrackerTokenStoring, auth: any TrackerTokenRefreshing) async throws -> String? {
         try Task.checkCancellation()
         let key = store.coordinationID
         guard erasures[key] == nil else { throw TrackerSharedRefreshError.superseded }
-        if let configuration = sharedRefresh {
+        try recoverLocalAuthentication(store: store)
+        if let configuration = try sharedRefresh(for: store) {
             let revision = revisions[key, default: 0]
             while let refresh = refreshes[key] {
                 let access: String?
@@ -88,7 +99,7 @@ public actor TrackerTokenCoordinator {
         guard let previous = store.load() else { return nil }
         if let pending = pendingWrites[key] {
             if pending.previous == previous {
-                try store.save(pending.refreshed)
+                try saveLocalRefresh(pending.refreshed, store: store)
                 pendingWrites[key] = nil
                 return pending.refreshed.accessToken
             }
@@ -114,7 +125,7 @@ public actor TrackerTokenCoordinator {
                 // Keep a failed write in memory: consuming the old refresh token
                 // again would lose the only valid replacement.
                 pendingWrites[key] = PendingWrite(previous: previous, refreshed: refreshed)
-                try store.save(refreshed)
+                try saveLocalRefresh(refreshed, store: store)
                 pendingWrites[key] = nil
                 return refreshed.accessToken
             } catch {
@@ -139,7 +150,7 @@ public actor TrackerTokenCoordinator {
         let key = store.coordinationID
         guard erasures[key] == nil else { throw TrackerSharedRefreshError.superseded }
         let revision = revisions[key, default: 0]
-        guard let configuration = sharedRefresh else {
+        guard let configuration = sharedRefresh, configuration.allowsDiscovery() else {
             return ConnectionContext(
                 id: UUID(), scope: key, revision: revision, accountID: nil, expectedEpoch: nil
             )
@@ -180,8 +191,18 @@ public actor TrackerTokenCoordinator {
             guard context.scope == key, context.revision == revisions[key, default: 0] else {
                 throw TrackerSharedRefreshError.superseded
             }
+            if let configuration = sharedRefresh,
+               !configuration.allowsDiscovery() || context.accountID == nil {
+                let operations = inFlightOperations.values.filter { $0.key == key }.map(\.task)
+                invalidate(key)
+                let revision = revisions[key, default: 0]
+                for operation in operations { _ = await operation.result }
+                try checkSharedRevision(key, revision)
+                try saveLocalAuthentication(tokens, store: store, configuration: configuration)
+                return
+            }
         }
-        if let configuration = sharedRefresh {
+        if let configuration = try sharedRefresh(for: store) {
             guard let context, context.accountID != nil,
                   preparedConnections[key]?.id == context.id else {
                 throw TrackerSharedRefreshError.superseded
@@ -208,7 +229,7 @@ public actor TrackerTokenCoordinator {
         guard erasures[store.coordinationID] == nil else { throw TrackerSharedRefreshError.superseded }
         let tokens = store.load()
         invalidate(store.coordinationID)
-        if let configuration = sharedRefresh {
+        if let configuration = try sharedRefresh(for: store) {
             let refresh = startSharedOperation(key: store.coordinationID, renewsExpiredTokens: false) {
                 try await self.changeSharedConnection(nil, store: store, configuration: configuration)
                 return nil
@@ -220,12 +241,13 @@ public actor TrackerTokenCoordinator {
             }
             return tokens
         }
+        try retireLocalAuthentication(store: store)
         try store.clear()
         return tokens
     }
 
     func synchronizeShared(store: any TrackerTokenStoring) async throws {
-        guard let configuration = sharedRefresh else { return }
+        guard let configuration = try sharedRefresh(for: store) else { return }
         let key = store.coordinationID
         guard erasures[key] == nil else { throw TrackerSharedRefreshError.superseded }
         let revision = revisions[key, default: 0]

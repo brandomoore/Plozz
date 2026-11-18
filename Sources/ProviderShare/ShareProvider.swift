@@ -18,7 +18,7 @@ import os
 /// watch-state stamping/writes through `ShareWatchStateService`, and playback
 /// file access (locator, sidecar subtitles, stream probe) through
 /// `SharePlaybackSourceService`. It keeps only browse/playback orchestration.
-public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
+public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, ExternalPlaybackProviding {
     public let kind: ProviderKind = .mediaShare
     public let session: UserSession
     public let localMediaContext: LocalMediaContext
@@ -334,6 +334,10 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     }
 
     public func item(id: String) async throws -> MediaItem {
+        try await item(id: id, inspectDiscMenu: true)
+    }
+
+    private func item(id: String, inspectDiscMenu: Bool) async throws -> MediaItem {
         if let containerID = ShareCatalogID.containerID(forFileBrowserID: id) {
             guard let folder = await store.item(id: containerID) else {
                 throw AppError.unknown("Folder not found on share: \(containerID)")
@@ -344,7 +348,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             guard let item = await store.item(id: id) else {
                 throw AppError.unknown("Item not found on share: \(id)")
             }
-            return try await resolvingExternalLinks(in: await watchState.stamp(item))
+            return try await resolvingFileActions(in: await watchState.stamp(item), inspectDiscMenu: inspectDiscMenu)
         }
         // Indexed items (movies/series/seasons/episodes) resolve from the catalog;
         // raw file-tree ids (`share:root`, `d:`) fall back to the live browser.
@@ -366,16 +370,30 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             if !indexed.opensExternalSource {
                 playbackSource.measureStreamProbeIfEnabled(itemID: id)
             }
-            return try await resolvingExternalLinks(in: await watchState.stamp(indexed))
+            return try await resolvingFileActions(in: await watchState.stamp(indexed), inspectDiscMenu: inspectDiscMenu)
         }
         guard let item = await store.item(id: id) else {
             throw AppError.unknown("Item not found on share: \(id)")
         }
-        return try await resolvingExternalLinks(in: await watchState.stamp(item))
+        return try await resolvingFileActions(in: await watchState.stamp(item), inspectDiscMenu: inspectDiscMenu)
     }
 
-    private func resolvingExternalLinks(in item: MediaItem) async throws -> MediaItem {
+    private func resolvingFileActions(in item: MediaItem, inspectDiscMenu: Bool) async throws -> MediaItem {
         var result = item
+        for index in result.versions.indices where inspectDiscMenu &&
+            result.versions[index].container?.lowercased() == "bdmv" {
+            try Task.checkCancellation()
+            guard let path = result.versions[index].playbackMediaSourceID else { continue }
+            do {
+                let data = try await store.readFile(path, maximumBytes: 2 * 1_024 * 1_024)
+                try Task.checkCancellation()
+                result.versions[index].discMenuAvailability = DiscMenuInspection.availability(index: data)
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                PlozzLog.playback.error("share.disc-menu inspection unavailable; compatibility remains unknown")
+                result.versions[index].discMenuAvailability = .unknown
+            }
+        }
         for index in result.versions.indices where result.versions[index].isExternalSource {
             try Task.checkCancellation()
             guard let path = result.versions[index].playbackMediaSourceID else { continue }
@@ -453,7 +471,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             return await watchState.stamp(await catalog.episodes(seriesKey: key, season: season))
         }
         let rawContainerID = ShareCatalogID.containerID(forFileBrowserID: itemID)
-        let entries = try await store.entries(forContainerID: rawContainerID ?? itemID)
+        let entries = try await store.entries(forContainerID: rawContainerID ?? itemID, rawFiles: rawContainerID != nil)
         if rawContainerID != nil {
             return await watchState.stamp(entries.map(ShareCatalogID.fileBrowserEntry))
         }
@@ -527,7 +545,8 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         let entries = try await store.entries(
             forContainerID: rawContainerID ?? containerID,
             sort: page.sort,
-            foldersFirst: rawContainerID != nil || libraryConfiguration?.contentType == .personalVideos
+            foldersFirst: rawContainerID != nil || libraryConfiguration?.contentType == .personalVideos,
+            rawFiles: rawContainerID != nil
         )
         let all = rawContainerID != nil
             ? entries.map(ShareCatalogID.fileBrowserEntry)
@@ -672,6 +691,41 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     /// `movie:<key>` with no chosen version plays its best default file; a bare
     /// `f:<rel>` (raw browser / episode) plays directly.
     public func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
+        try await preparePlaybackInfo(for: itemID, mediaSourceID: mediaSourceID, externalPlayer: nil)
+    }
+
+    public func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?
+    ) async throws -> PlaybackRequest {
+        try await externalPlaybackInfo(
+            for: itemID, mediaSourceID: mediaSourceID, player: player, streaming: streaming, allowLocalRelay: false
+        )
+    }
+
+    public func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?, allowLocalRelay: Bool
+    ) async throws -> PlaybackRequest {
+        try streaming?.quality.validate()
+        let canRelay = allowLocalRelay && player != .custom
+        guard player.supportsDirectMediaScheme(session.server.baseURL.scheme) || canRelay,
+              streaming?.requiresConversionPolicy != true else {
+            throw ExternalPlayerError.unsupportedSource
+        }
+        if let mediaSourceID {
+            guard !mediaSourceID.isEmpty else { throw ExternalPlayerError.unsupportedSource }
+            _ = try await playbackPreparationLocator(for: itemID, mediaSourceID: mediaSourceID)
+        }
+        return try await preparePlaybackInfo(
+            for: itemID, mediaSourceID: mediaSourceID, externalPlayer: player,
+            allowLocalRelay: canRelay
+        )
+    }
+
+    private func preparePlaybackInfo(
+        for itemID: String, mediaSourceID: String?, externalPlayer: ExternalPlayer?, allowLocalRelay: Bool = false
+    ) async throws -> PlaybackRequest {
         let started = Date()
         let requestID = UUID().uuidString
         let transport = MediaShareTransportKind(mediaShareScheme: session.server.baseURL.scheme)?.rawValue ?? "unknown"
@@ -681,7 +735,8 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         HandoffDiagnostics.emit("\(context) stage=\(stage) event=start")
         do {
             let request = try await resolvePlaybackInfo(
-                for: itemID, mediaSourceID: mediaSourceID,
+                for: itemID, mediaSourceID: mediaSourceID, externalPlayer: externalPlayer,
+                allowLocalRelay: allowLocalRelay,
                 onStage: {
                     stage = $0
                     HandoffDiagnostics.emit("\(context) stage=\(stage) event=start")
@@ -702,7 +757,9 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     }
 
     private func resolvePlaybackInfo(
-        for itemID: String, mediaSourceID: String?, onStage: (String) -> Void
+        for itemID: String, mediaSourceID: String?, externalPlayer: ExternalPlayer?,
+        allowLocalRelay: Bool,
+        onStage: (String) -> Void
     ) async throws -> PlaybackRequest {
         let isPersonalVideos = libraryConfiguration?.contentType == .personalVideos
         let catalog: (any ShareCatalogReading)?
@@ -753,14 +810,41 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         guard !ShareMediaParser.isExternalLinkFile(relPath) else {
             throw AppError.unknown("Open this title in its external app instead of playing it in Plozz.")
         }
+        if externalPlayer != nil, ShareBluRayFolder.isIndex(relPath) {
+            throw ExternalPlayerError.unsupportedSource
+        }
         onStage("locator")
-        let opening = try await playbackSource.playbackOpening(
-            for: relPath,
-            reuseDirectoryMetadata: ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? "")
-        )
+        let disc = ShareBluRayFolder.isIndex(relPath)
+            ? try await playbackSource.networkDiscLocator(for: relPath) : nil
+        let opening: (locator: NetworkFileLocator, directoryEntries: [RemoteFileEntry]?)
+        if let disc {
+            opening = (disc.anchor, nil)
+        } else {
+            opening = try await playbackSource.playbackOpening(
+                for: relPath,
+                reuseDirectoryMetadata: ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? "")
+            )
+        }
         let locator = opening.locator
+        let externalURL: URL?
+        if let externalPlayer {
+            onStage("external")
+            do {
+                let url = try await store.externalPlaybackURL(for: locator, player: externalPlayer)
+                guard ExternalPlayerURL.isSupportedMediaURL(url, player: externalPlayer, allowPassword: true) else {
+                    throw ExternalPlayerError.unsupportedSource
+                }
+                externalURL = url
+            } catch MediaTransportError.unsupportedCapability where allowLocalRelay {
+                try Task.checkCancellation()
+                PlozzLog.playback.info("share.external using an app-owned source for unsupported direct delivery")
+                externalURL = nil
+            }
+        } else {
+            externalURL = nil
+        }
         onStage("item")
-        let item = try await item(id: canonicalItemID)
+        let item = try await item(id: canonicalItemID, inspectDiscMenu: false)
         // Resume from the newest canonical/legacy member-file state so a movie
         // watched before version grouping still resumes after the upgrade.
         let records = await watchState.records(for: [canonicalItemID])
@@ -808,15 +892,24 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
         // sibling Subs/Subtitles folder) as selectable tracks. Best-effort: a
         // listing/read failure just yields no sidecars rather than blocking play.
         onStage("sidecars")
-        let subtitleTracks = try await playbackSource.discoverSidecarSubtitles(
-            forVideoRelPath: relPath,
-            exactStemOnly: isExtra,
-            directoryEntries: opening.directoryEntries
-        )
+        let subtitleTracks: [MediaTrack]
+        if externalPlayer != nil {
+            subtitleTracks = []
+        } else if disc != nil {
+            subtitleTracks = try await playbackSource.discoverSidecarSubtitles(
+                forVideoRelPath: ShareBluRayFolder.classificationPath(relPath)
+            )
+        } else {
+            subtitleTracks = try await playbackSource.discoverSidecarSubtitles(
+                forVideoRelPath: relPath,
+                exactStemOnly: isExtra,
+                directoryEntries: opening.directoryEntries
+            )
+        }
         try Task.checkCancellation()
-        return PlaybackRequest(
+        var request = PlaybackRequest(
             item: playItem,
-            playbackSource: .networkFile(locator),
+            playbackSource: disc.map(PlaybackSource.networkDisc) ?? .networkFile(locator),
             audioTracks: audioTracks,
             subtitleTracks: subtitleTracks,
             startPosition: startPosition,
@@ -824,6 +917,29 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
             sourceProvider: .mediaShare,
             serverName: session.server.name,
             sourceFileName: (relPath as NSString).lastPathComponent
+        )
+        if let externalURL {
+            request.playbackSource = nil
+            request.streamURL = externalURL
+            if let externalPlayer {
+                request.externalSubtitleURLs = try await playbackSource.externalSubtitleURLs(
+                    forVideoRelPath: relPath, exactStemOnly: isExtra,
+                    directoryEntries: opening.directoryEntries, player: externalPlayer
+                )
+            }
+        } else if let externalPlayer, allowLocalRelay {
+            request.externalSubtitleLocators = try await playbackSource.externalSubtitleLocators(
+                forVideoRelPath: relPath, exactStemOnly: isExtra,
+                directoryEntries: opening.directoryEntries, player: externalPlayer
+            )
+        }
+        return request
+    }
+
+    public func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        guard let path = context.mediaSourceID, !path.isEmpty else { throw AppError.notFound }
+        return try await playbackSource.discoverSidecarSubtitles(
+            forVideoRelPath: path, exactStemOnly: true, requiresCompleteResult: true
         )
     }
 
@@ -834,7 +950,8 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     public func playbackPreparationLocator(
         for itemID: String, mediaSourceID: String
     ) async throws -> NetworkFileLocator? {
-        guard !ShareMediaParser.isExternalLinkFile(mediaSourceID) else { return nil }
+        guard !ShareMediaParser.isExternalLinkFile(mediaSourceID),
+              !ShareBluRayFolder.isIndex(mediaSourceID) else { return nil }
         guard ["http", "https"].contains(session.server.baseURL.scheme?.lowercased() ?? "") else {
             return nil
         }
@@ -952,6 +1069,7 @@ extension ShareProvider: SupplementalStreamFactsProviding {
               let streamProber,
               let relativePath = await probeRelativePath(for: item),
               !ShareMediaParser.isExternalLinkFile(relativePath),
+              !ShareBluRayFolder.isIndex(relativePath),
               let locator = try? await networkFileLocator(for: relativePath) else {
             return nil
         }
@@ -996,6 +1114,8 @@ extension ShareProvider: WatchStateProviding {
 }
 
 extension ShareProvider: PlayedStateWriting {
+    public var usesLocalWatchStateOnly: Bool { true }
+
     /// Outbox-drained played write: use the play's real `capturedAt` (not the
     /// drain time) so a stale played write that drains after a newer re-watch
     /// can't overwrite the newer resume state — the local store orders writes by

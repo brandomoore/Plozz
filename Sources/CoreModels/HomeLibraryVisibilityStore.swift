@@ -235,6 +235,24 @@ public final class HomeLibraryVisibilityModel {
         store.save(visibility)
     }
 
+    public func setHomeRowName(_ name: String, for id: HomeRowID) {
+        var updated = visibility
+        updated.setHomeRowName(name, for: id)
+        guard updated != visibility else { return }
+        visibility = updated
+        store.save(visibility)
+    }
+
+    public func setEmptyHomeRowDismissed(_ dismissed: Bool, id: HomeRowID) {
+        guard visibility.dismissedEmptyHomeRows.contains(id) != dismissed else { return }
+        if dismissed {
+            visibility.dismissedEmptyHomeRows.insert(id)
+        } else {
+            visibility.dismissedEmptyHomeRows.remove(id)
+        }
+        store.save(visibility)
+    }
+
     public func setHomeSectionVisible(
         _ visible: Bool, id: HomeRowID, catalog: HomeSectionCatalog
     ) throws {
@@ -252,8 +270,7 @@ public final class HomeLibraryVisibilityModel {
     }
 
     public func saveCollectionSection(_ section: CollectionSection, catalog: HomeSectionCatalog) throws {
-        guard !section.id.isEmpty, !section.source.collectionID.isEmpty,
-              !section.source.accountID.isEmpty, section.source.serverUserID?.isEmpty == false,
+        guard !section.id.isEmpty, !section.sources.isEmpty, section.sources.allSatisfy(\.isValid),
               !section.title.isEmpty else { throw AppError.invalidResponse }
         var updated = visibility
         if let index = updated.collectionSections.firstIndex(where: { $0.id == section.id }) {

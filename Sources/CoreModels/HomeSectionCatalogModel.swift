@@ -17,6 +17,13 @@ public final class HomeSectionCatalogModel {
         let revision: Int
     }
 
+    private struct DiscoveryID: Equatable {
+        let load: LoadID
+        let scope: UUID?
+        let revision: UUID?
+        let refreshing: Bool
+    }
+
     public private(set) var catalog = HomeSectionCatalog(libraries: [])
     public private(set) var libraryFailures: [String: AppError] = [:]
     public private(set) var serverFailures: [String: AppError] = [:]
@@ -24,7 +31,7 @@ public final class HomeSectionCatalogModel {
     public private(set) var requestID: RequestID?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var recommendations: [String: [LibrarySection]] = [:]
-    @ObservationIgnored private var pendingLoadID: LoadID?
+    @ObservationIgnored private var pendingLoadID: DiscoveryID?
     @ObservationIgnored private var pendingLoad: Task<Void, Never>?
     @ObservationIgnored private var consumers: Set<UUID> = []
 
@@ -59,10 +66,14 @@ public final class HomeSectionCatalogModel {
 
     /// Visible editor pages share discovery; leaving the last consumer cancels it.
     public func load(
-        libraries: [AggregatedLibrary], accounts: [ResolvedAccount], visibility: HomeLibraryVisibilityModel
+        libraries: [AggregatedLibrary], accounts: [ResolvedAccount], visibility: HomeLibraryVisibilityModel,
+        recommendationScope: HomeRecommendationScope? = nil, refreshRecommendations: Bool = false
     ) async {
         guard !Task.isCancelled else { return }
-        let id = Self.loadID(libraries: libraries, accounts: accounts, visibility: visibility)
+        let id = DiscoveryID(
+            load: Self.loadID(libraries: libraries, accounts: accounts, visibility: visibility),
+            scope: recommendationScope?.id, revision: recommendationScope?.revision, refreshing: refreshRecommendations
+        )
         let consumer = UUID()
         let task: Task<Void, Never>
         if pendingLoadID == id, let pendingLoad {
@@ -74,7 +85,11 @@ public final class HomeSectionCatalogModel {
             pendingLoadID = id
             let generation = generation
             task = Task {
-                await discover(libraries: libraries, accounts: accounts, visibility: visibility, generation: generation)
+                await HomeRecommendationScope.$current.withValue(recommendationScope) {
+                    await HomeRecommendationScope.$refreshRequested.withValue(refreshRecommendations) {
+                        await discover(libraries: libraries, accounts: accounts, visibility: visibility, generation: generation)
+                    }
+                }
             }
             pendingLoad = task
         }

@@ -13,6 +13,7 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
 
     func testCommunityTimestampActionIsOptInAndNeverAppearsInZoomSubmenu() {
         let model = PlayerControlsModel()
+        model.upscaling.isAvailable = true
         let without = PlaybackOptionsPane.rows(
             model: model, zoom: model.videoZoom, actions: .init(), openScreen: { _ in }
         )
@@ -22,6 +23,7 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
             model: model, zoom: model.videoZoom, actions: .init(), openScreen: { _ in },
             onCommunityTimestamps: { opened = true }
         )
+        XCTAssertEqual(Set(with.map(\.id)).count, with.count)
         let action = with.first { $0.slot == PlaybackOptionsPane.timestampsSlot }
         if case .action(let run) = action?.kind { run() } else { XCTFail("Missing explicit timestamp action") }
         XCTAssertTrue(opened)
@@ -30,6 +32,30 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
             openScreen: { _ in }, onCommunityTimestamps: {}
         )
         XCTAssertFalse(zoom.contains { $0.slot == PlaybackOptionsPane.timestampsSlot })
+    }
+
+    func testAudioSyncAndUpscalingUseTheExistingOptionsNavigation() {
+        let model = PlayerControlsModel()
+        XCTAssertFalse(model.hasAudioControls)
+        model.engineCapabilities = [.audioDelay]
+        XCTAssertTrue(model.hasAudioControls)
+        XCTAssertEqual(
+            PlayerOptionsPanel.preferredFocus(for: .audio, subtitleScreen: .tracks, model: model, audioScreen: .sync),
+            .row(0)
+        )
+        model.upscaling.isAvailable = true
+        model.upscaling.selection = .animation
+        XCTAssertTrue(model.trackControlCategories.contains(.playback))
+        let rows = PlaybackOptionsPane.rows(
+            model: model, zoom: model.videoZoom, actions: .init(), openScreen: { _ in }
+        )
+        XCTAssertTrue(rows.contains { $0.id == PlaybackOptionsPane.upscalingSlot })
+        XCTAssertEqual(
+            PlayerOptionsPanel.preferredFocus(
+                for: .playback, subtitleScreen: .tracks, model: model, playbackScreen: .upscaling
+            ),
+            .row(3)
+        )
     }
 
     func testChaptersUseTheBottomCardAndEnterOnTheirTab() {

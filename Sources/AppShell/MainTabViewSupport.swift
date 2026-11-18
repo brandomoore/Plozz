@@ -37,16 +37,6 @@ func resolveProvider(_ accountID: String?, in accounts: [ResolvedAccount]) throw
     return account.provider
 }
 
-struct MediaSourceUnavailableView: View {
-    var body: some View {
-        ContentUnavailableView(
-            "Source Unavailable",
-            systemImage: "externaldrive.badge.exclamationmark",
-            description: Text("Connect or enable this source in Settings, then try again.")
-        )
-    }
-}
-
 /// Resolves a specific account id to its provider, or `nil` when that account is
 /// no longer signed in. Used by the detail page to fetch a merged title's
 /// *alternate* servers' versions/watch-state for the server picker — a missing
@@ -125,11 +115,17 @@ func makeHeroDiscoveryProvider(
 /// `actingName` is the mapped Seerr user, or `nil` when requesting as admin.
 func seerRequestResult(_ outcome: SeerRequestOutcome, actingName: String?) -> MediaRequestActionResult {
     switch outcome {
+    case let .successElsewhere(message):
+        return .init(confirmation: message)
     case let .success(status):
         return .success(status)
     case let .failure(reason):
         let who = actingName ?? "This account"
         switch reason {
+        case .cancelled:
+            return .init()
+        case .signInRequired:
+            return .failure(title: "Sign in again", message: .copy(reason.userMessage))
         case .noDefaults:
             return .failure(
                 title: "No Default Server",
@@ -269,7 +265,10 @@ func makeHeroMetadataEnricher(
     accounts: [ResolvedAccount],
     identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
     ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
-    seer: SeerService? = nil
+    seer: SeerService? = nil,
+    hideWatched: Bool = false,
+    visibility: @escaping @Sendable () async -> HomeLibraryVisibility = { .default },
+    allowsDiscovery: @escaping @Sendable () async -> Bool = { true }
 ) -> @Sendable ([MediaItem]) async -> [MediaItem] {
     let enricher = HeroMetadataEnricher(
         accounts: accounts,
@@ -284,7 +283,12 @@ func makeHeroMetadataEnricher(
         requestIdentityResolver: { item in
             guard await seer?.isConfigured == true else { return nil }
             return await ExternalTitleMetadataResolver.shared.tmdbID(for: item)
-        }
+        },
+        libraryTargetResolver: heroLibraryTargetResolver(
+            in: accounts, identitySources: identitySources,
+            visibility: visibility, allowsDiscovery: allowsDiscovery
+        ),
+        hideWatched: hideWatched
     )
     return { await enricher.enrich($0) }
 }
@@ -479,6 +483,7 @@ private func failoverPlayItem(
 private func makePlayerViewModel(
     for request: PlayRequest,
     accounts: [ResolvedAccount],
+    metadataLanguage: @escaping @MainActor @Sendable () -> String,
     networkFileResolver: any MediaTransportNetworkFileResolving,
     authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving,
     offlinePlaybackResolver: (any OfflinePlaybackResolving)? = nil,
@@ -597,6 +602,11 @@ private func makePlayerViewModel(
             watchBridge: watchBridge,
             identitySources: identitySources
         ),
+        onPlaybackStoppedWithoutProgress: {
+            Task { @MainActor in
+                watchBridge.endWithoutProgress(liveAccountID, liveItemID)
+            }
+        },
         onPlaybackStarted: {
             // Guard the streaming server while it plays: a mid-play drain can't
             // disturb/zero its now-playing session. Deferred, not dropped.
@@ -631,6 +641,7 @@ private func makePlayerViewModel(
     episodeViewModel.controls.infoCard.castDetailLoader = makeCastDetailLoader(
         for: request.item,
         accounts: accounts,
+        metadataLanguage: metadataLanguage,
         // So a credit the viewer owns isn't marked absent. A server's person
         // query only returns titles whose own People list names the person, and
         // a series records its main cast rather than a guest voice part — so
@@ -741,6 +752,7 @@ extension View {
         resumePrompt: Binding<MediaItem?>,
         pendingPlaylistOrigin: Binding<VideoPlaylistPlaybackOrigin?>,
         accounts: [ResolvedAccount],
+        metadataLanguage: @escaping @MainActor @Sendable () -> String,
         networkFileResolver: any MediaTransportNetworkFileResolving,
         authenticatedHTTPResolver: any AuthenticatedHTTPResourceResolving,
         offlinePlaybackResolver: (any OfflinePlaybackResolving)?,
@@ -761,15 +773,37 @@ extension View {
         /// Leave the film for a person's own page (in-player Cast card).
         onOpenPerson: @escaping (MediaPerson, String?) -> Void,
         /// Leave the film for one of a person's credits (in-player Cast card).
-        onOpenTitle: @escaping (MediaItem) -> Void
+        onOpenTitle: @escaping (MediaItem) -> Void,
+        /// Home's Continue Watching row, for the player's tab.
+        continueWatching: @escaping @MainActor () -> [MediaItem] = { [] }
     ) -> some View {
-        fullScreenCover(item: playRequest) { request in
+        playbackPresentation(playRequest: playRequest, resumePrompt: resumePrompt, onResume: { item, startPosition in
+            let origin = pendingPlaylistOrigin.wrappedValue
+                .flatMap { $0.containsSelection(item) ? $0 : nil }
+            let playlist: VideoPlaylistPlaybackContext? = origin.flatMap { origin in
+                guard let provider = try? resolveProvider(origin.accountID, in: accounts) else { return nil }
+                return VideoPlaylistPlaybackContext(origin: origin, provider: provider)
+            }
+            pendingPlaylistOrigin.wrappedValue = nil
+            let request = PlayRequest(
+                item: item,
+                startPosition: startPosition,
+                playlist: playlist
+            )
+            HandoffDiagnostics.emit(
+                "tap RESUME_CHOICE trace=\(request.traceID.uuidString.prefix(8)) "
+                    + "item=\(item.id) start=\(Int(startPosition))"
+            )
+            resumePrompt.wrappedValue = nil
+            playRequest.wrappedValue = request
+        }) { request in
             PlayerPresentation(
                 request: request,
                 make: { request, adopted, continuation in
                     let model = try makePlayerViewModel(
                         for: request,
                         accounts: accounts,
+                        metadataLanguage: metadataLanguage,
                         networkFileResolver: networkFileResolver,
                         authenticatedHTTPResolver: authenticatedHTTPResolver,
                         offlinePlaybackResolver: offlinePlaybackResolver,
@@ -788,6 +822,7 @@ extension View {
                         continuation: continuation,
                         versionPreferences: versionPreferences
                     )
+                    model.controls.videoZoom.bindAutoCropFraming(to: playbackSettingsModel, platform: .current)
                     // Set here rather than inside the factory: leaving the film
                     // is a navigation concern, and navigation lives with the
                     // shell that presented the player, not with the code that
@@ -796,6 +831,7 @@ extension View {
                         onOpenPerson(person, request.item.sourceAccountID)
                     }
                     model.controls.infoCard.openTitlePage = onOpenTitle
+                    model.continueWatchingSnapshot = continueWatching
                     return model
                 },
                 makeFailover: { failedItem, tried in
@@ -828,25 +864,6 @@ extension View {
                 },
                 playbackSettings: playbackSettingsModel.settings
             )
-        }
-        .resumePrompt(item: resumePrompt) { item, startPosition in
-            let origin = pendingPlaylistOrigin.wrappedValue
-                .flatMap { $0.containsSelection(item) ? $0 : nil }
-            let playlist: VideoPlaylistPlaybackContext? = origin.flatMap { origin in
-                guard let provider = try? resolveProvider(origin.accountID, in: accounts) else { return nil }
-                return VideoPlaylistPlaybackContext(origin: origin, provider: provider)
-            }
-            pendingPlaylistOrigin.wrappedValue = nil
-            let request = PlayRequest(
-                item: item,
-                startPosition: startPosition,
-                playlist: playlist
-            )
-            HandoffDiagnostics.emit(
-                "tap RESUME_CHOICE trace=\(request.traceID.uuidString.prefix(8)) "
-                    + "item=\(item.id) start=\(Int(startPosition))"
-            )
-            playRequest.wrappedValue = request
         }
     }
 }

@@ -4,8 +4,8 @@ import Foundation
 /// Binds a provider-supplied ``RelatedTitle`` to the viewer's own copy, so a row
 /// entry plays instead of dead-ending.
 ///
-/// Neither Jellyfin nor Plex can look a title up by external id, so discovery has
-/// to go through free-text search — and a search matches on the name alone. That is
+/// When the local identity index cannot locate a native item, discovery falls
+/// back to free-text search — and a search matches on the name alone. That is
 /// exactly how "Lucky!" (a 2022 documentary) ended up wearing a 2026 drama's
 /// schedule earlier: the title matched and nothing checked the ids.
 ///

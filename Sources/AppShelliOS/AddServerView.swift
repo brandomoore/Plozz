@@ -71,7 +71,7 @@ struct AddServerView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
+                        Button("Cancel", systemImage: "xmark") { dismiss() }
                     }
                 }
                 .navigationDestination(item: $chosenProvider) { selected in
@@ -86,12 +86,23 @@ struct AddServerView: View {
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
             palette: palette
         )
+        .offlineStatusOverlay(appModel: appModel, palette: palette)
     }
 
     @ViewBuilder
     private func connectionContent(for provider: ProviderKind) -> some View {
         Group {
-            if provider == .iptv {
+            if provider == .subsonic {
+                SubsonicSignInView(
+                    deviceID: appModel.deviceID, address: address, showsCancelButton: false,
+                    onAuthenticated: {
+                        guard appModel.profiles.activeProfileID == initialProfileID else { throw AppError.cancelled }
+                        guard appModel.persist([$0]) else { throw AppError.invalidResponse }
+                        dismiss()
+                    },
+                    onCancel: { dismiss() }
+                )
+            } else if provider == .iptv {
                 IPTVSignInView(
                     deviceID: appModel.deviceID,
                     address: initialIPTVPlaylist?.playlistURL.absoluteString ?? address,
@@ -202,7 +213,7 @@ struct AddServerView: View {
         .toolbar {
             if startsAtProvider && provider != .mediaShare && provider != .plex {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
                 }
             }
         }
@@ -267,20 +278,9 @@ struct ManagedServerDiscoverySection: View {
                 Button {
                     onSelect(server)
                 } label: {
-                    HStack(spacing: 12) {
+                    ServerDiscoveryRow(name: Text(verbatim: server.name), address: server.baseURL) {
                         ProviderBrandMark(provider: server.provider, size: 32)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(verbatim: server.name).font(.headline)
-                            Text(verbatim: server.baseURL.absoluteString)
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.forward")
-                            .foregroundStyle(.secondary).accessibilityHidden(true)
                     }
-                    .frame(minHeight: 44)
                 }
                 .disabled(model.phase == .validating)
                 .accessibilityIdentifier("discovered-server-\(server.id)")
@@ -659,7 +659,7 @@ struct PlexServerSignInView: View {
                     if isChoosingServers { showCancelConfirm = true }
                     else { dismiss() }
                 } label: {
-                    if isNavigationRoot { Text("Cancel") }
+                    if isNavigationRoot { Label("Cancel", systemImage: "xmark") }
                     else { Label("Back", systemImage: "chevron.backward").labelStyle(.iconOnly) }
                 }
                 .confirmationDialog("Start over?", isPresented: $showCancelConfirm, titleVisibility: .visible) {
@@ -724,7 +724,7 @@ struct PlozziOSAccountReauthenticationView: View {
             )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button("Cancel", systemImage: "xmark") {
                         model.cancel()
                         dismiss()
                     }

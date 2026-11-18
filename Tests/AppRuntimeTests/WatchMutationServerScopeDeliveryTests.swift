@@ -182,6 +182,7 @@ private final class ServerViewerFixture {
             accountsProviders: accounts, profilesModel: profiles,
             plexHomeUserTokenCache: PlexHomeUserTokenCache(store: InMemorySecureStore()),
             automaticSignInStore: AutomaticSignInStore(defaults: defaults, secureStore: InMemorySecureStore()),
+            offlineSignInStore: .init(secureStore: InMemorySecureStore()),
             switchProfile: { _ in XCTFail("This fixture never changes Plozz profiles") }
         )
         plex.plexHomeUserSwitch = { user, _, _, _ in "user-\(user)" }

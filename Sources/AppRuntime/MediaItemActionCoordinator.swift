@@ -375,8 +375,8 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             scopedItemIDs: scoped,
             cascadesToSeasonEpisodes: item.kind == .season,
             played: played,
-            resumePosition: played ? 0 : nil,
-            playedPercentage: played ? 1 : nil,
+            resumePosition: 0,
+            playedPercentage: played ? 1 : 0,
             item: item
         ).post()
 
@@ -422,6 +422,7 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
     private func performMarkUpToHere(on item: MediaItem, context: MediaItemActionContext) {
         guard let watch = provider(for: item) as? WatchStateProviding else { return }
         let confirm = makeActionConfirmation()
+        let capturedAt = Date()
         var ids = Set(context.precedingContainerIDs)
         ids.formUnion(MediaItemActionCatalog.siblingsToMarkUpToHere(item, in: context.orderedSiblings).map(\.id))
         ids.insert(item.id)
@@ -444,7 +445,8 @@ public final class MediaItemActionCoordinator: MediaItemActionHandling {
             var allSucceeded = true
             for id in ids {
                 do {
-                    try await watch.setPlayed(true, itemID: id)
+                    let kind: MediaItemKind = context.precedingContainerIDs.contains(id) ? .season : item.kind
+                    try await watch.setPlayed(true, itemID: id, kind: kind, capturedAt: capturedAt)
                 } catch {
                     allSucceeded = false
                     PlozzLog.app.error("Mark watched up to here failed on an item")

@@ -23,8 +23,8 @@ final class PlayerChapterHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         let metrics = PlayerCardMetrics.tv
-        let inset = max(metrics.contentPadding, metrics.panelCornerRadius * 2 / 3)
-        let layout = PlayerChapterArtworkLayout(
+        let inset = InfoPanelView.contentPadding
+        let layout = PlayerMediaArtworkLayout(
             height: metrics.cardHeight, inset: inset, cornerRadius: metrics.panelCornerRadius
         )
         let probe = ChapterArtworkProbe()
@@ -53,15 +53,13 @@ final class PlayerChapterHostedTests: XCTestCase {
         XCTAssertEqual(probe.artwork.minY - probe.card.minY, inset, accuracy: 0.5)
         XCTAssertEqual(probe.card.maxX - probe.artwork.maxX, inset, accuracy: 0.5)
         XCTAssertEqual(probe.card.maxY - probe.caption.maxY, inset, accuracy: 0.5)
-        XCTAssertEqual(probe.caption.minX, probe.artwork.minX, accuracy: 0.5)
+        XCTAssertEqual(probe.caption.minX - probe.artwork.minX, 4, accuracy: 0.5)
+        XCTAssertEqual(probe.artwork.maxX - probe.caption.maxX, 4, accuracy: 0.5)
         XCTAssertEqual(probe.caption.minY - probe.artwork.maxY, 8, accuracy: 0.5)
         XCTAssertEqual(probe.artwork.width / probe.artwork.height, 16.0 / 9.0, accuracy: 0.005)
         let radius = layout.thumbnailShape.cornerSize.width
         XCTAssertEqual(probe.artwork.minX + radius, probe.card.minX + metrics.panelCornerRadius, accuracy: 0.5)
         XCTAssertEqual(probe.artwork.minY + radius, probe.card.minY + metrics.panelCornerRadius, accuracy: 0.5)
-        let previousWidth = (metrics.cardHeight - metrics.castVerticalInset * 2
-            - metrics.castNameSize * 1.5 - metrics.captionSize * 1.5 - 16) * 16 / 9 + 24
-        XCTAssertGreaterThan(probe.card.width, previousWidth)
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }

@@ -1,6 +1,7 @@
 #if os(iOS)
 import CoreModels
 import CoreUI
+import FeatureAuth
 import FeatureHomeCore
 import SwiftUI
 import UIKit
@@ -9,6 +10,71 @@ import XCTest
 
 @MainActor
 final class HomeModelLifetimeTests: XCTestCase {
+    func testHomeStateBoxRetiresOnlyDiscardedScopes() {
+        let box = LazyViewState<String>()
+        var retired: [String] = []
+        XCTAssertEqual(box.value(forKey: "a", onDiscard: { retired.append($0) }) { "first" }, "first")
+        XCTAssertEqual(box.value(forKey: "a", onDiscard: { retired.append($0) }) { "unused" }, "first")
+        XCTAssertTrue(retired.isEmpty)
+        XCTAssertEqual(box.value(forKey: "b", onDiscard: { retired.append($0) }) { "second" }, "second")
+        XCTAssertEqual(retired, ["first"])
+        box.discard { retired.append($0) }
+        XCTAssertEqual(retired, ["first", "second"])
+        XCTAssertNil(box.existingValue(forKey: "b"))
+    }
+
+    func testPerformanceRetiredHomeModels() async throws {
+        try PerformanceProbe.requireEnabled()
+        let suite = "HomeModelLifetime.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let original = app.profiles.activeProfileID
+        let other = app.profiles.add(name: "Home lifetime fixture", isAwaitingSetup: false)
+        defer {
+            for key in UserDefaults.standard.dictionaryRepresentation().keys
+            where key.components(separatedBy: ".").contains(other.id) {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        let box = LazyViewState<HomeViewModel>()
+        func model() -> HomeViewModel {
+            PlozziOSTabShell(
+                appModel: app, homeViewModelBox: box, onAddServer: {},
+                showingSettings: .constant(false), showingProfileSwitcher: .constant(false),
+                deferredPairingURL: .constant(nil), systemColorScheme: .dark
+            ).sharedHomeViewModel
+        }
+        await app.ensureTrackersScopedToActiveProfile()
+        try await Task.sleep(for: .seconds(1))
+        try await PerformanceProbe.measure(self, scenario: "mobile-home-lifecycle") {
+            for _ in 0..<20 {
+                weak var retired = model()
+                weak var retiredSettings = app.settings
+                weak var retiredDownloads = app.downloads
+                app.selectProfile(app.profiles.activeProfileID == original ? other.id : original)
+                _ = model()
+                let deadline = ContinuousClock.now + .seconds(5)
+                while (retired != nil || retiredSettings != nil || retiredDownloads != nil),
+                      ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let released = retired == nil && retiredSettings == nil && retiredDownloads == nil
+                _ = try XCTUnwrap(
+                    released ? true : nil,
+                    "Retained profile models: Home=\(retired != nil), settings=\(retiredSettings != nil), downloads=\(retiredDownloads != nil)"
+                )
+            }
+            await app.ensureTrackersScopedToActiveProfile()
+            try await Task.sleep(for: .seconds(1))
+            return ["replacements": 20, "survivingModels": 0]
+        }
+        try await PerformanceProbe.attachMemoryAfterOneSecond(self, scenario: "mobile-home-lifecycle")
+    }
+
     func testDefaultTabsKeepSettingsOptionalOnPhoneAndTablet() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID

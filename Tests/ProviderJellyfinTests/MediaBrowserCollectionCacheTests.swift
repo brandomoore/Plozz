@@ -3,6 +3,26 @@ import XCTest
 @testable import ProviderJellyfin
 
 final class MediaBrowserCollectionCacheTests: XCTestCase {
+    func testDistinctLibrariesEvictOldSnapshotsAndKeepTheNewestFour() async throws {
+        let cache = MediaBrowserCollectionLibraryCache()
+        for index in 0..<32 {
+            _ = try await cache.snapshot(key: "library-\(index)", refresh: false) {
+                [MediaItem(id: "item-\(index)", title: "Fixture", kind: .movie)]
+            }
+        }
+        for index in 28..<32 {
+            let recent = try await cache.snapshot(key: "library-\(index)", refresh: false) {
+                XCTFail("The four most recent snapshots must remain cached.")
+                return []
+            }
+            XCTAssertEqual(recent.map(\.id), ["item-\(index)"])
+        }
+        let oldest = try await cache.snapshot(key: "library-27", refresh: false) {
+            [MediaItem(id: "reloaded", title: "Fixture", kind: .movie)]
+        }
+        XCTAssertEqual(oldest.map(\.id), ["reloaded"])
+    }
+
     func testProgressReachesActiveConsumersOnly() async throws {
         for cancelFirst in [false, true] {
             let cache = MediaBrowserCollectionLibraryCache()

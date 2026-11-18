@@ -37,11 +37,38 @@ public enum MediaItemSortOrder {
         sort: SortDescriptor,
         identityTieBreak: Bool = true
     ) -> Bool {
+        isOrderedBefore(lhs, rhs, sort: sort, identityTieBreak: identityTieBreak, names: nil)
+    }
+
+    /// Normalize each title once, rather than at every comparison in a large shelf.
+    public static func sorted(_ items: [MediaItem], by sort: SortDescriptor) -> [MediaItem] {
+        sorted(items, by: sort, checkCancellation: {})
+    }
+
+    public static func sorted(
+        _ items: [MediaItem], by sort: SortDescriptor, checkCancellation: () throws -> Void
+    ) rethrows -> [MediaItem] {
+        let names = try items.enumerated().map { index, item in
+            if index.isMultiple(of: 256) { try checkCancellation() }
+            return sortName(item)
+        }
+        var comparisons = 0
+        return try items.indices.sorted {
+            comparisons += 1
+            if comparisons.isMultiple(of: 256) { try checkCancellation() }
+            return isOrderedBefore(items[$0], items[$1], sort: sort, identityTieBreak: true, names: (names[$0], names[$1]))
+        }.map { items[$0] }
+    }
+
+    private static func isOrderedBefore(
+        _ lhs: MediaItem, _ rhs: MediaItem, sort: SortDescriptor,
+        identityTieBreak: Bool, names: (String, String)?
+    ) -> Bool {
         let ascending = sort.direction == .ascending
         let order: Bool?
         switch sort.field {
         case .name, .random:
-            order = compareNames(lhs, rhs, ascending: ascending)
+            order = compareNames(lhs, rhs, ascending: ascending, names: names)
         case .dateAdded:
             order = compare(lhs.librarySortValues?.dateAdded, rhs.librarySortValues?.dateAdded, ascending: ascending)
         case .communityRating:
@@ -67,15 +94,15 @@ public enum MediaItemSortOrder {
             if let result = compare(lhs.productionYear, rhs.productionYear, ascending: ascending) {
                 return result
             }
-            order = compareNames(lhs, rhs, ascending: true)
+            order = compareNames(lhs, rhs, ascending: true, names: names)
         case .runtime:
             if let result = compare(lhs.runtime, rhs.runtime, ascending: ascending) {
                 return result
             }
-            order = compareNames(lhs, rhs, ascending: true)
+            order = compareNames(lhs, rhs, ascending: true, names: names)
         }
         if let order { return order }
-        if let names = compareNames(lhs, rhs, ascending: true) { return names }
+        if let order = compareNames(lhs, rhs, ascending: true, names: names) { return order }
         guard identityTieBreak else { return false }
         if lhs.sourceAccountID != rhs.sourceAccountID {
             return (lhs.sourceAccountID ?? "") < (rhs.sourceAccountID ?? "")
@@ -101,9 +128,9 @@ public enum MediaItemSortOrder {
     private static func compareNames(
         _ lhs: MediaItem,
         _ rhs: MediaItem,
-        ascending: Bool
+        ascending: Bool, names: (String, String)? = nil
     ) -> Bool? {
-        let result = sortName(lhs).compare(sortName(rhs), options: [.numeric])
+        let result = (names?.0 ?? sortName(lhs)).compare(names?.1 ?? sortName(rhs), options: [.numeric])
         guard result != .orderedSame else { return nil }
         return ascending ? result == .orderedAscending : result == .orderedDescending
     }

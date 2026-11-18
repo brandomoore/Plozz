@@ -43,17 +43,11 @@ enum SiloOfflineDownload {
         return .init(
             url: result.url, expectedDuration: result.duration, cleanupURL: nil,
             headers: result.headers, singleFile: true, expectedBytes: result.expectedBytes,
+            expectedAudioLanguages: result.expectedAudioLanguages,
             didComplete: { destination in
                 try await provider.validateDownloadCompletion(result.reference, manifest: result.manifest)
                 try result.manifest.write(to: destination.appendingPathExtension("silo-manifest.json"), options: .atomic)
                 try JSONEncoder().encode(result.metadata).write(to: destination.appendingPathExtension("metadata.json"), options: .atomic)
-                if source.includesTextSubtitleTracks {
-                    let assets = try await provider.downloadSubtitleAssets(manifest: result.manifest, reference: result.reference)
-                    for asset in assets {
-                        try asset.bytes.write(to: destination.deletingLastPathComponent().appendingPathComponent(asset.file.fileName), options: .atomic)
-                    }
-                    try JSONEncoder().encode(assets.map(\.file)).write(to: destination.appendingPathExtension("subtitles.json"), options: .atomic)
-                }
             })
     }
 }

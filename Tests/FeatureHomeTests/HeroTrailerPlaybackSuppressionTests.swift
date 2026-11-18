@@ -8,6 +8,21 @@ import XCTest
 
 @MainActor
 final class HeroTrailerPlaybackSuppressionTests: XCTestCase {
+    func testPlayingTrailerStillProducesHandoffFrame() async throws {
+        let url = try await makeVideo()
+        let controller = HeroTrailerController()
+        defer { controller.stop() }
+        controller.play(itemID: "hero", resolvedURL: url, muted: true)
+        try await wait { controller.isPlaying && controller.player.currentTime().seconds > 0.1 }
+        await controller.captureHandoffFrame()
+        let frame = try XCTUnwrap(controller.handoffImage?.cgImage)
+        XCTAssertEqual(frame.width, 160)
+        XCTAssertEqual(frame.height, 96)
+        XCTAssertEqual(controller.currentItemID, "hero")
+        controller.stop()
+        XCTAssertNil(controller.handoffImage)
+    }
+
     func testFeaturedCoordinatorPlaysResolvedTrailerAndWithdrawsOnScrollAway() async throws {
         let url = try await makeVideo()
         let controller = HeroTrailerController()

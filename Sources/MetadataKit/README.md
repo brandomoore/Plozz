@@ -14,6 +14,12 @@ load-bearing.
   the resolved URL in `MetadataDiskCache`.
 - `ContentClassification` — turns a `MediaItem` into a routable
   `ContentType` using provider-supplied genre / external-id hints.
+  Its upscaling selector preserves explicit choices and maps Automatic to
+  Animation for anime identities or animation genres/tags, otherwise Standard.
+  An episode may use its exact, same-account series metadata. This is metadata
+  classification, not visual analysis or reliable separation of drawn and CGI
+  animation; Standard remains an explicit override. Format eligibility belongs
+  to the playback engine, not the classifier.
 - Provider conformers — each isolated behind a small `ArtworkProviding`
   surface and individually unit-testable:
   - **AniList** (GraphQL) — anime hero / poster / score.
@@ -32,13 +38,22 @@ load-bearing.
   library is enriched with a one-time burst of calls, then effectively
   none.
 - `MetadataHTTP` — internal lightweight `URLSession` transport for enrichment.
-- `DetailMetadataResolver` — fills missing cast, directors, writers, studios and
-  genres after a provider's full detail response, using the same pipeline on
+- `DetailMetadataResolver` — fills missing descriptions, cast, directors, writers, producers, composers, studios,
+  genres and confirmed title facts after a provider's full detail response, using the same pipeline on
   tvOS and iOS/iPadOS. Cast and crew are separate gaps: an existing cast does not
   hide missing directors, and adding cast never erases server crew. Source
   changes and cancellation discard stale results. Household source preferences
   and the current TMDB credential still apply.
   TMDB credits use the movie, series, season or episode endpoint as appropriate;
+  cast uses explicit billing order before deduplication and the upstream limit,
+  retaining response order for ties or absent billing and placing guest stars last.
+  Producer/executive-producer and composer gaps use the same scoped credits request
+  and preserve server-supplied groups; general department credits are not promoted.
+  The response retains scoped credits as matching evidence, including
+  roles already supplied by the server. A unique name plus an overlapping role on
+  that same title can join native and TMDB portraits through `creditIdentity`;
+  ambiguous names and conflicting identities stay separate. This display-only
+  link never replaces native person IDs, biography handles, or server role data.
   an episode never inherits a whole show's directing/writing credits. Exact
   external IDs take precedence and a failed ID lookup never falls back to a
   different title. A title-only match must agree on title and any supplied year.
@@ -54,8 +69,49 @@ load-bearing.
   less-identified query, even when a provider returns no IDs with its fields.
   TMDB transport failures report provider health, rather than caching an outage
   or revoked credential as an authoritative absence of credits.
+  Movie/series original language and series production status/catalog totals
+  use the existing identity-checked TMDB detail response, with sourced-field
+  provenance and gap-only merging. Discover requests the same fields. Unknown
+  statuses and nonpositive totals remain absent; local episode counts, empty
+  schedules and audio-selection heuristics are not evidence for these facts.
+  Series facts never propagate to seasons/episodes or personal-video mode.
   Artwork, playable identity, file/stream facts and Common Sense are not filled
   by this resolver.
+  Detail pages pass the effective UI/profile locale to text enrichment, including
+  text refresh for external/discovery details. Existing feed text is a fallback,
+  not authoritative server text. Known externally attributed share metadata is
+  refreshed only in the detail presentation; shared catalog records remain unchanged.
+  TMDB detail, episode, credits and matching requests carry that language;
+  when a localized title search misses an English release alias, identity lookup
+  retries the English search with the same exact-title/year checks. Detail text
+  still comes from the requested-language endpoint.
+  Provider-result keys and detail snapshots separate language variants. Query
+  copies retain language when promoting series IDs or threading matched IDs.
+  Providers without requested-language text support cannot fill descriptions,
+  genres, titles or taglines for non-English requests; their artwork and other
+  capabilities remain available. Once all applicable translated sources have been
+  tried, unresolved text can fall back to English/original metadata. Server/NFO text is never
+  translated or replaced. Child descriptions use scoped providers, not a series
+  description returned by an unscoped adapter. The independent English-only
+  `OverviewRouter` no longer races library-detail enrichment.
+  Its keyless Wikipedia overview fallback now participates in the same
+  ordered pipeline for movie/series gaps; Wikipedia artwork remains idle-only.
+  Retained detail models update their language in place, discard late old-language
+  work and refill gaps from native metadata, not previously enriched text.
+  TheTVDB requests its catalog language IDs (including `pt` for Brazilian
+  Portuguese and `zhtw` for Traditional Chinese) for detail text and admitted discovery
+  candidates, with at most four translation requests in flight and a four-second
+  translation budget that retains original feed text on timeout.
+  Wikipedia follows the matched English article's language link,
+  including Chinese/Serbian script variants, rather than searching for a different
+  work or person. Person biographies preserve server priority and refresh external
+  prose when the selected language changes; in-player biography caches separate languages.
+  Home discovery requests, task identities and persisted hero selections retain
+  the full language, including regional/script distinctions, so a language switch
+  cannot reuse the previous language's discovery snapshot.
+  This does not translate existing server metadata or shared share-scanner records.
+  AniList and TVmaze retain their available original/English text. Selecting a language cannot guarantee
+  translated descriptions when the server or external service has no such text.
 - `HeroDiscoveryProviding` — separate candidate-feed seam for TMDB,
   AniList, TheTVDB, and TVmaze. It does not call Trakt.
 - `HeroDiscoveryService` — bounded, coalesced public-feed reads, provider-level
@@ -108,6 +164,21 @@ API ignores it. Movies never send TV-only parameters. Combined-episode files
 do not use single-episode community markers. Empty/episode-list/version-list
 responses yield no timestamps; open ends need a known runtime, and negative,
 reversed or out-of-runtime segments are discarded.
+
+TheIntroDB arrays represent separate intervals, not competing candidates to
+collapse into one late window. IntroDB's explicit `post_credits` interval is
+non-skippable: it can shorten or split that source's overlapping credits, never
+extend them. Malformed or zero-start scene reports are ignored without losing
+valid markers. A finite credits end alone does not establish a scene or permit
+extending the range. Server-first, per-kind source precedence and optional
+fallback requests remain unchanged; marker count is not a confidence score.
+
+Real-media checks against Plex, Jellyfin, both community APIs, and decoded
+ending frames found separate credits/scene windows in Iron Man, Deadpool and
+The Avengers, and ordinary closing credits in Inception. They also found
+misplaced server markers, shifted community timing, and a zero-start community
+scene. These checks validate range-preserving behavior, not universal marker
+accuracy or compatibility between different releases of a title.
 
 ## Discovery sources
 
@@ -169,11 +240,13 @@ Already identified, owned, unsupported, and personal-media items skip this work.
   endpoint, candidate-image download, SVG renderer, or contrast-analysis pass.
   Better-ranked originals can improve dark-background legibility, but metadata
   ranking does not guarantee contrast. Server artwork and configured source
-  priority remain authoritative. External logos prefer the active app language
-  (including profile overrides), then untagged artwork, English, and other
-  languages; ratings break ties. Regional language tags use the image API's
-  language code. Logo URL and presentation caches include that language, so
-  switching languages cannot reuse a previously selected English logo. This
+  priority remain authoritative. TMDB logos prefer the active app language
+  (including profile overrides), then untagged artwork and English; ratings break
+  ties. Logos tagged with unrelated languages are rejected so the remaining
+  providers or the hero's text title can supply the fallback. Regional language
+  tags use the image API's language code. Logo URL and presentation caches include that language, so
+  switching languages cannot reuse a previously selected English logo. Older
+  language-unrestricted logo selections are not reused. This
   versions only logo keys, not posters/backdrops, and never translates or
   replaces server titles, taglines, or synopses.
 - **Portrait hero artwork is opt-in.** Compact mobile heroes prefer a
@@ -188,6 +261,15 @@ Already identified, owned, unsupported, and personal-media items skip this work.
   Dedicated server square backgrounds take precedence on compact Home and detail
   heroes under Recommended or Library artwork preferences. They are not poster
   substitutes; an explicit online preference still uses this portrait lookup first.
+- **Landscape title artwork is a separate capability.** Artwork-only landscape
+  cards may request `landscapeCardURL` when native title art is absent. TMDB
+  selects language-tagged backdrops from its existing images response, preferring
+  the requested language, then English, then vote order. Untagged backgrounds
+  are not title-art candidates. Language metadata is a signal, not OCR.
+  Unsupported providers return no title-art result; ordinary hero ranking and
+  logos are unchanged. Cache keys isolate this role and language, and live
+  provider enablement/order still apply. Logo-composited cards request clean
+  backgrounds instead, avoiding an intentional second title over this artwork.
 - **No required user subscription or user-supplied key.** App credentials and
   keyless endpoints coexist; missing credentials disable only their provider.
 - **No UI imports.** Provider and composition logic stay outside the shells.

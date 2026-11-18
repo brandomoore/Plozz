@@ -1,0 +1,15 @@
+<!--
+  The end-bar half of Tabler's `player-skip-forward`, on the same 24x24 grid as
+  `player-skip-arrow` so the two compose back into the original glyph. The bar
+  is the thing the arrow runs into, so it is drawn separately and never travels.
+  Occupies x 19-21.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="currentColor"
+>
+  <path d="M20 4a1 1 0 0 1 .993 .883l.007 .117v14a1 1 0 0 1 -1.993 .117l-.007 -.117v-14a1 1 0 0 1 1 -1z" />
+</svg>

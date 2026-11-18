@@ -1,5 +1,6 @@
 import CoreModels
 import Foundation
+import CoreNetworking
 import MediaTransportCore
 import MediaTransportHTTP
 #if canImport(Security)
@@ -112,7 +113,7 @@ public struct WebDAVOnboardingProbe: WebDAVOnboardingProbing {
                 continuation.resume(returning: result)
             }
             let configuration = URLSessionConfiguration.ephemeral
-            let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+            let session = OfflineNetworkSession.make(configuration: configuration, delegate: delegate, delegateQueue: nil)
             var request = URLRequest(url: url)
             request.httpMethod = "OPTIONS"
             request.timeoutInterval = 15

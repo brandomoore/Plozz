@@ -6,6 +6,7 @@ public enum NavigationRailDestination: Hashable, Sendable {
     case home
     case search
     case watchlist
+    case upcoming
     case discover
     case liveTV
     case music
@@ -21,6 +22,7 @@ public enum NavigationRailDestination: Hashable, Sendable {
         case .home: return "home"
         case .search: return "search"
         case .watchlist: return "watchlist"
+        case .upcoming: return "upcoming"
         case .discover: return "discover"
         case .liveTV: return "liveTV"
         case .music: return "music"
@@ -35,6 +37,7 @@ public enum NavigationRailDestination: Hashable, Sendable {
         case "home": self = .home
         case "search": self = .search
         case "watchlist": self = .watchlist
+        case "upcoming": self = .upcoming
         case "discover": self = .discover
         case "liveTV": self = .liveTV
         case "music": self = .music
@@ -94,7 +97,7 @@ public enum NavigationDestinationDefaults {
     public static func compact(hasMusic: Bool) -> [String] {
         var keys = [
             NavigationLibraryLayout.homeKey, NavigationLibraryLayout.discoverKey,
-            NavigationLibraryLayout.watchlistKey
+            NavigationLibraryLayout.watchlistKey, NavigationLibraryLayout.upcomingKey
         ]
         keys.append(NavigationLibraryLayout.liveTVKey)
         keys.append(NavigationLibraryLayout.searchKey)
@@ -121,6 +124,7 @@ public enum NavigationDestinationDefaults {
 
     public static let iOSDefaultVisibleKeys = [
         NavigationLibraryLayout.homeKey,
+        NavigationLibraryLayout.upcomingKey,
         NavigationLibraryLayout.downloadsKey,
         NavigationLibraryLayout.searchKey,
     ]
@@ -135,8 +139,9 @@ public enum NavigationDestinationDefaults {
         ]
     }
 
-    public static func iOS(visibleLibraries: [AggregatedLibrary]) -> [String] {
+    public static func iOS(visibleLibraries: [AggregatedLibrary], hasMusic: Bool = false) -> [String] {
         var keys = iOS
+        if hasMusic { keys.insert(NavigationLibraryLayout.musicKey, at: 1) }
         let libraries = NavigationRailPlan.browsableLibraries(visibleLibraries)
         keys.insert(
             contentsOf: (libraries.count > 1 ? [NavigationLibraryLayout.allLibrariesKey] : [])
@@ -152,8 +157,12 @@ public enum NavigationDestinationDefaults {
 
     /// New libraries stay in the editor until explicitly shown. This is a
     /// presentation default, not a persisted hide or a content restriction.
-    public static func iOSAutomaticallyHiddenKeys(available: [String]) -> Set<String> {
-        Set(available).subtracting(iOSDefaultVisibleKeys)
+    public static func iOSAutomaticallyHiddenKeys(
+        available: [String], hasUpcomingContent: Bool = true
+    ) -> Set<String> {
+        var hidden = Set(available).subtracting(iOSDefaultVisibleKeys + [NavigationLibraryLayout.musicKey])
+        if !hasUpcomingContent { hidden.insert(NavigationLibraryLayout.upcomingKey) }
+        return hidden
     }
 }
 
@@ -273,6 +282,7 @@ public enum NavigationRailPlan {
         case NavigationLibraryLayout.homeKey: return .home
         case NavigationLibraryLayout.searchKey: return .search
         case NavigationLibraryLayout.watchlistKey: return .watchlist
+        case NavigationLibraryLayout.upcomingKey: return .upcoming
         case NavigationLibraryLayout.discoverKey: return .discover
         case NavigationLibraryLayout.liveTVKey: return .liveTV
         case NavigationLibraryLayout.musicKey: return .music
@@ -288,6 +298,7 @@ public enum NavigationRailPlan {
         case .home: return NavigationLibraryLayout.homeKey
         case .search: return NavigationLibraryLayout.searchKey
         case .watchlist: return NavigationLibraryLayout.watchlistKey
+        case .upcoming: return NavigationLibraryLayout.upcomingKey
         case .discover: return NavigationLibraryLayout.discoverKey
         case .liveTV: return NavigationLibraryLayout.liveTVKey
         case .music: return NavigationLibraryLayout.musicKey

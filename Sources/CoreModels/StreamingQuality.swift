@@ -363,9 +363,12 @@ public struct StreamingPlaybackOptions: Hashable, Sendable {
                     && $0.isCommentary == audioTrack.isCommentary
             }) { return sameLanguage }
         }
-        return AudioLanguagePolicy.fallbackTrackID(preferredLanguages: preferredAudioLanguages, tracks: tracks)
-            .flatMap { id in tracks.first { $0.id == id } }
-            ?? tracks.first(where: \.isDefault) ?? tracks.first
+        for language in preferredAudioLanguages {
+            if let match = tracks.first(where: { LanguageMatch.matches($0.language, language) }) {
+                return match
+            }
+        }
+        return tracks.first(where: \.isDefault) ?? tracks.first
     }
 
     public func selectedSubtitle(in tracks: [MediaTrack]) -> MediaTrack? {
@@ -398,6 +401,12 @@ public protocol StreamingQualityProviding: MediaProvider {
 
 public extension StreamingQualityProviding {
     var streamingQualitySupport: StreamingQualitySupport { .standard }
+}
+
+/// Session cleanup that can survive an app handoff without persisting media
+/// URLs or reconstructing a playback request.
+public protocol StreamingSessionReleasing: StreamingQualityProviding {
+    func releaseStreamingSession(id: String) async
 }
 
 /// Opt-in maintenance of an already-started server rendition, including while paused.
@@ -500,9 +509,11 @@ public struct StreamingPlaybackFailure: Equatable, Sendable {
         case network, timedOut, accessDenied, unavailable, unsupportedFormat
         case hdrConversion, hdrConversionUnconfirmed, server, unknown
         case rateLimited, accessRestricted, storageExhausted, audioOutputFailed
-        case readinessTimedOut, processingFailed
+        case readinessTimedOut, processingFailed, mediaServicesReset
     }
-    public enum Domain: String, Codable, Sendable { case avFoundation = "AVFoundation", url = "URL", coreMedia = "CoreMedia" }
+    public enum Domain: String, Codable, Sendable {
+        case avFoundation = "AVFoundation", url = "URL", coreMedia = "CoreMedia", osStatus = "OSStatus"
+    }
     public let kind: Kind
     public let domain: Domain?
     public let code: Int?
@@ -593,6 +604,8 @@ public struct StreamingPlaybackFailure: Equatable, Sendable {
             "Your device ran out of space while preparing video."
         case .audioOutputFailed:
             "The player could not start the audio session."
+        case .mediaServicesReset:
+            "The system player reported a playback failure."
         case .unknown:
             engineFailure?.message ?? "The player couldn’t play this video. No more specific cause was captured."
         }

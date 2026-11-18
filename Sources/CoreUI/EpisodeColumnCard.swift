@@ -39,16 +39,27 @@ public struct EpisodeColumnCard: View, Equatable {
     #endif
     @State private var synopsisVisible = false
     @State private var synopsisAtRest = false
+    @State private var isMenuPresented = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzWatchStatusIndicator) private var watchStatusIndicator
     @Environment(\.plozzCardFocusStyle) private var focusStyle
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+    @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.detailHeaderSettings) private var detailSettings
     @Environment(\.plozzAppTextScale) private var appTextScale
 
     private let metrics = PlozzMetrics.standard
+    private var descriptionsOnFocus: Bool {
+        #if os(tvOS)
+        captionSettings.episodeDescriptionsOnFocus
+        #else
+        true
+        #endif
+    }
+    private var showsSynopsis: Bool { !descriptionsOnFocus || synopsisVisible }
+    private var captionIsFocused: Bool { isFocused || isMenuPresented }
     private var textScale: CGFloat {
         #if os(tvOS)
         PlozzTypography.scale(local: detailSettings?.settings.textSize.scale ?? 1, app: appTextScale)
@@ -73,12 +84,7 @@ public struct EpisodeColumnCard: View, Equatable {
 
     public var body: some View {
         let _ = plozzTraceBodyChanges { Self._printChanges() }
-        VStack(alignment: .leading, spacing: 0) {
-            episodeArtwork
-            if !captionsHidden {
-                episodeCaption
-            }
-        }
+        cardContent
         .frame(width: Self.artworkSize.width, alignment: .leading)
         .padding(.trailing, Self.trailingSpacing)
         .focusableCard(
@@ -92,7 +98,7 @@ public struct EpisodeColumnCard: View, Equatable {
         .task(id: synopsisTaskID) {
             synopsisVisible = false
             synopsisAtRest = false
-            guard isFocused, !captionsHidden else { return }
+            guard descriptionsOnFocus, captionIsFocused, !captionsHidden else { return }
             if reduceMotion {
                 synopsisVisible = true
                 synopsisAtRest = true
@@ -103,7 +109,10 @@ public struct EpisodeColumnCard: View, Equatable {
             synopsisVisible = true
             synopsisAtRest = true
         }
-        .mediaItemContextMenu(for: item)
+        .mediaItemContextMenu(
+            for: item, nativeControl: focusStyle.usesSystemEffect,
+            onNativePresentationChanged: { isMenuPresented = $0 }
+        )
         .environment(\.plozzCardStyle, .borderless)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
@@ -119,7 +128,7 @@ public struct EpisodeColumnCard: View, Equatable {
 
             SpoilerSafeOverviewText(
                 overview: presentation.overviewTreatment == .blurred
-                    ? item.overview
+                    ? EpisodeColumnPresentation.compactOverview(item.overview)
                     : presentation.visibleOverview,
                 hidesSpoilers: presentation.overviewTreatment == .blurred
                     || presentation.overviewTreatment == .placeholder,
@@ -129,48 +138,67 @@ public struct EpisodeColumnCard: View, Equatable {
                 lineSpacing: PlozzTypography.episodeDescription.scaled(by: textScale).lineSpacing,
                 maxWidth: Self.artworkSize.width
             )
-            .opacity(synopsisVisible ? 1 : 0)
+            .opacity(showsSynopsis ? 1 : 0)
             .animation(
                 reduceMotion ? nil : .easeOut(duration: 0.12),
-                value: synopsisVisible
+                value: showsSynopsis
             )
-            .offset(y: reduceMotion || synopsisAtRest ? 0 : -metrics.focusCaptionPush)
+            .offset(y: usesNativeCaptionMotion || reduceMotion || !descriptionsOnFocus || synopsisAtRest ? 0 : -metrics.focusCaptionPush)
             .animation(
-                reduceMotion ? nil : .smooth(duration: 0.28),
+                usesNativeCaptionMotion || reduceMotion ? nil : .smooth(duration: 0.28),
                 value: synopsisAtRest
             )
             .padding(.top, 10)
         }
-        .offset(y: reduceMotion || isFocused ? 0 : -metrics.focusCaptionPush)
+        .offset(y: usesNativeCaptionMotion || reduceMotion || captionIsFocused ? 0 : -metrics.focusCaptionPush)
         .animation(
-            reduceMotion ? nil : PlozzTheme.Metrics.cardFocusAnimation(
-                isFocused: isFocused, focusStyle: focusStyle, reduceMotion: reduceMotion
+            usesNativeCaptionMotion || reduceMotion ? nil : PlozzTheme.Metrics.cardFocusAnimation(
+                isFocused: captionIsFocused, focusStyle: focusStyle, reduceMotion: reduceMotion
             ),
-            value: isFocused
+            value: captionIsFocused
         )
     }
 
+    private var usesNativeCaptionMotion: Bool {
+        #if os(tvOS)
+        focusStyle.usesSystemEffect
+        #else
+        false
+        #endif
+    }
+
     private var synopsisTaskID: SynopsisTaskID {
-        SynopsisTaskID(isFocused: isFocused, reduceMotion: reduceMotion, captionsHidden: captionsHidden)
+        SynopsisTaskID(
+            isFocused: captionIsFocused, reduceMotion: reduceMotion,
+            captionsHidden: captionsHidden, descriptionsOnFocus: descriptionsOnFocus
+        )
     }
 
     private struct SynopsisTaskID: Hashable {
         let isFocused: Bool
         let reduceMotion: Bool
         let captionsHidden: Bool
+        let descriptionsOnFocus: Bool
     }
 
     @ViewBuilder
-    private var episodeArtwork: some View {
+    private var cardContent: some View {
         #if os(tvOS)
         if focusStyle.usesSystemEffect {
-            nativeEpisodeArtwork
+            nativeEpisodeCard
         } else {
-            customEpisodeArtwork
+            customEpisodeCard
         }
         #else
-        customEpisodeArtwork
+        customEpisodeCard
         #endif
+    }
+
+    private var customEpisodeCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            customEpisodeArtwork
+            if !captionsHidden { episodeCaption }
+        }
     }
 
     private var customEpisodeArtwork: some View {
@@ -191,11 +219,11 @@ public struct EpisodeColumnCard: View, Equatable {
     }
 
     private var episodeOverlays: some View {
-        episodeOverlayContent
+        episodeOverlayContent()
             .overlay(alignment: .topTrailing) { statusIndicator }
     }
 
-    private var episodeOverlayContent: some View {
+    private func episodeOverlayContent(scrimOutset: CGFloat = 0) -> some View {
         ZStack {
             if presentation.isUpcoming, let air = item.upcomingReleaseText {
                 VStack(spacing: 8) {
@@ -216,13 +244,15 @@ public struct EpisodeColumnCard: View, Equatable {
                 .padding(.horizontal, 12)
             }
             if presentation.artworkTreatment != .blurred {
-                ResumeChipOverlay(item: item).plozzChromeFocused(isFocused)
+                ResumeChipOverlay(item: item)
+                    .extendingScrim(by: scrimOutset)
+                    .plozzChromeFocused(isFocused)
             }
         }
     }
 
     #if os(tvOS)
-    private var nativeEpisodeArtwork: some View {
+    private var nativeEpisodeCard: some View {
         let source = EpisodeArtworkSource(
             item: item, spoilerSettings: spoilerSettings, policy: artworkPolicy.forArea(.episodes)
         )
@@ -235,13 +265,17 @@ public struct EpisodeColumnCard: View, Equatable {
             fallbackWidth: Self.artworkSize.width, title: nil, subtitle: nil,
             overlay: ZStack {
                 if captionsHidden && nativeArtwork.image == nil { neutralPlaceholder }
-                episodeOverlayContent
+                episodeOverlayContent(scrimOutset: 40)
             },
+            rasterizesOverlay: false,
+            clipsOverlayToArtwork: false,
             indicators: nativeStatusIndicator,
+            caption: captionsHidden ? nil : AnyView(episodeCaption),
+            captionFocusOffset: reduceMotion ? 0 : metrics.focusCaptionPush,
             focus: $isFocused, action: action
         )
         .focused($isFocused.focusState)
-        .frame(width: Self.artworkSize.width, height: Self.artworkSize.height)
+        .frame(width: Self.artworkSize.width)
         .background {
             FallbackAsyncImage(
                 references: source.references, variant: .landscapeCard,

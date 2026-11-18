@@ -256,10 +256,11 @@ public struct PlexAuthClient: Sendable {
     /// account's (admin) token. Use the returned `id` (uuid) with
     /// `switchHomeUser` to assume that user's identity.
     public func homeUsers(authToken: String) async throws -> [PlexHomeUser] {
-        let endpoint = Endpoint(
+        var endpoint = Endpoint(
             path: "/api/v2/home/users",
             headers: deviceProfile.headers(token: authToken)
         )
+        endpoint.reportsServerTrustFailures = true
         let dto = try await http.decode(PlexHomeUsersDTO.self, from: endpoint, baseURL: baseURL)
         return dto.users.compactMap { user -> PlexHomeUser? in
             guard let id = user.uuid ?? user.id.map(String.init) else { return nil }
@@ -289,12 +290,13 @@ public struct PlexAuthClient: Sendable {
         if let pin, !pin.isEmpty {
             queryItems.append(URLQueryItem(name: "pin", value: pin))
         }
-        let endpoint = Endpoint(
+        var endpoint = Endpoint(
             method: .post,
             path: "/api/v2/home/users/\(uuid)/switch",
             queryItems: queryItems,
             headers: deviceProfile.headers(token: authToken)
         )
+        endpoint.reportsServerTrustFailures = true
         let dto = try await http.decode(PlexHomeSwitchDTO.self, from: endpoint, baseURL: baseURL)
         guard let token = dto.authToken ?? dto.authenticationToken, !token.isEmpty else {
             throw AppError.unauthorized

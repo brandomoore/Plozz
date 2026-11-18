@@ -163,9 +163,10 @@ struct DetailExtrasView: View {
                     ))
                     .id("detail-extras-related")
                 }
-                if !item.cast.isEmpty {
+                if !item.detailCredits.isEmpty {
                     CastRowView(
-                        people: item.cast,
+                        title: item.detailCredits.contains { !$0.crewRoles.isEmpty } ? "Cast & Crew" : "Cast",
+                        people: item.people,
                         leadingInset: leadingInset,
                         onFocusEntered: onCastFocusEntered
                     )
@@ -371,7 +372,7 @@ private struct StudioLogoChip: View {
     private func load() async {
         guard !resolved else { return }
         guard
-            let (data, response) = try? await ArtworkSession.shared.data(from: url),
+            let (data, response) = try? await ArtworkSession.data(from: url),
             (response as? HTTPURLResponse).map({ (200...299).contains($0.statusCode) }) ?? true,
             // Studio tiles are ~180×135pt; a 400px thumbnail is crisp yet a
             // fraction of a full-size company logo's bitmap. Falls back to a full

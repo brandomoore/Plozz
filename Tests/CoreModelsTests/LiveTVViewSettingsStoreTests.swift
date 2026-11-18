@@ -14,6 +14,7 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
         let settings = LiveTVViewSettingsStore(defaults: makeDefaults()).load()
 
         XCTAssertFalse(settings.sortByName)
+        XCTAssertTrue(settings.cleanChannelNames)
         XCTAssertTrue(settings.autoPreview)
         XCTAssertFalse(settings.hasChosenAutoPreview)
         XCTAssertFalse(settings.allowsAutomaticPreview)
@@ -24,6 +25,27 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
         XCTAssertTrue(settings.previewAfterWatching)
         XCTAssertTrue(settings.showsRecentChannels)
         XCTAssertTrue(settings.startsWithCategories)
+        XCTAssertEqual(settings.guideUpdateInterval, .twelveHours)
+    }
+
+    func testGuideUpdateIntervalPersistsForEachProfileAndIgnoresUnknownValues() {
+        let defaults = makeDefaults()
+        for (namespace, interval) in [("profile-a", LiveTVGuideUpdateInterval.off), ("profile-b", .hourly)] {
+            let store = LiveTVViewSettingsStore(defaults: defaults, namespace: namespace)
+            var settings = store.load()
+            settings.guideUpdateInterval = interval
+            store.save(settings)
+        }
+        XCTAssertEqual(LiveTVViewSettingsStore(defaults: defaults, namespace: "profile-a").load().guideUpdateInterval, .off)
+        XCTAssertEqual(LiveTVViewSettingsStore(defaults: defaults, namespace: "profile-b").load().guideUpdateInterval, .hourly)
+        XCTAssertEqual(LiveTVViewSettingsStore(defaults: defaults).load().guideUpdateInterval, .twelveHours)
+        XCTAssertNil(LiveTVGuideUpdateInterval.off.seconds)
+        XCTAssertEqual(LiveTVGuideUpdateInterval.daily.seconds, 86_400)
+
+        defaults.set(5, forKey: SettingsKey.scoped(LiveTVViewSettingsStore.guideUpdateIntervalKey, namespace: "profile-a"))
+        XCTAssertEqual(
+            LiveTVViewSettingsStore(defaults: defaults, namespace: "profile-a").load().guideUpdateInterval, .twelveHours
+        )
     }
 
     func testAllValuesRoundTripAcrossStoreInstances() {
@@ -38,7 +60,9 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
             previewAfterWatching: false,
             showsRecentChannels: false,
             hasChosenAutoPreview: true,
-            startsWithCategories: false
+            startsWithCategories: false,
+            cleanChannelNames: true,
+            guideUpdateInterval: .threeHours
         )
 
         LiveTVViewSettingsStore(defaults: defaults).save(settings)
@@ -60,8 +84,30 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
             XCTAssertEqual(reopened.autoPreview, enabled)
             XCTAssertEqual(reopened.allowsAutomaticPreview, enabled)
         }
+
         XCTAssertFalse(LiveTVViewSettingsStore(defaults: defaults).load().hasChosenAutoPreview)
         XCTAssertFalse(LiveTVViewSettingsStore(defaults: defaults).load().allowsAutomaticPreview)
+    }
+
+    func testNameCleanupIsOnUntilTurnedOffProfileScopedAndSurvivesOtherPreferenceChanges() {
+        let defaults = makeDefaults()
+        let primary = LiveTVViewSettingsStore(defaults: defaults)
+        let secondary = LiveTVViewSettingsStore(defaults: defaults, namespace: "secondary")
+        var settings = secondary.load()
+        XCTAssertTrue(settings.cleanChannelNames)
+        settings.cleanChannelNames = false
+        secondary.save(settings)
+        XCTAssertTrue(primary.load().cleanChannelNames)
+        let reopened = LiveTVViewSettingsStore(defaults: defaults, namespace: "secondary")
+        XCTAssertFalse(reopened.load().cleanChannelNames)
+        settings = reopened.load()
+        settings.sortByName = true
+        reopened.save(settings)
+        XCTAssertFalse(secondary.load().cleanChannelNames)
+        settings.cleanChannelNames = true
+        reopened.save(settings)
+        XCTAssertTrue(secondary.load().cleanChannelNames)
+        XCTAssertTrue(secondary.load().sortByName)
     }
 
     func testCategoryEntryDefaultsApplyToExistingProfilesAndGuideChoiceIsIsolated() {

@@ -6,12 +6,17 @@ public struct OfflineSubtitleFile: Codable, Sendable {
     public let codec: String
     public let forced: Bool
     public let hearingImpaired: Bool
+    public let displayTitle: String?
 
-    public init(fileName: String, language: String?, codec: String, forced: Bool, hearingImpaired: Bool) {
+    public init(
+        fileName: String, language: String?, codec: String, forced: Bool, hearingImpaired: Bool,
+        displayTitle: String? = nil
+    ) {
         self.fileName = fileName
         self.language = language
         self.codec = codec
         self.forced = forced
         self.hearingImpaired = hearingImpaired
+        self.displayTitle = displayTitle
     }
 }

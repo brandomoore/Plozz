@@ -18,30 +18,76 @@ final class PlayerVideoZoomTests: XCTestCase {
         }.value
     }
 
-    func testZoomModeCopyUsesFamiliarNamesAndIdentifiesTheDefaultWithoutDescriptions() {
+    func testZoomModeCopyDoesNotClaimNormalIsEveryPlayersDefault() {
         XCTAssertEqual(PlayerVideoZoom().mode, .fit)
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.title) },
                        ["Normal", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
         XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.menuTitle) },
-                       ["Normal (Default)", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
+                       ["Normal", "Crop", "Stretch", "Custom", "Auto-crop black bars"])
     }
 
-    func testPictureFitUsesFullBoundsWithUniformScaleAndAsymmetricTranslation() throws {
+    func testDefaultAndRestorationNeverWriteButExplicitChoicesDo() {
+        let model = PlayerVideoZoomModel()
+        var saved: [PlayerVideoZoom] = []
+        model.onUserChange = { saved.append($0) }
+        model.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .fit)
+        XCTAssertTrue(saved.isEmpty)
+        model.settings.mode = .fit
+        model.setCustomPercent(117)
+        XCTAssertEqual(saved, [.init(mode: .fit), .init(mode: .custom, customPercent: 117)])
+        model.restoreForPlayback(saved.last, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.customPercent, 117)
+        XCTAssertEqual(saved.count, 2)
+        model.restoreForPlayback(nil, defaultPreference: .init(mode: .stretch), supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .stretch, "A new item uses the platform's selected default.")
+        model.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .fit, "A new title does not inherit Custom.")
+        XCTAssertEqual(saved.count, 2)
+    }
+
+    func testUnsupportedEngineDoesNotReplaceRememberedAutoCrop() {
+        let model = PlayerVideoZoomModel()
+        var remembered = PlayerVideoZoom(mode: .picture)
+        model.onUserChange = { remembered = $0 }
+        model.restoreForPlayback(remembered, defaultPreference: .onDemandDefault, supportsActivePicture: false)
+        XCTAssertEqual(model.settings.mode, .fit)
+        XCTAssertEqual(remembered.mode, .picture)
+        model.restoreForPlayback(remembered, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .picture)
+        model.restoreForPlayback(.init(mode: .fit), defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertEqual(model.settings.mode, .fit)
+    }
+
+    func testNormalDefaultDoesNotFollowDetectedPictureChanges() throws {
+        let model = PlayerVideoZoomModel()
+        model.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        let original = try XCTUnwrap(model.settings.videoRect(in: television, aspectRatio: 16 / 9))
+        for picture in [
+            CGRect(x: 0, y: 0, width: 1, height: 1),
+            CGRect(x: 0, y: 0.1, width: 1, height: 0.8),
+            CGRect(x: 0.05, y: 0.2, width: 0.8, height: 0.65)
+        ] {
+            let frame = try XCTUnwrap(model.settings.videoRect(
+                in: television, aspectRatio: 16 / 9, activePicture: picture
+            ))
+            assertRect(frame, equals: original)
+        }
+    }
+
+    func testPictureFitMaximizesSafeBoundsWithUniformScaleAndAsymmetricTranslation() throws {
         let normalized = CGRect(x: 0.05, y: 0.1, width: 0.8, height: 0.65)
         for (bounds, insets) in safeAreaCases {
             let safe = bounds.inset(by: insets)
-            let zoom = PlayerVideoZoom(mode: .picture)
+            let zoom = PlayerVideoZoom(mode: .picture, pictureFitsInsideSafeArea: true)
             let video = try XCTUnwrap(zoom.videoRect(
                 in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: normalized
             ))
             let active = VideoActivePictureGeometry.map(normalized, into: video)
-            XCTAssertEqual(active.midX, bounds.midX, accuracy: 0.001)
-            XCTAssertEqual(active.midY, bounds.midY, accuracy: 0.001)
-            XCTAssertTrue(bounds.insetBy(dx: -0.001, dy: -0.001).contains(active))
-            XCTAssertEqual(max(active.width / bounds.width, active.height / bounds.height), 1, accuracy: 0.001)
-            assertRect(video, equals: try XCTUnwrap(zoom.videoRect(
-                in: bounds, aspectRatio: 16 / 9, activePicture: normalized
-            )))
+            XCTAssertEqual(active.midX, safe.midX, accuracy: 0.001)
+            XCTAssertEqual(active.midY, safe.midY, accuracy: 0.001)
+            XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(active))
+            XCTAssertEqual(max(active.width / safe.width, active.height / safe.height), 1, accuracy: 0.001)
             XCTAssertEqual(video.width / video.height, 16 / 9, accuracy: 0.001)
             let scale = zoom.scaleFactors(in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: normalized)
             XCTAssertEqual(scale.dx, scale.dy)
@@ -49,34 +95,181 @@ final class PlayerVideoZoomTests: XCTestCase {
         }
     }
 
-    func testPictureFitRemovesEncodedBarsPastTheLandscapeCutoutWithoutCroppingContent() throws {
+    func testPictureFitRemovesEncodedBarsUpToTheLandscapeCutoutWithoutCroppingContent() throws {
         let bounds = CGRect(x: 0, y: 0, width: 2622, height: 1206)
         let safe = bounds.insetBy(dx: 177, dy: 0)
         let normalized = CGRect(x: 0, y: 153.0 / 1206.0, width: 1, height: 901.0 / 1206.0)
-        let zoom = PlayerVideoZoom(mode: .picture)
+        let zoom = PlayerVideoZoom(mode: .picture, pictureFitsInsideSafeArea: true)
         let video = try XCTUnwrap(zoom.videoRect(
             in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: normalized
         ))
         let active = VideoActivePictureGeometry.map(normalized, into: video)
-        XCTAssertEqual(active.minX, bounds.minX, accuracy: 0.001)
-        XCTAssertEqual(active.maxX, bounds.maxX, accuracy: 0.001)
+        XCTAssertEqual(active.minX, safe.minX, accuracy: 0.001)
+        XCTAssertEqual(active.maxX, safe.maxX, accuracy: 0.001)
         XCTAssertEqual(active.midY, bounds.midY, accuracy: 0.001)
         XCTAssertGreaterThan(active.minY, bounds.minY)
         XCTAssertLessThan(active.maxY, bounds.maxY)
         XCTAssertEqual(active.width / active.height, (16 / 9) / normalized.height, accuracy: 0.001)
+        let normal = try XCTUnwrap(PlayerVideoZoom().videoRect(
+            in: bounds, aspectRatio: 16 / 9, fitBounds: safe
+        ))
+        XCTAssertGreaterThan(active.width, normal.width, "Encoded bars must not waste safe horizontal space.")
+        let edgeToEdge = try XCTUnwrap(zoom.videoRect(
+            in: bounds, aspectRatio: 16 / 9, activePicture: normalized
+        ))
+        let edgePicture = VideoActivePictureGeometry.map(normalized, into: edgeToEdge)
+        XCTAssertEqual(edgePicture.minX, bounds.minX, accuracy: 0.001)
+        XCTAssertEqual(edgePicture.maxX, bounds.maxX, accuracy: 0.001)
     }
 
-    func testUnknownAndUnsafePictureGeometryPreserveNormalSafeAreaFitting() {
+    func testNormalPinchReturnsToTheWholeFrameEvenWhenAutoCropIsSupported() throws {
+        let model = PlayerVideoZoomModel()
+        model.supportsActivePicture = true
+        let bounds = CGRect(x: 0, y: 0, width: 874, height: 402)
+        let safe = bounds.insetBy(dx: 59, dy: 0)
+        model.setPinchZoom(fillsScreen: false)
+        XCTAssertEqual(model.settings.mode, .fit)
+        let safeVideo = try XCTUnwrap(model.settings.videoRect(
+            in: bounds, aspectRatio: 16 / 9, fitBounds: safe
+        ))
+        XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(safeVideo))
+        XCTAssertEqual(safeVideo.height, safe.height, accuracy: 0.001)
+        XCTAssertLessThan(safeVideo.width, safe.width, "Reaching the notch must not trim real picture.")
+        model.setPinchZoom(fillsScreen: true)
+        XCTAssertEqual(model.settings.mode, .fill)
+        let fullVideo = try XCTUnwrap(model.settings.videoRect(
+            in: bounds, aspectRatio: 16 / 9, fitBounds: safe
+        ))
+        XCTAssertEqual(fullVideo.width, bounds.width, accuracy: 0.001)
+        XCTAssertGreaterThan(fullVideo.height, bounds.height, "Only explicit Crop may trim picture.")
+        model.setPinchZoom(fillsScreen: false)
+        XCTAssertEqual(model.settings.mode, .fit)
+        assertRect(try XCTUnwrap(model.settings.videoRect(
+            in: bounds, aspectRatio: 16 / 9, fitBounds: safe
+        )), equals: safeVideo)
+        model.supportsActivePicture = false
+        model.setPinchZoom(fillsScreen: true)
+        model.setPinchZoom(fillsScreen: false)
+        XCTAssertEqual(model.settings.mode, .fit)
+    }
+
+    func testAutoCropPinchSharesFramingAcrossTitlesAndRestartsForOnlyItsDeviceType() throws {
+        let suite = "SharedAutoCrop-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PlaybackSettingsStore(defaults: defaults)
+        for platform in VideoZoomDefaults.Platform.allCases {
+            let preferences = PlaybackSettingsModel(store: store)
+            preferences.settings.videoZoom[platform].mode = .picture
+            let model = PlayerVideoZoomModel()
+            var saved: [PlayerVideoZoom] = []
+            model.onUserChange = { saved.append($0) }
+            model.bindAutoCropFraming(to: preferences, platform: platform)
+            model.restoreForPlayback(nil, defaultPreference: preferences.settings.videoZoom[platform],
+                                     supportsActivePicture: true)
+            XCTAssertTrue(saved.isEmpty)
+            for fillsScreen in [false, true] {
+                model.setPinchZoom(fillsScreen: fillsScreen)
+                XCTAssertEqual(model.settings.mode, .picture)
+                XCTAssertEqual(model.settings.pictureFitsInsideSafeArea, !fillsScreen)
+                XCTAssertEqual(saved.last, model.settings)
+
+                let reopened = PlaybackSettingsModel(store: store)
+                let nextMovie = PlayerVideoZoomModel()
+                nextMovie.bindAutoCropFraming(to: reopened, platform: platform)
+                for remembered: PlayerVideoZoom? in [
+                    nil, .init(mode: .picture, pictureFitsInsideSafeArea: fillsScreen)
+                ] {
+                    nextMovie.restoreForPlayback(remembered, defaultPreference: reopened.settings.videoZoom[platform],
+                                                 supportsActivePicture: true)
+                    XCTAssertEqual(nextMovie.settings.mode, .picture)
+                    XCTAssertEqual(nextMovie.settings.pictureFitsInsideSafeArea, !fillsScreen,
+                                   "New and previously saved titles must use the shared framing.")
+                }
+                for other in VideoZoomDefaults.Platform.allCases where other != platform {
+                    XCTAssertFalse(reopened.settings.videoZoom[other].pictureFitsInsideSafeArea)
+                }
+                XCTAssertEqual(reopened.settings.videoZoom[platform].mode, .picture)
+            }
+            XCTAssertEqual(saved.count, 2, "Binding and restoring must not write title preferences.")
+        }
+    }
+
+    func testSharedAutoCropFramingPreservesManualModesAndProfileIsolation() throws {
+        let suite = "AutoCropProfiles-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        preferences.settings.videoZoom.phone = .init(mode: .custom, customPercent: 117)
+        let model = PlayerVideoZoomModel()
+        model.bindAutoCropFraming(to: preferences, platform: .phone)
+        model.restoreForPlayback(.init(mode: .picture), defaultPreference: preferences.settings.videoZoom.phone,
+                                 supportsActivePicture: true)
+        model.setPinchZoom(fillsScreen: false)
+        XCTAssertEqual(preferences.settings.videoZoom.phone.mode, .custom)
+        XCTAssertEqual(preferences.settings.videoZoom.phone.customPercent, 117)
+        let stored = preferences.settings
+        for remembered in [PlayerVideoZoom(mode: .fit), .init(mode: .custom, customPercent: 125)] {
+            model.restoreForPlayback(remembered, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+            XCTAssertEqual(model.settings.mode, remembered.mode)
+            XCTAssertEqual(model.settings.customPercent, remembered.customPercent)
+        }
+        model.setCustomPercent(134)
+        model.settings.mode = .picture
+        XCTAssertTrue(model.settings.pictureFitsInsideSafeArea, "Custom must not reset Auto-crop framing.")
+        model.restoreForPlayback(.onDemandDefault, defaultPreference: .onDemandDefault, supportsActivePicture: false)
+        XCTAssertEqual(model.settings.mode, .fit)
+        XCTAssertEqual(preferences.settings, stored, "Restoration and fallback must not change shared defaults.")
+        let guest = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults, namespace: "guest"))
+        model.bindAutoCropFraming(to: guest, platform: .phone)
+        model.restoreForPlayback(.init(mode: .picture, pictureFitsInsideSafeArea: true),
+                                 defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        XCTAssertFalse(model.settings.pictureFitsInsideSafeArea, "A title cannot import another profile's framing.")
+        XCTAssertTrue(preferences.settings.videoZoom.phone.pictureFitsInsideSafeArea)
+    }
+
+    func testBothAutoCropLevelsFitTheEntireActivePictureAcrossAspectsAndCutouts() throws {
+        for (bounds, insets) in safeAreaCases {
+            let safe = bounds.inset(by: insets)
+            for aspect in [4.0 / 3, 16.0 / 9, 2.4, 9.0 / 16] {
+                for normalized in [
+                    CGRect(x: 0, y: 0, width: 1, height: 1),
+                    CGRect(x: 0, y: 0.125, width: 1, height: 0.75),
+                    CGRect(x: 0.05, y: 0.1, width: 0.8, height: 0.65)
+                ] {
+                    for safeLevel in [false, true] {
+                        let viewport = safeLevel ? safe : bounds
+                        let zoom = PlayerVideoZoom(mode: .picture, pictureFitsInsideSafeArea: safeLevel)
+                        let video = try XCTUnwrap(zoom.videoRect(
+                            in: bounds, aspectRatio: aspect, fitBounds: safe, activePicture: normalized
+                        ))
+                        let active = VideoActivePictureGeometry.map(normalized, into: video)
+                        let expected = try XCTUnwrap(SubtitleOverlayGeometry.aspectFitRect(
+                            in: viewport, aspectRatio: aspect * normalized.width / normalized.height
+                        ))
+                        assertRect(active, equals: expected)
+                        XCTAssertTrue(viewport.insetBy(dx: -0.001, dy: -0.001).contains(active))
+                        XCTAssertEqual(video.width / video.height, aspect, accuracy: 0.001)
+                    }
+                }
+            }
+        }
+    }
+
+    func testUnknownAndUnsafePictureGeometryFitTheWholeFrameAtBothAutoCropLevels() {
         for (bounds, insets) in safeAreaCases {
             let safe = bounds.inset(by: insets)
             for invalid: CGRect? in [nil, .zero, CGRect(x: 0, y: 0, width: 0.01, height: 0.01),
                                      CGRect(x: 0, y: 0, width: Double.nan, height: 1)] {
-                XCTAssertEqual(
-                    PlayerVideoZoom(mode: .picture).videoRect(
-                        in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: invalid
-                    ),
-                    PlayerVideoZoom().videoRect(in: bounds, aspectRatio: 16 / 9, fitBounds: safe)
-                )
+                for safeLevel in [false, true] {
+                    XCTAssertEqual(
+                        PlayerVideoZoom(mode: .picture, pictureFitsInsideSafeArea: safeLevel).videoRect(
+                            in: bounds, aspectRatio: 16 / 9, fitBounds: safe, activePicture: invalid
+                        ),
+                        PlayerVideoZoom().videoRect(in: bounds, aspectRatio: 16 / 9,
+                                                   fitBounds: safeLevel ? safe : bounds)
+                    )
+                }
             }
         }
     }
@@ -287,6 +480,11 @@ final class PlayerVideoZoomTests: XCTestCase {
              UIEdgeInsets(top: 0, left: 59, bottom: 21, right: 0)),
             (CGRect(x: 0, y: 0, width: 844, height: 390),
              UIEdgeInsets(top: 0, left: 0, bottom: 21, right: 59)),
+            (CGRect(x: 0, y: 0, width: 844, height: 390),
+             UIEdgeInsets(top: 0, left: 44, bottom: 0, right: 44)),
+            (CGRect(x: 0, y: 0, width: 874, height: 402),
+             UIEdgeInsets(top: 0, left: 62, bottom: 0, right: 62)),
+            (CGRect(x: 0, y: 0, width: 667, height: 375), .zero),
             (CGRect(x: 23, y: 41, width: 844, height: 390),
              UIEdgeInsets(top: 17, left: 63, bottom: 29, right: 11)),
             (CGRect(x: 0, y: 0, width: 1024, height: 1366), .zero),
@@ -453,7 +651,7 @@ final class PlayerVideoZoomTests: XCTestCase {
         let frame = engine.output.frame
         retired.update(zoom: PlayerVideoZoom(mode: .custom, customPercent: 200))
         retired.layoutIfNeeded()
-        XCTAssertTrue(engine.output.superview === current)
+        XCTAssertTrue(engine.output.isDescendant(of: current))
         XCTAssertEqual(engine.output.frame, frame)
     }
 

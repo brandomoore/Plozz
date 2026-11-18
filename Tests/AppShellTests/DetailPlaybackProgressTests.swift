@@ -78,7 +78,10 @@ final class DetailPlaybackProgressTests: XCTestCase {
                     XCTAssertNil(retained[key])
                     XCTAssertFalse(retained.values.contains { $0 === model })
                     XCTAssertEqual(model.currentSourceForDisplay?.accountID, account)
-                    XCTAssertEqual(model.originSourceAccountID, origin)
+                    XCTAssertEqual(
+                        model.originSourceAccountID, model === seasonModel ? account : nil,
+                        "Only explicit season navigation retains a provider-local child choice"
+                    )
                     retained[key] = model
                 }
                 XCTAssertEqual(titleModel.currentSourceForDisplay?.itemID, "42")

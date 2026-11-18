@@ -18,6 +18,7 @@ import SwiftUI
 struct PlozziOSHomeSkeletonRail: View {
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var isVisible = false
 
     let title: Text
     let style: PosterCardView.Style
@@ -28,18 +29,25 @@ struct PlozziOSHomeSkeletonRail: View {
     /// Matches Continue Watching's narrower, deeper series-artwork card shape.
     var showsSeriesArtwork: Bool = false
     var isLibraryRow = false
+    var isContinueWatching = false
 
     var body: some View {
-        PlozziOSHomeRailLayout { rail(metrics: $0) }
+        PlozziOSHomeRailLayout(
+            isContinueWatching: style == .landscape && (isContinueWatching || showsSeriesArtwork)
+        ) { rail(metrics: $0) }
+            .environment(\.plozzShimmerEnabled, isVisible)
+            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSMediaSection(title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0) {
+        PlozziOSMediaSection(
+            title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0,
+            reservesBrowseSpace: !isLibraryRow
+        ) {
             ScrollView(.horizontal) {
-                // Deliberately NOT lazy: the placeholders are cheap, and a lazy
-                // stack would only materialise the ones already on screen — the
-                // opposite of what a "never show a blank row" placeholder is for.
-                HStack(
+                // Match loaded rails: retain eager vertical sizing, but don't
+                // construct cards clipped beyond each horizontal viewport.
+                LazyHStack(
                     alignment: .top,
                     spacing: isLibraryRow ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics) : PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
@@ -86,47 +94,6 @@ struct PlozziOSHomeSkeletonRail: View {
             .scrollDisabled(true)
             .accessibilityHidden(true)
         }
-    }
-}
-
-/// Whole-Home placeholder shown before the first rows resolve.
-///
-/// Deliberately mirrors the real Home's shape — a couple of poster rails with a
-/// landscape "Continue Watching"-style rail — so the page doesn't visibly
-/// restructure when content lands. A spinner was previously shown here, which
-/// gave no sense of the layout and left the screen blank-feeling on a cold load.
-struct PlozziOSHomeSkeletonScreen: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    let heroActive: Bool
-    var logoSize: HeroLogoSize = .default
-    var showsPosterCaptions: Bool = CardCaptionSettings.default.showsLabels
-    var showsLibraryCaptions: Bool = CardCaptionSettings.default.showsLabels
-    var continueWatchingLayout: ContinueWatchingCardLayout = .landscape
-    var continueWatchingShowsSeriesArtwork = true
-    var continueWatchingShowsCaption = false
-
-    var body: some View {
-        PlozziOSHomeScrollView(heroActive: heroActive) {
-            PlozziOSHomeHeroSkeleton(
-                style: horizontalSizeClass == .compact
-                    ? .compactPortrait
-                    : .landscape,
-                logoSize: logoSize
-            )
-        } rows: {
-            PlozziOSHomeSkeletonRail(
-                title: Text(verbatim: " "), style: continueWatchingLayout.cardStyle,
-                showsCaption: continueWatchingShowsCaption,
-                showsSeriesArtwork: continueWatchingShowsSeriesArtwork
-            )
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
-            PlozziOSHomeSkeletonRail(
-                title: Text(verbatim: " "), style: .landscape, showsCaption: showsLibraryCaptions, isLibraryRow: true
-            )
-        }
-        .scrollDisabled(true)
-        .accessibilityLabel("Loading Home")
     }
 }
 

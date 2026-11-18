@@ -98,6 +98,7 @@ final class StubHTTPClient: HTTPClient {
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         let result = try await sendRaw(endpoint, baseURL: baseURL)
+        HTTPResponseDiagnostics.recordHTTPFailure(status: result.1.statusCode)
         switch result.1.statusCode {
         case 200...299:
             return result

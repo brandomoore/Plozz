@@ -307,12 +307,34 @@ public struct HeroCurator: Sendable {
         settings: HeroSettings?,
         watchMutations: [MediaItemMutation],
         preservesLineup: Bool = false,
-        sourceEligibility: HeroSourceEligibility = .unrestricted
+        sourceEligibility: HeroSourceEligibility = .unrestricted,
+        verifiedWatchItems: [MediaItem] = []
     ) -> [MediaItem] {
         guard var settings, settings.isActive else { return [] }
         if preservesLineup { settings.hideWatched = false }
+        let eligible = sourceEligibility.filtering(items)
+        guard settings.hideWatched, !verifiedWatchItems.isEmpty else {
+            return HeroWatchEligibility.filter(eligible, settings: settings, mutations: watchMutations)
+        }
+        let watchedRoots = verifiedWatchItems.filter {
+            $0.locallyValidatedPlayableSource && $0.hasBeenPlayed
+                && ($0.kind == .movie || $0.kind == .series)
+        }.map { (item: $0, tokens: HeroDedupe.tokens(for: $0).filter { !$0.hasPrefix("title:") }) }
+        let items = eligible.map { original in
+            var item = original
+            let tokens = HeroDedupe.tokens(for: item)
+            if watchedRoots.contains(where: {
+                !tokens.isDisjoint(with: $0.tokens)
+                    && !HeroDiscoveryIdentityVerification.hasConflictingStrongIdentity(item, $0.item)
+            }) {
+                // Watch exclusions apply across series/episode presentation
+                // changes without altering a pinned slide's playback routing.
+                item.hasBeenPlayed = true
+            }
+            return item
+        }
         return HeroWatchEligibility.filter(
-            sourceEligibility.filtering(items),
+            items,
             settings: settings,
             mutations: watchMutations
         )

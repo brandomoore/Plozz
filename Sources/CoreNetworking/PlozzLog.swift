@@ -98,7 +98,7 @@ public enum PlozzLog {
         let sensitiveQuery: Set<String> = [
             "secret", "api_key", "apikey", "x-plex-token", "token",
             "opentoken", "livestreamid", "playsessionid", "username", "password", "st",
-            "access_token", "refresh_token", "signature", "sig"
+            "access_token", "refresh_token", "signature", "sig", "u", "t", "s", "p"
         ]
         components.queryItems = components.queryItems?.map { item in
             (sensitiveQuery.contains(item.name.lowercased())

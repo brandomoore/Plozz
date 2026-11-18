@@ -5,6 +5,34 @@ import XCTest
 
 @MainActor
 final class WatchlistCollectionRefreshTests: XCTestCase {
+    func testSavedQueryRefreshesCompleteMembershipAndKeepsDefaultSiblingOrder() async throws {
+        let provider = RefreshProvider(totalCount: 137, pageSize: 17)
+        var sorted = section("sorted", "Sorted", collectionID: "saved")
+        sorted.query = .init(sort: .init(field: .name, direction: .descending))
+        let plain = section("plain", "Source order", collectionID: "saved")
+        let settings = visibility([sorted, plain])
+        let model = makeModel(provider, settings: { settings })
+        await model.load()
+        await provider.reset(version: 1)
+        change.post()
+        try await waitUntil { model.collectionRefreshQueue.isEmpty }
+        let rows = try XCTUnwrap(model.state.value?.collectionRows)
+        let inventory = try XCTUnwrap(rows[0].sourceItems.values.first)
+        XCTAssertEqual(inventory.count, 137)
+        XCTAssertTrue(inventory.allSatisfy { $0.id.hasPrefix("v1-") })
+        XCTAssertEqual(rows[0].items, Array(sorted.query.applying(to: inventory).prefix(20)))
+        XCTAssertEqual(rows[1].items.map(\.id), (0..<20).map { "v1-saved-\($0)" })
+        XCTAssertTrue(rows.allSatisfy(\.hasMore))
+        XCTAssertTrue(rows[0].continuingSources.isEmpty, "Complete membership is not a still-running cursor")
+        let requests = await provider.requests
+        XCTAssertTrue(requests.contains { $0.page.startIndex > 100 })
+        await provider.setTotalCount(0)
+        change.post()
+        try await waitUntil { model.collectionRefreshQueue.isEmpty }
+        XCTAssertTrue(model.state.value?.collectionRows.allSatisfy { $0.items.isEmpty && !$0.hasMore } == true)
+        model.invalidate()
+    }
+
     func testNamePriorityCoversPublishedConventionsAndFormattingVariants() throws {
         let names = [
             "Watchlist", "My Watchlist", "Movie Watchlist", "TV Watchlist", "Alex's Watchlist",
@@ -231,6 +259,34 @@ final class WatchlistCollectionRefreshTests: XCTestCase {
         try await waitUntil { await provider.inFlight == 0 }
         let requests = await provider.requests
         XCTAssertEqual(requests.count, 1)
+    }
+
+    func testReturningFromSettingsResumesQueuedPreviewsWithoutReloadingHome() async throws {
+        let provider = RefreshProvider()
+        let settings = visibility([section("saved", "Watchlist")])
+        var allowed = true
+        let model = HomeViewModel(
+            accounts: [resolved(provider)], profileNamespace: "profile",
+            currentVisibility: { settings }, isLoadingAllowed: { allowed }
+        )
+        model.collectionRefreshQueue = .init(debounce: .milliseconds(25), followUp: .milliseconds(50))
+        await model.load()
+        await provider.reset(version: 1)
+        allowed = false
+        model.cancelPendingLoad()
+        change.post()
+        try await Task.sleep(for: .milliseconds(100))
+        let pausedRequests = await provider.requests
+        XCTAssertTrue(pausedRequests.isEmpty)
+        XCTAssertFalse(model.collectionRefreshQueue.isEmpty)
+        allowed = true
+        await model.loadIfNeeded(for: settings)
+        try await waitUntil { model.collectionRefreshQueue.isEmpty }
+        let requests = await provider.requests
+        let otherRequests = await provider.nonCollectionRequests
+        XCTAssertEqual(requests.map(\.collectionID), ["saved", "saved"])
+        XCTAssertEqual(otherRequests, 0)
+        XCTAssertTrue(try XCTUnwrap(model.state.value?.collectionRows.first?.items.first?.id).hasPrefix("v1-"))
     }
 
     func testModelTeardownDuringDebounceStartsNoPreview() async throws {

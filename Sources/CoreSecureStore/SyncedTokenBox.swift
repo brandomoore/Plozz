@@ -14,34 +14,49 @@ import Security
 /// So signing into a tracker on one device left every other device signed out,
 /// while the servers those devices talk to synced fine.
 ///
-/// Items are written synchronizable, which requires dropping `…ThisDeviceOnly`
-/// (`KeychainStore` already enforces that pairing). Tokens are still never
-/// written anywhere but the Keychain, and never logged.
+/// On new installations, pending or declined iCloud consent selects device-only
+/// storage. Existing installations retain their historical sign-in behavior.
+/// Tokens are still never written outside the Keychain or logged.
 public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendable {
     private let service: String
     private let baseAccount: String
     private let lock = NSLock()
     private var namespace: String?
-    private let synced: KeychainStore
+    private let synced: any SecureStoring
+    private let local: any SecureStoring
+    private let allowsSync: @Sendable () -> Bool
+    private let synchronizableAttribute: @Sendable (String) -> String
 
-    public init(
+    public convenience init(
         service: String = "com.plozz.app.tokens",
         account: String,
         namespace: String? = nil
     ) {
+        self.init(
+            service: service, account: account, namespace: namespace,
+            synced: KeychainStore(service: service, userIndependent: false,
+                                  fallbackToPerUser: false, synchronizable: true),
+            local: KeychainStore(service: service, userIndependent: false,
+                                 fallbackToPerUser: false),
+            allowsSync: { SyncSetupFeatureFlag().allowsAutomaticSignInSync },
+            synchronizableAttribute: { Self.storedSynchronizable(service: service, account: $0) }
+        )
+    }
+
+    init(
+        service: String, account: String, namespace: String? = nil,
+        synced: any SecureStoring, local: any SecureStoring,
+        allowsSync: @escaping @Sendable () -> Bool,
+        synchronizableAttribute: @escaping @Sendable (String) -> String = { _ in "injected-store" }
+    ) {
         self.service = service
         self.baseAccount = account
         self.namespace = namespace
-        // Trackers are account-level, not device-level: the same sign-in is
-        // meant to be true everywhere. Not user-independent, because a tracker
-        // belongs to a person rather than to the household.
-        defer { registerForSync() }
-        self.synced = KeychainStore(
-            service: service,
-            userIndependent: false,
-            fallbackToPerUser: false,
-            synchronizable: true
-        )
+        self.synced = synced
+        self.local = local
+        self.allowsSync = allowsSync
+        self.synchronizableAttribute = synchronizableAttribute
+        registerForSync()
     }
 
     public func setNamespace(_ namespace: String?) {
@@ -68,27 +83,41 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
 
     public func load() -> Token? {
         let account = currentAccount()
+        guard allowsSync() else {
+            return local.string(for: account).flatMap(decode)
+        }
+        if local.string(for: Self.localAuthenticationKey(account)) != nil,
+           let raw = local.string(for: account), let token = decode(raw) {
+            do { try save(token, account: account) }
+            catch { FanoutDiagnostics.emit("keychain.localAuthenticationMigration result=FAILED") }
+            return token
+        }
+        guard !SyncedTokenRegistry.shared.isSignedOut(.init(service: service, account: account)) else {
+            return nil
+        }
         if let raw = synced.string(for: account),
            let token = decode(raw) {
+            do { try local.removeValue(for: account) }
+            catch { FanoutDiagnostics.emit("keychain.localCopyRetirement result=FAILED") }
             FanoutDiagnostics.emit(
                 "keychain.read account=\(account) source=synced "
-                + "attrSynchronizable=\(Self.storedSynchronizable(service: service, account: account))"
+                + "attrSynchronizable=\(synchronizableAttribute(account))"
             )
             return token
         }
         FanoutDiagnostics.emit(
             "keychain.read account=\(account) source=none "
-            + "attrSynchronizable=\(Self.storedSynchronizable(service: service, account: account))"
+            + "attrSynchronizable=\(synchronizableAttribute(account))"
         )
         // Nothing synced yet. A device that signed in before this existed still
         // holds a device-local item; adopt it so switching storage doesn't read
         // as being signed out, and so it reaches this account's other devices.
-        guard let legacy = legacyData(account: account),
-              let token = try? JSONDecoder().decode(Token.self, from: legacy)
+        guard let raw = local.string(for: account),
+              let token = decode(raw)
         else { return nil }
         do {
             try save(token, account: account)
-            try removeLegacy(account: account)
+            if allowsSync() { try local.removeValue(for: account) }
         } catch {
             FanoutDiagnostics.emit("keychain.migration result=FAILED legacy=retained")
         }
@@ -104,6 +133,11 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
         guard let raw = String(data: data, encoding: .utf8) else {
             throw SyncedTokenBoxError.encoding
         }
+        guard allowsSync() else {
+            try local.setString(raw, for: account)
+            try local.setString("1", for: Self.localAuthenticationKey(account))
+            return
+        }
         do {
             try synced.setString(raw, for: account)
             SyncedTokenRegistry.shared.register(service: service, account: account)
@@ -111,12 +145,14 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
                 .init(service: service, account: account)
             )
             SyncedTokenRegistry.shared.noteChanged()
+            try local.removeValue(for: Self.localAuthenticationKey(account))
+            try local.removeValue(for: account)
             // Never the token itself — only whether the synced write landed and
             // whether the item reads back as synchronizable.
             FanoutDiagnostics.emit(
                 "keychain.sync account=\(account) write=ok "
                 + "readback=\(synced.string(for: account) == nil ? "miss" : "hit") "
-                + "attrSynchronizable=\(Self.storedSynchronizable(service: service, account: account))"
+                + "attrSynchronizable=\(synchronizableAttribute(account))"
             )
         } catch {
             FanoutDiagnostics.emit(
@@ -148,9 +184,14 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
 
     public func clear() throws {
         let account = currentAccount()
+        try local.removeValue(for: Self.localAuthenticationKey(account))
+        guard allowsSync() else {
+            try local.removeValue(for: account)
+            return
+        }
         try synced.removeValue(for: account)
         // A failed legacy deletion must not report a successful sign-out.
-        try removeLegacy(account: account)
+        try local.removeValue(for: account)
         // Deliberate: this must sign the account's other devices out too.
         SyncedTokenRegistry.shared.markSignedOut(
             .init(service: service, account: account)
@@ -163,31 +204,10 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
         return try? JSONDecoder().decode(Token.self, from: data)
     }
 
-    private func legacyQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecAttrSynchronizable as String: false
-        ]
+    public static func localAuthenticationKey(_ account: String) -> String {
+        account + ".local-authentication.v1"
     }
 
-    private func legacyData(account: String) -> Data? {
-        var query = legacyQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
-        else { return nil }
-        return result as? Data
-    }
-
-    private func removeLegacy(account: String) throws {
-        let status = SecItemDelete(legacyQuery(account: account) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError.unexpectedStatus(status)
-        }
-    }
 }
 
 public enum SyncedTokenBoxError: Error {

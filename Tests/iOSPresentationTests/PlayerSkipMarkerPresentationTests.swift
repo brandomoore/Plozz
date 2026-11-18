@@ -26,9 +26,13 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
                                        "The full-height gap reveals the picture, without backing or surviving rails.")
                     }
                 }
-                XCTAssertEqual(color(marked.bytes, x: boundary + 2, y: 18), [0, 255, 255])
+                XCTAssertNotEqual(
+                    color(marked.bytes, x: boundary + 2, y: 18),
+                    color(marked.bytes, x: boundary + 2, y: 22),
+                    "The internal cut retains a small corner curve."
+                )
                 XCTAssertNotEqual(color(marked.bytes, x: boundary + 3, y: 22), [0, 255, 255],
-                                 "Each section's end is rounded, not square.")
+                                 "The body stays filled right up to the narrow cut.")
             }
             for x in (width / 5 + 12)..<(width * 4 / 5 - 12) {
                 XCTAssertEqual(color(marked.bytes, x: x, y: 22), color(plain.bytes, x: x, y: 22),
@@ -82,6 +86,25 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
         }
     }
 
+    func testRealLongCreditsRemainVisibleBesideShortEarlierWindow() throws {
+        let duration = 3_116.96
+        let longCredits = MediaSegment(kind: .credits, start: 100 * 2_809.416 / duration, end: 100)
+        let shortCredits = MediaSegment(
+            kind: .credits, start: 100 * 2_749.416 / duration, end: 100 * 2_773.416 / duration
+        )
+        for width in [320, 960] {
+            for scheme in [ColorScheme.light, .dark] {
+                let expected = try render(width: width, segments: [longCredits], colorScheme: scheme)
+                let actual = try render(width: width, segments: [shortCredits, longCredits], colorScheme: scheme)
+                XCTAssertTrue(actual.bytes == expected.bytes,
+                              "A short neighboring window must not hide the five-minute credits section.")
+                let boundary = Int((Double(width) * longCredits.start / 100).rounded())
+                let index = (22 * width + boundary) * 4
+                XCTAssertEqual(Array(actual.bytes[index..<(index + 3)]), [0, 255, 255])
+            }
+        }
+    }
+
     func testTinyUnmarkedNeighborDoesNotLeaveAnIsolatedSliver() throws {
         for width in [320, 390] {
             let adjacent = try render(width: width, segments: [
@@ -119,9 +142,9 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
                         let expected = try pixels(
                             ZStack(alignment: .leading) {
                                 PlayerScrubTrackSurface(height: height)
-                                Capsule().fill(Color.primary.opacity(0.14))
+                                Capsule().fill(Color.white.opacity(0.14))
                                     .frame(width: width * 0.7, height: height)
-                                Rectangle().fill(Color.primary.opacity(touching ? 0.9 : 0.62))
+                                Rectangle().fill(Color.white.opacity(touching ? 0.9 : 0.62))
                                     .frame(width: width * progress, height: height)
                             }
                             .mask {
@@ -134,8 +157,8 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
                             .environment(\.colorScheme, scheme)
                             .background(Color(red: 0, green: 1, blue: 1))
                         )
-                        XCTAssertEqual(actual.bytes, expected.bytes,
-                                       "Progress must be only a masked fill, including 0/100% and during dragging.")
+                        XCTAssertTrue(actual.bytes == expected.bytes,
+                                      "Progress must remain a masked white fill: width=\(width), touching=\(touching), progress=\(progress), scheme=\(scheme).")
                         if !touching {
                             let control = try render(
                                 width: Int(width), segments: markers, currentSeconds: progress * 100, colorScheme: scheme

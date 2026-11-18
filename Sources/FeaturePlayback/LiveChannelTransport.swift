@@ -116,7 +116,7 @@ struct LiveChannelOverlay: View {
     /// The VOD player's options panel, fed the channel's tracks: its model, the
     /// Subtitles screen it shows, its remembered heights, the Menu press that
     /// steps it back, and the focus inside it.
-    @State private var trackOptions = PlayerControlsModel()
+    @State private var trackOptions = PlayerControlsModel(audioDelayRange: PlayerAudioSyncAdjustment.liveRange)
     @State private var subtitleScreen: PlayerControls.SubtitleScreen = .tracks
     @State private var playbackScreen: PlayerControls.PlaybackScreen = .options
     @State private var audioScreen: PlayerControls.AudioScreen = .options
@@ -236,10 +236,12 @@ struct LiveChannelOverlay: View {
             }
         }
         .onChange(of: channelID) { _, _ in
+            trackOptions.audioSyncAdjustment.cancel()
             resetScrub()
             invalidateMobileMenu()
         }
         .onChange(of: input) { _, _ in
+            trackOptions.audioSyncAdjustment.cancel()
             resetScrub()
             invalidateMobileMenu()
         }
@@ -247,6 +249,7 @@ struct LiveChannelOverlay: View {
             if unavailable { resetScrub() }
         }
         .onDisappear {
+            trackOptions.audioSyncAdjustment.cancel()
             invalidateMobileMenu()
             resetScrub()
             onTracksPresentationChange(false)
@@ -266,7 +269,8 @@ struct LiveChannelOverlay: View {
             switch sheet {
             case .zoom: PlayerZoomSettingsSheet(model: tracks.videoZoom)
             case .subtitles: LiveSubtitleSettingsSheet(tracks: tracks, controls: trackOptions)
-            case .audioSync: LiveAudioSyncSheet(tracks: tracks, controls: trackOptions)
+            case .audioSync:
+                LiveAudioSyncSheet(tracks: tracks, controls: trackOptions, apply: trackActions.setAudioDelay)
             }
         }
         #endif
@@ -566,6 +570,7 @@ struct LiveChannelOverlay: View {
     /// The channel's tracks as the VOD menus list them (`TrackMenuBuilder`: the
     /// same labels, and an Off row for subtitles), with the live style.
     private func syncTrackOptions(_ source: TrackOptionsSource) {
+        guard !tracks.engine.isSessionReloading else { return }
         trackOptions.audioOptions = TrackMenuBuilder.audioOptions(
             tracks: source.audio, selectedID: source.selectedAudio, preferred: [], locale: locale
         )
@@ -575,6 +580,7 @@ struct LiveChannelOverlay: View {
         trackOptions.subtitleStyle = source.style
         trackOptions.subtitlesRenderHDR = source.isHDR
         trackOptions.engineCapabilities = source.capabilities
+        trackOptions.audioDelaySeconds = tracks.engine.audioDelaySeconds
         trackOptions.secondarySubtitleImagePrimaryFormat = TrackMenuBuilder.imagePrimaryFormat(
             selectedPrimaryID: source.selectedSubtitle, engineTracks: source.subtitles, providerTracks: []
         )
@@ -598,6 +604,13 @@ struct LiveChannelOverlay: View {
             )
         }
         actions.setSubtitleStyle = { tracks.setSubtitleStyle($0) }
+        actions.setAudioDelay = { value in
+            guard tracks.matchesSource(channelID: channelID, input: input),
+                  tracks.engine.capabilities.contains(.audioDelay), value.isFinite else { return }
+            let range = trackOptions.audioSyncAdjustment.range
+            tracks.engine.setAudioDelay(min(range.upperBound, max(range.lowerBound, value)))
+            trackOptions.audioDelaySeconds = tracks.engine.audioDelaySeconds
+        }
         actions.togglePlayPause = onPlayPause
         return actions
     }
@@ -634,10 +647,11 @@ struct LiveChannelOverlay: View {
     // MARK: Badges
 
     private var showsAudio: Bool {
+        if trackOptions.engineCapabilities.contains(.audioDelay) { return true }
         #if os(tvOS)
-        Self.showsAudio(trackCount: tracks.audioTracks.count, systemAudio: trackOptions.systemAudio)
+        return Self.showsAudio(trackCount: tracks.audioTracks.count, systemAudio: trackOptions.systemAudio)
         #else
-        !tracks.audioTracks.isEmpty
+        return !tracks.audioTracks.isEmpty
         #endif
     }
 

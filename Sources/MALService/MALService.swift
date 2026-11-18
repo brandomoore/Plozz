@@ -223,7 +223,9 @@ public final class MALService: TrackerHistorySyncReading {
                 if let session = self.pendingSession {
                     query.append(.init(name: "session", value: session))
                 }
-                var endpoint = Endpoint(path: "/api/redeem", queryItems: query, redirectPolicy: .sameOrigin)
+                var endpoint = Endpoint(
+                    path: "/api/redeem", queryItems: query, redirectPolicy: .sameOrigin, allowsAutomaticAddressRetry: false
+                )
                 endpoint.redactsURLForLogging = true
                 let (data, _) = try await self.http.send(endpoint, baseURL: relayURL)
                 guard generation == self.profileGeneration.current else { return }

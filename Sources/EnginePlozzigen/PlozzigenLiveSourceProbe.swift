@@ -1,3 +1,4 @@
+import CoreNetworking
 import CoreModels
 import Foundation
 import os
@@ -28,7 +29,7 @@ final class PlozzigenLiveSourceProbe: Sendable {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 15
-        session = URLSession(configuration: configuration)
+        session = OfflineNetworkSession.make(configuration: configuration)
         self.requestBytes = requestBytes ?? { session, request in
             try await session.bytes(for: request, delegate: Redirects())
         }

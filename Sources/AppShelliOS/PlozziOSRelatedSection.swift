@@ -12,7 +12,6 @@ import SwiftUI
 /// with the rest of the page rather than importing a TV-sized rail.
 struct PlozziOSRelatedSection: View {
     @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -24,6 +23,12 @@ struct PlozziOSRelatedSection: View {
     var onSelect: (MediaItem, MediaArtworkZoomSource) -> Void
 
     var body: some View {
+        PlozziOSHomeRailLayout { metrics in
+            section(metrics: metrics)
+        }
+    }
+
+    @ViewBuilder private func section(metrics: PlozzMetrics) -> some View {
         if !items.isEmpty {
             PlozziOSMediaSection(
                 title: Text("Related"), horizontalInset: inset,
@@ -41,7 +46,7 @@ struct PlozziOSRelatedSection: View {
                         )
                     ) {
                         ForEach(items, id: \.stablePresentationID) { item in
-                            card(item, width: cardWidth)
+                            card(item, width: metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle))
                         }
                     }
                 }
@@ -96,10 +101,6 @@ struct PlozziOSRelatedSection: View {
     }
 
     private var items: [MediaItem] { entries.map(\.item) }
-    private var cardWidth: CGFloat {
-        metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle)
-    }
-
     /// Library ids of the entries that continue the seed's own story, so the cue
     /// follows the *relation* rather than anything about the matched item.
     private var continuationItemIDs: Set<String> {

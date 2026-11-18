@@ -15,6 +15,7 @@ public enum HeroPresentationSurface: Sendable, Equatable {
 /// retain their own geometry and controls while sharing the same media policy.
 public struct HeroPresentation: Sendable, Equatable {
     public let itemID: String
+    public let artworkIdentity: String
     public let kind: MediaItemKind
     public let title: String   // l10n:content — media title from the server
     public let artworkReferences: [ArtworkReference]
@@ -46,6 +47,7 @@ public struct HeroPresentation: Sendable, Equatable {
         surface: HeroPresentationSurface
     ) {
         itemID = item.id
+        artworkIdentity = item.stablePresentationID
         kind = item.kind
         title = Self.normalizedTitle(for: item)
         artworkPlacement = artworkStyle == .compactPortrait
@@ -110,7 +112,7 @@ public struct HeroPresentation: Sendable, Equatable {
             isAnime = hasAnimeGenre || animeIDCount >= 1
         }
         sourceMaterial = Self.sourceMaterial(from: item.tags)
-        isResumable = (item.resumePosition ?? 0) > 1
+        isResumable = item.hasVisiblePlaybackProgress && (item.resumePosition ?? 0) > 1
     }
 
     public static func normalizedTitle(for item: MediaItem) -> String {

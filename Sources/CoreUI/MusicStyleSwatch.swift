@@ -2,143 +2,80 @@
 import SwiftUI
 import CoreModels
 
-/// Fixed, appearance-independent colours for a music-player preview swatch.
-/// Like `ThemePreviewColors`, these are a *picture* of each player look and never
-/// adapt to the currently applied theme. Models the real player's layering: a
-/// solid `base`, artwork-colored blobs at `blobOpacity`, and a `scrim` veil.
-private struct MusicStylePreviewColors {
-    /// Solid floor under the artwork blobs (white for the frosted look, else black).
-    let base: Color
-    /// How strongly the artwork colors show through, per style (mirrors the real
-    /// `LiquidArtworkBackground.gradientOpacity`).
-    let blobOpacity: Double
-    /// Legibility veil painted over the blobs (a white frost for Light, black
-    /// veils for Dark and Pure Black — Pure Black heaviest so colors read as faint accents).
-    let scrim: Color
-    /// Progress-track colour (the unfilled scrubber behind the played portion).
-    let track: Color
-    /// Played-portion colour of the scrubber. The real player uses white on a
-    /// lighter-white track, so this is white.
-    let seek: Color
+public extension MusicPlayerAppearance {
+    func resolved(palette: ThemePalette, gradientEnabled: Bool) -> Self {
+        guard self == .matchTheme else { return self }
+        if gradientEnabled { return .artwork }
+        if palette == .pureBlack { return .pureBlack }
+        return palette.isLight ? .light : .dark
+    }
 
-    /// The album-art tile gradient AND the source of the background blobs — a
-    /// fixed, vivid palette so every variant shows the same "artwork," with only
-    /// the surrounding chrome (base, veil) changing per style. The background
-    /// blobs use these SAME colors (pink → purple) so the tint always matches the
-    /// dummy album art rather than looking random.
-    static let artwork: [Color] = [
-        Color(red: 0.98, green: 0.42, blue: 0.55),  // pink   (top-leading)
-        Color(red: 0.42, green: 0.38, blue: 0.95)   // purple (bottom-trailing)
-    ]
-
-    static let light = MusicStylePreviewColors(
-        base: .white,
-        blobOpacity: 0.95,
-        scrim: Color.white.opacity(0.32),
-        track: Color.white.opacity(0.9),
-        seek: Color.white
-    )
-    static let dark = MusicStylePreviewColors(
-        base: .black,
-        blobOpacity: 1.0,
-        scrim: Color.black.opacity(0.22),
-        track: Color.white.opacity(0.3),
-        seek: Color.white
-    )
-    static let pureBlack = MusicStylePreviewColors(
-        base: .black,
-        blobOpacity: 1.0,
-        scrim: Color.black.opacity(0.42),
-        track: Color.white.opacity(0.3),
-        seek: Color.white
-    )
-}
-
-/// Static stand-in for the player's animated liquid background: the album's own
-/// artwork palette (pink → purple) painted as two large, soft, blended radial
-/// "blobs" — top-leading pink, bottom-trailing purple — echoing the album tile's
-/// gradient direction. No animation (cheap), but captures the tinted field.
-private struct ArtworkBlobs: View {
-    let width: CGFloat
-
-    var body: some View {
-        let c = MusicStylePreviewColors.artwork
-        ZStack {
-            RadialGradient(colors: [c[0].opacity(0.95), .clear], center: .topLeading, startRadius: 0, endRadius: width * 1.15)
-            RadialGradient(colors: [c[1].opacity(0.95), .clear], center: .bottomTrailing, startRadius: 0, endRadius: width * 1.15)
+    var neutralBackground: Color {
+        switch self {
+        case .light: ThemePalette.light.backgroundBase
+        case .dark: ThemePalette.dark.backgroundBase
+        case .pureBlack, .artwork, .matchTheme: .black
         }
-        .blur(radius: width * 0.09)
     }
 }
 
-/// A tiny mock "now playing" screen: an artwork-tinted background (base + blobs
-/// + scrim, mirroring the real player), a centred album-art tile, and a progress
-/// bar. Deliberately static (per the small preview size). Fills whatever frame
-/// the caller gives it and stays proportionate at half width (each side of the
-/// Match-Theme split).
-private struct MusicMini: View {
-    let colors: MusicStylePreviewColors
+/// Shared preview content; each platform supplies its actual player background.
+public struct MusicPlayerPreview<Background: View>: View {
+    private let isLight: Bool
+    private let cornerRadius: CGFloat
+    private let background: Background
 
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let pad: CGFloat = 16
-            let innerW = w - pad * 2
-            let innerH = h - pad * 2
-            let art = min(innerW * 0.62, innerH * 0.66)
-            let barH = max(4, h * 0.05)
+    public static var artworkColors: [Color] {
+        [Color(red: 0.98, green: 0.42, blue: 0.55), Color(red: 0.42, green: 0.38, blue: 0.95)]
+    }
 
-            VStack(spacing: h * 0.08) {
-                Spacer(minLength: 0)
-                // Album art.
-                RoundedRectangle(cornerRadius: art * 0.12, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: MusicStylePreviewColors.artwork,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+    public init(isLight: Bool, cornerRadius: CGFloat = 16, @ViewBuilder background: () -> Background) {
+        self.isLight = isLight
+        self.cornerRadius = cornerRadius
+        self.background = background()
+    }
+
+    public var body: some View {
+        GeometryReader { geometry in
+            let height = geometry.size.height
+            let art = max(0, min(geometry.size.width - 32, height * 0.5))
+            let foreground: Color = isLight ? .black : .white
+            VStack(spacing: height * 0.06) {
+                RoundedRectangle(cornerRadius: art * 0.12)
+                    .fill(LinearGradient(colors: Self.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: art, height: art)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: art * 0.12, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.35), radius: art * 0.08, y: art * 0.04)
-                Spacer(minLength: 0)
-                // Progress bar: white played portion on a lighter-white track.
-                // A soft shadow lifts it off light backgrounds where white-on-
-                // near-white would otherwise wash out.
-                ZStack(alignment: .leading) {
-                    Capsule().fill(colors.track).frame(height: barH)
-                    Capsule().fill(colors.seek).frame(width: innerW * 0.4, height: barH)
+                Capsule().fill(foreground.opacity(0.7)).frame(width: art * 0.7, height: 4)
+                HStack(spacing: 0) {
+                    Capsule().fill(foreground).frame(width: art * 0.4)
+                    Capsule().fill(foreground.opacity(0.25))
                 }
-                .frame(width: innerW)
-                .shadow(color: .black.opacity(0.25), radius: barH * 0.9, y: barH * 0.35)
-            }
-            .padding(pad)
-            .frame(width: w, height: h)
-            .background {
-                // Base → artwork blobs (per-style strength) → legibility veil.
-                ZStack {
-                    colors.base
-                    ArtworkBlobs(width: w).opacity(colors.blobOpacity)
-                    colors.scrim
+                .frame(height: 3)
+                HStack(spacing: 18) {
+                    Image(systemName: "backward.end.fill")
+                    Image(systemName: "pause.fill")
+                    Image(systemName: "forward.end.fill")
                 }
+                .font(.system(size: max(8, height * 0.08)))
+                .foregroundStyle(foreground)
             }
+            .padding(16)
+            .frame(width: geometry.size.width, height: height)
+            .background { background }
         }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color(white: 0.5).opacity(0.35), lineWidth: 1)
+        }
+        .accessibilityHidden(true)
     }
 }
 
-/// The per-appearance preview graphic for the music player style picker.
-/// Light, Dark, and Pure Black show their own fixed chrome; Match Theme is one screen split
-/// light | dark down the middle (mirroring the System theme swatch) to signal
-/// "follows your theme." Fills the caller's frame, so it scales for the full and
-/// compact card sizes.
 public struct MusicStyleSwatch: View {
     private let appearance: MusicPlayerAppearance
     private let cornerRadius: CGFloat
+    @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     public init(appearance: MusicPlayerAppearance, cornerRadius: CGFloat = 16) {
         self.appearance = appearance
@@ -146,34 +83,16 @@ public struct MusicStyleSwatch: View {
     }
 
     public var body: some View {
-        Group {
-            switch appearance {
-            case .matchTheme:
-                GeometryReader { geo in
-                    ZStack {
-                        MusicMini(colors: .light)
-                            .mask(alignment: .leading) {
-                                Rectangle().frame(width: geo.size.width / 2 + 0.5)
-                            }
-                        MusicMini(colors: .dark)
-                            .mask(alignment: .trailing) {
-                                Rectangle().frame(width: geo.size.width / 2)
-                            }
-                    }
-                }
-            case .light:
-                MusicMini(colors: .light)
-            case .dark:
-                MusicMini(colors: .dark)
-            case .pureBlack:
-                MusicMini(colors: .pureBlack)
+        let resolved = appearance.resolved(palette: palette, gradientEnabled: gradientEnabled)
+        MusicPlayerPreview(isLight: resolved == .light, cornerRadius: cornerRadius) {
+            if resolved == .artwork {
+                LiquidArtworkBackground(
+                    palette: MusicPlayerPreview<Color>.artworkColors, animate: false, style: .dark
+                )
+            } else {
+                resolved.neutralBackground
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(Color(white: 0.5).opacity(0.35), lineWidth: 1)
-        )
     }
 }
 #endif

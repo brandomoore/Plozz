@@ -1,0 +1,138 @@
+{
+  "id": "app-store-screenshots-2026-11-04",
+  "app_id": "6782668147",
+  "locale": "en-US",
+  "after_versions": {
+    "IOS": {
+      "id": "e40e4a75-915f-4b69-bbed-ee7dcf3e26bd",
+      "version": "2026.10.30"
+    },
+    "TV_OS": {
+      "id": "79d217a5-03f2-4318-b599-11e6ec0ac072",
+      "version": "2026.10.30"
+    }
+  },
+  "groups": [
+    {
+      "device": "iphone",
+      "platform": "IOS",
+      "placement_group": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+      "spec_id": "5a7a65df-8822-5e32-bd47-cfbc4ef99663",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "assets": [
+        {
+          "file": "01-opening-iphone-1206x2622.png",
+          "id": "c5000019-4474-8d73-802f-a82359e976f0",
+          "sha256": "80db2d1b5bcd4c67da0f279672fb4582b902c0c5fb7d8827811e918236b265f4"
+        },
+        {
+          "file": "02-guide-iphone-1206x2622.png",
+          "id": "52800019-4474-8d73-801a-bb287d69f06a",
+          "sha256": "651f59c534de0b00136551ece84ebf10402dbedefe29c26538854eec77422cb0"
+        },
+        {
+          "file": "03-library-iphone-1206x2622.png",
+          "id": "77400019-4474-8d73-803f-31e671821000",
+          "sha256": "ddf046ee7b1aa07fad3c30b68b46dba84fe84a337046b26a9ba10ee722efeb38"
+        },
+        {
+          "file": "04-native-iphone-1206x2622.png",
+          "id": "8c000019-4474-8d73-8038-b8c8ccc0c333",
+          "sha256": "666456161de746e938491da429c8a03ec23ee50f1f330f927935970d35e6a1bc"
+        },
+        {
+          "file": "05-sync-iphone-1206x2622.png",
+          "id": "e4000019-4474-8d73-8025-9c191916160a",
+          "sha256": "7220cc09b03bee414587d711df84332ef2b977d78cfc053aad86af2f5898dcdd"
+        },
+        {
+          "file": "06-downloads-iphone-1206x2622.png",
+          "id": "fe000019-4474-8d73-800d-2483831d115f",
+          "sha256": "c241418af3bb66b90d5737ca9fa6b840c11158c4c99759345e68b4ddeb6660ec"
+        }
+      ]
+    },
+    {
+      "device": "ipad",
+      "platform": "IOS",
+      "placement_group": "IPAD_13_PROFILE",
+      "spec_id": "1751a63a-af79-5c7f-a2f2-41140bf28f9e",
+      "dimensions": [
+        2064,
+        2752
+      ],
+      "assets": [
+        {
+          "file": "01-opening-ipad-2064x2752.png",
+          "id": "5f400019-4474-8d73-8005-bd9aae3f0817",
+          "sha256": "d1b75b874018fc525df3c20d765a97f2411c4978f81db88d0889959f0bcf6819"
+        },
+        {
+          "file": "02-guide-ipad-2064x2752.png",
+          "id": "d2000019-4474-8d73-800d-cf736c3feee5",
+          "sha256": "d316578dc5f310b745115871197746fa4d299cf1eab481e3cffb1ef413ab653f"
+        },
+        {
+          "file": "03-library-ipad-2064x2752.png",
+          "id": "98400019-4474-8d73-8022-1ff8b297d745",
+          "sha256": "da9d9e8d6eb164dedf531b128509551e7834d12865d9ae726befa5501e109080"
+        },
+        {
+          "file": "04-native-ipad-2064x2752.png",
+          "id": "f6c00019-4474-8d73-8011-2a5a56988d18",
+          "sha256": "7dd8d420682accd5a2bb0a092445efc56f72df0f689c6ee93177ef58a75591ba"
+        },
+        {
+          "file": "05-sync-ipad-2064x2752.png",
+          "id": "84c00019-4474-8d73-8038-a2e7eeac1a48",
+          "sha256": "f1e11d95e9e5304794ede6ebf57b2593945f44c7c8e13d83a4e3db26c85d8447"
+        },
+        {
+          "file": "06-downloads-ipad-2064x2752.png",
+          "id": "f5000019-4474-8d73-8024-55a1f7fccd67",
+          "sha256": "8b4e44b92cd169bf97f3d013baa491357b70ff5a73c7c6052b5a5a6a5893b67a"
+        }
+      ]
+    },
+    {
+      "device": "tv",
+      "platform": "TV_OS",
+      "placement_group": "TV_PROFILE",
+      "spec_id": "61448751-87af-56dd-a700-50cd9a2fc82d",
+      "dimensions": [
+        1920,
+        1080
+      ],
+      "assets": [
+        {
+          "file": "01-opening-tv-1920x1080.png",
+          "id": "4c000019-4474-8d73-802d-bf9c6e72f0d3",
+          "sha256": "1fbaf660294d45b7d068e19086b866d68c6dfcf4d1aa47ae49dc6ca9324f45c5"
+        },
+        {
+          "file": "02-guide-tv-1920x1080.png",
+          "id": "17400019-4474-8d73-8000-8fc834912153",
+          "sha256": "6f4d0f6a2df5ad9fb66ada3595113e4efed2d84b48981e7f04acc6a00708651e"
+        },
+        {
+          "file": "03-library-tv-1920x1080.png",
+          "id": "8cc00019-4474-8d73-8001-898a1f3ae3e0",
+          "sha256": "69d79a7068af03aa404a0a34c16907588ba016fe877c98361b868142f58fc398"
+        },
+        {
+          "file": "04-native-tv-1920x1080.png",
+          "id": "9e400019-4474-8d73-8027-10f5fe222681",
+          "sha256": "c900651d44f1dac5195ec07982c437ec9fefa9484a99a11957b00d41e4fdfd03"
+        },
+        {
+          "file": "05-sync-tv-1920x1080.png",
+          "id": "75800019-4474-8d73-8039-4029c0cda0f2",
+          "sha256": "c14f8f998e635978a6f282802a851b36ad0e51765f3aa948615ffc5180e9220f"
+        }
+      ]
+    }
+  ]
+}

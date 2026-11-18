@@ -276,6 +276,7 @@ enum ShareArtworkAssociationPolicy {
             return [(.homeHero, 10), (.detailBackdrop, 0)]
         case .landscape:
             return [(.homeHero, 0), (.detailBackdrop, 10)]
+                + (owner.kind == .episode ? [] : [(.landscapeCard, 0)])
         case .logo: return [(.logo, 0)]
         case .banner: return [(owner.isSeason ? .seasonBanner : .banner, 0)]
         case .episodeThumbnail:

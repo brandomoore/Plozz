@@ -46,7 +46,9 @@ if [[ "${PIPE_STATUSES[0]}" -ne 0 ]]; then exit "${PIPE_STATUSES[0]}"; fi
 if [[ "${PIPE_STATUSES[1]}" -ne 0 ]]; then exit "${PIPE_STATUSES[1]}"; fi
 
 python3 tools/run-bounded.py "${PLOZZ_FOCUS_TEST_TIMEOUT:-2400}" "hosted focus tests" -- \
-  xcodebuild test-without-building "${BUILD_ARGS[@]}" -collect-test-diagnostics never \
+  xcodebuild test-without-building "${BUILD_ARGS[@]}" -collect-test-diagnostics on-failure \
+  -test-timeouts-enabled YES -default-test-execution-time-allowance 600 \
+  -maximum-test-execution-time-allowance 600 \
   -resultBundlePath "$RUN_DIR/Test.xcresult" \
   2>&1 | tee "$RUN_DIR/xcodebuild.log"
 PIPE_STATUSES=("${PIPESTATUS[@]}")

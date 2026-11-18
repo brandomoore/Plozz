@@ -203,6 +203,14 @@ final class PlozziOSOrientationHostingController: UIHostingController<AnyView> {
         fatalError("init(coder:) is not supported")
     }
 
+    #if canImport(SwiftUI, _version: 8.0.85)
+    @available(iOS 27.1, *)
+    override var preferredVerticalBarBehavior: UIVerticalBarBehavior {
+        // Fullscreen playback owns its controls; embedded Live TV keeps the page's native bars.
+        ownsWindowOrientation ? super.preferredVerticalBarBehavior : .disabled
+    }
+    #endif
+
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         if isBeingPresented, orientation.isPlaybackActive { return orientation.supportedMask }
         let requested = orientation.supportedMask

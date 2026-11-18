@@ -4,6 +4,9 @@ import CoreUI
 import CoreNetworking
 import FeatureAuth
 import FeatureProfiles
+import Observation
+import SeerService
+import FeatureLiveTVCore
 @testable import AppRuntime
 @testable import AppShell
 
@@ -41,6 +44,7 @@ final class PlexHomeUsersModelTests: XCTestCase {
     private func makeModel(
         accountIDs: [String] = [],
         samePlexLogin: Bool = false,
+        profileStore: ProfileStore? = nil,
         cache: PlexHomeUserTokenCache = PlexHomeUserTokenCache(store: InMemorySecureStore()),
         switchProfile: @escaping @MainActor (String) -> Void = { _ in }
     ) throws -> (PlexHomeUsersModel, AccountsProvidersModel, ProfilesModel) {
@@ -50,7 +54,7 @@ final class PlexHomeUsersModelTests: XCTestCase {
             if samePlexLogin { account.userID = "shared-owner" }
             try store.add(account, token: "admin-\(id)")
         }
-        let profiles = ProfilesModel(store: ProfileStore(defaults: makeDefaults()))
+        let profiles = ProfilesModel(store: profileStore ?? ProfileStore(defaults: makeDefaults()))
         let hub = AccountsProvidersModel(
             accountStore: store,
             registry: ProviderRegistry(),
@@ -62,11 +66,144 @@ final class PlexHomeUsersModelTests: XCTestCase {
             profilesModel: profiles,
             plexHomeUserTokenCache: cache,
             automaticSignInStore: AutomaticSignInStore(defaults: makeDefaults(), secureStore: InMemorySecureStore()),
+            offlineSignInStore: .init(secureStore: InMemorySecureStore()),
             switchProfile: switchProfile
         )
         model.plexHomeUsersFetch = { _, _ in throw URLError(.notConnectedToInternet) }
         model.plexHomeUserSwitch = { _, _, _, _ in throw AppError.unauthorized }
         return (model, hub, profiles)
+    }
+
+    func testLiveTVPlexHomeScopesAndUnbindingFailClosedUntilCredentialReconciliation() async throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["a"])
+        hub.registry.register(.plex) { LiveTVAccountsTestProvider(session: $0.session) }
+        hub.tokenResolver = { model.resolvedToken(for: $0) }
+        hub.credentialRevision = { model.effectiveCredentialRevision(for: $0) }
+        profiles.setActiveAccountIDs(["a"], for: profiles.activeProfileID)
+        hub.reloadAccounts()
+        let resolver = hub.liveTVProviderResolver()
+        let owner = try XCTUnwrap(resolver("a"))
+        let ownerScope = try XCTUnwrap(owner.viewerScopeID)
+        XCTAssertFalse(ownerScope.isEmpty)
+        var scopes: Set<String> = [ownerScope]
+        var authorizations: Set<String> = [owner.authorizationID]
+        for userID in ["managed-one", "managed-two"] {
+            model.plexHomeUsersFetch = { _, _ in [.init(id: userID, name: userID, requiresPIN: true)] }
+            model.plexHomeUserSwitch = { _, _, _, _ in "cloud-\(userID)" }
+            model.plexServerTokenResolve = { _, _, _ in "server-\(userID)" }
+            activateSavedUser(model, profiles: profiles, accountID: "a",
+                              user: .init(id: userID, name: userID, requiresPIN: true))
+            XCTAssertNil(resolver("a"), "Neither the owner nor the previous Home token authorizes a pending binding")
+            await model.waitForPlexPINRequirementCheck()
+            model.submitPlexPIN("2468")
+            await model.waitForPlexPINRequirementCheck()
+            let context = try XCTUnwrap(resolver("a"))
+            let scope = try XCTUnwrap(context.viewerScopeID)
+            XCTAssertFalse(scope.isEmpty)
+            XCTAssertTrue(scopes.insert(scope).inserted, "Owner and each managed user need distinct durable scopes")
+            XCTAssertTrue(authorizations.insert(context.authorizationID).inserted)
+            XCTAssertEqual(resolver("a")?.viewerScopeID, scope)
+            XCTAssertEqual((context.provider as? LiveTVAccountsTestProvider)?.session.accessToken, "server-\(userID)")
+        }
+        XCTAssertEqual(scopes.count, 3)
+
+        let saved = profiles.activeProfile
+        profiles.update(saved.settingHomeUserBinding(
+            .init(homeUserID: "", name: "Incomplete", requiresPIN: true), forPlexAccount: "a"
+        ))
+        XCTAssertNil(model.resolvedToken(for: "a"), "An empty Home identity must fail closed")
+        XCTAssertNil(resolver("a"))
+        profiles.update(saved.settingHomeUserBinding(nil, forPlexAccount: "a"))
+        // Deliberately inspect the real hub before ensurePlexIdentityForActiveProfile clears the override.
+        XCTAssertNil(model.resolvedToken(for: "a"), "Unbinding cannot relabel the last managed token as owner")
+        XCTAssertNil(resolver("a"))
+        model.ensurePlexIdentityForActiveProfile()
+        let reconciled = try XCTUnwrap(resolver("a"))
+        XCTAssertEqual(reconciled.viewerScopeID, ownerScope)
+        XCTAssertEqual((reconciled.provider as? LiveTVAccountsTestProvider)?.session.accessToken, "admin-a")
+        XCTAssertEqual(model.resolvedToken(for: "a"), "admin-a")
+    }
+
+    func testSeerrEmbyUsernameSuggestionsStayWithinTheActiveProfileAccounts() throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["plex"])
+        for id in ["first", "second"] {
+            let account = Account(
+                id: id,
+                server: MediaServer(id: id, name: "Emby", baseURL: URL(string: "https://\(id).example")!, provider: .emby),
+                userID: id, userName: "Emby \(id)", deviceID: "device"
+            )
+            try hub.accountStore.add(account, token: "fixture-\(id)")
+        }
+        hub.reloadAccounts()
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore())
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        profiles.setActiveAccountIDs(["first", "plex"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.embyUsernames(), ["Emby first"])
+        XCTAssertEqual(Set(service.setupSources().map(\.mediaServerType)), [1, 3])
+        profiles.setActiveAccountIDs(["second"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.embyUsernames(), ["Emby second"])
+        XCTAssertEqual(service.setupSources().flatMap(\.urls), [URL(string: "https://second.example")!])
+        XCTAssertEqual(service.setupSources().map(\.mediaServerType), [3])
+        profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
+        XCTAssertTrue(service.embyUsernames().isEmpty)
+        XCTAssertTrue(service.setupSources().isEmpty)
+    }
+
+    func testSeerrOffersTheExistingAccountWhenPlexAuthorizationFinishes() async throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["a"])
+        profiles.update(profiles.activeProfile.settingHomeUserBinding(
+            .init(homeUserID: "viewer", name: "Viewer", requiresPIN: true, pinRequirementVerified: true),
+            forPlexAccount: "a"
+        ))
+        model.plexHomeUsersFetch = { _, _ in
+            [PlexHomeUser(id: "viewer", name: "Viewer", requiresPIN: true)]
+        }
+        model.plexHomeUserSwitch = { user, pin, _, _ in
+            XCTAssertEqual(user, "viewer")
+            XCTAssertEqual(pin, "2468")
+            return "viewer-cloud"
+        }
+        model.plexServerTokenResolve = { _, _, _ in "viewer-server" }
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore(connection: nil))
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        model.ensurePlexIdentityForActiveProfile()
+        await model.waitForPlexPINRequirementCheck()
+        let refreshed = expectation(description: "Refresh Seerr sign-in choices after authorization")
+        withObservationTracking {
+            XCTAssertTrue(service.loginOptions().isEmpty, "Never offer the owner's credential before viewer authorization")
+        } onChange: {
+            refreshed.fulfill()
+        }
+
+        model.submitPlexPIN("2468")
+        await model.waitForPlexPINRequirementCheck()
+
+        XCTAssertEqual(service.loginOptions().map(\.name), ["Viewer"])
+        await fulfillment(of: [refreshed], timeout: 1)
+    }
+
+    func testSeerrExistingJellyfinChoicesIdentifyServersWithinTheActiveProfile() throws {
+        let (model, hub, profiles) = try makeModel(accountIDs: ["plex"])
+        for id in ["first", "second", "excluded"] {
+            try hub.accountStore.add(Account(
+                id: id, server: MediaServer(
+                    id: id, name: "Server \(id)", baseURL: URL(string: "https://\(id).example")!, provider: .jellyfin
+                ), userID: id, userName: "Alex", deviceID: "device"
+            ), token: "fixture-\(id)")
+        }
+        hub.reloadAccounts()
+        profiles.setActiveAccountIDs(["first", "second"], for: profiles.activeProfileID)
+        let service = SeerService(connectionStore: InMemorySeerConnectionStore())
+        SeerProfileAuthentication.configure(service: service, profiles: profiles, accounts: hub, plex: model)
+        let choices = service.loginOptions()
+        XCTAssertEqual(Set(choices.map(\.id)), ["first", "second"])
+        for choice in choices {
+            XCTAssertEqual(choice.name, "Alex")
+            XCTAssertEqual(choice.serverName, "Server \(choice.id)")
+            XCTAssertEqual(choice.serverURL, URL(string: "https://\(choice.id).example")!)
+        }
+        profiles.setActiveAccountIDs(["second"], for: profiles.activeProfileID)
+        XCTAssertEqual(service.loginOptions().map(\.id), ["second"])
     }
 
     func testOnePINAuthenticatesTheSameHomeUserAcrossServersWithDistinctServerTokens() async throws {
@@ -389,6 +526,86 @@ final class PlexHomeUsersModelTests: XCTestCase {
         // Should not crash and should leave token resolution intact for others.
         model.forgetAccount("missing")
         XCTAssertEqual(model.resolvedToken(for: "a"), "admin-a")
+    }
+
+    func testPlexImportAfterCloudRosterDoesNotDuplicateImportedPeople() throws {
+        let (sender, _, source) = try makeModel(accountIDs: ["a", "b"], samePlexLogin: true)
+        let users = [
+            PlexHomeUser(id: "parent", name: "Parent", requiresPIN: true, isAdmin: true),
+            PlexHomeUser(id: "child", name: "Child", requiresPIN: false)
+        ]
+        sender.presentUserSelection(.init(
+            accountID: "a", serverName: "Plex", users: users,
+            isFirstRun: true, applyToAccountIDs: ["a", "b"]
+        ))
+        XCTAssertEqual(sender.importOnboardingProfiles(), .added)
+        var customized = try XCTUnwrap(source.profiles.first { $0.name == "Child" })
+        customized.name = "Personal name"
+        customized.replaceLock(with: ProfileLock.make(pin: "1234", iterations: 1))
+        customized.replaceKidsProfile(with: true)
+        source.update(customized)
+        let originalIDs = Set(source.profiles.map(\.id))
+        let destinationStore = ProfileStore(defaults: makeDefaults())
+        let (_, _, destination) = try makeModel(
+            accountIDs: ["receiver-a", "receiver-b"], samePlexLogin: true, profileStore: destinationStore
+        )
+        let wire = try JSONEncoder().encode(source.profiles.map { ProfileSyncDTO(profile: $0) })
+        let received = try JSONDecoder().decode([ProfileSyncDTO].self, from: wire)
+        destination.applySyncedProfileDTOs(
+            Dictionary(uniqueKeysWithValues: received.map { ($0.id, $0) }),
+            deletions: []
+        )
+        XCTAssertEqual(Set(destination.profiles.map(\.id)), originalIDs)
+        let (receiver, _, restarted) = try makeModel(
+            accountIDs: ["receiver-a", "receiver-b"], samePlexLogin: true, profileStore: destinationStore
+        )
+        XCTAssertTrue(restarted.profiles.allSatisfy { $0.plexHomeUserBindings == nil })
+        receiver.presentUserSelection(.init(
+            accountID: "receiver-a", serverName: "Plex", users: users,
+            isFirstRun: true, applyToAccountIDs: ["receiver-a", "receiver-b"]
+        ))
+        XCTAssertEqual(receiver.importOnboardingProfiles(), .existing)
+        XCTAssertEqual(Set(restarted.profiles.map(\.id)), originalIDs)
+        XCTAssertEqual(receiver.importedOnboardingProfileID(for: users[1]), customized.id)
+        let child = try XCTUnwrap(restarted.profiles.first { $0.id == customized.id })
+        XCTAssertEqual(child.name, customized.name)
+        XCTAssertEqual(child.lock, customized.lock)
+        XCTAssertTrue(child.isKids)
+        XCTAssertTrue(child.needsSetup)
+        XCTAssertFalse(restarted.isProfileUnlocked(child.id))
+        for id in ["receiver-a", "receiver-b"] {
+            XCTAssertEqual(child.homeUserBinding(forPlexAccount: id)?.homeUserID, "child")
+            XCTAssertNil(receiver.resolvedToken(for: id), "Import must not authenticate the protected active parent.")
+        }
+        XCTAssertEqual(receiver.importOnboardingProfiles(), .existing)
+        XCTAssertEqual(Set(destinationStore.loadProfiles().map(\.id)), originalIDs)
+    }
+
+    func testPlexImportDoesNotMergeNamesDifferentOwnersOrConflictingLocalBindings() throws {
+        let cases: [(PlexHomeImportIdentity?, String?)] = [
+            (nil, nil),
+            (.init(ownerUserID: "another-owner", homeUserID: "child"), nil),
+            (.init(ownerUserID: "shared-owner", homeUserID: "different-child"), nil),
+            (.init(ownerUserID: "shared-owner", homeUserID: "child"), "different-child")
+        ]
+        for (origin, localUserID) in cases {
+            let (model, _, profiles) = try makeModel(accountIDs: ["a"], samePlexLogin: true)
+            let existing = profiles.add(
+                name: "Child",
+                plexHomeUserBindings: localUserID.map { [
+                    "a": PlexHomeUserBinding(homeUserID: $0, name: "Child", requiresPIN: true)
+                ] },
+                plexHomeImportIdentity: origin
+            )
+            let user = PlexHomeUser(id: "child", name: "Child", requiresPIN: false)
+            model.presentUserSelection(.init(
+                accountID: "a", serverName: "Plex", users: [user], isFirstRun: false, applyToAccountIDs: ["a"]
+            ))
+            XCTAssertEqual(model.importOnboardingProfiles(), .added)
+            XCTAssertEqual(profiles.profiles.count, 3)
+            XCTAssertEqual(profiles.profiles.first { $0.id == existing.id }, existing)
+            XCTAssertNotEqual(model.importedOnboardingProfileID(for: user), existing.id)
+        }
     }
 
     func testDisabledPlexBindingsDoNotRequestAuthorization() async throws {

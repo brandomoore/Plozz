@@ -22,40 +22,19 @@ struct ServersAndLibrariesDetailView: View {
                     SettingsCopy.sources,
                     subtitle: "Sign-ins are shared by everyone on this Apple TV. Choose what each profile sees under Libraries."
                 )
+                #if os(tvOS)
+                SettingsConnectedControlGroups {
+                    addSourceButton
+                    savedSources
+                }
+                #else
                 SettingsPanel {
-                    // Rows separated by a gap rather than flush dividers: the
-                    // focus lift bleeds outward and would otherwise paint over a
-                    // divider sitting directly against a row.
                     VStack(spacing: 16) {
-                        if context.accounts.isEmpty {
-                            Text("No sources have been added yet.")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 14)
-                                .padding(.horizontal, 14)
-                        } else {
-                            let groups = serverGroups(from: context.accounts)
-                            ForEach(groups, id: \.serverKey) { group in
-                                serverSummaryRow(group)
-                                    .settingsWorkspaceEntry(group.serverKey == groups.first?.serverKey)
-                            }
-                        }
-                        Button(action: context.onAddAccount) {
-                            Label {
-                                Text(SettingsCopy.addSource)
-                            } icon: {
-                                Image(systemName: "plus.circle")
-                            }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 14)
-                                .padding(.horizontal, 14)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
-                        .settingsWorkspaceEntry(context.accounts.isEmpty)
-                        .accessibilityIdentifier("sources-add-source")
+                        addSourceButton
+                        savedSources
                     }
                 }
+                #endif
             }
             .frame(maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -63,6 +42,40 @@ struct ServersAndLibrariesDetailView: View {
             .padding(.vertical, 24)
         }
         .scrollClipDisabled()
+    }
+
+    private var addSourceButton: some View {
+        Button(action: context.onAddAccount) {
+            Label {
+                Text(SettingsCopy.addSource)
+            } icon: {
+                Image(systemName: "plus.circle")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
+        .settingsWorkspaceEntry()
+        .accessibilityIdentifier("sources-add-source")
+    }
+
+    private var savedSources: some View {
+        // Leave room between rows for the native focus lift.
+        VStack(spacing: 16) {
+            if context.accounts.isEmpty {
+                Text("No sources have been added yet.")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 14)
+            } else {
+                ForEach(serverGroups(from: context.accounts), id: \.serverKey) { group in
+                    serverSummaryRow(group)
+                }
+            }
+        }
     }
 
     /// One server's at-a-glance row with a clear chevron so the affordance

@@ -115,7 +115,7 @@ struct PlayerPresentation: View {
                     dismiss()
                     return
                 }
-                ExternalPlaybackRuntime.shared.beginPlaybackIntent()
+                ExternalPlaybackRuntime.shared.beginPlaybackIntent(context: externalContext?())
                 HandoffDiagnostics.emit(
                     "presentation READY trace=\(activeRequest.traceID.uuidString.prefix(8)) "
                         + "item=\(activeRequest.item.id) "
@@ -189,6 +189,20 @@ struct PlayerPresentation: View {
                 preparesEpisodeHandoff: true
             )
         }
+        // A title picked in the player's Continue Watching tab.
+        // Leaving the current title saves its position like any other stop.
+        .onChange(of: viewModel?.pendingContinueWatching?.stablePresentationID) { _, nextID in
+            guard handoffTask == nil, nextID != nil,
+                  let next = viewModel?.pendingContinueWatching else { return }
+            triedAccountIDs = []
+            replacePlayback(
+                with: PlayRequest(
+                    item: next, startPosition: next.resumePosition ?? 0,
+                    versionPreferences: versionPreferences
+                ),
+                preparesContinueWatching: true
+            )
+        }
         .onChange(of: viewModel?.pendingPlaylistSelection?.index) { _, index in
             guard handoffTask == nil, let index,
                   let outgoing = viewModel,
@@ -209,6 +223,7 @@ struct PlayerPresentation: View {
             // another server's copy) and re-present at the same resume point. When
             // no untried source remains, the player's `.failed` error stays visible.
             guard handoffTask == nil, !activeRequest.item.explicitSourceSelection,
+                  viewModel?.isDiscMenuPlayback != true,
                   case .failed = phase else { return }
             let failedAccountID = activeRequest.item.selectedSourceAccountID
                 ?? activeRequest.item.sourceAccountID
@@ -227,9 +242,12 @@ struct PlayerPresentation: View {
     }
 
     private func openExternalPlayer() async -> Bool {
+        guard activeRequest.item.effectiveDiscPlayback(default: playbackSettings.discPlayback) != .openMenu else {
+            return false
+        }
         let deviceSettings = ExternalPlayerSettingsModel.shared
         deviceSettings.migrateIfNeeded(from: playbackSettings.externalPlayer)
-        guard deviceSettings.settings.player != .builtIn else { return false }
+        guard activeRequest.item.effectiveExternalPlayer(default: deviceSettings.settings).player != .builtIn else { return false }
         do {
             guard let externalContext else { throw ExternalPlayerError.unavailable }
             let opened = try await ExternalPlaybackRuntime.shared.launch(
@@ -295,6 +313,7 @@ struct PlayerPresentation: View {
     private func replacePlayback(
         with request: PlayRequest,
         preparesEpisodeHandoff: Bool = false,
+        preparesContinueWatching: Bool = false,
         continuation: PlaybackContinuation? = nil,
         playlistIndex: Int? = nil
     ) {
@@ -307,13 +326,14 @@ struct PlayerPresentation: View {
             do {
                 // An in-player version change or source failover is already a
                 // concrete selection, not another Play/Next action.
-                request = preparesEpisodeHandoff || playlistIndex != nil
+                request = preparesEpisodeHandoff || preparesContinueWatching || playlistIndex != nil
                     ? try await preparedRequest(incomingRequest) : incomingRequest
             } catch is CancellationError {
                 handoffTask = nil
                 if isPresented { dismiss() }
                 return
             } catch {
+                if preparesContinueWatching { outgoing.cancelContinueWatchingSelection() }
                 handoffTask = nil
                 showVersionChoiceFailure(error)
                 return
@@ -356,8 +376,10 @@ struct PlayerPresentation: View {
     private func preparedRequest(_ request: PlayRequest) async throws -> PlayRequest {
         try checkPresentationAuthorization()
         guard !request.item.isYouTubeTrailer else { throw AppError.invalidResponse }
+        let opened = request.item.effectiveDiscPlayback(default: playbackSettings.discPlayback) == .openMenu
+            ? request.item.requestingDiscPlayback(.openMenu) : request.item
         let prepared = try await PlaybackVersionChoiceModel.prepareWithFailover(
-            request.item, triedAccountIDs: triedAccountIDs,
+            opened, triedAccountIDs: triedAccountIDs,
             prepare: { try await prepareVersion(versionChoice, $0) },
             nextSource: makeFailover,
             isCurrent: { isPresented && externalContext?().isAuthorized != false }

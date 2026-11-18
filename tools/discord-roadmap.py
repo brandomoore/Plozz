@@ -57,8 +57,7 @@ def app_store_builds(apple):
         apple, f"/apps/{quote(app['id'], safe='')}/appStoreVersions",
         {"include": "build", "limit": 200},
     )
-    releases = []
-    seen = set()
+    current = {}
     for version in versions:
         attributes = version["attributes"]
         platform = attributes["platform"]
@@ -69,9 +68,19 @@ def app_store_builds(apple):
         state = attributes.get("appVersionState") or attributes.get("appStoreState")
         if state not in ("READY_FOR_DISTRIBUTION", "READY_FOR_SALE"):
             continue
-        if platform in seen:
-            raise Error("Multiple live App Store versions exist for one platform.")
-        seen.add(platform)
+        number = ANN.NOTES.version_parts(attributes["versionString"], (3,))
+        previous = current.get(platform)
+        if previous:
+            previous_number = ANN.NOTES.version_parts(previous["attributes"]["versionString"], (3,))
+            if number == previous_number:
+                raise Error("Duplicate distributed App Store versions exist for one platform.")
+            if number < previous_number:
+                continue
+        # Apple can retain the distribution state on superseded versions.
+        current[platform] = version
+    releases = []
+    for platform, version in current.items():
+        attributes = version["attributes"]
         build = ANN.related(version, "build", included)
         if build.get("processingState") != "VALID":
             raise Error("A live App Store version has an unverified build.")
@@ -88,6 +97,15 @@ def verified_releases(releases, published):
     result = []
     for release in releases:
         if ANN.published_release(release["build"], published) is not None:
+            tag = ANN.NOTES.release_tag(release["build"])
+            catalog = RES["git"](
+                "ls-tree", "--name-only", f"refs/tags/{tag}^{{commit}}",
+                "--", "App/Resources/ReleaseNotes.json",
+            )
+            if not catalog:
+                print(f"Build {release['build']}: tagged source has no release catalog; "
+                      "roadmap delivery is not inferred.")
+                continue
             result.append(RES["verified_release_source"](release))
         else:
             print(f"Build {release['build']}: no published source tag; roadmap delivery is not inferred.")

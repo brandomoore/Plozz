@@ -689,11 +689,13 @@ public final class ProfileFlowModel {
     /// Resuming asks the question that was never answered, which is the only
     /// answer that's both safe and correct: importing anyway is the leak the gate
     /// exists to prevent, and clearing it without asking is the same thing.
-    public func resumeSetupIfNeeded() {
+    public func resumeSetupIfNeeded(manualICloudSetup: Bool = false) {
         guard pendingSetupProfile == nil, plexHomeUsers.pendingPlexUserSelection == nil else { return }
         let active = profilesModel.activeProfile
         if active.needsSetup {
             appearanceSetupStore.markPending(profileID: active.id)
+            pendingSetupProfile = active
+        } else if manualICloudSetup {
             pendingSetupProfile = active
         } else if appearanceSetupStore.isPending(profileID: active.id) {
             isPickingAppearanceForNewProfile = true
@@ -851,6 +853,10 @@ public final class ProfileFlowModel {
         let current = accountsProviders.activeAccountIDs
         var next = current
         if included { next.insert(accountID) } else { next.remove(accountID) }
+        guard next != current
+            || profilesModel.storedActiveAccountIDs(for: profileID) == nil
+            || profilesModel.unconfirmedAccountSelectionProfileIDs.contains(profileID)
+        else { return }
         profilesModel.setActiveAccountIDs(Array(next), for: profileID)
         // Noted BEFORE the reload, which schedules a watchlist import: the whole
         // point is that the import waits for the answer, and a note taken after
@@ -862,7 +868,7 @@ public final class ProfileFlowModel {
             // unanswerable question would gate the import forever.
             resolveIdentityPrompt(for: accountID)
         }
-        accountsProviders.reloadAccounts()
+        accountsProviders.refreshActiveAccountSelection()
     }
 
     /// The server this profile has just enabled and not yet chosen an identity

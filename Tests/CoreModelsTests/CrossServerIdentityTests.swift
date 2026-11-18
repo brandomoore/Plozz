@@ -402,7 +402,9 @@ final class CrossSourceSelectorTests: XCTestCase {
     func testDirectPlayBeatsHigherQualityTranscode() {
         let directPlay1080 = source("a", versions: [h264])
         let transcode4K = source("b", versions: [uhdTranscode()])
-        let pick = CrossSourceSelector.bestSelection(from: [transcode4K, directPlay1080], capabilities: .default)
+        let pick = CrossSourceSelector.bestSelection(
+            from: [transcode4K, directPlay1080], capabilities: .default, engine: .native
+        )
         XCTAssertEqual(pick?.source.accountID, "a", "A 1080p Direct Play beats a 4K transcode")
         XCTAssertEqual(pick?.version?.id, "v")
     }

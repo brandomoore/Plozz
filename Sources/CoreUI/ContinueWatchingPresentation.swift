@@ -2,11 +2,35 @@
 import CoreModels
 import SwiftUI
 
+public struct ContinueWatchingPresentation: Equatable, Sendable {
+    public var artworkStyle: ContinueWatchingArtworkStyle
+    public var isShowcase: Bool
+
+    public init(visibility: HomeLibraryVisibility = .default, isShowcase: Bool = false) {
+        artworkStyle = visibility.continueWatchingLayout == .portrait ? .portraitPosters
+            : (visibility.continueWatchingShowsSeriesArtwork ? .logoAndArtwork : .thumbnail)
+        self.isShowcase = isShowcase
+    }
+
+    public func showsCaptions(_ settings: CardCaptionSettings) -> Bool {
+        artworkStyle.showsCaptions(settings: settings, isShowcase: isShowcase)
+    }
+}
+
+private struct ContinueWatchingPresentationKey: EnvironmentKey {
+    static let defaultValue = ContinueWatchingPresentation()
+}
+
 private struct ContinueWatchingPlaybackDetailsKey: EnvironmentKey {
     static let defaultValue = ContinueWatchingPlaybackDetails.default
 }
 
 public extension EnvironmentValues {
+    var plozzContinueWatchingPresentation: ContinueWatchingPresentation {
+        get { self[ContinueWatchingPresentationKey.self] }
+        set { self[ContinueWatchingPresentationKey.self] = newValue }
+    }
+
     var plozzContinueWatchingPlaybackDetails: ContinueWatchingPlaybackDetails {
         get { self[ContinueWatchingPlaybackDetailsKey.self] }
         set { self[ContinueWatchingPlaybackDetailsKey.self] = newValue }

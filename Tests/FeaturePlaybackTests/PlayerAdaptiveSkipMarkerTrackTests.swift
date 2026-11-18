@@ -90,7 +90,7 @@ final class PlayerAdaptiveSkipMarkerTrackTests: XCTestCase {
         }
     }
 
-    func testDefaultTVLayoutRetainsItsTinySectionPolicy() throws {
+    func testRawLayoutCanRetainTinySectionsWithoutAdaptiveSuppression() throws {
         let size = CGSize(width: 360, height: 20)
         let ranges = [(60.0 / 2_700)..<(68.0 / 2_700)]
         let original = SkipMarkerTrackLayout.segmentedSections(ranges: ranges, size: size)
@@ -98,6 +98,36 @@ final class PlayerAdaptiveSkipMarkerTrackTests: XCTestCase {
         let middle = try XCTUnwrap(original.dropFirst().first)
         XCTAssertEqual(middle.width, 360 * (8.0 / 2_700) / 2, accuracy: 0.000001)
         XCTAssertEqual(sections(ranges, size: size), [CGRect(origin: .zero, size: size)])
+    }
+
+    func testDenseMovieEndingDisappearsWithoutRemovingAnIsolatedIntroOrChangingMarkers() {
+        let duration = 8_142.656
+        let credits: [MediaSegment] = [
+            .init(kind: .credits, start: 7_754.39, end: 7_784.39),
+            .init(kind: .credits, start: 7_816.39, end: 7_852.39),
+            .init(kind: .credits, start: 7_962.39, end: 8_032.39),
+            .init(kind: .credits, start: 8_072.39, end: 8_110.39)
+        ]
+        let intro = MediaSegment(kind: .intro, start: duration * 0.1, end: duration * 0.15)
+        let ranges = SkipMarkerTrackLayout.ranges(segments: credits, duration: duration)
+        let combined = SkipMarkerTrackLayout.ranges(segments: [intro] + credits, duration: duration)
+        for width in [CGFloat(960), 1280, 1760] {
+            for height in [CGFloat(12), 14, 16, 18, 20] {
+                let size = CGSize(width: width, height: height)
+                XCTAssertEqual(
+                    SkipMarkerTrackLayout.segmentedSections(
+                        ranges: ranges, size: size, minimumSectionWidth: minimumSectionWidth,
+                        restingHeight: 12, omitShortRanges: true
+                    ),
+                    [CGRect(origin: .zero, size: size)]
+                )
+                XCTAssertEqual(sections(combined, size: size), sections([0.1..<0.15], size: size),
+                               "Only the crowded tail should lose its cuts.")
+            }
+        }
+        XCTAssertEqual(credits.activeSkippable(at: 7_770)?.start, 7_754.39)
+        XCTAssertNil(credits.activeSkippable(at: 7_800),
+                     "A visually continuous tail must not turn its unmarked gap into a skip range.")
     }
 
     func testEmptyFullLengthAndInvalidSizesAreSafe() {
@@ -114,9 +144,46 @@ final class PlayerAdaptiveSkipMarkerTrackTests: XCTestCase {
         }
     }
 
+    func testShortCreditsWindowDoesNotEraseLongFinalCreditsBoundary() {
+        let duration = 3_116.96
+        let credits: [MediaSegment] = [
+            .init(kind: .credits, start: 2_749.416, end: 2_773.416),
+            .init(kind: .credits, start: 2_809.416, end: duration)
+        ]
+        let ranges = SkipMarkerTrackLayout.ranges(segments: credits, duration: duration)
+        for width in [CGFloat(320), 390, 960, 1280, 1760] {
+            for height in [CGFloat(8), 12, 16, 20] {
+                let size = CGSize(width: width, height: height)
+                let expected = sections([ranges[1]], size: size)
+                let actual = sections(ranges, size: size)
+                XCTAssertEqual(actual, expected)
+                XCTAssertEqual(actual.count, 2, "The five-minute credits section must remain visible.")
+                XCTAssertEqual(actual[0].maxX + 2, width * (2_809.416 / duration), accuracy: 0.000001)
+                XCTAssertTrue(actual.allSatisfy { $0.width >= minimumSectionWidth })
+                // Programme boundaries keep their existing neighbor-based policy.
+                XCTAssertEqual(
+                    SkipMarkerTrackLayout.segmentedSections(
+                        ranges: ranges, size: size, minimumSectionWidth: minimumSectionWidth
+                    ),
+                    [CGRect(origin: .zero, size: size)]
+                )
+            }
+        }
+        XCTAssertEqual(credits.activeSkippable(at: 2_760)?.end, 2_773.416)
+        XCTAssertNil(credits.activeSkippable(at: 2_790))
+    }
+
+    func testShortWindowAfterLongMarkerDoesNotEraseItsEnd() {
+        let size = CGSize(width: 320, height: 20)
+        XCTAssertEqual(sections([0.1..<0.6, 0.61..<0.62], size: size),
+                       sections([0.1..<0.6], size: size))
+        XCTAssertEqual(sections([0.08..<0.09, 0.1..<0.6, 0.61..<0.62], size: size),
+                       sections([0.1..<0.6], size: size))
+    }
+
     private func sections(_ ranges: [Range<Double>], size: CGSize) -> [CGRect] {
         SkipMarkerTrackLayout.segmentedSections(
-            ranges: ranges, size: size, minimumSectionWidth: minimumSectionWidth
+            ranges: ranges, size: size, minimumSectionWidth: minimumSectionWidth, omitShortRanges: true
         )
     }
 }

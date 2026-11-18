@@ -59,8 +59,26 @@ refresh replaces the previous results with the corresponding explicit state.
 ## Where to look first
 
 The mobile presentation lives in `AppShelliOS/PlozziOSSearchView.swift`. Its input
-uses CoreUI's shared raised surface and theme text colors so the field remains
-distinct over page gradients in light, dark, and black appearances. The native
+uses a flat theme-aware capsule at rest, crossfading to native Liquid Glass
+while focused or holding a nonempty query on iOS 26 and later. Both background
+layers stay mounted so editing never replaces the text field. Reduce Transparency
+and older systems retain the flat surface; Reduce Motion skips the crossfade.
+Results start below the transparent header but draw beyond their scroll viewport
+behind its individual glass controls, without a full-width background. The
+header stays above the results for drawing and hit testing.
+The resting input reuses `settingsGroupSurface` with a capsule shape, including
+its gradient-aware wash, theme borders/shadows, and Reduce Transparency fallback.
+Section headings, visible poster edges, and captions share the input's 16-point
+leading margin. Grid padding accounts for each card style's internal artwork
+inset rather than aligning the invisible card slot.
+Section-heading taps dismiss the keyboard without activating a nearby result.
+Search results use a standard navigation push rather than an artwork zoom, so
+interactive Back does not scale the Search page into an inset background.
+The title/profile row collapses as search activates, moving that same field up
+and revealing a separate native Cancel button. Cancel clears the query and
+dismisses the keyboard; ending an empty search restores the title and profile.
+Native More navigation keeps its own Back/title row instead of duplicating it.
+Theme text colors keep it legible in light, dark, and black appearances. The native
 Settings navigation entry displays the active profile avatar. Search keeps a
 local avatar only when that navigation entry is not visible, including compact
 layouts where Settings is under More.
@@ -68,7 +86,9 @@ layouts where Settings is under More.
 On iPhone and iPad, the mobile screen owns the input's native SwiftUI focus.
 Tapping the content below the header dismisses the keyboard without clearing the
 query or consuming result/retry actions; scrolling results dismisses it
-interactively. Tapping the input or its clear button keeps editing available.
+interactively. The full input capsule takes focus, and its clear button keeps
+editing available. Unlike an overlaid search bar, results remain below this
+header, so scrolling alone does not activate glass.
 
 - `SearchViewModel.swift` — the debounced fan-out / merge loop.
 - `SearchDeduplicator.swift` + `SearchPolicy.swift` — the pure logic

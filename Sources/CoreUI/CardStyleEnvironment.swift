@@ -15,6 +15,10 @@ private struct PlozzGradientCardSurfaceKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct PlozzGradientCardFillOpacityKey: EnvironmentKey {
+    static let defaultValue = ThemePalette.gradientSurfaceFillOpacity
+}
+
 extension EnvironmentValues {
     var plozzGradientCardSurface: Bool {
         get { self[PlozzGradientCardSurfaceKey.self] }
@@ -22,7 +26,14 @@ extension EnvironmentValues {
     }
 
     var plozzRestingCardSurface: SurfaceStyle {
-        plozzGradientCardSurface ? themePalette.gradientSurface : themePalette.raised
+        plozzGradientCardSurface
+            ? themePalette.gradientSurface(fillOpacity: plozzGradientCardFillOpacity)
+            : themePalette.raised
+    }
+
+    var plozzGradientCardFillOpacity: Double {
+        get { self[PlozzGradientCardFillOpacityKey.self] }
+        set { self[PlozzGradientCardFillOpacityKey.self] = newValue }
     }
 }
 
@@ -36,18 +47,20 @@ public extension EnvironmentValues {
 }
 
 private struct AdaptiveCardSurface: ViewModifier {
+    let fillOpacity: Double
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
     func body(content: Content) -> some View {
         content.environment(\.plozzGradientCardSurface, gradientEnabled && !reduceTransparency)
+            .environment(\.plozzGradientCardFillOpacity, fillOpacity)
     }
 }
 
 public extension View {
     /// Shares detail cards' gradient wash, with opaque surfaces when transparency is disabled.
-    func plozzAdaptiveCardSurface() -> some View {
-        modifier(AdaptiveCardSurface())
+    func plozzAdaptiveCardSurface(fillOpacity: Double = ThemePalette.gradientSurfaceFillOpacity) -> some View {
+        modifier(AdaptiveCardSurface(fillOpacity: min(1, max(0, fillOpacity))))
     }
 }
 #endif

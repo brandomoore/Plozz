@@ -41,8 +41,9 @@ Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
 failed refresh. Completion distinguishes missing guide configuration, no current
 listings, successful matching and failure; displayed matching counts cover the
-next six hours. Ordinary cache-driven refreshes retain their existing policy and
-do not create a setup-progress task. Profile/account authorization changes cancel
+next six hours (the first viewport for per-channel Xtream guides). Ordinary
+cache-driven refreshes use the freshness policy below and do not create a
+setup-progress task. Profile/account authorization changes cancel
 explicit work and discard its presentation state.
 
 Source setup explains that viewers must have authorization for their channels
@@ -51,6 +52,38 @@ and that Plozz does not provide TV content or channel subscriptions.
 For past failures, attempted repairs and related tests, see the short
 [IPTV troubleshooting history](iptv-history.md). It is historical context,
 not a specification.
+
+## Channel-name presentation
+
+Settings > Live TV > **Clean channel names** is on by default and scoped to
+the active profile. Its live preview uses the same formatter as the guide and
+up to three distinct original names from the authorized loaded IPTV catalog,
+preferring names that cleanup changes. It excludes hidden and manually renamed
+channels, never fetches a playlist for the preview, and clears provider samples
+when access is revoked or sources are removed. Until eligible names are loaded,
+a fixed sample is explicitly labeled **Example**.
+It tidies IPTV display names only: whitespace, paired `##` / `**` wrappers,
+pipe separators, and recognized trailing spaced or superscript quality labels.
+Country/provider tags, regional names, channel numbers, `+1`, quality labels,
+and unknown text remain visible. `3840P`, for example, is retained as provider
+text, not interpreted as a verified resolution.
+
+Original imported names remain in the source catalog. Turning cleanup off restores
+them; explicit custom names always win. Plex, Jellyfin, Emby, and scheduled
+library channel names are unchanged. Guide matching, stream URLs/headers,
+channel IDs, favorites, and provider boundaries do not use the cleaned name.
+Equivalent-looking names still produce separate rows; this is not deduplication.
+
+The approach borrows separation and conservative token-boundary principles,
+not source code, from [IPTVnator's optional display cleanup][name-iptvnator]
+and [Lume's quality parsing][name-lume]. It deliberately avoids IPTVnator's
+broad prefix removal (`BBC: News` must not become `News`) and any interpretation
+of hash-wrapped names as non-playable headers. Naming conventions are heuristics,
+not a shared provider standard. Regression examples include decorations,
+regional feeds, numbers, timeshifts, ambiguous acronyms, and untouched custom names.
+
+[name-iptvnator]: https://github.com/4gray/iptvnator/blob/ff90ccb9402cfd53fdc4cbd2dfbbc6d0ede356de/libs/shared/m3u-utils/src/lib/strip-country-prefix.util.ts
+[name-lume]: https://github.com/bilipp/Lume/blob/7b1d324b0ae339a0a77099e9a7b4a54831affb63/Lume/Services/Player/ChannelQuality.swift
 
 For the reliability-first hardening priorities and explicitly deferred feature
 gaps, see [Live TV reliability](live-tv-reliability.md). It records finite
@@ -167,12 +200,25 @@ Wide layouts use the category sidebar instead of duplicating that menu.
 **Add Source** in the source menu
 opens the existing authorized IPTV/playlist and media-server setup choices.
 **Search** then **More** share one native toolbar group on the directory and
-guide. A native fixed spacer separates Back from the category menu. Guide,
+guide. Back uses leading navigation placement before the category menu; a native
+fixed spacer gives it a separate floating surface. Picker cancellation retains
+its cancellation placement. Guide,
 filters, Multiviews, source management and the existing **Settings** destination
 are contextual actions in **More**; Live TV has no separate profile button.
 Other pages' profile shortcuts are unchanged. Category tiles use
 shorter minimum heights while retaining channel counts and Dynamic Type growth.
-Apple TV navigation is unchanged.
+On Apple TV, the categories sidebar places the same source menu above
+**Search**. It shows the current source, supports **All**, and opens the existing
+**Add Source** choices. Source filtering shares the mobile authorization and
+category-retention behavior without changing connected sources or active playback.
+Closing the menu returns focus to its button; entering the sidebar from the guide
+still lands on the selected category.
+
+On every platform, a single enabled source shows its name on the button and in
+the menu alongside **Add Source**, without a redundant **All** option. Disabled
+sources do not count. This is presentation-only: it does not rewrite the saved
+browse filter. **All** remains available for multiple enabled sources, or when
+Plozz library channels also contribute to the guide.
 
 On iOS/iPadOS 26 and later, the category directory and search results extend
 behind the transparent native navigation controls, retaining their resting
@@ -431,10 +477,15 @@ without relaxing the existing station/region checks or accepting name-only
 guesses. Existing URL accounts refresh once for the new mapping; imported files
 need reimporting to recover previously discarded metadata.
 
-Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
-Xtream otherwise uses its native guide API, falling back to its `xmltv.php`
-for channels with empty, malformed or unsupported API listings. Successful
-native listings are retained. Working explicit guides remain preferred. If an
+Explicit XMLTV guides are ordered, with separate first-guide-origin headers.
+Xtream without an explicit guide uses the saved-index, whole-guide, then
+unavailable-batch native fallback ordering detailed below. A usable saved index
+or successful whole-guide answer, including an empty answer, does not trigger
+per-channel requests to fill gaps.
+The lineup's matching fingerprint is reused across batches for the same committed
+catalog revision; a replacement or explicit invalidation requires validation again.
+Freshness and requested-window coverage are still checked for every batch.
+Working explicit guides remain preferred. If an
 explicit Xtream guide returns HTTP 404, other configured guides are tried in
 order before one attempt at the account's standard `xmltv.php` for uncovered
 channels. A default URL already in the configured list is not requested again.
@@ -445,7 +496,10 @@ apply to playlist/file accounts, and does not replace a working but empty guide.
 An unavailable endpoint is not retried once per remaining channel in the batch.
 Authentication failures, rate limits, transport failures and ordinary server
 errors remain visible rather than triggering another request path; a failed
-XMLTV fallback also remains an error. Playlist-declared HTTP(S) guide URLs load
+XMLTV fallback also remains an error. After such a native failure the remaining
+channels in the batch are not requested. Listings already retrieved are returned
+with the failure, and unanswered channels stay pending for the next on-demand
+request. Playlist-declared HTTP(S) guide URLs load
 automatically, including guides hosted on another server, scheme, or port.
 Each guide is requested at its declared address without copying the playlist's
 query credentials. Account headers stay scoped to their configured origin;
@@ -464,7 +518,7 @@ ten seconds are returned as failures rather than retried ahead of the server's
 deadline. Cancellation, authentication, certificates, blocked redirects, missing
 endpoints, size limits and XML parse errors are not retried. Failed body transfers
 restart from byte zero; incomplete responses are never cached. Native Xtream
-API fallback selection is unchanged.
+API requests are not retried.
 Confirmed XMLTV 404s, malformed guides and transport byte-limit failures are reused
 only within the current provider's refresh,
 across its channel/window batches. Every new refresh can retry immediately;
@@ -514,15 +568,164 @@ utility-priority import has separate waiter cancellation, and teardown or explic
 refresh cancels and drains superseded work. Existing visible listings remain
 available in the presentation model while it refreshes.
 
-This does not introduce a new polling schedule. Parsed reuse retains the existing
-60-second maximum freshness, honoring shorter max-age and no-cache. An identical
-download can revalidate an eligible index without parsing again. No-store removes
-persisted source data before bounded transient parsing, including malformed
-replacements. Explicit refresh bypasses parsed freshness and the raw-response
-cache. Account HTTP validators are not introduced here: unlike existing standalone
-conditional fetching, this path still downloads expired bodies before comparing
-their digest. A changed catalog projection, language, or requested interval outside
-the retained horizon requires a new import.
+Account XMLTV indexes use a conventional 12-hour maximum/default freshness,
+honoring shorter HTTP max-age, Expires, Age and no-cache directives. ETag and
+Last-Modified are encrypted alongside the parsed index, within its existing
+account/credential-revision/profile scope. A conditional 304 advances freshness
+without transferring XML or replacing the parsed generation. Validators belong
+to the exact final response URL: redirects do not send them to another resource.
+A changed catalog projection, language, or requested interval outside the retained
+window requires a full response because a 304 cannot supply unindexed rows.
+
+If the validator-owning resource rejects a conditional request with 400, 405,
+412, 431 or 501 and no Retry-After header, the client attempts one ordinary
+download without validators. A failed fallback remains an error, with no further
+retry. Authentication, missing-feed, throttling and redirect restrictions are
+not bypassed. Oversized or newline-bearing optional cache headers are discarded
+without rejecting valid XMLTV. Unusable cache-policy headers disable persistence
+and reuse for that response; invalid validators are never forwarded.
+
+An identical 200 response can still reuse the generation by digest comparison.
+No-store removes persisted source data before bounded transient parsing, including
+malformed replacements. A 304 no-store revokes the old index and requires an
+unconditional replacement. Explicit refresh bypasses freshness, but may validate
+an unchanged index conditionally. The legacy raw-response cache remains bounded
+to one document and at most 60 seconds; it is not a second persistent XML store.
+
+The existing guide-use/resume request path checks loaded IPTV windows again after
+12 hours, without a coverage-triggered polling heuristic; the optional automatic
+update described below is the only timer.
+Existing listings stay visible during refresh and ordinary failures remain
+observable without advancing freshness. Missing windows load on demand. This
+policy does not promise background execution while the OS suspends the app.
+Standalone prototype-source fetching retains its separate existing HTTP cache.
+
+Successful empty IPTV windows become retryable on use after 60 seconds. Truly
+empty XMLTV sources (no programme elements) use the same maximum negative-cache
+lifetime, honoring shorter HTTP freshness, including after restoration and
+304 or identical-200 revalidation. A populated feed with no matches or no rows
+in the requested window retains normal source freshness: an empty viewport is
+not a reason to repeatedly download the whole feed. Legacy zero-row indexes
+without a source programme count require one full rebuild to distinguish these
+cases. Negative-cache expiry does not itself schedule polling.
+
+For Xtream accounts without an explicit XMLTV URL, a guide request first ensures
+that a committed live lineup exists, then reads the saved `xmltv.php` index when
+it can answer without a guide download: indexed for the current lineup and window,
+within its reuse limit, and not awaiting an explicit refresh. Otherwise the request
+tries the whole-guide `xmltv.php` endpoint before native listings. Channels whose
+listings cover the complete requested window need no native request. Missing or
+partly covered channels use `get_simple_data_table`, including streams without
+XMLTV guide IDs. Nonempty native listings replace that channel's incomplete batch
+listings; empty, malformed or unavailable native answers retain the batch listings.
+A transient native failure stops further requests and preserves retrieved listings
+as an explicitly incomplete result; authentication and cancellation remain terminal.
+An unavailable batch endpoint (HTTP 404, 405 or 501) is remembered in memory until
+guide invalidation, so later requests can skip the missing batch. Batch authentication,
+overload, transport and parsing failures do not trigger native recovery requests.
+
+Native fallback uses stream IDs, not guide IDs (`epg_channel_id`): it sequentially
+requests each distinct caller-requested channel, including channels without guide
+IDs, never the unrequested lineup. An empty native listing table is remembered
+in memory for six hours (cleared by an explicit refresh). Merely receiving rows
+outside the requested window does not create that suppression.
+
+The saved XMLTV index's matching projection contains only lineup channels with
+guide IDs; it cannot supply XMLTV listings for channels without them. Renaming
+such channels does not change that projection. Native fallback can still supply
+their listings even when the batch endpoint succeeds. The lookup retains the
+prepared lineup, its digest, the decoded station document and normalised station
+names between requests.
+
+The earlier sample of one provider found no native listings absent from its guide
+file; that observation is not a guarantee for other providers. The reported
+few-millisecond answer for twelve channels describes a reused-index lookup, not
+visible Live TV opening, first download, parsing or full-lineup publication.
+PR #458's title claim of 13 seconds to under 200 ms lacks comparable real
+visible-open baseline/candidate evidence and is not an established speedup.
+The import replay and publication checks documented below cover their own
+workloads, not that end-to-end claim.
+
+Separately, Live TV can seed an empty destination from at most 150 last-seen
+server-channel rows in a sealed, disposable local file per profile. Restoration
+requires the currently authorized source, account, provider kind and stable
+server/viewer scope, including the Plex Home viewer; credential/session rotation
+alone does not change that scope. Legacy rows without viewer scope are ignored.
+Authorization is rechecked after asynchronous work. Categories and counts are
+derived from admitted rows under current filters, not restored whole-lineup
+aggregates; the authoritative lineup replaces these provisional rows. Cloud
+erasure and first-run reset on tvOS and iOS/iPadOS remove last-seen files and their
+keys without deleting unrelated catalog secrets. Erasure fences already-prepared
+saves so they cannot recreate the erased files or keys; newly admitted saves may
+persist later authorized rows.
+
+For an Xtream account using its own `xmltv.php`, the lineup and guide share one
+key, so a channel's guide ID alone decides its listings: HD, 4K and regional copies
+that carry the same ID all receive them, and the answer for a channel does not
+depend on which other channels were requested with it. Letter case and surrounding
+spaces in the ID are ignored, and when a provider declares a station under several
+spellings the channel's own is read first and another only if it has no listings in
+the window. Playlists and explicit guide
+addresses keep the stricter matcher, where channels sharing an ID must also share a
+name, because there the ID and the guide come from different parties.
+
+Settings > Live TV > Guide preferences > **Refresh while open** (Off, or
+every 1, 3, 6, 12 or 24 hours; 12 by default; profile-scoped) sets how long a saved
+account guide is reused. A chosen interval can outlast the built-in 12-hour default
+but never a lifetime the server stated. While the app is in the foreground and the
+profile may use Live TV, a low-priority task brings guides that are *already saved*
+up to date once they are older than the interval: one conditional whole-guide
+request per interval and account, never per-channel requests, and never a first
+download for a profile that has not loaded that guide. Playlist-declared guide
+URLs are read from the committed catalog without refreshing the playlist;
+explicit guide overrides retain precedence. An Xtream account's saved
+live lineup is refreshed by the same task on the same interval. Independently,
+reading a saved Xtream live lineup can start a background refresh once it is at
+least 24 hours old, while returning the committed channels immediately. Off
+disables the periodic task, not this stale-lineup refresh or on-demand guide
+loading. Playlist accounts and the film and series libraries keep the 30-minute
+rule. The periodic task starts one minute after launch, waits at least five
+minutes between checks, and backs off from 15 minutes after a failure. Off restores the on-demand behaviour
+described above.
+
+A guide request answered with HTTP 429, 502, 503 or 504 is a signal to back off.
+After any applicable in-request retries, the account makes no new guide transfer
+(per-channel or whole-guide) for five minutes, doubling on each further refusal up
+to one hour, or for a longer valid `Retry-After`, capped at 24 hours. The delay
+applies to 429 and 502/503/504 responses. Requests needing a transfer during that
+period fail with the provider's error without touching the network; reusable
+saved listings remain available. The deadline, refusal count, status and granted
+delay are persisted in the account's catalog and validated on restoration, so
+reopening the provider does not reset the cooldown. A successful guide transfer
+clears it. Explicit refresh bypasses the current deadline but retains the refusal
+count, so another refusal continues the exponential sequence rather than
+restarting at five minutes. Cancellation does not record a new refusal. Guide
+backoff does not affect playback or lineup requests.
+
+Xtream without an explicit XMLTV URL advertises per-channel guide loading.
+Startup discovery and guide preparation warm only the first 12 channels, then
+browsing requests its bounded neighborhood. Preparation counts describe that
+sample, not the complete lineup. Explicit XMLTV sources still prepare the complete
+catalog through one shared index; neither mode opens streams during preparation.
+
+The guide-only filter keeps per-channel sources' unrequested channels eligible
+for demand discovery. A successful guide response resolves that pending state
+for the requested channels; partial failures resolve only channels with returned
+listings. Confirmed empty channels are filtered out, while failures remain
+discoverable for retry. Pending channels do not count as known guide matches.
+Explicit per-channel source refresh clears window freshness and restarts
+discovery, retaining visible programmes and fetching unsampled windows when used.
+An ordinary catalogue reload preserves already-resolved discovery state.
+
+Catalogue imports, XMLTV downloads and Xtream per-channel guide requests share
+cancellable admission within each IPTV provider instance. They do not compete
+for a provider connection. A started transfer finishes without being discarded;
+queued catalogue work precedes the next guide transfer. Cached guide reads and
+saved playback-locator reads need no admission, and other account instances remain
+independent. Teardown rejects queued work; retry backoff does not hold admission.
+This intentionally trades waiting behind an active transfer for avoiding its
+cancellation and re-download. It does not serialize playback streams or promise
+that unrelated provider APIs never overlap.
 
 The bounded-retry comparison used
 [Kodi IPTV Simple's XMLTV loader](https://github.com/kodi-pvr/pvr.iptvsimple/blob/f4071e16c747e1a13d4710e249cb03ff11204f17/src/iptvsimple/Epg.cpp)
@@ -541,15 +744,21 @@ and distinguishes it from
 Neither implementation establishes a speed estimate for Plozz or justifies
 replacing its bounded streaming XML/gzip validation with a materialized XML tree.
 
-XMLTV accepts minute- or second-precision programme timestamps, compact and
+XMLTV accepts year-, month-, day-, hour-, minute- and second-precision timestamps, compact and
 colon-separated numeric timezone offsets, and the unambiguous UTC/GMT/Z labels.
-Absent zones mean UTC. Calendar and offset validation remains strict; coarser
-dates and ambiguous regional timezone abbreviations do not invent airtimes.
+Missing date fields use the start of the specified period (January/first day,
+midnight, zero minutes/seconds); absent zones mean UTC, never device time.
+Calendar and offset validation remains strict, and ambiguous regional timezone
+abbreviations are rejected. A programme still needs an end after its start or
+the existing bounded same-station missing-stop inference.
 Programme-only feeds can supply exact channel IDs without invented display names
 or relaxed station matching. Repeated channel declarations with the same exact
 ID combine distinct display names in source order, rather than rejecting the
 whole guide. Different IDs remain separate and ambiguous names do not establish
-a match. Referenced IDs and declared channels share the channel/text budgets;
+a match. Manual station search includes every declared display name, including
+names merged from repeated declarations, while showing the first name and the
+safe station ID. Searching never changes an automatic match or saves a correction.
+Referenced IDs and declared channels share the channel/text budgets;
 repeated declarations still count toward the declaration limit. Declarations
 with missing, empty or whitespace-only IDs are skipped without inventing an
 identity; they still count toward declaration limits and their display names
@@ -571,6 +780,23 @@ text in comments, processing instructions and CDATA is not a declaration.
 numeric parser code, line/column and channel/programme counts. They never include
 XML fragments, station names, URLs or native error descriptions. Compatible
 duplicate and skipped declarations are reported once per metadata pass as counts.
+Successful parses requested for channels also report candidate station counts,
+retained listings and skipped-row reasons (channel ID, start, stop, missing title,
+outside the window, unmatched station or unresolved missing stop). Account index
+imports identify themselves as `stationIndex`, not final per-channel matches.
+Both account projections and standalone cache settings include the parser version,
+so an older empty index cannot mask newly supported timestamps.
+
+`tools/iptv-guide-corpus.py` captures two public XMLTV feeds into ignored local
+storage, with hashes and independent exact-ID schedule references. The opt-in
+`IPTVGuideRefreshTests` replay those bytes through production networking/parsing
+and a controlled single-connection transport; ordinary tests do not download
+guides. A separate `PLOZZ_LIVE_GUIDE_PROBE=1` opt-in exercises the public endpoints
+through the production downloader and full station-index parser. Neither route
+opens a stream or establishes commercial-provider limits. See
+[the comparison evidence](live-tv-reliability.md#refresh-coordination-and-real-guide-evidence)
+for the measured sample and remaining limitations.
+
 Playlist and imported-file accounts without an explicit or playlist-declared
 guide immediately report no guide capability. Both platforms show "No program
 guide available" and skip guide warmup and browsing requests instead of showing
@@ -781,7 +1007,7 @@ the following settings down by the full list height.
 Saved sources use icon/name/status rows instead of repeating every control and hostname.
 Provider/type and status share one secondary line, with compact row insets rather
 than another full layer of group padding. Long content can still wrap.
-Playlist icons optionally load the source origin's favicon, with a generic
+Playlist icons on TV, iPhone, and iPad optionally load the source origin's favicon, with a generic
 fallback; no playlist credentials or third-party favicon service are used.
 Connected media servers reuse `ProviderBrandMark`, including the same Plex,
 Jellyfin, and Emby logos and focus-aware colors used elsewhere in Settings.
@@ -949,7 +1175,9 @@ is no prior in-memory history to migrate on the first updated launch.
   right-hand programme/channel-name area plays directly; long-press actions
   remain available there.
   Hidden channels are excluded from Search and every guide section for this
-  profile. Restore them in Settings > Live TV > Hidden channels. Hiding retains
+  profile. Restore them in Settings > Live TV > Hidden channels. Returning to the
+  guide applies restored visibility to rows and categories even when the lineup
+  and browse filters have not changed. Hiding retains
   their favorite/recent metadata and source data, and does not end deliberate
   playback. After hiding, focus goes to the next remaining row, or the previous
   row when the hidden row was last; another occurrence of that channel is not
@@ -1734,30 +1962,125 @@ generated library channels, indexed program search, channel checks and four-chan
 Multiview. Multiview retains each player's decoder and prepared stream through
 side-by-side/corner layout changes, audio selection and returning to one player.
 Setup keeps the pictures inside a bounded canvas with room for controls.
+On Apple TV, setup reserves the measured bottom toolbar and 24-point native
+focus clearance, not a matching empty header band. Equal-picture and Main picture
+layouts pack the actual aspect-fitted pictures with 24-point gaps; they do not
+apply another inset to each picture. Main picture uses the same horizontal
+and vertical gaps, including mixed source aspect ratios. Its widened layout
+uses 8-point gaps. The focused picture still receives the system's native lift.
+Packed pictures keep transparent clearance outside their resting frames for
+native focus scale and shadow. Only the picture is clipped; the outer card remains
+unclipped so its native shadow feathers over neighboring pictures rather than
+ending at a hard boundary. Visible picture sizes and gaps do not shrink to make
+room for it.
 Focus outlines hug the actual video aspect, reported by the retained player,
 rather than its letterbox area or caption. Add and Replace return to the actual
 guide in selection mode: the same channel/programme rows, vertical catalog,
 Favorites, Recents, category sidebar and native Search, backed by the same
 profile model and loaded guide. There is no separate channel browser or
-horizontal all-channel shelf. The current audible picture remains in the guide
-preview, and browsing never retunes a Multiview player. Selecting a station or
+horizontal all-channel shelf. On Apple TV, an existing multi-picture composition
+stays behind the guide in its current layout; opening Add or Replace never
+promotes the audible picture to a full-screen preview or hides the other streams.
+The TV picker guide and its scrim disappear together without sliding or fading
+across the returning pictures; the retained videos still animate into their slots.
+The initial single-picture picker and mobile guide use the audible preview.
+Browsing never retunes a Multiview player. Selecting a station or
 programme adds/replaces its live channel, then returns to setup. Already-added
 channels are marked; selecting one returns to it without allocating another
 player. Cancel preserves every stream and the existing composition.
+Entering Multiview from a single channel opens this picker
+immediately to choose the second channel; restoring a saved composition does not.
+Cancelling that first selection or selecting the already playing channel returns
+to normal single-channel playback. Removing pictures down to one also returns
+automatically, retaining the remaining player and tuner lease. The normal
+player's Multiview action opens the picker again; no separate exit is required.
+On Apple TV, the picker hides app navigation while retaining the full guide,
+category sidebar and Search. The shell's retained full-screen workspace moves
+the existing guide/player host outside the native tab focus tree, without
+reconstructing players. Closing Multiview restores that host to the shell.
+This full-screen guide does not reserve the app sidebar or top-navigation insets.
+Guide and scrim visibility animate independently of the retained picture layout;
+adding a channel animates existing pictures to their new slots and introduces the
+new picture in its own slot rather than passing through a full-screen frame.
+New channels show a skeleton at their picture's exact size while preparing and
+waiting for their first frame. It shares the picture's rounded boundary and
+does not fill native focus clearance or cover neighboring pictures. The existing
+reduced-motion-aware shimmer is shared across preparation and player startup;
+errors, cancellation, and first-frame audio gating keep their existing behavior.
+Filtering scrolls the guide to its first row without taking focus from categories.
+Left from the guide reaches categories; Right
+returns to the filtered guide. These directions reverse in right-to-left layouts.
+Back cancels selection and returns to Multiview
+without stopping streams; Back from Search first returns to the picker.
 
-Watch switches to the full physical-screen canvas, including safe-area edges,
-with no video focus outlines. Two channels split horizontally in landscape and
-vertically in portrait; three or four use a two-row grid. Main and stack places
+On Apple TV, ten seconds without interaction automatically leaves setup for the
+full physical-screen canvas, including safe-area edges, and hides controls and
+focus treatment. There is no Watch button. Remote activity restores the
+interactive layout and controls. On iPhone/iPad, Watch remains an explicit action.
+The Apple TV bottom actions enter together with a half-second fade and a
+20-point upward movement, on both initial setup and return from idle or the
+guide. Reduce Motion shows them immediately without movement. Their measured
+layout and native focus styling remain unchanged.
+Two channels are labeled Side by side in landscape and Top and bottom in
+portrait; three or four use Grid. Main picture places
 one large picture on the left and up to three separate pictures stacked on the
 right, without overlap. Corner mode retains its overlaid inset column.
+Layout controls and menu options use count-aware SF Symbol previews: two,
+three or four pictures, with a large primary and the correct number of stacked
+pictures for Main picture. Corner previews include the selected position and
+inset size; position and size options preview their respective destinations.
+Native menu checkmarks remain separate from the preview icon. The mobile
+two-picture icon also follows portrait/landscape orientation. Favorite descriptions
+use the saved picture count and the presenting canvas orientation, not the sheet's
+dimensions. Layout names do not change persisted enum values.
 Each renderer fits its source without cropping. Edit layout returns to setup;
 ordinary viewing never reserves permanent space for controls.
+Widened Apple TV split/grid layouts pack the actual picture edges with equal
+8-point horizontal and vertical gaps, including three-picture and mixed-aspect
+grids. Viewing layouts keep a 12-point outer margin for TV pixel shifting and
+edge cropping. The centered group fills the remaining width or height without cropping;
+unused space stays outside the group rather than widening individual gaps.
+An expanded Multiview picture keeps that same outer margin; ordinary fullscreen
+playback is unchanged.
+
+Apple TV animates the retained video surfaces into Multiview and between layouts,
+including pane entry/removal, return to watching, promotion and expansion.
+Multiview layout and new-renderer fades share a half-second ease-in-out
+transition. New renderers no longer add a separate scale-in. Moving focus
+between pictures keeps the native animated lift and defocus. Only restoration
+of an already-focused idle surface suppresses an extra scale-in, without a
+competing setup-resize animation. Returning focus to the interactive canvas
+does not shrink below or grow beyond the focused size.
+Up from the Apple TV toolbar returns directly to the last-focused picture.
+A native focus guide spans the gap above the toolbar, avoiding a visible
+handoff through a different picture. Ordinary picture-to-picture navigation
+and focus animation remain native.
+Native full-screen playback first hands its existing renderer back to the full-size
+inline canvas, then shrinks it; no replacement player or screenshot stands in
+for the video. A temporary window host keeps that renderer visible during native
+cover dismissal, and resizing waits for the inline host's actual layout.
+Focus clearance around a shrunken corner picture is transparent rather than an
+opaque backing rectangle. On tvOS, 20-point rounded corners clip each fitted picture, not its letterbox slot,
+and disappear when a picture is expanded. Reduce Motion makes these changes
+immediate. Removing a pane still retires its stream immediately; visual removal
+never delays authorization or tuner cleanup.
+The renderer follows the container's size in the same animation frames when
+shrinking or growing. Placement and focus clearance share one interpolation,
+so all pictures shrink together instead of starting nested resize animations.
+The selected picture's lift remains the native tvOS focus effect.
+During idle/native label replacement, temporary live renderer hosts track the
+incoming labels' animated presentation geometry even before those labels reach
+full opacity. Motion coverage uses real decoders, native style replacement and
+display-link samples without forcing layout from the test.
+The close confirmation and playback errors share `playerPlatformAppearance`
+with transport controls, preserving native focused-label contrast without a
+dialog-specific button style.
 
 On Apple TV, native pane focus selects that channel's audio once its source is
-prepared. Moving into the controls keeps the last selected audio. Select opens
-the focused picture full-screen; Back restores all retained players without
-retuning. On touch devices, tapping a picture selects its audio and expands it;
-Show all restores the layout. Tapping again reveals hidden controls.
+prepared. Moving into the controls keeps the last selected audio. Select makes
+the focused picture primary without hiding the other streams or leaving the
+current layout. On touch devices, tapping a picture likewise selects its audio
+and makes it primary. Interaction reveals hidden controls.
 iPhone/iPad controls use the original container safe area even though the video
 canvas extends beneath system chrome. A compact Close control and separate Watch
 action stay at the top; a touch-sized bottom dock exposes Add, Layout, and Audio,
@@ -1766,20 +2089,73 @@ windows the dock scrolls rather than truncating labels. Setup's pictures reserve
 the measured header and dock heights so landscape and large-text controls cannot
 cover them. TV focus controls and the retained players' full-screen geometry are
 unchanged.
-Apple TV multiview's header and toolbar keep visible title-and-icon labels with
+Apple TV multiview has no top-left title. The toolbar is bottom-aligned with
+32 points below its visible buttons (24 points outside and 8 points inside the
+toolbar). Pictures use a 24-point top inset and reserve at least a 24-point
+gap before the toolbar, plus its internal padding. Focus lift does not reposition the group. The toolbar
+contains Add channel, Layout and More. More holds
+Favorite and, while expanded, Show all. Holding Select on a picture opens its
+native menu for Make main video, Replace channel and Remove; Remove is
+available only with multiple pictures. Loading pictures retain their menu, and
+failed pictures expose removal beside recovery actions. Channel actions always
+target their own picture rather than the last audible channel.
+Prepared video menus anchor to the picture without moving or snapshotting its
+renderer. Layout-changing actions wait for the native menu dismissal completion,
+so its returning preview cannot resize or reposition a picture during promotion.
+Holding Select does not also activate or promote the picture; cancellation leaves
+its position unchanged. A short Select or Make main video remains an explicit
+promotion action. The video with sound has a broad, soft, live-color glow that
+waits one second before appearing on a newly audible video, then fades in over
+three seconds and out over 1.5 seconds. Rapid focus moves cancel pending glows without delaying
+audio. The glow remains visible when focus moves to the toolbar.
+An unfocused audible picture also has a 44%-opacity border, two physical pixels
+plus one point wide, using a brighter tint of the live palette and the same activation fade. A fine dark edge
+separates it from bright or saturated footage without strengthening the broad glow.
+Native focus hides that border; idle playback
+shows it without adding focus chrome. Both indicators share the video's motion.
+It does not change picture geometry or replace the native focus treatment.
+Reduce Transparency hides the glow; Reduce Motion removes its fades.
+First focus after fullscreen or idle uses one whole-card transition to the
+native card's displayed size, keeping the focus sheen and live video together
+instead of shrinking the video and then separately adding the focus lift.
+The renderer's destination-local geometry is committed before returning it to
+the native card, avoiding a one-frame double scale. Ordinary focus moves still
+animate natively.
+The toolbar keeps visible title-and-icon labels with
 the same native button treatment as normal playback, including the Layout menu.
 Their height stays transport-sized while width follows the action's title.
 Focused labels stay dark against the bright fill in native-glass and
 reduced-transparency modes. These controls do not use the larger page/form action pills.
-Watching hides controls after four seconds of inactivity. Editing, native menus,
-channel selection, preparation failures and VoiceOver keep them available.
+Apple TV uses the same ten-second inactivity deadline for setup and viewing.
+Native menus, channel selection, initial preparation, failures and VoiceOver
+block that deadline. Mobile retains its four-second viewing timeout and keeps
+controls available while editing.
+On Apple TV, only the focused picture briefly shows a compact channel logo and
+name, using the native playback glass treatment and its reduced-effects fallback.
+The label fades after three seconds, independently of the controls, and returns
+on refocus. VoiceOver retains it while focused; the pane's accessible channel
+name and audio state remain available even when the visual label is hidden.
+During interaction, every fitted picture reserves space for the system's native
+card lift and specular highlight. The focused video itself grows within that
+space; no custom outline is painted on focused or unfocused pictures. The inset
+scales with picture width and reserves at least 28 points per side where the
+picture is large enough. After the ten-second idle deadline, focus effects
+disappear and the retained videos expand into the viewing layout. VoiceOver
+keeps the interactive presentation available. These changes do not reload or
+replace streams; Reduce Motion uses final layout sizes immediately.
+Idle/native focus-label replacements retain each live renderer in a temporary,
+picture-sized window host until the replacement is visible, avoiding blank
+frames without taking snapshots or covering neighboring pictures. Cancellation,
+authorization loss and playback teardown release that temporary host.
+Reduce Motion suppresses the fade, and loading/error indicators remain separate.
 Native menu focus notifications do not write back into the pinned controls'
 activity state, avoiding an update loop that can repeatedly rebuild the menu.
-Back from a guide row still focuses Search; Back from those controls or Cancel
-returns to setup. In Multiview, Back restores all pictures if expanded, then
-leaves setup or dismisses active controls. Any Back or Close Multiview action
-that would end the composition asks for confirmation. Keep watching dismisses
-the confirmation without closing streams.
+Back from a picker guide row, its category controls or Cancel returns to setup.
+In Multiview, Back restores all pictures if expanded, then
+leaves setup or dismisses active controls. Apple TV has no explicit Close
+Multiview button; Back asks for confirmation when it would leave the composition
+and return to the guide. The Close control on iPhone/iPad also asks for
+confirmation. Keep watching dismisses the confirmation without closing streams.
 
 Favorite saves channel IDs in display order, the main picture and the chosen
 layout. The guide's Multiviews control opens these saved compositions. Favorites
@@ -2074,7 +2450,8 @@ the Release model is empty; imported listings never receive synthetic gap filler
 
 Account-backed IPTV guide batches write `IPTV_GUIDE` events to Recent Activity
 on both platforms. A random batch ID links the source mode, requested channel
-count, Xtream-to-XMLTV fallback counts (empty, malformed, or unavailable), and
+count, Xtream-to-XMLTV fallback counts (empty, malformed, or unavailable),
+channels whose whole window the saved index answered (`indexed`), and
 completion outcome. Up to six operation samples retain the first four, first
 failure, and last operation, with the omitted count reported explicitly.
 Samples identify `get_simple_data_table` or XMLTV, lookup/request/download/parse

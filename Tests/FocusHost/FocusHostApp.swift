@@ -3,16 +3,64 @@ import UIKit
 import CoreUI
 import CoreModels
 import FeaturePlayback
+@testable import AppShell
+import AppRuntime
+import CoreSecureStore
+import FeatureAuth
 @testable import FeatureSettings
+
+private struct LiveJellyfinOnboardingFixture: View {
+    @State private var app: AppState
+
+    init() {
+        let suite = "LiveJellyfinOnboardingFixture"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        _app = State(initialValue: AppState(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profilesModel: ProfilesModel(store: ProfileStore(defaults: defaults))
+        ))
+    }
+
+    var body: some View {
+        RootView(appState: app)
+    }
+}
 
 @main
 struct FocusHostApp: App {
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
+            URLProtocol.registerClass(SourceSmokeNetworkBlocker.self)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             if ProcessInfo.processInfo.arguments.contains("--tracker-history-import-fixture") {
                 TrackerHistoryImportFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--publicmetadb-pairing-fixture") {
                 PublicMetaDBPairingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--upcoming-capture-fixture") {
+                UpcomingCaptureFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-onboarding") {
+                LiveJellyfinOnboardingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--live-webdav-watchlist-fixture") {
+                LiveWebDAVWatchlistFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--detail-selection-fixture") {
+                DetailSelectionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--live-content-refresh-fixture") {
+                LiveContentRefreshFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--content-refresh-return-fixture") {
+                ContentRefreshReturnFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
+                LiveTVRootFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--multiview-fixture") {
+                MultiviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--disc-review-fixture") {
+                DiscReviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--detail-information-fixture") {
+                DetailInformationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--discover-fixture") {
                 DiscoverBrowseFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--profile-pin-transition-fixture") {
@@ -25,6 +73,8 @@ struct FocusHostApp: App {
                 HomeSectionWarningFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-section-editor-fixture") {
                 HomeSectionsEditorFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--collection-row-editor-fixture") {
+                CollectionRowEditorFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--playback-failure-fixture") {
                 PlaybackFailureFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--setup-picker-fixture") {
@@ -33,10 +83,16 @@ struct FocusHostApp: App {
                 SetupSummaryFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--player-presentation-back-fixture") {
                 PlayerPresentationBackFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--disc-menu-input-fixture") {
+                DiscMenuInputFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--deep-link-resume-fixture") {
+                DeepLinkResumeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--server-address-fixture") {
                 ServerAddressNavigationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--read-ahead-settings-fixture") {
                 PlaybackReadAheadFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--external-player-settings-fixture") {
+                ExternalPlayerSettingsFixtureHost()
             } else if ProcessInfo.processInfo.arguments.contains("--skip-settings-fixture") {
                 SkipSettingsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-organization-fixture") {
@@ -77,6 +133,8 @@ struct FocusHostApp: App {
                 FamilyGuidanceFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-sidebar-handoff-fixture") {
                 NativeSidebarHandoffFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--empty-pinned-navigation-fixture") {
+                EmptyPinnedNavigationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-handoff-fixture") {
                 NavigationDestinationHandoffFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--pinned-back-fixture") {
@@ -92,7 +150,15 @@ struct FocusHostApp: App {
             } else if ProcessInfo.processInfo.arguments.contains("--library-channel-actions") {
                 LibraryChannelActionsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-fixture") {
-                NavigationRailFixture { Color.clear }
+                NavigationRailFixture {
+                    if ProcessInfo.processInfo.arguments.contains("--navigation-guide") {
+                        LiveTVCategorySearchFixture()
+                    } else {
+                        Color.clear
+                    }
+                }
+            } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-home") {
+                LiveJellyfinHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
                 ProductionHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-artwork-focus-comparison") {
@@ -110,6 +176,267 @@ struct FocusHostApp: App {
             }
         }
     }
+}
+
+private struct ExternalPlayerSettingsFixtureHost: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> ExternalPlayerFixtureController {
+        ExternalPlayerFixtureController(rootView: ExternalPlayerSettingsFixture())
+    }
+
+    func updateUIViewController(_ controller: ExternalPlayerFixtureController, context: Context) {}
+}
+
+private final class ExternalPlayerFixtureController: UIHostingController<ExternalPlayerSettingsFixture> {
+    var target: (any UIFocusEnvironment)?
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+}
+
+private struct ExternalPlayerSettingsFixture: View {
+    @State private var model: ExternalPlayerSettingsModel = {
+        let defaults = UserDefaults(suiteName: "external-player-settings-fixture")!
+        defaults.removePersistentDomain(forName: "external-player-settings-fixture")
+        let model = ExternalPlayerSettingsModel(defaults: defaults)
+        model.settings.player = .nativePlayer
+        return model
+    }()
+    @State private var failure: String?
+
+    var body: some View {
+        SettingsFormLayout(
+            title: Text("External player"),
+            rows: Array(ExternalPlayerSettingsRows.external(
+                model: model, installedPlayers: Set(ExternalPlayer.supported)
+            ).prefix(1))
+        )
+        .frame(width: SettingsFormMetrics.pageWidth)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.themePalette, .dark)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .background(.black)
+        .overlay(alignment: .top) {
+            if let failure { Text(failure).foregroundStyle(.red) }
+        }
+        .task {
+            do { try await verifyFocusPreview() }
+            catch { failure = "Focus fixture failed: \(error)" }
+        }
+    }
+
+    @MainActor private func verifyFocusPreview() async throws {
+        let player: ExternalPlayer = ProcessInfo.processInfo.arguments.contains("--external-player-vlc") ? .vlc
+            : ProcessInfo.processInfo.arguments.contains("--external-player-infuse") ? .infuse
+            : ProcessInfo.processInfo.arguments.contains("--external-player-built-in") ? .builtIn : .nativePlayer
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            if let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows).first(where: \.isKeyWindow),
+               let system = UIFocusSystem.focusSystem(for: window) {
+                var containers: [any UIFocusItemContainer] = [window]
+                var visited = Set<ObjectIdentifier>()
+                var items: [ObjectIdentifier: any UIFocusItem] = [:]
+                while let container = containers.popLast() {
+                    guard visited.insert(ObjectIdentifier(container)).inserted else { continue }
+                    for item in container.focusItems(in: container.coordinateSpace.convert(window.bounds, from: window)) {
+                        if let child = item.focusItemContainer { containers.append(child) }
+                        if let view = item as? UIView { containers.append(view) }
+                        if item.canBecomeFocused, !(item is UIScrollView) { items[ObjectIdentifier(item)] = item }
+                    }
+                }
+                let targets = items.values.compactMap { item -> ((any UIFocusItem), CGFloat)? in
+                    var environment: (any UIFocusEnvironment)? = item
+                    while let current = environment {
+                        if let container = current.focusItemContainer {
+                            return (item, container.coordinateSpace.convert(item.frame, to: window).minY)
+                        }
+                        environment = current.parentFocusEnvironment
+                    }
+                    return nil
+                }.sorted { $0.1 < $1.1 }
+                if targets.count == ExternalPlayer.supported.count,
+                   let index = ExternalPlayer.supported.firstIndex(of: player),
+                   let host = focusHost(in: window.rootViewController) {
+                    let target = targets[index].0
+                    host.target = target
+                    system.requestFocusUpdate(to: host)
+                    system.updateFocusIfNeeded()
+                    try await Task.sleep(for: .milliseconds(400))
+                    host.target = nil
+                    guard system.focusedItem === target, model.settings.player == .nativePlayer else {
+                        throw NSError(domain: "PlayerFocusFixture", code: 1, userInfo: [
+                            NSLocalizedDescriptionKey: "Focus did not reach \(player.rawValue) or selection changed."
+                        ])
+                    }
+                    let report: [String: String] = ["focused": player.rawValue, "selected": model.settings.player.rawValue]
+                    let url = URL.documentsDirectory.appendingPathComponent("external-player-focus.json")
+                    try JSONEncoder().encode(report).write(to: url, options: .atomic)
+                    return
+                }
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw NSError(domain: "PlayerFocusFixture", code: 2, userInfo: [
+            NSLocalizedDescriptionKey: "Player focus targets were not ready."
+        ])
+    }
+
+    private func focusHost(in controller: UIViewController?) -> ExternalPlayerFixtureController? {
+        guard let controller else { return nil }
+        if let host = controller as? ExternalPlayerFixtureController { return host }
+        return controller.children.lazy.compactMap { focusHost(in: $0) }.first
+    }
+}
+
+private struct CollectionRowEditorFixture: View {
+    @State private var visibility = HomeLibraryVisibilityModel(
+        store: HomeLibraryVisibilityStore(namespace:
+            ProcessInfo.processInfo.arguments.contains("--collection-row-isolated")
+                ? "collection-row-editor-\(UUID())" : "collection-row-editor-fixture"
+        )
+    )
+    @State private var navigation = SettingsPageNavigation<String>()
+    @State private var account: ResolvedAccount?
+    @State private var newSection = CollectionSection(sources: [])
+    private var isNew: Bool { !ProcessInfo.processInfo.arguments.contains("--collection-row-existing") }
+    private var testsExit: Bool { ProcessInfo.processInfo.arguments.contains("--collection-row-exit") }
+
+    var body: some View {
+        SettingsPageStack(navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}) {
+            if testsExit {
+                VStack {
+                    Text(verbatim: "Saved rows: \(visibility.visibility.collectionSections.count)")
+                    Button("Create row") { navigation.push("editor") }
+                        .disabled(account == nil)
+                        .accessibilityIdentifier("fixture-open-row")
+                }
+            } else {
+                editor
+            }
+        } destination: { _ in editor }
+        .environment(CardStyleSettingsModel())
+        .environment(\.settingsInWorkspace, true)
+        .environment(\.themePalette, .dark)
+        .environment(\.colorScheme, .dark)
+        .background { SettingsPageBackground() }
+        .task { await loadAccount() }
+    }
+
+    @ViewBuilder
+    private var editor: some View {
+        if let account {
+            CollectionSectionSettingsView(
+                section: testsExit && isNew ? newSection
+                    : visibility.visibility.collectionSections.first ?? CollectionSection(
+                    source: .init(
+                        accountID: account.account.id, collectionID: "weekend", title: "Weekend picks",
+                        serverUserID: account.provider.session.userID
+                    ),
+                    cardStyle: .landscape,
+                    titleLogo: ProcessInfo.processInfo.arguments.contains("--collection-row-logo-on") ? .on : .default
+                ),
+                isNew: isNew, inventory: HomeSectionCatalogModel(), visibility: visibility,
+                libraries: [AggregatedLibrary(
+                    accountID: account.account.id, accountName: "Viewer", serverName: "Sample library",
+                    providerKind: .jellyfin, library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
+                )], accounts: [account]
+            )
+        } else {
+            ProgressView()
+        }
+    }
+
+    private func loadAccount() async {
+        guard account == nil else { return }
+        let backgroundURL = URL(string: "https://collection-fixture.invalid/\(UUID())-background.png")!
+        let logoURL = URL(string: "https://collection-fixture.invalid/\(UUID())-logo.png")!
+        let background = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 360)).image {
+            UIColor(red: 0.12, green: 0.24, blue: 0.36, alpha: 1).setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 640, height: 360))
+        }
+        let logo = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 90)).image { _ in
+            ("LOGO" as NSString).draw(at: CGPoint(x: 8, y: 2), withAttributes: [
+                .font: UIFont.boldSystemFont(ofSize: 72), .foregroundColor: UIColor.white
+            ])
+        }
+        guard let cache = ArtworkSession.shared.configuration.urlCache else {
+            preconditionFailure("Collection fixture requires an artwork cache")
+        }
+        for (url, image) in [(backgroundURL, background), (logoURL, logo)] {
+            guard let data = image.pngData() else { preconditionFailure("Fixture PNG encoding failed") }
+            let response = HTTPURLResponse(
+                url: url, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+            )!
+            cache.storeCachedResponse(
+                CachedURLResponse(response: response, data: data), for: URLRequest(url: url)
+            )
+        }
+        let loaded = CollectionRowEditorProvider(background: backgroundURL, logo: logoURL)
+        let resolved = ResolvedAccount(
+            account: Account(id: "collection-editor-fixture", from: loaded.session), provider: loaded
+        )
+        if !isNew && visibility.visibility.collectionSections.isEmpty {
+            do {
+                try visibility.saveCollectionSection(CollectionSection(source: .init(
+                    accountID: resolved.account.id, collectionID: "weekend", title: "Weekend picks",
+                    serverUserID: loaded.session.userID
+                ), cardStyle: .landscape, titleLogo: .on), catalog: HomeSectionCatalog(libraries: []))
+            } catch {
+                preconditionFailure("Could not seed existing collection fixture")
+            }
+        }
+        account = resolved
+    }
+}
+
+private struct CollectionRowEditorProvider: MediaProvider, CapabilityReporting {
+    let background: URL
+    let logo: URL
+    let kind: ProviderKind = .jellyfin
+    let capabilities: ProviderCapability = [.video, .libraryCollections, .videoPlaylists]
+    let session = UserSession(
+        server: MediaServer(
+            id: "fixture", name: "Sample library", baseURL: URL(string: "https://fixture.invalid")!,
+            provider: .jellyfin
+        ),
+        userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
+    )
+
+    func libraries() async throws -> [MediaLibrary] {
+        [MediaLibrary(id: "movies", title: "Movies", kind: .movie)]
+    }
+    func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        MediaPage(
+            items: page.startIndex == 0 ? [MediaItem(id: "classics", title: "Movie classics", kind: .collection)] : [],
+            startIndex: page.startIndex, totalCount: 1
+        )
+    }
+    func videoPlaylists(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        MediaPage(
+            items: page.startIndex == 0 ? [MediaItem(id: "marathon", title: "Movie marathon", kind: .playlist)] : [],
+            startIndex: page.startIndex, totalCount: 1
+        )
+    }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        MediaPage(items: [], startIndex: page.startIndex, totalCount: 0)
+    }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] {
+        [("orbit", "Orbit"), ("crossing", "The Crossing")].map { id, title in
+            MediaItem(
+                id: id, title: title, kind: .movie, backdropURL: background, logoURL: logo,
+                allowsTitleBasedMetadataMatching: false,
+                artworkSelections: [.init(placement: .landscapeCard, references: [.remote(background)])]
+            )
+        }
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
 private struct SkipSettingsFixture: View {

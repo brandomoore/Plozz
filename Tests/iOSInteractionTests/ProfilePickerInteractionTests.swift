@@ -36,6 +36,7 @@ final class ProfilePickerInteractionTests: XCTestCase {
 
     func testEditModeAndLongPressPushOneProfilePage() {
         launch()
+        app.buttons["profile-picker-options"].tap()
         app.buttons["profile-picker-edit"].tap()
         XCTAssertFalse(app.buttons["Add Profile"].exists)
         XCTAssertFalse(app.buttons["profile-picker-close"].exists)

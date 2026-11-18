@@ -6,6 +6,7 @@ import FeatureAuthCore
 import CryptoKit
 import FeatureLiveTVCore
 import CoreSecureStore
+import CoreUI
 
 /// The accounts + providers hub, extracted from `AppState`.
 ///
@@ -32,6 +33,7 @@ import CoreSecureStore
 @MainActor
 @Observable
 public final class AccountsProvidersModel {
+    @ObservationIgnored public var onLocalAccountAuthentication: (String) -> Void = { _ in }
     /// All signed-in accounts, in stable order.
     public private(set) var accounts: [Account] = []
     /// The subset of `accounts` currently included in the active set. Sourced
@@ -44,6 +46,8 @@ public final class AccountsProvidersModel {
     /// An explicit selection has no locally available accounts, including when
     /// its selected accounts were removed. Never substitute an excluded account.
     public private(set) var watchesNothingByChoice = false
+    /// Non-nil replaces, never supplements, online providers while browsing downloads.
+    public var localProviders: [String: any MediaProvider]?
 
     /// The persisted multi-account store (token per account in the Keychain).
     @ObservationIgnored
@@ -84,15 +88,18 @@ public final class AccountsProvidersModel {
     /// fires at the end, after the new set is known) because an invalidation must
     /// happen even if the recompute below returns early.
     public var onAccountsInvalidated: @MainActor () -> Void = {}
+    @ObservationIgnored private let removedAccountIDs: () -> Set<String>
 
     public init(
         accountStore: AccountPersisting,
         registry: ProviderRegistry,
-        profilesModel: ProfilesModel
+        profilesModel: ProfilesModel,
+        removedAccountIDs: @escaping () -> Set<String> = { RemovedAccountsStore().removedIDs }
     ) {
         self.accountStore = accountStore
         self.registry = registry
         self.profilesModel = profilesModel
+        self.removedAccountIDs = removedAccountIDs
         let token = NotificationCenter.default.addObserver(
             forName: LiveTVSourceDiagnostics.snapshotRequested, object: nil, queue: .main
         ) { [weak self] _ in
@@ -103,6 +110,36 @@ public final class AccountsProvidersModel {
 
     /// This device's stable client identifier.
     public var deviceID: String { accountStore.deviceID() }
+
+    public func configureAuthenticatedArtwork() {
+        ArtworkSession.authenticatedLoader = { [weak self] reference in
+            guard let self else { throw AppError.cancelled }
+            let profileID = self.profilesModel.activeProfileID
+            @MainActor func authorizedProvider() throws -> any AuthenticatedArtworkProviding {
+                guard self.localProviders == nil, !self.accountSelectionIsUnavailable,
+                      self.profilesModel.activeProfileID == profileID,
+                      self.homeAccounts.contains(where: {
+                          $0.account.id == reference.accountID
+                            && self.credentialRevision($0.account) == reference.credentialRevision
+                      }),
+                      let provider = self.provider(forAccountID: reference.accountID)
+                        as? any AuthenticatedArtworkProviding else { throw AppError.unauthorized }
+                return provider
+            }
+            let bytes = try await authorizedProvider().artworkData(for: reference)
+            try Task.checkCancellation()
+            _ = try authorizedProvider()
+            return bytes
+        }
+    }
+
+    public func downloadUserID(for accountID: String, profileID: String) -> String? {
+        guard profilesModel.activeProfileID == profileID, activeAccountIDs.contains(accountID),
+              let account = accounts.first(where: { $0.id == accountID }) else { return nil }
+        return WatchMutationServerScope.AccountIdentity(
+            account: account, profile: profilesModel.activeProfile
+        ).downloadUserID
+    }
 
     public func makeAccountReauthentication(
         account: Account, isAuthorized: @escaping () -> Bool, onComplete: @escaping () -> Void
@@ -116,6 +153,7 @@ public final class AccountsProvidersModel {
             },
             onComplete: { [weak self] in
                 guard let self else { return }
+                self.onLocalAccountAuthentication(account.id)
                 self.registry.invalidate(accountID: account.id)
                 self.reloadAccounts()
                 onComplete()
@@ -156,7 +194,8 @@ public final class AccountsProvidersModel {
     public var liveTVAuthorizationID: String {
         let identities = accounts.filter { activeAccountIDs.contains($0.id) }
             .map(liveTVAuthorizationID(for:)).sorted()
-        return profilesModel.activeProfileID + "|" + identities.joined(separator: "|")
+        return profilesModel.activeProfileID + (localProviders == nil ? "|online|" : "|offline|")
+            + identities.joined(separator: "|")
     }
 
     /// Stable watch-state ownership. Unlike the live authorization fingerprint,
@@ -398,16 +437,26 @@ public final class AccountsProvidersModel {
             else { return nil }
             return LiveTVAuthorizedServerProvider(
                 accountID: accountID, authorizationID: self.liveTVAuthorizationID(for: account),
-                kind: kind, provider: provider
+                kind: kind, provider: provider, viewerScopeID: self.liveTVViewerScopeID(for: account)
             )
         }
+    }
+
+    private func liveTVViewerScopeID(for account: Account) -> String? {
+        let identity = WatchMutationServerScope.AccountIdentity(account: account, profile: profilesModel.activeProfile)
+        guard !identity.accountID.isEmpty, !identity.serverID.isEmpty, !identity.userID.isEmpty,
+              identity.plexHomeUserID?.isEmpty != true else { return nil }
+        let fields = [profilesModel.activeProfileID, identity.accountID, identity.downloadUserID]
+        let fingerprint = fields.map { "\($0.utf8.count):\($0)" }.joined()
+        return SHA256.hash(data: Data(fingerprint.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     private func liveTVAuthorizationID(for account: Account) -> String {
         let fields = [
             profilesModel.activeProfileID, account.id, account.server.id,
             account.server.provider.rawValue, account.server.baseURL.absoluteString,
-            account.userID, account.deviceID, credentialRevision(account).rawValue.uuidString
+            account.userID, account.deviceID, credentialRevision(account).rawValue.uuidString,
+            liveTVViewerScopeID(for: account) ?? "unscoped"
         ] + (account.server.connectionURLs ?? []).map(\.absoluteString)
         let fingerprint = fields.map { "\($0.utf8.count):\($0)" }.joined()
         if let cached = liveTVAuthorizationCache[account.id],
@@ -425,13 +474,16 @@ public final class AccountsProvidersModel {
         case .jellyfin: .jellyfin
         case .emby: .emby
         case .iptv: .iptv
-        case .mediaShare, .silo: nil
+        case .mediaShare, .silo, .subsonic: nil
         }
     }
 
     /// The provider for the primary active account — the single-provider Home in
     /// this branch. `nil` when not signed in.
     public var primaryProvider: (any MediaProvider)? {
+        if let localProviders {
+            return primaryActiveAccount.flatMap { localProviders[$0.id] }
+        }
         guard let account = primaryActiveAccount,
               let token = tokenResolver(account.id) else { return nil }
         return resolveProvider(for: providerResolutionContext(for: account, token: token))
@@ -452,6 +504,12 @@ public final class AccountsProvidersModel {
     /// stored on the value.
     public var resolvedActiveAccounts: [ResolvedAccount] {
         guard !accountSelectionIsUnavailable else { return [] }
+        if let localProviders {
+            return accounts.compactMap { account in
+                guard activeAccountIDs.contains(account.id), let provider = localProviders[account.id] else { return nil }
+                return resolvedAccount(account, provider: provider)
+            }
+        }
         return accounts.compactMap { account in
             guard activeAccountIDs.contains(account.id),
                   let token = tokenResolver(account.id),
@@ -467,7 +525,14 @@ public final class AccountsProvidersModel {
     /// "choose your libraries" step (which fans a library-listing call out over
     /// the just-added accounts). Tokens are resolved on demand.
     public func resolvedAccounts(withIDs ids: [String]) -> [ResolvedAccount] {
-        ids.compactMap { id in
+        if let localProviders {
+            return accounts.compactMap { account in
+                guard ids.contains(account.id), activeAccountIDs.contains(account.id),
+                      let provider = localProviders[account.id] else { return nil }
+                return resolvedAccount(account, provider: provider)
+            }
+        }
+        return ids.compactMap { id in
             guard let account = accounts.first(where: { $0.id == id }),
                   let token = tokenResolver(account.id),
                   let provider = resolveProvider(
@@ -488,6 +553,7 @@ public final class AccountsProvidersModel {
     /// fed the household's first server.
     public var homeAccounts: [ResolvedAccount] {
         let active = resolvedActiveAccounts
+        if localProviders != nil { return active }
         if !active.isEmpty { return active }
         if watchesNothingByChoice { return [] }
         guard let account = primaryActiveAccount,
@@ -521,6 +587,10 @@ public final class AccountsProvidersModel {
     /// library/item from the merged Home back to its owning provider. Tokens are
     /// resolved on demand and never stored on the value.
     public func provider(forAccountID id: String) -> (any MediaProvider)? {
+        if let localProviders {
+            guard activeAccountIDs.contains(id), !accountSelectionIsUnavailable else { return nil }
+            return localProviders[id]
+        }
         guard let account = accounts.first(where: { $0.id == id }),
               let token = tokenResolver(account.id)
         else { return nil }
@@ -620,7 +690,14 @@ public final class AccountsProvidersModel {
     public func reloadAccounts(updatingServerAddressesFor addressAccountID: String? = nil) {
         profilesModel.retryUnconfirmedAccountSelections()
         liveTVAuthorizationCache = [:]
-        let updated = accountStore.loadAccounts()
+        let removed = removedAccountIDs()
+        for account in accountStore.loadAccounts() where removed.contains(account.id) {
+            do { try accountStore.remove(id: account.id) }
+            catch { PlozzLog.auth.error("Household account removal is pending local credential storage recovery") }
+        }
+        // Receipt of a household revocation denies use even if Keychain deletion
+        // must be retried on a later reload.
+        let updated = accountStore.loadAccounts().filter { !removed.contains($0.id) }
         if let addressAccountID,
            let account = updated.first(where: { $0.id == addressAccountID }),
            accounts.map({ old in
@@ -638,6 +715,22 @@ public final class AccountsProvidersModel {
         onAccountsInvalidated()
         accounts = updated
         householdActiveAccountIDs = accountStore.activeAccountIDs()
+        publishActiveAccountSelection()
+    }
+
+    /// Membership edits do not change household credentials or unrelated
+    /// providers. Retire only disabled sources, retaining other connections.
+    public func refreshActiveAccountSelection() {
+        profilesModel.retryUnconfirmedAccountSelections()
+        let resolved = Set(activeAccountIDs(forProfile: profilesModel.activeProfileID))
+        for id in activeAccountIDs.subtracting(resolved) {
+            registry.invalidate(accountID: id)
+        }
+        onAccountsInvalidated()
+        publishActiveAccountSelection()
+    }
+
+    private func publishActiveAccountSelection() {
         let resolved = Set(activeAccountIDs(forProfile: profilesModel.activeProfileID))
         activeAccountIDs = resolved
         watchesNothingByChoice = resolved.isEmpty
@@ -750,6 +843,7 @@ public final class AccountsProvidersModel {
     /// propagates address changes to retained providers and library/Home tasks.
     /// Offline servers are skipped; account and credential identities are retained.
     public func refreshServerNames() {
+        guard !OfflineMode.shared.isEnabled else { return }
         let store = accountStore
         Task { @MainActor [weak self] in
             let updated = await ServerNameRefresher(accountStore: store).refresh()

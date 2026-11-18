@@ -7,6 +7,28 @@ import CoreNetworking
 /// keyless, server-proxied search maps `<Stream>` results to `RemoteSubtitle`,
 /// and the download PUTs the chosen result's `key` back to the item.
 final class PlexRemoteSubtitleTests: XCTestCase {
+    func testSubtitleDiscoveryUsesRequestedVersionAndRejectsMissingVersion() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/metadata/rk1", json: """
+        {"MediaContainer":{"Metadata":[{"ratingKey":"rk1","type":"movie","Media":[
+          {"id":1,"Part":[{"id":11,"Stream":[{"id":21,"streamType":3,"codec":"srt","key":"/library/streams/21"}]}]},
+          {"id":2,"Part":[{"id":12,"Stream":[{"id":22,"streamType":3,"codec":"ass","languageTag":"fr","forced":1,"hearingImpaired":1,"key":"/library/streams/22"}]}]}
+        ]}]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let tracks = try await provider.subtitleTracks(context: .init(itemID: "rk1", mediaSourceID: "2"))
+        XCTAssertEqual(tracks.map(\.id), [22])
+        XCTAssertTrue(tracks[0].isForced)
+        XCTAssertTrue(tracks[0].isHearingImpaired)
+        guard case .authenticatedHTTP(let source)? = tracks[0].deliverySource else { return XCTFail("Missing delivery source") }
+        XCTAssertEqual(source.mediaSourceID, "2")
+        do {
+            _ = try await provider.subtitleTracks(context: .init(itemID: "rk1", mediaSourceID: "missing"))
+            XCTFail("Never fall back to another version")
+        } catch { XCTAssertEqual(error as? AppError, .notFound) }
+        XCTAssertTrue(stub.sentPaths.allSatisfy { $0.hasSuffix("/library/metadata/rk1") })
+    }
+
     private func makeSession() -> UserSession {
         UserSession(
             server: MediaServer(id: "srv", name: "Home", baseURL: URL(string: "https://plex.host:32400")!, provider: .plex),

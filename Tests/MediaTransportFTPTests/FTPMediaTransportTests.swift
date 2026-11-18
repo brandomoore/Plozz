@@ -16,7 +16,8 @@ final class FTPMediaTransportTests: XCTestCase {
     private func makeKey(
         scheme: String = "ftp",
         host: String = "nas.example.com",
-        rootPath: String = "/media"
+        rootPath: String = "/media",
+        port: Int = 21
     ) throws -> MediaTransportSessionKey {
         MediaTransportSessionKey(
             accountID: "account",
@@ -24,7 +25,7 @@ final class FTPMediaTransportTests: XCTestCase {
             endpoint: try MediaTransportEndpointIdentity(
                 transportIdentifier: scheme,
                 host: host,
-                port: 21,
+                port: port,
                 rootPath: rootPath
             ),
             trustRevision: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
@@ -35,12 +36,14 @@ final class FTPMediaTransportTests: XCTestCase {
     private func makeAdapter(
         scheme: FTPScheme = .ftp,
         server: FakeFTPServer,
-        security: FTPSecurity = .plaintext
+        security: FTPSecurity = .plaintext,
+        credential: FTPCredential = .anonymous,
+        trustPolicy: FTPTrustPolicy = .system
     ) -> FTPMediaTransportAdapter {
         FTPMediaTransportAdapter(
             scheme: scheme,
             configurationProvider: { _, _ in
-                FTPMediaTransportConfiguration(credential: .anonymous, security: security)
+                FTPMediaTransportConfiguration(credential: credential, security: security, trustPolicy: trustPolicy)
             },
             backendMaker: { _, _ in FakeFTPBackend(server: server) }
         )
@@ -67,6 +70,121 @@ final class FTPMediaTransportTests: XCTestCase {
     }
 
     // MARK: - connect guard
+
+    func testExternalVLCURLPreservesAbsolutePathEncodingPortAndCredentials() async throws {
+        let server = FakeFTPServer()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let path = "space café & +;type=a/clip %20.mp4"
+        server.addFile(path: "/media/" + path, data: Data([1, 2, 3]), mtime: now)
+        for credential in [FTPCredential.anonymous, .password(username: "viewer", password: "synthetic-123")] {
+            let adapter = makeAdapter(server: server, credential: credential)
+            let session = try await adapter.connect(for: try makeKey(port: 2121))
+            let fileSystem = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            let url = try await fileSystem.externalPlaybackURL(
+                for: locator(relativePath: path, size: 3, modifiedAt: now), player: .vlc
+            )
+            let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+            XCTAssertEqual(components.scheme, "ftp")
+            XCTAssertEqual(components.host, "nas.example.com")
+            XCTAssertEqual(components.port, 2121)
+            XCTAssertEqual(components.path, "//media/" + path)
+            XCTAssertTrue(components.percentEncodedPath.contains("%2520"))
+            XCTAssertFalse(components.percentEncodedPath.contains(";"))
+            XCTAssertNil(components.query)
+            XCTAssertNil(components.fragment)
+            if case .password(let user, let password) = credential {
+                XCTAssertEqual(components.user, user)
+                XCTAssertEqual(components.password, password)
+            } else {
+                XCTAssertNil(components.user)
+                XCTAssertNil(components.password)
+            }
+            await session.shutdown()
+        }
+    }
+
+    func testExternalFTPRefusesOtherPlayersTLSAndUnverifiedCredentialEncoding() async throws {
+        let server = FakeFTPServer()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let file = try locator(relativePath: "movie.mp4", size: 3, modifiedAt: now)
+        for (player, security, credential, trust) in [
+            (ExternalPlayer.infuse, FTPSecurity.plaintext, FTPCredential.anonymous, FTPTrustPolicy.system),
+            (.nativePlayer, .plaintext, .anonymous, .system),
+            (.custom, .plaintext, .anonymous, .system),
+            (.vlc, .implicitTLS, .anonymous, .system),
+            (.vlc, .explicitTLS, .anonymous, .system),
+            (.vlc, .plaintext, .anonymous, .pinnedLeaf(sha256: [UInt8](repeating: 1, count: 32), revision: UUID())),
+            (.vlc, .plaintext, .password(username: "viewer", password: "p@ss"), .system),
+            (.vlc, .plaintext, .password(username: "view:er", password: "pass"), .system)
+        ] {
+            let adapter = makeAdapter(server: server, security: security, credential: credential, trustPolicy: trust)
+            let session = try await adapter.connect(for: try makeKey())
+            let fileSystem = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            do {
+                _ = try await fileSystem.externalPlaybackURL(for: file, player: player)
+                XCTFail("unsupported policy must not produce a URL")
+            } catch let error as MediaTransportError {
+                guard case .unsupportedCapability = error else { return XCTFail("unexpected \(error)") }
+            }
+            await session.shutdown()
+        }
+    }
+
+    func testExternalFTPRejectsChangedSourceAndWrongCredentialRevision() async throws {
+        let server = FakeFTPServer()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        server.addFile(path: "/media/movie.mp4", data: Data([1, 2, 3]), mtime: now)
+        let adapter = makeAdapter(server: server)
+        let session = try await adapter.connect(for: try makeKey())
+        let fileSystem = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+        let changed = try locator(relativePath: "movie.mp4", size: 4, modifiedAt: now)
+        do {
+            _ = try await fileSystem.externalPlaybackURL(for: changed, player: .vlc)
+            XCTFail("changed file must fail")
+        } catch let error as MediaTransportError {
+            guard case .sourceChanged = error else { return XCTFail("unexpected \(error)") }
+        }
+        let stale = try NetworkFileLocator(
+            accountID: "account", sourceID: "account", credentialRevision: CredentialRevision(),
+            relativePath: "movie.mp4", representation: changed.representation
+        )
+        do {
+            _ = try await fileSystem.externalPlaybackURL(for: stale, player: .vlc)
+            XCTFail("stale credentials must fail")
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .invalidInput(reason: "locator session mismatch"))
+        }
+        await session.shutdown()
+    }
+
+    func testExternalFTPDoesNotHideReadAuthorizationFailureOrDowngradeFTPSEndpoint() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let file = try locator(relativePath: "movie.mp4", size: 3, modifiedAt: now)
+        for error in [MediaTransportError.permissionDenied, .authentication(reason: "fixture")] {
+            let server = FakeFTPServer()
+            server.addFile(path: "/media/movie.mp4", data: Data([1, 2, 3]), mtime: now)
+            let session = try await makeAdapter(server: server).connect(for: makeKey())
+            let files = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+            server.connectError = error
+            do {
+                _ = try await files.externalPlaybackURL(for: file, player: .vlc)
+                XCTFail("independent read authorization must succeed")
+            } catch let actual as MediaTransportError {
+                XCTAssertEqual(actual, error)
+            }
+            await session.shutdown()
+        }
+        let session = try await makeAdapter(scheme: .ftps, server: FakeFTPServer())
+            .connect(for: makeKey(scheme: "ftps"))
+        let files = try XCTUnwrap(session.fileSystem as? any MediaTransportExternalPlaybackFileSystem)
+        do {
+            _ = try await files.externalPlaybackURL(for: file, player: .vlc)
+            XCTFail("an FTPS endpoint must never become plain FTP")
+        } catch let error as MediaTransportError {
+            guard case .unsupportedCapability = error else { return XCTFail("unexpected \(error)") }
+        }
+        await session.shutdown()
+    }
 
     func testConnectRejectsMismatchedTransportIdentifier() async throws {
         let adapter = makeAdapter(server: FakeFTPServer())

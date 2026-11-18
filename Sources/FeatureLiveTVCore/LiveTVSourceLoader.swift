@@ -36,7 +36,7 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil
-        session = URLSession(configuration: configuration, delegate: redirects, delegateQueue: nil)
+        session = OfflineNetworkSession.make(configuration: configuration, delegate: redirects, delegateQueue: nil)
     }
 
     deinit { session.invalidateAndCancel() }

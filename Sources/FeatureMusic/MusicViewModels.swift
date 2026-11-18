@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import CoreModels
+import CoreNetworking
 
 // MARK: - Landing
 
@@ -54,6 +55,7 @@ public final class MusicLandingViewModel {
     private let context: MusicContext
     private let sampleSize: Int
     private let cache: MusicLandingCache
+    @ObservationIgnored private var loadRevision = 0
 
     public init(context: MusicContext, sampleSize: Int = 18, cache: MusicLandingCache = .ephemeral) {
         self.context = context
@@ -79,26 +81,51 @@ public final class MusicLandingViewModel {
     }
 
     public func load() async {
+        await load(retryDelays: [.seconds(2), .seconds(8)])
+    }
+
+    func load(retryDelays: [Duration]) async {
+        guard !Task.isCancelled else { return }
+        loadRevision += 1
+        let revision = loadRevision
+        defer {
+            if revision == loadRevision, state.isLoading { state = .idle }
+        }
         let key = cacheKey
         // Stale-while-revalidate: paint the last merged snapshot instantly (no
         // spinner) if we have one, otherwise show the loading state, then refresh
         // from the network below.
         if !isLoaded {
-            if let snapshot = await cache.snapshot(for: key), !snapshot.isEmpty {
+            let snapshot = await cache.snapshot(for: key)
+            guard !Task.isCancelled, revision == loadRevision else { return }
+            if let snapshot, !snapshot.isEmpty {
                 state = .loaded(Content(snapshot: snapshot))
             } else {
                 state = .loading
             }
         }
 
-        let content = await fetchContent()
-        if content.isEmpty {
-            // Don't flip a populated (cached) screen to empty on a transient
-            // fetch miss — only show empty when there was nothing to begin with.
-            if !isLoaded { state = .empty }
-        } else {
-            state = .loaded(content)
-            await cache.store(content.snapshot, for: key)
+        var retries = retryDelays.makeIterator()
+        while !Task.isCancelled, revision == loadRevision {
+            let result = await fetchContent()
+            guard !Task.isCancelled, revision == loadRevision else { return }
+            if !result.content.isEmpty {
+                state = .loaded(result.content)
+                await cache.store(result.content.snapshot, for: key)
+                return
+            }
+            // A partial/failed fetch cannot prove that the user's library is empty.
+            // Keep useful cached content, but surface failure on a cold landing.
+            if let error = result.errors.first(where: { !Self.canRetry($0) }) ?? result.errors.first {
+                if Self.canRetry(error), let delay = retries.next() {
+                    do { try await Task.sleep(for: delay) } catch { return }
+                    continue
+                }
+                if !isLoaded { state = .failed(error) }
+            } else if !isLoaded {
+                state = .empty
+            }
+            return
         }
     }
 
@@ -106,9 +133,9 @@ public final class MusicLandingViewModel {
     /// ready before the user ever opens the tab. Called as soon as music is
     /// detected.
     public func prefetch() async {
-        let content = await fetchContent()
-        guard !content.isEmpty else { return }
-        await cache.store(content.snapshot, for: cacheKey)
+        let result = await fetchContent()
+        guard !Task.isCancelled, !result.content.isEmpty else { return }
+        await cache.store(result.content.snapshot, for: cacheKey)
     }
 
     /// Fetches every (account × kind) request — plus each account's recently
@@ -117,7 +144,7 @@ public final class MusicLandingViewModel {
     /// serially, so the landing screen waited on the sum of every request. One
     /// task group collapses that to roughly a single round-trip and scales to
     /// ~10 libraries without summing latencies.
-    private func fetchContent() async -> Content {
+    private func fetchContent() async -> (content: Content, errors: [AppError]) {
         let accounts = context.musicAccounts
         let sampleSize = self.sampleSize
 
@@ -125,22 +152,30 @@ public final class MusicLandingViewModel {
             for (index, account) in accounts.enumerated() {
                 for kind in [MusicItemKind.album, .artist, .playlist] {
                     group.addTask {
-                        let page = PageRequest(startIndex: 0, limit: sampleSize)
-                        let result = try? await account.provider.musicItems(in: "", kind: kind, page: page, libraryIDs: account.libraryIDs)
-                        return .items(account: index, kind: kind, page: result)
+                        await Self.request {
+                            let page = PageRequest(startIndex: 0, limit: sampleSize)
+                            let result = try await account.provider.musicItems(in: "", kind: kind, page: page, libraryIDs: account.libraryIDs)
+                            return .items(account: index, kind: kind, page: result)
+                        }
                     }
                 }
                 group.addTask {
-                    let albums = (try? await account.provider.recentlyPlayed(limit: sampleSize, libraryIDs: account.libraryIDs)) ?? []
-                    return .recent(account: index, albums: albums)
+                    await Self.request {
+                        let albums = try await account.provider.recentlyPlayed(limit: sampleSize, libraryIDs: account.libraryIDs)
+                        return .recent(account: index, albums: albums)
+                    }
                 }
                 group.addTask {
-                    let tracks = (try? await account.provider.recentlyPlayedTracks(limit: sampleSize, libraryIDs: account.libraryIDs)) ?? []
-                    return .recentTracks(account: index, tracks: tracks)
+                    await Self.request {
+                        let tracks = try await account.provider.recentlyPlayedTracks(limit: sampleSize, libraryIDs: account.libraryIDs)
+                        return .recentTracks(account: index, tracks: tracks)
+                    }
                 }
                 group.addTask {
-                    let playlists = (try? await account.provider.recentlyPlayedPlaylists(limit: sampleSize, libraryIDs: account.libraryIDs)) ?? []
-                    return .recentPlaylists(account: index, playlists: playlists)
+                    await Self.request {
+                        let playlists = try await account.provider.recentlyPlayedPlaylists(limit: sampleSize, libraryIDs: account.libraryIDs)
+                        return .recentPlaylists(account: index, playlists: playlists)
+                    }
                 }
             }
             var results: [Partial] = []
@@ -160,8 +195,7 @@ public final class MusicLandingViewModel {
         for (index, account) in accounts.enumerated() {
             for entry in fetched {
                 switch entry {
-                case let .items(acc, kind, page) where acc == index:
-                    guard let result = page else { continue }
+                case let .items(acc, kind, result) where acc == index:
                     switch kind {
                     case .album: albums += result.albums.map { $0.taggingSource(account.accountID) }
                     case .artist: artists += result.artists.map { $0.taggingSource(account.accountID) }
@@ -184,20 +218,50 @@ public final class MusicLandingViewModel {
         // The Recently Played rail interleaves recently-played songs, albums *and*
         // playlists ordered by real play recency, so Plex + Jellyfin read as one
         // combined, de-duplicated library.
-        return Content(
+        let content = Content(
             recentlyPlayed: MusicMerge.recentlyPlayedItems(albums: recents, tracks: recentTracks, playlists: recentPlaylists, limit: sampleSize),
             albums: Array(MusicMerge.albums(albums).prefix(sampleSize)),
             artists: Array(MusicMerge.artists(artists).prefix(sampleSize)),
             playlists: Array(MusicMerge.playlists(playlists).prefix(sampleSize))
         )
+        let errors = fetched.compactMap { entry -> AppError? in
+            if case let .failure(error) = entry { return error }
+            return nil
+        }
+        if !Task.isCancelled, !errors.isEmpty {
+            PlozzLog.discovery.error("Music landing fetch: \(errors.count) requests failed")
+        }
+        return (content, errors)
+    }
+
+    private nonisolated static func request(_ body: @Sendable () async throws -> Partial) async -> Partial {
+        do {
+            try Task.checkCancellation()
+            let result = try await body()
+            try Task.checkCancellation()
+            return result
+        } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                return .failure(.cancelled)
+            }
+            return .failure((error as? AppError) ?? (error is URLError ? .serverUnreachable : .invalidResponse))
+        }
+    }
+
+    private nonisolated static func canRetry(_ error: AppError) -> Bool {
+        switch error {
+        case .serverUnreachable, .invalidResponse, .cancelled: return true
+        default: return false
+        }
     }
 
     /// One account's partial landing result, carried out of the parallel fetch.
     private enum Partial: Sendable {
-        case items(account: Int, kind: MusicItemKind, page: MusicPage?)
+        case items(account: Int, kind: MusicItemKind, page: MusicPage)
         case recent(account: Int, albums: [MusicAlbum])
         case recentTracks(account: Int, tracks: [MusicTrack])
         case recentPlaylists(account: Int, playlists: [MusicPlaylist])
+        case failure(AppError)
     }
 }
 

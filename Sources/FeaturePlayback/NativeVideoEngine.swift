@@ -71,7 +71,12 @@ public final class NativeVideoEngine: VideoEngine {
         return end
     }
 
-    public var audioTracks: [MediaTrack] { request?.audioTracks ?? [] }
+    public var audioTracks: [MediaTrack] { localAudioGroup != nil ? localAudioTracks : request?.audioTracks ?? [] }
+    public var currentAudioTrackID: Int? {
+        guard let group = localAudioGroup,
+              let selected = player?.currentItem?.currentMediaSelection.selectedMediaOption(in: group) else { return nil }
+        return group.options.firstIndex(of: selected)
+    }
     public var subtitleTracks: [MediaTrack] { request?.subtitleTracks ?? [] }
     public private(set) var chapters: [MediaChapter] = []
 
@@ -80,8 +85,8 @@ public final class NativeVideoEngine: VideoEngine {
     public var onProgress: (@MainActor () -> Void)?
     public var onFailure: (@MainActor (AppError) -> Void)?
     public var onEnded: (@MainActor () -> Void)?
-    /// Provider tracks are known synchronously; native text is emitted as timed
-    /// cues while sidecars remain owned by the view model.
+    /// Provider tracks are known synchronously; local audio choices are discovered
+    /// from the asset. Native text emits cues; sidecars remain owned by the model.
     public var onTracksChanged: (@MainActor () -> Void)?
     public var onChaptersChanged: (@MainActor () -> Void)?
     public var onProbedSourceFactsChanged: (@MainActor (EngineProbedSourceFacts) -> Void)?
@@ -150,6 +155,8 @@ public final class NativeVideoEngine: VideoEngine {
     /// native engine. Cancelled on teardown so a stale selection never applies to a
     /// replaced player item.
     @ObservationIgnored private var preferredAudioSelectionTask: Task<Void, Never>?
+    @ObservationIgnored private var localAudioGroup: AVMediaSelectionGroup?
+    private var localAudioTracks: [MediaTrack] = []
     #if !os(macOS)
     @ObservationIgnored private var routeChangeObserver: NSObjectProtocol?
     @ObservationIgnored private var endOfPlaybackObserver: NSObjectProtocol?
@@ -220,6 +227,7 @@ public final class NativeVideoEngine: VideoEngine {
 
     public func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         guard !Task.isCancelled else { return }
+        activePictureSourceID = UUID()
         loadGeneration &+= 1
         let generation = loadGeneration
         defer {
@@ -236,7 +244,7 @@ public final class NativeVideoEngine: VideoEngine {
         }
         #endif
         status = .loading
-        configureAudioSession()
+        loadFailure = nil
         // Tear down any previous player (e.g. a failed direct-play attempt being
         // retried under a transcode) without reporting a stop.
         teardownPlayer()
@@ -245,6 +253,20 @@ public final class NativeVideoEngine: VideoEngine {
         #endif
 
         self.request = request
+        do {
+            try await configureAudioSession()
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            loadFailure = NativePlaybackFailure.audioSessionFailure(error)
+            HandoffDiagnostics.emit("native AUDIO_SESSION_FAILED code=\(loadFailure?.diagnosticCode ?? "unreported")")
+            status = .failed(.invalidResponse)
+            onFailure?(.invalidResponse)
+            return
+        }
+        guard generation == loadGeneration, !Task.isCancelled else { return }
+        #if !os(macOS)
+        observeAudioRouteChanges(AVAudioSession.sharedInstance())
+        #endif
         let streamURL: URL?
         if case .some(.authenticatedHTTP(let locator)) = request.playbackSource {
             do {
@@ -445,12 +467,14 @@ public final class NativeVideoEngine: VideoEngine {
         // later manual pick (`selectAudioTrack`) still overrides this freely.
         preferredAudioSelectionTask?.cancel()
         let preferredAudioLanguages = request.preferredAudioLanguages
-        if !preferredAudioLanguages.isEmpty {
+        let discoversLocalAudio = streamURL.isFileURL && request.audioTracks.isEmpty
+        if discoversLocalAudio || !preferredAudioLanguages.isEmpty {
             preferredAudioSelectionTask = Task { @MainActor [weak self] in
                 guard let self else { return }
                 await self.applyPreferredAudioSelection(
                     for: item,
-                    preferredLanguages: preferredAudioLanguages
+                    preferredLanguages: preferredAudioLanguages,
+                    discoversLocalAudio: discoversLocalAudio
                 )
             }
         }
@@ -536,7 +560,8 @@ public final class NativeVideoEngine: VideoEngine {
     // MARK: - Asset construction
 
     /// tvOS sidecars use the owned overlay, leaving the video asset untouched.
-    /// Other platforms retain subtitle injection; provider HLS stays unchanged.
+    /// Local files also stay native: the HLS wrapper cannot serve file segments.
+    /// Other remote sources retain subtitle injection; provider HLS stays unchanged.
     private func makeAsset(
         for request: PlaybackRequest,
         streamURL: URL,
@@ -547,7 +572,8 @@ public final class NativeVideoEngine: VideoEngine {
             HandoffDiagnostics.emit("native ASSET route=provider-manifest")
             return AVURLAsset(url: streamURL)
         }
-        guard !injectableSubtitles.isEmpty,
+        guard !streamURL.isFileURL,
+              !injectableSubtitles.isEmpty,
               let duration = request.item.runtime,
               duration > 0 else {
             HandoffDiagnostics.emit("native ASSET route=original-url")
@@ -754,6 +780,7 @@ public final class NativeVideoEngine: VideoEngine {
     public var capabilities: PlayerEngineCapabilities { [.playbackSpeed, .videoZoom] }
 
     public var supportsActivePictureAnalysis: Bool { activePictureAnalyzer != nil }
+    @ObservationIgnored public private(set) var activePictureSourceID: UUID? = UUID()
 
     public func sampleActivePicture() async -> VideoActivePictureState {
         guard let activePictureAnalyzer else { return .unsupported }
@@ -795,6 +822,7 @@ public final class NativeVideoEngine: VideoEngine {
     }
 
     public func stop() {
+        activePictureSourceID = UUID()
         loadGeneration &+= 1
         fallbackMonitorTask?.cancel()
         fallbackMonitorTask = nil
@@ -822,20 +850,15 @@ public final class NativeVideoEngine: VideoEngine {
 
     // MARK: - Audio session
 
-    /// Best-effort: configure the shared audio session for video playback so
-    /// multichannel/Atmos passthrough and spatialization route correctly. Never
-    /// blocks or fails playback — any error is swallowed.
-    private func configureAudioSession() {
+    private func configureAudioSession() async throws {
         #if !os(macOS)
-        let session = AVAudioSession.sharedInstance()
-        do {
+        try await Task.detached {
+            let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .moviePlayback, options: [])
             try session.setSupportsMultichannelContent(true)
             try session.setActive(true)
-        } catch {
-            PlozzLog.playback.debug("Audio session configuration failed (non-fatal)")
-        }
-        observeAudioRouteChanges(session)
+        }.value
+        try Task.checkCancellation()
         #endif
     }
 
@@ -893,7 +916,9 @@ public final class NativeVideoEngine: VideoEngine {
         return request.isManifestStream ? .nativeHLS : .nativeFile
     }
 
+    @ObservationIgnored private var loadFailure: StreamingPlaybackFailure?
     public var streamingFailure: StreamingPlaybackFailure? {
+        if let loadFailure { return loadFailure }
         guard let item = player?.currentItem else { return nil }
         let lastError = item.errorLog()?.events.last
         guard item.error != nil || lastError != nil else { return nil }
@@ -1147,6 +1172,8 @@ public final class NativeVideoEngine: VideoEngine {
         defaultSubtitleSelectionTask = nil
         preferredAudioSelectionTask?.cancel()
         preferredAudioSelectionTask = nil
+        localAudioGroup = nil
+        localAudioTracks = []
         subtitleLoader = nil
         streamingInitializationLoader = nil
         nativeSubtitleOutput?.detach()
@@ -1339,11 +1366,12 @@ public final class NativeVideoEngine: VideoEngine {
             if let track { option = await Self.legibleOption(for: track, in: group) }
             else { option = nil }
             guard !Task.isCancelled, self.player?.currentItem === item else { return }
-            if let option, self.nativeSubtitleOutput?.isSelecting(option) == true,
-               item.currentMediaSelection.selectedMediaOption(in: group) == option {
+            guard let reading = await NativeMediaSelectionReader.shared.read(item: item, group: group),
+                  !Task.isCancelled, self.player?.currentItem === item else { return }
+            let current = reading.option
+            if let option, self.nativeSubtitleOutput?.isSelecting(option) == true, current == option {
                 return
             }
-            let current = item.currentMediaSelection.selectedMediaOption(in: group)
             if current?.mediaSubTypes.contains(NSNumber(value: kCMSubtitleFormatType_3GText)) == true {
                 // An active tx3g decoder can keep a removed output on tvOS 27.
                 // HLS switches must stay direct: an intermediate Off can lose paused cues.
@@ -1414,21 +1442,39 @@ public final class NativeVideoEngine: VideoEngine {
     /// so language identifiers are canonicalised — a preference of `"jpn"` matches
     /// an option tagged `"ja"`, and vice versa — and the result is ordered by the
     /// preference list. Best-effort: no match (or no audible group) leaves the
-    /// asset's default audio untouched and never affects playback.
+    /// asset's default audio untouched and never affects playback. Local downloads
+    /// without provider inventory publish the asset's exact audible options.
     private func applyPreferredAudioSelection(
         for item: AVPlayerItem,
-        preferredLanguages: [String]
+        preferredLanguages: [String],
+        discoversLocalAudio: Bool
     ) async {
-        guard !preferredLanguages.isEmpty,
-              let group = try? await item.asset.loadMediaSelectionGroup(for: .audible),
-              !Task.isCancelled, player?.currentItem === item
-        else { return }
-        let ranked = AVMediaSelectionGroup.mediaSelectionOptions(
-            from: group.options,
-            filteredAndSortedAccordingToPreferredLanguages: preferredLanguages
-        )
-        guard let best = ranked.first else { return }
-        item.select(best, in: group)
+        do {
+            guard let group = try await item.asset.loadMediaSelectionGroup(for: .audible),
+                  !Task.isCancelled, player?.currentItem === item else { return }
+            if discoversLocalAudio {
+                localAudioGroup = group
+                localAudioTracks = group.options.enumerated().map { index, option in
+                    MediaTrack(
+                        id: index, kind: .audio, displayTitle: option.displayName,
+                        language: option.extendedLanguageTag ?? option.locale?.identifier,
+                        isDefault: option == group.defaultOption,
+                        isVisualImpaired: option.hasMediaCharacteristic(.describesVideoForAccessibility)
+                    )
+                }
+            }
+            if !preferredLanguages.isEmpty {
+                let ranked = AVMediaSelectionGroup.mediaSelectionOptions(
+                    from: group.options,
+                    filteredAndSortedAccordingToPreferredLanguages: preferredLanguages
+                )
+                if let best = ranked.first { item.select(best, in: group) }
+            }
+            if discoversLocalAudio { onTracksChanged?() }
+        } catch {
+            guard !Task.isCancelled, player?.currentItem === item else { return }
+            PlozzLog.playback.error("Native audio choices could not be read.")
+        }
     }
 
     private func legibleGroup(for asset: AVAsset) async -> AVMediaSelectionGroup? {
@@ -1467,6 +1513,16 @@ public final class NativeVideoEngine: VideoEngine {
     }
 
     private func select(track: MediaTrack?, in group: AVMediaSelectionGroup, on item: AVPlayerItem) {
+        if localAudioGroup != nil, let track {
+            guard localAudioTracks.contains(where: { $0.id == track.id }),
+                  group.options.indices.contains(track.id) else {
+                PlozzLog.playback.error("The selected local audio track is unavailable.")
+                return
+            }
+            item.select(group.options[track.id], in: group)
+            onTracksChanged?()
+            return
+        }
         guard let track, let language = track.language else {
             item.select(nil, in: group)
             return

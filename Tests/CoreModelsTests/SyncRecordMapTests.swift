@@ -46,6 +46,29 @@ final class SyncRecordMapTests: XCTestCase {
 
     // MARK: ProfileSyncDTO — cosmetic-only, canonical, round-trips exactly
 
+    func testProfileImportIdentitySurvivesSyncWithoutGrantingPlexAccess() throws {
+        let origin = PlexHomeImportIdentity(ownerUserID: "owner", homeUserID: "child")
+        let profile = Profile(
+            name: "Customized", plexHomeUserBindings: [
+                "local-account": .init(homeUserID: "child", name: "Child", requiresPIN: true)
+            ],
+            plexHomeImportIdentity: origin
+        )
+        let bytes = try XCTUnwrap(CanonicalJSON.encode(ProfileSyncDTO(profile: profile)))
+        let decoded = try XCTUnwrap(CanonicalJSON.decode(ProfileSyncDTO.self, from: bytes))
+        let restored = try JSONDecoder().decode(Profile.self, from: JSONEncoder().encode(decoded.makeProfile()))
+        XCTAssertEqual(restored.plexHomeImportIdentity, origin)
+        XCTAssertNil(restored.plexHomeUserBindings)
+        XCTAssertNil(restored.plexHomeUserID)
+        XCTAssertNil(restored.linkedAccountID)
+        XCTAssertEqual(CanonicalJSON.encode(ProfileSyncDTO(profile: restored)), bytes)
+        XCTAssertEqual(CanonicalJSON.encode(ProfileSyncDTO(profile: decoded.merged(into: profile))), bytes)
+        XCTAssertNil(restored.settingHomeUserBinding(
+            .init(homeUserID: "different", name: "Other", requiresPIN: false),
+            forPlexAccount: "local-account"
+        ).plexHomeImportIdentity)
+    }
+
     func testProfileDTOExcludesDeviceLocalFields() {
         var p = Profile(name: "Kid", avatarSymbol: "star.fill", colorIndex: 3,
                         avatarEmoji: "🦊", avatarEmojiColorIndex: 7)

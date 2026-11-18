@@ -12,6 +12,7 @@ struct DownloadsInteractionFixture: View {
     @State private var appModel: PlozziOSAppModel
     @State private var downloads: PlozziOSDownloadsModel
     @State private var trailer = HeroTrailerController()
+    @State private var sidebar = PlozziOSSidebarGeometryModel()
 
     init() {
         let sync = SyncSetupFeatureFlag()
@@ -27,13 +28,16 @@ struct DownloadsInteractionFixture: View {
                 fatalError("Could not prepare the Downloads fixture account: \(error)")
             }
             app.accountsProviders.reloadAccounts()
+            app.profiles.markFirstRunProfileSetupComplete()
+            app.selectProfile(app.profiles.activeProfileID)
             app.settings.heroBackground.settings.detailMode = .off
             app.metadataProviderSettingsModel.settings = MetadataProviderSettings(
                 orderMode: .custom, preferOnlineArtwork: false,
                 disabledOrder: MetadataSourceAttribution.all.map(\.id)
             )
         }
-        var records = (1...12).map { index in
+        let count = ProcessInfo.processInfo.arguments.contains("--download-scroll") ? 24 : 12
+        var records = (1...count).map { index in
             DownloadedMediaRecord(
                 identity: .external(source: "plozz-account:fixture", value: "episode-\(index)"),
                 sourceKind: .managedHTTP, status: index == 1 ? .downloading : .completed,
@@ -49,11 +53,16 @@ struct DownloadsInteractionFixture: View {
                 )
             )
         }
+        if ProcessInfo.processInfo.arguments.contains("--download-edit") {
+            records = Array(records.prefix(3))
+            records[2].snapshot.seasonNumber = 3
+        }
         if ProcessInfo.processInfo.arguments.contains("--download-movie") {
             records = [
                 DownloadedMediaRecord(
                     identity: .external(source: "plozz-account:fixture", value: "movie"),
-                    sourceKind: .managedHTTP, status: .completed,
+                    sourceKind: .managedHTTP,
+                    status: ProcessInfo.processInfo.arguments.contains("--download-active") ? .downloading : .completed,
                     localFileName: "movie.mkv", bytesDownloaded: 100_000_000,
                     totalBytes: 100_000_000,
                     snapshot: .init(
@@ -62,6 +71,9 @@ struct DownloadsInteractionFixture: View {
                     )
                 )
             ]
+        }
+        if ProcessInfo.processInfo.arguments.contains("--download-empty") {
+            records = []
         }
         let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
             records: Dictionary(uniqueKeysWithValues: records.map { ($0.identityKey, $0) })
@@ -74,8 +86,11 @@ struct DownloadsInteractionFixture: View {
             networkFileResolver: DownloadFixtureNetworkResolver(),
             providerKind: { _ in .emby }, preferredAudioLanguages: { _ in [] },
             startsActive: false, activityScheduler: nil,
-            managedURLResolver: { _, _, _ in throw CancellationError() }
+            managedURLResolver: { _, _, _, _ in throw CancellationError() }
         ))
+        if ProcessInfo.processInfo.arguments.contains("--download-unavailable") {
+            _downloads = State(initialValue: PlozziOSDownloadsModel(initializationError: "Fixture storage unavailable."))
+        }
     }
 
     var body: some View {
@@ -84,6 +99,7 @@ struct DownloadsInteractionFixture: View {
         }
         .environment(appModel)
         .environment(trailer)
+        .environment(sidebar)
         .environment(\.locale, Locale(identifier: "en"))
         .environment(\.themePalette, .dark)
         .environment(\.plozzMetrics, .touch(density: .standard))
@@ -116,6 +132,20 @@ private struct DownloadFixtureProvider: MediaProvider {
         MediaPage(items: [], startIndex: 0, totalCount: 0)
     }
     func item(id: String) async throws -> MediaItem {
+        if id == "movie" {
+            return MediaItem(
+                id: id, title: "Downloaded Movie", kind: .movie,
+                overview: "Downloaded movie fixture details.",
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
+            )
+        }
+        if id == "andor" || id.hasPrefix("show-") {
+            return MediaItem(
+                id: id, title: id == "andor" ? "Andor" : "Downloaded Show \(id.dropFirst(5))",
+                kind: .series, overview: "Downloaded show fixture details.",
+                allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
+            )
+        }
         guard id.hasPrefix("episode-"), let index = Int(id.dropFirst("episode-".count)) else {
             throw AppError.notFound
         }

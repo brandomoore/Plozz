@@ -87,6 +87,36 @@ final class HomeViewModelNewResumeReloadTests: XCTestCase {
         vm.state.value?.continueWatching ?? []
     }
 
+    func testUnwatchedResetRemovesOnlySelectedResumeAndClearsOtherCards() async throws {
+        for kind in [MediaItemKind.movie, .episode] {
+            let selected = MediaItem(
+                id: "selected", title: "Selected", kind: kind,
+                resumePosition: 600, playedPercentage: 0.5, sourceAccountID: "a"
+            )
+            let other = MediaItem(
+                id: "other", title: "Other", kind: kind,
+                resumePosition: 900, playedPercentage: 0.5, sourceAccountID: "a"
+            )
+            let provider = FakeMediaProvider(allItems: [selected, other])
+            provider.continueWatchingItems = [selected, other]
+            provider.latestItems = [selected, other]
+            let vm = makeViewModel(provider: provider)
+            await vm.load()
+            XCTAssertEqual(Set(cw(vm).map(\.id)), ["selected", "other"])
+            vm.applyWatchedState(.init(
+                itemIDs: ["selected"], scopedItemIDs: ["a:selected"],
+                played: false, resumePosition: 0, playedPercentage: 0, item: selected
+            ))
+            XCTAssertEqual(cw(vm).map(\.id), ["other"])
+            XCTAssertFalse(vm.continueWatchingForDetail.contains { $0.id == "selected" })
+            let updated = try XCTUnwrap(vm.state.value?.latest.first { $0.id == "selected" })
+            XCTAssertFalse(updated.isPlayed)
+            XCTAssertNil(updated.resumePosition)
+            XCTAssertEqual(updated.playedPercentage, 0)
+            XCTAssertEqual(cw(vm).first?.resumePosition, 900)
+        }
+    }
+
     func testProviderStyleNextUpMovesIntoResumeAndRefreshesAfterCompletion() async throws {
         let provider = FakeMediaProvider(allItems: [], kind: .emby)
         provider.libraryItems = [.init(id: "shows", title: "Shows", kind: .series)]

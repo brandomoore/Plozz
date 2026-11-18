@@ -48,6 +48,22 @@ struct PlozziOSPlayerControlsOverlay: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var pictureInPicture = PlozziOSPictureInPictureController()
 
+    init(
+        viewModel: PlayerViewModel, keyboardActions: PlozziOSPlayerKeyboardActions,
+        hasVersions: Bool, versionsPresented: Bool, onShowVersions: @escaping () -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        self.viewModel = viewModel
+        self.keyboardActions = keyboardActions
+        self.hasVersions = hasVersions
+        self.versionsPresented = versionsPresented
+        self.onShowVersions = onShowVersions
+        self.onClose = onClose
+        // Disc navigation can temporarily clear its overlay between scenes.
+        // Recreating the transport must not reveal it without a user interaction.
+        _controlsVisible = State(initialValue: !viewModel.isDiscMenuPlayback)
+    }
+
     private var isScrubbing: Bool { viewModel.controls.isScrubbing }
     private var nativeMenuPresented: Bool { menuPresentation.isBusy }
     private var menuSourceID: [String?] {
@@ -71,7 +87,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                 onSkip: touchSkip,
                 onBoostChanged: touchBoostChanged,
                 onZoom: { fillsScreen in
-                    viewModel.controls.videoZoom.settings.mode = fillsScreen ? .fill : .fit
+                    viewModel.controls.videoZoom.setPinchZoom(fillsScreen: fillsScreen)
                 },
                 onGestureStarted: beginTouchInteraction
             )
@@ -302,6 +318,14 @@ struct PlozziOSPlayerControlsOverlay: View {
             case .timestamps:
                 if let timestampBrowser { PlayerCommunityTimestampsView(model: timestampBrowser) }
             }
+        }
+        .alert("Couldn't change upscaling", isPresented: Binding(
+            get: { viewModel.controls.upscaling.error != nil },
+            set: { if !$0 { viewModel.controls.upscaling.error = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.controls.upscaling.error = nil }
+        } message: {
+            if let error = viewModel.controls.upscaling.error { Text(error) }
         }
         .ignoresSafeArea()
     }
@@ -738,6 +762,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let hasTimestamps: Bool
     let hasVersions: Bool
     let menuPresentation: PlayerMenuPresentation
+    @State private var discPresentationOwner = UUID()
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The full player bounds, not this bottom cluster's intrinsic size.
@@ -880,16 +905,26 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     private var trackControlGroup: some View {
         let item = viewModel.currentPlaybackItem
         return PlayerGlassControlGroup {
-            PlayerMoreMenuButton(
-                model: viewModel.controls,
-                availability: .init(
-                    maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
-                    quality: viewModel.streamingQualityAvailable, versions: hasVersions, timestamps: hasTimestamps
-                ),
-                presentation: menuPresentation,
-                layout: .init(size: availableSize),
-                actions: menuActions(for: item)
-            )
+            HStack(spacing: 0) {
+                if viewModel.isDiscMenuPlayback || viewModel.hasDiscVideos {
+                    PlayerDiscControlsButton(
+                        model: viewModel, onInteraction: onInteraction,
+                        onPresentationChanged: {
+                            menuPresentation.setPresented($0, owner: discPresentationOwner)
+                        }
+                    )
+                }
+                PlayerMoreMenuButton(
+                    model: viewModel.controls,
+                    availability: .init(
+                        maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
+                        quality: viewModel.streamingQualityAvailable, versions: hasVersions, timestamps: hasTimestamps
+                    ),
+                    presentation: menuPresentation,
+                    layout: .init(size: availableSize),
+                    actions: menuActions(for: item)
+                )
+            }
         }
         .accessibilityIdentifier("player-track-controls")
     }
@@ -905,6 +940,8 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         actions.selectSubtitle = { viewModel.selectSubtitleOption(id: $0); onInteraction() }
         actions.setDialogueEnhancement = { viewModel.setDialogEnhanceEnabled($0); onInteraction() }
         actions.setSpeed = { viewModel.setPlaybackSpeed($0); onInteraction() }
+        actions.setDolbyVisionFELConversion = { viewModel.setDolbyVisionFELConversion($0); onInteraction() }
+        actions.setVideoUpscaling = { viewModel.setVideoUpscaling($0); onInteraction() }
         return actions
     }
 
@@ -1302,27 +1339,40 @@ private struct PlozziOSPlaybackSyncControls: View {
     let viewModel: PlayerViewModel
     var includesAudio = true
     var includesSubtitles = true
+    private var audioAdjustment: PlayerAudioSyncEditor { viewModel.controls.audioSyncAdjustment }
+
+    private var audioDelay: TimeInterval { audioAdjustment.value ?? viewModel.controls.audioDelaySeconds }
 
     var body: some View {
         Group {
             if includesAudio, viewModel.controls.engineCapabilities.contains(.audioDelay) {
                 Section("Audio Delay") {
-                    Slider(
+                    Stepper(
                         value: Binding(
-                            get: { viewModel.controls.audioDelaySeconds },
-                            set: { viewModel.setAudioDelay($0) }
+                            get: { audioDelay },
+                            set: changeAudioDelay
                         ),
-                        in: -2...2,
-                        step: 0.05
-                    )
+                        in: PlayerControlsModel.audioDelayRange,
+                        step: PlayerAudioSyncAdjustment.step,
+                        onEditingChanged: { editing in
+                            if editing { audioAdjustment.beginEditing() }
+                            else { audioAdjustment.endEditing(commit: viewModel.setAudioDelay) }
+                        }
+                    ) {
+                        Text(audioDelay,
+                             format: .number.precision(.fractionLength(2)))
+                            + Text(" s")
+                    }
                     .accessibilityLabel("Audio Delay")
                     .accessibilityIdentifier("player-audio-delay")
-                    Text(
-                        viewModel.controls.audioDelaySeconds,
-                        format: .number.precision(.fractionLength(2))
-                    )
-                    .plozzForeground(.secondary)
+                    Text(PlayerControlsModel.audioSyncHint(for: audioDelay)).plozzForeground(.secondary)
+                    Button("Reset") {
+                        audioAdjustment.cancel()
+                        changeAudioDelay(0)
+                    }
+                        .disabled(audioDelay == 0)
                 }
+                .onDisappear { audioAdjustment.cancel() }
             }
 
             if includesSubtitles, viewModel.controls.subtitleDelayAdjustable {
@@ -1345,6 +1395,16 @@ private struct PlozziOSPlaybackSyncControls: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            audioAdjustment.cancel()
+        }
+        .onChange(of: viewModel.controls.infoCard.sourceItemID) { _, _ in audioAdjustment.cancel() }
+        .onChange(of: viewModel.controls.infoCard.sourceAccountID) { _, _ in audioAdjustment.cancel() }
+    }
+
+    private func changeAudioDelay(_ value: TimeInterval) {
+        audioAdjustment.change(to: value, current: viewModel.controls.audioDelaySeconds,
+                               applyLive: viewModel.setAudioDelayLive, commit: viewModel.setAudioDelay)
     }
 }
 

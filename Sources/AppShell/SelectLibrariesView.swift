@@ -98,6 +98,17 @@ struct SelectLibrariesView: View {
 
             content
 
+            if !guides.isEmpty {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(guides) { status in
+                        LiveTVGuidePreparationStatus(status: status)
+                    }
+                }
+                .font(.subheadline)
+                .frame(maxWidth: 520)
+                .padding(.top, 24)
+            }
+
             Button {
                 appState.confirmLibrarySelection()
             } label: {
@@ -108,6 +119,7 @@ struct SelectLibrariesView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("library-selection-continue")
             .focused($focused, equals: .continueButton)
             .padding(.top, 24)
         }

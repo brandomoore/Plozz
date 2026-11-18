@@ -1,9 +1,24 @@
 import Foundation
 
+/// How often a saved programme guide is brought up to date while the app is open.
+/// `off` updates it only when Live TV asks for listings.
+public enum LiveTVGuideUpdateInterval: Int, CaseIterable, Sendable {
+    case off = 0
+    case hourly = 1
+    case threeHours = 3
+    case sixHours = 6
+    case twelveHours = 12
+    case daily = 24
+
+    /// The longest a saved guide is reused; nil leaves that to the guide's own lifetime.
+    public var seconds: TimeInterval? { self == .off ? nil : TimeInterval(rawValue) * 3_600 }
+}
+
 /// Profile-scoped preferences that control how Live TV channels are presented.
 public struct LiveTVViewSettings: Equatable, Sendable {
     public var startsWithCategories: Bool
     public var sortByName: Bool
+    public var cleanChannelNames: Bool
     public var autoPreview: Bool
     public var hasChosenAutoPreview: Bool
     public var keepWatchingWhileBrowsing: Bool
@@ -14,6 +29,7 @@ public struct LiveTVViewSettings: Equatable, Sendable {
     public var previewAfterWatching: Bool
     /// Show the Recently watched row at the top of the guide.
     public var showsRecentChannels: Bool
+    public var guideUpdateInterval: LiveTVGuideUpdateInterval
 
     public init(
         sortByName: Bool = false,
@@ -25,10 +41,13 @@ public struct LiveTVViewSettings: Equatable, Sendable {
         previewAfterWatching: Bool = true,
         showsRecentChannels: Bool = true,
         hasChosenAutoPreview: Bool = false,
-        startsWithCategories: Bool = true
+        startsWithCategories: Bool = true,
+        cleanChannelNames: Bool = true,
+        guideUpdateInterval: LiveTVGuideUpdateInterval = .twelveHours
     ) {
         self.startsWithCategories = startsWithCategories
         self.sortByName = sortByName
+        self.cleanChannelNames = cleanChannelNames
         self.autoPreview = autoPreview
         self.hasChosenAutoPreview = hasChosenAutoPreview
         self.keepWatchingWhileBrowsing = keepWatchingWhileBrowsing
@@ -37,6 +56,7 @@ public struct LiveTVViewSettings: Equatable, Sendable {
         self.wifiOnly = wifiOnly
         self.previewAfterWatching = previewAfterWatching
         self.showsRecentChannels = showsRecentChannels
+        self.guideUpdateInterval = guideUpdateInterval
     }
 
     public var allowsAutomaticPreview: Bool { hasChosenAutoPreview && autoPreview }
@@ -59,6 +79,7 @@ public protocol LiveTVViewSettingsStoring: Sendable {
 public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecked Sendable {
     public static let didChange = Notification.Name("com.plozz.liveTV.view.didChange")
     static let sortByNameKey = "com.plozz.liveTV.view.sortByName"
+    static let cleanChannelNamesKey = "com.plozz.liveTV.view.cleanChannelNames"
     static let autoPreviewKey = "com.plozz.liveTV.view.autoPreview"
     static let hasChosenAutoPreviewKey = "com.plozz.liveTV.view.hasChosenAutoPreview"
     static let keepWatchingWhileBrowsingKey = "com.plozz.liveTV.view.keepWatchingWhileBrowsing"
@@ -68,9 +89,11 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
     static let previewAfterWatchingKey = "com.plozz.liveTV.view.previewAfterWatching"
     static let showsRecentChannelsKey = "com.plozz.liveTV.view.showsRecentChannels"
     static let startsWithCategoriesKey = "com.plozz.liveTV.view.startsWithCategories"
+    static let guideUpdateIntervalKey = "com.plozz.liveTV.view.guideUpdateHours"
 
     private let defaults: UserDefaults
     private let sortByNameKey: String
+    private let cleanChannelNamesKey: String
     private let autoPreviewKey: String
     private let hasChosenAutoPreviewKey: String
     private let keepWatchingWhileBrowsingKey: String
@@ -80,12 +103,14 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
     private let previewAfterWatchingKey: String
     private let showsRecentChannelsKey: String
     private let startsWithCategoriesKey: String
+    private let guideUpdateIntervalKey: String
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
     ///   profile) uses un-suffixed keys; other profiles pass their `Profile.id`.
     public init(defaults: UserDefaults = .standard, namespace: String? = nil) {
         self.defaults = defaults
         self.sortByNameKey = SettingsKey.scoped(Self.sortByNameKey, namespace: namespace)
+        self.cleanChannelNamesKey = SettingsKey.scoped(Self.cleanChannelNamesKey, namespace: namespace)
         self.autoPreviewKey = SettingsKey.scoped(Self.autoPreviewKey, namespace: namespace)
         self.hasChosenAutoPreviewKey = SettingsKey.scoped(Self.hasChosenAutoPreviewKey, namespace: namespace)
         self.keepWatchingWhileBrowsingKey = SettingsKey.scoped(
@@ -97,6 +122,7 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
         self.previewAfterWatchingKey = SettingsKey.scoped(Self.previewAfterWatchingKey, namespace: namespace)
         self.showsRecentChannelsKey = SettingsKey.scoped(Self.showsRecentChannelsKey, namespace: namespace)
         self.startsWithCategoriesKey = SettingsKey.scoped(Self.startsWithCategoriesKey, namespace: namespace)
+        self.guideUpdateIntervalKey = SettingsKey.scoped(Self.guideUpdateIntervalKey, namespace: namespace)
     }
 
     public func load() -> LiveTVViewSettings {
@@ -113,12 +139,16 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
             previewAfterWatching: value(forKey: previewAfterWatchingKey, default: fallback.previewAfterWatching),
             showsRecentChannels: value(forKey: showsRecentChannelsKey, default: fallback.showsRecentChannels),
             hasChosenAutoPreview: value(forKey: hasChosenAutoPreviewKey, default: fallback.hasChosenAutoPreview),
-            startsWithCategories: value(forKey: startsWithCategoriesKey, default: fallback.startsWithCategories)
+            startsWithCategories: value(forKey: startsWithCategoriesKey, default: fallback.startsWithCategories),
+            cleanChannelNames: value(forKey: cleanChannelNamesKey, default: fallback.cleanChannelNames),
+            guideUpdateInterval: (defaults.object(forKey: guideUpdateIntervalKey) as? Int)
+                .flatMap(LiveTVGuideUpdateInterval.init) ?? fallback.guideUpdateInterval
         )
     }
 
     public func save(_ settings: LiveTVViewSettings) {
         defaults.set(settings.sortByName, forKey: sortByNameKey)
+        defaults.set(settings.cleanChannelNames, forKey: cleanChannelNamesKey)
         defaults.set(settings.autoPreview, forKey: autoPreviewKey)
         defaults.set(settings.hasChosenAutoPreview, forKey: hasChosenAutoPreviewKey)
         defaults.set(settings.keepWatchingWhileBrowsing, forKey: keepWatchingWhileBrowsingKey)
@@ -128,6 +158,7 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
         defaults.set(settings.previewAfterWatching, forKey: previewAfterWatchingKey)
         defaults.set(settings.showsRecentChannels, forKey: showsRecentChannelsKey)
         defaults.set(settings.startsWithCategories, forKey: startsWithCategoriesKey)
+        defaults.set(settings.guideUpdateInterval.rawValue, forKey: guideUpdateIntervalKey)
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 

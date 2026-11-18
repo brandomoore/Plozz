@@ -19,6 +19,11 @@ public struct WatchMutationServerScope: Codable, Hashable, Sendable {
             plexHomeUserID = account.server.provider == .plex
                 ? profile.homeUserBinding(forPlexAccount: account.id)?.homeUserID : nil
         }
+
+        public var downloadUserID: String {
+            [providerKind.rawValue, serverID, userID, plexHomeUserID ?? ""]
+                .map { "\($0.utf8.count):\($0)" }.joined()
+        }
     }
 
     public let profileID: String

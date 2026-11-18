@@ -1,0 +1,120 @@
+{
+  "id": "app-store-duo-screenshots-2026-11-04",
+  "app_id": "6782668147",
+  "locale": "en-US",
+  "after_versions": {
+    "IOS": {
+      "id": "e40e4a75-915f-4b69-bbed-ee7dcf3e26bd",
+      "version": "2026.10.30"
+    }
+  },
+  "groups": [
+    {
+      "device": "duo",
+      "platform": "IOS",
+      "placement_group": "IPHONE_DUO_PROFILE",
+      "assets": [
+        {
+          "file": "01-opening-duo-outer-1398x2034.png",
+          "id": "f3400019-4474-8d73-800d-7ef7b6ece8ca",
+          "sha256": "3ac6665a8681a3aad1866bd5b7d3c665d8e88dd6f6d63849e48a92e3fe44646c",
+          "spec_id": "205e7ab6-a23a-4ee2-b327-0a99ec2a2520",
+          "dimensions": [
+            1398,
+            2034
+          ]
+        },
+        {
+          "file": "02-opening-duo-inner-2853x2007.png",
+          "id": "b3800019-4474-8d73-8019-696374f7e63f",
+          "sha256": "bd8025abaed4a3a7b995b82196e09011e8c943b01709e2ae762a3803603f2e15",
+          "spec_id": "b83915b8-5b87-4e63-bba5-ab3a0c439862",
+          "dimensions": [
+            2853,
+            2007
+          ]
+        },
+        {
+          "file": "03-guide-duo-outer-1398x2034.png",
+          "id": "42c00019-4474-8d73-8019-4f59cf1e73cf",
+          "sha256": "4cc10bf9dbc8aaa9aea4cf496d562140c45e0a8687dfe6ab0f9f0b2ac86d2c3f",
+          "spec_id": "205e7ab6-a23a-4ee2-b327-0a99ec2a2520",
+          "dimensions": [
+            1398,
+            2034
+          ]
+        },
+        {
+          "file": "04-guide-duo-inner-2853x2007.png",
+          "id": "7c400019-4474-8d73-8024-e2f8d9156b32",
+          "sha256": "0ae138ad48f10a7b4d891e91e9b12a1656573d0858e92e92bb7cc588c4d6e88e",
+          "spec_id": "b83915b8-5b87-4e63-bba5-ab3a0c439862",
+          "dimensions": [
+            2853,
+            2007
+          ]
+        },
+        {
+          "file": "05-library-duo-outer-1398x2034.png",
+          "id": "e4c00019-4474-8d73-800d-0285802fc3c9",
+          "sha256": "99b96c2d40df7c66812a3c01920ba926945ce38fbd373ff976112a7536e769c6",
+          "spec_id": "205e7ab6-a23a-4ee2-b327-0a99ec2a2520",
+          "dimensions": [
+            1398,
+            2034
+          ]
+        },
+        {
+          "file": "06-library-duo-inner-2853x2007.png",
+          "id": "44400019-4474-8d73-801f-f92247c05851",
+          "sha256": "f7c73e8a9991a83c1ec390e992f0eee8eea2ab215550c4109354dcd05fdb1af8",
+          "spec_id": "b83915b8-5b87-4e63-bba5-ab3a0c439862",
+          "dimensions": [
+            2853,
+            2007
+          ]
+        },
+        {
+          "file": "07-sync-duo-outer-1398x2034.png",
+          "id": "9e800019-4474-8d73-801d-b7fba3802266",
+          "sha256": "c303e1e858f31184cb2c3374652d056335e17b502d37b3188cd0430f4f23b54b",
+          "spec_id": "205e7ab6-a23a-4ee2-b327-0a99ec2a2520",
+          "dimensions": [
+            1398,
+            2034
+          ]
+        },
+        {
+          "file": "08-sync-duo-inner-2853x2007.png",
+          "id": "14c00019-4474-8d73-8029-16f7016648ea",
+          "sha256": "6b8c9d04cb54c6740725a62909b9be13d04aa7c6ce8fb19e41386e017e386a21",
+          "spec_id": "b83915b8-5b87-4e63-bba5-ab3a0c439862",
+          "dimensions": [
+            2853,
+            2007
+          ]
+        },
+        {
+          "file": "09-downloads-duo-outer-1398x2034.png",
+          "id": "c2800019-4474-8d73-803a-1de0f9f802a7",
+          "sha256": "ce2fe2218ce4a46459da0ab0f21a2f17e0df160afd3e8acb5d86946de224bfa7",
+          "spec_id": "205e7ab6-a23a-4ee2-b327-0a99ec2a2520",
+          "dimensions": [
+            1398,
+            2034
+          ]
+        },
+        {
+          "file": "10-downloads-duo-inner-2853x2007.png",
+          "id": "99400019-4474-8d73-803e-020fb389a28e",
+          "sha256": "bbabafc43cb076a8d4e66c66dbba39342e28e2bd2826279c2757295672942885",
+          "spec_id": "b83915b8-5b87-4e63-bba5-ab3a0c439862",
+          "dimensions": [
+            2853,
+            2007
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import FeatureHomeCore
 import MetadataKit
 import Observation
 import SwiftUI
+import UIKit
 
 struct EpisodeBreadcrumbFixture: View {
     @State private var path: [MediaItem] = []
@@ -44,6 +45,16 @@ struct EpisodeBreadcrumbFixture: View {
                 }
         }
         .overlay(alignment: .topLeading) {
+            if ProcessInfo.processInfo.arguments.contains("--episode-menu") {
+                VStack {
+                    Text(verbatim: model.actions.performedActions.isEmpty
+                         ? "none" : model.actions.performedActions.joined(separator: ","))
+                        .accessibilityIdentifier("episode-menu-performed-actions")
+                    Text(verbatim: "\(playCount)")
+                        .accessibilityIdentifier("episode-menu-play-count")
+                }
+                .allowsHitTesting(false)
+            }
             if ProcessInfo.processInfo.arguments.contains("--delayed-series-entry") || model.provider.isDiscovery {
                 VStack {
                     Text(verbatim: "\(playCount)").accessibilityIdentifier("detail-entry-play-count")
@@ -57,8 +68,18 @@ struct EpisodeBreadcrumbFixture: View {
         }
         .environment(\.themePalette, .dark)
         .environment(\.plozzCardFocusStyle, focusStyle)
+        .environment(\.plozzCardCaptionSettings, CardCaptionSettings(
+            episodeDescriptionsOnFocus: ProcessInfo.processInfo.arguments.contains("--descriptions-on-focus")
+        ))
         .preferredColorScheme(.dark)
         .detailNavigationZoom(isEnabled: true)
+        .background {
+            if ProcessInfo.processInfo.arguments.contains("--trace-menu-appearance") {
+                MenuAppearanceProbe()
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+            }
+        }
         .task {
             guard !entered else { return }
             entered = true
@@ -72,6 +93,17 @@ struct EpisodeBreadcrumbFixture: View {
                 path.append(model.provider.series)
             }
             path.append(model.provider.episode)
+        }
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("--refresh-episode-progress") else { return }
+            for revision in 0..<1000 {
+                do { try await Task.sleep(for: .milliseconds(250)) }
+                catch { return }
+                model.show.applyWatchedState(MediaItemMutation(
+                    itemIDs: ["episode-1", "episode-2", "episode-3"],
+                    resumePosition: Double(revision % 2 + 1) / 10
+                ))
+            }
         }
     }
 
@@ -164,14 +196,101 @@ private final class EpisodeBreadcrumbModel {
 @MainActor @Observable
 private final class EpisodeBreadcrumbActions: MediaItemActionHandling {
     var contextID = "original"
+    var performedActions: [String] = []
 
     func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
         if ProcessInfo.processInfo.arguments.contains("--delayed-series-entry") { return [.addToWatchlist] }
-        return MediaItemActionCatalog.actions(for: item, supportsWatchState: false, context: context)
+        return MediaItemActionCatalog.actions(
+            for: item, supportsWatchState: ProcessInfo.processInfo.arguments.contains("--episode-menu"),
+            supportsWatchlist: ProcessInfo.processInfo.arguments.contains("--episode-menu"),
+            supportsMetadataRefresh: ProcessInfo.processInfo.arguments.contains("--episode-menu"),
+            context: context
+        )
     }
     func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {
+        performedActions.append(action.rawValue)
         if ProcessInfo.processInfo.arguments.contains("--change-context-on-watchlist") {
             contextID = "changed"
+        }
+    }
+}
+
+private struct MenuAppearanceProbe: UIViewRepresentable {
+    func makeUIView(context: Context) -> MenuAppearanceObserver {
+        let view = MenuAppearanceObserver()
+        view.isAccessibilityElement = true
+        view.accessibilityIdentifier = "episode-menu-appearance-result"
+        view.accessibilityLabel = "Menu appearance trace"
+        view.accessibilityValue = "pending"
+        return view
+    }
+
+    func updateUIView(_ uiView: MenuAppearanceObserver, context: Context) {}
+}
+
+private final class MenuAppearanceObserver: UIView {
+    private var timer: Timer?
+    private var firstFrame: CFTimeInterval?
+    private var deadline: CFTimeInterval = 0
+    private var lists: Set<ObjectIdentifier> = []
+    private var labels: Set<ObjectIdentifier> = []
+    private var minimumOpacity: Float = 1
+    private var samples = 0
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        timer?.invalidate()
+        guard window != nil else { return }
+        deadline = CACurrentMediaTime() + 30
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sample() }
+        }
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func sample() {
+        let now = CACurrentMediaTime()
+        var foundMenu = false
+        func visit(_ view: UIView, insideMenu: Bool) {
+            let name = String(describing: type(of: view))
+            // Read-only observation of UIKit's menu subtree, never a styling hook.
+            let menu = insideMenu || name.contains("ContextMenu")
+            if menu {
+                if view is UICollectionView {
+                    foundMenu = true
+                    lists.insert(ObjectIdentifier(view))
+                    minimumOpacity = min(minimumOpacity, view.layer.presentation()?.opacity ?? view.layer.opacity)
+                }
+                if let label = view as? UILabel, label.text?.isEmpty == false {
+                    labels.insert(ObjectIdentifier(label))
+                }
+            }
+            for child in view.subviews { visit(child, insideMenu: menu) }
+        }
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows { visit(window, insideMenu: false) }
+        }
+        if foundMenu {
+            if firstFrame == nil { firstFrame = now }
+            samples += 1
+        }
+        if now > deadline || firstFrame.map({ now - $0 > 2 }) == true {
+            timer?.invalidate()
+            timer = nil
+            do {
+                let summary: [String: Any] = [
+                    "lists": lists.count, "labels": labels.count,
+                    "minimumOpacity": minimumOpacity, "samples": samples
+                ]
+                accessibilityValue = String(
+                    decoding: try JSONSerialization.data(withJSONObject: summary, options: [.sortedKeys]),
+                    as: UTF8.self
+                )
+            } catch {
+                accessibilityValue = "failed"
+                assertionFailure("Menu appearance trace failed: \(error)")
+            }
         }
     }
 }

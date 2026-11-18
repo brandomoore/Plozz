@@ -16,7 +16,8 @@ actor SiloClient {
     private let http: any HTTPClient
     private var refresh: Task<SiloCredential, Error>?
     private let now: @Sendable () -> Date
-    private var requestNotBefore = Date.distantPast
+    private let uptime: @Sendable () -> TimeInterval
+    private var browseRetryAfter: TimeInterval?
     private let backgroundReadInterval: Duration
     private var lastBackgroundRead: ContinuousClock.Instant?
     private var requestsSent = 0
@@ -30,6 +31,7 @@ actor SiloClient {
         context: ProviderResolutionContext, store: any RotatingCredentialStoring, http: any HTTPClient,
         addressProbe: any HTTPClient = URLSessionHTTPClient(session: .plozzDiscovery),
         now: @escaping @Sendable () -> Date = { Date() },
+        uptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         backgroundReadInterval: Duration = .milliseconds(200)
     ) throws {
         let credential = try SiloCredential.decode(context.session.accessToken)
@@ -56,6 +58,7 @@ actor SiloClient {
         self.store = store
         self.now = now
         self.backgroundReadInterval = backgroundReadInterval
+        self.uptime = uptime
     }
 
     private func currentCredential() throws -> (String, SiloCredential) {
@@ -68,6 +71,20 @@ actor SiloClient {
     }
 
     func validateLogin() throws { _ = try currentCredential() }
+
+    func validateExternalMediaLifetime(_ url: URL, duration: TimeInterval) async throws {
+        guard MediaProviderURLIdentity.matchingBaseURL(for: url, among: addressResolver.addresses) != nil else {
+            return
+        }
+        let credential = try await authorizedCredential()
+        _ = try currentCredential()
+        // External players cannot refresh the native media-element account token.
+        // Reserve startup time as well as the entire source timeline.
+        guard duration.isFinite, duration > 0,
+              credential.expiresAt.timeIntervalSinceNow > duration + 5 * 60 else {
+            throw ExternalPlayerError.unsupportedSource
+        }
+    }
 
     func authorizedMediaURL(_ url: URL, sessionID: String) async throws -> URL {
         let credential = try await authorizedCredential()
@@ -197,32 +214,45 @@ actor SiloClient {
     ) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation()
         _ = try currentCredential()
-        try checkRequestCooldown()
+        try checkBrowseCooldown(path)
         let credential = try await authorizedCredential()
         _ = try currentCredential()
-        try checkRequestCooldown()
         var endpoint = SiloAPI.endpoint(path, method: method, query: query, token: credential.accessToken,
                                         profileID: credential.profileID, profileToken: credential.profileToken)
         endpoint.body = body
         if let deviceID { endpoint.headers["X-Silo-Device-Id"] = deviceID }
         if body != nil { endpoint.headers["Content-Type"] = "application/json" }
-        try await admitBackgroundRead(method: method)
-        try Task.checkCancellation()
-        _ = try currentCredential()
-        try checkRequestCooldown()
-        recordRequest(path)
-        var result = try await http.sendRaw(endpoint, baseURL: baseURL)
-        if result.1.statusCode == 401, method == .get {
-            let refreshed = try await authorizedCredential(rejectedToken: credential.accessToken)
-            try checkRequestCooldown()
-            endpoint.headers["Authorization"] = "Bearer \(refreshed.accessToken)"
-            try await admitBackgroundRead(method: method)
+        var result = try await transmit(endpoint, path: path, allowsTokenRefresh: method == .get)
+        if result.1.statusCode == 401 {
             try Task.checkCancellation()
             _ = try currentCredential()
-            try checkRequestCooldown()
-            recordRequest(path)
-            result = try await http.sendRaw(endpoint, baseURL: baseURL)
+            try checkBrowseCooldown(path)
+            let refreshed = try await authorizedCredential(rejectedToken: credential.accessToken)
+            endpoint.headers["Authorization"] = "Bearer \(refreshed.accessToken)"
+            result = try await transmit(endpoint, path: path)
         }
+        try Task.checkCancellation()
+        _ = try currentCredential()
+        return result
+    }
+
+    private func transmit(
+        _ endpoint: Endpoint, path: String, allowsTokenRefresh: Bool = false
+    ) async throws -> (Data, HTTPURLResponse) {
+        try checkBrowseCooldown(path)
+        try await admitBackgroundRead(method: endpoint.method)
+        try Task.checkCancellation()
+        _ = try currentCredential()
+        try checkBrowseCooldown(path)
+        recordRequest(path)
+        let result: (Data, HTTPURLResponse)
+        do {
+            result = try await http.sendRaw(endpoint, baseURL: baseURL)
+        } catch AppError.rateLimited(let delay) {
+            recordBrowseCooldown(delay, path: path)
+            throw AppError.rateLimited(retryAfter: delay)
+        }
+        if result.1.statusCode == 401, allowsTokenRefresh { return result }
         if !(200...299).contains(result.1.statusCode) {
             HTTPResponseDiagnostics.recordHTTPFailure(status: result.1.statusCode)
             let operation = path.hasPrefix("/catalog/items/") ? "catalog/item"
@@ -261,21 +291,13 @@ actor SiloClient {
         case 404: throw AppError.notFound
         case 409, 412: throw AppError.conflict
         case 429:
-            let current = now()
-            let serverDate = result.1.value(forHTTPHeaderField: "Date").flatMap(HTTPDate.parse) ?? current
+            let serverDate = result.1.value(forHTTPHeaderField: "Date").flatMap(HTTPDate.parse) ?? now()
             let delay = HTTPDate.retryAfter(result.1.value(forHTTPHeaderField: "Retry-After"), now: serverDate)
-            requestNotBefore = max(requestNotBefore, current.addingTimeInterval(max(1, delay ?? 60)))
+            recordBrowseCooldown(delay, path: path)
             throw AppError.rateLimited(retryAfter: delay)
         default: throw AppError.invalidResponse
         }
-        try Task.checkCancellation()
-        _ = try currentCredential()
         return result
-    }
-
-    private func checkRequestCooldown() throws {
-        let remaining = requestNotBefore.timeIntervalSince(now())
-        if remaining > 0 { throw AppError.rateLimited(retryAfter: remaining) }
     }
 
     private func admitBackgroundRead(method: HTTPMethod) async throws {
@@ -299,12 +321,30 @@ actor SiloClient {
         if path.hasPrefix("/catalog/items/") {
             detailRequestsSent = min(detailRequestsSent + 1, 1_000_000_000)
         }
-        let second = floor(now().timeIntervalSince1970)
+        let second = floor(uptime())
         if requestSecond != second {
             requestSecond = second
             requestsInSecond = 0
         }
         requestsInSecond = min(requestsInSecond + 1, 1_000_000_000)
         peakRequestsInSecond = max(peakRequestsInSecond, requestsInSecond)
+    }
+
+    private func checkBrowseCooldown(_ path: String) throws {
+        // A catalog quota must not prevent an active player from reporting or stopping.
+        guard !path.hasPrefix("/playback/"), let deadline = browseRetryAfter else { return }
+        let remaining = deadline - uptime()
+        guard remaining > 0 else {
+            browseRetryAfter = nil
+            return
+        }
+        throw AppError.rateLimited(retryAfter: remaining)
+    }
+
+    private func recordBrowseCooldown(_ delay: TimeInterval?, path: String) {
+        guard !path.hasPrefix("/playback/") else { return }
+        let delay = delay.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } ?? 60
+        browseRetryAfter = max(browseRetryAfter ?? 0, uptime() + max(1, delay))
+        PlozzLog.networking.info("Silo browsing paused after a rate limit.")
     }
 }

@@ -8,12 +8,15 @@ public struct WatchlistIntentStoreState: Codable, Hashable, Sendable {
     public var nextRank: UInt64
     public var intents: [WatchlistIntent]
     public var migration: WatchlistMigrationMetadata
+    /// Device-local provenance; remote DTOs retain their sender's origin.
+    public var locallyAuthoredAliasIDs: [MediaAliasID]
 
     public init(
         version: Int = currentVersion,
         nextRank: UInt64 = 0,
         intents: [WatchlistIntent] = [],
-        migration: WatchlistMigrationMetadata = .init()
+        migration: WatchlistMigrationMetadata = .init(),
+        locallyAuthoredAliasIDs: [MediaAliasID] = []
     ) {
         self.version = version
         let maximumRank = intents.map(\.rank).max()
@@ -24,6 +27,8 @@ public struct WatchlistIntentStoreState: Codable, Hashable, Sendable {
         self.intents = intents.map { $0.canonicalized() }.sorted {
             $0.aliasID < $1.aliasID
         }
+        self.locallyAuthoredAliasIDs = Set(locallyAuthoredAliasIDs)
+            .intersection(Set(intents.map(\.aliasID))).sorted()
         self.migration = WatchlistMigrationMetadata(
             legacyHomeSeedCompletedAt: migration.legacyHomeSeedCompletedAt,
             legacyPresentationArtworkScrubbedAt:
@@ -33,6 +38,23 @@ public struct WatchlistIntentStoreState: Codable, Hashable, Sendable {
     }
 
     public static let empty = Self()
+
+    private enum CodingKeys: String, CodingKey {
+        case version, nextRank, intents, migration, locallyAuthoredAliasIDs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            version: try container.decode(Int.self, forKey: .version),
+            nextRank: try container.decode(UInt64.self, forKey: .nextRank),
+            intents: try container.decode([WatchlistIntent].self, forKey: .intents),
+            migration: try container.decode(WatchlistMigrationMetadata.self, forKey: .migration),
+            locallyAuthoredAliasIDs: try container.decodeIfPresent(
+                [MediaAliasID].self, forKey: .locallyAuthoredAliasIDs
+            ) ?? []
+        )
+    }
 }
 
 public protocol WatchlistIntentStoring: Sendable {
@@ -78,13 +100,15 @@ public final class AtomicWatchlistIntentStore: WatchlistIntentStoring, @unchecke
         let nextRank: UInt64
         let intents: [WatchlistIntent]
         let migration: WatchlistMigrationMetadata
+        let locallyAuthoredAliasIDs: [MediaAliasID]?
 
         var state: WatchlistIntentStoreState {
             WatchlistIntentStoreState(
                 version: version,
                 nextRank: nextRank,
                 intents: intents,
-                migration: migration
+                migration: migration,
+                locallyAuthoredAliasIDs: locallyAuthoredAliasIDs ?? []
             )
         }
     }
@@ -142,7 +166,8 @@ public final class AtomicWatchlistIntentStore: WatchlistIntentStoring, @unchecke
                 revision: envelope.revision,
                 nextRank: state.nextRank,
                 intents: state.intents,
-                migration: state.migration
+                migration: state.migration,
+                locallyAuthoredAliasIDs: state.locallyAuthoredAliasIDs
             )
             guard let canonicalData = CanonicalJSON.encode(canonicalEnvelope)
             else { throw DurableLocalStateError.malformedPayload }
@@ -160,7 +185,8 @@ public final class AtomicWatchlistIntentStore: WatchlistIntentStoring, @unchecke
                     revision: nextRevision,
                     nextRank: state.nextRank,
                     intents: state.intents,
-                    migration: state.migration
+                    migration: state.migration,
+                    locallyAuthoredAliasIDs: state.locallyAuthoredAliasIDs
                 )
                 guard let rewrittenData = CanonicalJSON.encode(rewritten)
                 else { throw DurableLocalStateError.malformedPayload }
@@ -191,7 +217,8 @@ public final class AtomicWatchlistIntentStore: WatchlistIntentStoring, @unchecke
             version: state.version,
             nextRank: state.nextRank,
             intents: state.intents,
-            migration: state.migration
+            migration: state.migration,
+            locallyAuthoredAliasIDs: state.locallyAuthoredAliasIDs
         )
         let nextRevision = (diskRevision ?? 0) &+ 1
         let envelope = Envelope(
@@ -199,7 +226,8 @@ public final class AtomicWatchlistIntentStore: WatchlistIntentStoring, @unchecke
             revision: nextRevision,
             nextRank: canonical.nextRank,
             intents: canonical.intents,
-            migration: canonical.migration
+            migration: canonical.migration,
+            locallyAuthoredAliasIDs: canonical.locallyAuthoredAliasIDs
         )
         guard let data = CanonicalJSON.encode(envelope) else {
             throw DurableLocalStateError.malformedPayload

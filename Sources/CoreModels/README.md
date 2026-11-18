@@ -87,9 +87,21 @@ checks, not an atomic transaction with either remote service.
 
 - Domain value types: `MediaItem`, `MediaLibrary`, `MediaServer`,
   `UserSession`, `Account`, `Profile`, `MusicTrack`, `Person`, etc.
+- `MediaItem` retains optional confirmed original language, series production
+  status and whole-title catalog season/episode totals. These are independent
+  of local ownership, unwatched counts, schedules and playable audio languages.
 - The dual-provider abstraction: `MediaProvider` protocol, `ProviderKind`,
   `ProviderRegistry` / `ProviderResolving`, `ResolvedAccount`.
 - Cross-cutting UI state: `LoadState`, `AppError`.
+- `ApplicationStorageLifecycle` fences process-wide storage admission before
+  asynchronously closing registered actor-owned stores. Owners register before
+  opening files, reject inactive access, and ignore stale cleanup after resume.
+  Registration is weak, so the registry does not retain retired stores.
+- `PerformanceDiagnostics` owns consent-scoped, bounded operation histories and
+  numeric Home responsiveness windows. Home load/merge/publication retention is
+  independent of HTTP/decode traffic. UI observers must hold a current Home
+  observation token; replacement and opt-out reject late samples. The recorder
+  does not schedule sampling or emit events.
 - `ThemeMusicVolume` persists a bounded 0–1 gain per profile. Legacy named levels
   decode to their original gain; only the old `"off"` token triggers the paired
   background-mode migration, not a new numeric zero.
@@ -97,6 +109,8 @@ checks, not an atomic transaction with either remote service.
   network/storage preferences, not profile settings. Both default to Automatic
   and are excluded from profile transfer. `EngineSessionCache` carries active
   temporary-cache usage and the engine's effective playback-safe budget.
+- `PlaybackSettings.identifySongs` (#351) is a profile preference, on by
+  default; payloads written before it existed decode as on.
 - `LosslessAudioSettingsStore` defaults on and remains device-local across
   profile changes and transfers. The audio bridge reads it for each new load;
   missing source-channel metadata does not downgrade the chosen output mode.
@@ -142,6 +156,12 @@ checks, not an atomic transaction with either remote service.
   uses immutable image identity and placement, never a pixel comparison.
 - Profiles persistence contract: `ProfilePersisting`, `ProfileStore`,
   `ProfilesModel`, plus the Plex Home-user mapping (`PlexHomeUser`).
+- Shared profile migration writes memberships before the roster and retires
+  legacy copies only after every write succeeds. Failed writes retain the legacy
+  roster as the local authority, including edits made before retry. A failed
+  shared read must not be interpreted as an absent household or seed a replacement
+  during bootstrap. The migration journal includes memberships delivered before
+  their profiles and pending clears; reset retires these alongside the roster.
 - Local PIN proof is in-memory and bound to the current verifier and selection.
   `ProfilesModel` clears it whenever the active profile changes, including
   deletion/sync fallbacks. Manual entry to another locked profile requires fresh
@@ -155,12 +175,25 @@ checks, not an atomic transaction with either remote service.
 
 ## Invariants
 
+- New installations prepare `SyncSetupFeatureFlag` before profile bootstrap.
+  iCloud Sync stays off until the onboarding choice; Enable iCloud Sync is the primary
+  action, and Not now persists an opt-out. Pending choices survive restart.
+  Existing profile installations and explicit sync settings retain their behavior.
+  On installations shown the choice, declining also keeps non-Trakt tracker
+  sign-ins device-local instead of adopting or publishing iCloud Keychain items.
+  Existing installations retain their historical tracker sign-in policy.
+  An unreadable installation blocks app startup with Retry, rather than guessing
+  whether consent is needed. No preference is changed until classification succeeds.
 - **No SwiftUI / AVKit / UIKit imports.** This module compiles on Linux so
   pure-logic tests can run there. UI lives in `CoreUI` and feature modules.
 - **Never hold secrets.** Tokens are owned by `FeatureAuth` (Keychain). Types
   here (e.g. `Account`, `Profile`) carry only non-secret metadata.
 - **Provider-agnostic.** No type here may assume Jellyfin- or Plex-specific
   behavior; the only provider seam is `MediaProvider`.
+- Provider-ID lookup preserves alias priority and the first nonempty normalized
+  spelling without rebuilding the whole ID map for each lookup. ASCII keys use
+  a byte-based fast path; other spellings retain the same Unicode normalization.
+  No cross-item cache or metadata truncation is involved.
 - **Collections are server-defined groups, not alternate title sources.**
   Collection identity stays scoped to the owning account and item ID, even when
   two groups share a catalogue collection ID or physical server. Library
@@ -188,8 +221,34 @@ checks, not an atomic transaction with either remote service.
   `CollectionPreviewLoader` shares bounded membership paging with Hero, validates
   page progress and identity, and never treats a selected library as inferred
   membership for returned titles.
+  `HomeContentPager` completes explicit sort/filter inventories with rolling
+  200-item library/collection/playlist requests, with at most three source-page
+  requests running across the entire traversal. A fresh library starts with
+  one fully enriched item to learn continuation before parallel page loading.
+  Each source bounds pending plus buffered lookahead to six pages, consuming
+  responses in cursor order rather than waiting for a whole batch.
+  `HomeRowPage.totalCountHint` and observed terminal pages constrain speculation
+  but never override actual continuation, including after server page caps or
+  visibility filtering. Changed strides drain and discard noncontiguous
+  lookahead before resuming at the actual offset. Home feeds retain sequential
+  60-item requests and ordinary browsing retains its small adaptive pages. Failure or cancellation
+  never commits a partial sorted inventory.
 
 ## Public surface, at a glance
+
+Automatic version and cross-server recommendations share
+`VersionSelectionAssessment`. Plozzigen uses the linked decoder-backed input
+list, not native passthrough eligibility: DTS/TrueHD bridging and software video
+decode do not make a version unsupported. Rich source-local metadata precedes
+flattened facts. Native-only callers can explicitly request the native policy.
+The existing quality weights remain, but the HDR bonus requires a usable range
+hint and is suppressed when AVPlayer reports HDR playback ineligible. Profile 7
+is evaluated as HDR10 under the adapter's base-layer policy; other Dolby Vision
+base layers require explicit compatibility metadata. No extra points promise
+FEL reconstruction, height-channel conversion or lossless passthrough.
+This is a metadata estimate, not a playback/performance or display-format test.
+Remembered/explicit choices, source locality/provider precedence, displayed
+file-size ordering and provider negotiation remain independent and unchanged.
 
 Technical badges use the same stream classifier for detail heroes, version
 pickers, and cached share facts. Confirmed Dolby Vision compatibility is one
@@ -313,6 +372,15 @@ contracts before they can become templates in this editor. Do not overload an
 existing `HomeRowID` to represent independent instances or change provider IDs
 to make them unique in the UI.
 
+`LibraryInventoryStore` is a bounded, local names/IDs cache for already authorized
+server viewers, separate from profile choices and navigation's per-profile
+snapshot. Home and Settings warm it through live library discovery. It never
+resolves credentials or authorizes a profile; callers supply currently resolved
+accounts. Profile-local providers, including downloaded-media projections, bypass
+both cache reads and writes so they cannot replace the server's full inventory.
+See [Libraries behavior](../FeatureSettings/README.md#responsibility) for
+refresh, error, and storage limits.
+
 ## Profile deletion and namespace ownership
 
 Transferable preferences use byte-stable sync values. JSON object keys and
@@ -334,6 +402,12 @@ a persisted, non-publishing placeholder until a replacement arrives or is added;
 `profilesForSync` excludes it so a restart cannot recreate the deleted record.
 Live TV and media-state captures also exclude `pendingSyncedDeletionProfileIDs`,
 including preserved fallback records, without erasing the temporary local data.
+Live TV's persisted profile-removal markers apply only while the profile remains
+absent from the current roster. A restored profile supersedes an older marker in
+both portable state and playlist-source sync; merely opening an unconfigured
+device must not delete its peer's sources. Pending-deletion placeholders remain
+excluded. Profile removal callers update the roster in the same synchronous
+lifecycle operation as recording the removal.
 The revisioned household Parental PIN moves to the first surviving profile rather
 than disappearing with its former anchor.
 
@@ -438,6 +512,27 @@ Settings choice; `rememberVersionPerSeries` defaults on. Legacy `rememberChoice`
 decodes as `automatic`. `VersionPreferenceStore` reads the live playback policy
 from its own namespace, so all existing request/detail resolvers honor the toggle
 without another unscoped preference. Automatic resolution never writes a memory.
+`serverOrder` selects the first non-external version in the selected server's
+fresh inventory, without quality ranking or remembered movie/series choices.
+Explicit file selections still win. The opened item's files precede discovered
+same-server editions; other accounts remain separate. Manual picker ordering and
+download recommendations are unchanged.
+Transient `explicitVersionSelection` distinguishes a manual file choice from
+`explicitSourceSelection`, which can also mean a pinned server/library/edition.
+Source-only pins must not freeze a recommendation across inventory refreshes or
+the first-use mode choice.
+
+`SeriesTrackPreferenceStore` retains its existing profile-scoped storage key for
+compatibility, including profile transfer. It stores series audio/subtitles,
+movie audio, and explicit movie/series `VideoZoomPreference` choices. Zoom is a
+typed mode plus a clamped Custom percentage, never a detected picture rectangle.
+Missing zoom fields in older records leave track memory intact; automatic defaults
+and temporary capability fallbacks are not saved. Invalid stored data is logged
+and preserved rather than overwritten by a later preference write.
+Normal is the initial zoom on all platforms. Unversioned Auto-crop choices decode
+as Normal without changing audio/subtitle memory, other modes or framing parameters.
+Newly encoded zoom preferences carry a schema version so explicit Auto-crop opt-ins
+survive subsequent loads and profile transfer.
 
 ## Artwork and profile presentation
 

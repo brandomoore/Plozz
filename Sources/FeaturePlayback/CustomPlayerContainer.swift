@@ -20,7 +20,10 @@ struct PlayerActions {
     /// Pick the second (dual) subtitle track by option id, or `offID` for off.
     var selectSecondarySubtitle: (Int) -> Void = { _ in }
     var setPlaybackSpeed: (Double) -> Void = { _ in }
+    var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
+    var setVideoUpscaling: (VideoUpscaling) -> Void = { _ in }
     var setAudioDelay: (TimeInterval) -> Void = { _ in }
+    var setAudioDelayLive: (TimeInterval) -> Bool = { _ in false }
     var setSubtitleDelay: (TimeInterval) -> Void = { _ in }
     var setDialogEnhance: (Bool) -> Void = { _ in }
     /// Apply an edited subtitle appearance (in-player Style screen), for live
@@ -154,7 +157,7 @@ struct VideoSurfaceContainer: UIViewRepresentable {
     func makeUIView(context: Context) -> VideoPresentationView {
         let root = VideoPresentationView(frame: .zero)
         root.subtitleViewport = subtitleViewport
-        root.attach(engine)
+        root.attach(engine, deferringOffscreenAttachment: true)
         updateReflection(root)
         root.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea,
                     needsPictureSubtitles: needsPictureSubtitles)
@@ -163,7 +166,7 @@ struct VideoSurfaceContainer: UIViewRepresentable {
 
     func updateUIView(_ uiView: VideoPresentationView, context: Context) {
         uiView.subtitleViewport = subtitleViewport
-        uiView.attach(engine)
+        uiView.attach(engine, deferringOffscreenAttachment: true)
         updateReflection(uiView)
         uiView.update(zoom: zoom, aspectRatio: aspectRatio, fitsInsideSafeArea: fitsInsideSafeArea,
                       needsPictureSubtitles: needsPictureSubtitles)
@@ -414,6 +417,9 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         startSubtitleClock()
 #if os(tvOS)
         remoteTouchInput.start()
+        if controlBarHost != nil, model.controlsVisible {
+            scheduleAutoHide()
+        }
 #endif
     }
 
@@ -421,6 +427,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         super.viewDidDisappear(animated)
         refreshTask?.cancel()
         refreshTask = nil
+        cancelAutoHide()
         stopRemoteScan()
         cancelScrubCommit()
         resetSwipePreviewCadence()
@@ -570,6 +577,14 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// interaction is off so indirect-touch scrub pans flow to the surface and it
     /// can't steal focus.
     func attachControls(themePalette: ThemePaletteBox) {
+        // A disc menu can replace this host while retaining the controls model.
+        // Focus and panel state belong to this new host, not the retired one.
+        model.controlBarVisible = false
+        model.isPanelOpen = false
+        model.controlBar.focusArmed = false
+        model.controlBar.settled = false
+        model.controlBar.infoCardOpen = false
+        model.controlBar.episodeBrowserOpen = false
         // The remote's Play/Pause reaches the view model as a Now Playing command
         // while video plays; this is where it becomes the same input as a press.
         model.remotePlayPause.onSystemCommand = { [weak self] in
@@ -588,7 +603,10 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             selectSubtitle: { [weak self] in self?.actions.selectSubtitle($0) },
             selectSecondarySubtitle: { [weak self] in self?.actions.selectSecondarySubtitle($0) },
             setPlaybackSpeed: { [weak self] in self?.actions.setPlaybackSpeed($0) },
+            setDolbyVisionFELConversion: { [weak self] in self?.actions.setDolbyVisionFELConversion($0) },
+            setVideoUpscaling: { [weak self] in self?.actions.setVideoUpscaling($0) },
             setAudioDelay: { [weak self] in self?.actions.setAudioDelay($0) },
+            setAudioDelayLive: { [weak self] in self?.actions.setAudioDelayLive($0) ?? false },
             setSubtitleDelay: { [weak self] in self?.actions.setSubtitleDelay($0) },
             setDialogEnhance: { [weak self] in self?.actions.setDialogEnhance($0) },
             setSubtitleStyle: { [weak self] in self?.actions.setSubtitleStyle($0) },
@@ -597,7 +615,13 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             downloadRemoteSubtitle: { [weak self] in self?.actions.downloadRemoteSubtitle($0) },
             playNextEpisode: { [weak self] in self?.actions.playNextEpisode() },
             playPreviousEpisode: { [weak self] in self?.actions.playPreviousEpisode() },
-            restart: { [weak self] in self?.actions.restart() }
+            restart: { [weak self] in self?.actions.restart() },
+            restoreInfoFocus: { [weak self] in
+                guard let self, self.focusContext == .controlBar else { return }
+                self.model.controlBar.entry = .info
+                self.model.controlBar.settled = false
+                self.requestControlBarFocusUpdate()
+            }
         )
         let host = UIHostingController(rootView: themePalette.makeControls(model, actions, exitToSurface))
         host.view.backgroundColor = .clear

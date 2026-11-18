@@ -3,6 +3,58 @@ import XCTest
 
 @MainActor
 final class PlayerLayoutInteractionTests: XCTestCase {
+    func testContinueWatchingArtworkAndPaddingSelectTheCard() {
+        assertContinueWatchingCardTaps(options: [])
+    }
+
+    func testContinueWatchingBorderlessHiddenLabelsStillSelectTheCard() {
+        assertContinueWatchingCardTaps(options: ["--cw-borderless", "--cw-hide-labels"])
+    }
+
+    private func assertContinueWatchingCardTaps(options: [String]) {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+            for artwork in [[], ["--cw-thumbnail"], ["--cw-portrait-artwork"]] {
+                XCUIDevice.shared.orientation = orientation
+                app.launchArguments = ["--player-layout-fixture", "--continue-watching-player-fixture"] + options + artwork
+                app.launch()
+                wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    (app.frame.width > app.frame.height) == orientation.isLandscape
+                }, object: nil)], timeout: 10)
+                let tab = app.buttons["player-tab-continue-watching"]
+                XCTAssertTrue(tab.waitForExistence(timeout: 10), app.debugDescription)
+                tab.tap()
+                let cards = app.otherElements.matching(NSPredicate(
+                    format: "identifier BEGINSWITH %@", "player-continue-watching-"
+                ))
+                XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+                var selections = 0
+                for (index, provider) in ["plex", "silo"].enumerated() {
+                    let card = cards.element(boundBy: index)
+                    XCTAssertTrue(card.isHittable, app.debugDescription)
+                    let vertical = card.frame.width > card.frame.height * 3
+                    let points: [CGVector] = vertical
+                        ? [.init(dx: 0.08, dy: 0.5), .init(dx: 0.9, dy: 0.5)]
+                        : [.init(dx: 0.5, dy: 0.25), .init(dx: 0.5, dy: 0.9), .init(dx: 0.02, dy: 0.5)]
+                    for point in points {
+                        card.coordinate(withNormalizedOffset: point).tap()
+                        selections += 1
+                        XCTAssertTrue(app.staticTexts["player-cw-selection"].wait(
+                            for: \.label, toEqual: "\(provider)-continue:\(selections)", timeout: 3
+                        ), "The card must own taps on its artwork and padding: \(orientation), \(artwork), \(options), \(point).")
+                        XCTAssertTrue(card.exists, "A card tap must not fall through and dismiss the player controls.")
+                    }
+                }
+                app.terminate()
+            }
+        }
+    }
+
     func testChapterOpeningDoesNotFadeUntilARealScrollAndResetsOnReopen() throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
         XCUIDevice.shared.orientation = .portrait

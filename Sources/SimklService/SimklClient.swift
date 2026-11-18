@@ -76,7 +76,8 @@ struct SimklClient: Sendable {
             method: .get,
             path: "/oauth/pin",
             queryItems: [URLQueryItem(name: "client_id", value: config.clientID ?? "")],
-            headers: headers()
+            headers: headers(),
+            allowsRequestCoalescing: false
         )
         return try await decode(SimklDeviceCode.self, endpoint: endpoint)
     }
@@ -88,7 +89,8 @@ struct SimklClient: Sendable {
             method: .get,
             path: "/oauth/pin/\(userCode)",
             queryItems: [URLQueryItem(name: "client_id", value: config.clientID ?? "")],
-            headers: headers()
+            headers: headers(),
+            allowsRequestCoalescing: false
         )
         let (data, _) = try await send(endpoint)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]

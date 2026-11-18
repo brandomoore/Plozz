@@ -16,9 +16,8 @@ public struct CrossSourceSelection: Sendable, Hashable {
 /// Picks the best server+version to play **by default** for a merged title.
 ///
 /// It extends the single-server smart default
-/// (``Swift/Array/recommendedSelection(for:)``) across servers: each source's own
-/// best version is evaluated for this device, then ranked using conservative
-/// native-profile compatibility. This is not the resolved delivery mode:
+/// (``Swift/Array/recommendedSelection(for:engine:)``) across servers: each
+/// source's best version is evaluated for this device and engine, not resolved delivery:
 /// providers and Plozzigen may play/remux/decode more than the flattened facts
 /// can prove. Every other server remains available as an explicit pick/fallback.
 ///
@@ -32,11 +31,10 @@ public struct CrossSourceSelection: Sendable, Hashable {
 ///    unclassifiable host never loses to a known-remote server.
 /// 1. **Managed server before file share** — within the same locality tier,
 ///    Plex/Emby/Jellyfin provide the richer and more reliable series page.
-/// 2. **Known native compatibility** — a version whose flattened facts fit the
-///    native profile beats one that does not. This is only an ordering hint.
+/// 2. **Known engine input** — decoder-backed inputs beat unconfirmed ones.
 /// 3. **Known beats unknown** — a source whose versions are loaded beats one
 ///    whose file list hasn't been fetched yet.
-/// 4. **Higher quality** — `qualityScore` (resolution → HDR → bitrate).
+/// 4. **Higher estimated quality** — engine-aware score, including usable HDR.
 /// 5. **Primary first** — stable tie-break so a file mirrored identically on two
 ///    servers deterministically resolves to the primary source.
 public enum CrossSourceSelector {
@@ -45,7 +43,7 @@ public enum CrossSourceSelector {
         var source: MediaSourceRef
         var version: MediaVersion?
         var localityRank: Int
-        var nativeCompatible: Bool
+        var supportedInput: Bool
         var hasVersions: Bool
         var qualityScore: Int
         var isPreferred: Bool
@@ -58,15 +56,16 @@ public enum CrossSourceSelector {
     /// `item.versions.recommendedSelection(for:)`).
     public static func bestSelection(
         for item: MediaItem,
-        capabilities: MediaCapabilities
+        capabilities: MediaCapabilities,
+        engine: PlaybackEngineKind = .plozzigen
     ) -> CrossSourceSelection? {
-        bestSelection(from: item.sources, capabilities: capabilities)
+        bestSelection(from: item.sources, capabilities: capabilities, engine: engine)
     }
 
     /// The default server+version to play across `sources`, or `nil` when empty.
     ///
     /// `preferring` is a **soft** origin/library hint used only as the *last*
-    /// tie-break (after locality, provider tier, Direct Play, known versions, and
+    /// tie-break (after locality, provider tier, engine input, known versions, and
     /// quality): when the item was opened from a particular server's library tile,
     /// that server wins **only** among otherwise-equal candidates. It never overrides
     /// locality — a local copy still beats a remote/Tailscale origin — so the
@@ -76,7 +75,8 @@ public enum CrossSourceSelector {
         from sources: [MediaSourceRef],
         capabilities: MediaCapabilities,
         preferring preferredAccountID: String? = nil,
-        excluding excludedAccountIDs: Set<String> = []
+        excluding excludedAccountIDs: Set<String> = [],
+        engine: PlaybackEngineKind = .plozzigen
     ) -> CrossSourceSelection? {
         // Drop sources on servers already attempted (failover). Done first so an
         // empty remainder returns `nil` (true exhaustion) rather than re-selecting
@@ -89,15 +89,16 @@ public enum CrossSourceSelector {
         let candidates = pool.enumerated().map { offset, source -> Candidate in
             let localityRank = (source.locality ?? .unknown).rank
             let isPreferred = preferredAccountID != nil && source.accountID == preferredAccountID
-            if let best = source.versions.recommendedSelection(for: capabilities) {
+            if let best = source.versions.recommendedSelection(for: capabilities, engine: engine) {
+                let assessment = best.selectionAssessment(for: capabilities, engine: engine)
                 return Candidate(
                     order: offset,
                     source: source,
                     version: best,
                     localityRank: localityRank,
-                    nativeCompatible: best.compatibility(with: capabilities) == .directPlay,
+                    supportedInput: assessment.hasSupportedInput,
                     hasVersions: true,
-                    qualityScore: best.qualityScore,
+                    qualityScore: assessment.qualityScore,
                     isPreferred: isPreferred,
                     richnessRank: source.providerKind?.metadataRichnessRank ?? 0
                 )
@@ -107,7 +108,7 @@ public enum CrossSourceSelector {
                 source: source,
                 version: nil,
                 localityRank: localityRank,
-                nativeCompatible: false,
+                supportedInput: false,
                 hasVersions: false,
                 qualityScore: Int.min,
                 isPreferred: isPreferred,
@@ -121,8 +122,8 @@ public enum CrossSourceSelector {
             }
             if lhs.localityRank != rhs.localityRank { return lhs.localityRank < rhs.localityRank }
             if lhs.richnessRank != rhs.richnessRank { return lhs.richnessRank < rhs.richnessRank }
-            if lhs.nativeCompatible != rhs.nativeCompatible {
-                return !lhs.nativeCompatible && rhs.nativeCompatible
+            if lhs.supportedInput != rhs.supportedInput {
+                return !lhs.supportedInput && rhs.supportedInput
             }
             if lhs.hasVersions != rhs.hasVersions { return !lhs.hasVersions && rhs.hasVersions }
             if lhs.qualityScore != rhs.qualityScore { return lhs.qualityScore < rhs.qualityScore }

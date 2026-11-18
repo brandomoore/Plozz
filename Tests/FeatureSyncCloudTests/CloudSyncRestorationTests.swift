@@ -65,10 +65,59 @@ final class CloudSyncRestorationTests: XCTestCase {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let file = folder.appendingPathComponent("primary.json")
         let service = CloudConfigSyncService(configuration(file))
-        await service.activate()
+        let fetched = await service.activate()
+        XCTAssertFalse(fetched, "A disabled service must not report a completed initial restore.")
         let restored = await service.hasRestoredLocalState
         XCTAssertFalse(restored)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        let initialFetched = await service.activate(initialSetupOnly: true)
+        XCTAssertFalse(initialFetched)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    func testInitialSetupFetchIncludesRoutingEssentialsButNotOptionalContent() async {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let extras: [CloudSyncSchemaDescriptor] = [
+            .mediaStateV1, .trackerTokensV1, .providerCredentialsV1, .liveTVStateV1, .liveTVSourcesV1
+        ]
+        let service = CloudConfigSyncService(configuration(folder.appendingPathComponent("config.json")), channels:
+            extras.map { schema in
+                .init(schema: schema, stateFileURL: folder.appendingPathComponent(schema.zoneName),
+                      captureRecords: { $0 }, applyRecords: { _ in })
+            })
+        let zones = await service.initialSetupZoneIDs
+        XCTAssertEqual(Set(zones), Set([
+            CloudSyncSchemaDescriptor.configV3.zoneID, CloudSyncSchemaDescriptor.providerCredentialsV1.zoneID,
+            CloudSyncSchemaDescriptor.liveTVSourcesV1.zoneID
+        ]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        let configActivity = await service.initialSetupActivity(for: CloudSyncSchemaDescriptor.configV3.zoneID)
+        let serverActivity = await service.initialSetupActivity(for: CloudSyncSchemaDescriptor.providerCredentialsV1.zoneID)
+        let sourceActivity = await service.initialSetupActivity(for: CloudSyncSchemaDescriptor.liveTVSourcesV1.zoneID)
+        let guideActivity = await service.initialSetupActivity(for: CloudSyncSchemaDescriptor.liveTVStateV1.zoneID)
+        XCTAssertEqual(configActivity, .profilesAndSettings)
+        XCTAssertEqual(serverActivity, .servers)
+        XCTAssertEqual(sourceActivity, .liveTVSources)
+        XCTAssertNil(guideActivity, "Guide/channel content is not an initial setup stage")
+    }
+
+    func testConcurrentFetchesKeepTheCurrentActivityUntilItsActualCompletion() {
+        var progress = CloudConfigSyncService.InitialSetupFetchProgress()
+        let profileZone = CloudSyncSchemaDescriptor.configV3.zoneID
+        let sourceZone = CloudSyncSchemaDescriptor.liveTVSourcesV1.zoneID
+        let serverZone = CloudSyncSchemaDescriptor.providerCredentialsV1.zoneID
+        XCTAssertNil(progress.activity)
+        progress.begin(profileZone, activity: .profilesAndSettings)
+        progress.begin(sourceZone, activity: .liveTVSources)
+        progress.begin(serverZone, activity: .servers)
+        XCTAssertEqual(progress.activity, .profilesAndSettings)
+        progress.end(serverZone)
+        XCTAssertEqual(progress.activity, .profilesAndSettings, "Other completions must not churn the visible status")
+        progress.end(profileZone)
+        XCTAssertEqual(progress.activity, .liveTVSources, "Show the actual outstanding source fetch")
+        progress.begin(sourceZone, activity: .liveTVSources)
+        progress.end(sourceZone)
+        XCTAssertNil(progress.activity, "Duplicate starts must not leave a phantom loading stage")
     }
 
     func testReloadOfAnInactiveServiceReportsUnavailableWithoutTouchingStorage() async {

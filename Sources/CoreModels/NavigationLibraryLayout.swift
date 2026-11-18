@@ -21,6 +21,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     public static let homeKey = "plozz.navigation.home"
     public static let searchKey = "plozz.navigation.search"
     public static let watchlistKey = "plozz.navigation.watchlist"
+    public static let upcomingKey = "plozz.navigation.upcoming"
     public static let discoverKey = "plozz.navigation.discover"
     public static let liveTVKey = "plozz.navigation.liveTV"
     public static let musicKey = "plozz.navigation.music"
@@ -45,6 +46,17 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     /// Explicit Show choices, distinct from destinations that happen to be
     /// useful today. Automatic visibility is never persisted in this set.
     public var shownKeys: Set<String>
+    public private(set) var customNames: [String: String] = [:]
+
+    public func customName(for key: String, homeVisibility: HomeLibraryVisibility) -> String? {
+        if key == Self.watchlistKey { return homeVisibility.homeRowName(for: .global(.watchlist)) }
+        return customNames[key]
+    }
+
+    public mutating func setCustomName(_ name: String, for key: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        customNames[key] = trimmed.isEmpty ? nil : trimmed
+    }
     /// Only Settings has a fixed trailing position in horizontal navigation.
     public private(set) var settingsWasMoved: Bool
 
@@ -59,7 +71,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case order, hiddenKeys, shownKeys, settingsWasMoved
+        case order, hiddenKeys, shownKeys, settingsWasMoved, customNames
     }
 
     public init(from decoder: any Decoder) throws {
@@ -73,6 +85,11 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
         shownKeys.subtract(hiddenKeys)
         settingsWasMoved = try values.decodeIfPresent(Bool.self, forKey: .settingsWasMoved)
             ?? Self.legacySettingsWasMoved(order, hiddenKeys: hiddenKeys)
+        customNames = (try values.decodeIfPresent([String: String].self, forKey: .customNames) ?? [:])
+            .compactMapValues {
+                let name = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                return name.isEmpty ? nil : name
+            }
     }
 
     public var pinsSettingsInTopBar: Bool {
@@ -230,6 +247,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
             homeKey,
             searchKey,
             watchlistKey,
+            upcomingKey,
             discoverKey,
             musicKey,
             downloadsKey,

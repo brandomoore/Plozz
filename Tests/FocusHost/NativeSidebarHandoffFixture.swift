@@ -9,7 +9,9 @@ struct NativeSidebarHandoffFixture: View {
     @State private var model = NativeSidebarHandoffModel()
 
     var body: some View {
-        TabView(selection: Binding(get: { model.selection }, set: { model.select($0) })) {
+        NativeSidebarNavigation(
+            selection: model.selection, handoff: model.handoff,
+            content: TabView(selection: Binding(get: { model.selection }, set: { model.select($0) })) {
             Tab("Home", systemImage: "house", value: NavigationRailDestination.home) {
                 NativeSidebarFocusDestination(
                     destination: .home, selection: model.selection, handoff: model.handoff,
@@ -25,6 +27,7 @@ struct NativeSidebarHandoffFixture: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .tvNavigationExitProtection(isEnabled: true)
+        )
         .onPlayPauseCommand {
             model.expected = model.selection == .home ? .settings : .home
             model.prematureFocusCount = 0

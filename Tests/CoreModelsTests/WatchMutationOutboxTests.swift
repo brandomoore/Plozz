@@ -24,6 +24,7 @@ private final class FakeWatchApplier: WatchMutationApplying, @unchecked Sendable
 
     /// Accounts whose writes currently fail (simulating an offline / asleep server).
     var failingAccounts: Set<String> = []
+    var failingResumeAccounts: Set<String> = []
     var failure: AppError = .serverUnreachable
     /// When true, Trakt mirroring throws (simulating an offline tracker).
     var traktFails = false
@@ -36,7 +37,9 @@ private final class FakeWatchApplier: WatchMutationApplying, @unchecked Sendable
     }
 
     func setResumePosition(_ seconds: TimeInterval, on target: WatchMutationTarget, capturedAt: Date) async throws {
-        if failingAccounts.contains(target.accountID) { throw failure }
+        if failingAccounts.contains(target.accountID) || failingResumeAccounts.contains(target.accountID) {
+            throw failure
+        }
         lock.lock(); resumeWrites.append(.init(seconds: seconds, accountID: target.accountID, itemID: target.itemID)); lock.unlock()
     }
 
@@ -85,6 +88,42 @@ private final class WatchOutboxTestClock: @unchecked Sendable {
 }
 
 final class WatchOutboxRetryTests: XCTestCase {
+    func testUnwatchedResetRetriesUntilBothCompletionAndProgressAreCleared() async throws {
+        let clock = WatchOutboxTestClock()
+        let applier = FakeWatchApplier()
+        applier.failingResumeAccounts = ["plex"]
+        let store = InMemoryWatchMutationStore()
+        let reconciler = WatchStateReconciler(store: store, applier: applier, now: { clock.now })
+        let intent = WatchMutation(
+            capturedAt: clock.now, canonicalMediaID: "movie",
+            played: false, clearResume: true,
+            targets: [target("plex", "px"), target("jellyfin", "jf")], kind: .movie
+        )
+        await reconciler.enqueue(intent)
+        await reconciler.drain()
+        let pending = await reconciler.snapshot().pending
+        XCTAssertEqual(pending.first?.targets.map(\.id), ["plex:px"])
+        XCTAssertEqual(Set(applier.playedWrites.map(\.accountID)), ["plex", "jellyfin"])
+        XCTAssertTrue(applier.playedWrites.allSatisfy { !$0.played })
+        XCTAssertEqual(applier.resumeWrites, [.init(seconds: 0, accountID: "jellyfin", itemID: "jf")])
+        let replay = try XCTUnwrap(MediaItemMutation(watchMutation: XCTUnwrap(pending.first)))
+        XCTAssertEqual(replay.scopedItemIDs, ["plex:px", "jellyfin:jf"])
+        XCTAssertEqual(replay.resumePosition, 0)
+        XCTAssertEqual(replay.playedPercentage, 0)
+
+        let restored = WatchStateReconciler(store: store, applier: applier, now: { clock.now })
+        applier.failingResumeAccounts = []
+        clock.advance(30)
+        await restored.drain()
+        let final = await restored.snapshot()
+        XCTAssertTrue(final.pending.isEmpty)
+        XCTAssertEqual(applier.resumeWrites.last, .init(seconds: 0, accountID: "plex", itemID: "px"))
+        XCTAssertTrue(applier.traktScrobbles.isEmpty)
+        XCTAssertTrue(applier.simklScrobbles.isEmpty)
+        XCTAssertTrue(applier.anilistScrobbles.isEmpty)
+        XCTAssertTrue(applier.malScrobbles.isEmpty)
+    }
+
     func testThreeRejectedTargetsDoNotStormDuringTenMinutesOfFrequentDrains() async throws {
         let clock = WatchOutboxTestClock()
         let applier = FakeWatchApplier()
@@ -659,6 +698,27 @@ final class WatchOutboxColdStartTests: XCTestCase {
         applier.failingAccounts = []
         await reconciler.drain()
         XCTAssertEqual(confirmations.value, 1)
+    }
+
+    func testFinalPlaybackAcknowledgesDurableIntentWithoutClaimingDelivery() async {
+        let confirmations = PersistenceFailureCounter()
+        let applier = FakeWatchApplier()
+        applier.failingAccounts = ["plex"]
+        let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier)
+        let mutation = playedMutation(capturedAt: Date(), targets: [target("plex", "p1")])
+        await reconciler.beginLiveSession(accountID: "plex", itemID: "p1")
+        await reconciler.finishLiveSession(accountID: "plex", itemID: "p1", mutation: mutation) {
+            confirmations.increment()
+        }
+        XCTAssertEqual(confirmations.value, 1)
+        let pending = await reconciler.pendingCount
+        XCTAssertEqual(pending, 1)
+        XCTAssertTrue(applier.playedWrites.isEmpty)
+        let failedStore = WatchStateReconciler(store: FailingWatchMutationStore(), applier: applier)
+        await failedStore.finishLiveSession(accountID: "plex", itemID: "p1", mutation: mutation) {
+            confirmations.increment()
+        }
+        XCTAssertEqual(confirmations.value, 1, "A failed save cannot update a local download as acknowledged.")
     }
 
     /// A new user's very first watch must enqueue and converge end-to-end.

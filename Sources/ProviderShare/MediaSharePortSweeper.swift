@@ -169,7 +169,11 @@ public struct MediaSharePortSweeper: Sendable {
     /// Returns the doors found on `host` across the given specs. A port equal to
     /// the transport default is reported with `port == nil` (implicit).
     public func sweep(host: String, specs: [TransportSweepSpec]) async -> [DiscoveredMediaShareBox.Door] {
-        await withTaskGroup(of: DiscoveredMediaShareBox.Door?.self) { group in
+        guard !OfflineMode.shared.isEnabled else {
+            PlozzLog.networking.info("Share probing deferred in Offline Mode")
+            return []
+        }
+        return await withTaskGroup(of: DiscoveredMediaShareBox.Door?.self) { group in
             for spec in specs {
                 for target in spec.targets {
                     group.addTask { [probe, timeout] in
@@ -212,6 +216,7 @@ public struct ProtocolServiceProbe: MediaShareServiceProbing {
         target: TransportSweepTarget,
         timeout: TimeInterval
     ) async -> Bool {
+        guard !OfflineMode.shared.isEnabled else { return false }
         switch target.probe {
         case .webDAVHTTP:
             return await confirmsWebDAV(
@@ -267,7 +272,7 @@ public struct ProtocolServiceProbe: MediaShareServiceProbing {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = timeout
         config.timeoutIntervalForResource = timeout
-        let session = URLSession(
+        let session = OfflineNetworkSession.make(
             configuration: config,
             delegate: delegate,
             delegateQueue: nil

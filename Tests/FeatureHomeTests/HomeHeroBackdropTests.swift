@@ -10,6 +10,64 @@ import CoreUI
 
 @MainActor
 final class HomeHeroBackdropTests: XCTestCase {
+    func testCachedOnlineBackdropMissDoesNotHideServerLandscape() async throws {
+        let server = try XCTUnwrap(URL(string: "https://library.example.test/Images/Backdrop"))
+        let poster = try XCTUnwrap(URL(string: "https://metadata.example.test/poster.jpg"))
+        let item = MediaItem(
+            id: "server-movie", title: "Movie", kind: .movie,
+            backdropURL: server, heroBackdropURL: server, providerIDs: ["Tmdb": "42"]
+        )
+        let settings = CarouselArtworkProviderSettings(.init(orderMode: .custom, enabledOrder: ["tvdb", "tmdb"]))
+        let cache = MetadataDiskCache(directory: nil)
+        for provider in [MetadataSource.tvdb, .tmdb] {
+            for kind in [ArtworkKind.hero, .poster] {
+                await cache.store(kind == .poster ? poster : nil, for: ArtworkRouter.providerCacheKey(
+                    query: MetadataQuery(item), kind: kind, source: provider
+                ))
+            }
+        }
+        let router = ArtworkRouter(
+            cache: cache,
+            enrichmentBaseline: .init(order: [.tvdb, .tmdb], priority: .init(rules: [])),
+            settingsStore: settings
+        )
+        let landscape = image(.blue)
+        let portrait = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 30)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 20, height: 30))
+        }
+        let fallback = await router.heroArtworkURL(for: item, placement: .homeHero)
+        XCTAssertEqual(fallback, poster, "Reproduce the persisted missing-backdrop result, not a fresh lookup.")
+        let policy = ArtworkPresentationPolicy(area: .home, settings: .init(preference: .online))
+        for prefersLandscape in [false, true] {
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: HomeHeroArtwork.backdropReferences(for: item, policy: policy),
+                variant: .heroPreview, maxAspectRatio: HeroBackdropArtworkPolicy.maxAspectRatio,
+                prefersLandscape: prefersLandscape,
+                asyncOnlineURL: { await router.heroArtworkURL(for: item, placement: .homeHero) },
+                prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                imageLoader: { $0 == .remote(server) ? landscape : portrait }
+            )
+            XCTAssertEqual(result?.reference, .remote(prefersLandscape ? server : poster))
+            XCTAssertTrue(result?.image === (prefersLandscape ? landscape : portrait))
+        }
+    }
+
+    func testCachedPortraitDoesNotBypassLandscapeResolution() async {
+        let portrait = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 30)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 20, height: 30))
+        }
+        var resolverCalls = 0
+        _ = await HeroBackdropArtworkPolicy.firstPaint(
+            references: [.remote(URL(string: "https://example.test/poster.jpg")!)],
+            allowsCachedLibraryArtwork: true,
+            cachedImage: { _, _ in portrait },
+            resolve: { resolverCalls += 1; return nil }
+        )
+        XCTAssertEqual(resolverCalls, 1, "Cached posters cannot skip the remaining backdrop candidates.")
+    }
+
     func testBrowseHostKeepsRestingArtworkAtTheScreenTop() async throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 180))
         defer { window.isHidden = true; window.rootViewController = nil }

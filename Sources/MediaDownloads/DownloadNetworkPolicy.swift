@@ -24,9 +24,7 @@ public struct DownloadNetworkConditions: Sendable, Equatable {
     )
 }
 
-/// Per-profile, data-driven download policy. Ships a sensible default (Wi‑Fi‑only,
-/// original quality) but every knob is a value flip so the future UI / settings
-/// can change it without touching the engine.
+/// Per-profile network, storage and quality preferences for new downloads.
 public struct DownloadNetworkPolicy: Sendable, Equatable, Codable {
     /// Allow downloading over cellular/expensive paths. Default `false` = the
     /// familiar "Download over Wi‑Fi only" behavior.
@@ -45,10 +43,6 @@ public struct DownloadNetworkPolicy: Sendable, Equatable, Codable {
     public var maximumBytesPerSecond: Int64?
     /// What capped managed downloads do when iOS suspends the app.
     public var cappedBackgroundBehavior: CappedDownloadBackgroundBehavior
-    /// Preserve every alternate audio rendition when the server exposes them.
-    public var includesAllAudioTracks: Bool
-    /// Preserve downloadable text-subtitle renditions for constrained copies.
-    public var includesTextSubtitleTracks: Bool
 
     public init(
         allowsExpensiveNetwork: Bool = false,
@@ -57,9 +51,7 @@ public struct DownloadNetworkPolicy: Sendable, Equatable, Codable {
         storageBudgetBytes: Int64? = nil,
         maxConcurrentDownloads: Int = 1,
         maximumBytesPerSecond: Int64? = nil,
-        cappedBackgroundBehavior: CappedDownloadBackgroundBehavior = .pause,
-        includesAllAudioTracks: Bool = false,
-        includesTextSubtitleTracks: Bool = true
+        cappedBackgroundBehavior: CappedDownloadBackgroundBehavior = .pause
     ) {
         self.allowsExpensiveNetwork = allowsExpensiveNetwork
         self.pausesOnConstrainedNetwork = pausesOnConstrainedNetwork
@@ -70,8 +62,6 @@ public struct DownloadNetworkPolicy: Sendable, Equatable, Codable {
             $0 > 0 ? $0 : nil
         }
         self.cappedBackgroundBehavior = cappedBackgroundBehavior
-        self.includesAllAudioTracks = includesAllAudioTracks
-        self.includesTextSubtitleTracks = includesTextSubtitleTracks
     }
 
     public static let `default` = DownloadNetworkPolicy()
@@ -92,8 +82,6 @@ public struct DownloadNetworkPolicy: Sendable, Equatable, Codable {
         case maxConcurrentDownloads
         case maximumBytesPerSecond
         case cappedBackgroundBehavior
-        case includesAllAudioTracks
-        case includesTextSubtitleTracks
     }
 
     public init(from decoder: any Decoder) throws {
@@ -126,15 +114,7 @@ public struct DownloadNetworkPolicy: Sendable, Equatable, Codable {
             cappedBackgroundBehavior: try container.decodeIfPresent(
                 CappedDownloadBackgroundBehavior.self,
                 forKey: .cappedBackgroundBehavior
-            ) ?? .pause,
-            includesAllAudioTracks: try container.decodeIfPresent(
-                Bool.self,
-                forKey: .includesAllAudioTracks
-            ) ?? false,
-            includesTextSubtitleTracks: try container.decodeIfPresent(
-                Bool.self,
-                forKey: .includesTextSubtitleTracks
-            ) ?? true
+            ) ?? .pause
         )
     }
 }

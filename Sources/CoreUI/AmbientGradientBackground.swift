@@ -82,7 +82,8 @@ public struct AmbientGradientBackground: View {
 
     static func meshColors(tint: [Color]?, palette: ThemePalette, tintSaturation: Double = 1) -> [Color] {
         let stock = palette.isLight ? light : dark
-        let brightnessScale = palette.isLight ? 1.0 : (palette == .pureBlack ? 0.32 : 0.88)
+        let brightnessScale = (palette.isLight ? 1.0 : (palette == .pureBlack ? 0.32 : 0.88))
+            * palette.backgroundGradientIntensity
         return stock.indices.map { index in
             let stop = stock[index]
             let fallback = Color(

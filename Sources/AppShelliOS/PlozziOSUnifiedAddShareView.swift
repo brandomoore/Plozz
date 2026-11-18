@@ -153,6 +153,7 @@ struct PlozziOSUnifiedAddShareView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button(
                     viewModel.step == .chooseDevice && isNavigationRoot ? "Cancel" : "Back",
+                    systemImage: viewModel.step == .chooseDevice && isNavigationRoot ? "xmark" : "chevron.backward",
                     action: back
                 )
             }

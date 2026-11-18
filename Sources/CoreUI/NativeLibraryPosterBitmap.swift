@@ -134,10 +134,10 @@ enum NativePosterArtworkBitmap {
         $0.fill(CGRect(x: 0, y: 0, width: 2, height: 3))
     }
 
-    static func portraitFocusCrop(for size: CGSize) -> CGSize {
-        guard size.width > 0, size.height > size.width else { return .zero }
+    static func focusCrop(for size: CGSize) -> CGSize {
+        guard size.width > 0, size.height > 0 else { return .zero }
         // Native rectangular focus trims about 2 source points horizontally.
-        // Match the portrait aspect so top and trailing content keep equal clearance.
+        // Match the artwork aspect so top and trailing content keep equal clearance.
         return CGSize(width: 2, height: 2 * size.height / size.width)
     }
 
@@ -499,7 +499,7 @@ enum NativeLibraryPosterBitmap {
         }
 
         init(item: MediaItem?, spoilerSettings: SpoilerSettings, environment: EnvironmentValues) {
-            preservesArtwork = item.map { PosterCardPresentation.preservesContainerArtwork(for: $0.kind) } ?? false
+            preservesArtwork = item.map { PosterCardPresentation.fitsContainerArtwork(for: $0.kind) } ?? false
             playback = item.map(MediaPlaybackIndicatorState.init)
             symbol = item.map { .init(for: $0) } ?? .playback
             title = environment.plozzCardCaptionsHidden ? item.map {

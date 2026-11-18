@@ -74,6 +74,7 @@ public enum CardCaptionPreference: String, CaseIterable, Codable, Identifiable, 
 
 public struct CardCaptionSettings: Codable, Equatable, Sendable {
     public var preference: CardCaptionPreference
+    public var episodeDescriptionsOnFocus: Bool
     public private(set) var overrides: [CardCaptionView: Bool]
     public private(set) var mixedOverrides: Set<CardCaptionView> = []
 
@@ -84,7 +85,7 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
     }
 
     public mutating func applyPreset(_ preset: CardCaptionPreference) {
-        self = Self(preference: preset)
+        self = Self(preference: preset, episodeDescriptionsOnFocus: episodeDescriptionsOnFocus)
     }
 
     public mutating func toggleCustomization(in view: CardCaptionView) {
@@ -109,14 +110,17 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
         set { preference = newValue ? .show : .hide }
     }
 
-    public init(preference: CardCaptionPreference = .recommended, overrides: [CardCaptionView: Bool] = [:]) {
+    public init(
+        preference: CardCaptionPreference = .recommended, overrides: [CardCaptionView: Bool] = [:],
+        episodeDescriptionsOnFocus: Bool = false
+    ) {
         self.preference = preference
         self.overrides = overrides
+        self.episodeDescriptionsOnFocus = episodeDescriptionsOnFocus
     }
 
     public init(showsLabels: Bool, overrides: [CardCaptionView: Bool] = [:]) {
-        preference = showsLabels ? .show : .hide
-        self.overrides = overrides
+        self.init(preference: showsLabels ? .show : .hide, overrides: overrides)
     }
 
     public func inheritedShowsLabels(
@@ -171,11 +175,12 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case preference, showsLabels, overrides, mixedOverrides, homeDefaultVersion
+        case preference, showsLabels, overrides, mixedOverrides, homeDefaultVersion, episodeDescriptionsOnFocus
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        episodeDescriptionsOnFocus = try container.decodeIfPresent(Bool.self, forKey: .episodeDescriptionsOnFocus) ?? false
         let storedPreference = try container.decodeIfPresent(CardCaptionPreference.self, forKey: .preference)
         if let storedPreference {
             preference = storedPreference
@@ -206,6 +211,7 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(preference, forKey: .preference)
+        try container.encode(episodeDescriptionsOnFocus, forKey: .episodeDescriptionsOnFocus)
         try container.encode(showsLabels, forKey: .showsLabels)
         try container.encode(1, forKey: .homeDefaultVersion)
         try container.encode(

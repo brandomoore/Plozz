@@ -17,6 +17,7 @@ final class IPTVPlaybackHostedTests: XCTestCase {
         for cycle in 0..<12 {
             let engine = NativeVideoEngine(startsMuted: true)
             defer { engine.stop() }
+            print("Native reopen \(cycle): loading")
             await engine.load(request: .init(
                 item: .init(id: "reopen", title: "Reopen fixture", kind: .movie),
                 streamURL: file,
@@ -28,9 +29,11 @@ final class IPTVPlaybackHostedTests: XCTestCase {
             let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
             ])
+            print("Native reopen \(cycle): attaching video output")
             item.add(output)
             let deadline = ContinuousClock.now + .seconds(15)
             var decoded = false
+            print("Native reopen \(cycle): waiting for a decoded frame")
             while ContinuousClock.now < deadline, item.status != .failed {
                 if output.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil) != nil {
                     decoded = true
@@ -38,9 +41,12 @@ final class IPTVPlaybackHostedTests: XCTestCase {
                 }
                 try await Task.sleep(for: .milliseconds(50))
             }
+            print("Native reopen \(cycle): removing video output")
             item.remove(output)
             XCTAssertTrue(decoded, "Reopen \(cycle) must decode a frame, not merely construct a player.")
+            print("Native reopen \(cycle): stopping")
             engine.stop()
+            print("Native reopen \(cycle): stopped")
             retiredPlayers.append(player)
             XCTAssertTrue(retiredPlayers.allSatisfy { $0.currentItem == nil })
             XCTAssertTrue(item.outputs.isEmpty)

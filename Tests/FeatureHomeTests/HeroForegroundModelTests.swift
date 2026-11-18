@@ -95,6 +95,45 @@ final class HeroForegroundModelTests: XCTestCase {
         XCTAssertEqual(cache.presentation(for: item).familyGuidanceAge, 16)
     }
 
+    func testDetailHeroCacheHydratesSeriesMetadataWithoutRatings() {
+        let cache = HeroPresentationCache()
+        var item = MediaItem(id: "show", title: "Show", kind: .series)
+        XCTAssertNil(cache.presentation(for: item).overview)
+        item.overview = "A quiet village beside the ocean."
+        item.taglines = ["Every village has a story."]
+        item.genres = ["Drama"]
+        item.officialRating = "TV-PG"
+        item.productionYear = 2020
+        XCTAssertEqual(
+            cache.presentation(for: item),
+            HeroPresentation(item: item, artworkStyle: .landscape, surface: .detail)
+        )
+        item.overview = nil
+        item.taglines = []
+        XCTAssertNil(cache.presentation(for: item).overview)
+        XCTAssertNil(cache.presentation(for: item).tagline)
+    }
+
+    func testDetailHeroCacheRefreshesSameCountArtworkAndAccountCollisions() throws {
+        let cache = HeroPresentationCache()
+        var first = movie()
+        first.sourceAccountID = "first-account"
+        let original = cache.presentation(for: first)
+        var second = first
+        second.sourceAccountID = "second-account"
+        second.title = "Another server's title"
+        second.logoURL = try XCTUnwrap(URL(string: "https://fixture.invalid/replacement-logo"))
+        let replacement = cache.presentation(for: second)
+        XCTAssertNotEqual(replacement, original)
+        XCTAssertEqual(
+            replacement,
+            HeroPresentation(item: second, artworkStyle: .landscape, surface: .detail)
+        )
+        XCTAssertEqual(cache.presentation(for: first), original)
+        first.logoURL = second.logoURL
+        XCTAssertEqual(cache.presentation(for: first).logoReferences, replacement.logoReferences)
+    }
+
     func testFocusedEpisodeKeepsTheShowsAgeRecommendation() {
         let root = HeroPresentation(
             item: MediaItem(id: "show", title: "Show", kind: .series,
@@ -155,10 +194,10 @@ final class HeroForegroundModelTests: XCTestCase {
 
     func testStartWatchingPillNamesTheFirstEpisode() {
         let pill = Builder.pill(for: .init(
-            kind: .play, isStarting: true, seasonEpisodeText: "S1, E1"
+            kind: .play, isStarting: true, seasonEpisodeText: "S1 E1"
         ))
         XCTAssertNotNil(pill.localizedTitle)
-        XCTAssertEqual(pill.text, " · S1, E1")
+        XCTAssertEqual(pill.text, " · S1 E1")
     }
 
 #if canImport(UIKit)
@@ -222,13 +261,13 @@ final class HeroForegroundModelTests: XCTestCase {
     @MainActor
     func testStartWatchingPillResolvesCopyAtTheUIKitBoundary() {
         let pill = Builder.pill(for: .init(
-            kind: .play, isStarting: true, seasonEpisodeText: "S1, E1"
+            kind: .play, isStarting: true, seasonEpisodeText: "S1 E1"
         ))
         let view = HeroForegroundPillView(frame: .zero)
         view.configure(pill, selected: false, locale: Locale(identifier: "en"))
         XCTAssertEqual(
             view.subviews.compactMap { $0 as? UILabel }.first?.text,
-            "Start watching · S1, E1"
+            "Start watching · S1 E1"
         )
     }
 #endif
@@ -236,9 +275,9 @@ final class HeroForegroundModelTests: XCTestCase {
     func testInProgressFirstEpisodeKeepsTheResumePill() {
         let pill = Builder.pill(for: .init(
             kind: .play, resumeProgress: 0.3, isResume: true, isStarting: true,
-            resumeRemainingText: "35m", seasonEpisodeText: "S1, E1"
+            resumeRemainingText: "35m", seasonEpisodeText: "S1 E1"
         ))
-        XCTAssertEqual(pill.text, "S1, E1 • 35m")
+        XCTAssertEqual(pill.text, "S1 E1 • 35m")
         XCTAssertEqual(pill.progress, 0.3)
     }
 
@@ -260,7 +299,7 @@ final class HeroForegroundModelTests: XCTestCase {
     }
 
     func testSeasonEpisodeButtonTextFormatsEpisode() {
-        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 12, number: 2)), "S12, E2")
+        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 12, number: 2)), "S12 E2")
     }
 
     func testSeasonEpisodeButtonTextNilForMovie() {
@@ -286,7 +325,8 @@ final class HeroForegroundModelTests: XCTestCase {
             slideCount: 1,
             slideIndex: 0
         )
-        XCTAssertEqual(model.pills.first?.text, "Play S3, E7")
+        XCTAssertEqual(model.pills.first?.localizedTitle, "Play")
+        XCTAssertEqual(model.pills.first?.text, " S3 E7")
     }
 
     func testEpisodeTextFallbackUsesSeriesTitle() {
@@ -313,7 +353,8 @@ final class HeroForegroundModelTests: XCTestCase {
 
     func testPlayPillUsesPlayLabelWhenNotResumable() {
         let pill = Builder.pill(for: PillInput(kind: .play, resumeProgress: nil, isResume: false))
-        XCTAssertEqual(pill.text, "Play")
+        XCTAssertEqual(pill.localizedTitle, LocalizedStringResource("Play"))
+        XCTAssertNil(pill.text)
         XCTAssertEqual(pill.systemImage, "play.fill")
         XCTAssertNil(pill.progress)
     }
@@ -336,38 +377,42 @@ final class HeroForegroundModelTests: XCTestCase {
         let pill = Builder.pill(for: PillInput(
             kind: .play, resumeProgress: 0.42, isResume: true, resumeRemainingText: nil
         ))
-        XCTAssertEqual(pill.text, "Resume")
+        XCTAssertEqual(pill.localizedTitle, LocalizedStringResource("Resume"))
+        XCTAssertNil(pill.text)
         XCTAssertNil(pill.progress)
     }
 
     // MARK: - season/episode in the Play pill
 
-    func testSeasonEpisodeButtonTextUsesCommaForm() {
-        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 21, number: 8)), "S21, E8")
+    func testSeasonEpisodeButtonTextUsesSpaceSeparatedForm() {
+        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 1, number: 22)), "S1 E22")
+        XCTAssertEqual(Builder.seasonEpisodeButtonText(for: episode(season: 21, number: 8)), "S21 E8")
         XCTAssertNil(Builder.seasonEpisodeButtonText(for: movie()))
         XCTAssertNil(Builder.seasonEpisodeButtonText(for: episode(season: nil, number: 8)))
     }
 
     func testPlainPlayPillAppendsSeasonEpisode() {
         let pill = Builder.pill(for: PillInput(
-            kind: .play, resumeProgress: nil, isResume: false, seasonEpisodeText: "S21, E8"
+            kind: .play, resumeProgress: nil, isResume: false, seasonEpisodeText: "S21 E8"
         ))
-        XCTAssertEqual(pill.text, "Play S21, E8")
+        XCTAssertEqual(pill.localizedTitle, LocalizedStringResource("Play"))
+        XCTAssertEqual(pill.text, " S21 E8")
         XCTAssertNil(pill.progress)
     }
 
     func testResumePlayPillPrefixesSeasonEpisodeOntoRemaining() {
         let pill = Builder.pill(for: PillInput(
             kind: .play, resumeProgress: 0.42, isResume: true,
-            resumeRemainingText: "43m", seasonEpisodeText: "S5, E12"
+            resumeRemainingText: "43m", seasonEpisodeText: "S5 E12"
         ))
-        XCTAssertEqual(pill.text, "S5, E12 • 43m")
+        XCTAssertEqual(pill.text, "S5 E12 • 43m")
         XCTAssertEqual(pill.progress, 0.42)
     }
 
     func testPlayPillOmitsSeasonEpisodeForMovies() {
         // No seasonEpisodeText (movie): plain "Play" and bare remaining, unchanged.
-        XCTAssertEqual(Builder.pill(for: PillInput(kind: .play)).text, "Play")
+        XCTAssertEqual(Builder.pill(for: PillInput(kind: .play)).localizedTitle, LocalizedStringResource("Play"))
+        XCTAssertNil(Builder.pill(for: PillInput(kind: .play)).text)
         XCTAssertEqual(Builder.pill(for: PillInput(
             kind: .play, resumeProgress: 0.5, isResume: true, resumeRemainingText: "43m"
         )).text, "43m")

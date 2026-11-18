@@ -26,6 +26,162 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false)
     }
 
+    func testRetappingNavigationScrollsThePageToTopWithoutResettingOtherTabs() throws {
+        for opaque in [false, true] {
+            launchNavigation(arguments: ["--navigation-scroll-fixture"] + (opaque ? ["--opaque-navigation"] : []))
+            let movies = app.buttons.matching(NSPredicate(format: "label == %@", "Movies")).firstMatch
+            XCTAssertTrue(movies.waitForExistence(timeout: 10), app.debugDescription)
+            movies.tap()
+            let browse = app.buttons["library-mode-titles"]
+            XCTAssertTrue(browse.waitForExistence(timeout: 5))
+            browse.tap()
+            let first = app.staticTexts["Navigation item 01"].firstMatch
+            XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
+            let originalY = first.frame.minY
+            scrollPageDown()
+            XCTAssertFalse(first.isHittable)
+            let retained = try XCTUnwrap(app.staticTexts.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "Navigation item")
+            ).allElementsBoundByIndex.first { $0.isHittable })
+            let retainedLabel = retained.label
+            let retainedY = retained.frame.minY
+
+            let search = app.buttons.matching(NSPredicate(format: "label == %@", "Search")).firstMatch
+            search.tap()
+            let field = app.textFields["Search your libraries"]
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.tap()
+            field.typeText("navigation")
+            let searchFirst = app.staticTexts["Search Navigation item 01"].firstMatch
+            XCTAssertTrue(searchFirst.waitForExistence(timeout: 10))
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
+                .withOffset(CGVector(dx: 0, dy: 40)).tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            let searchY = searchFirst.frame.minY
+            scrollPageDown()
+            XCTAssertFalse(searchFirst.isHittable)
+            search.tap()
+            XCTAssertTrue(searchFirst.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            XCTAssertEqual(searchFirst.frame.minY, searchY, accuracy: 2)
+            XCTAssertEqual(field.value as? String, "navigation")
+
+            movies.tap()
+            let restored = app.staticTexts[retainedLabel].firstMatch
+            XCTAssertTrue(restored.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            XCTAssertEqual(restored.frame.minY, retainedY, accuracy: 2)
+            movies.tap()
+            XCTAssertTrue(first.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            XCTAssertEqual(first.frame.minY, originalY, accuracy: 2)
+            capture("navigation-retap-\(opaque ? "opaque" : "native")")
+            app.terminate()
+        }
+    }
+
+    private func scrollPageDown() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)
+            ))
+    }
+
+    func testOpaqueNavigationPreservesSettingsBackAndTabActions() {
+        verifyNavigationRetention(
+            directPresentation: false, settingsFirst: true, arguments: ["--opaque-navigation"]
+        )
+        XCTAssertFalse(app.tabBars.firstMatch.isHittable)
+        let search = app.buttons.matching(NSPredicate(format: "label == %@", "Search")).firstMatch
+        XCTAssertTrue(search.isHittable)
+        search.tap()
+        XCTAssertTrue(app.textFields["Search your libraries"].waitForExistence(timeout: 5))
+        capture("opaque-search-navigation")
+        app.buttons.matching(NSPredicate(format: "label == %@", "Downloads")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+        app.buttons["Download Settings"].tap()
+        XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 5))
+        let edge = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+        let destination = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        edge.press(forDuration: 0.1, thenDragTo: destination)
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5),
+                      "Opaque Back styling must preserve the native edge-swipe gesture.")
+    }
+
+    func testLiquidGlassToggleRestoresNativeTabsWithoutLosingPushedPage() {
+        launchNavigation(settingsFirst: true, arguments: ["--opaque-navigation"])
+        let downloads = app.buttons.matching(NSPredicate(format: "label == %@", "Downloads")).firstMatch
+        XCTAssertTrue(downloads.waitForExistence(timeout: 10))
+        downloads.tap()
+        app.buttons["Download Settings"].tap()
+        XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 5))
+        for value in ["On", "Off"] {
+            app.buttons.matching(NSPredicate(format: "label == %@", "Settings")).firstMatch.tap()
+            let appearance = categoryButton("Appearance")
+            reveal(appearance, settingsMenu: true)
+            appearance.tap()
+            let glass = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Liquid Glass")).firstMatch
+            reveal(glass)
+            glass.tap()
+            app.buttons[value].tap()
+            app.buttons["BackButton"].firstMatch.tap()
+            app.buttons["Close"].tap()
+            XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.tabBars.firstMatch.isHittable, value == "On")
+            capture("live-liquid-glass-\(value.lowercased())")
+        }
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+    }
+
+    func testOpaqueNavigationKeepsOverflowDestinationsReachable() {
+        launchNavigation(settingsInMore: true, arguments: ["--opaque-navigation"])
+        let overflow = app.scrollViews["opaque-navigation-overflow"]
+        XCTAssertTrue(overflow.waitForExistence(timeout: 10))
+        XCTAssertLessThan(overflow.frame.height, 120, "Overflow must not consume the page's height.")
+        let settings = app.buttons.matching(NSPredicate(format: "label == %@", "Settings")).firstMatch
+        for _ in 0..<6 where !settings.isHittable { overflow.swipeLeft() }
+        XCTAssertTrue(settings.isHittable)
+        settings.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
+        app.buttons["Close"].tap()
+        let downloads = app.buttons.matching(NSPredicate(format: "label == %@", "Downloads")).firstMatch
+        for _ in 0..<6 where !downloads.isHittable { overflow.swipeRight() }
+        XCTAssertTrue(downloads.isHittable)
+        downloads.tap()
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+        capture("opaque-navigation-overflow")
+    }
+
+    func testSettingsClosePreservesNestedNativeBackNavigation() {
+        launchNavigation()
+        let open = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Settings for "
+        )).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        open.tap()
+        let close = app.buttons["Close"]
+        XCTAssertTrue(close.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        let playback = categoryButton("Playback")
+        reveal(playback, settingsMenu: true)
+        playback.tap()
+        let advanced = app.buttons["playback-advanced"]
+        reveal(advanced)
+        advanced.tap()
+        XCTAssertTrue(app.navigationBars["Advanced"].waitForExistence(timeout: 5))
+        let back = app.buttons["BackButton"].firstMatch
+        XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        capture("settings-native-nested-back")
+        back.tap()
+        XCTAssertTrue(app.navigationBars["Playback"].waitForExistence(timeout: 5))
+        if !close.exists {
+            XCTAssertTrue(back.isHittable)
+            back.tap()
+        }
+        XCTAssertTrue(close.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        capture("settings-native-close")
+        close.tap()
+        XCTAssertTrue(open.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        XCTAssertFalse(close.exists)
+    }
+
     func testTabletSidebarSwitchesCategoriesFromPushedSettingsPages() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
         launchNavigation(directPresentation: true)
@@ -546,8 +702,10 @@ final class SettingsInteractionTests: XCTestCase {
         verifyNavigationRetention(directPresentation: false, settingsFirst: true)
     }
 
-    private func verifyNavigationRetention(directPresentation: Bool, settingsFirst: Bool = false) {
-        launchNavigation(directPresentation: directPresentation, settingsFirst: settingsFirst)
+    private func verifyNavigationRetention(
+        directPresentation: Bool, settingsFirst: Bool = false, arguments: [String] = []
+    ) {
+        launchNavigation(directPresentation: directPresentation, settingsFirst: settingsFirst, arguments: arguments)
         let settings = directPresentation
             ? app.buttons["fixture-open-settings"]
             : app.buttons.matching(NSPredicate(format: "label == %@", "Settings")).firstMatch
@@ -1035,7 +1193,7 @@ final class SettingsInteractionTests: XCTestCase {
         for title in ["Appearance", "Screens & Navigation"] {
             openSettingsPage(title)
             let children = title == "Appearance"
-                ? ["Theme", "Cards", "Artwork", "Circadian Mode"]
+                ? ["Music player", "Cards", "Artwork", "Circadian Mode"]
                 : ["Spoiler Protection", "Customize Home", "Customize Libraries", "App navigation", "Detail Page"]
             for child in children {
                 let row = button(child)
@@ -1466,28 +1624,33 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5))
     }
 
-    func testThemeMenusAndToggleKeepSeparateActions() {
+    func testThemeCardsMenusAndMusicLinkKeepSeparateActions() {
         launch()
-        app.buttons["appearance-theme"].tap()
-        XCTAssertTrue(app.navigationBars["Theme"].waitForExistence(timeout: 5))
-        let appearance = app.collectionViews.buttons.matching(NSPredicate(
-            format: "label == %@ OR label BEGINSWITH %@", "Appearance", "Appearance,"
-        )).firstMatch
-        appearance.tap()
-        XCTAssertTrue(app.buttons["Light"].waitForExistence(timeout: 3), app.debugDescription)
-        app.buttons["Light"].tap()
-        XCTAssertTrue(appearance.staticTexts["Light"].exists)
+        XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5))
+        let light = app.buttons["theme-option-light"]
+        XCTAssertTrue(light.waitForExistence(timeout: 3), app.debugDescription)
+        light.tap()
+        XCTAssertTrue(light.isSelected)
         let gradient = app.switches["Gradient Backgrounds"]
+        reveal(gradient)
         let before = gradient.value as? String
         tapNativeSwitch(gradient)
         XCTAssertNotEqual(gradient.value as? String, before)
-        XCTAssertTrue(appearance.staticTexts["Light"].exists)
+        XCTAssertTrue(light.isSelected)
         let glass = button("Liquid Glass")
+        reveal(glass)
         glass.tap()
-        XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 3), app.debugDescription)
-        XCTAssertFalse(app.buttons["Light"].exists)
-        app.buttons["System"].tap()
-        XCTAssertTrue(app.navigationBars["Theme"].exists)
+        let systemOption = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", "System", "theme-option-system"
+        )).firstMatch
+        XCTAssertTrue(systemOption.waitForExistence(timeout: 3), app.debugDescription)
+        systemOption.tap()
+        XCTAssertTrue(app.navigationBars["Appearance"].exists)
+        let music = app.buttons["appearance-musicPlayer"]
+        reveal(music)
+        music.tap()
+        XCTAssertTrue(app.navigationBars["Music player"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["music-appearance-matchTheme"].exists)
     }
 
     func testLabelEditsEnterCustomAndPresetsReplaceAllViews() {
@@ -2093,6 +2256,34 @@ final class SettingsInteractionTests: XCTestCase {
         ] + arguments
         app.launch()
         XCTAssertTrue(app.navigationBars["Playback"].waitForExistence(timeout: 5))
+    }
+
+    func testAutomaticVersionHelpLeavesTheSelectionUnchanged() {
+        launchPlayback()
+        let picker = app.buttons["playback-version-selection"]
+        reveal(picker, fullyVisible: true)
+        picker.tap()
+        app.buttons["Choose automatically"].tap()
+        let info = app.buttons["automatic-version-information"]
+        XCTAssertTrue(info.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        XCTAssertGreaterThanOrEqual(info.frame.width, 44 - 0.01)
+        XCTAssertGreaterThanOrEqual(info.frame.height, 44 - 0.01)
+        XCTAssertFalse(picker.frame.intersects(info.frame), app.debugDescription)
+        capture("automatic-version-setting")
+        info.tap()
+        let help = app.alerts["How automatic selection works"]
+        XCTAssertTrue(help.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(help.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@ AND label CONTAINS %@", "lower-bitrate HDR", "previous choice takes priority"
+        )).firstMatch.exists)
+        capture("automatic-version-examples")
+        help.buttons["Done"].tap()
+        XCTAssertTrue(help.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(picker.label.contains("Choose automatically") || picker.value as? String == "Choose automatically")
+        picker.tap()
+        app.buttons["Ask every time"].tap()
+        XCTAssertTrue(info.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(picker.label.contains("Ask every time") || picker.value as? String == "Ask every time")
     }
 
     func testCompactSkipDefaultsShowEffectiveValueAndNativeMenuChoices() {
@@ -2752,7 +2943,7 @@ final class SettingsInteractionTests: XCTestCase {
         let parent: String? = switch title {
         case "Customize Home", "Customize Libraries", "App navigation", "Detail Page", "Spoiler Protection":
             "Screens & Navigation"
-        case "Theme", "Circadian Mode": "Appearance"
+        case "Music player", "Circadian Mode": "Appearance"
         default: nil
         }
         if let parent {

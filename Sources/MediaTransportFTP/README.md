@@ -3,6 +3,29 @@
 The shared FTP transport supports plain FTP and implicit FTPS. Explicit
 FTPS remains unsupported; the transport never silently downgrades TLS.
 
+## External playback
+
+VLC can receive plain FTP video and SRT URLs directly, without a Plozz relay.
+The adapter verifies the selected locator and an authenticated byte read first.
+It preserves the configured port and encodes the absolute path with two leading
+slashes: VLC strips one, so a single slash could select a login-home-relative
+file instead. Literal percent sequences and reserved/Unicode filename characters
+remain intact through both layers of URL encoding.
+The existing network-file locator restrictions still apply; this does not
+expand which filenames the share library can index.
+
+Direct delivery supports anonymous login or username/password values made of
+ASCII letters, digits and `-._~`. Other credential encodings are not yet enabled.
+FTPS endpoints, TLS requirements and certificate pins never become plain FTP
+links. Unsupported configurations can use the admitted iOS/iPadOS 26 app-owned
+handoff; otherwise they stay in Plozz. Native Player and Infuse do not receive
+FTP links from Plozz.
+
+Physical VLC 3.7.4 tvOS probes verified anonymous/password video, custom ports,
+absolute paths against a login-home decoy, literal `%20` filenames, nonzero
+REST offsets and visible SRT subtitles. This is not a full-film, interactive-seek,
+FTPS, or every-server compatibility claim.
+
 Playback requires byte-offset restart. Capability discovery is refreshed after
 authentication. If the authenticated feature list does not advertise `REST`,
 the backend probes `REST 1` after `TYPE I`, then requires `REST 0` to clear the

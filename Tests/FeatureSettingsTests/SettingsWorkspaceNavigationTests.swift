@@ -6,6 +6,37 @@ import XCTest
 
 @MainActor
 final class SettingsWorkspaceNavigationTests: XCTestCase {
+    func testHomeCustomizationShortcutReplacesStalePagesWithoutGrowingTheStack() {
+        let navigation = SettingsNavigationModel()
+        #if os(tvOS)
+        navigation.pages.animationsEnabled = false
+        navigation.beginSearch()
+        navigation.searchQuery = "server"
+        #endif
+        navigation.path = [.appearance, .artwork]
+        for _ in 0..<3 {
+            navigation.openHomeCustomization()
+            #if os(tvOS)
+            XCTAssertEqual(navigation.section, .screensNavigation)
+            #else
+            XCTAssertEqual(navigation.section, .customizeHome)
+            #endif
+            XCTAssertEqual(navigation.path, [.customizeHome])
+            XCTAssertTrue(navigation.enteringDetail)
+            XCTAssertFalse(navigation.restoringSidebar)
+            #if os(tvOS)
+            XCTAssertFalse(navigation.isSearching)
+            XCTAssertTrue(navigation.searchQuery.isEmpty)
+            #endif
+            navigation.path.append(.searchResult("home-row-arrangement"))
+        }
+        navigation.returnToSidebar()
+        #if os(tvOS)
+        XCTAssertEqual(navigation.section, .screensNavigation)
+        #endif
+        XCTAssertTrue(navigation.path.isEmpty)
+    }
+
     func testAdvancedPlaybackKeepsExternalPlayerWithoutRetiredConversionControls() throws {
         let suite = "AdvancedPlaybackSettingsTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

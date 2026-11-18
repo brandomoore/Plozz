@@ -225,7 +225,10 @@ final class NavigationRailPlanTests: XCTestCase {
         )
         XCTAssertTrue(keys.contains(NavigationLibraryLayout.allLibrariesKey))
         XCTAssertEqual(keys.filter { $0.hasPrefix("server:") }, libraries.map(\.key))
-        XCTAssertEqual(Array(keys.prefix(3)), NavigationDestinationDefaults.iOSDefaultVisibleKeys)
+        XCTAssertEqual(
+            Array(keys.prefix(NavigationDestinationDefaults.iOSDefaultVisibleKeys.count)),
+            NavigationDestinationDefaults.iOSDefaultVisibleKeys
+        )
         let layout = NavigationLibraryLayout(order: ["server:19", "server:0"], hiddenKeys: ["server:1"])
         let visible = layout.sections(available: keys, requiredEnabled: []).enabled
         XCTAssertFalse(visible.contains("server:1"))
@@ -323,6 +326,7 @@ final class NavigationRailPlanTests: XCTestCase {
             NavigationLibraryLayout.homeKey,
             NavigationLibraryLayout.discoverKey,
             NavigationLibraryLayout.watchlistKey,
+            NavigationLibraryLayout.upcomingKey,
         ]
         expected.append(NavigationLibraryLayout.liveTVKey)
         expected += [
@@ -521,6 +525,7 @@ final class NavigationRailPlanTests: XCTestCase {
             NavigationLibraryLayout.discoverKey,
             NavigationLibraryLayout.searchKey,
             NavigationLibraryLayout.watchlistKey,
+            NavigationLibraryLayout.upcomingKey,
             NavigationLibraryLayout.musicKey,
             NavigationLibraryLayout.allLibrariesKey,
             "a:1",

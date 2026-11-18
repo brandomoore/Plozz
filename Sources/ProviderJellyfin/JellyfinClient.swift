@@ -28,6 +28,10 @@ public struct JellyfinClient: Sendable {
     private let playbackRequests: PlaybackInfoRequestCoordinator
     private let playbackServerKey: String
     private let inventoryScope = UUID()
+    let userViewRequests = JellyfinDiscoveryRequests<[BaseItemDto]>()
+    private let recommendationRequests = JellyfinRecommendationRequests()
+    // Emby omits release metadata unless explicitly requested, unlike Jellyfin.
+    private static let homeRowSortFields = "SortName,DateCreated,ProductionYear,PremiereDate"
 
     public init(
         baseURL: URL,
@@ -272,7 +276,7 @@ public struct JellyfinClient: Sendable {
         userID: String, sectionID: String, limit: Int, parentID: String?
     ) async throws -> [BaseItemDto] {
         if limit == Int.max {
-            return try await exhaustiveContinueWatchingItems { startIndex, pageSize in
+            return try await exhaustiveItems { startIndex, pageSize in
                 try await nativeHomeItemsPage(
                     userID: userID, sectionID: sectionID, startIndex: startIndex,
                     limit: pageSize, parentID: parentID
@@ -296,7 +300,7 @@ public struct JellyfinClient: Sendable {
             URLQueryItem(name: "Limit", value: String(limit)),
             URLQueryItem(name: "StartIndex", value: String(startIndex)),
             URLQueryItem(name: "EnableTotalRecordCount", value: "true"),
-            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,PrimaryImageAspectRatio,ProviderIds,DateCreated")
+            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,PrimaryImageAspectRatio,ProviderIds,\(Self.homeRowSortFields)")
         ]
         if let parentID { query.append(URLQueryItem(name: "ParentId", value: parentID)) }
         return try await http.decode(
@@ -317,7 +321,7 @@ public struct JellyfinClient: Sendable {
                 URLQueryItem(name: "Limit", value: String(limit)),
                 URLQueryItem(name: "IsInProgress", value: "true"),
                 URLQueryItem(name: "EnableTotalRecordCount", value: "false"),
-                URLQueryItem(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,DateCreated")
+                URLQueryItem(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,\(Self.homeRowSortFields)")
             ],
             headers: authHeaders
         )
@@ -328,14 +332,17 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Views",
             queryItems: [URLQueryItem(name: "IncludeExternalContent", value: "false")],
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
-        return try await http.decode(UserViewsResponse.self, from: endpoint, baseURL: baseURL).Items
+        return try await userViewRequests.run(key: userID) {
+            try await http.decode(UserViewsResponse.self, from: endpoint, baseURL: baseURL).Items
+        }
     }
 
     func resumeItems(userID: String, limit: Int, parentID: String? = nil) async throws -> [BaseItemDto] {
         if limit == Int.max {
-            return try await exhaustiveContinueWatchingItems { startIndex, pageSize in
+            return try await exhaustiveItems { startIndex, pageSize in
                 return try await resumeItemsPage(
                     userID: userID,
                     startIndex: startIndex,
@@ -361,7 +368,7 @@ public struct JellyfinClient: Sendable {
         var queryItems = [
             URLQueryItem(name: "Limit", value: String(limit)),
             URLQueryItem(name: "MediaTypes", value: "Video"),
-            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,PrimaryImageAspectRatio,ProviderIds,DateCreated")
+            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,PrimaryImageAspectRatio,ProviderIds,\(Self.homeRowSortFields)")
         ]
         if let startIndex {
             queryItems.append(URLQueryItem(name: "StartIndex", value: String(startIndex)))
@@ -373,7 +380,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Items/Resume",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.resumeItems) {
             try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
@@ -396,8 +404,8 @@ public struct JellyfinClient: Sendable {
     func nextUpItems(
         userID: String, limit: Int, parentID: String? = nil, seriesID: String? = nil
     ) async throws -> [BaseItemDto] {
-        if limit == Int.max {
-            return try await exhaustiveContinueWatchingItems { startIndex, pageSize in
+        if limit > 100 {
+            return try await exhaustiveItems(limit: limit) { startIndex, pageSize in
                 return try await nextUpItemsPage(
                     userID: userID,
                     startIndex: startIndex,
@@ -429,7 +437,7 @@ public struct JellyfinClient: Sendable {
             URLQueryItem(name: "MediaTypes", value: "Video"),
             URLQueryItem(name: "EnableResumable", value: seriesID == nil ? "false" : "true"),
             URLQueryItem(name: "EnableRewatching", value: "false"),
-            URLQueryItem(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,DateCreated")
+            URLQueryItem(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,\(Self.homeRowSortFields)")
         ]
         if let startIndex {
             queryItems.append(URLQueryItem(name: "StartIndex", value: String(startIndex)))
@@ -444,7 +452,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Shows/NextUp",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.nextUp) {
             try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
@@ -456,7 +465,8 @@ public struct JellyfinClient: Sendable {
     /// actual row count and a missing total is completed only by an empty page.
     /// Duplicate/non-advancing pages fail closed instead of hanging or presenting
     /// a silently truncated "unlimited" row.
-    private func exhaustiveContinueWatchingItems(
+    private func exhaustiveItems(
+        limit: Int = .max,
         page: (Int, Int) async throws -> ItemsResponse
     ) async throws -> [BaseItemDto] {
         let pageSize = 100
@@ -467,8 +477,9 @@ public struct JellyfinClient: Sendable {
 
         while true {
             try Task.checkCancellation()
-            let response = try await page(startIndex, pageSize)
-            guard response.Items.count <= pageSize else {
+            let requestedCount = min(pageSize, limit - collected.count)
+            let response = try await page(startIndex, requestedCount)
+            guard response.Items.count <= requestedCount else {
                 throw AppError.invalidResponse
             }
             if let total = response.TotalRecordCount {
@@ -503,6 +514,7 @@ public struct JellyfinClient: Sendable {
                 }
             }
 
+            if collected.count == limit { return collected }
             let (nextStart, overflow) = startIndex.addingReportingOverflow(response.Items.count)
             guard !overflow, nextStart > startIndex else {
                 throw AppError.invalidResponse
@@ -648,7 +660,7 @@ public struct JellyfinClient: Sendable {
     ) async throws -> [BaseItemDto] {
         var queryItems = [
             URLQueryItem(name: "Limit", value: String(limit)),
-            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,ProviderIds,DateCreated")
+            URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,ProviderIds,\(Self.homeRowSortFields)")
         ]
         if let parentID {
             queryItems.append(URLQueryItem(name: "ParentId", value: parentID))
@@ -659,7 +671,8 @@ public struct JellyfinClient: Sendable {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Items/Latest",
             queryItems: queryItems,
-            headers: authHeaders
+            headers: authHeaders,
+            allowsRequestCoalescing: true
         )
         // /Items/Latest returns a bare array, not an Items envelope.
         let items: [BaseItemDto] = try await http.decode([BaseItemDto].self, from: endpoint, baseURL: baseURL)
@@ -667,6 +680,20 @@ public struct JellyfinClient: Sendable {
     }
 
     func movieRecommendations(userID: String, parentID: String, limit: Int) async throws -> [MovieRecommendationDto] {
+        guard providerKind == .jellyfin, let scope = HomeRecommendationScope.current else {
+            return try await fetchMovieRecommendations(userID: userID, parentID: parentID, limit: limit)
+        }
+        return try await recommendationRequests.load(
+            scope: scope, user: userID, library: parentID, limit: limit,
+            refresh: HomeRecommendationScope.refreshRequested
+        ) {
+            try await fetchMovieRecommendations(userID: userID, parentID: parentID, limit: limit)
+        }
+    }
+
+    private func fetchMovieRecommendations(
+        userID: String, parentID: String, limit: Int
+    ) async throws -> [MovieRecommendationDto] {
         let endpoint = Endpoint(
             path: "/Movies/Recommendations",
             queryItems: [
@@ -674,13 +701,39 @@ public struct JellyfinClient: Sendable {
                 URLQueryItem(name: "parentId", value: parentID),
                 URLQueryItem(name: "categoryLimit", value: "5"),
                 URLQueryItem(name: "itemLimit", value: String(limit)),
-                URLQueryItem(name: "fields", value: "Overview,OriginalTitle,ProviderIds,DateCreated")
+                URLQueryItem(name: "fields", value: "Overview,OriginalTitle,ProviderIds,\(Self.homeRowSortFields)")
             ],
             headers: authHeaders
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.movieRecommendations) {
             try await http.decode(MovieRecommendationsResponse.self, from: endpoint, baseURL: baseURL).recommendations
         }
+    }
+
+    func libraryItems(userID: String, ids: [String]) async throws -> [BaseItemDto] {
+        try Task.checkCancellation()
+        let requested = Set(ids)
+        guard !requested.isEmpty else { return [] }
+        guard requested.count <= 50,
+              requested.allSatisfy({ !$0.isEmpty && !$0.contains(",") && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+        else { throw AppError.invalidResponse }
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "Ids", value: requested.sorted().joined(separator: ",")),
+                URLQueryItem(name: "Limit", value: String(requested.count)),
+                URLQueryItem(name: "Fields", value: "Overview,OriginalTitle,ProviderIds,PrimaryImageAspectRatio,Genres,\(Self.homeRowSortFields)"),
+                URLQueryItem(name: "EnableImages", value: "true"),
+                URLQueryItem(name: "ImageTypeLimit", value: "1"),
+                URLQueryItem(name: "EnableUserData", value: "true"),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "false")
+            ],
+            headers: authHeaders
+        )
+        let items = try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL).Items
+        guard items.allSatisfy({ requested.contains($0.Id) }),
+              Set(items.map(\.Id)).count == items.count else { throw AppError.invalidResponse }
+        return items
     }
 
     func item(userID: String, id: String) async throws -> BaseItemDto {
@@ -699,7 +752,9 @@ public struct JellyfinClient: Sendable {
                 // people and media sources.
                 URLQueryItem(name: "ImageTypeLimit", value: "4")
             ],
-            headers: authHeaders
+            headers: authHeaders,
+            // Reset arbitration also uses this read; it must not join an older response.
+            allowsRequestCoalescing: false
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.itemDetail) {
             try await interactiveHTTP.decode(BaseItemDto.self, from: endpoint, baseURL: baseURL)
@@ -788,7 +843,7 @@ public struct JellyfinClient: Sendable {
                 URLQueryItem(name: "Limit", value: String(page.limit)),
                 URLQueryItem(name: "EnableTotalRecordCount", value: "true"),
                 URLQueryItem(name: "EnableUserData", value: "true"),
-                URLQueryItem(name: "Fields", value: "Overview,MediaStreams,MediaSources,Genres,ProviderIds,UserData,DateCreated")
+                URLQueryItem(name: "Fields", value: "Overview,MediaStreams,MediaSources,Genres,ProviderIds,UserData,\(Self.homeRowSortFields)")
             ],
             headers: authHeaders
         )
@@ -857,7 +912,7 @@ public struct JellyfinClient: Sendable {
         startIndex: Int,
         limit: Int,
         sort: CoreModels.SortDescriptor,
-        fields: String = "PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,Genres",
+        fields: String = "PrimaryImageAspectRatio,ProviderIds,Genres",
         filters: LibraryFilters = .all,
         useServerCollections: Bool = false
     ) async throws -> ItemsResponse {
@@ -871,7 +926,7 @@ public struct JellyfinClient: Sendable {
             // Minimal fields keep the first-page payload small for a fast grid;
             // ProviderIds is included so the aggregated cross-server library
             // browse can collapse a title that lives on multiple servers.
-            URLQueryItem(name: "Fields", value: fields),
+            URLQueryItem(name: "Fields", value: "\(fields),\(Self.homeRowSortFields)"),
             URLQueryItem(name: "ImageTypeLimit", value: "1"),
             URLQueryItem(name: "EnableTotalRecordCount", value: "true")
         ]
@@ -885,7 +940,10 @@ public struct JellyfinClient: Sendable {
         if !useServerCollections {
             queryItems.append(collectionGroupingDisabled)
         }
-        let endpoint = Endpoint(path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders)
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders,
+            allowsRequestCoalescing: true
+        )
         return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
     }
 
@@ -929,6 +987,25 @@ public struct JellyfinClient: Sendable {
             baseURL: baseURL
         )
         return LibraryQueryFacets(genres: response.Genres ?? [], years: response.Years ?? [])
+    }
+
+    /// Existence needs one identity, not sorted card metadata or artwork.
+    func collectionDirectoryHasItems(userID: String, libraryID: String?) async throws -> ItemsResponse {
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "IncludeItemTypes", value: "BoxSet"),
+                URLQueryItem(name: "Recursive", value: "true"),
+                URLQueryItem(name: "StartIndex", value: "0"),
+                URLQueryItem(name: "Limit", value: "1"),
+                URLQueryItem(name: "EnableImages", value: "false"),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "true")
+            ] + (libraryID.map { [URLQueryItem(name: "ParentId", value: $0)] } ?? []),
+            headers: authHeaders
+        )
+        return try await HTTPResponseDiagnostics.$route.withValue(.collectionCandidates) {
+            try await readCollectionPage(endpoint)
+        }
     }
 
     /// Match the native client: the server decides whether ParentId scopes BoxSets.
@@ -1441,6 +1518,7 @@ public struct JellyfinClient: Sendable {
                 played = nil
             }
             try Task.checkCancellation()
+            try await WatchMutationDeliveryAuthorization.check()
             var endpoint = Endpoint(
                 method: .post,
                 path: isEmby ? "/Users/\(userID)/Items/\(itemID)/UserData" : "/UserItems/\(itemID)/UserData",
@@ -1458,6 +1536,38 @@ public struct JellyfinClient: Sendable {
             HandoffDiagnostics.emit("session RESUME_WRITE_FAILED \(context) error=\(HandoffDiagnostics.errorCode((error as? AppError) ?? .unknown("")))")
             throw error
         }
+    }
+
+    func watchStateEpisodes(userID: String, parentID: String, kind: MediaItemKind) async throws -> [BaseItemDto] {
+        guard kind == .season || kind == .series else { throw AppError.invalidResponse }
+        let episodes = try await exhaustiveItems { startIndex, limit in
+            try await WatchMutationDeliveryAuthorization.check()
+            return try await items(
+                userID: userID, parentID: parentID, includeItemTypes: ["Episode"],
+                recursive: true, startIndex: startIndex, limit: limit,
+                sort: .default, fields: "UserData,ParentId"
+            )
+        }
+        guard episodes.allSatisfy({
+            $0.Type == "Episode"
+                && (kind == .season ? $0.SeasonId : $0.SeriesId) == parentID
+                && $0.UserData?.Played != nil
+        }) else { throw AppError.invalidResponse }
+        return episodes
+    }
+
+    func episodeWatchState(userID: String, itemID: String, parentID: String, kind: MediaItemKind) async throws -> UserItemDataDto {
+        try Task.checkCancellation()
+        try await WatchMutationDeliveryAuthorization.check()
+        let item = try await http.decode(
+            BaseItemDto.self,
+            from: Endpoint(path: "/Users/\(userID)/Items/\(itemID)", headers: authHeaders),
+            baseURL: baseURL
+        )
+        guard item.Id == itemID, item.Type == "Episode",
+              (kind == .season ? item.SeasonId : item.SeriesId) == parentID,
+              let state = item.UserData, state.Played != nil else { throw AppError.invalidResponse }
+        return state
     }
 
     /// `POST`/`DELETE /Users/{userId}/PlayedItems/{itemId}` — marks an item
@@ -1728,7 +1838,7 @@ public struct JellyfinClient: Sendable {
     ) async throws -> ItemsResponse {
         var query = [
             URLQueryItem(name: "UserId", value: userID),
-            URLQueryItem(name: "Fields", value: "Genres,PrimaryImageAspectRatio"),
+            URLQueryItem(name: "Fields", value: "Genres,PrimaryImageAspectRatio,\(Self.homeRowSortFields)"),
             URLQueryItem(name: "EnableTotalRecordCount", value: "true")
         ]
         if let start { query.append(URLQueryItem(name: "StartIndex", value: String(start))) }

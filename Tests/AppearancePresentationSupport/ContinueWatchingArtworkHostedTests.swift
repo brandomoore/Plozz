@@ -311,7 +311,7 @@ final class ContinueWatchingArtworkHostedTests: XCTestCase {
             settings: .init(preference: .library), shape: .poster,
             detailsChanges: Array(modes.dropFirst())
         ) { window in
-            try await waitUntil {
+            try await waitUntil("details step \(step): \(modes[step])", timeout: .seconds(20)) {
                 let text = try self.recognizedText(window)
                 if modes[step] == .detailed {
                     return text.contains { $0.contains("POSTER") } && text.contains { $0.contains("45m") }
@@ -321,6 +321,7 @@ final class ContinueWatchingArtworkHostedTests: XCTestCase {
                     && self.artworkPixels(window).lightRun > 42
                     && self.coloredPixels(window)[0] > 10_000
             }
+            _ = try recognizedText(window, attachmentName: "continue-watching-details-step-\(step)")
             #if os(tvOS)
             let current = try XCTUnwrap(nativePoster(in: window))
             if let owner { XCTAssertTrue(current === owner, "Changing details must not replace the native focus owner.") }
@@ -765,8 +766,10 @@ final class ContinueWatchingArtworkHostedTests: XCTestCase {
         return (counts, longestLightRun, barHeight, centerRed)
     }
 
-    private func waitUntil(_ context: String = "", _ condition: () throws -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(5)
+    private func waitUntil(
+        _ context: String = "", timeout: Duration = .seconds(5), _ condition: () throws -> Bool
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
         while try !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(30))
         }

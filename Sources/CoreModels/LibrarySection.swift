@@ -44,6 +44,7 @@ public struct LibrarySection: Identifiable, Equatable, Sendable {
     public var isHomeDefault: Bool?
     public var isLegacyHomeDefault: Bool?
     /// Opaque provider identity for this exact shelf, separate from its arranger slot.
+    /// Recommendations without one are fixed snapshots, not extendable prefixes.
     public var browseID: String?
     public var hasMore: Bool
 

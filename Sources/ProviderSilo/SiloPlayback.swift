@@ -220,11 +220,18 @@ extension SiloProvider: ProviderHTTPResourceResolving {
 
     func resolvePlayback(
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
-        streaming: StreamingPlaybackOptions?, libraryChannel: LibraryChannelItem? = nil
+        streaming: StreamingPlaybackOptions?, libraryChannel: LibraryChannelItem? = nil,
+        externalPlayer: Bool = false
     ) async throws -> PlaybackRequest {
         let dto: SiloItem = try await client.request(
             "/catalog/items/\(try SiloAPI.pathComponent(itemID))",
             query: libraryChannel.map { [.init(name: "library_id", value: $0.library.libraryID)] } ?? [])
+        var item = map(dto)
+        if externalPlayer {
+            guard !item.opensExternalSource, [.movie, .episode, .video].contains(item.kind) else {
+                throw ExternalPlayerError.unsupportedSource
+            }
+        }
         let files = dto.versions ?? []
         HandoffDiagnostics.emit("silo playback metadata versions=\(files.count) explicitVersion=\(mediaSourceID != nil)")
         let selected = mediaSourceID.flatMap { id in files.first { $0.file_id == id } } ?? files.first
@@ -266,7 +273,7 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             installation_id: installationID, file_id: selected.file_id, profile_id: credential.profileID,
             capabilities: capabilitiesSnapshot, forceTranscode: forceTranscode,
             fixedSourceSupported: fixedSourceSupported, streaming: streamingSelection,
-            libraryChannel: libraryChannel != nil)
+            libraryChannel: libraryChannel != nil, externalPlayer: externalPlayer)
         HandoffDiagnostics.emit(
             "silo playback request quality=\(body.quality_preference) "
                 + "encoding=\(streamingSelection?.requiresEncoding ?? forceTranscode) "
@@ -343,6 +350,9 @@ extension SiloProvider: ProviderHTTPResourceResolving {
                 throw StreamingQualityError.serverRefusal("Silo returned a stream delivery format that Plozz does not support.", reason: .unsupportedDelivery)
             }
             guard let streamURL = resourceURL(plan.stream.url) else { throw StreamingQualityError.malformedResponse }
+            if externalPlayer {
+                try await client.validateExternalMediaLifetime(streamURL, duration: selected.duration)
+            }
             var resources: [String: URL] = [:]
             func locator(url: URL, key: String, purpose: AuthenticatedHTTPResourcePurpose) throws -> AuthenticatedHTTPPlaybackLocator {
                 let path = "silo/\(UUID().uuidString)/\(key)"
@@ -374,11 +384,13 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             }
             let expiry = plan.expires_at.flatMap(Self.date)
             guard plan.expires_at == nil || expiry != nil else { throw StreamingQualityError.malformedResponse }
+            if externalPlayer, let expiry, expiry.timeIntervalSinceNow <= selected.duration + 5 * 60 {
+                throw ExternalPlayerError.unsupportedSource
+            }
             try await playback.insert(.init(itemID: itemID, sourceID: selected.file_id, installationID: installationID,
                                             expiry: expiry, streamURL: streamURL,
                                             isLibraryChannel: libraryChannel != nil, resources: resources,
                                             downloadedTracks: downloadedTracks), id: sessionID)
-            var item = map(dto)
             item.selectedVersionID = selected.file_id
             item.mediaInfo = metadata(selected)
             if let libraryChannel {
@@ -395,7 +407,7 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             // Session-bound stream grants are not offline-download permission.
             request.originalFileSource = nil
             request.streamingOptions = streaming
-            request.streamingSessionID = streaming == nil ? nil : sessionID
+            request.streamingSessionID = streaming == nil && !externalPlayer ? nil : sessionID
             request.negotiatedStreamingVideoCodec = negotiatedCodec
             request.suppressOrdinaryWatchReporting = libraryChannel != nil
             return request
@@ -536,7 +548,8 @@ struct SiloPlaybackStart: Encodable {
 
     init(installation_id: String, file_id: String, profile_id: String, capabilities: MediaCapabilities,
          forceTranscode: Bool, fixedSourceSupported: Bool = true,
-         streaming: SiloStreamingSelection? = nil, libraryChannel: Bool = false) {
+         streaming: SiloStreamingSelection? = nil, libraryChannel: Bool = false,
+         externalPlayer: Bool = false) {
         self.installation_id = installation_id
         self.file_id = file_id
         self.profile_id = profile_id
@@ -545,7 +558,7 @@ struct SiloPlaybackStart: Encodable {
             + (fixedSourceSupported ? ["fixed_media_file_v1"] : [])
         quality_preference = streaming?.qualityPreference ?? (forceTranscode ? "1080p" : "original")
         start_position = streaming?.options.startPosition ?? 0
-        progress_persistence = libraryChannel ? "client" : nil
+        progress_persistence = libraryChannel || externalPlayer ? "client" : nil
         bandwidth_cap_kbps = streaming?.videoBudgetKbps
         audio_track_index = streaming.flatMap { $0.options.selectedAudio(in: $0.source.playbackAudioTracks)?.id }
         subtitle_track_index = streaming.flatMap {

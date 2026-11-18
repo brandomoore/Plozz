@@ -80,7 +80,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .hero: ["Screens & Navigation", "Home", "Hero"]
         case .heroContent: ["Screens & Navigation", "Home", "Hero", "Hero content sources"]
         case .heroRatings: ["Screens & Navigation", "Home", "Hero", "Ratings"]
-        case .heroTrailers: ["Screens & Navigation", "Home", "Hero", "Trailers"]
+        case .heroTrailers: ["Screens & Navigation", "Movie & show details", "Trailers & music"]
         case .heroDiscovery: ["Screens & Navigation", "Home", "Hero", "Discovery providers"]
         case .heroLibraries: ["Screens & Navigation", "Home", "Hero", "Random libraries"]
         case .heroCollections: ["Screens & Navigation", "Home", "Hero", "Collections"]
@@ -157,7 +157,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     public var platform: SettingsSearchEntry.Platform? {
         switch self {
         case .downloads, .streamingAdvanced, .detailRatingSources: .mobile
-        case .topShelf, .musicPlayer: .television
+        case .topShelf: .television
         default: nil
         }
     }
@@ -221,9 +221,12 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
 
     public func isAvailable(
         on platform: Platform, osVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
-        isKids: Bool = false
+        isKids: Bool = false, featureFlags: RuntimeFeatureFlags = .buildDefault,
+        releaseChannel: AppReleaseChannel = .current
     ) -> Bool {
         osVersion >= minimumOSVersion && !(isKids && requiresAdultProfile)
+            && (id != "offline-mode" || featureFlags.isEnabled(.offlineMode))
+            && (page != .musicPlayer || platform == .television || releaseChannel.isBeta)
             && (self.platform == nil || self.platform == platform
                 || (self.platform == .mobile && platform != .television))
     }
@@ -236,7 +239,11 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
     }
 
     public func destinationPath(on platform: Platform) -> [SettingsSearchLabel] {
-        destinationPage(on: platform).path + (subtitlePage == .appearance ? [] : [.localized(subtitlePage.title)])
+        if platform != .television {
+            if page == .theme { return [.localized("Appearance")] }
+            if page == .musicPlayer { return [.localized("Appearance"), .localized("Music player")] }
+        }
+        return destinationPage(on: platform).path + (subtitlePage == .appearance ? [] : [.localized(subtitlePage.title)])
             + (skipKind.map { [.localized($0.settingsTitle)] } ?? [])
             + (qualityNetwork.map { [.localized($0.title)] } ?? [])
     }
@@ -384,7 +391,7 @@ public enum SettingsSearchCatalog {
 
     public static var carouselHeroTargets: [String] {
         entries.filter {
-            [.hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
+            [.hero, .heroContent, .heroRatings, .heroDiscovery,
              .heroLibraries, .heroCollections].contains($0.page)
                 && !$0.id.hasPrefix("showcase-") && $0.id != "home-layout"
         }.map(\.id)
@@ -395,6 +402,8 @@ public enum SettingsSearchCatalog {
     }
 
     private static let baseEntries: [SettingsSearchEntry] = [
+        .init("disc-playback", page: .playback, title: "Disc playback",
+              keywords: "blu-ray bdmv menu play video default"),
         .init("ask-before-resuming", page: .playback, title: "Ask to resume or start over",
               keywords: "continue watching restart beginning prompt confirmation resume playback"),
         .init("resume-rewind", page: .playback, title: "Rewind on resume",
@@ -411,6 +420,16 @@ public enum SettingsSearchCatalog {
               keywords: "automatically start play next episode binge stop after each episode continuous playback"),
         .init("autoplay-next-playlist", page: .playback, title: "Autoplay next playlist item",
               keywords: "automatically start play next video playlist continuous playback"),
+        .init("player-tab-chapters", page: .playback, title: "Chapters",
+              keywords: "player tabs show hide chapters scenes navigation"),
+        .init("player-tab-cast", page: .playback, title: .localized(PlayerOptionalTab.cast.title),
+              keywords: "player tabs show hide cast actors people"),
+        .init("player-tab-episodes", page: .playback, title: "Episodes",
+              keywords: "player tabs show hide episodes season series navigation"),
+        .init("player-tab-playlist", page: .playback, title: "Playlist",
+              keywords: "player tabs show hide playlist queue navigation"),
+        .init("continue-watching-in-player", page: .playback, title: .localized(PlayerOptionalTab.continueWatching.title),
+              keywords: "player tabs show hide continue watching switch title resume another movie show"),
         .init("show-up-next-card", page: .playback, title: "Show Up Next card",
               keywords: "next episode popup countdown end credits"),
         .init("audio-language", page: .playback, title: "Preferred audio language",
@@ -419,8 +438,12 @@ public enum SettingsSearchCatalog {
               keywords: "remember sound track language episodes"),
         .init("lossless-audio", page: .playback, title: "Prefer lossless audio",
               keywords: "sound surround compressed HDMI ARC receiver audio compatibility"),
+        .init("identify-songs", page: .playback, title: "Identify songs",
+              keywords: "shazam music song soundtrack what song is playing apple music"),
         .init("read-ahead", page: .playback, title: "Video buffer",
               keywords: "buffering streaming cache ahead slow network stuttering loading memory"),
+        .init("video-upscaling", page: .playback, title: "Video upscaling",
+              keywords: "picture resolution SDR automatic standard animation anime4k super resolution metalfx"),
         .init("live-buffer", page: .playback, title: "Live TV buffer",
               keywords: "live channel buffering cache ahead slow network memory"),
         .init("skip-intros", page: .playback, title: "Skip intros, credits & more",
@@ -493,7 +516,7 @@ public enum SettingsSearchCatalog {
         .init("hero-enabled", page: .hero, title: "Show hero",
               keywords: "home hero carousel spotlight banner featured showcase enable disable turn on off hide",
               preferredQueries: ["hero", "home banner", "spotlight"]),
-        .init("detail-background", page: .detail, title: "Background",
+        .init("detail-background", page: .heroTrailers, title: "Detail background",
               keywords: "movie show details hero trailer theme music behind artwork"),
         .init("detail-size", page: .detail, title: "Logo & text size",
               keywords: "movie show details title logo synopsis description bigger larger smaller"),
@@ -505,6 +528,8 @@ public enum SettingsSearchCatalog {
               keywords: "start live channel guide categories default screen"),
         .init("channel-order", page: .liveTV, title: "Channel order",
               keywords: "sort channels alphabetically name number order"),
+        .init("live-clean-channel-names", page: .liveTV, title: "Clean channel names",
+              keywords: "iptv names cleanup decorations spacing region quality labels"),
         .init("guide-preferences", page: .liveTV, title: "Guide preferences",
               keywords: "channel preview keep watching browsing recently watched guide"),
         .init("channel-visibility", page: .liveTV, title: "Channel visibility",
@@ -596,7 +621,9 @@ public enum SettingsSearchCatalog {
               keywords: "hero family guidance children recommended age"),
         .init("hero-rating-count", page: .heroRatings, title: "Maximum ratings shown",
               keywords: "hero review scores number limit"),
-        .init("hero-trailers", page: .heroTrailers, title: "Play trailer behind the hero",
+        .init("trailer-sources", page: .heroTrailers, title: "Trailers",
+              keywords: "trailers music youtube server only off disable manual button sources"),
+        .init("hero-trailers", page: .heroTrailers, title: "Home autoplay",
               keywords: "hero background video preview motion autoplay"),
         .init("hero-trailers-muted", page: .heroTrailers, title: "Start muted",
               keywords: "hero trailer sound audio silent background"),
@@ -665,8 +692,12 @@ public enum SettingsSearchCatalog {
 
     public static func entries(
         on platform: SettingsSearchEntry.Platform,
-        osVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion, isKids: Bool = false
+        osVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion, isKids: Bool = false,
+        featureFlags: RuntimeFeatureFlags = .buildDefault, releaseChannel: AppReleaseChannel = .current
     ) -> [SettingsSearchEntry] {
-        entries.filter { $0.isAvailable(on: platform, osVersion: osVersion, isKids: isKids) }
+        entries.filter {
+            $0.isAvailable(on: platform, osVersion: osVersion, isKids: isKids,
+                           featureFlags: featureFlags, releaseChannel: releaseChannel)
+        }
     }
 }

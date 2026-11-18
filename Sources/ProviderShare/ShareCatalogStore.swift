@@ -114,7 +114,7 @@ actor ShareCatalogStore {
     /// Persisted only as an opaque hash of account identity + credential revision.
     /// This avoids rematerializing every item after a process relaunch while never
     /// storing credentials or artwork paths in catalog metadata.
-    private static let artworkReferenceContextMetaKey = "artwork_reference_context_v2"
+    private static let artworkReferenceContextMetaKey = "artwork_reference_context_v3"
     private var artworkReferenceContextPreparationCount = 0
     static let libraryAnimeContextMetaKey = "library_anime_context"
     private var artworkAssociationMaterializationStats = ArtworkAssociationMaterializationStats(
@@ -832,20 +832,15 @@ actor ShareCatalogStore {
             path: Self.artworkReferenceContextMetaKey,
             fingerprint: credentialRevision.rawValue.uuidString
         )
+        // Version 3 also rebuilds landscape-card associations from existing inventory.
         // This marker commits with the legacy ID backfill and reference rebuild.
         // New artwork receives IDs on upsert; unchanged readers need neither pass.
         guard meta(Self.artworkReferenceContextMetaKey) != marker else { return }
 
         artworkReferenceContextPreparationCount += 1
-        let itemIDs = allArtworkAssociatedItemIDs().sorted()
         _ = connection.withImmediateTransaction {
-            guard artworkRepo.ensureCatalogArtworkIDs() else { return false }
-            for itemID in itemIDs {
-                guard !Task.isCancelled,
-                      materializeArtworkSelectionsInTransaction(
-                        itemID: itemID
-                      ) else { return false }
-            }
+            guard artworkRepo.ensureCatalogArtworkIDs(),
+                  reassociateAllArtworkInTransaction() else { return false }
             return setMeta(Self.artworkReferenceContextMetaKey, marker)
         }
     }
@@ -1045,7 +1040,8 @@ actor ShareCatalogStore {
         guard artworkRepo.replaceAllAssociations(associations) else { return false }
         let current = artworkAssociatedItemIDs(paths: candidates.map(\.relPath))
         for itemID in previous.union(current).sorted() {
-            guard materializeArtworkSelectionsInTransaction(itemID: itemID) else { return false }
+            guard !Task.isCancelled,
+                  materializeArtworkSelectionsInTransaction(itemID: itemID) else { return false }
         }
         return true
     }
@@ -1058,7 +1054,7 @@ actor ShareCatalogStore {
     }
 
     private func reassociateArtwork(afterUpserting assets: [CatalogAsset]) {
-        var directories = Set(assets.map { ($0.relPath as NSString).deletingLastPathComponent })
+        var directories = Set(assets.map { ShareBluRayFolder.metadataDirectory($0.relPath) })
         directories.formUnion(assets.compactMap(\.metadataRoot))
         let directArtworkDirectories = directories.flatMap {
             $0.isEmpty
@@ -1089,7 +1085,8 @@ actor ShareCatalogStore {
         }
         let current = artworkAssociatedItemIDs(paths: candidates.map(\.relPath))
         for itemID in previous.union(current).sorted() {
-            guard materializeArtworkSelectionsInTransaction(itemID: itemID) else { return false }
+            guard !Task.isCancelled,
+                  materializeArtworkSelectionsInTransaction(itemID: itemID) else { return false }
         }
         return true
     }
@@ -1374,10 +1371,11 @@ actor ShareCatalogStore {
         JOIN local_artwork_files f ON f.rel_path=a.artwork_rel_path
         WHERE a.item_id=? AND f.probe_status IN ('pending','unvalidated','validated')
           AND (
-            a.placement NOT IN ('homeHero','detailBackdrop')
+            a.placement NOT IN ('homeHero','detailBackdrop','landscapeCard')
             OR (
               f.probe_status='validated'
               AND f.width <= 3 * f.height
+              AND (a.placement <> 'landscapeCard' OR 3 * f.width >= 4 * f.height)
             )
           )
         ORDER BY a.placement,a.rank,f.rel_path;
@@ -1933,7 +1931,7 @@ actor ShareCatalogStore {
             query("SELECT kind FROM assets WHERE rel_path=?;", bind: { self.bindText($0, 1, relPath) }) { stmt in
                 isMovie = self.columnText(stmt, 0) == "movie"
             }
-            let parentDir = (relPath as NSString).deletingLastPathComponent
+            let parentDir = ShareBluRayFolder.metadataDirectory(relPath)
             members = [.init(
                 relPath: relPath,
                 isMovie: isMovie,
@@ -1948,7 +1946,7 @@ actor ShareCatalogStore {
             WHERE COALESCE(movie_group_key, movie_key)=? AND library='movies' AND kind='movie';
             """, bind: { self.bindText($0, 1, groupKey) }) { stmt in
                 guard let relPath = self.columnText(stmt, 0) else { return }
-                let parentDir = (relPath as NSString).deletingLastPathComponent
+                let parentDir = ShareBluRayFolder.metadataDirectory(relPath)
                 members.append(.init(
                     relPath: relPath,
                     isMovie: true,
@@ -2008,10 +2006,10 @@ actor ShareCatalogStore {
         query("""
         SELECT rel_path, movie_key, movie_group_key FROM assets
         WHERE library='movies' AND kind='movie'
-          AND substr(rel_path,1,length(rel_path)-length(basename)-1)=?;
-        """, bind: { self.bindText($0, 1, dir) }) { stmt in
+          AND (substr(rel_path,1,length(rel_path)-length(basename)-1)=? OR metadata_root=?);
+        """, bind: { self.bindText($0, 1, dir); self.bindText($0, 2, dir) }) { stmt in
             guard let relPath = self.columnText(stmt, 0),
-                  (relPath as NSString).deletingLastPathComponent == dir else { return }
+                  ShareBluRayFolder.metadataDirectory(relPath) == dir else { return }
             let key = self.columnText(stmt, 2) ?? self.columnText(stmt, 1) ?? relPath
             if let existing = repsByGroup[key], relPath >= existing { return }
             repsByGroup[key] = relPath

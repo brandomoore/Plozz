@@ -1,4 +1,5 @@
 import CoreSecureStore
+import CoreModels
 import CoreNetworking
 import FeatureSyncCloud
 import Foundation
@@ -22,7 +23,8 @@ public enum TraktSharedRefreshBootstrap {
                 return SyncedTokenRegistry.shared.isSignedOut(.init(
                     service: String(parts[0]), account: String(parts[1])
                 ))
-            }
+            },
+            allowsDiscovery: { SyncSetupFeatureFlag().allowsAutomaticSignInSync }
         ))
     }
 

@@ -164,6 +164,47 @@ class AppleAvailabilityTests(unittest.TestCase):
         with self.assertRaises(ROAD.Error):
             self.read(self.versions() + self.versions())
 
+    def test_latest_distributed_version_wins_regardless_of_response_order(self):
+        older = self.versions()[0]
+        newer = copy.deepcopy(older)
+        newer["attributes"]["versionString"] = "1.1.0"
+        newer["attributes"]["appVersionState"] = "READY_FOR_DISTRIBUTION"
+        newer["relationships"]["build"]["data"]["id"] = "new-build"
+        pending = copy.deepcopy(newer)
+        pending["attributes"].update(versionString="1.2.0", appVersionState="PENDING_DEVELOPER_RELEASE")
+        included = {
+            ("builds", "build"): {"attributes": {"version": "69", "processingState": "VALID"}},
+            ("builds", "new-build"): {"attributes": {"version": "70", "processingState": "VALID"}},
+        }
+        for versions in ([older, newer, pending], [pending, newer, older]):
+            self.assertEqual(self.read(versions, included), [
+                {"marketing": "1.1.0", "build": "70", "platforms": {"IOS"}},
+            ])
+
+    def test_legacy_source_without_catalog_is_explicitly_excluded(self):
+        releases = [{"build": "24"}, {"build": "70"}]
+        published = [{"tag_name": ROAD.ANN.NOTES.release_tag(r["build"]), "draft": False} for r in releases]
+        output = io.StringIO()
+        with patch.dict(ROAD.RES, {
+            "git": Mock(side_effect=["", "App/Resources/ReleaseNotes.json"]),
+            "verified_release_source": Mock(return_value={"build": "70", "source": COMMIT}),
+        }), redirect_stdout(output):
+            self.assertEqual(ROAD.verified_releases(releases, published), [{"build": "70", "source": COMMIT}])
+            ROAD.RES["verified_release_source"].assert_called_once_with(releases[1])
+        self.assertIn("Build 24: tagged source has no release catalog", output.getvalue())
+
+    def test_broken_tag_or_invalid_existing_catalog_is_not_skipped(self):
+        releases = [{"build": "70"}]
+        published = [{"tag_name": ROAD.ANN.NOTES.release_tag("70"), "draft": False}]
+        for lookup, verifier in [
+            (Mock(side_effect=ROAD.Error("Missing tag")), Mock()),
+            (Mock(return_value="App/Resources/ReleaseNotes.json"),
+             Mock(side_effect=ROAD.Error("Invalid catalog"))),
+        ]:
+            with patch.dict(ROAD.RES, {"git": lookup, "verified_release_source": verifier}):
+                with self.assertRaises(ROAD.Error):
+                    ROAD.verified_releases(releases, published)
+
     def test_unpublished_source_never_becomes_a_verified_release(self):
         with patch.dict(ROAD.RES, {"verified_release_source": Mock()}):
             self.assertEqual(ROAD.verified_releases([{"build": "70"}], []), [])

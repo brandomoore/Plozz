@@ -6,7 +6,9 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
     ServerLiveTVProviding, ProviderHTTPResourceResolving, PlayedStateWriting,
     ResumeStateWriting, ContinueWatchingRemovable, ProviderTeardown, Sendable {
     public let kind: ProviderKind = .iptv
+    public var usesLocalWatchStateOnly: Bool { true }
     public let session: UserSession
+    public let usesPerChannelLiveTVGuide: Bool
     private let context: ProviderResolutionContext
     private let client: IPTVClient
     private let watch: LocalMediaWatchStore
@@ -22,6 +24,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         guard context.session.server.provider == .iptv, let local = context.localMediaContext,
               local.accountID == context.accountID else { throw ProviderResolutionError.localMediaContextRequired(.iptv) }
         let credential = try IPTVCredential.decode(context.session.accessToken)
+        usesPerChannelLiveTVGuide = credential.mode == .xtream && credential.explicitGuideURLs.isEmpty
         self.context = context
         self.guideLoader = guideLoader
         self.guideIndex = guideIndex
@@ -275,6 +278,28 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         await client.invalidateGuideCache()
     }
 
+    public func updateSavedLiveTVGuide() async throws -> Date? {
+        guard let guideIndex else { return nil }
+        var next: Date?
+        // The lineup first, so the guide is matched against current channels.
+        if let interval = guideIndex.updateInterval {
+            next = try await client.refreshSavedLiveLineup(olderThan: interval)
+        }
+        for url in try await client.savedGuideURLs() {
+            try Task.checkCancellation()
+            let due = try await guideIndex.updateSaved(
+                url: url,
+                catalog: { [client] in
+                    guard let channels = try await client.savedGuideChannels() else { throw AppError.notFound }
+                    return channels
+                },
+                download: { [client] previous in try await client.guideResponse(from: url, previous: previous) }
+            )
+            if let due { next = min(next ?? due, due) }
+        }
+        return next
+    }
+
     public func completeLiveTVGuideDiscovery() async throws -> Bool? {
         try await client.completeGuideDiscovery()
     }
@@ -319,68 +344,102 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         channelIDs: [String], from: Date, to: Date, diagnostics: IPTVGuideDiagnostics
     ) async throws -> [ServerLiveTVProgramme] {
         let credential = await client.credential
-        if credential.mode == .xtream, credential.explicitGuideURLs.isEmpty {
-            var result: [ServerLiveTVProgramme] = []
-            var fallbackIDs: [String] = []
-            var endpointUnavailable = false
-            for id in channelIDs {
-                try Task.checkCancellation()
-                if endpointUnavailable {
-                    diagnostics.fallback(.unavailable)
-                    fallbackIDs.append(id)
-                    continue
-                }
-                do {
-                    let request = IPTVGuideDiagnostics.Request()
-                    let programmes: [ServerLiveTVProgramme]
-                    do {
-                        programmes = try await IPTVGuideDiagnostics.$request.withValue(request) {
-                            try await client.guide(channelID: id, from: from, to: to)
-                        }
-                        diagnostics.record(request, endpoint: .xtream, rows: programmes.count)
-                    } catch {
-                        diagnostics.record(request, endpoint: .xtream, error: error)
-                        throw error
-                    }
-                    if programmes.isEmpty {
-                        diagnostics.fallback(.empty)
-                        fallbackIDs.append(id)
-                    }
-                    else { result += programmes }
-                } catch AppError.notFound, IPTVError.unsupported {
-                    diagnostics.fallback(.unavailable)
-                    endpointUnavailable = true
-                    fallbackIDs.append(id)
-                } catch IPTVError.malformed {
-                    diagnostics.fallback(.malformed)
-                    fallbackIDs.append(id)
-                }
-            }
-            if !fallbackIDs.isEmpty {
-                do {
-                    result += try await xmlTVGuide(channelIDs: fallbackIDs, from: from, to: to, diagnostics: diagnostics)
-                } catch let partial as ServerLiveTVPartialGuideError {
-                    throw ServerLiveTVPartialGuideError(
-                        programmes: result + partial.programmes, failure: partial.failure
-                    )
-                } catch {
-                    try Task.checkCancellation()
-                    guard !result.isEmpty, Self.canIsolateGuideFailure(error) else { throw error }
-                    throw ServerLiveTVPartialGuideError(programmes: result, failure: error)
-                }
-            }
-            return result
+        guard credential.mode == .xtream, credential.explicitGuideURLs.isEmpty else {
+            return try await xmlTVGuide(channelIDs: channelIDs, from: from, to: to, diagnostics: diagnostics)
         }
-        return try await xmlTVGuide(channelIDs: channelIDs, from: from, to: to, diagnostics: diagnostics)
+        try await client.ensureCatalog("live")
+        guard let lineup = try await client.savedGuideLineup() else { return [] }
+        var seen = Set<String>()
+        let requestedIDs = channelIDs.filter { seen.insert($0).inserted }
+        let guided = requestedIDs.compactMap { lineup.guided[$0] }
+        let saved = try await indexedGuide(channels: guided, lineup: lineup, from: from, to: to, diagnostics: diagnostics)
+        var batch = saved ?? []
+        if saved == nil, !(try await client.isBatchGuideUnavailable()) {
+            do {
+                batch = try await xmlTVGuide(channelIDs: guided.map(\.id), from: from, to: to, diagnostics: diagnostics)
+            } catch {
+                try Task.checkCancellation()
+                guard try await client.isBatchGuideUnavailable() else { throw error }
+            }
+        }
+        var byChannel = Dictionary(grouping: batch, by: \.channelID)
+        let covered = Set(byChannel.compactMap { id, rows in
+            Self.listings(rows, cover: from, to: to) ? id : nil
+        })
+        if saved != nil { diagnostics.indexed(channels: covered.count) }
+        func result() -> [ServerLiveTVProgramme] {
+            requestedIDs.flatMap { byChannel[$0] ?? [] }
+        }
+        // Native listings use stream IDs, even when the channel has no XMLTV guide ID.
+        for id in requestedIDs where !covered.contains(id) {
+            try Task.checkCancellation()
+            if await client.hasEmptyGuideAnswer(id) { continue }
+            let request = IPTVGuideDiagnostics.Request()
+            do {
+                let rows = try await IPTVGuideDiagnostics.$request.withValue(request) {
+                    try await client.guide(channelID: id, from: from, to: to)
+                }
+                diagnostics.record(request, endpoint: .xtream, rows: rows.count)
+                if !rows.isEmpty { byChannel[id] = rows }
+            } catch {
+                diagnostics.record(request, endpoint: .xtream, error: error)
+                try Task.checkCancellation()
+                switch error {
+                case IPTVError.malformed:
+                    continue
+                case AppError.notFound, IPTVError.unsupported:
+                    return result()
+                default:
+                    break
+                }
+                let partial = result()
+                guard !partial.isEmpty, Self.canIsolateGuideFailure(error) else { throw error }
+                throw ServerLiveTVPartialGuideError(programmes: partial, failure: error)
+            }
+        }
+        return result()
+    }
+
+    private static func listings(_ programmes: [ServerLiveTVProgramme], cover from: Date, to: Date) -> Bool {
+        var answered = from
+        for programme in programmes.sorted(by: { $0.startDate < $1.startDate }) {
+            guard programme.startDate <= answered else { return false }
+            answered = max(answered, programme.endDate)
+            if answered >= to { return true }
+        }
+        return answered >= to
+    }
+
+    private func indexedGuide(
+        channels: [IPTVGuideChannel], lineup: IPTVClient.SavedGuideLineup,
+        from: Date, to: Date, diagnostics: IPTVGuideDiagnostics
+    ) async throws -> [ServerLiveTVProgramme]? {
+        guard let guideIndex, let url = try await client.xtreamGuideURL() else { return nil }
+        do {
+            guard let rows = try await guideIndex.cachedProgrammes(
+                url: url, channels: channels, from: from, to: to, trustsGuideIDs: true,
+                catalogRevision: lineup.revision, catalog: { Array(lineup.guided.values) }
+            ) else { return nil }
+            try Task.checkCancellation()
+            guard lineup.revision == (try await client.guideCatalogRevision()) else { return nil }
+            let request = IPTVGuideDiagnostics.Request()
+            request.reusedIndex()
+            diagnostics.record(request, endpoint: .xmltv, rows: rows.count)
+            return rows
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError { throw error }
+            PlozzLog.networking.info("IPTV_GUIDE event=indexUnavailable")
+            return nil
+        }
     }
 
     private func xmlTVGuide(
         channelIDs: [String], from: Date, to: Date, diagnostics: IPTVGuideDiagnostics
     ) async throws -> [ServerLiveTVProgramme] {
-        guard !channelIDs.isEmpty else { return [] }
+        guard !channelIDs.isEmpty || usesPerChannelLiveTVGuide else { return [] }
         let urls = try await client.guideURLs()
         guard !urls.isEmpty else { return [] }
-        guard guideLoader != nil || guideIndex != nil else { throw ServerLiveTVError.unsupportedAPI }
         let indexedCatalog = guideIndex == nil ? nil : try await client.guideChannels()
         var channels: [IPTVGuideChannel] = []
         if let indexedCatalog {
@@ -407,7 +466,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         var firstFailure: (any Error)?
         for url in urls {
             let remaining = channels.filter { !covered.contains($0.id) }
-            if remaining.isEmpty { break }
+            if remaining.isEmpty && !channels.isEmpty { break }
             do {
                 let programmes = try await loadXMLTVGuide(
                     url: url, channels: remaining, from: from, to: to, loader: guideLoader,
@@ -489,16 +548,16 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                 if let guideIndex, let catalog {
                     return try await guideIndex.programmes(
                         url: url, channels: channels, from: from, to: to,
-                        catalog: { catalog },
-                        download: { [client] in
-                            let response = try await client.guideDocument(from: url)
+                        trustsGuideIDs: usesPerChannelLiveTVGuide, catalog: { catalog },
+                        download: { [client] previous in
+                            let response = try await client.guideResponse(from: url, previous: previous)
                             request.parsing()
                             return response
                         }
                     )
                 }
-                guard let loader else { throw ServerLiveTVError.unsupportedAPI }
                 let data = try await client.guideData(from: url)
+                guard let loader else { throw ServerLiveTVError.unsupportedAPI }
                 request.parsing()
                 return try await loader(data, url, channels, from, to)
             }
@@ -573,6 +632,32 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             }
             return item
         }
+    }
+}
+
+extension IPTVProvider: ExternalPlaybackProviding {
+    public func externalPlaybackInfo(
+        for itemID: String, mediaSourceID: String?, player: ExternalPlayer,
+        streaming: StreamingPlaybackOptions?
+    ) async throws -> PlaybackRequest {
+        guard streaming?.requiresConversionPolicy != true else { throw ExternalPlayerError.unsupportedSource }
+        let record = try await client.record(itemID, details: true)
+        guard !record.isLive, record.item.kind == .movie || record.item.kind == .episode,
+              mediaSourceID == nil else {
+            throw ExternalPlayerError.unsupportedSource
+        }
+        let delivery = try await client.delivery(itemID)
+        // App-link APIs do not carry arbitrary HTTP headers. Never silently drop
+        // authentication, referer or user-agent requirements, or export the proxy.
+        guard delivery.headers.isEmpty, ExternalPlayerURL.isSupportedMediaURL(delivery.url, player: player) else {
+            throw ExternalPlayerError.unsupportedSource
+        }
+        let item = await applyingWatch([record.item])[0]
+        try Task.checkCancellation()
+        return PlaybackRequest(
+            item: item, streamURL: delivery.url, startPosition: item.resumePosition ?? 0,
+            sourceProvider: .iptv, serverName: session.server.name
+        )
     }
 }
 

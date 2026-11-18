@@ -18,6 +18,7 @@ struct PlozziOSTrackerScrobbler: TraktScrobbling {
         progress: Double,
         event: PlaybackEvent
     ) async {
+        guard !OfflineMode.shared.isEnabled else { return }
         async let traktResult: Void = trakt.scrobble(
             item: item,
             progress: progress,

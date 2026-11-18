@@ -1,4 +1,5 @@
 #if canImport(SwiftUI)
+import CoreNetworking
 import Foundation
 import CoreModels
 
@@ -77,7 +78,7 @@ public actor TMDbArtworkResolver {
         config.timeoutIntervalForRequest = 12
         config.timeoutIntervalForResource = 20
         config.httpMaximumConnectionsPerHost = 6
-        return URLSession(configuration: config)
+        return OfflineNetworkSession.make(configuration: config)
     }()
 
     /// Caps *background* TMDb warming (season episode-still prefetch) so it can
@@ -232,7 +233,7 @@ public actor TMDbArtworkResolver {
                             #if canImport(UIKit)
                             await ArtworkImageCache.shared.image(for: url, variant: .landscapeCard, background: true)
                             #else
-                            _ = try? await URLSession.shared.data(from: url)
+                            _ = try? await OfflineNetworkSession.shared.data(from: url)
                             #endif
                         }
                     }

@@ -5,6 +5,26 @@ import CoreModels
 @testable import CoreUI
 
 final class EpisodeColumnPresentationTests: XCTestCase {
+    func testEpisodeOverviewCollapsesParagraphsWithoutChangingSourceMetadata() {
+        let overview = "A guiding thought.\r\n\r\nThe crew investigate.\u{2028}\tMore details."
+        let item = episode(overview: overview)
+        let presentation = EpisodeColumnPresentation(item: item, spoilerSettings: .default)
+        let expected = "A guiding thought. The crew investigate. More details."
+        XCTAssertEqual(presentation.visibleOverview, expected)
+        XCTAssertTrue(presentation.accessibilityLabel.contains(expected))
+        XCTAssertEqual(item.overview, overview)
+        XCTAssertEqual(EpisodeColumnPresentation.compactOverview(overview), expected)
+        XCTAssertNil(EpisodeColumnPresentation.compactOverview(" \r\n\t\u{2029} "))
+        for mode in [SpoilerSettings.Mode.blur, .placeholder] {
+            let hidden = EpisodeColumnPresentation(
+                item: item, spoilerSettings: SpoilerSettings(isEnabled: true, mode: mode)
+            )
+            XCTAssertNil(hidden.visibleOverview)
+            XCTAssertFalse(hidden.accessibilityLabel.contains("A guiding thought"))
+            XCTAssertFalse(hidden.debugDescription.contains("The crew investigate"))
+        }
+    }
+
     func testUnwatchedEpisodeShowsIdentityRuntimeAndOverview() {
         let presentation = EpisodeColumnPresentation(
             item: episode(runtime: 2_700),
@@ -31,6 +51,23 @@ final class EpisodeColumnPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.progress, 0.25)
         XCTAssertFalse(presentation.isWatched)
         XCTAssertTrue(presentation.accessibilityLabel.contains("25 percent watched"))
+    }
+
+    func testBriefPlayKeepsFullRuntimeUnwatchedAccessibilityAndSpoilerProtection() {
+        let item = episode(runtime: 3600, resumePosition: 2, playedPercentage: 2.0 / 3600)
+        let presentation = EpisodeColumnPresentation(item: item, spoilerSettings: .default)
+        XCTAssertEqual(presentation.metadataText, "1h")
+        XCTAssertNil(presentation.progress)
+        XCTAssertFalse(presentation.isWatched)
+        XCTAssertTrue(presentation.accessibilityLabel.contains("Unwatched"))
+        XCTAssertFalse(presentation.accessibilityLabel.contains("percent watched"))
+        for mode in [SpoilerSettings.Mode.blur, .placeholder] {
+            let protected = EpisodeColumnPresentation(
+                item: item, spoilerSettings: SpoilerSettings(isEnabled: true, mode: mode)
+            )
+            XCTAssertEqual(protected.artworkTreatment, mode == .blur ? .blurred : .placeholder)
+            XCTAssertNil(protected.visibleOverview)
+        }
     }
 
     /// A rewatch shows where the viewer is, not where they once finished.

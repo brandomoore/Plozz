@@ -2,6 +2,503 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/073.1",
+      "version": "2026.11.17",
+      "marketingVersion": "2026.11.16",
+      "build": "73.1",
+      "releasedAt": "2026-11-17",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Automatic upscaling for supported SDR below 1080p, or up to 1080p for animation. Enabled by default; HDR and 4K are unchanged.",
+            "Audio sync controls for supported playback.",
+            "Separate default zoom settings for Apple TV, iPhone and iPad.",
+            {
+              "text": "Week navigation in Upcoming.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Live TV startup, guide loading and automatic refresh.",
+            "Home loading across multiple media servers.",
+            {
+              "text": "Playback version and subtitle-sync controls.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Remembered Auto Crop framing on iPhone.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Collection posters not filling their cards.",
+            "Title logos appearing in unrelated languages.",
+            {
+              "text": "Focus getting stuck in long Upcoming lists.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Settings navigation after customizing Home.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/073",
+      "version": "2026.11.16",
+      "marketingVersion": "2026.11.16",
+      "build": 73,
+      "releasedAt": "2026-11-16",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Upcoming calendar and Coming Soon for shows and movies you watch, add to Watchlist or request.",
+            "Profile-specific Seerr sign-in with Jellyfin, Plex, Emby or Seerr accounts, plus multiple saved connections. Setup is unavailable in child profiles.",
+            "Bengali and Urdu.",
+            "Remembered movie audio language and movie/series crop settings.",
+            "Optional IPTV channel-name cleanup.",
+            "Beta Dolby Vision P7 FEL to P8.1 conversion, on by default for supported on-demand playback. Approximates brightness, not full FEL reconstruction; turn off for HDR10."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Home and title-detail layouts, with consistent Related and Cast & Crew sizing and steadier artwork during swipe-back.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Home and title-detail layouts.",
+              "platforms": ["tvOS"]
+            },
+            "More metadata and biographies in your selected language, when available.",
+            "Auto Crop defaults on for supported movies and episodes, with steadier framing through seeks.",
+            "Live TV guide loading, compatibility and source controls, plus Plex Live TV playback.",
+            "Settings and sign-in layouts.",
+            {
+              "text": "Search, Downloads and Music layouts.",
+              "platforms": ["iOS"]
+            },
+            "Playback compatibility and subtitle loading, including confirmed Dolby Vision P7 MEL to P8.1 conversion. Unclassified P7 retains HDR10."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Missing Play and ratings on some Home Discovery titles already in your libraries.",
+            {
+              "text": "Picture in Picture not returning to the player when reopening Plozz.",
+              "platforms": ["iOS"]
+            },
+            "Auto Crop changing video colors during native playback.",
+            "Advancing to the next episode before mid- or post-credits scenes."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/072",
+      "version": "2026.11.13",
+      "marketingVersion": "2026.11.12",
+      "build": 72,
+      "releasedAt": "2026-11-13",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Rename Home rows and navigation items.",
+            "Restore compatible server sign-ins through iCloud.",
+            {
+              "text": "Navidrome and compatible Subsonic music servers, joining Plex, Jellyfin and Emby (beta).",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Music browsing and streaming from Plex, Jellyfin, Emby, Navidrome and compatible Subsonic servers (beta).",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Custom Home rows now support playlists, libraries and lists like Continue Watching, individually or combined.",
+            "Custom Home rows now support sorting and filtering.",
+            "Clearer iCloud setup and restoration progress.",
+            "Source settings and sign-in screens.",
+            "Video-version selection, including an option to use server order.",
+            "More consistent title details, resume choices and metadata language.",
+            "Faster Plex library loading and fewer repeated Jellyfin requests.",
+            {
+              "text": "Live TV Multiview controls, layouts and audio indication.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Home, detail and Live TV navigation.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Appearance settings and Liquid Glass Off support.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Watched status and resume progress not updating reliably.",
+            "Older iCloud updates removing newer Watchlist items.",
+            "Connecting to local Jellyfin and Emby servers using HTTP.",
+            "Profile loss during migration and duplicate Plex Home imports.",
+            {
+              "text": "Inconsistent German playback labels on Home.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Hangs when opening Home movie rows on iOS 18.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071.6",
+      "version": "2026.11.9",
+      "marketingVersion": "2026.11.6",
+      "build": "71.6",
+      "releasedAt": "2026-11-09",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Multiple audio languages in new reduced-quality Plex, Emby and compatible Silo downloads.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Select and remove multiple downloaded episodes.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Broader external-player support for converted videos and compatible network shares.",
+            "More music services and a redesigned song picker.",
+            {
+              "text": "More text subtitles saved with reduced-quality Jellyfin and Emby downloads.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Improved download navigation and native toolbar controls.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Settings text contrast with gradients or Liquid Glass disabled.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Playback and audio selection for downloaded videos.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071.5",
+      "version": "2026.11.8",
+      "marketingVersion": "2026.11.6",
+      "build": "71.5",
+      "releasedAt": "2026-11-08",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Spotify and YouTube searches for recognized songs."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Episode descriptions stay visible, with an optional focus-only setting.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Episode card focus and menu previews.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Native sidebar layout and clipped Settings content.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Selecting Home again not returning to the top.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071.4",
+      "version": "2026.11.8",
+      "marketingVersion": "2026.11.6",
+      "build": "71.4",
+      "releasedAt": "2026-11-08",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Pinned sidebar blocking navigation into Live TV and Settings.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Music playback skipping a newly selected song.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071.3",
+      "version": "2026.11.8",
+      "marketingVersion": "2026.11.6",
+      "build": "71.3",
+      "releasedAt": "2026-11-08",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": [
+            "Series synopsis and ratings on TV show details.",
+            "Faster loading of Related titles."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Home focus staying on navigation after closing release notes.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071.2",
+      "version": "2026.11.7",
+      "marketingVersion": "2026.11.6",
+      "build": "71.2",
+      "releasedAt": "2026-11-07",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Unencrypted Blu-ray folder playback from network shares, with HDMV menus and video selection. BD-J plays video only; menu and manually selected disc videos don't save watch progress.",
+            "Choose a one-time player from Play's menu for supported sources.",
+            {
+              "text": "External text subtitles for more download sources, plus subtitle-only updates and retries.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Mark in-progress movies and episodes as unwatched to reset progress.",
+            "Performance improvements to Home and profile library selection.",
+            "More detailed real-time playback diagnostics.",
+            "Refined song cards and Play/Resume labels.",
+            {
+              "text": "Simplified download settings and improved offline artwork.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Improved Live TV handling when the app is backgrounded.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Continue Watching cards ignoring taps on iPad.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Settings closing during server-user verification.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Misplaced Resume / Start Over popovers on Home and title details.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Home opening with the sidebar focused instead of page content.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Playback links failing while another video is playing.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071.1",
+      "version": "2026.11.6",
+      "marketingVersion": "2026.11.6",
+      "build": "71.1",
+      "releasedAt": "2026-11-06",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Offline Mode for downloads, with known limitations in library filters, series details and Watchlist.",
+              "platforms": ["iOS"]
+            },
+            "Offline sign-in for previously authenticated Plex profiles.",
+            "Song identification during supported playback.",
+            "Continue Watching and customizable tabs in the player.",
+            {
+              "text": "Full-screen playback controls for hero trailers.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Redesigned title details, ratings, cast and crew.",
+            "Trailers continue between Home and title details.",
+            "More control over trailers and background music.",
+            "Improved landscape artwork and optional title logos in Home rows.",
+            "Dolby Vision Profile 7 videos now use their HDR10 base."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Subtitle labels losing regional and version names.",
+            "Home trailers preventing screen savers and sleep.",
+            "Resume positions and brief-play indicators on title details.",
+            "Playback failures after system media-service interruptions."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/071",
+      "version": "2026.11.6",
+      "marketingVersion": "2026.11.6",
+      "build": 71,
+      "releasedAt": "2026-11-06",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Offline Mode for downloads, with known limitations in library filters, series details and Watchlist.",
+              "platforms": ["iOS"]
+            },
+            "Offline sign-in for previously authenticated Plex profiles.",
+            "Song identification during supported playback.",
+            "Continue Watching and customizable tabs in the player.",
+            {
+              "text": "Full-screen playback controls for hero trailers.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Redesigned title details, ratings, cast and crew.",
+            "Trailers continue between Home and title details.",
+            "More control over trailers and background music.",
+            "Improved landscape artwork and optional title logos in Home rows.",
+            "Dolby Vision Profile 7 videos now use their HDR10 base."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Subtitle labels losing regional and version names.",
+            "Home trailers preventing screen savers and sleep.",
+            "Resume positions and brief-play indicators on title details.",
+            "Playback failures after system media-service interruptions."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/070.1",
+      "version": "2026.11.4",
+      "marketingVersion": "2026.11.4",
+      "build": "70.1",
+      "releasedAt": "2026-11-04",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Improved episode and version selection for downloads.",
+              "platforms": ["iOS"]
+            },
+            "Clearer empty Home rows with optional dismissal.",
+            "Better handling of Silo Home loading and request limits.",
+            "More reliable watch-progress syncing after connection changes.",
+            "Resume progress for short Plex extras is saved on this device.",
+            "Some DV seek previews are no longer available; playback is unchanged."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Unwanted Continue Watching entries from brief plays, trailers and Live TV.",
+            "Missing Plex collection cards in Browse.",
+            "Missing Live TV seek previews on some channels.",
+            {
+              "text": "Download confirmation now respects Ask Before Downloading.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Downloads failing with some WebDAV sources.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/070",
       "version": "2026.11.3",
       "marketingVersion": "2026.10.30",

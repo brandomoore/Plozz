@@ -32,6 +32,9 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   iOS toolbar buttons when the iPad app runs on Mac; framing a resizable photo
   alone does not constrain the extracted image. Keep the native button style
   and hit target. Palette resolution lives here, not in Foundation-only `CoreModels`.
+- `ProfileChip` — the shared avatar/name chip used by Seerr setup and Libraries'
+  scrolling profile context. Its name wraps at accessibility sizes; the avatar
+  is decorative to avoid repeating the name in VoiceOver.
 - `ProfileTileColor` — the colour palette and the deterministic
   `colorIndex → Color` resolution used by avatar / tile / picker.
   Avatar choices reuse CoreUI's `ColorSwatchButton`, also used by watch-indicator
@@ -52,6 +55,8 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 - `AutomaticSignInSettings` — one binding and shared control for the device's
   startup preference, exposed in individual profile settings and Everyone → Profiles.
   The description carries device scope without an extra section heading.
+  Described toggles use CoreUI's `SettingsDescribedControl`, including its shared
+  typography and balanced row padding; do not put helper text inside the toggle label.
 
 ## Invariants
 
@@ -125,6 +130,13 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   button; only the uncommitted Just me choice offers Back. Transitions use a short
   lift/fade; Reduce Motion uses only a fade.
   Import preserves existing profiles and their customization. New profiles have
+  non-authorizing Plex Home import provenance (owner and Home-user identity).
+  It syncs with the profile so an explicit import on another device can reuse
+  that profile without matching names or transferring authentication. Existing
+  device-local bindings take precedence; changing the mapped Home user clears
+  the provenance. Older profiles without provenance and existing duplicate
+  profiles are not automatically merged.
+  New profiles have
   explicit membership in that login's selected
   Plex servers, their own Home-user bindings/photos, and the normal setup gate.
   Import is metadata-only: no other user's PIN or session is requested, and

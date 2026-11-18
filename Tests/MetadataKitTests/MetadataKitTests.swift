@@ -46,6 +46,40 @@ final class MetadataKitTests: XCTestCase {
         XCTAssertEqual(ContentClassifier.classify(item(kind: .episode)), .tvShow)
     }
 
+    func testAutomaticUpscalingUsesAnimationMetadataAndHonorsExplicitChoices() {
+        var tagged = item()
+        tagged.tags = [" Animation "]
+        for animated in [
+            item(genres: ["Animation"]), item(genres: ["Anime"]),
+            item(providerIDs: ["AniList": "21"]), item(providerIDs: ["SeriesMal": "1"]), tagged
+        ] {
+            XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: animated), .animation)
+            XCTAssertEqual(ContentClassifier.videoUpscaling(.standard, for: animated), .standard)
+            XCTAssertEqual(ContentClassifier.videoUpscaling(.off, for: animated), .off)
+        }
+        let unknown = item(title: "Anime in the title is not metadata")
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: unknown), .standard)
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: item(genres: ["Reanimation"])), .standard)
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.animation, for: unknown), .animation)
+    }
+
+    func testAutomaticUpscalingUsesOnlyTheEpisodesSourceScopedParent() {
+        var episode = item(kind: .episode)
+        episode.seriesID = "series"
+        episode.sourceAccountID = "account"
+        var series = MediaItem(id: "series", title: "Series", kind: .series, genres: ["Animation"])
+        series.sourceAccountID = "account"
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: episode, series: series), .animation)
+        series.sourceAccountID = "other-account"
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: episode, series: series), .standard)
+        series.sourceAccountID = "account"
+        episode.seriesID = "other-series"
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: episode, series: series), .standard)
+        episode.seriesID = "series"
+        series.kind = .season
+        XCTAssertEqual(ContentClassifier.videoUpscaling(.automatic, for: episode, series: series), .standard)
+    }
+
     func testOriginalAudioLanguageHeuristic() {
         // Anime → Japanese original; everything else is unknown (nil) so the
         // prefer-original policy defers to the container default.
@@ -297,7 +331,7 @@ final class MetadataKitTests: XCTestCase {
         XCTAssertEqual(TMDbMetadataProvider.bestLogoPath(
             [english, german], preferredLanguage: "fr"
         ), "/en.png")
-        XCTAssertEqual(TMDbMetadataProvider.bestLogoPath([german], preferredLanguage: "fr"), "/de.png")
+        XCTAssertNil(TMDbMetadataProvider.bestLogoPath([german], preferredLanguage: "fr"))
     }
 
     func testLogoCacheSeparatesLanguagesButKeepsOtherArtworkShared() {
@@ -333,6 +367,27 @@ final class MetadataKitTests: XCTestCase {
         let english = await provider.artworkURL(.logo, for: query.forArtworkLanguage("en"))
         XCTAssertEqual(french?.lastPathComponent, "fr.png")
         XCTAssertEqual(english?.lastPathComponent, "en.png")
+    }
+
+    func testFriscoKingLogoLookupRejectsUnrelatedLanguages() async {
+        let provider = TMDbMetadataProvider(
+            access: .proxy(baseURL: URL(string: "https://metadata.example")!),
+            imagesRequest: { _, _ in
+                .init(backdrops: nil, logos: [
+                    .init(file_path: "/mgQXhaG19AVwXsQpWa9ilfklfXM.png", iso_639_1: "uk", vote_average: 0),
+                    .init(file_path: "/cQlTHHqZ0J7SeSU3ex5AHFG74nl.png", iso_639_1: "ru", vote_average: 0)
+                ], posters: nil)
+            }
+        )
+        let query = MetadataQuery(MediaItem(
+            id: "frisco-king", title: "Frisco King", kind: .series, providerIDs: ["Tmdb": "296244"]
+        ))
+        let english = await provider.artworkURL(.logo, for: query.forArtworkLanguage("en-US"))
+        let ukrainian = await provider.artworkURL(.logo, for: query.forArtworkLanguage("uk-UA"))
+        let russian = await provider.artworkURL(.logo, for: query.forArtworkLanguage("ru"))
+        XCTAssertNil(english, "Without a suitable logo, the hero must retain its text title.")
+        XCTAssertEqual(ukrainian?.lastPathComponent, "mgQXhaG19AVwXsQpWa9ilfklfXM.png")
+        XCTAssertEqual(russian?.lastPathComponent, "cQlTHHqZ0J7SeSU3ex5AHFG74nl.png")
     }
 
     func testBestLogoKeepsHigherRatedRasterAndStableTies() {

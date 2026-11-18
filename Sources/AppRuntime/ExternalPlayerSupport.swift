@@ -1,4 +1,5 @@
 import CoreModels
+import CoreUI
 import SwiftUI
 
 private struct ExternalPlaybackContextKey: EnvironmentKey {
@@ -22,7 +23,13 @@ private struct ExternalPlayerSupport: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.externalPlaybackContext, context)
+            .environment(\.externalPlaybackChoices, { item in
+                runtime.availablePlayers(
+                    for: item, context: context(), selection: ExternalPlayerSettingsModel.shared.settings
+                )
+            })
             .task(id: context().identity + (runtime.returnID?.uuidString ?? "") + String(describing: scenePhase)) {
+                runtime.updateRelayContext(context(), isActive: scenePhase == .active, isBackground: scenePhase == .background)
                 guard scenePhase == .active else { return }
                 if context().isAuthorized {
                     ExternalPlayerSettingsModel.shared.migrateIfNeeded(from: legacySettings())

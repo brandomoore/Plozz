@@ -71,7 +71,6 @@ public struct DetailHeaderMetadataRow: View {
         if !ratings.isEmpty || !badges.isEmpty || familyGuidanceAge != nil {
             ViewThatFits(in: .horizontal) {
                 metadataLine(ratingCount: ratings.count, badgeCount: badges.count, showsDisclosure: false)
-                    .frame(minHeight: 44)
                     .accessibilityIdentifier("detail-header-metadata-inline")
 
                 Button { showsDetails = true } label: {

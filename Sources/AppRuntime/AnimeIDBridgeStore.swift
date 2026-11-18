@@ -1,3 +1,4 @@
+import CoreNetworking
 import CoreModels
 import Foundation
 
@@ -131,7 +132,7 @@ public actor AnimeIDBridgeStore {
         directoryURL: URL?,
         sourceURL: URL = AnimeIDBridgeStore.defaultSourceURL,
         fetch: @escaping @Sendable (URL) async throws -> Data = { url in
-            try await URLSession.shared.data(from: url).0
+            try await OfflineNetworkSession.shared.data(from: url).0
         }
     ) {
         fileURL = directoryURL?

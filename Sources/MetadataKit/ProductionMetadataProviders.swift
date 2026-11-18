@@ -17,8 +17,8 @@ public enum ProductionMetadataProviders {
         .tvdb, .tmdb, .anilist, .tvmaze, .kitsu, .wikidata, .wikipedia,
     ]
 
-    /// The default provider set. Wikidata/Wikipedia are confined to idle backlog via
-    /// their policy so they never sit on the foreground path. When `cache` is
+    /// The default provider set. Wikidata and Wikipedia artwork are idle-only;
+    /// Wikipedia's English overview can fill foreground text gaps. When `cache` is
     /// supplied, every provider is wrapped in a ``ResilientEnrichmentProvider`` — its
     /// own circuit breaker plus the shared, provider+version-namespaced result cache —
     /// so an outage in one source degrades gracefully to its cached/last-known data
@@ -51,12 +51,7 @@ public enum ProductionMetadataProviders {
                 policy: .idleBacklogFallback,
                 provider: WikidataArtworkProvider()
             ),
-            ArtworkEnrichmentAdapter(
-                id: .wikipedia,
-                capabilities: [.poster, .backdrop, .logo],
-                policy: .idleBacklogFallback,
-                provider: WikipediaArtworkProvider()
-            ),
+            WikipediaEnrichmentProvider(),
         ]
         guard let cache else { return providers }
         // Each provider gets an INDEPENDENT breaker so outages are isolated per

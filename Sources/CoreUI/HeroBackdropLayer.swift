@@ -4,23 +4,6 @@ import CoreModels
 import CoreNetworking
 import MetadataKit
 
-public enum DetailBackdropArtwork {
-    public static func fallback(
-        for item: MediaItem, isDiscoveryItem: Bool
-    ) -> (@Sendable () async -> URL?)? {
-        guard ![.folder, .collection, .unknown].contains(item.kind) else { return nil }
-        // Discovery enrichment owns its first backdrop; do not race a different chooser.
-        guard !isDiscoveryItem || item.heroBackdropURL != nil || item.backdropURL != nil else { return nil }
-        return {
-            if let hero = await ArtworkRouter.shared.heroArtworkURL(for: item, placement: .detailBackdrop) {
-                return hero
-            }
-            if let poster = item.libraryArtworkURL(item.posterURL) { return poster }
-            return await ArtworkRouter.shared.artworkURL(.poster, for: item)
-        }
-    }
-}
-
 #if os(tvOS)
 @MainActor
 struct DetailBackdropArtworkSource {
@@ -34,30 +17,32 @@ struct DetailBackdropArtworkSource {
         let policy = policy.forArea(.details).forPlacement(.detailBackdrop)
         self.init(
             references: policy.references(for: item, placement: .detailBackdrop),
-            pinIdentity: "detail:\(item.id)",
-            settings: policy.metadataSettings,
-            fallback: DetailBackdropArtwork.fallback(
-                for: item, isDiscoveryItem: TitleClassifier.isDiscoveryRouting(item, identitySources: item.sources)
-            )
+            pinIdentity: "detail:\(item.stablePresentationID)",
+            policy: policy,
+            fallback: MediaArtworkSource.heroFallback(for: item, placement: .detailBackdrop),
+            lookupIdentity: MetadataQuery(item).seriesScoped.enrichmentCacheKey
         )
     }
 
     init(
         references: [ArtworkReference], pinIdentity: String,
-        settings: MetadataProviderSettings, fallback: (@Sendable () async -> URL?)?
+        policy: ArtworkPresentationPolicy, fallback: (@Sendable () async -> URL?)?,
+        lookupIdentity: String? = nil
     ) {
         self.references = references
-        self.settings = settings
+        self.settings = policy.metadataSettings
         self.fallback = fallback
         key = ArtworkResolveKey.make(
             references: references, variant: .heroBackdrop, maxAspectRatio: 3,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: policy.identity,
+            prefersLandscape: true, lookupIdentity: lookupIdentity
         )
         previewKey = ArtworkResolveKey.make(
             references: references, variant: .heroPreview, maxAspectRatio: 3,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: policy.identity,
+            prefersLandscape: true, lookupIdentity: lookupIdentity
         )
     }
 }
@@ -78,6 +63,7 @@ final class DetailBackdropArtworkRequest {
         task = Task {
             await ArtworkFirstPaintResolver.resolve(
                 references: source.references, variant: .heroPreview, maxAspectRatio: 3,
+                prefersLandscape: true,
                 asyncOnlineURL: fallback,
                 prefersOnlineArtwork: source.settings.preferOnlineArtwork
             )
@@ -129,6 +115,7 @@ fileprivate final class DetailBackdropWarmup {
         task = Task(priority: .utility) {
             await ArtworkFirstPaintResolver.resolve(
                 references: source.references, variant: .heroPreview, maxAspectRatio: 3,
+                prefersLandscape: true,
                 asyncOnlineURL: fallback,
                 prefersOnlineArtwork: source.settings.preferOnlineArtwork,
                 background: true
@@ -272,6 +259,7 @@ public struct HeroBackdropLayer<Video: View>: View {
     /// until the newly-mounted AVPlayerLayer presents its first frame.
     private let stillImageOpacity: Double
     private let pinIdentity: String?
+    private let lookupIdentity: String?
     /// Overrides the platform default for embedding and controlled comparisons.
     /// Unsupported tones/directions still retain the original analytic shading.
     private let prefersCachedScrim: Bool?
@@ -288,6 +276,7 @@ public struct HeroBackdropLayer<Video: View>: View {
         ignoresOverscan: Bool = true,
         stillImageOpacity: Double = 1,
         pinIdentity: String? = nil,
+        lookupIdentity: String? = nil,
         prefersCachedScrim: Bool? = nil,
         @ViewBuilder backgroundVideo: @escaping () -> Video
     ) {
@@ -300,6 +289,7 @@ public struct HeroBackdropLayer<Video: View>: View {
         self.ignoresOverscan = ignoresOverscan
         self.stillImageOpacity = stillImageOpacity
         self.pinIdentity = pinIdentity
+        self.lookupIdentity = lookupIdentity
         self.prefersCachedScrim = prefersCachedScrim
         self.backgroundVideo = backgroundVideo
     }
@@ -314,6 +304,7 @@ public struct HeroBackdropLayer<Video: View>: View {
         ignoresOverscan: Bool = true,
         stillImageOpacity: Double = 1,
         pinIdentity: String? = nil,
+        lookupIdentity: String? = nil,
         prefersCachedScrim: Bool? = nil,
         @ViewBuilder backgroundVideo: @escaping () -> Video
     ) {
@@ -326,6 +317,7 @@ public struct HeroBackdropLayer<Video: View>: View {
         self.ignoresOverscan = ignoresOverscan
         self.stillImageOpacity = stillImageOpacity
         self.pinIdentity = pinIdentity
+        self.lookupIdentity = lookupIdentity
         self.prefersCachedScrim = prefersCachedScrim
         self.backgroundVideo = backgroundVideo
     }
@@ -333,6 +325,7 @@ public struct HeroBackdropLayer<Video: View>: View {
     public var body: some View {
         FallbackAsyncImage(
             references: references,
+            prefersLandscape: true,
             maxAspectRatio: 3.0,
             variant: .heroBackdrop,
             // Put a real image up while the 2000px pass decodes. Home's hero has
@@ -341,6 +334,7 @@ public struct HeroBackdropLayer<Video: View>: View {
             artworkPolicy: artworkPolicy.forArea(.details).forPlacement(.detailBackdrop),
             asyncFallbackURL: asyncFallbackURL,
             pinIdentity: pinIdentity,
+            lookupIdentity: lookupIdentity,
             content: ArtworkFillImage.init,
             placeholder: { ambientPlaceholder }
         )

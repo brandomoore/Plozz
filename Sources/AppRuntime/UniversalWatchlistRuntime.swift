@@ -346,7 +346,9 @@ public extension UniversalWatchlistHost {
     }
 
     private func mayReadUniversalWatchlist() -> Bool {
-        if activeProfileAwaitsUnlock {
+        if OfflineMode.shared.isEnabled {
+            return false
+        } else if activeProfileAwaitsUnlock {
             PlozzLog.app.info("Watchlist refresh deferred — profile locked")
         } else if profiles.activeProfile.needsSetup {
             PlozzLog.app.info("Watchlist refresh deferred — profile awaiting setup")
@@ -1027,6 +1029,7 @@ public extension UniversalWatchlistHost {
                 desiredState: adding ? .present : .absent,
                 target: target
             )
+            guard !OfflineMode.shared.isEnabled else { return }
             let processed = await reconciler.drain(profileID: profileID)
             await retryScheduler?.reschedule()
             let status = await reconciler.diagnostics(profileID: profileID)

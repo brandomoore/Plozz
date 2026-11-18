@@ -9,7 +9,8 @@ public enum RememberedSubtitleSelection: Codable, Equatable, Sendable {
     case language(String)
 }
 
-/// The per-series remembered audio/subtitle choices for one profile. Stored by
+/// Remembered title choices for one profile; the legacy series type/key is retained.
+/// Audio and subtitles are stored by
 /// **language** (not track id, which differs per episode/file) so it re-resolves
 /// to a concrete track on each episode.
 public struct SeriesTrackPreference: Codable, Equatable, Sendable {
@@ -17,15 +18,18 @@ public struct SeriesTrackPreference: Codable, Equatable, Sendable {
     public var audioLanguage: String?
     /// Remembered subtitle decision, or `nil` if never set.
     public var subtitle: RememberedSubtitleSelection?
+    public var videoZoom: VideoZoomPreference?
 
-    public init(audioLanguage: String? = nil, subtitle: RememberedSubtitleSelection? = nil) {
+    public init(audioLanguage: String? = nil, subtitle: RememberedSubtitleSelection? = nil,
+                videoZoom: VideoZoomPreference? = nil) {
         self.audioLanguage = audioLanguage
         self.subtitle = subtitle
+        self.videoZoom = videoZoom
     }
 
     /// `true` when nothing is remembered, so the store can drop the entry instead
     /// of persisting empties.
-    public var isEmpty: Bool { audioLanguage == nil && subtitle == nil }
+    public var isEmpty: Bool { audioLanguage == nil && subtitle == nil && videoZoom == nil }
 }
 
 /// Builds the per-series store keys. A profile can hold several servers (Plex +

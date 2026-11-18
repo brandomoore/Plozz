@@ -80,6 +80,7 @@ public final class NavigationStyleSettingsModel {
 
     public var automaticallyHiddenKeys: Set<String> = []
     public var hasWatchlistItems = false
+    public var hasWatchlistTitles = false
     public private(set) var contentLibraries: [AggregatedLibrary]
     public private(set) var discoveredAccountIDs: Set<String>
     public private(set) var offlineAccountIDs: Set<String> = []
@@ -172,7 +173,9 @@ public final class NavigationStyleSettingsModel {
     ) {
         let libraries = NavigationContentAvailability.reconcileLibraries(
             discovered: discovered,
-            unreachableAccountIDs: unreachableAccountIDs,
+            unreachableAccountIDs: unreachableAccountIDs.filter {
+                failures[$0]?.requiresSignIn != true && failures[$0] != .accessRestricted
+            },
             remembered: contentLibraries
         ).filter { accountIDs.contains($0.accountID) }
         if contentLibraries != libraries { contentLibraries = libraries }
@@ -229,10 +232,23 @@ public final class NavigationStyleSettingsModel {
 
     /// Restores every destination's default visibility and order.
     public func resetLibraryLayout() {
-        let next = NavigationLibraryLayout.default
+        var next = NavigationLibraryLayout.default
+        for (key, name) in libraryLayout.customNames { next.setCustomName(name, for: key) }
         guard libraryLayout != next else { return }
         libraryLayout = next
         layoutStore.save(libraryLayout)
+    }
+
+    public func renameDestination(_ key: String, to name: String, homeVisibility: HomeLibraryVisibilityModel) {
+        if key == NavigationLibraryLayout.watchlistKey {
+            homeVisibility.setHomeRowName(name, for: .global(.watchlist))
+            return
+        }
+        var next = libraryLayout
+        next.setCustomName(name, for: key)
+        guard next != libraryLayout else { return }
+        libraryLayout = next
+        layoutStore.save(next)
     }
 
     private func setDestination(_ visible: Bool, key: String) {

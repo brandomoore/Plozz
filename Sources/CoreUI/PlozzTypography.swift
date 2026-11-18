@@ -24,7 +24,11 @@ public enum PlozzTypography {
     public static let heroFallbackTitle = Style(pointSize: 64, lineSpacing: 0)
     public static let heroCredit = Style(pointSize: 24, lineSpacing: 0)
     public static let heroSchedule = Style(pointSize: 24, lineSpacing: 0)
+    #if os(tvOS)
+    public static let episodeDescription = heroDescription
+    #else
     public static let episodeDescription = Style(pointSize: 20, lineSpacing: 2)
+    #endif
     public static var episodeTitle: Style {
         Style(pointSize: PlozzMetrics.standard.cardTitleFontSize, lineSpacing: 0)
     }

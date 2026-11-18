@@ -12,18 +12,33 @@ struct PlayerLayoutFixture: View {
     @State private var model: PlayerViewModel
     @State private var timelineSampleIndex = 0
     @State private var scrubStarts = 0
+    @State private var continueWatchingSelection = "none"
+    @State private var continueWatchingSelections = 0
     private let chapterScrollFixture = ProcessInfo.processInfo.arguments.contains("--chapter-scroll-fixture")
+    private let continueWatchingFixture = ProcessInfo.processInfo.arguments.contains("--continue-watching-player-fixture")
 
     init() {
         let provider = PlayerLayoutProvider()
-        let episode = MediaItem(id: "layout", title: "Mud", kind: .episode, seriesID: "series")
+        let isContinueWatching = ProcessInfo.processInfo.arguments.contains("--continue-watching-player-fixture")
+        let episode = MediaItem(id: "layout", title: "Mud", kind: isContinueWatching ? .movie : .episode, seriesID: "series")
         let playlist = VideoPlaylistPlaybackContext(
             origin: .init(playlistID: "playlist", accountID: "layout", index: 0, totalCount: 1, item: episode),
             provider: provider
         )
         let model = PlayerViewModel(
-            provider: provider, itemID: episode.id, episodeItem: episode, playlistContext: playlist
+            provider: provider, itemID: episode.id, episodeItem: episode,
+            playlistContext: isContinueWatching ? nil : playlist
         )
+        if isContinueWatching {
+            model.continueWatchingSnapshot = {
+                ["plex", "silo"].map { (accountID: String) in
+                    MediaItem(
+                        id: "\(accountID)-continue", title: "Continue \(accountID)", kind: .movie,
+                        runtime: 3_600, resumePosition: 600, sourceAccountID: accountID
+                    )
+                }
+            }
+        }
         model.controls.duration = ProcessInfo.processInfo.arguments.contains("--long-video") ? 5_400 : 1_200
         model.controls.currentSeconds = ProcessInfo.processInfo.arguments.contains("--timeline-rollovers") ? 0 : 600
         model.controls.bufferedSeconds = 900
@@ -94,12 +109,35 @@ struct PlayerLayoutFixture: View {
         .onChange(of: model.controls.isScrubbing) { _, active in
             if active { scrubStarts += 1 }
         }
+        .onChange(of: model.pendingContinueWatching?.stablePresentationID) { _, _ in
+            guard continueWatchingFixture, let selected = model.pendingContinueWatching else { return }
+            continueWatchingSelection = selected.id
+            continueWatchingSelections += 1
+            model.cancelContinueWatchingSelection()
+        }
         .environment(\.themePalette, light ? .light : .dark)
         .environment(\.colorScheme, light ? .light : .dark)
         .preferredColorScheme(light ? .light : .dark)
         .environment(\.plozzMetrics, .touch(density: .standard))
         .transformEnvironment(\.plozzReduceTransparency) { value in
             if chapterScrollFixture { value = true }
+        }
+        .transformEnvironment(\.plozzCardStyle) { value in
+            if continueWatchingFixture {
+                value = ProcessInfo.processInfo.arguments.contains("--cw-borderless") ? .borderless : .framed
+            }
+        }
+        .transformEnvironment(\.plozzCardCaptionSettings) { value in
+            if continueWatchingFixture {
+                value = .init(preference: ProcessInfo.processInfo.arguments.contains("--cw-hide-labels") ? .hide : .show)
+            }
+        }
+        .transformEnvironment(\.plozzContinueWatchingPresentation) { value in
+            if continueWatchingFixture {
+                let arguments = ProcessInfo.processInfo.arguments
+                value.artworkStyle = arguments.contains("--cw-portrait-artwork") ? .portraitPosters
+                    : arguments.contains("--cw-thumbnail") ? .thumbnail : .logoAndArtwork
+            }
         }
         .task {
             guard chapterScrollFixture else { return }
@@ -112,6 +150,11 @@ struct PlayerLayoutFixture: View {
             }
         }
         .overlay(alignment: .topTrailing) {
+            if continueWatchingFixture {
+                Text(verbatim: "\(continueWatchingSelection):\(continueWatchingSelections)")
+                    .accessibilityIdentifier("player-cw-selection")
+                    .allowsHitTesting(false)
+            }
             if ProcessInfo.processInfo.arguments.contains("--timeline-rollovers") {
                 Button("Advance time") {
                     let duration = model.controls.duration

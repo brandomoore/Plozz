@@ -25,7 +25,11 @@ final class IPTVCatalog {
     private(set) var db: OpaquePointer?
     private let key: SymmetricKey
     static let maximumRetainedJournalBytes = 4 * 1_024 * 1_024
+    static let maximumLineupBytes = 64 * 1_024 * 1_024
     private let url: URL
+    private let storageLifecycle: ApplicationStorageLifecycle?
+    private var importID: UUID?
+    private var importNeedsCleanup = false
     private var writeStatements: [String: OpaquePointer] = [:]
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
     private static let teardownQueue = DispatchQueue(label: "com.plozz.iptv.catalog-teardown", qos: .utility)
@@ -39,9 +43,18 @@ final class IPTVCatalog {
         ("catalogue_live", "live,title COLLATE NOCASE,id")
     ]
 
-    init(url: URL, key: Data) throws {
+    init(url: URL, key: Data, storageLifecycle: ApplicationStorageLifecycle? = nil) throws {
         self.url = url
         self.key = SymmetricKey(data: key)
+        self.storageLifecycle = storageLifecycle
+        // The owning actor must register before its first database access.
+        if storageLifecycle == nil { try open() }
+    }
+
+    private func open() throws {
+        if let db, sqlite3_get_autocommit(db) == 0 { return }
+        try storageLifecycle?.checkAccess()
+        guard db == nil else { return }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         IPTVCatalogStorage.retain(url)
         var handle: OpaquePointer?
@@ -68,6 +81,9 @@ final class IPTVCatalog {
                     ordinal INTEGER NOT NULL, live INTEGER NOT NULL, payload BLOB NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS lineup (
+                    key TEXT PRIMARY KEY, token TEXT NOT NULL, payload BLOB NOT NULL
+                );
                 """)
             try createIndexes()
         } catch {
@@ -109,11 +125,22 @@ final class IPTVCatalog {
     }
 
     func execute(_ sql: String, cancellable: Bool = false) throws {
-        if cancellable { sqlite3_progress_handler(db, 1_000, { _ in Task.isCancelled ? 1 : 0 }, nil) }
+        try open()
+        if cancellable {
+            let context = storageLifecycle.map { Unmanaged.passUnretained($0).toOpaque() }
+            sqlite3_progress_handler(db, 1_000, { context in
+                if Task.isCancelled { return 1 }
+                guard let context else { return 0 }
+                return Unmanaged<ApplicationStorageLifecycle>.fromOpaque(context).takeUnretainedValue().isActive ? 0 : 1
+            }, context)
+        }
         defer { if cancellable { sqlite3_progress_handler(db, 0, nil, nil) } }
         guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
             let code = sqlite3_extended_errcode(db)
-            if code & 0xff == SQLITE_INTERRUPT { try Task.checkCancellation() }
+            if code & 0xff == SQLITE_INTERRUPT {
+                try Task.checkCancellation()
+                try storageLifecycle?.checkAccess()
+            }
             throw Self.databaseError(code)
         }
     }
@@ -122,13 +149,17 @@ final class IPTVCatalog {
     /// A busy reader keeps its snapshot; never unlink or force-reset SQLite files.
     @discardableResult
     func reclaimJournal() -> Bool {
+        guard db != nil, storageLifecycle?.isActive != false else { return false }
         sqlite3_busy_timeout(db, 0)
         defer { sqlite3_busy_timeout(db, 15_000) }
         return IPTVCatalogStorage.reclaimJournal(db: db, url: url)
     }
 
     func insert(_ record: IPTVRecord, overwrite: Bool = true, into table: Table = .entries) throws {
+        try storageLifecycle?.checkAccess()
         if !overwrite, try contains(record.item.id, in: table) { return }
+        let changesLive = try table == .entries && (record.isLive
+            || count(where: "id = ? AND live = 1", values: [record.item.id]) > 0)
         let data = try JSONEncoder().encode(record)
         guard let sealed = try AES.GCM.seal(data, using: key).combined else { throw IPTVError.storage }
         let item = record.item
@@ -148,6 +179,51 @@ final class IPTVCatalog {
         guard status == SQLITE_OK, sqlite3_step(statement) == SQLITE_DONE else {
             throw Self.databaseError(sqlite3_extended_errcode(db))
         }
+        if changesLive { try invalidateLineup() }
+    }
+
+    /// Changes when another connection commits to the catalogue.
+    func dataVersion() throws -> Int64 {
+        let statement = try prepare("PRAGMA data_version")
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw Self.databaseError(sqlite3_extended_errcode(db)) }
+        return sqlite3_column_int64(statement, 0)
+    }
+
+    /// The saved lineup, if one was written for exactly this catalogue state.
+    func lineup(token: String) throws -> [IPTVLineupEntry]? {
+        let statement = try prepare("SELECT payload FROM lineup WHERE key = 'live' AND token = ?")
+        defer { sqlite3_finalize(statement) }
+        try bind([token], to: statement)
+        let status = sqlite3_step(statement)
+        if status == SQLITE_DONE { return nil }
+        guard status == SQLITE_ROW else { throw Self.databaseError(sqlite3_extended_errcode(db)) }
+        guard let bytes = sqlite3_column_blob(statement, 0) else { return nil }
+        let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 0)))
+        // An unreadable copy is a miss: the sealed records remain the source of truth.
+        guard let box = try? AES.GCM.SealedBox(combined: data),
+              let opened = try? AES.GCM.open(box, using: key) else { return nil }
+        return IPTVLineupEntry.decode(opened)
+    }
+
+    func saveLineup(_ entries: [IPTVLineupEntry], token: String) throws {
+        try storageLifecycle?.checkAccess()
+        guard let encoded = IPTVLineupEntry.encode(entries), encoded.count <= Self.maximumLineupBytes,
+              let sealed = try AES.GCM.seal(encoded, using: key).combined else { return }
+        let statement = try prepare("INSERT OR REPLACE INTO lineup(key,token,payload) VALUES('live',?,?)")
+        defer { sqlite3_finalize(statement) }
+        try bind([token], to: statement)
+        let status = sealed.withUnsafeBytes {
+            sqlite3_bind_blob(statement, 2, $0.baseAddress, Int32($0.count), Self.transient)
+        }
+        guard status == SQLITE_OK, sqlite3_step(statement) == SQLITE_DONE else {
+            throw Self.databaseError(sqlite3_extended_errcode(db))
+        }
+    }
+
+    private func invalidateLineup() throws {
+        try setState("live-revision", UUID().uuidString)
+        try execute("DELETE FROM lineup")
     }
 
     func record(_ id: String) throws -> IPTVRecord {
@@ -208,6 +284,13 @@ final class IPTVCatalog {
         guard sqlite3_step(statement) == SQLITE_DONE else { throw Self.databaseError(sqlite3_extended_errcode(db)) }
     }
 
+    func removeState(_ name: String) throws {
+        let statement = try prepare("DELETE FROM state WHERE key = ?")
+        defer { sqlite3_finalize(statement) }
+        try bind([name], to: statement)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw Self.databaseError(sqlite3_extended_errcode(db)) }
+    }
+
     func remove(library: String) throws {
         let statement = try prepare("DELETE FROM entries WHERE library = ?")
         defer { sqlite3_finalize(statement) }
@@ -215,7 +298,9 @@ final class IPTVCatalog {
         guard sqlite3_step(statement) == SQLITE_DONE else { throw Self.databaseError(sqlite3_extended_errcode(db)) }
     }
 
-    func beginImport() throws {
+    @discardableResult
+    func beginImport() throws -> UUID {
+        if importNeedsCleanup, importID == nil { try removeImportTable() }
         try execute("""
             CREATE TEMP TABLE incoming (
                 id TEXT PRIMARY KEY, kind TEXT NOT NULL, library TEXT NOT NULL,
@@ -223,14 +308,53 @@ final class IPTVCatalog {
                 ordinal INTEGER NOT NULL, live INTEGER NOT NULL, payload BLOB NOT NULL
             )
             """)
+        let id = UUID()
+        importID = id
+        importNeedsCleanup = true
+        return id
     }
 
-    func discardImport() {
+    func checkImport(_ id: UUID) throws {
+        guard importID == id else { throw CancellationError() }
+        try storageLifecycle?.checkAccess()
+        try Task.checkCancellation()
+    }
+
+    func discardImport(_ id: UUID? = nil) {
+        if let id, id != importID { return }
+        importID = nil
+        guard db != nil else { return }
+        do {
+            if storageLifecycle?.isActive == false { try closeForSuspension() }
+            else {
+                try removeImportTable()
+                reclaimJournal()
+            }
+        } catch { PlozzLog.networking.error("IPTV temporary catalogue could not be removed") }
+    }
+
+    private func removeImportTable() throws {
         for statement in writeStatements.values { sqlite3_finalize(statement) }
         writeStatements.removeAll()
-        do { try execute("DROP TABLE IF EXISTS incoming") }
-        catch { PlozzLog.networking.error("IPTV temporary catalogue could not be removed") }
-        reclaimJournal()
+        try execute("DROP TABLE IF EXISTS incoming")
+        importNeedsCleanup = false
+    }
+
+    func closeForSuspension() throws {
+        guard let db else { return }
+        importID = nil
+        if sqlite3_get_autocommit(db) == 0 {
+            guard sqlite3_exec(db, "ROLLBACK", nil, nil, nil) == SQLITE_OK else {
+                throw Self.databaseError(sqlite3_extended_errcode(db))
+            }
+        }
+        for statement in writeStatements.values { sqlite3_finalize(statement) }
+        writeStatements.removeAll()
+        let result = sqlite3_close(db)
+        guard result == SQLITE_OK else { throw Self.databaseError(result) }
+        self.db = nil
+        importNeedsCleanup = false
+        IPTVCatalogStorage.release(url)
     }
 
     func commitImport(
@@ -246,6 +370,11 @@ final class IPTVCatalog {
         try progress(0)
         try execute("BEGIN IMMEDIATE")
         do {
+            // A movie or series import leaves the saved live lineup valid.
+            let replacesLive = try library.map {
+                try count(where: "library = ? AND live = 1", values: [$0]) > 0
+            } ?? true
+            if try replacesLive || count(where: "live = 1", in: .incoming) > 0 { try invalidateLineup() }
             if let library { try remove(library: library) }
             else {
                 // Rebuild secondary indexes once, inside the same atomic replacement.
@@ -256,6 +385,7 @@ final class IPTVCatalog {
             var lastRowID: Int64 = 0
             while let nextRowID = try lastImportRow(after: lastRowID) {
                 try Task.checkCancellation()
+                try storageLifecycle?.checkAccess()
                 try execute("""
                     INSERT INTO entries SELECT * FROM incoming
                     WHERE rowid > \(lastRowID) AND rowid <= \(nextRowID)
@@ -266,7 +396,9 @@ final class IPTVCatalog {
             }
             if library == nil { try createIndexes() }
             try Task.checkCancellation()
+            try storageLifecycle?.checkAccess()
             try setState(scope, String(Date().timeIntervalSince1970))
+            try setState("\(scope)-revision", UUID().uuidString)
             try execute("COMMIT")
             outcome = .succeeded
             reclaimJournal()
@@ -312,6 +444,7 @@ final class IPTVCatalog {
     }
 
     private func writeStatement(_ sql: String) throws -> OpaquePointer {
+        try open()
         if let statement = writeStatements[sql] { return statement }
         let statement = try prepare(sql)
         writeStatements[sql] = statement
@@ -324,6 +457,7 @@ final class IPTVCatalog {
     }
 
     private func prepare(_ sql: String) throws -> OpaquePointer {
+        try open()
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
             throw Self.databaseError(sqlite3_extended_errcode(db))

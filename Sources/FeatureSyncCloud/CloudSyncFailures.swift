@@ -3,6 +3,11 @@ import CloudKit
 /// Completion events are not acknowledgements. Keep each failure until the
 /// corresponding operation succeeds, including across unrelated fetches/sends.
 struct CloudSyncFailures {
+    struct LocalCaptureFailure: Error {
+        let zoneID: CKRecordZone.ID
+        let underlying: any Error
+    }
+
     enum Operation: Hashable {
         case fetchDatabase
         case sendChanges
@@ -11,6 +16,7 @@ struct CloudSyncFailures {
         case deleteZone(CKRecordZone.ID)
         case saveRecord(CKRecord.ID)
         case deleteRecord(CKRecord.ID)
+        case captureZone(CKRecordZone.ID)
     }
 
     private var errors: [Operation: any Error] = [:]
@@ -35,6 +41,23 @@ struct CloudSyncFailures {
 
     var error: (any Error)? { fetchError ?? sendError }
 
+    var canRetryAutomatically: Bool {
+        !errors.isEmpty && errors.values.allSatisfy(Self.isRetryable)
+    }
+
+    static func isRetryable(_ error: any Error) -> Bool {
+        guard let error = error as? CKError else { return false }
+        switch error.code {
+        case .zoneBusy, .serviceUnavailable, .requestRateLimited, .serverRecordChanged,
+             .networkFailure, .networkUnavailable:
+            return true
+        case .serverRejectedRequest:
+            return error.retryAfterSeconds.map { $0.isFinite && $0 >= 0 } == true
+        default:
+            return false
+        }
+    }
+
     mutating func record(_ error: (any Error)?, for operation: Operation) {
         errors[operation] = error
     }
@@ -58,7 +81,7 @@ struct CloudSyncFailures {
                 return zone != id
             case .saveRecord(let record), .deleteRecord(let record):
                 return record.zoneID != id
-            case .fetchDatabase, .sendChanges:
+            case .fetchDatabase, .sendChanges, .captureZone:
                 return true
             }
         }

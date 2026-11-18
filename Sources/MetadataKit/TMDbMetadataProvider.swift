@@ -185,7 +185,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         guard access.isEnabled,
               query.contentType != .music,
               let id = await resolveID(for: query) else {
-            return ExternalTitleAvailability(regionCode: region)
+            return ExternalTitleAvailability(regionCode: region, releaseDatesAvailable: false)
         }
 
         async let offers = watchOffers(
@@ -206,9 +206,10 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let (events, resolvedOffers) = await (releaseDates, offers)
         return ExternalTitleAvailability(
             regionCode: region,
-            releaseEvents: events,
+            releaseEvents: events ?? [],
             watchOffers: resolvedOffers.offers,
-            watchProvidersURL: resolvedOffers.link
+            watchProvidersURL: resolvedOffers.link,
+            releaseDatesAvailable: events != nil
         )
     }
 
@@ -263,6 +264,32 @@ public struct TMDbMetadataProvider: ArtworkProvider {
     }
 
     // MARK: - Lookups
+
+    public func landscapeCardURL(for query: MetadataQuery) async -> URL? {
+        guard access.isEnabled, query.contentType != .music,
+              let id = await resolveID(for: query),
+              let images = await images(forID: id, isTV: query.isTV),
+              let path = Self.landscapeCardPath(images.backdrops, preferredLanguage: query.artworkLanguage)
+        else { return nil }
+        return URL(string: "\(imageBase)/w1280\(path)")
+    }
+
+    static func landscapeCardPath(_ images: [Image]?, preferredLanguage: String) -> String? {
+        let language = MetadataQuery.normalizedArtworkLanguage(preferredLanguage)
+        let titled = (images ?? []).filter {
+            $0.file_path?.isEmpty == false
+                && ($0.iso_639_1 == language || $0.iso_639_1 == "en")
+        }
+        return titled.enumerated().min {
+            let left = $0.element.iso_639_1 == language ? 0 : 1
+            let right = $1.element.iso_639_1 == language ? 0 : 1
+            if left != right { return left < right }
+            let leftScore = $0.element.vote_average ?? 0
+            let rightScore = $1.element.vote_average ?? 0
+            if leftScore != rightScore { return leftScore > rightScore }
+            return $0.offset < $1.offset
+        }?.element.file_path
+    }
 
     public func portraitHeroURL(for query: MetadataQuery) async -> URL? {
         guard access.isEnabled, query.contentType != .music,
@@ -355,7 +382,12 @@ public struct TMDbMetadataProvider: ArtworkProvider {
 
     static func cast(from response: CreditsResponse, limit: Int = 40) -> [MediaPerson] {
         var seen = Set<Int>()
-        return ((response.cast ?? []) + (response.guest_stars ?? [])).compactMap { entry -> MediaPerson? in
+        let billed = (response.cast ?? []).enumerated().sorted {
+            let left = $0.element.order.flatMap { $0 >= 0 ? $0 : nil } ?? Int.max
+            let right = $1.element.order.flatMap { $0 >= 0 ? $0 : nil } ?? Int.max
+            return left == right ? $0.offset < $1.offset : left < right
+        }.map(\.element)
+        return (billed + (response.guest_stars ?? [])).compactMap { entry -> MediaPerson? in
             guard let name = entry.name?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !name.isEmpty, let personID = entry.id, seen.insert(personID).inserted
             else { return nil }
@@ -395,15 +427,19 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         guard isEnabled, query.contentType != .music,
               let id = try await detailID(for: query) else { return MetadataEnrichment() }
         var result = MetadataEnrichment()
-        if !missing.isDisjoint(with: [.cast, .directors, .writers]),
-           let path = Self.creditsPath(id: id, query: query), let url = url(path),
+        if !missing.isDisjoint(with: [.cast, .directors, .writers, .producers, .composers]),
+           let path = Self.creditsPath(id: id, query: query),
+           let url = url(path, language: query.metadataLanguage),
            let credits = try await detailResponse(CreditsResponse.self, url: url) {
             result = Self.creditMetadata(credits, missing: missing, sourceURL: url)
         }
         try Task.checkCancellation()
-        if !missing.isDisjoint(with: [.genres, .studios, .taglines, .overview]) {
+        if !missing.isDisjoint(with: [
+            .title, .genres, .studios, .taglines, .overview,
+            .originalLanguage, .seriesStatus, .catalogSeasonCount, .catalogEpisodeCount
+        ]) {
             let base = "/3/\(query.isTV ? "tv" : "movie")/\(id)"
-            if let url = url(base),
+            if let url = url(base, language: query.metadataLanguage),
                let facts = try await detailResponse(DetailFacts.self, url: url) {
                 if missing.contains(.genres), let values = Self.names(facts.genres) {
                     result.genres = SourcedValue(value: values, source: .tmdb, sourceURL: url)
@@ -412,8 +448,29 @@ public struct TMDbMetadataProvider: ArtworkProvider {
                     result.studios = SourcedValue(value: values, source: .tmdb, sourceURL: url)
                 }
                 if query.kind == .movie || query.kind == .series || query.kind == .video {
+                    if missing.contains(.title), let title = (facts.title ?? facts.name)?.tmdbNonEmpty {
+                        result.title = SourcedValue(value: title, source: .tmdb, sourceURL: url)
+                    }
+                    if missing.contains(.originalLanguage),
+                       let language = facts.original_language?.tmdbNonEmpty,
+                       !["xx", "und", "zxx", "mul"].contains(language.lowercased()),
+                       Locale(identifier: "en").localizedString(forLanguageCode: language) != nil {
+                        result.originalLanguage = SourcedValue(value: language, source: .tmdb, sourceURL: url)
+                    }
                     if missing.contains(.overview), let text = facts.overview?.tmdbNonEmpty {
                         result.overview = SourcedValue(value: text, source: .tmdb, sourceURL: url)
+                    }
+                    if query.kind == .series {
+                        if missing.contains(.seriesStatus),
+                           let status = facts.status.flatMap(MediaSeriesStatus.init(providerValue:)) {
+                            result.seriesStatus = SourcedValue(value: status, source: .tmdb, sourceURL: url)
+                        }
+                        if missing.contains(.catalogSeasonCount), let count = facts.number_of_seasons, count > 0 {
+                            result.catalogSeasonCount = SourcedValue(value: count, source: .tmdb, sourceURL: url)
+                        }
+                        if missing.contains(.catalogEpisodeCount), let count = facts.number_of_episodes, count > 0 {
+                            result.catalogEpisodeCount = SourcedValue(value: count, source: .tmdb, sourceURL: url)
+                        }
                     }
                     if missing.contains(.taglines), let text = facts.tagline?.tmdbNonEmpty {
                         result.tagline = SourcedValue(value: text, source: .tmdb, sourceURL: url)
@@ -422,7 +479,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
             }
             if missing.contains(.overview), query.kind == .episode || query.kind == .season,
                let creditsPath = Self.creditsPath(id: id, query: query),
-               let url = url(String(creditsPath.dropLast("/credits".count))),
+               let url = url(String(creditsPath.dropLast("/credits".count)), language: query.metadataLanguage),
                let facts = try await detailResponse(DetailFacts.self, url: url),
                let text = facts.overview?.tmdbNonEmpty {
                 result.overview = SourcedValue(value: text, source: .tmdb, sourceURL: url)
@@ -437,14 +494,17 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         sourceURL: URL? = nil
     ) -> MetadataEnrichment {
         var result = MetadataEnrichment()
-        let cast = Self.cast(from: response)
+        let cast = Self.cast(from: response, limit: .max)
+        var references = cast
         if missing.contains(.cast), !cast.isEmpty {
-            result.cast = SourcedValue(value: cast, source: .tmdb, sourceURL: sourceURL)
+            result.cast = SourcedValue(value: Array(cast.prefix(40)), source: .tmdb, sourceURL: sourceURL)
         }
         for (field, kind, jobs) in [
             (MetadataField.directors, "Director", Set(["Director"])),
-            (MetadataField.writers, "Writer", Set(["Writer", "Screenplay", "Story", "Teleplay"]))
-        ] where missing.contains(field) {
+            (MetadataField.writers, "Writer", Set(["Writer", "Screenplay", "Story", "Teleplay"])),
+            (MetadataField.producers, "Producer", Set(["Producer", "Executive Producer"])),
+            (MetadataField.composers, "Composer", Set(["Original Music Composer", "Composer"]))
+        ] {
             var seen = Set<Int>()
             let people = (response.crew ?? []).compactMap { credit -> MediaPerson? in
                 let reportedJobs = (credit.jobs ?? []).compactMap(\.job) + [credit.job].compactMap { $0 }
@@ -452,14 +512,25 @@ public struct TMDbMetadataProvider: ArtworkProvider {
                       let id = credit.id, let name = credit.name?.tmdbNonEmpty,
                       seen.insert(id).inserted else { return nil }
                 return MediaPerson(
-                    id: "tmdb:person:\(id)", name: name, kind: kind,
+                    id: "tmdb:person:\(id)", name: name,
+                    kind: field == .producers && !reportedJobs.contains("Producer") ? "Executive Producer" : kind,
                     imageURL: credit.profile_path.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") }
                 )
             }
-            if !people.isEmpty {
+            references.append(contentsOf: people)
+            if missing.contains(field), !people.isEmpty {
                 let sourced = SourcedValue(value: people, source: MetadataSource.tmdb, sourceURL: sourceURL)
-                if field == .directors { result.directors = sourced } else { result.writers = sourced }
+                switch field {
+                case .directors: result.directors = sourced
+                case .writers: result.writers = sourced
+                case .producers: result.producers = sourced
+                case .composers: result.composers = sourced
+                default: preconditionFailure("Unsupported crew field")
+                }
             }
+        }
+        if !result.isEmpty {
+            result.creditReferences = SourcedValue(value: references, source: .tmdb, sourceURL: sourceURL)
         }
         return result
     }
@@ -477,7 +548,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         for (namespace, source) in [(ProviderIDNamespace.imdb, "imdb_id"), (.tvdb, "tvdb_id")] {
             guard let externalID = scoped.providerIDs.providerID(namespace) else { continue }
             guard let escaped = externalID.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
-                  let url = url("/3/find/\(escaped)?external_source=\(source)"),
+                  let url = url("/3/find/\(escaped)?external_source=\(source)", language: query.metadataLanguage),
                   let response = try await detailResponse(FindResponse.self, url: url),
                   let result = (query.isTV ? response.tv_results : response.movie_results)?.first,
                   let id = result.id, id > 0 else { return nil }
@@ -487,14 +558,20 @@ public struct TMDbMetadataProvider: ArtworkProvider {
               let escaped = metadataEscaped(query.title) else { return nil }
         var path = "/3/search/\(query.isTV ? "tv" : "movie")?query=\(escaped)&include_adult=false"
         if let year = query.year { path += "&\(query.isTV ? "first_air_date_year" : "year")=\(year)" }
-        guard let url = url(path),
-              let results = try await detailResponse(SearchResponse.self, url: url)?.results,
-              let match = Self.bestMatch(for: query, among: results),
-              let name = match.displayTitle,
-              MediaItemIdentity.normalizedTitle(name) == MediaItemIdentity.normalizedTitle(query.title),
-              query.year == nil || match.year == query.year,
-              let id = match.id else { return nil }
-        return String(id)
+        // Identity can be an English release alias even when neither the localized
+        // display title nor the original-language title matches it.
+        let languages = query.metadataLanguage == "en" ? ["en"] : [query.metadataLanguage, "en"]
+        for language in languages {
+            try Task.checkCancellation()
+            guard let url = url(path, language: language),
+                  let results = try await detailResponse(SearchResponse.self, url: url)?.results,
+                  let match = Self.bestMatch(for: query, among: results),
+                  match.matches(normalizedTitle: MediaItemIdentity.normalizedTitle(query.title)),
+                  query.year == nil || match.year == query.year,
+                  let id = match.id, id > 0 else { continue }
+            return String(id)
+        }
+        return nil
     }
 
     private func detailResponse<Value: Decodable & Sendable>(_ type: Value.Type, url: URL) async throws -> Value? {
@@ -611,10 +688,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
     static func bestMatch(for query: MetadataQuery, among results: [SearchResult]) -> SearchResult? {
         let wanted = MediaItemIdentity.normalizedTitle(query.title)
         guard !wanted.isEmpty else { return results.first }
-        let exact = results.filter {
-            guard let title = $0.displayTitle else { return false }
-            return MediaItemIdentity.normalizedTitle(title) == wanted
-        }
+        let exact = results.filter { $0.matches(normalizedTitle: wanted) }
         guard !exact.isEmpty else { return results.first }
         if let year = query.year, let dated = exact.first(where: { $0.year == year }) {
             return dated
@@ -630,14 +704,14 @@ public struct TMDbMetadataProvider: ArtworkProvider {
     private func movieReleaseDates(
         id: String,
         regionCode: String
-    ) async -> [TitleReleaseEvent] {
+    ) async -> [TitleReleaseEvent]? {
         guard let url = url("/3/movie/\(id)/release_dates"),
               let response = await MetadataHTTP.get(
                   ReleaseDatesResponse.self,
                   url: url,
                   headers: authHeaders
-              ),
-              let region = response.results.first(where: {
+              ) else { return nil }
+        guard let region = response.results.first(where: {
                   $0.iso_3166_1?.uppercased() == regionCode
               }) else { return [] }
 
@@ -734,8 +808,14 @@ public struct TMDbMetadataProvider: ArtworkProvider {
 
     /// Builds a TMDb API URL against `apiBase`, attaching the bearer token only in
     /// direct-token mode (the proxy injects auth itself).
-    private func url(_ path: String) -> URL? {
-        URL(string: apiBase + path)
+    private func url(_ path: String, language: String? = nil) -> URL? {
+        guard var components = URLComponents(string: apiBase + path) else { return nil }
+        if let language {
+            components.queryItems = (components.queryItems ?? []) + [
+                URLQueryItem(name: "language", value: language)
+            ]
+        }
+        return components.url
     }
 
     // MARK: - Selection (pure, shared with the legacy resolver's logic)
@@ -776,7 +856,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
             if normalized == preferred { return 0 }
             return normalized == "en" ? 2 : 3
         }
-        guard let path = logos.lazy.filter({ $0.file_path?.isEmpty == false }).min(by: {
+        guard let path = logos.lazy.filter({ $0.file_path?.isEmpty == false && rank($0) < 3 }).min(by: {
             let (lr, rr) = (rank($0), rank($1))
             if lr != rr { return lr < rr }
             return ($0.vote_average ?? 0) > ($1.vote_average ?? 0)
@@ -802,9 +882,17 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let release_date: String?
         let first_air_date: String?
         let original_language: String?
+        var original_title: String? = nil
+        var original_name: String? = nil
 
         var displayTitle: String? { title ?? name }
         var year: Int? { Int((release_date ?? first_air_date)?.prefix(4) ?? "") }
+
+        func matches(normalizedTitle: String) -> Bool {
+            [title, name, original_title, original_name].compactMap { $0 }.contains {
+                MediaItemIdentity.normalizedTitle($0) == normalizedTitle
+            }
+        }
     }
     struct OriginalLanguageResponse: Decodable {
         let original_language: String?
@@ -854,10 +942,16 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let job: String?
     }
     struct DetailFacts: Decodable, Sendable {
+        let title: String?
+        let name: String?
         let overview: String?
         let tagline: String?
         let genres: [NamedFact]?
         let production_companies: [NamedFact]?
+        let original_language: String?
+        let status: String?
+        let number_of_seasons: Int?
+        let number_of_episodes: Int?
     }
     struct NamedFact: Decodable, Sendable {
         let name: String?
@@ -875,6 +969,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let character: String?
         let profile_path: String?
         let roles: [CreditRole]?
+        let order: Int?
     }
     struct CreditRole: Decodable, Sendable {
         let character: String?

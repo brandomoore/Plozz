@@ -3,6 +3,26 @@ import XCTest
 
 @MainActor
 final class VideoPlaylistSnapshotCacheTests: XCTestCase {
+    func testDistinctLibrariesEvictOldSnapshotsAndKeepTheNewest() async throws {
+        let cache = VideoPlaylistSnapshotCache()
+        for index in 0..<64 {
+            _ = try await cache.snapshot(key: "library-\(index)", refresh: false) {
+                [MediaItem(id: "item-\(index)", title: "Fixture", kind: .movie)]
+            }
+        }
+        for index in 56..<64 {
+            let latest = try await cache.snapshot(key: "library-\(index)", refresh: false) {
+                XCTFail("The newest eight snapshots must remain cached.")
+                return []
+            }
+            XCTAssertEqual(latest.map(\.id), ["item-\(index)"])
+        }
+        let oldest = try await cache.snapshot(key: "library-55", refresh: false) {
+            [MediaItem(id: "reloaded", title: "Fixture", kind: .movie)]
+        }
+        XCTAssertEqual(oldest.map(\.id), ["reloaded"])
+    }
+
     func testCancelledRefreshDoesNotPublishOrReuseItsSnapshot() async throws {
         let cache = VideoPlaylistSnapshotCache()
         let old = MediaItem(id: "old", title: "Old", kind: .movie)

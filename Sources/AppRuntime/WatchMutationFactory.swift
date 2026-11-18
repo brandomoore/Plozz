@@ -149,9 +149,9 @@ public enum WatchMutationFactory {
         return (identities, !identities.isEmpty, normalized.isEmpty ? nil : normalized, item.productionYear)
     }
 
-    /// A mark-watched / mark-unwatched mutation. Marking watched clears resume
-    /// everywhere and mirrors to Trakt (write-if-missing); unwatch never touches
-    /// Trakt (no deletes) and leaves resume alone.
+    /// Both explicit watch-state actions clear resume everywhere. Only marking
+    /// watched mirrors to Trakt (write-if-missing); unwatch never deletes history
+    /// from external trackers.
     public static func playedToggle(item: MediaItem, played: Bool, primaryAccountID: String?, additionalSources: [MediaSourceRef] = [], crossServerSync: Bool = true, capturedAt: Date = Date()) -> WatchMutation? {
         let targets = targets(for: item, primaryAccountID: primaryAccountID, additionalSources: additionalSources, crossServerSync: crossServerSync)
         guard !targets.isEmpty else { return nil }
@@ -167,7 +167,7 @@ public enum WatchMutationFactory {
             seasonNumber: item.seasonNumber,
             episodeNumber: item.episodeNumber,
             played: played,
-            clearResume: played,
+            clearResume: true,
             targets: targets,
             trakt: played && !item.isExtra && !item.isTrailer && !item.isYouTubeTrailer ? traktIntent(for: item, progress: 100) : nil,
             episodeOrigin: episode.origin,
@@ -176,7 +176,10 @@ public enum WatchMutationFactory {
             kind: item.kind,
             anchorTitle: identity.anchorTitle,
             anchorYear: identity.anchorYear,
-            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id))
+            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id)),
+            observedLastPlayedAt: observedPlayback(item, primaryAccountID: primaryAccountID,
+                                                 additionalSources: additionalSources, targets: targets),
+            isExplicitReset: true
         )
     }
 
@@ -255,8 +258,27 @@ public enum WatchMutationFactory {
             kind: item.kind,
             anchorTitle: identity.anchorTitle,
             anchorYear: identity.anchorYear,
-            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id))
+            rejectedSourceIDs: item.rejectedSourceIDs.subtracting(targets.map(\.id)),
+            observedLastPlayedAt: observedPlayback(item, primaryAccountID: primaryAccountID,
+                                                 additionalSources: additionalSources, targets: targets),
+            isExplicitReset: true
         )
+    }
+
+    private static func observedPlayback(
+        _ item: MediaItem, primaryAccountID: String?,
+        additionalSources: [MediaSourceRef], targets: [WatchMutationTarget]
+    ) -> [String: Date] {
+        Dictionary(uniqueKeysWithValues: targets.compactMap { target in
+            let source = (item.sources + additionalSources).first {
+                $0.accountID == target.accountID && $0.itemID == target.itemID
+            }
+            let isOrigin = target.accountID == (item.sourceAccountID ?? primaryAccountID) && target.itemID == item.id
+            guard let date = source?.lastPlayedAt ?? (source == nil && isOrigin ? item.lastPlayedAt : nil) else {
+                return nil
+            }
+            return (target.id, date)
+        })
     }
 
     /// External players cannot send Plozz's realtime scrobbles. Their return

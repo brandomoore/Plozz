@@ -1,5 +1,6 @@
 import CoreModels
 import Foundation
+import MediaTransportCore
 
 /// The transport-agnostic download orchestrator: turns ``DownloadRequest``s into
 /// durable, resumable downloads, draining them with bounded concurrency while
@@ -10,9 +11,14 @@ import Foundation
 /// owns paths, and ``DownloadNetworkObserving`` + ``DownloadNetworkPolicy`` gate
 /// progress. Groups (seasons) are just many requests sharing a `groupID`.
 public actor DownloadQueue {
+    public typealias SubtitleSaver = @Sendable (
+        DownloadedMediaRecord, URL, DownloadNetworkPolicy
+    ) async throws -> DownloadSubtitleStatus
+
     private let registry: DownloadedMediaRegistry
     private let storage: any DownloadStorageLocating
     private let engine: any MediaDownloadEngine
+    private let saveSubtitles: SubtitleSaver?
     private let observer: any DownloadNetworkObserving
     private let fileManager: FileManager
     private let storageCapacity: DownloadStorageCapacity
@@ -26,6 +32,8 @@ public actor DownloadQueue {
     private var running: [String: Task<Void, Never>] = [:]
     private var attemptPermits: [String: DownloadMutationPermit] = [:]
     private var pendingPauses: [String: Set<UUID>] = [:]
+    private var changingFiles: Set<String> = []
+    private var subtitleRefreshes: Set<String> = []
     private let lifetimePermit = DownloadMutationPermit()
     private var activityPermit = DownloadMutationPermit()
     private var schedulingEnabled = true
@@ -37,6 +45,7 @@ public actor DownloadQueue {
         registry: DownloadedMediaRegistry,
         storage: any DownloadStorageLocating,
         engine: any MediaDownloadEngine,
+        saveSubtitles: SubtitleSaver? = nil,
         observer: any DownloadNetworkObserving = StaticDownloadNetworkObserver(),
         policy: DownloadNetworkPolicy = .default,
         applicationIsActive: Bool = true,
@@ -51,6 +60,7 @@ public actor DownloadQueue {
         self.registry = registry
         self.storage = storage
         self.engine = engine
+        self.saveSubtitles = saveSubtitles
         self.observer = observer
         self.policy = policy
         self.applicationIsActive = applicationIsActive
@@ -77,7 +87,7 @@ public actor DownloadQueue {
         await networkConditionsDidChange(conditions)
     }
 
-    public func setApplicationActive(_ isActive: Bool, revision: UInt64) {
+    public func setApplicationActive(_ isActive: Bool, revision: UInt64) async {
         guard revision > applicationActivityRevision
                 || (revision == applicationActivityRevision
                     && isActive == applicationIsActive) else {
@@ -89,6 +99,20 @@ public actor DownloadQueue {
             applicationActivityRevision = revision
         }
         applicationIsActive = isActive
+        if !isActive {
+            for key in subtitleRefreshes {
+                attemptPermits[key]?.invalidate()
+                running[key]?.cancel()
+            }
+            for key in Array(running.keys) {
+                let record = await registry.record(forKey: key)
+                guard revision == applicationActivityRevision, !applicationIsActive else { return }
+                if let record, record.status == .completed, !permitsRunning(record) {
+                    attemptPermits[key]?.invalidate()
+                    running[key]?.cancel()
+                }
+            }
+        }
     }
 
     public func setBackgroundExecutionLease(_ lease: DownloadBackgroundExecutionLease) {
@@ -357,6 +381,8 @@ public actor DownloadQueue {
     }
 
     public func cancelAndRemove(identityKey: String) async throws {
+        guard changingFiles.insert(identityKey).inserted else { throw CancellationError() }
+        defer { changingFiles.remove(identityKey) }
         if let persistentEngine = engine as? any DownloadPersistentWorkCancelling {
             await persistentEngine.discardPersistentWork(identityKey: identityKey)
         }
@@ -393,6 +419,115 @@ public actor DownloadQueue {
     }
 
     // MARK: - Draining
+
+    /// Joins optional work for the completed generations owned by a background activity.
+    public func waitForSubtitleCompletion(for tracked: [String: Date]) async {
+        for (identityKey, createdAt) in tracked {
+            guard schedulingEnabled, !Task.isCancelled else { return }
+            guard let task = running[identityKey], let permit = attemptPermits[identityKey] else { continue }
+            let record = await registry.record(forKey: identityKey)
+            guard schedulingEnabled, !Task.isCancelled else { return }
+            guard record?.status == .completed, record?.createdAt == createdAt,
+                  attemptPermits[identityKey] === permit else { continue }
+            await task.value
+        }
+    }
+
+    /// Refreshes sidecars without changing the completed video or fetching it again.
+    public func retrySubtitles(identityKey: String) async throws {
+        try lifetimePermit.check()
+        guard saveSubtitles != nil, running[identityKey] == nil, !changingFiles.contains(identityKey),
+              let record = await registry.record(forKey: identityKey),
+              record.status == .completed else { throw MediaDownloadError.unsupportedSource }
+        let conditions = await observer.currentConditions()
+        try lifetimePermit.check()
+        // Actor reentrancy must not admit a second refresh or overwrite a deletion.
+        let current = await registry.record(forKey: identityKey)
+        guard applicationIsActive, policy.allows(conditions) else {
+            throw OfflineModeError.networkUnavailable
+        }
+        guard running[identityKey] == nil, !changingFiles.contains(identityKey), pendingPauses[identityKey] == nil,
+              current?.status == .completed, current?.createdAt == record.createdAt,
+              current?.snapshot.sourceUserID == record.snapshot.sourceUserID,
+              current?.managedHTTPSource == record.managedHTTPSource,
+              current?.directShareSource == record.directShareSource else { throw CancellationError() }
+        try lifetimePermit.check()
+        let destination = try storage.pinnedFileURL(for: record)
+        let permit = DownloadMutationPermit()
+        attemptPermits[identityKey] = permit
+        subtitleRefreshes.insert(identityKey)
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                let task = Task {
+                    let outcome: Result<Void, any Error>
+                    do {
+                        try await self.limiter.runUnlessCancelled {
+                            try permit.check()
+                            let result = try await self.subtitleResult(for: record, destination: destination)
+                            try Task.checkCancellation()
+                            try await self.registry.withMutationPermit(permit) {
+                                if let result { try $0.setSubtitleStatus(identityKey: identityKey, result) }
+                            }
+                        }
+                        outcome = .success(())
+                    } catch {
+                        outcome = .failure(error)
+                    }
+                    permit.invalidate()
+                    self.attemptPermits[identityKey] = nil
+                    self.running[identityKey] = nil
+                    self.subtitleRefreshes.remove(identityKey)
+                    continuation.resume(with: outcome)
+                }
+                running[identityKey] = task
+            }
+        } onCancel: {
+            permit.invalidate()
+            Task { await self.cancelSubtitleRefresh(identityKey: identityKey, permit: permit) }
+        }
+        try lifetimePermit.check()
+        try Task.checkCancellation()
+    }
+
+    private func cancelSubtitleRefresh(identityKey: String, permit: DownloadMutationPermit) {
+        guard attemptPermits[identityKey] === permit else { return }
+        running[identityKey]?.cancel()
+    }
+
+    private func subtitleResult(
+        for record: DownloadedMediaRecord, destination: URL
+    ) async throws -> DownloadSubtitleStatus? {
+        guard let saveSubtitles else { return nil }
+        do {
+            return try await saveSubtitles(record, destination, policy)
+        } catch where error is CancellationError || (error as? AppError) == .cancelled
+            || (error as? MediaTransportError) == .cancelled || (error as? URLError)?.code == .cancelled {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            NSLog("External subtitles could not be saved for an offline download")
+            return .unavailable
+        }
+    }
+
+    private func finishSubtitles(
+        for record: DownloadedMediaRecord, destination: URL, permit: DownloadMutationPermit
+    ) async {
+        guard permitsRunning(record), !Task.isCancelled else { return }
+        do {
+            try permit.check()
+            let result = try await subtitleResult(for: record, destination: destination)
+            try Task.checkCancellation()
+            try await registry.withMutationPermit(permit) {
+                if let result { try $0.setSubtitleStatus(identityKey: record.identityKey, result) }
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            // Optional sidecars must never send a completed video through transport retry.
+            NSLog("External subtitle status could not be persisted for an offline download")
+        }
+    }
 
     private func schedule(_ identityKey: String) {
         guard schedulingEnabled,
@@ -533,6 +668,7 @@ public actor DownloadQueue {
                     }
                 }
                 guard !Task.isCancelled else { return }
+                let finalRecord = await registry.record(forKey: identityKey) ?? currentRecord
                 try await registry.withMutationPermit(permit) {
                     try $0.markCompleted(identityKey: identityKey, totalBytes: total)
                 }
@@ -541,6 +677,7 @@ public actor DownloadQueue {
                 ) {
                     try? fileManager.removeItem(at: backup)
                 }
+                await finishSubtitles(for: finalRecord, destination: destination, permit: permit)
                 return
             } catch is CancellationError {
                 if !Task.isCancelled {
@@ -593,6 +730,16 @@ public actor DownloadQueue {
         existing: DownloadedMediaRecord,
         replacement: DownloadedMediaRecord
     ) async throws {
+        guard changingFiles.insert(existing.identityKey).inserted else { throw CancellationError() }
+        defer { changingFiles.remove(existing.identityKey) }
+        var replacement = replacement
+        if replacement.snapshot.sourceUserID == existing.snapshot.sourceUserID,
+           replacement.snapshot.sourceAccountID == existing.snapshot.sourceAccountID {
+            replacement.snapshot.artworkFileName =
+                replacement.snapshot.artworkFileName ?? existing.snapshot.artworkFileName
+            replacement.snapshot.posterArtworkFileName =
+                replacement.snapshot.posterArtworkFileName ?? existing.snapshot.posterArtworkFileName
+        }
         if let persistentEngine = engine as? any DownloadPersistentWorkCancelling {
             await persistentEngine.discardPersistentWork(
                 identityKey: existing.identityKey
@@ -630,7 +777,7 @@ public actor DownloadQueue {
         }
 
         do {
-            _ = try await registry.withMutationPermit(lifetimePermit) {
+            _ = try await registry.withMutationPermit(lifetimePermit) { [replacement] in
                 try $0.beginQualityReplacement(replacement)
             }
         } catch {
@@ -641,14 +788,16 @@ public actor DownloadQueue {
             throw error
         }
 
-        if let artworkFileName = replacement.snapshot.artworkFileName {
+        for artworkFileName in Set(PinnedMediaSnapshot.ArtworkRole.allCases.compactMap({
+            replacement.snapshot.artworkFileName(for: $0)
+        })) {
             let backupArtwork = backup.appendingPathComponent(artworkFileName)
             if fileManager.fileExists(atPath: backupArtwork.path) {
                 try fileManager.createDirectory(
                     at: folder,
                     withIntermediateDirectories: true
                 )
-                try? fileManager.copyItem(
+                try fileManager.copyItem(
                     at: backupArtwork,
                     to: folder.appendingPathComponent(artworkFileName)
                 )

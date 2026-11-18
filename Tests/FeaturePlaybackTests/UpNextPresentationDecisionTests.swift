@@ -1,5 +1,6 @@
 #if canImport(AVFoundation)
 import CoreModels
+import SwiftUI
 import XCTest
 
 @testable import FeaturePlayback
@@ -7,6 +8,41 @@ import XCTest
 /// Pins the Up Next card's per-mode presentation policy — the binge auto-advance
 /// timing and the grace-window passive-present that must never hijack a seek.
 final class UpNextPresentationDecisionTests: XCTestCase {
+    @MainActor
+    func testOnlyTerminalCreditsOwnUpNextAndSkipPreferencesRemainIntact() {
+        let controls = PlayerControlsModel()
+        controls.duration = 300
+        controls.upNextCard.info = UpNextInfo(
+            episode: .init(id: "next", title: "Next", kind: .episode),
+            showName: Text(verbatim: "Show"), metaLine: nil, thumbnailURLs: [], blurThumbnail: false
+        )
+        controls.skipSegments.segments = [
+            .init(id: "first", kind: .credits, start: 100, end: 200),
+            .init(id: "last", kind: .credits, start: 250, end: 300)
+        ]
+        for mode in SkipIntrosMode.allCases {
+            controls.skipModes = SkipMarkerModes(base: mode)
+            controls.currentSeconds = 120
+            XCTAssertFalse(controls.upNextActive)
+            XCTAssertFalse(controls.creditsOwnedByUpNext)
+            XCTAssertEqual(controls.skipMode, mode)
+            XCTAssertEqual(controls.skipButtonVisible, mode == .on || mode == .autoDelay)
+            controls.currentSeconds = 225
+            XCTAssertFalse(controls.upNextActive)
+            XCTAssertNil(controls.activeSkipSegment)
+            controls.currentSeconds = 260
+            XCTAssertTrue(controls.upNextActive, "Up Next can return for actual final credits.")
+        }
+        controls.skipSegments.segments = [.init(kind: .credits, start: 100, end: 296)]
+        controls.currentSeconds = 120
+        XCTAssertFalse(controls.upNextActive, "Four unmarked seconds are not proof of empty padding.")
+        controls.currentSeconds = 298
+        XCTAssertFalse(controls.upNextActive, "The time fallback must not cover an unmarked scene.")
+        controls.duration = 0
+        controls.currentSeconds = 120
+        XCTAssertFalse(controls.creditsOwnedByUpNext, "Unknown duration cannot prove terminal credits.")
+    }
+
 
     private func decide(
         skipMode: SkipIntrosMode,

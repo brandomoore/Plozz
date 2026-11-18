@@ -6,6 +6,91 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         continueAfterFailure = false
     }
 
+    func testFirstLaunchKeepsPrimaryProvidersAndMusicSignInReachable() throws {
+        let app = launch("welcome")
+        defer { app.terminate() }
+        let music = app.buttons["add-server-provider-subsonic"]
+        XCTAssertTrue(music.waitForExistence(timeout: 5))
+        for provider in ["jellyfin", "plex", "emby", "silo", "mediaShare", "iptv"] {
+            XCTAssertTrue(app.buttons["add-server-provider-\(provider)"].exists)
+        }
+        if !music.isHittable { app.swipeUp() }
+        XCTAssertTrue(music.isHittable)
+        let transfer = app.buttons["Set Up from Another Device"]
+        XCTAssertTrue(transfer.exists)
+        XCTAssertGreaterThanOrEqual(transfer.frame.minY, music.frame.maxY)
+        attach(app, name: "Subsonic-first-launch")
+        music.tap()
+        XCTAssertTrue(app.textFields["subsonic-address"].waitForExistence(timeout: 5))
+    }
+
+    func testSubsonicOpensDirectlyAndReturnsToProviderChoices() throws {
+        let app = launch("chooser")
+        defer { app.terminate() }
+        let choice = app.buttons["add-server-provider-subsonic"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 5))
+        if !choice.isHittable { app.swipeUp() }
+        XCTAssertTrue(choice.isHittable)
+        attach(app, name: "Subsonic-provider-choice")
+        choice.tap()
+        let address = app.textFields["subsonic-address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["subsonic-username"].exists)
+        XCTAssertTrue(app.secureTextFields["subsonic-secret"].exists)
+        XCTAssertFalse(app.buttons["subsonic-sign-in"].isEnabled)
+        attach(app, name: "Subsonic-direct-sign-in")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["add-server-provider-jellyfin"].waitForExistence(timeout: 5))
+    }
+
+    func testSubsonicAuthenticationMethodsHaveConditionalHelpAndClearPreviousSecret() throws {
+        let app = launch("chooser")
+        defer { app.terminate() }
+        let choice = app.buttons["add-server-provider-subsonic"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 5))
+        if !choice.isHittable { app.swipeUp() }
+        choice.tap()
+        let method = app.segmentedControls["subsonic-auth-method"]
+        XCTAssertTrue(method.waitForExistence(timeout: 5))
+        let password = method.buttons["Password"]
+        let apiKey = method.buttons["API Key"]
+        let secret = app.secureTextFields["subsonic-secret"]
+        let help = app.staticTexts["subsonic-api-key-help"]
+        XCTAssertTrue(password.isSelected)
+        XCTAssertEqual(secret.placeholderValue, "Password")
+        XCTAssertFalse(help.exists)
+        attach(app, name: "Subsonic-password-method")
+
+        apiKey.tap()
+        XCTAssertTrue(apiKey.isSelected)
+        XCTAssertEqual(secret.placeholderValue, "API key")
+        XCTAssertTrue(help.waitForExistence(timeout: 3))
+        attach(app, name: "Subsonic-api-key-method")
+
+        let address = app.textFields["subsonic-address"]
+        let username = app.textFields["subsonic-username"]
+        address.tap()
+        address.typeText("https://music.example.test")
+        username.tap()
+        username.typeText("preview")
+        secret.tap()
+        secret.typeText("fixture-key")
+        XCTAssertTrue(app.buttons["subsonic-sign-in"].isEnabled)
+        password.tap()
+        XCTAssertTrue(password.isSelected)
+        XCTAssertEqual(secret.value as? String, "Password")
+        XCTAssertFalse(help.exists)
+        secret.tap()
+        secret.typeText("fixture-password")
+        apiKey.tap()
+        XCTAssertTrue(apiKey.isSelected)
+        XCTAssertEqual(secret.value as? String, "API key")
+        XCTAssertTrue(help.exists)
+        XCTAssertEqual(address.value as? String, "https://music.example.test")
+        XCTAssertEqual(username.value as? String, "preview")
+        XCTAssertFalse(app.buttons["subsonic-sign-in"].isEnabled)
+    }
+
     func testSourceEntryPointsShareTheChooserAndReturnToTheirOrigin() throws {
         for page in ["home-empty", "home-new", "sources", "libraries", "libraries-empty"] {
             let app = launch(page)

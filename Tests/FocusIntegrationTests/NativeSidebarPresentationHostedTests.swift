@@ -10,6 +10,155 @@ import XCTest
 
 @MainActor
 final class NativeSidebarPresentationHostedTests: XCTestCase {
+    func testStartupFocusHostPreservesNativeSidebarBounds() async throws {
+        for wrapped in [false, true] {
+            let fixture = try await makeFixture()
+            defer { fixture.close() }
+            let model = LayoutModel()
+            let tabs = TabView {
+                Tab("Home", systemImage: "house") {
+                    LayoutProbe(model: model).ignoresSafeArea()
+                }
+                Tab("Settings", systemImage: "gearshape") {
+                    Button("Settings content") {}
+                }
+            }
+            .tabViewStyle(.sidebarAdaptable)
+            let content = wrapped
+                ? AnyView(NativeSidebarNavigation(
+                    selection: .home, handoff: NavigationDestinationFocusHandoff(), content: tabs
+                ))
+                : AnyView(tabs)
+            let host = UIHostingController(rootView: content)
+            fixture.window.rootViewController = host
+            try await waitUntil { model.backdrop?.window != nil }
+            fixture.window.layoutIfNeeded()
+            let controller: UIViewController = wrapped ? try XCTUnwrap(focusHost(in: host)) : host
+            let frame = controller.view.convert(controller.view.bounds, to: fixture.window)
+            let backdrop = try XCTUnwrap(model.backdrop)
+            let backdropFrame = backdrop.convert(backdrop.bounds, to: fixture.window)
+            let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                XCTAssertTrue(fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Native sidebar startup host=\(wrapped) bounds=\(frame)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTAssertEqual(
+                frame, fixture.window.bounds,
+                "The focus owner must not inset native sidebar chrome, its scrim or the page viewport."
+            )
+            XCTAssertEqual(
+                backdropFrame, fixture.window.bounds,
+                "Full-bleed page content must remain full-screen inside the native sidebar."
+            )
+        }
+    }
+
+    func testNativeSidebarSettingsScrollViewportMatchesUnwrappedTabs() async throws {
+        var nativeViewport: CGRect?
+        for wrapped in [false, true] {
+            let fixture = try await makeFixture()
+            defer { fixture.close() }
+            let model = LayoutModel()
+            let navigation = SettingsNavigationModel()
+            let handoff = NavigationDestinationFocusHandoff()
+            let tabs = TabView {
+                Tab("Settings", systemImage: "gearshape") {
+                    NativeSidebarFocusDestination(
+                        destination: .settings, selection: .settings, handoff: handoff,
+                        content: SettingsWorkspace(navigation: navigation) {
+                            ScrollView {
+                                SettingsSectionGroup {
+                                    ForEach(0..<18) { index in
+                                        SettingsSectionButton(
+                                            title: Text(verbatim: "Category \(index)"),
+                                            icon: "gearshape", route: .profileAppearance(profileID: "layout-\(index)")
+                                        )
+                                        .background {
+                                            if index == 17 {
+                                                LayoutProbe(model: model, recordsLastRow: true)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .background(LayoutProbe(model: model))
+                        } detail: { _ in
+                            Button("Return") { navigation.returnToSidebar() }
+                        }
+                    )
+                }
+                Tab("Home", systemImage: "house") {
+                    Button("Home content") {}
+                }
+            }
+            .tabViewStyle(.sidebarAdaptable)
+            let content = wrapped
+                ? AnyView(NativeSidebarNavigation(selection: .settings, handoff: handoff, content: tabs))
+                : AnyView(tabs)
+            fixture.window.rootViewController = UIHostingController(
+                rootView: content.environment(\.plozzNavigationStyle, .sidebar)
+            )
+            try await waitUntil { model.lastRow?.window != nil && !handoff.isWaiting }
+            fixture.window.layoutIfNeeded()
+            let last = try XCTUnwrap(model.lastRow)
+            let scroll = try XCTUnwrap(scrollView(containing: last))
+            let viewport = scroll.convert(scroll.bounds, to: fixture.window)
+            XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height)
+            if let nativeViewport {
+                XCTAssertEqual(viewport, nativeViewport, "Startup focus must not shrink Settings' scrolling viewport.")
+            } else {
+                nativeViewport = viewport
+            }
+            scroll.setContentOffset(CGPoint(
+                x: scroll.contentOffset.x,
+                y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+            ), animated: false)
+            fixture.window.layoutIfNeeded()
+            let lastFrame = last.convert(last.bounds, to: fixture.window)
+            XCTAssertTrue(viewport.contains(lastFrame), "The last Settings row must not be clipped: \(lastFrame).")
+            XCTAssertTrue(fixture.window.bounds.contains(lastFrame))
+            let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                XCTAssertTrue(fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Native Settings scrolled to bottom startup host=\(wrapped)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private func scrollView(containing view: UIView) -> UIScrollView? {
+        if let scroll = view.superview as? UIScrollView { return scroll }
+        return view.superview.flatMap { scrollView(containing: $0) }
+    }
+
+    private func focusHost(in controller: UIViewController) -> NavigationRailFocusHostController? {
+        if let host = controller as? NavigationRailFocusHostController { return host }
+        return controller.children.compactMap { focusHost(in: $0) }.first
+    }
+
+    private final class LayoutModel {
+        weak var backdrop: UIView?
+        weak var lastRow: UIView?
+    }
+
+    private struct LayoutProbe: UIViewRepresentable {
+        let model: LayoutModel
+        var recordsLastRow = false
+
+        func makeUIView(context: Context) -> UIView {
+            let view = UIView()
+            view.backgroundColor = recordsLastRow ? .clear : .systemBlue
+            if recordsLastRow { model.lastRow = view }
+            else { model.backdrop = view }
+            return view
+        }
+
+        func updateUIView(_ view: UIView, context: Context) {}
+    }
+
     func testNativeSidebarHidesOnSettingsSubpages() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

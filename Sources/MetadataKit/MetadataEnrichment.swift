@@ -33,11 +33,26 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
     /// Every known future episode, oldest first, when the provider lists more than
     /// the next one (TheTVDB). Empty for single-next providers (AniList, TVmaze).
     public var upcomingEpisodes: [UpcomingEpisode]
+    /// Calendar-only completeness: true includes successful empty listings;
+    /// false means the attempted listing was unavailable and must remain retryable.
+    public var calendarScheduleAvailable: Bool?
+    /// A full calendar listing, unlike AniList's single next-episode answer.
+    public var calendarScheduleComplete: Bool?
+    public var calendarScheduleNotFound: Bool?
     /// Billed cast, best-first, independent of the crew groups.
     public var cast: SourcedValue<[MediaPerson]>?
     public var directors: SourcedValue<[MediaPerson]>?
     public var writers: SourcedValue<[MediaPerson]>?
+    public var producers: SourcedValue<[MediaPerson]>?
+    public var composers: SourcedValue<[MediaPerson]>?
+    /// Complete scoped credit evidence, including roles the server already supplies.
+    /// Supports cross-source portrait reconciliation without replacing server credits.
+    public var creditReferences: SourcedValue<[MediaPerson]>?
     public var studios: SourcedValue<[String]>?
+    public var originalLanguage: SourcedValue<String>?
+    public var seriesStatus: SourcedValue<MediaSeriesStatus>?
+    public var catalogSeasonCount: SourcedValue<Int>?
+    public var catalogEpisodeCount: SourcedValue<Int>?
     /// The provider-stated release cadence, when reported. Never inferred.
     public var cadence: AirCadence?
 
@@ -59,7 +74,14 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         cast: SourcedValue<[MediaPerson]>? = nil,
         directors: SourcedValue<[MediaPerson]>? = nil,
         writers: SourcedValue<[MediaPerson]>? = nil,
-        studios: SourcedValue<[String]>? = nil
+        producers: SourcedValue<[MediaPerson]>? = nil,
+        composers: SourcedValue<[MediaPerson]>? = nil,
+        studios: SourcedValue<[String]>? = nil,
+        originalLanguage: SourcedValue<String>? = nil,
+        seriesStatus: SourcedValue<MediaSeriesStatus>? = nil,
+        catalogSeasonCount: SourcedValue<Int>? = nil,
+        catalogEpisodeCount: SourcedValue<Int>? = nil,
+        creditReferences: SourcedValue<[MediaPerson]>? = nil
     ) {
         self.externalIDs = externalIDs
         self.title = title
@@ -78,7 +100,14 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         self.cast = cast
         self.directors = directors
         self.writers = writers
+        self.producers = producers
+        self.composers = composers
+        self.creditReferences = creditReferences
         self.studios = studios
+        self.originalLanguage = originalLanguage
+        self.seriesStatus = seriesStatus
+        self.catalogSeasonCount = catalogSeasonCount
+        self.catalogEpisodeCount = catalogEpisodeCount
     }
 
     public var isEmpty: Bool {
@@ -86,8 +115,12 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
             && tagline == nil && posterURL == nil && logoURL == nil
             && episodeStillURL == nil && bannerURL == nil && score == nil
             && backdropCandidates.isEmpty && upcomingEpisode == nil
-            && upcomingEpisodes.isEmpty && cast == nil && cadence == nil
-            && directors == nil && writers == nil && studios == nil
+            && upcomingEpisodes.isEmpty && calendarScheduleAvailable != true
+            && calendarScheduleNotFound != true && cast == nil && cadence == nil
+            && directors == nil && writers == nil && producers == nil && composers == nil && studios == nil
+            && creditReferences == nil
+            && originalLanguage == nil && seriesStatus == nil
+            && catalogSeasonCount == nil && catalogEpisodeCount == nil
     }
 
     /// The best backdrop for the full-bleed home hero (the top-ranked candidate).
@@ -122,11 +155,17 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         // in a season's rail — leaving the field open lets TVmaze, which numbers
         // per season, still be asked. When no provider can list, every one is tried
         // once (`triedForField` prevents repeats) and the singular survives.
-        if !upcomingEpisodes.isEmpty { fields.insert(.nextAiringEpisode) }
+        if !upcomingEpisodes.isEmpty || calendarScheduleComplete == true { fields.insert(.nextAiringEpisode) }
         if cast != nil { fields.insert(.cast) }
         if directors != nil { fields.insert(.directors) }
         if writers != nil { fields.insert(.writers) }
+        if producers != nil { fields.insert(.producers) }
+        if composers != nil { fields.insert(.composers) }
         if studios != nil { fields.insert(.studios) }
+        if originalLanguage != nil { fields.insert(.originalLanguage) }
+        if seriesStatus != nil { fields.insert(.seriesStatus) }
+        if catalogSeasonCount != nil { fields.insert(.catalogSeasonCount) }
+        if catalogEpisodeCount != nil { fields.insert(.catalogEpisodeCount) }
         return fields
     }
 
@@ -155,7 +194,14 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         fill(&cast, from: other.cast, field: .cast, present: present)
         fill(&directors, from: other.directors, field: .directors, present: present)
         fill(&writers, from: other.writers, field: .writers, present: present)
+        fill(&producers, from: other.producers, field: .producers, present: present)
+        fill(&composers, from: other.composers, field: .composers, present: present)
+        if creditReferences == nil { creditReferences = other.creditReferences }
         fill(&studios, from: other.studios, field: .studios, present: present)
+        fill(&originalLanguage, from: other.originalLanguage, field: .originalLanguage, present: present)
+        fill(&seriesStatus, from: other.seriesStatus, field: .seriesStatus, present: present)
+        fill(&catalogSeasonCount, from: other.catalogSeasonCount, field: .catalogSeasonCount, present: present)
+        fill(&catalogEpisodeCount, from: other.catalogEpisodeCount, field: .catalogEpisodeCount, present: present)
         // Banner and score have no dedicated MetadataField (bonus art/metadata);
         // still first-writer-wins, and never blocked by `present`.
         if bannerURL == nil { bannerURL = other.bannerURL }
@@ -163,7 +209,21 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         // Schedule: first provider (in configured order) to report a next episode
         // wins, mirroring the priority-respecting merge used for fields above.
         if !present.contains(.nextAiringEpisode) {
-            if !other.upcomingEpisodes.isEmpty, upcomingEpisodes.isEmpty {
+            // Only a complete listing can supersede another provider's failed calendar request.
+            if other.calendarScheduleAvailable == true,
+               calendarScheduleAvailable != false || other.calendarScheduleComplete == true {
+                calendarScheduleAvailable = true
+            }
+            if other.calendarScheduleAvailable == false, calendarScheduleComplete != true {
+                calendarScheduleAvailable = false
+            }
+            if other.calendarScheduleNotFound == true { calendarScheduleNotFound = true }
+            if other.calendarScheduleComplete == true, calendarScheduleComplete != true {
+                calendarScheduleComplete = true
+                upcomingEpisodes = other.upcomingEpisodes
+                upcomingEpisode = other.upcomingEpisode
+                cadence = other.cadence
+            } else if !other.upcomingEpisodes.isEmpty, upcomingEpisodes.isEmpty {
                 // A provider that lists the whole run supersedes one that reported
                 // only the next episode. Its singular is taken too: the list and the
                 // next episode must describe the same source, or a per-season run

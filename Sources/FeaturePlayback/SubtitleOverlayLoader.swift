@@ -40,7 +40,7 @@ final class SubtitleOverlayLoader {
 
     init(
         host: SubtitleOverlayLoaderHost,
-        fetch: @escaping @Sendable (URL) async throws -> Data = { try await URLSession.shared.data(from: $0).0 }
+        fetch: @escaping @Sendable (URL) async throws -> Data = { try await OfflineNetworkSession.shared.data(from: $0).0 }
     ) {
         self.host = host
         self.fetch = fetch

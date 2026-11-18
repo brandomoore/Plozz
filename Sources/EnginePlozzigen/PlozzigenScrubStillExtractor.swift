@@ -84,7 +84,7 @@ public final class PlozzigenScrubStillExtractor: ScrubStillExtracting {
         plozzigen?.registerScrubStillExtractor(self)
         let url: URL
         switch source {
-        case .networkFile:
+        case .networkFile, .networkDisc:
             return plozzigen?.makeLoadedSourceFrameExtractor()
         case .publicURL(let publicSource):
             url = publicSource.url

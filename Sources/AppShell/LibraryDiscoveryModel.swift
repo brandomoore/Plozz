@@ -23,16 +23,20 @@ final class LibraryDiscoveryModel {
     /// making the Settings root observe the detail pages' loading state.
     func refreshNavigationLibraries(
         from accounts: [ResolvedAccount],
+        expectedAccountIDs: Set<String> = [],
         navigation: NavigationStyleSettingsModel,
         settings: DiscoveredLibrariesStore,
         changedAccountID: String? = nil,
         isCurrent: () -> Bool
     ) async -> Bool {
-        let accountIDs = Set(accounts.map(\.account.id))
-        let request = settings.beginRefresh(accountIDs: changedAccountID.map { Set([$0]) } ?? accountIDs)
+        guard !Task.isCancelled, isCurrent() else { return false }
+        let accountIDs = Set(accounts.map(\.account.id)).union(expectedAccountIDs)
+        let cached = cachedLibraries(from: accounts)
+        settings.seed(libraries: cached.libraries, cachedAccountIDs: cached.accountIDs, accountIDs: accountIDs)
+        let request = settings.beginRefresh(accountIDs: accountIDs.subtracting(cached.accountIDs))
         defer { settings.cancelRefresh(request) }
         guard let discovered = await navigationDiscovery.refresh(
-            from: accounts, navigation: navigation, isCurrent: isCurrent
+            from: accounts, expectedAccountIDs: expectedAccountIDs, navigation: navigation, isCurrent: isCurrent
         ) else { return false }
         settings.finishRefresh(
             with: discovered.libraries,
@@ -46,8 +50,16 @@ final class LibraryDiscoveryModel {
     /// Discovers libraries across `accounts`, resiliently, WITHOUT publishing any
     /// state, reporting which accounts were unreachable. The Settings path uses
     /// this to write results into a `DiscoveredLibrariesStore`.
-    func libraryDiscovery(from accounts: [ResolvedAccount]) async -> HomeAggregator.LibraryDiscovery {
-        await aggregator.libraryDiscovery(from: accounts)
+    func libraryDiscovery(
+        from accounts: [ResolvedAccount], expectedAccountIDs: Set<String> = []
+    ) async -> HomeAggregator.LibraryDiscovery {
+        await aggregator.libraryDiscovery(from: accounts, expectedAccountIDs: expectedAccountIDs)
+    }
+
+    func cachedLibraries(
+        from accounts: [ResolvedAccount]
+    ) -> (libraries: [AggregatedLibrary], accountIDs: Set<String>) {
+        HomeAggregator.cachedLibraries(from: accounts)
     }
 
     /// Discovers libraries across `accounts`, resiliently, WITHOUT publishing any
@@ -67,7 +79,10 @@ final class LibraryDiscoveryModel {
     ) async {
         let generation = UUID()
         loadGeneration = generation
-        state = .loading
+        let cached = cachedLibraries(from: accounts)
+        state = cached.libraries.isEmpty
+            ? (Set(accounts.map(\.account.id)).union(expectedAccountIDs).isSubset(of: cached.accountIDs) ? .empty : .loading)
+            : .loaded(cached.libraries)
         canSkipSelection = false
         let discovery = await aggregator.libraryDiscovery(from: accounts, expectedAccountIDs: expectedAccountIDs)
         guard !Task.isCancelled, generation == loadGeneration, isCurrent() else { return }

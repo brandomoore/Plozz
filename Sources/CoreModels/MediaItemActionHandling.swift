@@ -128,6 +128,10 @@ public extension Notification.Name {
     static let universalWatchlistCacheDidLoad =
         Notification.Name("PlozzUniversalWatchlistCacheDidLoad")
 
+    /// A request attempt completed for the current service connection. Retained
+    /// personal feeds invalidate without depending on a mounted request screen.
+    static let personalRequestsDidChange = Notification.Name("PlozzPersonalRequestsDidChange")
+
     /// Posted after a native read has resolved complete membership and ordering,
     /// before slower per-title ownership checks finish. Existing cards stay put;
     /// Home and Watchlist add skeleton slots for the unresolved remainder.
@@ -258,18 +262,20 @@ public struct MediaItemMutation: Sendable, Equatable {
     /// lets a relaunched surface preserve the user's watched/unwatched intent while
     /// a server is offline, without coupling UI code to outbox persistence details.
     public init?(watchMutation: WatchMutation) {
+        let targets = watchMutation.effectiveOptimisticTargets
         guard let played = watchMutation.played,
-              !watchMutation.optimisticTargets.isEmpty
+              !targets.isEmpty
         else {
             return nil
         }
+        let resumePosition = watchMutation.resumePosition ?? (watchMutation.clearResume ? 0 : nil)
         self.init(
-            itemIDs: Set(watchMutation.optimisticTargets.map(\.itemID)),
-            scopedItemIDs: Set(watchMutation.optimisticTargets.map(\.id)),
+            itemIDs: Set(targets.map(\.itemID)),
+            scopedItemIDs: Set(targets.map(\.id)),
             cascadesToSeasonEpisodes: watchMutation.kind == .season,
             played: played,
-            resumePosition: watchMutation.kind == .season && watchMutation.clearResume
-                ? 0 : watchMutation.resumePosition,
+            resumePosition: resumePosition,
+            playedPercentage: resumePosition == 0 ? (played ? 1 : 0) : nil,
             kind: watchMutation.kind
         )
     }

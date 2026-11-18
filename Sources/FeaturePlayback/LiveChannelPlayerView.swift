@@ -64,6 +64,7 @@ public extension View {
 /// caller owns any server-specific live session. Video still runs through Plozz's production
 /// AetherEngine adapter and its existing video surface.
 public struct LiveChannelPlayerView: View {
+    @Environment(PlaybackSettingsModel.self) private var playbackSettingsModel: PlaybackSettingsModel?
     private let channelID: String
     private let title: String // l10n:content — provider-supplied channel name
     private let input: LiveChannelInput
@@ -91,7 +92,7 @@ public struct LiveChannelPlayerView: View {
     private let onPlaybackUpdate: @MainActor (LiveTVPlaybackUpdate) -> Void
     private let onPlaybackFailed: @MainActor (LiveChannelFailureReport) -> Void
     private let onVideoAspectRatioChange: @MainActor (Double?) -> Void
-    private let onMultiview: (() -> Void)?
+    private let onMultiview: (() -> Bool)?
     private let outputGroup: LiveChannelOutputGroup?
     private let outputID: UUID?
     private let isAudible: Bool
@@ -115,6 +116,9 @@ public struct LiveChannelPlayerView: View {
     private let guideOverlay: ((LiveChannelGuideEmbedding) -> AnyView)?
 
     @Environment(\.dismiss) private var dismiss
+    #if os(tvOS)
+    @Environment(\.retainedFullscreenWorkspace) private var workspace
+    #endif
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
@@ -124,6 +128,12 @@ public struct LiveChannelPlayerView: View {
     @State private var fullscreenPresented = false
     @State private var fullscreenOwnsSurface = false
     @State private var returnsToGuideAfterFullscreen = false
+    @State private var opensMultiviewAfterFullscreen = false
+    @State private var videoHandoff: VideoPresentationHandoff?
+    #if os(tvOS)
+    @State private var audioGlow = VideoAudioGlowState()
+    #endif
+    @Environment(\.videoCardFocus) private var videoCardFocus
     @State private var engineInitializationFailed = false
     @State private var controlsVisible = true
     @State private var touchGestures = PlayerTouchGestureState()
@@ -217,7 +227,7 @@ public struct LiveChannelPlayerView: View {
         onPlaybackUpdate: @escaping @MainActor (LiveTVPlaybackUpdate) -> Void = { _ in },
         onPlaybackFailed: @escaping @MainActor (LiveChannelFailureReport) -> Void = { _ in },
         onVideoAspectRatioChange: @escaping @MainActor (Double?) -> Void = { _ in },
-        onMultiview: (() -> Void)? = nil,
+        onMultiview: (() -> Bool)? = nil,
         outputGroup: LiveChannelOutputGroup? = nil,
         outputID: UUID? = nil,
         isAudible: Bool = true,
@@ -315,7 +325,7 @@ public struct LiveChannelPlayerView: View {
         onPlaybackUpdate: @escaping @MainActor (LiveTVPlaybackUpdate) -> Void = { _ in },
         onPlaybackFailed: @escaping @MainActor (LiveChannelFailureReport) -> Void = { _ in },
         onVideoAspectRatioChange: @escaping @MainActor (Double?) -> Void = { _ in },
-        onMultiview: (() -> Void)? = nil,
+        onMultiview: (() -> Bool)? = nil,
         outputGroup: LiveChannelOutputGroup? = nil,
         outputID: UUID? = nil,
         isAudible: Bool = true,
@@ -365,9 +375,9 @@ public struct LiveChannelPlayerView: View {
 
     private var playerSurface: some View {
         ZStack {
-            (hasInlineControls ? Color.clear : Color.black)
+            (hasInlineControls || isMultiview ? Color.clear : Color.black)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
+                .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
 
             if let model {
                 let sourceMatches = model.matchesSource(
@@ -376,25 +386,59 @@ public struct LiveChannelPlayerView: View {
                 )
                 let showsReflection = hasInlineControls && !reduceTransparency && isActive
                     && scenePhase == .active && !model.continuesExternally
-                VideoSurfaceContainer(
-                    engine: model.engine, zoom: model.videoZoom.settings,
-                    aspectRatio: model.videoAspectRatio,
-                    subtitleViewport: liveSubtitleViewport,
-                    needsPictureSubtitles: model.selectedSubtitleID != nil && model.subtitles.style.positionReference == .picture,
-                    reflectionHeight: showsReflection ? previewReflectionHeight : 0,
-                    topReflectionHeight: showsReflection ? previewTopReflectionHeight : 0,
-                    leadingReflectionWidth: showsReflection ? previewLeadingReflectionWidth : 0,
-                    trailingReflectionWidth: showsReflection ? previewTrailingReflectionWidth : 0,
-                    previewCornerRadius: hasInlineControls ? PlozzTheme.Metrics.Radius.content : 0,
-                    reflectionIsActive: sourceMatches && model.hasPresentedFrame
-                        && model.interruption == nil && model.networkBlock == nil
-                )
-                    .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
+                #if os(tvOS)
+                let showsAudioGlow = videoCardFocus?.audible == true && sourceMatches && model.hasPresentedFrame
+                    && isActive && isAuthorized && scenePhase == .active && !reduceTransparency
+                    && (videoCardFocus?.cornerRadius ?? 0) > 0 && !model.continuesExternally
+                    && model.interruption == nil && model.networkBlock == nil
+                #endif
+                ZStack {
+                    VideoSurfaceContainer(
+                        engine: model.engine, zoom: model.videoZoom.settings,
+                        aspectRatio: model.videoAspectRatio,
+                        subtitleViewport: liveSubtitleViewport,
+                        needsPictureSubtitles: model.selectedSubtitleID != nil && model.subtitles.style.positionReference == .picture,
+                        reflectionHeight: showsReflection ? previewReflectionHeight : 0,
+                        topReflectionHeight: showsReflection ? previewTopReflectionHeight : 0,
+                        leadingReflectionWidth: showsReflection ? previewLeadingReflectionWidth : 0,
+                        trailingReflectionWidth: showsReflection ? previewTrailingReflectionWidth : 0,
+                        previewCornerRadius: hasInlineControls ? PlozzTheme.Metrics.Radius.content : 0,
+                        reflectionIsActive: sourceMatches && model.hasPresentedFrame
+                            && model.interruption == nil && model.networkBlock == nil
+                    )
 
-                if sourceMatches, model.networkBlock == nil, !model.continuesExternally {
-                    LiveChannelSubtitleSurface(model: model, viewport: liveSubtitleViewport)
-                        .allowsHitTesting(false)
+                    if sourceMatches, model.networkBlock == nil, !model.continuesExternally {
+                        LiveChannelSubtitleSurface(model: model, viewport: liveSubtitleViewport)
+                            .allowsHitTesting(false)
+                    }
+
+                    if isMultiview,
+                       !sourceMatches || !model.hasPresentedFrame || model.interruption != nil {
+                        VideoLoadingPlaceholder(isLoading: !sourceMatches || (
+                            model.interruption == nil && model.networkBlock == nil && model.phase != .paused
+                        ))
+                    }
                 }
+                .videoCardFocusSurface { focused in
+                    #if os(tvOS)
+                    VideoAudioGlow(state: audioGlow, isActive: showsAudioGlow,
+                                   cornerRadius: videoCardFocus?.cornerRadius ?? 0, isFocused: focused)
+                    #endif
+                }
+                #if os(tvOS)
+                .onChange(of: showsAudioGlow, initial: true) { _, enabled in
+                    audioGlow.update(engine: model.engine, enabled: enabled)
+                }
+                .onChange(of: ObjectIdentifier(model.engine)) { _, _ in
+                    audioGlow.update(engine: model.engine, enabled: showsAudioGlow)
+                }
+                .onDisappear { audioGlow.stop() }
+                .transition(isMultiview && !reduceMotion ? .opacity : .identity)
+                #else
+                .transition(isMultiview && !reduceMotion
+                    ? .scale(scale: 0.94).combined(with: .opacity) : .identity)
+                #endif
+                .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
 
                 #if os(iOS)
                 if hasInlineControls {
@@ -423,11 +467,12 @@ public struct LiveChannelPlayerView: View {
                 }
                 #endif
 
-                if !sourceMatches || !model.hasPresentedFrame || (!isExpanded && model.interruption != nil) {
+                if !isMultiview,
+                   !sourceMatches || !model.hasPresentedFrame || (!isExpanded && model.interruption != nil) {
                     Rectangle()
                         .fill(.black)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .ignoresSafeArea(.all, edges: hasInlineControls ? [] : .all)
+                        .ignoresSafeArea(.all, edges: hasInlineControls || isMultiview ? [] : .all)
                         .allowsHitTesting(false)
                 }
 
@@ -471,7 +516,8 @@ public struct LiveChannelPlayerView: View {
                             onPlayPause: togglePlayPause,
                             onGoLive: goLive,
                             onNext: channelNext,
-                            onMultiview: model.engine.supportsConcurrentPlayback ? onMultiview : nil,
+                            onMultiview: model.engine.supportsConcurrentPlayback && onMultiview != nil
+                                ? openMultiview : nil,
                             guideContent: guideOverlay,
                             pendingGuideOpen: pendingGuideOpen,
                             consumeGuideOpen: { pendingGuideOpen = false },
@@ -523,7 +569,8 @@ public struct LiveChannelPlayerView: View {
                     )
                 } else if !model.hasPresentedFrame, model.phase == .paused {
                     LiveChannelCompactStatusView(icon: "pause.fill", title: "Paused")
-                } else if !sourceMatches || model.showsActivityIndicator {
+                } else if (!sourceMatches || model.showsActivityIndicator),
+                          !isMultiview || (sourceMatches && model.hasPresentedFrame) {
                     LiveChannelCompactStatusView(
                         icon: nil,
                         title: sourceMatches
@@ -585,6 +632,9 @@ public struct LiveChannelPlayerView: View {
                         title: "Preview unavailable"
                     )
                 }
+            } else if isMultiview {
+                VideoLoadingPlaceholder()
+                    .videoCardFocusSurface()
             } else {
                 if isExpanded {
                     LiveChannelStartupView(
@@ -612,6 +662,7 @@ public struct LiveChannelPlayerView: View {
                 )
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: controlsVisible)
+        .animation(isMultiview && !reduceMotion ? MultiviewMotion.animation : nil, value: model == nil)
         #if os(iOS)
         .preference(
             key: LiveChannelSystemOverlaysHiddenKey.self,
@@ -695,9 +746,10 @@ public struct LiveChannelPlayerView: View {
 
     private var presentationObservedRoot: some View {
         ZStack {
-            (hasInlineControls ? Color.clear : Color.black)
+            (hasInlineControls || isMultiview ? Color.clear : Color.black)
             if !fullscreenOwnsSurface {
                 playerSurface
+                    .transition(.identity)
             }
         }
         .plozzFullScreenCover(isPresented: $fullscreenPresented, onDismiss: fullscreenDidDismiss) {
@@ -809,6 +861,9 @@ public struct LiveChannelPlayerView: View {
     }
 
     struct LiveChannelActivityObserver: ViewModifier {
+        #if os(tvOS)
+        @Environment(\.retainedFullscreenWorkspace) private var workspace
+        #endif
         let isActive: Bool
         let isAuthorized: Bool
         let scenePhase: ScenePhase
@@ -835,6 +890,9 @@ public struct LiveChannelPlayerView: View {
                     if !authorized { stopPlayback() }
                 }
                 .onDisappear {
+                    #if os(tvOS)
+                    if isActive, isAuthorized, workspace?.isTransferring == true { return }
+                    #endif
                     // Fullscreen obscures its inline owner without retiring it.
                     guard !isActive || !fullscreenOwnsSurface() else { return }
                     currentModel()?.setVisible(false)
@@ -846,6 +904,7 @@ public struct LiveChannelPlayerView: View {
     private var wantsNativeFullscreen: Bool {
         #if os(tvOS)
         usesNativeFullscreen && isExpanded && isActive
+            && workspace?.isPresented != true && workspace?.isHostingFullscreen != true
         #else
         false
         #endif
@@ -860,8 +919,37 @@ public struct LiveChannelPlayerView: View {
         }
     }
 
+    private func openMultiview() {
+        guard isActive, isAuthorized, onMultiview != nil else { return }
+        if fullscreenOwnsSurface {
+            opensMultiviewAfterFullscreen = true
+            returnsToGuideAfterFullscreen = false
+            if let model {
+                videoHandoff = VideoPresentationHandoff(
+                    engine: model.engine, completion: finishOpeningMultiview)
+            }
+            updateFullscreenPresentation(false)
+        } else {
+            beginMultiview()
+        }
+    }
+
+    private func finishOpeningMultiview() {
+        guard opensMultiviewAfterFullscreen, !fullscreenOwnsSurface else { return }
+        opensMultiviewAfterFullscreen = false
+        videoHandoff = nil
+        guard isActive, isAuthorized else { return }
+        beginMultiview()
+    }
+
+    private func beginMultiview() {
+        // The channel picker keeps the inline renderer; no native card replaces it on entry.
+        _ = onMultiview?()
+    }
+
     private func fullscreenDidDismiss() {
         fullscreenOwnsSurface = false
+        if videoHandoff == nil { finishOpeningMultiview() }
         // SwiftUI may retain the dismissal closure from presentation time.
         // Read current state rather than its captured isActive/isExpanded inputs.
         if returnsToGuideAfterFullscreen {
@@ -932,8 +1020,12 @@ public struct LiveChannelPlayerView: View {
             engine: engine, channelID: channelID, input: input,
             outputGroup: outputGroup, outputID: outputID ?? UUID(), isAudible: isAudible,
             allowsDisplayMatching: allowsDisplayMatching,
-            trackPreferences: trackPreferences
+            trackPreferences: trackPreferences,
+            defaultVideoZoom: { displayTransitionSettings().videoZoom[.current] }
         )
+        if let playbackSettingsModel {
+            playerModel.videoZoom.bindAutoCropFraming(to: playbackSettingsModel, platform: .current)
+        }
         model = playerModel
         playerModel.onExternalContinuationChanged = onExternalContinuationChanged
         playerModel.setPermitsExternalPresentation(permitsExternalPresentation)
@@ -953,6 +1045,9 @@ public struct LiveChannelPlayerView: View {
     }
 
     private func stopPlayback() {
+        opensMultiviewAfterFullscreen = false
+        videoHandoff?.cancel()
+        videoHandoff = nil
         exitTask?.cancel()
         exitTask = nil
         displayTask?.cancel()
@@ -1258,7 +1353,7 @@ public struct LiveChannelPlayerView: View {
                     TouchFeedback.shared.emit(.selection)
                 },
                 onBoostChanged: { _ in },
-                onZoom: { model.videoZoom.settings.mode = $0 ? .fill : .fit },
+                onZoom: { model.videoZoom.setPinchZoom(fillsScreen: $0) },
                 onGestureStarted: dismissControls
             )
             .ignoresSafeArea()
@@ -1828,6 +1923,7 @@ final class LiveChannelPlayerModel {
     }
 
     private var source: Source
+    private let defaultVideoZoom: @MainActor () -> VideoZoomPreference
     private let uptime: @MainActor () -> TimeInterval
     private let idleSleepGuard = DisplayWakeLease()
     @ObservationIgnored private var monitorTask: Task<Void, Never>?
@@ -1872,10 +1968,13 @@ final class LiveChannelPlayerModel {
         isAudible: Bool = true,
         allowsDisplayMatching: Bool = true,
         trackPreferences: LiveChannelTrackPreferences? = nil,
+        defaultVideoZoom: @escaping @MainActor () -> VideoZoomPreference = { .onDemandDefault },
         playbackJournal: PlaybackDiagnosticJournal = .shared
     ) {
         self.engine = engine
-        videoZoom.supportsActivePicture = engine.supportsActivePictureAnalysis
+        self.defaultVideoZoom = defaultVideoZoom
+        videoZoom.restoreForPlayback(nil, defaultPreference: defaultVideoZoom(),
+                                     supportsActivePicture: engine.supportsActivePictureAnalysis)
         self.playbackJournal = playbackJournal
         self.outputGroup = outputGroup
         self.outputID = outputID
@@ -2246,7 +2345,10 @@ final class LiveChannelPlayerModel {
         setSessionReporting(reporting, reset: changed)
         guard changed else { return }
 
-        if nextSource != source { videoZoom.settings = PlayerVideoZoom() }
+        if nextSource != source {
+            videoZoom.restoreForPlayback(nil, defaultPreference: defaultVideoZoom(),
+                                         supportsActivePicture: engine.supportsActivePictureAnalysis)
+        }
         source = nextSource
         sourceDynamicRange = nil
         resetProgrammeTracks()

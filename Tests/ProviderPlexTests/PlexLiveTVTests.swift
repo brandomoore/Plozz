@@ -254,7 +254,7 @@ final class PlexLiveTVTests: XCTestCase {
                 json: tune ?? """
                 {"MediaContainer":{"MediaGrabOperation":[{"Metadata":{
                   "key":"\(sessionPath)","ratingKey":4321,"live":true,
-                  "Media":[{"uuid":"shared-tuner","Part":[{}]}]}}]}}
+                  "Media":[{"uuid":"shared-tuner","videoCodec":"h264","audioCodec":"aac","Part":[{}]}]}}]}}
                 """, gate: tuneGate
             )],
             "/video/:/transcode/universal/decision": [.init(
@@ -299,6 +299,7 @@ final class PlexLiveTVTests: XCTestCase {
         let decision = try XCTUnwrap(requests.first { $0.path.hasSuffix("/decision") })
         XCTAssertEqual(decision.query("path"), sessionPath)
         XCTAssertEqual(decision.query("session"), locator.playSessionID)
+        XCTAssertEqual(decision.query("directPlay"), "1")
         XCTAssertTrue(requests.allSatisfy { $0.headers["X-Plex-Token"] == "fixture-home-token" })
         XCTAssertTrue(requests.allSatisfy { $0.redirectPolicy == .sameOrigin })
         XCTAssertFalse(requests.contains { $0.path.hasSuffix("/grid") || $0.path == "/livetv/dvrs" })
@@ -326,6 +327,30 @@ final class PlexLiveTVTests: XCTestCase {
         XCTAssertFalse(requests.contains { $0.path.contains("/terminate") || $0.method == .delete })
     }
 
+    func testNativeIncompatibleAndUnknownLiveCodecsRequestCompatibilityConversion() async throws {
+        for codecs in [
+            #""videoCodec":"mpeg2video","audioCodec":"ac3","#,
+            #""videoCodec":"h264","audioCodec":"dca","#,
+            ""
+        ] {
+            let http = playbackHTTP(tune: """
+            {"MediaContainer":{"MediaSubscription":[{"MediaGrabOperation":[{"Metadata":{
+              "key":"\(sessionPath)","Media":[{\(codecs)"uuid":"shared-tuner"}]}}]}]}}
+            """, decision: #"{"MediaContainer":{"generalDecisionCode":1001}}"#)
+            let lease = try await provider(http).openLiveTVChannel(id: "\(epg)|101")
+            await lease.close()
+            let requests = await http.requests
+            let decision = try XCTUnwrap(requests.first { $0.path.hasSuffix("/decision") })
+            let start = try XCTUnwrap(requests.first { $0.path.hasSuffix("/start.m3u8") })
+            XCTAssertEqual(decision.query("directPlay"), "0")
+            XCTAssertEqual(start.query("directPlay"), "0")
+            XCTAssertEqual(decision.query("X-Plex-Client-Profile-Name"), "Generic")
+            let profile = try XCTUnwrap(decision.query("X-Plex-Client-Profile-Extra"))
+            XCTAssertTrue(profile.contains("videoCodec=h264&audioCodec=aac"))
+            XCTAssertEqual(start.query("X-Plex-Client-Profile-Extra"), profile)
+        }
+    }
+
     func testPublishedLegacyMediaUUIDTuneShapeIsSupported() async throws {
         let http = playbackHTTP(tune: """
         {"MediaContainer":{"Metadata":[{"live":true,"Media":[
@@ -336,6 +361,52 @@ final class PlexLiveTVTests: XCTestCase {
         let requests = await http.requests
         XCTAssertEqual(requests.first { $0.path == "/:/timeline" }?.query("key"), sessionPath)
         XCTAssertNil(requests.first { $0.path == "/:/timeline" }?.query("ratingKey"))
+    }
+
+    func testSubscriptionWrappedTuneIgnoresOtherAiringsAndPreservesOwnedCleanup() async throws {
+        let subscription = """
+        {"key":"/media/subscriptions/17","type":4,
+         "MediaGrabOperation":[{"status":"inprogress","Metadata":{
+           "key":"\(sessionPath)","ratingKey":"4321",
+           "Media":[{"uuid":"shared-tuner","protocol":"hls","Part":[{
+             "key":"/livetv/sessions/shared-tuner/buffer/index.m3u8"}]}]}}],
+         "Timeline":{"Metadata":[{"key":"/livetv/sessions/unrelated",
+           "ratingKey":"9999","Media":[{"uuid":"unrelated"}]}]},
+         "AlsoAiring":{"Metadata":[{"key":"/livetv/sessions/other-channel"}]}}
+        """
+        for value in [subscription, "[\(subscription)]"] {
+            let http = playbackHTTP(tune: """
+            {"MediaContainer":{"size":1,"MediaSubscription":\(value)}}
+            """)
+            let lease = try await provider(http).openLiveTVChannel(id: "\(epg)|101")
+            await lease.close()
+            let requests = await http.requests
+            let decision = try XCTUnwrap(requests.first { $0.path.hasSuffix("/decision") })
+            XCTAssertEqual(decision.query("path"), sessionPath)
+            XCTAssertEqual(requests.filter { $0.path == playlistPath }.count, 1)
+            let stopped = try XCTUnwrap(requests.first { $0.path == "/:/timeline" })
+            XCTAssertEqual(stopped.query("key"), sessionPath)
+            XCTAssertEqual(stopped.query("ratingKey"), "4321")
+            XCTAssertEqual(requests.last?.query("session"), decision.query("session"))
+        }
+    }
+
+    func testSubscriptionGuideMetadataAloneCannotAuthorizePlayback() async throws {
+        let http = playbackHTTP(tune: """
+        {"MediaContainer":{"MediaSubscription":[{
+          "Timeline":{"Metadata":[{"key":"\(sessionPath)","Media":[{"uuid":"shared-tuner"}]}]},
+          "AlsoAiring":{"Metadata":[{"key":"\(sessionPath)"}]}}]}}
+        """)
+        do {
+            _ = try await provider(http).openLiveTVChannel(id: "\(epg)|101")
+            XCTFail("Guide metadata cannot stand in for a tuned stream.")
+        } catch {
+            XCTAssertEqual(error as? AppError, .invalidResponse)
+        }
+        let requests = await http.requests
+        XCTAssertFalse(requests.contains { $0.path.hasSuffix("/decision") })
+        XCTAssertFalse(requests.contains { $0.path == playlistPath })
+        XCTAssertEqual(requests.filter { $0.path.hasSuffix("/stop") }.count, 1)
     }
 
     func testCancellationDuringTuneWaitsForOwnedHandleAndRollsBack() async throws {

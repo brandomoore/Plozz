@@ -51,8 +51,8 @@ enum HomeSectionIssueResolver {
                 }
             case let .section(id):
                 guard let definition = choice.collectionSection,
-                      let account = accounts.first(where: definition.source.matches) else { return nil }
-                accountID = account.account.id
+                      !definition.availableSources(accounts: accounts, visibility: visibility).isEmpty else { return nil }
+                accountID = definition.sources.count == 1 ? definition.sources.first?.accountID : nil
                 if let row = content.collectionRows.first(where: { $0.definition.id == id }) {
                     reason = row.failure.flatMap(failure)
                         ?? (row.failure == nil && !row.isLoading && row.items.isEmpty ? .empty : nil)

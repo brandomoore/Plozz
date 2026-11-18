@@ -17,6 +17,7 @@ public struct NativeArtworkPoster<Artwork: View, Overlay: View>: View {
     private let providerKind: ProviderKind?
     private let mediaShareTransport: MediaShareTransportKind?
     private let showsCaption: Bool
+    private let preservesArtworkTransparency: Bool
     @State private var resolution = ArtworkResolutionState()
     @Environment(\.plozzMetrics) private var metrics
 
@@ -31,6 +32,7 @@ public struct NativeArtworkPoster<Artwork: View, Overlay: View>: View {
         providerKind: ProviderKind? = nil,
         mediaShareTransport: MediaShareTransportKind? = nil,
         showsCaption: Bool = true,
+        preservesArtworkTransparency: Bool = false,
         focus: PlozzCardFocus.Binding,
         action: @escaping () -> Void,
         @ViewBuilder artwork: () -> Artwork,
@@ -49,12 +51,14 @@ public struct NativeArtworkPoster<Artwork: View, Overlay: View>: View {
         self.providerKind = providerKind
         self.mediaShareTransport = mediaShareTransport
         self.showsCaption = showsCaption
+        self.preservesArtworkTransparency = preservesArtworkTransparency
     }
 
     public var body: some View {
         VStack(spacing: metrics.nativePosterCaptionSpacing) {
             NativeTVPoster(
-                image: resolution.image, treatment: .original, aspectRatio: aspectRatio,
+                image: resolution.image, preservesArtworkTransparency: preservesArtworkTransparency,
+                treatment: .original, aspectRatio: aspectRatio,
                 fallbackWidth: width, title: title, subtitle: subtitle,
                 overlay: ZStack {
                     if resolution.image == nil {
@@ -108,6 +112,7 @@ public extension NativeArtworkPoster where Overlay == EmptyView {
         providerKind: ProviderKind? = nil,
         mediaShareTransport: MediaShareTransportKind? = nil,
         showsCaption: Bool = true,
+        preservesArtworkTransparency: Bool = false,
         focus: PlozzCardFocus.Binding,
         action: @escaping () -> Void,
         @ViewBuilder artwork: () -> Artwork
@@ -118,6 +123,7 @@ public extension NativeArtworkPoster where Overlay == EmptyView {
             placeholderTint: placeholderTint,
             providerKind: providerKind, mediaShareTransport: mediaShareTransport,
             showsCaption: showsCaption,
+            preservesArtworkTransparency: preservesArtworkTransparency,
             focus: focus, action: action, artwork: artwork, overlay: { EmptyView() }
         )
     }

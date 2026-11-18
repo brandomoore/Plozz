@@ -34,6 +34,7 @@ final class IPTVCatalogStorageTests: XCTestCase {
         let url = try location()
         let catalog = try IPTVCatalog(url: url, key: key)
         try importRows(1, into: catalog)
+        let revision = try XCTUnwrap(catalog.state("playlist-revision"))
         let db = try XCTUnwrap(catalog.db)
         try catalog.beginImport()
         defer { catalog.discardImport() }
@@ -64,7 +65,20 @@ final class IPTVCatalogStorageTests: XCTestCase {
         XCTAssertEqual(sqlite3_txn_state(db, "main"), SQLITE_TXN_NONE)
         XCTAssertEqual(try catalog.count(where: "1 = 1"), 1)
         XCTAssertEqual(try catalog.record("movie-0").item.id, "movie-0")
+        XCTAssertEqual(try catalog.state("playlist-revision"), revision)
         XCTAssertEqual(sqlite3_wal_checkpoint_v2(observerDB, "main", SQLITE_CHECKPOINT_TRUNCATE, nil, nil), SQLITE_OK)
+    }
+
+    func testImportRevisionChangesOnReplacementAndSurvivesReopen() throws {
+        let url = try location()
+        let catalog = try IPTVCatalog(url: url, key: key)
+        try importRows(1, into: catalog)
+        let first = try XCTUnwrap(catalog.state("playlist-revision"))
+        try importRows(1, into: catalog)
+        let replacement = try XCTUnwrap(catalog.state("playlist-revision"))
+        XCTAssertNotEqual(replacement, first)
+        let reopened = try IPTVCatalog(url: url, key: key)
+        XCTAssertEqual(try reopened.state("playlist-revision"), replacement)
     }
 
     func testRepeatedImportsBoundTheRetainedJournalWithoutLosingRows() throws {

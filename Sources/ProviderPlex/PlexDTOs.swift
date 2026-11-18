@@ -449,6 +449,7 @@ struct PlexStream: Decodable {
     let extendedDisplayTitle: String?
     let title: String? // l10n:content — container track title
     let hearingImpaired: Bool?
+    let visualImpaired: Bool?
     let selected: Bool?
     let `default`: Bool?
     let forced: Bool?
@@ -496,6 +497,7 @@ struct PlexStream: Decodable {
         extendedDisplayTitle = c.flexibleString(.extendedDisplayTitle)
         title = c.flexibleString(.title)
         hearingImpaired = c.flexibleBool(.hearingImpaired)
+        visualImpaired = c.flexibleBool(.visualImpaired)
         selected = c.flexibleBool(.selected)
         `default` = c.flexibleBool(.default)
         forced = c.flexibleBool(.forced)
@@ -520,7 +522,7 @@ struct PlexStream: Decodable {
     private enum CodingKeys: String, CodingKey {
         case id, streamType, index, codec, profile, language, languageTag, languageCode
         case displayTitle, extendedDisplayTitle, selected, `default`, forced, key
-        case title, hearingImpaired
+        case title, hearingImpaired, visualImpaired
         case width, height, frameRate, bitDepth, scanType, colorTrc
         case DOVIPresent, DOVIProfile, DOVILevel, DOVIBLPresent, DOVIBLCompatID
         case channels, samplingRate, audioChannelLayout, bitrate
@@ -662,8 +664,11 @@ struct PlexConnectionDTO: Decodable {
 // silently dropping a 4K Dolby Vision file to a coarse/empty badge set. These
 // helpers accept any of the representations so a single quirky field can never
 // nuke an item's technical badges.
+// Most stream fields are absent. Check presence before trying representations
+// so sparse library responses do not construct several errors per missing field.
 extension KeyedDecodingContainer {
     func flexibleBool(_ key: Key) -> Bool? {
+        guard contains(key) else { return nil }
         if let value = try? decode(Bool.self, forKey: key) { return value }
         if let value = try? decode(Int.self, forKey: key) { return value != 0 }
         if let value = try? decode(String.self, forKey: key) {
@@ -677,6 +682,7 @@ extension KeyedDecodingContainer {
     }
 
     func flexibleInt(_ key: Key) -> Int? {
+        guard contains(key) else { return nil }
         if let value = try? decode(Int.self, forKey: key) { return value }
         if let value = try? decode(String.self, forKey: key) { return Int(value) }
         if let value = try? decode(Double.self, forKey: key) { return Int(value) }
@@ -684,12 +690,14 @@ extension KeyedDecodingContainer {
     }
 
     func flexibleDouble(_ key: Key) -> Double? {
+        guard contains(key) else { return nil }
         if let value = try? decode(Double.self, forKey: key) { return value }
         if let value = try? decode(String.self, forKey: key) { return Double(value) }
         return nil
     }
 
     func flexibleString(_ key: Key) -> String? {
+        guard contains(key) else { return nil }
         if let value = try? decode(String.self, forKey: key) { return value }
         if let value = try? decode(Int.self, forKey: key) { return String(value) }
         if let value = try? decode(Double.self, forKey: key) { return String(value) }

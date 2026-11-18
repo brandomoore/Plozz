@@ -15,7 +15,7 @@ evidence gaps, not duplicate implementation instructions.
 | Priority | Evidence / uncertainty | Next action and acceptance criterion |
 | --- | --- | --- |
 | Remaining schedule size | The old "Live TV preferences" category included generated-channel definitions and full library-item snapshots. Downloaded IPTV guides/catalogues remain local. Existing published duplicates and overlapping-but-different item sets still occupy space. | Use the separated breakdown, including pending bytes, to attribute actual data. A more compact cross-device format needs explicit migration/older-client compatibility, not removal of required schedule inputs. |
-| Remaining guide work | Large downloads now reuse temporary file-backed data. Each channel batch still parses the document, and the first download still assembles Data. | Profile the remaining parsing/peak-memory cost before adding an indexed representation. Preserve exact matching, windows, cancellation and HTTP cache directives. |
+| Guide revalidation | Account guides reuse encrypted station indexes and persist ETag/Last-Modified for eligible conditional requests. | A 304 preserves the generation; changed projections/windows require a full response. Preserve exact matching, cancellation and HTTP cache directives. |
 | Playback fault breadth | Bounded synthetic sessions are not an evening of real-provider viewing. | Cover discontinuities and key/init changes independently of session renewal. Require advancing decoded images, bounded recovery, preserved pause intent and zero owned requests after stop. |
 | Plex shutdown | Shared and Plex lease owners serialize updates before closing; obsolete queued reports may delay cleanup behind a slow request. No user-visible failure is demonstrated. | Reproduce blocked transport plus queued updates before changing ordering. Preserve exactly-once owned-session cleanup and never release another viewer's tuner. |
 | Real-provider confirmation | Simulator fixtures do not establish Dispatcharr interoperability or resolution of the Level Up report. | Exercise representative authorized server/feed inputs, including audio on hardware. Keep this distinct from local installation success. |
@@ -119,9 +119,11 @@ and its fixture resources for the actual workload.
 
 ## Deferred behavior and features
 
-Partial guide publication requires explicit incomplete-coverage/error semantics;
-the current array-or-error API can discard new partial rows when a later required
-source fails. Do not silently turn that into success or weaken auth/cancellation.
+Independent guide-source failures now carry usable rows through
+`ServerLiveTVPartialGuideError`; consumers preserve the failure and old listings
+for uncovered channels. Publishing part of a malformed XML document remains
+deliberately unsupported. Do not silently turn either failure into success or
+weaken auth/cancellation.
 Dedicated Dispatcharr onboarding, DVR, provider archive catch-up, recommendation
 shelves and sports integrations remain deferred, not reliability work.
 
@@ -150,7 +152,7 @@ Behavioral references, not copied implementations:
   safeguards, and logs numeric locations/codes instead of source fragments.
 - [Jellyfin.XmlTv](https://github.com/jellyfin/Jellyfin.XmlTv/blob/6c8c302c8520e5f41cd51dd392ac631f97179d82/src/Jellyfin.XmlTv/XmlTvReader.cs)
   accepts reduced-precision dates and disables character checks in its XML
-  reader. Plozz accepts minute precision but does not copy broad character
+  reader. Plozz accepts reduced precision but does not copy broad character
   validation bypasses or guess repairs for malformed XML. Its text selection
   now follows the same requested-language, untagged, first-usable fallback order
   without retaining every translation.
@@ -169,3 +171,169 @@ strict failure/privacy behavior, cancellation and resource budgets. These are
 bounded compatibility changes, not proof that Level Up's particular XML is
 accepted. Fresh diagnostics can distinguish syntax, structural, entity and
 resource failures without collecting feed content.
+
+### Further guide compatibility
+
+The November 14 comparison inspected Lume at
+[`b3648b8`](https://github.com/bilipp/Lume/tree/b3648b8a56d6b907cb5142fac4c56e71d05ee48c),
+specifically its
+[XMLTV parser](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Network/XMLTVParser.swift),
+[timestamp reader](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Network/XMLTVDate.swift)
+and background guide scheduling. Its streaming batches and explicit coordination
+with catalogue refresh are useful comparison points, not evidence that all of
+its parser fallbacks are appropriate here. Plozz does not adopt unchecked partial
+XML publication or a locale-dependent date fallback.
+
+The XMLTV DTD's shortened-date contract and
+[Jellyfin.XmlTv's date cases](https://github.com/jellyfin/Jellyfin.XmlTv/blob/6c8c302c8520e5f41cd51dd392ac631f97179d82/tests/Jellyfin.XmlTv.Tests/XmlTvReaderDateTimeTests.cs)
+identified a concrete gap: valid year/month/day/hour precision was dropped.
+Plozz now interprets omitted components as the start of the specified period,
+preserving strict calendar/offset validation and existing stop-time rules.
+Independently authored fixtures cover plain XML, gzip, indexed ingestion and
+replacement of an older empty account index.
+
+Inspection also found that manual station search considered only the first
+display name. It now searches all declared aliases without merging station
+identities, changing automatic matching or confirming a correction. Bounded
+parse summaries distinguish unmatched stations, out-of-window listings and
+unusable row fields without exposing feed content. These changes use Plozz's
+existing implementations; no reference source was transplanted. They do not
+establish compatibility with an unavailable failing provider feed.
+
+### Refresh coordination and real-guide evidence
+
+Lume's [refresh gate](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Sync/EPGSyncService.swift)
+prevents background EPG work from racing playlist sync and cancels an already
+running background refresh when content sync starts. Plozz's catalogue and guide
+transfers previously had independent admission. The new provider-local queue
+serializes catalogue imports, XMLTV downloads and Xtream per-channel guide requests.
+It prioritizes queued catalogue work but keeps an active transfer intact rather
+than throwing away its bytes. Saved playback-locator reads remain available.
+This is an independently implemented policy, not copied reference code.
+
+Public snapshots captured November 14, 2026:
+
+| Feed | Declared stations | Source programmes | Exact-ID sample | Compared listings |
+| --- | ---: | ---: | ---: | ---: |
+| Pluto TV US | 457 | 9,224 | 12 stations | 259 |
+| EPGShare US2 | 792 | 82,203 | 12 stations | 1,482 |
+
+The capture tool uses an independent XML/date reader to record explicit schedule
+intervals. Production gzip parsing and indexed streaming agree with those intervals
+for all 24 sampled stations, not merely with each other. The sample IDs are drawn
+from guide declarations: this is not evidence of automatic matching against a
+real subscriber's playlist, correct regional assignment, or broadcast accuracy.
+Raw snapshots, names and listings stay in ignored local storage, not this document.
+
+A separate opt-in live run used real URLSession networking and the production
+downloader, then indexed every declared station through the production parser.
+Pluto returned 998,824 compressed bytes and 9,224 windowed listings across 457
+stations; EPGShare returned 6,833,546 bytes and 70,740 windowed listings across
+792 stations. The latter count differs from the source total because ingestion
+applies the requested time window. Full-feed ingestion is not an independent
+correctness comparison for every listing; the exact interval comparison above
+remains limited to the 24 sampled stations.
+
+The same captured payloads also exercise a controlled single-connection transport.
+An uncoordinated production-HTTP control receives one HTTP 503 when catalogue and
+guide requests overlap. The coordinated client completes both with one active
+refresh request and zero refusals. Tests cover both arrival orders, queued
+catalogue priority, cancellation, teardown, cache reuse and account isolation.
+This proves the scheduling decision under that declared constraint, not that a
+particular public or commercial provider applies it. No concurrency stress is
+sent to the public endpoints and no stream is opened.
+
+The sampled Pluto stations had 15.38-19.41 hours of future listings at capture;
+EPGShare had 53.16-60.49 hours. These snapshots do not establish publication
+cadence, typical paid-provider behavior, or justify an adaptive polling policy.
+
+### Conventional guide freshness and conditional revalidation
+
+The reference players do not establish a universal paid-provider interval:
+
+| Primary source | Verified behavior |
+| --- | --- |
+| [IPTVnator guide fetching](https://github.com/4gray/iptvnator/blob/9f125b93895ffc07453235f1ed5d03db3604412b/apps/electron-backend/src/app/events/epg-fetch.service.ts) | Whole XMLTV source freshness is 12 hours. Fresh sources are skipped; this is not evidence of a repeating background timer. |
+| [Open TV Xtream guide fetching](https://github.com/Fredolx/open-tv/blob/1bfa78a181166025a6b977d783f895e819ff720f/src-tauri/src/xtream.rs) | Channel schedules are requested on demand through the Xtream API, not by periodically downloading every channel's guide. |
+| [Lume frequency settings](https://github.com/bilipp/Lume/blob/b3648b8a56d6b907cb5142fac4c56e71d05ee48c/Lume/Services/Sync/SyncFrequency.swift#L77-L105) | Guide default is daily, independently of the three-day playlist default. Six-hour, daily, three-day and weekly choices exist. |
+| [Jellyfin guide task](https://github.com/jellyfin/jellyfin/blob/2953ed632c9277351483eff04f87a8276390691c/src/Jellyfin.LiveTv/Guide/RefreshGuideScheduledTask.cs#L62-L73) and [XMLTV cache](https://github.com/jellyfin/jellyfin/blob/2953ed632c9277351483eff04f87a8276390691c/src/Jellyfin.LiveTv/Listings/XmlTvListingsProvider.cs#L30-L159) | The task defaults to 24 hours. Its separate one-hour document cache/failure cooldown preserves the last downloaded file on ordinary refresh failure. Cache lifetime is not the scheduled refresh interval. |
+| [Kodi IPTV Simple settings](https://github.com/kodi-pvr/pvr.iptvsimple/blob/0159d1149b33df2fcb4123087790af1fa4f516f2/pvr.iptvsimple/resources/instance-settings.xml#L63-L105) | Combined M3U/XMLTV auto-refresh defaults to disabled. Optional repeated refresh defaults to 60 minutes; optional daily refresh defaults to 04:00. The 60-minute value is not an enabled default. |
+
+Official TiviMate and Sparkle pages confirm user-supplied playlist/guide support,
+but did not establish current refresh defaults. Reseller claims and user-count
+assumptions are not evidence of provider publication cadence or connection limits.
+No authorized paid IPTV account was available for this comparison.
+
+Plozz adopts a 12-hour default/maximum for account XMLTV indexes, following
+IPTVnator's comparable whole-feed use case. It is a conventional starting point,
+not a measured optimum or a claim that all players agree. Shorter HTTP freshness
+and no-cache still apply. The existing guide-use/resume path rechecks due IPTV
+windows; it does not add a background timer, a coverage-triggered early refresh,
+or a promise of OS background execution.
+
+Xtream channel schedules remain demand-driven. A provider capability limits
+startup and explicit preparation to the first viewport rather than issuing a
+request for every channel; browsing loads further channels as needed. XMLTV
+still indexes the complete catalog, and once that index is saved and fresh it
+answers browsing requests before the native API is asked; a channel is still
+requested when its saved listings do not span the whole window. A transient native failure ends
+that batch's native requests and keeps the listings already retrieved. Populated feeds with no matches or no rows
+in the requested window retain normal source freshness. A truly empty XMLTV
+source and a successful empty viewport instead use a 60-second on-demand
+negative cache, not 12 hours; shorter source HTTP freshness still applies.
+Restoration, 304 and identical-200 revalidation preserve that distinction.
+An empty viewport alone does not cause early whole-feed downloads.
+Ordinary failed refreshes keep visible
+listings and report the failure; they do not mark stale data fresh.
+
+For per-channel sources, guide-only filtering retains unrequested channels so
+it cannot prevent their schedules from being discovered. Successful requests
+resolve pending channels; partial failures resolve only channels with listings.
+Explicit source refresh makes previously browsed windows due without discarding
+visible rows or eagerly fetching the unsampled lineup. Regression cases cover
+a guide-bearing channel beyond the first 12, confirmed empty filtering, partial
+failure/denial, and refreshing an unsampled channel on demand.
+
+Account XMLTV validators live inside the existing encrypted, authorization-scoped
+index document. A 304 only succeeds when the exact source, projection and retained
+window can answer the request; otherwise a full document is required. Revalidation
+does not invent more coverage. Redirected validators are attached only to the
+exact final resource that issued them, not other paths or hosts. A malformed 200
+replacement preserves committed rows and metadata. No-store revokes persistence,
+including a 304 no-store, which requires an unconditional replacement.
+
+Servers rejecting conditional headers with 400, 405, 412, 431 or 501 receive
+one ordinary fallback only when the response belongs to the validator-owning
+resource and has no Retry-After header. Its failure is surfaced without another
+retry. Authorization failures, missing feeds, throttling and redirect policies
+remain unchanged. Oversized or newline-bearing optional cache headers no longer
+reject otherwise usable XMLTV: validators are discarded, while unusable
+cache-policy headers disable persistence and freshness conservatively.
+
+Public response headers supported this design: Pluto advertised an ETag and
+300-second max-age; EPGShare advertised ETag, Last-Modified and 14,400-second
+max-age. Neither value proves how often new programme data is published.
+One conditional GET against each unchanged feed returned HTTP 304 with zero
+response-body bytes, compared with 7,832,370 combined bytes for the full bodies.
+That initial measurement was a separate HTTP probe, not total network traffic.
+The opt-in `IPTVGuideRefreshTests` live test now also exercises Plozz's production
+conditional download path after indexing each public feed, reporting the actual
+304/200 outcome and body size; publication may legitimately race revalidation.
+In the implementation verification, both feeds returned 304 with zero body bytes.
+The preceding full responses indexed 9,224 Pluto and 69,624 EPGShare programmes
+in the requested retention windows; those counts describe this run, not guaranteed
+provider coverage. The captured replay separately retained all 1,741 independently
+derived sampled intervals across the two feeds.
+
+Deterministic guide-index, transport, preparation and window tests cover restored
+validators, the 12-hour boundary, changed 200 responses, 304 generation reuse,
+source/window eligibility, HTTP directives, redirect isolation, failures and
+bounded per-channel preparation. Existing cancellation, partial-result and
+account-isolation cases remain part of focused regression coverage.
+Compatibility regressions also exercise conditional rejection and refusal
+boundaries, unusable optional headers, empty-source recovery, and populated
+unmatched/out-of-window sources that must not refetch early. Captured public
+feed replay continues to match the 1,741 independently derived sample intervals;
+the imperfect-server cases are controlled fixtures, not paid-provider evidence.
+The public corpus does not establish subscriber-playlist matching or the
+distribution of paid-provider behaviors; no authorized paid account is available.

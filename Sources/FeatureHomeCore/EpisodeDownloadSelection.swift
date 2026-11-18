@@ -65,7 +65,8 @@ public struct EpisodeDownloadSelection: Sendable {
             guard let fallback = options.first else { return nil }
             let preferred = explicitID ?? DetailPlaybackSelection.preferredVersionID(
                 for: first.selectingVersion(nil), versions: options.map(\.version),
-                versionOverride: nil, preferences: preferences, capabilities: capabilities
+                versionOverride: nil, preferences: preferences, capabilities: capabilities,
+                mode: .automatic
             ) ?? fallback.id
             return Episode(
                 id: first.stablePresentationID, item: first,

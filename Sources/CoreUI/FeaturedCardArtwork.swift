@@ -132,9 +132,10 @@ public struct FeaturedCardArtwork<Video: View>: View {
 
     #if os(tvOS)
     private func nativeButton(control: NativeControl) -> some View {
-        artwork.resolvedBitmap { image in
+        artwork.resolvedBitmap { image, identity in
             NativeTVPoster(
-                image: image, treatment: .original, aspectRatio: size.width / size.height,
+                image: image, artworkIdentity: identity,
+                treatment: .original, aspectRatio: size.width / size.height,
                 fallbackWidth: size.width,
                 title: spoilerSettings.shouldHideText(for: item)
                     ? .localized(spoilerSettings.maskedTitle(for: item)) : .content(item.title),

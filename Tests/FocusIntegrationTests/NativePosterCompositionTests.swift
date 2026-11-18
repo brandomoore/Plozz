@@ -108,6 +108,113 @@ final class NativePosterCompositionTests: XCTestCase {
         XCTAssertEqual(staleCompletions, 0)
     }
 
+    func testSameArtworkKeepsCompletedPixelsWhileChromeIsRecomposed() async throws {
+        for size in [CGSize(width: 260, height: 390), CGSize(width: 320, height: 210)] {
+            let coordinator = NativeTVPoster<EmptyView>.Coordinator(focus: PlozzCardFocus().projectedValue, action: {})
+            defer { coordinator.cancelPresentation() }
+            let image = source(index: 4, size: CGSize(width: 520, height: 780))
+            var environment = EnvironmentValues()
+            environment.displayScale = 1
+            environment.plozzShowsUnwatchedEpisodeCount = true
+            var completed: UIImage?
+            _ = coordinator.presentationImage(
+                image, treatment: .original, size: size, indicators: nil,
+                artworkBackground: .init(), environment: environment, onReady: { completed = $0 }
+            )
+            try await waitUntil { completed != nil }
+            let initial = try XCTUnwrap(completed)
+            let indicators = NativePosterIndicators.media(MediaCardPlaybackIndicators(
+                item: MediaItem(id: "same-artwork", title: "Series", kind: .series, unwatchedEpisodeCount: 12345),
+                badgeInset: 12
+            ).statusOnly)
+            for dimming: CGFloat in [0.1, 0.2] {
+                for _ in 0..<3 {
+                    let pending = coordinator.presentationImage(
+                        image, treatment: .original, size: size, indicators: indicators,
+                        artworkBackground: .init(dimming: dimming), environment: environment,
+                        onReady: { completed = $0 }
+                    )
+                    XCTAssertTrue(pending === initial, "Chrome updates must not flash the loading tile over loaded artwork.")
+                    XCTAssertNil(coordinator.displayedOverlay, "Do not show new digits before their matching tile is ready.")
+                }
+            }
+            try await waitUntil { completed !== initial }
+            let final = try XCTUnwrap(completed)
+            XCTAssertNotNil(coordinator.displayedOverlay)
+            XCTAssertNotEqual(final.pngData(), initial.pngData(), "The latest chrome must still finish rendering.")
+            XCTAssertTrue(coordinator.presentationImage(
+                image, treatment: .original, size: size, indicators: indicators,
+                artworkBackground: .init(dimming: 0.2), environment: environment
+            ) === final)
+            let foreground = try XCTUnwrap(coordinator.displayedOverlay?.image)
+            XCTAssertTrue(coordinator.presentationImage(
+                image, treatment: .original, size: size, indicators: nil,
+                artworkBackground: .init(dimming: 0.3), environment: environment, onReady: { completed = $0 }
+            ) === final)
+            XCTAssertTrue(coordinator.displayedOverlay?.image === foreground,
+                          "Keep old digits with their old tile until both can be replaced.")
+            try await waitUntil { completed !== final }
+            XCTAssertNil(coordinator.displayedOverlay, "Removing a badge must remove both layers together.")
+        }
+    }
+
+    func testArtworkReplacementAndProtectionDoNotKeepPreviousPixels() async throws {
+        let image = source(index: 5, size: CGSize(width: 520, height: 780))
+        let replacement = source(index: 6, size: CGSize(width: 520, height: 780))
+        let size = CGSize(width: 260, height: 390)
+        var environment = EnvironmentValues()
+        environment.displayScale = 1
+        let placeholder = NativePosterArtworkBitmap.placeholder(size: size, scale: 1, clipsToArtwork: false)
+        for (nextImage, treatment) in [
+            (replacement as UIImage?, NativePosterImageTreatment.original),
+            (image, .blurred),
+            (nil, .original)
+        ] {
+            let coordinator = NativeTVPoster<EmptyView>.Coordinator(focus: PlozzCardFocus().projectedValue, action: {})
+            defer { coordinator.cancelPresentation() }
+            var completed: UIImage?
+            _ = coordinator.presentationImage(
+                image, treatment: .original, size: size, indicators: nil,
+                artworkBackground: .init(), environment: environment, onReady: { completed = $0 }
+            )
+            try await waitUntil { completed != nil }
+            let pending = coordinator.presentationImage(
+                nextImage, treatment: treatment, size: size, indicators: nil,
+                artworkBackground: .init(), environment: environment
+            )
+            XCTAssertTrue(pending === placeholder, "A new source or spoiler treatment must hide the previous picture immediately.")
+        }
+    }
+
+    func testProgressiveUpgradeKeepsOnlyTheSameArtworkIdentity() async throws {
+        let coordinator = NativeTVPoster<EmptyView>.Coordinator(focus: PlozzCardFocus().projectedValue, action: {})
+        defer { coordinator.cancelPresentation() }
+        let preview = source(index: 2, size: CGSize(width: 130, height: 195))
+        let full = source(index: 2, size: CGSize(width: 520, height: 780))
+        let size = CGSize(width: 260, height: 390)
+        var environment = EnvironmentValues()
+        environment.displayScale = 1
+        var completed: UIImage?
+        _ = coordinator.presentationImage(
+            preview, identity: "account-a|movie", treatment: .original, size: size, indicators: nil,
+            artworkBackground: .init(), environment: environment, onReady: { completed = $0 }
+        )
+        try await waitUntil { completed != nil }
+        let initial = try XCTUnwrap(completed)
+        let pending = coordinator.presentationImage(
+            full, identity: "account-a|movie", treatment: .original, size: size, indicators: nil,
+            artworkBackground: .init(), environment: environment, onReady: { completed = $0 }
+        )
+        XCTAssertTrue(pending === initial, "A higher-quality decode must not flash a placeholder over its preview.")
+        try await waitUntil { completed !== initial }
+        let placeholder = NativePosterArtworkBitmap.placeholder(size: size, scale: 1, clipsToArtwork: false)
+        let replacement = source(index: 3, size: CGSize(width: 520, height: 780))
+        XCTAssertTrue(coordinator.presentationImage(
+            replacement, identity: "account-b|movie", treatment: .original, size: size, indicators: nil,
+            artworkBackground: .init(), environment: environment
+        ) === placeholder, "A different account/title must not retain the previous image.")
+    }
+
     func testPerformanceNativePosterComposition() async throws {
         try PerformanceProbe.requireEnabled()
         let sources = (0..<12).map { source(index: $0) }

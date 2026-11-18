@@ -1,5 +1,11 @@
 # PublicMetaDBService
 
+## Branch reconciliation: 18 November 2026
+
+The feature branch incorporates `main` through `ddf1cd9d4`. The acceptance
+ledger below describes the November 5 source and accounts, not the reconciled
+build. No live acceptance scenario was rerun as part of this merge.
+
 ## Development checkpoint: 5 November 2026
 
 The PublicMetaDB and shared tracker-sync branch is paused, not release-ready.

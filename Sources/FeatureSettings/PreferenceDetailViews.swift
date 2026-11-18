@@ -209,6 +209,7 @@ struct AppearanceDetailView: View {
 
     @ViewBuilder private var themeControls: some View {
         CompactThemePicker(selection: $theme.theme)
+            .environment(\.gradientBackgroundsEnabled, theme.gradientEnabled)
             .settingsSearchAnchor("theme")
         Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
             .settingsSearchAnchor("gradient-backgrounds")
@@ -331,10 +332,7 @@ struct SpoilerRowsBuilder {
         #endif
     }
 }
-/// Detail-page customization (a sibling to Customize Home): what plays behind the
-/// hero on a movie/show detail page — static art, the trailer, or the title's
-/// theme music. Kept separate from the Home hero (which lives in Customize Home)
-/// and from Playback (which is video-playback behaviour).
+/// Detail-page presentation and the shared trailer/music preferences.
 struct DetailPageDetailView: View {
     let cards: CardStyleSettingsModel
     @Bindable var themeMusic: ThemeMusicSettingsModel
@@ -349,29 +347,16 @@ struct DetailPageDetailView: View {
         var rows = [
             SettingsSplitRow(
                 id: "detail-page-hero-mode",
-                title: "Background",
+                title: "Trailers & music",
                 sectionStart: detailHeaderSettings == nil ? .heading(Text("Hero")) : nil
             ) {
-                SettingsControlRows(nonTVSpacing: SettingsMetrics.sectionSpacing) {
-                    DescribedSegmentedPicker(
-                        options: HeroBackgroundMode.allCases,
-                        selection: $heroBackground.settings.detailMode,
-                        title: { $0.displayName },
-                        detail: { $0.detail }
-                    )
-                    .settingsSearchAnchor(
-                        "detail-background",
-                        fallbackFor: (heroBackground.settings.detailMode == .trailer ? [] : ["detail-trailer-muted"])
-                            + (heroBackground.settings.detailMode == .themeMusic ? [] : ["theme-music-volume"])
-                    )
-                    if heroBackground.settings.detailMode == .trailer {
-                        Toggle("Start muted", isOn: $heroBackground.settings.detailTrailerMuted).settingsSearchAnchor("detail-trailer-muted")
-                    }
-                    if heroBackground.settings.detailMode == .themeMusic {
-                        ThemeMusicVolumeControl(model: themeMusic)
-                    }
+                SettingsPageLink {
+                    TrailersAndMusicSettingsView(background: heroBackground, themeMusic: themeMusic)
+                } label: {
+                    SettingsDisclosureLabel { Text("Trailers & music") }
                 }
-            }
+                .accessibilityIdentifier("detail-trailers-music")
+            }.labeledControl()
         ]
         if let detailHeaderSettings {
             rows.insert(SettingsSplitRow(
@@ -608,30 +593,38 @@ struct PlaybackDetailView: View {
 
     // MARK: - Split sections
 
-    private var versionSelectionRows: [SettingsSplitRow] {
+    var versionSelectionRows: [SettingsSplitRow] {
         [
             SettingsSplitRow(
                 id: "version-selection", title: "Version selection",
-                description: "Ask before each multi-version video, including autoplay, or choose automatically without opening the version picker."
+                description: "Ask each time, let Plozz choose, or use the server's first version."
             ) {
                 #if os(tvOS)
-                SettingsControlRows {
-                    if playback.settings.versionSelectionMode == nil {
-                        Text("Choose on first play")
-                            .settingsHelperText()
-                    }
-                    ForEach(PlaybackVersionSelectionMode.allCases, id: \.self) { mode in
-                        SettingsCheckableRow(
-                            title: Text(mode.title), titleLineLimit: nil,
-                            isChecked: playback.settings.versionSelectionMode == mode
-                        ) {
-                            playback.settings.versionSelectionMode = mode
+                SettingsMenuRow(
+                    title: "Version selection",
+                    value: Text(playback.settings.versionSelectionMode?.title ?? "Choose on first play")
+                ) {
+                    Picker("Version selection", selection: $playback.settings.versionSelectionMode) {
+                        if playback.settings.versionSelectionMode == nil {
+                            Text("Choose on first play")
+                                .tag(Optional<PlaybackVersionSelectionMode>.none)
+                                .disabled(true)
+                        }
+                        ForEach(PlaybackVersionSelectionMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(Optional(mode))
                         }
                     }
-                    .settingsSearchAnchor("version-selection")
                 }
+                .accessibilityIdentifier("playback-version-selection")
+                .settingsSearchAnchor("version-selection")
                 #else
                 PlaybackVersionPreferencePicker(model: playback)
+                #endif
+            }.labeledControl().descriptionAccessory {
+                #if os(tvOS)
+                return AnyView(AutomaticVersionInfoButton())
+                #else
+                return nil
                 #endif
             },
             SettingsSplitRow(
@@ -667,7 +660,7 @@ struct PlaybackDetailView: View {
                         ForEach(upNextRows) { $0.detail() }
                     }
                 }.groupedContent()
-            ] + versionSelectionRows + readAheadRows + skipIntroRows + [
+            ] + zoomRows + playerTabRows + versionSelectionRows + videoUpscalingRows + readAheadRows + skipIntroRows + [
                 SettingsSplitRow(id: "seeking", title: "Seeking") {
                     SettingsControlRows {
                         ForEach(skipIntervalRows) { $0.detail() }
@@ -682,12 +675,14 @@ struct PlaybackDetailView: View {
                         }
                     }
                 }
-            ] + displayFadeRows + advancedRows
+            ] + displayFadeRows + discRows + advancedRows
         }
         #endif
         return subtitleRows
             + audioRows
+            + zoomRows
             + versionSelectionRows
+            + videoUpscalingRows
             + skipIntroRows
             + skipIntervalRows
             + resumeRows
@@ -695,7 +690,28 @@ struct PlaybackDetailView: View {
             + scrubbingRows
             + displayFadeRows
             + upNextRows
+            + playerTabRows
+            + discRows
             + advancedRows
+    }
+
+    var playerTabRows: [SettingsSplitRow] {
+        [SettingsSplitRow(id: "player-tabs", title: "Player tabs") {
+            PlayerTabSettingsControls(model: playback)
+        }]
+    }
+
+    var zoomRows: [SettingsSplitRow] {
+        [SettingsSplitRow(id: "default-video-zoom", title: "Default zoom") {
+            DefaultVideoZoomControl(model: playback)
+        }.labeledControl()]
+    }
+
+    var videoUpscalingRows: [SettingsSplitRow] {
+        [SettingsSplitRow(id: "video-upscaling", title: "Video upscaling") {
+            VideoUpscalingControl(selection: $playback.settings.videoUpscaling)
+                .settingsSearchAnchor("video-upscaling")
+        }.labeledControl()]
     }
 
     private var advancedRows: [SettingsSplitRow] {
@@ -887,9 +903,23 @@ struct PlaybackDetailView: View {
                 SettingsControlRows {
                     LosslessAudioControl()
                         .settingsSearchAnchor("lossless-audio")
+                    SettingsDescribedControl {
+                        Toggle("Identify songs", isOn: $playback.settings.identifySongs)
+                    } description: {
+                        Text("Shows the song playing in a movie or show in the player’s Info, using Shazam. Needs an internet connection.")
+                    }
+                    .settingsSearchAnchor("identify-songs")
                 }
             }
-        ]
+        ] + (AppReleaseChannel.current.isBeta ? [
+            SettingsSplitRow(id: "dolby-vision-fel", title: "Video") {
+                SettingsDescribedControl {
+                    Toggle("P7 FEL → P8.1 conversion", isOn: $playback.settings.dolbyVisionFELConversion)
+                } description: {
+                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
+                }
+            }
+        ] : [])
     }
 
     private var skipIntroRows: [SettingsSplitRow] {
@@ -935,6 +965,28 @@ struct PlaybackDetailView: View {
         ]
     }
 
+    private var discRows: [SettingsSplitRow] {
+        [
+            SettingsSplitRow(id: "disc-playback", title: "Discs") {
+                SettingsDescribedControl {
+                    SettingsMenuRow(
+                        title: "Disc playback",
+                        value: Text(playback.settings.discPlayback.title)
+                    ) {
+                        Picker("Disc playback", selection: $playback.settings.discPlayback) {
+                            ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
+                                Text($0.title).tag($0)
+                            }
+                        }
+                    }
+                } description: {
+                    Text(DiscPlaybackBehavior.settingsNotice)
+                }
+                .settingsSearchAnchor("disc-playback")
+            }
+        ]
+    }
+
     private var resumeRows: [SettingsSplitRow] {
         [
             SettingsSplitRow(id: "ask-before-resuming", title: "Ask to resume or start over") {
@@ -947,12 +999,11 @@ struct PlaybackDetailView: View {
                 title: "Rewind on resume",
                 description: "When you return to a partially-watched title, playback starts a little before where you left off. Set anywhere from 0 to 60 seconds.",
             ) {
-                VStack(alignment: .leading, spacing: 20) {
+                SettingsDescribedControl {
                     resumeRewindStepper
                         .settingsSearchAnchor("resume-rewind")
+                } description: {
                     Text(playback.settings.resumeRewindInterval.effectDescription)
-                        .settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

@@ -61,6 +61,7 @@ public struct HeroResolutionCacheEntry: Sendable {
 
 /// Content-loading identity, independent of carousel presentation preferences.
 public struct HeroCurationLoadKey: Equatable, Sendable {
+    public let isAwaitingSources: Bool
     private let continueWatching: [MediaItem]
     private let watchlist: [MediaItem]
     private let recentlyAdded: [MediaItem]
@@ -82,14 +83,20 @@ public struct HeroCurationLoadKey: Equatable, Sendable {
         identityIndexRevision: Int,
         watchlistMembershipRevision: Int = 0,
         scopeID: ObjectIdentifier,
-        seerRevision: UUID
+        seerRevision: UUID,
+        isPreparingHome: Bool = false,
+        loadingRows: Set<HomeRowKind> = [],
+        language: String = "en"
     ) {
+        isAwaitingSources = isPreparingHome || HomeHeroLaunchPolicy.isAwaitingSources(
+            settings: settings, loadingRows: loadingRows
+        )
         continueWatching = settings.isEnabled(.continueWatching) ? content.continueWatching : []
         watchlist = settings.isEnabled(.watchlist) ? content.watchlist : []
         recentlyAdded = settings.isEnabled(.recentlyAdded) ? content.latest : []
         libraries = settings.isEnabled(.randomFromLibrary) || settings.isEnabled(.collection)
             ? content.libraries : []
-        configuration = HeroConfigurationKey(settings: settings)
+        configuration = HeroConfigurationKey(settings: settings, language: language)
         self.visibility = visibility
         self.freshnessRevision = freshnessRevision
         let enrichesCollectionHistory = settings.isEnabled(.collection) && settings.hideWatched

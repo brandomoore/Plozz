@@ -34,6 +34,7 @@ import TopShelfKit
 enum HomeTabRoot {
     case home
     case watchlist
+    case upcoming
     case discover
     /// One library's grid.
     case library(MediaLibrary)
@@ -49,6 +50,7 @@ private struct PlaylistDetailRoute: Hashable {
 /// full-screen player presentation. Every destination resolves its provider from
 /// the tapped item/library's `sourceAccountID`.
 struct HomeTab: View {
+    private var navigationTitles = NavigationTitles()
     @State private var trailerOpening = YouTubeTrailerOpening()
     @State private var externalOpening = ExternalMediaOpening()
     @Environment(ProfilesModel.self) private var profilesModel: ProfilesModel?
@@ -56,6 +58,7 @@ struct HomeTab: View {
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
     @Environment(\.locale) private var locale
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.detailPlaybackPreparationAllowed) private var playbackPreparationAllowed
     @Environment(LibraryPresentationSettingsModel.self) private var libraryPresentation
@@ -68,6 +71,8 @@ struct HomeTab: View {
     /// for one of the rail's library slots.
     var root: HomeTabRoot = .home
     let accounts: [ResolvedAccount]
+    var upcomingAccounts: @MainActor () -> [ResolvedAccount] = { [] }
+    var upcomingWatchlist: @MainActor () -> [MediaItem] = { [] }
     var isProfileAuthorized: @MainActor () -> Bool = { false }
     /// Every server added to the device, regardless of what this profile has
     /// switched on. Home needs it to tell "no servers yet" from "all off".
@@ -174,6 +179,7 @@ struct HomeTab: View {
 
     @State private var path = NavigationPath()
     @State private var heroRequestFailure: SeerRequestFailure?
+    @State private var heroRequestConfirmation: LocalizedStringResource?
     /// Handles owned above the tab so tab re-hosting cannot destroy them.
     let runtime: HomeTabRuntime
     /// Detail view models, kept across `navigationDestination` re-evaluations.
@@ -208,8 +214,13 @@ struct HomeTab: View {
     private func preservesHeroTrailerOnReturn(itemID: String) -> Bool {
         guard case .home = root else { return false }
         return isActiveTab && path.isEmpty && playRequest == nil && resumePrompt == nil
-            && heroBackground.settings.homeTrailerEnabled
-            && heroRuntime.trailerReturnItemID == itemID
+            && heroBackground.settings.homeTrailerPlaybackEnabled
+            && heroRuntime.trailerReturnItemID.map {
+                $0 == itemID || (
+                    heroTrailerController.isShowing($0)
+                        && heroTrailerController.isShowing(itemID)
+                )
+            } == true
     }
 
     /// The stack's root screen, chosen by ``root``. Home, Watchlist, one library's
@@ -222,6 +233,8 @@ struct HomeTab: View {
             homeRoot
         case .watchlist:
             watchlistRoot
+        case .upcoming:
+            UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
         case .discover:
             discoverRoot
         case let .library(library):
@@ -263,8 +276,51 @@ struct HomeTab: View {
         }
     }
 
+    private var upcomingScopeKey: String {
+        UpcomingFeedLoader.scopeKey(
+            profileID: profilesModel?.activeProfileID ?? runtime.scopeKey,
+            accounts: upcomingAccounts(), requestIdentity: activeSeerrIdentity,
+            connectionRevision: seer.connectionRevision, language: locale.identifier,
+            regionCode: Locale.current.region?.identifier
+        )
+    }
+
+    private func refreshUpcoming() async {
+        let scope = upcomingScopeKey
+        let profileID = profilesModel?.activeProfileID
+        let accounts = upcomingAccounts()
+        let saved = upcomingWatchlist()
+        let region = Locale.current.region?.identifier
+        let language = locale.identifier
+        let identity = activeSeerrIdentity
+        let cacheScope = UpcomingFeedLoader.scopeKey(
+            profileID: profileID ?? runtime.scopeKey, accounts: accounts,
+            requestIdentity: identity, connectionRevision: nil, language: language,
+            regionCode: region, requestServerURL: seer.savedBaseURLString
+        )
+        let isCurrent: @MainActor @Sendable () -> Bool = {
+            isProfileAuthorized() && profilesModel?.activeProfileID == profileID
+                && upcomingScopeKey == scope
+                && seer.requestIdentity == identity
+        }
+        await sharedHomeViewModel.upcoming.refresh(
+            scope: scope, namespace: libraryPreferencesNamespace, cacheScope: cacheScope,
+            rehydrate: { mediaItemActionHandler?.rehydratePersistedArtwork($0) ?? $0 },
+            isCurrent: isCurrent
+        ) { progress in
+            try await UpcomingFeedLoader.load(
+                accounts: accounts, watchlist: saved, regionCode: region,
+                interval: UpcomingFeedLoader.window(),
+                requestedTitles: {
+                    try await seer.personallyRequestedTitles(identity: identity, language: language)
+                },
+                isCurrent: isCurrent, onProgress: progress
+            )
+        }
+    }
+
     private var sharedHomeViewModel: HomeViewModel {
-        runtime.homeViewModel.value(forKey: runtime.scopeKey) {
+        runtime.homeViewModel.value(forKey: runtime.scopeKey, onDiscard: { $0.invalidate() }) {
             HomeViewModel(
                 accounts: accounts,
                 profileNamespace: libraryPreferencesNamespace,
@@ -322,6 +378,7 @@ struct HomeTab: View {
             HomeView(
                 viewModel: sharedHomeViewModel,
                 visibility: homeVisibility,
+                metadataLanguage: locale.identifier,
                 spoilerSettings: spoilerSettings,
                 heroSettings: heroSettings,
                 heroBackground: heroBackground,
@@ -356,7 +413,11 @@ struct HomeTab: View {
                     accounts: accounts,
                     identitySources: identitySources,
                     ratingsProvider: ratingsProvider,
-                    seer: seer
+                    seer: seer,
+                    hideWatched: !heroSettings.effectiveSettings.followsFocus
+                        && heroSettings.effectiveSettings.hideWatched,
+                    visibility: { [homeVisibility] in await homeVisibility.visibility },
+                    allowsDiscovery: { [heroSettings] in await heroSettings.allowsDiscovery }
                 ),
                 heroTrailerResolver: makeHeroTrailerResolver(),
                 homePerfOverlayEnabled: homePerfOverlayEnabled,
@@ -379,12 +440,24 @@ struct HomeTab: View {
                     // server picker), so best-source selection still happens there and
                     // at play time (requestPlay).
                     let item = $0
-                    let handsOffTrailer = heroTrailerController.isShowing(item.id)
+                    if heroBackground.settings.detailTrailerEnabled,
+                       heroTrailerController.isShowing(item.id) {
+                        do {
+                            let destination = try titleDetailViewModel(for: item, libraryOrigin: nil)
+                            heroTrailerController.handoffToDetail(
+                                itemID: item.id,
+                                destinationItemID: destination.state.value?.item.id
+                            )
+                        } catch {
+                            PlozzLog.app.error("Could not prepare hero trailer detail handoff: \(String(describing: error))")
+                        }
+                    }
+                    let handsOffTrailer = heroTrailerController.isClaimed(by: .detail, itemID: item.id)
                         && heroTrailerController.isPlaying
                     #if os(tvOS)
                     DetailTransitionNavigation.prepare(
                         for: item,
-                        artworkSnapshot: handsOffTrailer ? heroTrailerController.handoffImage : nil
+                        preservingVideo: handsOffTrailer
                     )
                     #endif
                     if handsOffTrailer {
@@ -405,16 +478,16 @@ struct HomeTab: View {
                 enabledServerCount: accounts.count
             )
             .alert(
-                "Request Failed",
+                heroRequestConfirmation == nil ? Text("Request Failed") : Text(verbatim: "Seerr"),
                 isPresented: Binding(
-                    get: { heroRequestFailure != nil },
-                    set: { if !$0 { heroRequestFailure = nil } }
-                ),
-                presenting: heroRequestFailure
-            ) { _ in
+                    get: { heroRequestFailure != nil || heroRequestConfirmation != nil },
+                    set: { if !$0 { heroRequestFailure = nil; heroRequestConfirmation = nil } }
+                )
+            ) {
                 Button("OK", role: .cancel) {}
-            } message: { failure in
-                Text(failure.userMessage)
+            } message: {
+                if let confirmation = heroRequestConfirmation { Text(confirmation) }
+                else if let failure = heroRequestFailure { Text(failure.userMessage) }
             }
     }
 
@@ -424,6 +497,11 @@ struct HomeTab: View {
     ) async -> MediaAvailabilityStatus? {
         let outcome = await seer.request(item, seasons: seasons, identity: activeSeerrIdentity)
         switch outcome {
+        case let .successElsewhere(message):
+            heroRequestConfirmation = message
+            return nil
+        case .failure(.cancelled):
+            return nil
         case let .success(status):
             return status
         case let .failure(reason):
@@ -461,7 +539,10 @@ struct HomeTab: View {
                     settingsNamespace: libraryPreferencesNamespace,
                     presentation: libraryPresentation
                 ),
-                title: library.displayName,
+                title: navigationTitles(
+                    "\(browse.sourceAccountID ?? library.sourceAccountID ?? ""):\(library.id)",
+                    default: library.displayName
+                ),
                 isNavigationRoot: isNavigationRoot,
                 spoilerSettings: spoilerSettings,
                 continueWatchingShowsSeriesArtwork: homeVisibility.continueWatchingUsesSeriesArtwork,
@@ -502,7 +583,7 @@ struct HomeTab: View {
                     settingsNamespace: libraryPreferencesNamespace,
                     presentation: libraryPresentation
                 ),
-                title: Text(AllLibrariesBrowse.title),
+                title: navigationTitles(NavigationLibraryLayout.allLibrariesKey, default: Text(AllLibrariesBrowse.title)),
                 isNavigationRoot: true,
                 spoilerSettings: spoilerSettings,
                 onSelect: { navigate($0) }
@@ -546,6 +627,8 @@ struct HomeTab: View {
                         }
                     case .watchlist:
                         watchlistRoot
+                    case .upcoming:
+                        UpcomingView(model: sharedHomeViewModel.upcoming, interval: UpcomingFeedLoader.window())
                     }
                 }
                 .toolbar(.hidden, for: .tabBar)
@@ -560,6 +643,13 @@ struct HomeTab: View {
                 itemDetail(for: item, libraryOrigin: nil)
             }
             .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
+            .task(id: "\(upcomingScopeKey)|\(sharedHomeViewModel.upcoming.refreshRevision)|\(isActiveTab)") {
+                guard isActiveTab else { return }
+                await refreshUpcoming()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, isActiveTab { sharedHomeViewModel.upcoming.refreshIfStale() }
+            }
             .youTubeTrailerOpeningFailures(trailerOpening)
             .externalMediaOpeningFailures(externalOpening)
             .onChange(of: accounts.map(\.account.id)) { _, _ in externalOpening.cancel() }
@@ -671,7 +761,6 @@ struct HomeTab: View {
                         stackDepth: detailStackDepth,
                         heroTrailerResolver: makeHeroTrailerResolver(),
                         preservesHeroTrailerOnDisappear: preservesHeroTrailerOnReturn,
-                        initialEpisode: route.episode,
                         seerConnected: seer.isConfigured,
                         requestAvailabilityRefresh: { await seer.requestAvailability(for: $0) },
                         onRequestSeasons: { item, seasons in
@@ -806,11 +895,13 @@ struct HomeTab: View {
                         item, accounts: accounts, identitySources: identitySources
                     )
                     guard target.kind.needsPlaybackTargetResolution else {
+                        resumePrompt = nil
                         playRequest = PlayRequest(item: target, startPosition: seconds)
                         return
                     }
                     Task { @MainActor in
                         guard let episode = await resolveSeriesNextUpEpisode(target) else { return }
+                        resumePrompt = nil
                         playRequest = PlayRequest(
                             item: bestSourcePlayItem(
                                 episode, accounts: accounts, identitySources: identitySources
@@ -860,8 +951,11 @@ struct HomeTab: View {
         private func perform() async {
             guard isActive else { return }
             guard let request = director.request else { return }
+            // Clearing the task's identity before awaiting cancels network-backed lookups.
+            let outcome = await reach(request)
+            guard !Task.isCancelled, director.request == request else { return }
+            director.finish(outcome)
             director.request = nil
-            director.finish(await reach(request))
         }
 
         /// Reaches the requested screen and answers with what the capture script
@@ -1061,7 +1155,7 @@ struct HomeTab: View {
     ///
     /// Lives on ``DeepLinkPlayRouter`` rather than on the tab so that watching
     /// the pending id cannot invalidate the tab's body.
-    private struct DeepLinkPlayRouter: View {
+    struct DeepLinkPlayRouter: View {
         let pendingPlay: PendingPlayRequest
         let accounts: [ResolvedAccount]
         let scopeKey: String
@@ -1192,6 +1286,7 @@ struct HomeTab: View {
         let identitySources = self.identitySources
         let seer = self.seer
         let runtime = self.runtime
+        let metadataLanguage = locale.identifier
         return DetailOpenEnvironment(
             resolveProvider: { try resolveProvider($0, in: accounts) },
             resolveOptionalProvider: { resolveOptionalProvider($0, in: accounts) },
@@ -1199,8 +1294,12 @@ struct HomeTab: View {
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: { runtime.continueWatchingForDetail },
             ratingsProvider: ratingsProvider,
-            detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
+            metadataLanguage: metadataLanguage,
+            localizedDetailMetadataResolver: {
+                await DetailMetadataResolver.household.resolve($0, language: $1)
+            },
             onlineTrailerResolver: { await DetailMetadataResolver.household.trailers(for: $0) },
+            trailerSettings: heroBackground,
             discoveryStatusRefresh: { await seer.requestAvailability(for: $0) },
             loadSeasonEpisodeRoster: { await seer.seasonEpisodeRoster(for: $0, seasonNumber: $1) },
             makeRelatedTitlesLoader: {
@@ -1257,6 +1356,14 @@ struct HomeTab: View {
         }
     }
 
+    private func titleDetailViewModel(
+        for item: MediaItem, libraryOrigin: String?
+    ) throws -> ItemDetailViewModel {
+        try detailViewModels.value(forKey: .title(for: item, libraryOrigin: libraryOrigin)) {
+            try detailEnvironment.makeViewModel(for: item, libraryOrigin: libraryOrigin)
+        }
+    }
+
     @ViewBuilder
     private func titleDetail(
         for item: MediaItem, libraryOrigin: String?,
@@ -1268,12 +1375,7 @@ struct HomeTab: View {
         // titles (available/partiallyAvailable) are NOT discovery: they resolve to
         // a real library copy via the identity index, so they keep the normal
         // playable detail page.
-        if let model = try? detailViewModels.value(
-            forKey: .title(for: item, libraryOrigin: libraryOrigin),
-            {
-                try detailEnvironment.makeViewModel(for: item, libraryOrigin: libraryOrigin)
-            })
-        {
+        if let model = try? titleDetailViewModel(for: item, libraryOrigin: libraryOrigin) {
             ItemDetailView(
                 viewModel: model,
                 spoilerSettings: spoilerSettings,
@@ -1313,6 +1415,10 @@ struct HomeTab: View {
     private func requestPlay(
         _ item: MediaItem, playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
     ) {
+        guard !item.isTrailer || heroBackground.settings.trailerSources.allows(item) else {
+            PlozzLog.app.info("Trailer action suppressed by profile settings")
+            return
+        }
         if item.isYouTubeTrailer {
             Task { await trailerOpening.open(item) }
             return
@@ -1365,10 +1471,12 @@ struct HomeTab: View {
             return
         }
         pendingPlaylistOrigin = playlistOrigin
-        if playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
+        if target.effectiveDiscPlayback(default: playbackSettings.discPlayback) != .openMenu,
+           playbackSettings.shouldAskBeforeResuming(at: target.resumePosition) {
             HandoffDiagnostics.emit(
                 "tap RESUME_PROMPT item=\(target.id) provider=\(target.sourceAccountID ?? "nil")"
             )
+            playRequest = nil
             resumePrompt = target
         } else {
             let playlist: VideoPlaylistPlaybackContext? = playlistOrigin.flatMap { origin in
@@ -1381,6 +1489,7 @@ struct HomeTab: View {
                 "tap PLAY trace=\(request.traceID.uuidString.prefix(8)) item=\(target.id) "
                     + "provider=\(target.sourceAccountID ?? "nil")"
             )
+            resumePrompt = nil
             playRequest = request
         }
     }

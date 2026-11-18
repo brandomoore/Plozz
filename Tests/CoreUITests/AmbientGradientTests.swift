@@ -114,22 +114,22 @@ final class AmbientGradientTests: XCTestCase {
         }
     }
 
-    func testDarkIsSofterAndBlackIsMoreVisibleWithoutBecomingDark() throws {
-        let dark = AmbientGradientBackground.meshColors(tint: nil, palette: .dark).map(channels)
-        let black = AmbientGradientBackground.meshColors(tint: nil, palette: .pureBlack).map(channels)
-        XCTAssertEqual(dark[0][2], 0.22088, accuracy: 0.0001)
-        XCTAssertEqual(black[0][2], 0.08032, accuracy: 0.0001)
-        XCTAssertEqual(black[0][2] / 0.1004, 0.8, accuracy: 0.0001)
-        XCTAssertLessThan(dark[0][2], 0.251)
-        XCTAssertGreaterThan(black[0][2], 0.251 * 0.22)
-        for index in dark.indices {
-            for channel in 0..<3 {
-                XCTAssertLessThan(black[index][channel], dark[index][channel] * 0.5)
+    func testBlackRetainsThreeQuartersOfStockAndArtworkGradientsWhileDarkStaysUnchanged() throws {
+        for tint: [Color]? in [nil, [], [.red, .green, .blue, .purple]] {
+            let dark = AmbientGradientBackground.meshColors(tint: tint, palette: .dark).map(channels)
+            let black = AmbientGradientBackground.meshColors(tint: tint, palette: .pureBlack).map(channels)
+            XCTAssertEqual(dark[0][tint?.isEmpty == false ? 0 : 2],
+                           tint?.isEmpty == false ? 0.2761 : 0.22088, accuracy: 0.0001)
+            for index in dark.indices {
+                for channel in 0..<3 {
+                    let previousBlack = dark[index][channel] * (0.32 / 0.88)
+                    XCTAssertEqual(black[index][channel], previousBlack * 0.75, accuracy: 0.0001)
+                }
             }
+            let values = black.flatMap { $0 }
+            let contrast = try XCTUnwrap(values.max()) - XCTUnwrap(values.min())
+            XCTAssertGreaterThan(contrast, 0.015, "Black retains a faint gradient, not a flat fill.")
         }
-        let values = black.flatMap { $0 }
-        let contrast = try XCTUnwrap(values.max()) - XCTUnwrap(values.min())
-        XCTAssertGreaterThan(contrast, 0.03, "Black must retain visible variation instead of crushing the gradient.")
     }
 
     private func channels(_ color: Color) -> [Double] {

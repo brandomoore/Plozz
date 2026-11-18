@@ -73,6 +73,10 @@ public extension MetadataCapability {
     private static let fieldCapabilities: [MetadataField: MetadataCapability] = [
         .title: .canonicalText,
         .originalTitle: .canonicalText,
+        .originalLanguage: .canonicalText,
+        .seriesStatus: .canonicalText,
+        .catalogSeasonCount: .canonicalText,
+        .catalogEpisodeCount: .canonicalText,
         .sortTitle: .canonicalText,
         .overview: .canonicalText,
         .genres: .canonicalText,
@@ -96,5 +100,7 @@ public extension MetadataCapability {
         .cast: .cast,
         .directors: .cast,
         .writers: .cast,
+        .producers: .cast,
+        .composers: .cast,
     ]
 }

@@ -28,11 +28,11 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDefaultContinueWatchingOpensSeriesWithSelectedEpisodeForBothProvidersAndLayouts() {
+    func testDefaultContinueWatchingOpensSeriesWithCurrentResumeForBothProvidersAndLayouts() {
         for options in [[], ["--portrait"], ["--plex"], ["--plex", "--portrait"]] {
             launch(options)
             openCard("E2")
-            XCTAssertTrue(app.staticTexts["Episode-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.staticTexts["Whole-show synopsis."].waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"].waitForExistence(timeout: 10), app.debugDescription)
             app.terminate()
         }
@@ -44,11 +44,94 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Movie-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
     }
 
-    func testOrdinaryEpisodeBrowsingStillOpensTheShowWithSelectedEpisode() {
+    func testCancelledDetailBackSwipeRestoresScrollingAndCompletedSwipeReturnsHome() {
+        launch(["--portrait"])
+        openCard("E2")
+        let play = app.buttons["detail-hero-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 10), app.debugDescription)
+        let window = app.windows.firstMatch
+        let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.35))
+        let shortDrag = window.coordinate(withNormalizedOffset: CGVector(dx: 0.16, dy: 0.39))
+        edge.press(forDuration: 0.05, thenDragTo: shortDrag, withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        app.swipeUp()
+        XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"]
+            .wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        app.swipeDown()
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+        let across = window.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.35))
+        edge.press(forDuration: 0.05, thenDragTo: across, withVelocity: .slow, thenHoldForDuration: 0.1)
+        XCTAssertTrue(app.staticTexts["Continue Watching"].waitForExistence(timeout: 10), app.debugDescription)
+        openCard("E2")
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 10), app.debugDescription)
+    }
+
+    func testOrdinaryEpisodeBrowsingUsesShowMetadataAndCurrentResume() {
         launch()
         openCard("E3")
-        XCTAssertTrue(app.staticTexts["Recent episode synopsis."].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Whole-show synopsis."].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["series-season-tabs"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["detail-hero-play"].label.contains("E2"), app.debugDescription)
+    }
+
+    func testSearchAndStaleContinueWatchingShowTheSameFrenchSeriesAndResume() {
+        for options in [[], ["--plex"], ["--details-search"], ["--details-search", "--plex"]] {
+            app.launchArguments = ["--continue-watching-details-fixture", "--detail-route-parity"] + options
+            app.launch()
+            if options.contains("--details-search") {
+                let search = app.textFields.firstMatch
+                XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
+                search.tap()
+                search.typeText("Fixture")
+                let result = app.staticTexts["Fixture show"].firstMatch
+                XCTAssertTrue(result.waitForExistence(timeout: 10), app.debugDescription)
+                result.tap()
+            } else {
+                openCard("E3")
+            }
+            XCTAssertTrue(app.staticTexts["Description FR de la serie."].waitForExistence(timeout: 15), app.debugDescription)
+            let play = app.buttons["detail-hero-play"]
+            let resumed = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in play.exists && play.label.contains("E2") }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [resumed], timeout: 15), .completed, app.debugDescription)
+            app.terminate()
+        }
+    }
+
+    func testMovieRowHeaderRemainsNavigableAcrossRepeatedPushes() {
+        executionTimeAllowance = 120
+        launch(["--browse-movies"])
+        assertMovieRowNavigation(title: "Recently Added")
+    }
+
+    func testLibraryMovieRowHeaderRemainsNavigableAcrossRepeatedPushes() {
+        executionTimeAllowance = 120
+        launch(["--browse-movies", "--browse-library-movies"])
+        assertMovieRowNavigation(title: "Recently Added in Movies")
+    }
+
+    func testServerFilmsHeaderWithHeroRemainsNavigableAcrossRepeatedPushes() {
+        executionTimeAllowance = 180
+        launch(["--browse-movies", "--browse-server-films"])
+        XCTAssertTrue(app.buttons["home-hero-artwork-detail"].waitForExistence(timeout: 10))
+        assertMovieRowNavigation(title: "Films")
+    }
+
+    private func assertMovieRowNavigation(title: String) {
+        let heading = app.buttons.matching(identifier: "home-row-see-all")
+            .matching(NSPredicate(format: "label == %@", title)).firstMatch
+        for _ in 0..<4 {
+            for _ in 0..<4 where !heading.exists { app.swipeUp() }
+            XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
+            for _ in 0..<3 where !heading.isHittable { app.swipeUp() }
+            heading.tap()
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Browse movie 0"))
+                .firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.buttons["home-row-sort-menu"].exists)
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(heading.wait(for: \.isHittable, toEqual: true, timeout: 10))
+        }
     }
 
     private func launch(_ options: [String] = []) {

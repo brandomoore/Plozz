@@ -1,104 +1,140 @@
 #if os(iOS)
-import CoreModels
 import CoreUI
 import SwiftUI
 
-struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
+struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     @Environment(\.plozzMetrics) private var metrics
-    @State private var position = ScrollPosition(edge: .top)
-    @State private var preservation = PlozziOSHomeScrollPreservation()
     @State private var viewportWidth: CGFloat = 0
+    @State private var safeAreaTop: CGFloat = 0
     let heroActive: Bool
-    @ViewBuilder var hero: Hero
-    @ViewBuilder var rows: Rows
+    let showsPageActions: Bool
+    let hero: Hero
+    let rows: Rows
+    let pageActions: PageActions
+
+    init(
+        heroActive: Bool,
+        showsPageActions: Bool = false,
+        @ViewBuilder hero: () -> Hero,
+        @ViewBuilder rows: () -> Rows,
+        @ViewBuilder pageActions: () -> PageActions = { EmptyView() }
+    ) {
+        self.heroActive = heroActive
+        self.showsPageActions = showsPageActions
+        self.hero = hero()
+        self.rows = rows()
+        self.pageActions = pageActions()
+    }
 
     var body: some View {
+        if #available(iOS 26.0, *) {
+            scrollContent
+                .scrollEdgeEffectStyle(heroActive && !showsPageActions ? .soft : .automatic, for: .top)
+        } else {
+            scrollContent
+        }
+    }
+
+    private var scrollContent: some View {
         ScrollView {
             // Eager vertical sizing avoids estimated heights changing during scrolling.
             VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
-                if heroActive { hero }
+                if heroActive {
+                    hero.overlay(alignment: .top) {
+                        if showsPageActions {
+                            pageActions.padding(.top, safeAreaTop)
+                        }
+                    }
+                    // Underlap only the artwork, not the scroll view's safe-area boundary.
+                    .padding(.top, showsPageActions ? -safeAreaTop : 0)
+                } else if showsPageActions {
+                    pageActions
+                }
                 rows
             }
             .padding(.bottom)
-            .coordinateSpace(name: PlozziOSHomeScrollSpace.content)
             .environment(\.plozziOSHomeViewportWidth, viewportWidth)
             .plozzDesktopMediaRailLayout()
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
-        .scrollPosition($position)
-        .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
-            preservation.geometry = geometry
-        }
-        .onPreferenceChange(PlozziOSHomeRowFrames.self) { frames in
-            if let offset = preservation.offset(after: frames) {
-                position.scrollTo(y: offset)
-            }
-        }
-        .ignoresSafeArea(.container, edges: heroActive ? .top : [])
+        .ignoresSafeArea(.container, edges: heroActive && !showsPageActions ? .top : [])
+        .modifier(PlozziOSReducedTransparencyScrollFade(enabled: heroActive))
         .background {
+            if showsPageActions && heroActive {
+                PlozziOSWindowSafeAreaTopReader { safeAreaTop = $0 }
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             PlozziOSStationaryNavigationSource()
                 .frame(width: 0, height: 0)
         }
     }
 }
 
-@MainActor
-final class PlozziOSHomeScrollPreservation {
-    var geometry: ScrollGeometry? {
-        didSet {
-            if geometry?.contentOffset != oldValue?.contentOffset
-                || geometry?.containerSize != oldValue?.containerSize {
-                pendingOffset = nil
+struct PlozziOSHomePageActions: View {
+    let showsAudio: Bool
+    let isMuted: Bool
+    let onToggleMute: () -> Void
+    let onShowSettings: () -> Void
+
+    var body: some View {
+        HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) {
+            Spacer(minLength: 0)
+            if showsAudio {
+                PlozziOSHeroAudioMuteToolbarButton(isMuted: isMuted, onToggle: onToggleMute)
+                    .plozziOSPageAction()
             }
+            PlozziOSSettingsAvatarButton(action: onShowSettings)
         }
-    }
-    private var frames: [HomeRowID: CGRect] = [:]
-    private var containerSize: CGSize?
-    private var pendingOffset: CGFloat?
-
-    func offset(after next: [HomeRowID: CGRect]) -> CGFloat? {
-        defer {
-            frames = next
-            containerSize = geometry?.containerSize
-        }
-        guard let geometry, containerSize == geometry.containerSize,
-              geometry.contentOffset.y > -geometry.contentInsets.top + 1 else { return nil }
-        let currentOffset = pendingOffset ?? geometry.contentOffset.y
-        let viewport = geometry.visibleRect.offsetBy(dx: 0, dy: currentOffset - geometry.contentOffset.y)
-        let visible = frames.filter { $0.value.intersects(viewport) }
-            .sorted { $0.value.minY < $1.value.minY }
-        guard let anchor = visible.first(where: { next[$0.key] != nil }),
-              let replacement = next[anchor.key] else { return nil }
-        let change = replacement.minY - anchor.value.minY
-        guard abs(change) > 0.5 else { return nil }
-        let offset = max(-geometry.contentInsets.top, currentOffset + change)
-        pendingOffset = offset
-        // ScrollPosition's point origin includes the top content inset.
-        return offset + geometry.contentInsets.top
+        .padding(.horizontal, PlozziOSPageHeaderLayout.horizontalInset)
     }
 }
 
-private enum PlozziOSHomeScrollSpace: Hashable {
-    case content
-}
+struct PlozziOSReducedTransparencyScrollFade: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    @Environment(\.themePalette) private var palette
+    @State private var safeAreaTop: CGFloat = 0
+    @State private var scrolledFraction: CGFloat = 0
+    var enabled = true
 
-private struct PlozziOSHomeRowFrames: PreferenceKey {
-    static let defaultValue: [HomeRowID: CGRect] = [:]
-    static func reduce(value: inout [HomeRowID: CGRect], nextValue: () -> [HomeRowID: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
-
-extension View {
-    func plozziOSHomeScrollRow(_ id: HomeRowID) -> some View {
-        background {
-            GeometryReader { geometry in
-                Color.clear.preference(
-                    key: PlozziOSHomeRowFrames.self,
-                    value: [id: geometry.frame(in: .named(PlozziOSHomeScrollSpace.content))]
-                )
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                min(max((geometry.contentOffset.y + geometry.contentInsets.top) / 64, 0), 1)
+            } action: { _, fraction in
+                scrolledFraction = fraction
             }
-        }
+            .overlay(alignment: .top) {
+                if #available(iOS 26.0, *), enabled, !isRunningOnMac,
+                   systemReduceTransparency || reduceTransparency {
+                    // Protect status text without restoring the opaque native edge
+                    // over the hero. The artwork remains untouched at scroll origin.
+                    LinearGradient(
+                        stops: [
+                            .init(color: palette.backgroundBase, location: 0),
+                            .init(color: palette.backgroundBase, location: safeAreaTop / (safeAreaTop + 44)),
+                            .init(color: palette.backgroundBase.opacity(0), location: 1)
+                        ],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                    .frame(height: safeAreaTop + 44)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea(.container, edges: .top)
+                    .opacity(scrolledFraction)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
+            .background {
+                PlozziOSWindowSafeAreaTopReader { safeAreaTop = $0 }
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
     }
 }
+
 #endif

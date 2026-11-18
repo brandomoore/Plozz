@@ -52,7 +52,7 @@ struct PlayerSequenceLayout {
 /// Episode cards live inside one player panel; playlist cards stand alone.
 /// Only visible entries are built; playlist pages are still requested on demand.
 struct PlayerSequencePanel: View {
-    enum Source: Equatable { case episodes, playlist }
+    enum Source: Equatable { case episodes, playlist, continueWatching }
 
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.plozzMetrics) private var cardMetrics
@@ -94,6 +94,8 @@ struct PlayerSequencePanel: View {
             if source == .episodes {
                 content
                     .modifier(PlayerEpisodePanelSurface(layout: layout))
+            } else if source == .continueWatching {
+                content.modifier(PlayerCardHeight(metrics: metrics))
             } else {
                 content.frame(height: metrics.cardHeight)
             }
@@ -117,7 +119,22 @@ struct PlayerSequencePanel: View {
                 if let error = playlist.loadError {
                     errorRow(error) { playlist.retry() }
                 }
+            } else if source == .continueWatching {
+                let items = player.continueWatchingItems
+                if items.isEmpty {
+                    emptyRow("Nothing else to continue")
+                } else {
+                    continueWatchingRow(items)
+                }
             }
+        }
+    }
+
+    /// Home's Continue Watching row. Picking a card saves
+    /// what is playing and resumes the picked title in place.
+    private func continueWatchingRow(_ items: [MediaItem]) -> some View {
+        PlayerContinueWatchingPanel(items: items, spoilerSettings: player.spoilerSettings, focus: $focus) {
+            player.playFromContinueWatching($0)
         }
     }
 

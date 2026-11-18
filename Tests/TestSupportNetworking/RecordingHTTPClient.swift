@@ -20,6 +20,7 @@ final class RecordingHTTPClient: HTTPClient, @unchecked Sendable {
         let queryItems: [URLQueryItem]
         let headers: [String: String]
         let body: Data?
+        let allowsRequestCoalescing: Bool
         var json: [String: Any]? {
             guard let body else { return nil }
             return (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
@@ -81,7 +82,8 @@ final class RecordingHTTPClient: HTTPClient, @unchecked Sendable {
             path: endpoint.path,
             queryItems: endpoint.queryItems,
             headers: endpoint.headers,
-            body: endpoint.body
+            body: endpoint.body,
+            allowsRequestCoalescing: endpoint.allowsRequestCoalescing
         ))
         if let error { lock.unlock(); throw error }
         let matchKey = responses.keys

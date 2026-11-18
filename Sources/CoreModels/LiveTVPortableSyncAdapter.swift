@@ -576,7 +576,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
 
     public var isEnabled: Bool {
         accountEpoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
-            && SyncSetupFeatureFlag(defaults: defaults).isEnabled
+            && SyncSetupFeatureFlag(defaults: defaults).allowsAutomaticSync
             && LiveTVPortableSyncPreferenceStore(defaults: defaults, profileID: profileID, namespace: namespace).isEnabled
     }
 

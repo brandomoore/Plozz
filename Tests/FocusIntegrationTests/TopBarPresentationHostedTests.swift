@@ -86,16 +86,25 @@ final class TopBarPresentationHostedTests: XCTestCase {
         let deadline = ContinuousClock.now + .seconds(5)
         repeat {
             window.layoutIfNeeded()
-            window.setNeedsFocusUpdate()
-            window.updateFocusIfNeeded()
-            if system.focusedItem != nil, focusItems(in: window).count == model.destinations.count { break }
+            if model.buttons[.home]?.isFocused == true { break }
             try await Task.sleep(for: .milliseconds(20))
         } while ContinuousClock.now < deadline
+        XCTAssertTrue(model.buttons[.home]?.isFocused == true)
+        let selectedNavigationItem = try XCTUnwrap(navigationMarkers(in: window).compactMap {
+            NavigationRowFocusRequester.target(for: $0, in: window)
+        }.first)
+        XCTAssertTrue(owner.requestFocus(to: selectedNavigationItem, using: system))
+        let navigationDeadline = ContinuousClock.now + .seconds(5)
+        while navigationMarkers(in: window).compactMap({
+            NavigationRowFocusRequester.target(for: $0, in: window)
+        }).count != model.destinations.count, ContinuousClock.now < navigationDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         func focus(_ index: Int) throws {
-            let items = focusItems(in: window).sorted {
-                $0.frame.midX < $1.frame.midX
-            }
-            XCTAssertEqual(items.count, model.destinations.count, "Only navigation is eligible during traversal.")
+            let items = navigationMarkers(in: window).compactMap {
+                NavigationRowFocusRequester.target(for: $0, in: window)
+            }.sorted { $0.frame.midX < $1.frame.midX }
+            XCTAssertEqual(items.count, model.destinations.count)
             let target = try XCTUnwrap(items.indices.contains(index) ? items[index] : nil)
             XCTAssertTrue(owner.requestFocus(to: target, using: system))
         }

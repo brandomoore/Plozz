@@ -14,6 +14,24 @@ final class PlayerOrientationTestWindow: UIWindow, PresentationOrientationWindow
 
 @MainActor
 final class PlayerOrientationTests: XCTestCase {
+    #if canImport(SwiftUI, _version: 8.0.85)
+    func testFullscreenPlayerDisablesVerticalBarReservationWithoutChangingEmbeddedLayout() throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires vertical-bar layout APIs.") }
+        for embedded in [false, true] {
+            let orientation = PlozziOSPlayerOrientation(preference: .auto)
+            let player = PlozziOSOrientationHostingController(
+                rootView: AnyView(Color.black.ignoresSafeArea()),
+                orientation: orientation, ownsWindowOrientation: embedded
+            )
+            defer { player.tearDown() }
+            for preference in PlaybackOrientation.allCases {
+                orientation.updatePreference(preference)
+                XCTAssertEqual(player.preferredVerticalBarBehavior, embedded ? .automatic : .disabled)
+            }
+        }
+    }
+    #endif
+
     func testLandscapeDirectionRequiresStableSidewaysGravity() {
         var direction = PlozziOSLandscapeDirection()
         XCTAssertNil(direction.update(x: -1, y: 0, z: 0))

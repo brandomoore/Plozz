@@ -62,6 +62,37 @@ final class PlozziOSPictureInPictureController: NSObject, ObservableObject {
     private var restoreCompletion: ((Bool) -> Void)?
     private var reportedContinuation = false
     private let externalPlaybackPolicy = LiveChannelExternalPlaybackPolicy()
+    /// Set when the app goes to the background. Pulling down Control Center or
+    /// a notification only makes the app inactive, so it does not count.
+    private var leftApp = false
+    private var appObservations: [any NSObjectProtocol] = []
+
+    override init() {
+        super.init()
+        let center = NotificationCenter.default
+        appObservations = [
+            center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) {
+                [weak self] _ in MainActor.assumeIsolated { self?.leftApp = true }
+            },
+            center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) {
+                [weak self] _ in MainActor.assumeIsolated { self?.returnToPlayerAfterAppReturn() }
+            }
+        ]
+    }
+
+    deinit {
+        appObservations.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    /// Returning to the app brings a PiP window back into the player, whether
+    /// PiP started automatically on leaving or from the PiP button. A window
+    /// opened while staying in the app (to browse while it plays) stays put.
+    private func returnToPlayerAfterAppReturn() {
+        defer { leftApp = false }
+        guard leftApp, let controller, controller.isPictureInPictureActive else { return }
+        lifecycle.requestStop()
+        controller.stopPictureInPicture()
+    }
 
     /// Binds to the engine's presenting layer. Safe to call repeatedly: the
     /// engine republishes its player across audio-track reloads, and a controller

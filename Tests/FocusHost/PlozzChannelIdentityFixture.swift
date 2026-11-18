@@ -42,8 +42,9 @@ struct PlozzChannelIdentityFixture: View {
                         )
                     } sidebar: {
                         PrototypeBrowseSidebar(
-                            model: model, active: $railActive, focusRequest: 0,
-                            search: {}, enterGuide: {}, multiviews: {}, manageChannels: {}
+                            model: model, configuration: imports.configuration, active: $railActive, focusRequest: 0,
+                            search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {},
+                            multiviews: {}, manageChannels: {}
                         )
                         .disabled(true)
                     } guide: {

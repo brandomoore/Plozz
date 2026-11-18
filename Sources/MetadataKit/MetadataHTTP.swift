@@ -1,3 +1,4 @@
+import CoreNetworking
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -20,7 +21,7 @@ enum MetadataHTTP {
         // Let URLCache hold the JSON responses so repeat lookups within a run are
         // cheap even before the persistent MetadataDiskCache is consulted.
         config.requestCachePolicy = .useProtocolCachePolicy
-        return URLSession(configuration: config)
+        return OfflineNetworkSession.make(configuration: config)
     }()
 
     /// GET `url` and decode `T`, returning `nil` on any failure (network, non-2xx,

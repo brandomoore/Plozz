@@ -3,6 +3,30 @@ import XCTest
 
 final class NavigationStyleSettingsStoreTests: XCTestCase {
     @MainActor
+    func testAuthorizationRefusalRemovesRememberedLibrariesButOfflineRetainsThem() {
+        let defaults = makeDefaults()
+        let snapshot = NavigationLibrariesSnapshotStore(defaults: defaults)
+        let model = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults),
+            layoutStore: NavigationLibraryLayoutStore(defaults: defaults),
+            librariesSnapshotStore: snapshot
+        )
+        let library = AggregatedLibrary(
+            accountID: "server", accountName: "Viewer", serverName: "Server",
+            providerKind: .plex, library: .init(id: "movies", title: "Movies", kind: .movie)
+        )
+        for error in [AppError.serverUnreachable, .unauthorized, .invalidCredentials, .accessRestricted] {
+            model.updateContentLibraries([library], accountIDs: ["server"], unreachableAccountIDs: [])
+            model.updateContentLibraries(
+                [], accountIDs: ["server"], unreachableAccountIDs: ["server"], failures: ["server": error]
+            )
+            let expected = error == .serverUnreachable ? [library] : []
+            XCTAssertEqual(model.contentLibraries, expected)
+            XCTAssertEqual(snapshot.load(), expected)
+        }
+    }
+
+    @MainActor
     func testShowingLiveTVOverridesAutomaticAndExplicitHidingWithoutChangingOtherLayout() {
         let defaults = makeDefaults()
         let store = NavigationLibraryLayoutStore(defaults: defaults, namespace: "viewer")

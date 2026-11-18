@@ -29,7 +29,7 @@ public extension View {
             .font(.body)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, minHeight: 24)
+            .frame(maxWidth: .infinity, minHeight: 32)
         #else
         self
         #endif

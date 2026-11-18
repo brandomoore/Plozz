@@ -136,10 +136,10 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         case .library: false
         case .online: true
         case .recommended:
-            placement != .squareHero && (
+            placement == .landscapeCard || (placement != .squareHero && (
                 area == .home || area == .recommendedHero || area == .continueWatching
                     || (area == .details && [.homeHero, .detailBackdrop, .logo].contains(placement))
-            )
+            ))
         }
     }
 

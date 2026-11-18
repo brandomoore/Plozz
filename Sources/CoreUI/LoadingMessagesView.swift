@@ -18,9 +18,11 @@ public struct LoadingMessagesView: View {
     private let spinnerScale: CGFloat
     private let spinnerTint: Color?
     private let messageColor: Color
+    private let showsMessages: Bool
 
     /// - Parameters:
     ///   - messages: the message set to cycle (defaults to the playful set).
+    ///   - showsMessages: hides messages without replacing the mounted spinner.
     ///   - initialDelay: spinner-only grace period before messages begin.
     ///   - cycleInterval: how long each message stays before the next.
     ///   - spinnerScale: scale applied to the `ProgressView`.
@@ -32,7 +34,8 @@ public struct LoadingMessagesView: View {
         cycleInterval: TimeInterval = 5.5,
         spinnerScale: CGFloat = 1.5,
         spinnerTint: Color? = nil,
-        messageColor: Color = .secondary
+        messageColor: Color = .secondary,
+        showsMessages: Bool = true
     ) {
         _model = State(initialValue: LoadingMessageModel(
             sequencer: LoadingMessageSequencer(
@@ -44,6 +47,7 @@ public struct LoadingMessagesView: View {
         self.spinnerScale = spinnerScale
         self.spinnerTint = spinnerTint
         self.messageColor = messageColor
+        self.showsMessages = showsMessages
     }
 
     public var body: some View {
@@ -55,7 +59,7 @@ public struct LoadingMessagesView: View {
             // Reserve a stable slot so the spinner doesn't jump when a message
             // appears; the message cross-fades within it.
             ZStack {
-                if let message = model.currentMessage {
+                if showsMessages, let message = model.currentMessage {
                     Text(verbatim: message.text)
                         .font(.title3)
                         .multilineTextAlignment(.center)
@@ -71,10 +75,12 @@ public struct LoadingMessagesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(messageAnimation, value: model.currentMessage)
-        .task { model.start() }
+        .task(id: showsMessages) {
+            if showsMessages { model.start() } else { model.stop() }
+        }
         .onDisappear { model.stop() }
         .onChange(of: model.currentMessage) { _, message in
-            guard let message else { return }
+            guard showsMessages, let message else { return }
             announce(message)
         }
     }

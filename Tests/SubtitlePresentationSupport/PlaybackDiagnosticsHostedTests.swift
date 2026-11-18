@@ -36,11 +36,52 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testDiagnosticsRimIsSubtleAndPreservesTheBackground() throws {
+        let renderer = ImageRenderer(content:
+            Color.clear.frame(width: 320, height: 180)
+                .plozzGlassPanel(cornerRadius: 24, scrimOpacity: 0.45, refractEdgesOnly: true)
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .background(.white)
+        )
+        renderer.scale = 3
+        let image = try XCTUnwrap(renderer.cgImage)
+        let context = try XCTUnwrap(CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+            bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        let center = Int(pixels[(image.height / 2 * image.width + image.width / 2) * 4])
+        XCTAssertEqual(center, 140, accuracy: 3, "The existing 45% black scrim must stay unchanged")
+        let rim = (0..<image.height).map { y in
+            Int(pixels[(y * image.width + image.width / 2) * 4])
+        }.max() ?? 0
+        XCTAssertGreaterThan(rim - center, 15, "Retain a visible glass-like edge")
+        XCTAssertLessThan(rim - center, 45, "The rim must not become a bright outline")
+        let edges = [
+            (0..<3).map { Int(pixels[($0 * image.width + image.width / 2) * 4]) }.max()!,
+            ((image.height - 3)..<image.height).map { Int(pixels[($0 * image.width + image.width / 2) * 4]) }.max()!,
+            (0..<3).map { Int(pixels[(image.height / 2 * image.width + $0) * 4]) }.max()!,
+            ((image.width - 3)..<image.width).map { Int(pixels[(image.height / 2 * image.width + $0) * 4]) }.max()!
+        ]
+        XCTAssertLessThanOrEqual(try XCTUnwrap(edges.max()) - XCTUnwrap(edges.min()), 10,
+                                "The highlight should remain similar on all four sides")
+        let attachment = XCTAttachment(image: UIImage(cgImage: image))
+        attachment.name = "Subtle diagnostics rim"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testFullDiagnosticsClearRealTransportAndInfoCardWithoutShrinkingText() async throws {
         try await assertControlClearance(diagnostics: fixture, expectedTokens: [
             "AetherEngine", "v7.44.0", "APAC", "7.1.4", "HDMI", "Thermal", "engines 2", "Stalls", "Dropped",
             "33.2", "82.0", "45.0", "10.0", "24.00", "23 fps live", "P8", "10-bit", "DOVIWITHHDR10",
-            "Playback cache", "512 MB", "Encoding", "Lossy encoding"
+            "Playback cache", "512 MB", "Encoding", "Lossy encoding",
+            "Recent / avg", "Bridge bitrate", "Local delivery", "1.86 GB", "Read-ahead target", "10 min",
+            "Read / muxed", "Local server", "Restarts", "Bridge buffer", "Resident memory", "Mux A/V gap",
+            "51.5", "42.7", "650.0", "7.4", "-23.5", "Decoder", "Audio delivery", "Converted"
         ])
     }
 
@@ -57,7 +98,7 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
         diagnostics.liveStream?.variantBitrate = 8_000_000
         try await assertControlClearance(diagnostics: diagnostics, expectedTokens: [
             "Native HLS", "Rewind", "Segments", "123 req", "503", "1080", "HDMI",
-            "Thermal", "engines 2", "Stalls", "Dropped", "82.0"
+            "Thermal", "engines 2", "Stalls", "Dropped", "82.0", "Recent / avg", "Read / muxed", "Local delivery", "10 min"
         ])
     }
 
@@ -182,7 +223,7 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
             audioOutput: .init(renderingMode: .format("Dolby Atmos"), connections: [.format("HDMI")]),
             subtitleDescription: "SubRip · English", container: "mkv", mode: .plozzigen,
             hdr: .dolbyVision, engineName: "AetherEngine v7.44.0", bufferedSecondsAhead: 10, engineBufferedSecondsAhead: 45,
-            sessionCache: .init(residentBytes: 536_870_912, effectiveBudgetBytes: 2_147_483_648),
+            sessionCache: .init(residentBytes: 536_870_912, effectiveBudgetBytes: 2_147_483_648, targetSeconds: 600),
             stallCount: 0, droppedVideoFrames: 0, frameRate: 24, observedFps: 23,
             deviceModel: "Apple TV 4K (2nd gen)", deviceMemoryBytes: 3_000_000_000,
             freeDiskBytes: 600_000_000, totalDiskBytes: 32_000_000_000,
@@ -194,6 +235,15 @@ final class PlaybackDiagnosticsHostedTests: XCTestCase {
             seekableStartSeconds: 0, seekableEndSeconds: 7488, playbackState: "Ready · Playing"
         )
         value.sourceProvider = .plex
+        value.engineStatistics = .init(
+            decoder: "AVPlayer", recentBitrate: 51_500_000, averageBitrate: 42_700_000,
+            audioBridgeBitrate: 7_400_000, delivery: .local, deliveryBitrate: 650_000_000,
+            deliveredBytes: 2_000_000_000, muxAVGapMilliseconds: -23.5, cachedBytes: 536_870_912,
+            sourceBytes: 3_000_000_000, producerRestarts: 2, muxedBytes: 2_500_000_000,
+            servedBytes: 2_000_000_000, serverRequests: 153, audioBridgeBytes: 1_048_576,
+            residentMemoryBytes: 700_000_000
+        )
+        value.audioDelivery = .bridged
         value.serverName = "Fixture server"
         value.streamTransport = PlaybackDiagnostics.streamTransportFacts(url: URL(string: "http://127.0.0.1:12345/master.m3u8"))
         return value

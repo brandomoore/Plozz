@@ -364,6 +364,7 @@ private struct LiveTVSourcesContent: View {
                     )
                 }
                 settingsPreferences
+                    .environment(\.liveTVChannelNamePreviewSamples, imports?.channelNamePreviewSamples ?? [])
             }
             if model.hasLoaded, !isAddingSource {
                 if browseSource != nil || (settingsPreferences == nil && createChannel != nil)
@@ -475,6 +476,9 @@ private struct LiveTVSourcesContent: View {
     }
 
     private struct LiveTVConfiguredSourceRow: View {
+        #if os(tvOS)
+        @Environment(LiveTVGuidePreparationModel.self) private var guidePreparation: LiveTVGuidePreparationModel?
+        #endif
         let source: LiveTVConfiguredSourceItem
         let model: LiveTVSourceManagementModel
         let imports: LiveTVPrototypeImportModel?
@@ -556,6 +560,13 @@ private struct LiveTVSourcesContent: View {
                     }
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                     .accessibilityIdentifier("live-tv-source-details-\(source.id)")
+                    #if os(tvOS)
+                    if source.isEnabled, let preparation = guidePreparation?.statuses[source.accountID] {
+                        LiveTVGuidePreparationStatus(status: preparation)
+                            .font(SettingsRowMetrics.descriptionFont)
+                            .padding(.horizontal, SettingsRowMetrics.horizontalPadding)
+                    }
+                    #endif
                     if source.isEnabled, let imports {
                         LiveTVSourceErrors(imports: imports, sourceID: source.id, retry: retrySource)
                     }
@@ -1320,9 +1331,13 @@ struct LiveTVServerSourceSummary: View {
                     Text("Ready to load").font(.caption)
                 }
                 if let preparation = guidePreparation?.statuses[source.accountID] {
+                    #if os(tvOS)
+                    LiveTVGuidePreparationStatus(status: preparation)
+                    #else
                     if preparation.phase != .loading {
                         LiveTVGuidePreparationStatus(status: preparation)
                     }
+                    #endif
                 } else if status.guidePhase == .loading {
                     ProgressView("Loading guide")
                         .accessibilityIdentifier("live-tv-source-guide-loading-\(source.id)")
@@ -1357,18 +1372,17 @@ private struct LiveTVPlaylistSourceRow: View {
             title: Text(verbatim: source.name),
             contentInsets: liveTVSourceRowInsets,
             icon: {
-                #if os(tvOS)
-                ProviderSiteIcon(url: source.playlistURL, size: 40) {
+                ProviderSiteIcon(url: source.playlistURL, size: iconSize) {
+                    #if os(tvOS)
                     Image(systemName: source.importedPlaylistID == nil ? "antenna.radiowaves.left.and.right" : "doc")
                         .font(.body)
                         .settingsRowIcon()
+                    #else
+                    Image(systemName: source.importedPlaylistID == nil ? "list.bullet.rectangle" : "doc")
+                        .font(.system(size: 22))
+                        .settingsRowIcon()
+                    #endif
                 }
-                #else
-                Image(systemName: source.importedPlaylistID == nil ? "list.bullet.rectangle" : "doc")
-                    .font(.system(size: 22))
-                    .settingsRowIcon()
-                    .frame(width: SettingsRowMetrics.iconColumnWidth, height: SettingsRowMetrics.iconColumnWidth)
-                #endif
             },
             secondary: {
                 HStack(spacing: 6) {
@@ -1387,5 +1401,13 @@ private struct LiveTVPlaylistSourceRow: View {
             },
             trailing: { LiveTVSourceChevron() }
         )
+    }
+
+    private var iconSize: CGFloat {
+        #if os(tvOS)
+        40
+        #else
+        SettingsRowMetrics.iconColumnWidth
+        #endif
     }
 }

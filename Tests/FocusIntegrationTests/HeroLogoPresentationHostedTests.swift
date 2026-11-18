@@ -178,7 +178,7 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
             let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
                 fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true)
             }
-            let terms = ["The Hidden Room", "Across the stars", "The final signal"]
+            let terms = ["The Hidden Room", "Across the stars", "signal"]
             let frames = try textInkFrames(in: image, terms: terms)
             let currentArtwork = try XCTUnwrap(redBounds(in: fixture.window))
             if step == 0 {

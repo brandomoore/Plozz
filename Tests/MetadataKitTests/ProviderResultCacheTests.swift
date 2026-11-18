@@ -26,6 +26,25 @@ private final class CountingProvider: MetadataEnrichmentProvider, @unchecked Sen
 }
 
 final class ProviderResultCacheTests: XCTestCase {
+    func testDistinctPositiveAndNegativeResultsStayWithinSharedBudget() async {
+        let cache = ProviderResultCache(maxEntries: 64)
+        for index in 0..<512 {
+            await cache.store(
+                index.isMultiple(of: 2) ? sourced("result-\(index)", .tvdb) : nil,
+                source: index.isMultiple(of: 2) ? .tvdb : .tmdb,
+                version: 1, requestKey: "request-\(index)",
+                credential: "fixture-\(index % 4)"
+            )
+            let count = await cache.count
+            XCTAssertEqual(count, min(index + 1, 64))
+        }
+        for index in 0..<4 {
+            await cache.invalidate(credential: "fixture-\(index)")
+        }
+        let remaining = await cache.count
+        XCTAssertEqual(remaining, 0)
+    }
+
     private func query(title: String = "Item") -> MetadataQuery {
         MetadataQuery(
             contentType: .movie, kind: .movie, title: title, alternateTitle: nil, year: 2020,
@@ -114,6 +133,32 @@ final class ProviderResultCacheTests: XCTestCase {
         XCTAssertNotEqual(original, identified)
         XCTAssertNotEqual(identified, key(["AniList": "1", "Imdb": "tt0109830", "Tmdb": "13"]))
         XCTAssertEqual(identified, key(["IMDb ID": " TT0111161 ", "anilistid": "01"]))
+    }
+
+    func testCalendarResultsExpireWithoutExpiringOrdinaryMetadata() async {
+        for resilient in [false, true] {
+            for output in [sourced("schedule", .tvmaze), MetadataEnrichment()] {
+                let clock = MutableClock(Date(timeIntervalSince1970: 1000))
+                let cache = ProviderResultCache(now: { clock.value })
+                let base = CountingProvider(id: .tvmaze, version: 1, output: output)
+                let provider: any MetadataEnrichmentProvider = resilient
+                    ? ResilientEnrichmentProvider(base: base, breaker: ProviderCircuitBreaker(), cache: cache)
+                    : CachedEnrichmentProvider(base: base, cache: cache)
+                let calendar = query().forScheduleStarting(at: clock.value)
+                for _ in 0..<2 {
+                    _ = await provider.enrich(calendar, missing: [.nextAiringEpisode])
+                    _ = await provider.enrich(query(), missing: [.overview])
+                }
+                XCTAssertEqual(base.calls, 2)
+                clock.value = clock.value.addingTimeInterval(6 * 60 * 60 - 1)
+                _ = await provider.enrich(calendar, missing: [.nextAiringEpisode])
+                XCTAssertEqual(base.calls, 2)
+                clock.value = clock.value.addingTimeInterval(1)
+                _ = await provider.enrich(calendar, missing: [.nextAiringEpisode])
+                _ = await provider.enrich(query(), missing: [.overview])
+                XCTAssertEqual(base.calls, 3, "Only the calendar must be refetched after six hours")
+            }
+        }
     }
 
     func testExpiryIsHonored() async {

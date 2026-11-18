@@ -4,6 +4,80 @@ import XCTest
 @testable import MediaDownloads
 
 final class ManagedDownloadLifecycleTests: XCTestCase {
+    func testOnlyHLSRenditionsRequireUncappedTransfers() {
+        for provider: ProviderKind in [.plex, .jellyfin, .emby, .silo] {
+            for allAudio in [false, true] {
+                for quality: DownloadQuality in [.original, .hd720] {
+                    let source = ManagedHTTPDownloadSource(
+                        provider: provider, accountID: "account", itemID: "movie",
+                        quality: quality, includesAllAudioTracks: allAudio)
+                    XCTAssertEqual(source.requiresUncappedRenditionTransfer,
+                                   quality != .original && (provider == .jellyfin || (provider == .emby && !allAudio)))
+                }
+            }
+        }
+    }
+
+    func testAudioPreparationReferencesAreIndependentAndDurable() throws {
+        let primary = ManagedHTTPPreparationReference(queueIdentifier: "video", itemIdentifier: "1")
+        let extra = ManagedHTTPPreparationReference(queueIdentifier: "audio", itemIdentifier: "2")
+        let source = ManagedHTTPDownloadSource(
+            provider: .plex, accountID: "account", itemID: "movie", quality: .hd720,
+            includesAllAudioTracks: true, preparationReference: primary
+        ).replacingPreparationReference(extra, audioTrackID: 2)
+        let restored = try JSONDecoder().decode(ManagedHTTPDownloadSource.self, from: JSONEncoder().encode(source))
+        XCTAssertEqual(restored.preparationReference, primary)
+        XCTAssertEqual(restored.audioPreparationReferences, [2: extra])
+        let cleared = restored.replacingPreparationReference(nil, audioTrackID: 2)
+        XCTAssertEqual(cleared.preparationReference, primary)
+        XCTAssertTrue(cleared.audioPreparationReferences.isEmpty)
+        XCTAssertTrue(cleared.includesAllAudioTracks)
+    }
+
+    func testLegacySourceHasNoAudioPreparationReferences() throws {
+        let source = ManagedHTTPDownloadSource(provider: .plex, accountID: "account", itemID: "movie")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(source)) as? [String: Any])
+        json.removeValue(forKey: "audioPreparationReferences")
+        let restored = try JSONDecoder().decode(
+            ManagedHTTPDownloadSource.self, from: JSONSerialization.data(withJSONObject: json)
+        )
+        XCTAssertTrue(restored.audioPreparationReferences.isEmpty)
+        XCTAssertFalse(restored.includesAllAudioTracks)
+    }
+
+    func testNewManagedDownloadsDefaultToPreferredAudioAndAvailableTextSubtitles() throws {
+        for provider: ProviderKind in [.plex, .jellyfin, .emby, .silo] {
+            for quality: DownloadQuality in [.original, .hd720] {
+                let source = ManagedHTTPDownloadSource(
+                    provider: provider, accountID: "account", itemID: "movie",
+                    quality: quality, preferredAudioLanguages: ["fr"]
+                )
+                XCTAssertFalse(source.includesAllAudioTracks)
+                XCTAssertTrue(source.includesTextSubtitleTracks)
+                XCTAssertEqual(source.preferredAudioLanguages, ["fr"])
+                XCTAssertEqual(source.quality, quality)
+                XCTAssertEqual(try JSONDecoder().decode(
+                    ManagedHTTPDownloadSource.self, from: JSONEncoder().encode(source)
+                ), source)
+            }
+        }
+    }
+
+    func testExistingDownloadTrackSelectionsSurviveReload() throws {
+        var download = try record()
+        download.managedHTTPSource = .init(
+            provider: .jellyfin, accountID: "account", itemID: "movie",
+            quality: .hd720, includesAllAudioTracks: true, includesTextSubtitleTracks: false,
+            preferredAudioLanguages: ["de"]
+        )
+        let restored = try JSONDecoder().decode(
+            DownloadedMediaRecord.self, from: JSONEncoder().encode(download)
+        )
+        XCTAssertEqual(restored, download)
+        XCTAssertTrue(try XCTUnwrap(restored.managedHTTPSource).includesAllAudioTracks)
+        XCTAssertFalse(try XCTUnwrap(restored.managedHTTPSource).includesTextSubtitleTracks)
+    }
+
     private func record() throws -> DownloadedMediaRecord {
         var record = try DownloadTestFactory.record(status: .completed)
         record.sourceKind = .managedHTTP

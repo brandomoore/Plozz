@@ -71,5 +71,6 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.TESTFLIGHT_ASC_PRIVATE_KEY }}
           TESTFLIGHT_DISCORD_ENABLED: ${{ vars.TESTFLIGHT_DISCORD_ENABLED }}
           TESTFLIGHT_DISCORD_MIN_BUILD: ${{ vars.TESTFLIGHT_DISCORD_MIN_BUILD }}
+          DISCORD_ROADMAP_LINK_ENABLED: ${{ vars.DISCORD_ROADMAP_LINK_ENABLED }}
           ANNOUNCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'check' && 'check' || 'sync' }}
         run: python3 tools/testflight-discord.py --mode "$ANNOUNCE_MODE"

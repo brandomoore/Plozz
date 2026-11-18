@@ -149,6 +149,9 @@ extension LiveTVPrototypeImportModel {
                 discardUnauthorizedSource(source.id, into: model)
                 continue
             }
+            if forceRefresh && context.provider.usesPerChannelLiveTVGuide {
+                removeServerGuideWindows(source.id)
+            }
             if let cached = cachedServerCatalogs[source.id],
                cached.authorizationID != context.authorizationID || cached.kind != context.kind {
                 cachedServerCatalogs[source.id] = nil
@@ -162,8 +165,10 @@ extension LiveTVPrototypeImportModel {
                 $0.guidePhase = .idle
             }
             do {
+                let started = Date()
                 let availability = try await forceRefresh
                     ? context.provider.refreshLiveTVAvailability() : context.provider.liveTVAvailability()
+                let availabilityElapsed = HandoffDiagnostics.ms(started)
                 try Task.checkCancellation()
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model
@@ -195,6 +200,7 @@ extension LiveTVPrototypeImportModel {
                     break
                 }
                 let channels = try await context.provider.liveTVChannels()
+                let lineupElapsed = HandoffDiagnostics.ms(started)
                 try Task.checkCancellation()
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model
@@ -205,6 +211,13 @@ extension LiveTVPrototypeImportModel {
                 var catalog = try await withTaskCancellationHandler {
                     try await mapping.value
                 } onCancel: { mapping.cancel() }
+                let mappingElapsed = HandoffDiagnostics.ms(started)
+                try Task.checkCancellation()
+                guard acceptServerResult(
+                    source, context: context, request: request, sourceRevision: sourceRevision, into: model
+                ) else { continue }
+                await preparePublication(replacing: source.id, with: catalog, into: model)
+                let preparedElapsed = HandoffDiagnostics.ms(started)
                 try Task.checkCancellation()
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model
@@ -217,6 +230,11 @@ extension LiveTVPrototypeImportModel {
                     }.map { ($0.id, $0) })
                     for program in catalog.programs { programs[program.id] = program }
                     catalog.programs = programs.values.sorted { $0.id < $1.id }
+                    if !forceRefresh {
+                        catalog.pendingGuideChannelIDs.subtract(previous.references.keys.filter {
+                            !previous.pendingGuideChannelIDs.contains($0)
+                        })
+                    }
                 }
                 cachedServerCatalogs[source.id] = catalog
                 do {
@@ -226,6 +244,12 @@ extension LiveTVPrototypeImportModel {
                     cachedServerCatalogs[source.id] = previous
                     throw LiveTVServerImportError.invalidCatalog
                 }
+                // Cumulative stage times: where a slow first lineup spends its wait.
+                HandoffDiagnostics.emit(
+                    "LIVE_TV event=serverLineupReady kind=\(context.kind.rawValue) channels=\(channels.count)"
+                        + " availability=\(availabilityElapsed) lineup=\(lineupElapsed)"
+                        + " mapped=\(mappingElapsed) prepared=\(preparedElapsed) published=\(HandoffDiagnostics.ms(started))")
+                saveLastSeen(from: model)
                 retainServerGuideChannels(Set(catalog.channels.map(\.id)), sourceID: source.id)
                 updateServerStatus(source.id) {
                     $0.phase = .loaded
@@ -244,7 +268,7 @@ extension LiveTVPrototypeImportModel {
                     pendingGuideDiscovery.append((source, context, sourceRevision, availability))
                     continue
                 }
-                let warmup = context.kind == .plex
+                let warmup = context.kind == .plex || context.provider.usesPerChannelLiveTVGuide
                     ? Array(catalog.channels.prefix(Self.serverGuideWarmupChannelLimit)) : catalog.channels
                 let guideResult = await reloadServerGuidesResult(
                     channelIDs: warmup.map(\.id), from: model.now, to: model.now.addingTimeInterval(21_600),
@@ -295,7 +319,7 @@ extension LiveTVPrototypeImportModel {
                     )
                 }
                 guard supportsGuide else { continue }
-                let warmup = context.kind == .plex
+                let warmup = context.kind == .plex || context.provider.usesPerChannelLiveTVGuide
                     ? Array(catalog.channels.prefix(Self.serverGuideWarmupChannelLimit)) : catalog.channels
                 result = result.merging(await reloadServerGuidesResult(
                     channelIDs: warmup.map(\.id), from: model.now, to: model.now.addingTimeInterval(21_600),

@@ -1,5 +1,7 @@
 import XCTest
 import CoreModels
+import FeatureHomeCore
+import TestSupportContentRefresh
 @testable import FeatureHome
 
 /// Covers the rule that decides whether returning to Home asks the servers
@@ -17,6 +19,43 @@ import CoreModels
 /// reshuffles the row under the viewer for no new information.
 @MainActor
 final class HomeViewModelStalenessRefreshTests: XCTestCase {
+
+    func testLifecycleRequestRechecksTheProviderOnBothPlatforms() async throws {
+        for profile in [ContentRefreshProfile.tvOS, .iOS] {
+            let harness = ContentRefreshHarness(profile: profile)
+            let provider = CountingResumeProvider()
+            let model = makeModel(provider: provider, policy: ContinueWatchingPolicy(refreshAfter: 600))
+            defer { model.invalidate() }
+            await model.loadIfNeeded(for: visibility)
+            let initialCalls = provider.continueWatchingCalls
+            harness.show(ContentRefreshTestConstants.home)
+            XCTAssertNil(harness.coordinator.request)
+            harness.coordinator.applicationWillResignActive()
+            harness.advance(by: ContentRefreshTestConstants.shortAway)
+            harness.coordinator.applicationDidBecomeActive()
+            let request = try XCTUnwrap(harness.coordinator.request)
+            XCTAssertEqual(request.action, .reloadHome)
+            await model.loadIfNeeded(for: visibility, trigger: request.reason.diagnosticTrigger, forceRefresh: true)
+            XCTAssertGreaterThan(provider.continueWatchingCalls, initialCalls)
+            XCTAssertNotNil(model.state.value)
+        }
+    }
+
+    func testBackgroundInvalidationWaitsForTheNextVisit() async {
+        let provider = CountingResumeProvider()
+        let model = makeModel(provider: provider, policy: ContinueWatchingPolicy(refreshAfter: 600))
+        defer { model.invalidate() }
+        await model.loadIfNeeded(for: visibility)
+        let calls = provider.continueWatchingCalls
+        let displayed = model.state
+        model.setNeedsRefresh()
+        XCTAssertEqual(provider.continueWatchingCalls, calls)
+        XCTAssertEqual(model.state, displayed)
+        await model.loadIfNeeded(for: visibility)
+        XCTAssertEqual(provider.continueWatchingCalls, calls + 1)
+        await model.loadIfNeeded(for: visibility)
+        XCTAssertEqual(provider.continueWatchingCalls, calls + 1)
+    }
 
     private func makeModel(
         provider: CountingResumeProvider,

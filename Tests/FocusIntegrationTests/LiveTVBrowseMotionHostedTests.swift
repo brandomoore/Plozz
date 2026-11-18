@@ -10,6 +10,53 @@ import FeatureLiveTVCore
 
 @MainActor
 final class LiveTVBrowseMotionHostedTests: XCTestCase {
+    func testGuideCategoryHandoffOwnsPinnedNavigationFallbackUntilFocusLeaves() async throws {
+        let scene = try await foregroundScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        typealias Guide = PrototypeNativeGuideList<Int, Button<Text>>
+        let controller = Guide.Controller()
+        controller.parentView = Guide(
+            rows: [.init(channelID: "channel")], scrollController: PrototypeGuideScrollController(),
+            scrolled: { _, _ in }, revision: { _ in 0 }, leadingExit: {}
+        ) { _ in Button("Channel") {} }
+        controller.swiftUIEnvironment = EnvironmentValues()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        let observer = NavigationRailEdgeCatcher.LeftPressRecognizer()
+        window.addGestureRecognizer(observer)
+        var opens = 0
+        observer.onOpenNavigation = { opens += 1 }
+        defer {
+            window.removeGestureRecognizer(observer)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        for _ in 0..<50 where system.focusedItem == nil {
+            window.layoutIfNeeded()
+            system.requestFocusUpdate(to: controller)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let item = try XCTUnwrap(system.focusedItem)
+        XCTAssertFalse(NavigationRailEdgeCatcher.permitsNavigationFallback(from: item))
+        observer.checkFocusAfterInput(before: item, wasInRail: false)
+        // A held press keeps guide focus until release, longer than the rail's 70 ms fallback.
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertTrue(system.focusedItem === item)
+        XCTAssertEqual(opens, 0)
+
+        controller.parentView?.leadingExit = nil
+        XCTAssertTrue(NavigationRailEdgeCatcher.permitsNavigationFallback(from: item),
+                      "Guides without a category handoff must retain normal edge navigation.")
+        observer.checkFocusAfterInput(before: item, wasInRail: false)
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertEqual(opens, 1)
+    }
+
     func testCategoryFastScrollKeepsVisibleRowsFocusableAfterEntry() async throws {
         let scene = try await foregroundScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -176,9 +223,9 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         var body: some View {
             HStack(alignment: .top, spacing: 80) {
                 PrototypeBrowseSidebar(
-                    model: state.model, active: $state.active, focusRequest: 0,
+                    model: state.model, configuration: .empty, active: $state.active, focusRequest: 0,
                     categoryFocusRequest: state.request, restoresCategoryFocus: true,
-                    search: {}, enterGuide: {}
+                    search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
                 )
                 .frame(width: 384, height: 900)
                 Button("Guide") {}
@@ -553,9 +600,10 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
             } sidebar: {
                 if realSidebar {
                     PrototypeBrowseSidebar(
-                        model: model.sidebar,
+                        model: model.sidebar, configuration: .empty,
                         active: Binding(get: { model.sidebarActive }, set: { model.sidebarActive = $0 }),
-                        focusRequest: 0, search: {}, enterGuide: {}, multiviews: {}
+                        focusRequest: 0, search: {}, enterGuide: {},
+                        selectSource: { _ in }, addSource: {}, multiviews: {}
                     )
                     .disabled(true)
                 } else {

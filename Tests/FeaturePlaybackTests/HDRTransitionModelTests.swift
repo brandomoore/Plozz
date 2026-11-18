@@ -66,6 +66,71 @@ final class HDRTransitionModelTests: XCTestCase {
 
     // MARK: Decision logic
 
+    func testKnownSDRProbeUsesOnlyFrameRatePreferenceAcrossEveryEntryPath() {
+        for hdr in [false, true] {
+            for frameRate in [false, true] {
+                let model = HDRTransitionModel()
+                model.isDynamicRangeFadeEnabled = hdr
+                model.isFrameRateFadeEnabled = frameRate
+                let pending = EffectiveDynamicRange.awaitingEngineProbe(hint: .sdr)
+                model.synchronize(with: pending)
+                XCTAssertEqual(model.isVeiled, frameRate)
+                model.reconcile(from: .native(metadata: nil), to: pending)
+                XCTAssertEqual(model.isVeiled, frameRate)
+                model.restartProbeTransition(hint: .sdr)
+                XCTAssertEqual(model.isVeiled, frameRate)
+                model.reconcile(from: pending, to: .resolved(.sdr, authority: .engineProbe))
+                XCTAssertEqual(model.isVeiled, frameRate)
+                model.cancelTransition()
+            }
+        }
+    }
+
+    func testNativeFrameRateEntryHonorsItsOwnPreference() {
+        let model = HDRTransitionModel()
+        model.beginFrameRateTransition()
+        XCTAssertFalse(model.isVeiled)
+        model.isFrameRateFadeEnabled = true
+        model.beginFrameRateTransition()
+        XCTAssertTrue(model.isVeiled)
+        model.isDynamicRangeFadeEnabled = false
+        XCTAssertTrue(model.isVeiled, "Turning off HDR fades must not cancel a frame-rate fade.")
+        model.isFrameRateFadeEnabled = false
+        XCTAssertFalse(model.isVeiled)
+    }
+
+    func testIncorrectSDRHintStillAllowsAuthoritativeHDRFade() {
+        let model = HDRTransitionModel()
+        let pending = EffectiveDynamicRange.awaitingEngineProbe(hint: .sdr)
+        model.reconcile(from: .native(metadata: nil), to: pending)
+        XCTAssertFalse(model.isVeiled)
+        model.reconcile(from: pending, to: .resolved(.dolbyVision, authority: .engineProbe))
+        XCTAssertTrue(model.isVeiled)
+        model.cancelTransition()
+    }
+
+    func testSDRReplacingHDRStillCoversTheDynamicRangeSwitch() {
+        let model = HDRTransitionModel()
+        // The per-load notification can arrive before the range-change observer.
+        model.restartProbeTransition(hint: .sdr)
+        XCTAssertFalse(model.isVeiled)
+        model.reconcile(
+            from: .resolved(.hdr10, authority: .engineProbe),
+            to: .awaitingEngineProbe(hint: .sdr))
+        XCTAssertTrue(model.isVeiled)
+        model.cancelTransition()
+    }
+
+    func testFrameRateEntryUsesShortBoundedTimeout() async {
+        let sleeper = TaggedSleeper()
+        let model = makeModel(sleeper)
+        model.isFrameRateFadeEnabled = true
+        model.beginFrameRateTransition()
+        await assertEventually { sleeper.pendingCount == 1 }
+        sleeper.release(matching: 2)
+        await assertEventually { !model.isVeiled }
+    }
+
     func testDynamicRangeWillSwitch() {
         XCTAssertTrue(HDRTransitionModel.dynamicRangeWillSwitch(from: .sdr, to: .dolbyVision))
         XCTAssertTrue(HDRTransitionModel.dynamicRangeWillSwitch(from: .sdr, to: .hdr10))

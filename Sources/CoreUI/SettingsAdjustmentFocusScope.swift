@@ -34,6 +34,7 @@ public extension EnvironmentValues {
 @MainActor
 public protocol SettingsAdjustmentRemoteInput: AnyObject, HorizontalNavigationInputOwning {
     func beginPress(_ direction: SettingsMoveCommandDirection)
+    func endPress()
     func stopRepeating()
 }
 
@@ -45,6 +46,8 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
     let adjustableRow: () -> Int?
     let submenuRow: () -> Int?
     let onMove: (SettingsMoveCommandDirection, Bool) -> Void
+    let onSwipe: ((_ steps: Int, _ began: Bool) -> Void)?
+    let onEditingEnded: (Bool) -> Void
     let idealWidth: CGFloat
     let axis: Axis
 
@@ -55,6 +58,8 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         submenuRow: @escaping () -> Int? = { nil },
         idealWidth: CGFloat = SettingsFormMetrics.pageWidth,
         axis: Axis = .horizontal,
+        onSwipe: ((_ steps: Int, _ began: Bool) -> Void)? = nil,
+        onEditingEnded: @escaping (_ cancelled: Bool) -> Void = { _ in },
         onMove: @escaping (SettingsMoveCommandDirection, Bool) -> Void
     ) {
         self.content = content
@@ -64,6 +69,8 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         self.idealWidth = idealWidth
         self.axis = axis
         self.onMove = onMove
+        self.onSwipe = onSwipe
+        self.onEditingEnded = onEditingEnded
     }
 
     public func makeUIViewController(context: Context) -> Controller {
@@ -76,6 +83,8 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         controller.adjustableRow = adjustableRow
         controller.submenuRow = submenuRow
         controller.onMove = onMove
+        controller.onSwipe = onSwipe
+        controller.onEditingEnded = onEditingEnded
         return controller
     }
 
@@ -87,6 +96,8 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         controller.adjustableRow = adjustableRow
         controller.submenuRow = submenuRow
         controller.onMove = onMove
+        controller.onSwipe = onSwipe
+        controller.onEditingEnded = onEditingEnded
         controller.cancelRepeatIfFocusChanged()
     }
 
@@ -121,6 +132,8 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         var adjustableRow: (() -> Int?)?
         var submenuRow: (() -> Int?)?
         var onMove: ((SettingsMoveCommandDirection, Bool) -> Void)?
+        var onSwipe: ((_ steps: Int, _ began: Bool) -> Void)?
+        var onEditingEnded: ((Bool) -> Void)?
         var screen: Screen? {
             didSet {
                 if oldValue != screen { stopRepeating() }
@@ -141,6 +154,7 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         private var heldDirection: SettingsMoveCommandDirection?
         private var repeatWork: DispatchWorkItem?
         private var repeatGeneration: UInt64 = 0
+        private var swipe: SettingsAdjustmentSwipe?
         public var ownsHorizontalNavigationInput: Bool { axis == .horizontal && focusedAdjustableRow != nil }
 
         public override func viewDidLoad() {
@@ -148,7 +162,10 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
             let press = ArrowPressRecognizer()
             press.delegate = self
             press.began = { [weak self] in self?.beginPress($0) }
-            press.finished = { [weak self] in self?.stopRepeating() }
+            press.finished = { [weak self] cancelled in
+                guard self?.heldDirection != nil else { return }
+                if cancelled { self?.stopRepeating() } else { self?.endPress() }
+            }
             view.addGestureRecognizer(press)
 
             let pan = DirectionalPanRecognizer(target: self, action: #selector(swiped(_:)))
@@ -234,7 +251,8 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         }
 
         public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive press: UIPress) -> Bool {
-            switch press.type {
+            guard swipe == nil else { return false }
+            return switch press.type {
             case .leftArrow: accepts(.left)
             case .rightArrow: accepts(.right)
             case .upArrow: accepts(.up)
@@ -261,9 +279,43 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         }
 
         @objc private func swiped(_ recognizer: UIPanGestureRecognizer) {
-            let direction = direction(for: recognizer.velocity(in: view))
-            guard recognizer.state == .began, heldRow == nil, accepts(direction) else { return }
-            onMove?(direction, false)
+            switch recognizer.state {
+            case .began:
+                let direction = direction(for: recognizer.velocity(in: view))
+                guard heldRow == nil, accepts(direction) else { return }
+                guard let onSwipe, let row = focusedAdjustableRow else {
+                    onMove?(direction, false)
+                    onEditingEnded?(false)
+                    return
+                }
+                let movement = SettingsAdjustmentSwipe(
+                    translation: swipeTranslation(recognizer),
+                    forward: direction == .right || direction == .down
+                )
+                heldRow = row
+                heldItem = UIFocusSystem.focusSystem(for: view)?.focusedItem
+                swipe = movement
+                onSwipe(movement.initialSteps, true)
+            case .changed, .ended:
+                guard swipe != nil else { return }
+                guard stillOwnsHeldFocus else {
+                    stopRepeating()
+                    return
+                }
+                // Include the lift sample: fast flicks may have no changed event.
+                let steps = swipe?.advance(to: swipeTranslation(recognizer)) ?? 0
+                if steps != 0 { onSwipe?(steps, false) }
+                if recognizer.state == .ended { finishPress(cancelled: false) }
+            case .cancelled, .failed:
+                if swipe != nil { stopRepeating() }
+            default:
+                break
+            }
+        }
+
+        private func swipeTranslation(_ recognizer: UIPanGestureRecognizer) -> Double {
+            let translation = recognizer.translation(in: view)
+            return Double(axis == .horizontal ? translation.x : translation.y)
         }
 
         public func beginPress(_ direction: SettingsMoveCommandDirection) {
@@ -307,18 +359,29 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         }
 
         @objc public func stopRepeating() {
+            finishPress(cancelled: true)
+        }
+
+        public func endPress() {
+            finishPress(cancelled: false)
+        }
+
+        private func finishPress(cancelled: Bool) {
+            let wasEditing = heldRow != nil
             repeatGeneration &+= 1
             repeatWork?.cancel()
             repeatWork = nil
             heldRow = nil
             heldItem = nil
             heldDirection = nil
+            swipe = nil
+            if wasEditing { onEditingEnded?(cancelled) }
         }
     }
 
     private final class ArrowPressRecognizer: UIGestureRecognizer {
         var began: ((SettingsMoveCommandDirection) -> Void)?
-        var finished: (() -> Void)?
+        var finished: ((Bool) -> Void)?
 
         init() {
             super.init(target: nil, action: nil)
@@ -343,17 +406,17 @@ public struct SettingsAdjustmentFocusScope<Content: View, Screen: Equatable>: UI
         override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent) {}
 
         override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent) {
-            finished?()
+            finished?(false)
             state = .ended
         }
 
         override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent) {
-            finished?()
+            finished?(true)
             state = .cancelled
         }
 
         override func reset() {
-            finished?()
+            finished?(true)
             super.reset()
         }
 

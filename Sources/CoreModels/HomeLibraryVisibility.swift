@@ -33,6 +33,18 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
     /// Nil preserves an existing profile's legacy combined/grouped choices.
     public var rowCustomization: HomeRowCustomization?
     public var collectionSections: [CollectionSection]
+    public var dismissedEmptyHomeRows: Set<HomeRowID>
+    /// Profile-owned labels keyed by stable row identity, independent of layout presets.
+    public private(set) var homeRowNames: [String: String] = [:]
+
+    public func homeRowName(for id: HomeRowID) -> String? {
+        homeRowNames[id.presentationID]
+    }
+
+    public mutating func setHomeRowName(_ name: String, for id: HomeRowID) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        homeRowNames[id.presentationID] = trimmed.isEmpty ? nil : trimmed
+    }
 
     public var intent: Self {
         var copy = self
@@ -131,7 +143,8 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         rowCustomization: HomeRowCustomization? = nil,
         mergeNextUpIntoContinueWatching: Bool = true,
         collectionSections: [CollectionSection] = [],
-        hideWatchedRecentlyAdded: Bool = false
+        hideWatchedRecentlyAdded: Bool = false,
+        dismissedEmptyHomeRows: Set<HomeRowID> = []
     ) {
         self.mergeLibrariesOnHome = mergeLibrariesOnHome
         self.disabledKeys = disabledKeys
@@ -147,6 +160,7 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         self.mergeNextUpIntoContinueWatching = mergeNextUpIntoContinueWatching
         self.collectionSections = collectionSections
         self.hideWatchedRecentlyAdded = hideWatchedRecentlyAdded
+        self.dismissedEmptyHomeRows = dismissedEmptyHomeRows
     }
 
     /// Fresh profiles match their server; existing blobs retain legacy behavior.
@@ -382,6 +396,8 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         case collectionSections
         case mergeNextUpIntoContinueWatching
         case hideWatchedRecentlyAdded
+        case dismissedEmptyHomeRows
+        case homeRowNames
     }
 
     /// Decodes leniently so a pre-existing blob still loads: missing fields fall
@@ -429,6 +445,15 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         self.hideWatchedRecentlyAdded = try container.decodeIfPresent(
             Bool.self, forKey: .hideWatchedRecentlyAdded
         ) ?? false
+        self.dismissedEmptyHomeRows = try container.decodeIfPresent(
+            Set<HomeRowID>.self, forKey: .dismissedEmptyHomeRows
+        ) ?? []
+        self.homeRowNames = (try container.decodeIfPresent(
+            [String: String].self, forKey: .homeRowNames
+        ) ?? [:]).compactMapValues {
+            let name = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? nil : name
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -444,9 +469,16 @@ public struct HomeLibraryVisibility: Codable, Equatable, Sendable {
         try container.encode(continueWatchingPlaybackDetails, forKey: .continueWatchingPlaybackDetails)
         try container.encode(continueWatchingAction, forKey: .continueWatchingAction)
         try container.encodeIfPresent(rowCustomization, forKey: .rowCustomization)
+        if !homeRowNames.isEmpty { try container.encode(homeRowNames, forKey: .homeRowNames) }
         if !collectionSections.isEmpty { try container.encode(collectionSections, forKey: .collectionSections) }
         try container.encode(mergeNextUpIntoContinueWatching, forKey: .mergeNextUpIntoContinueWatching)
         try container.encode(hideWatchedRecentlyAdded, forKey: .hideWatchedRecentlyAdded)
+        if !dismissedEmptyHomeRows.isEmpty {
+            try container.encode(
+                dismissedEmptyHomeRows.sorted { $0.presentationID < $1.presentationID },
+                forKey: .dismissedEmptyHomeRows
+            )
+        }
     }
 }
 
@@ -470,12 +502,15 @@ public enum ContinueWatchingAction: String, CaseIterable, Codable, Sendable {
 /// separately via `HeroSettings`.
 public enum HomeGlobalRow: String, CaseIterable, Codable, Sendable {
     case continueWatching
+    case comingSoon
     case watchlist
     case recentlyAdded
 
     /// The row's display heading (matches ``HomeRowKind`` titles).
     public var title: LocalizedStringResource {
         switch self {
+        case .comingSoon:
+            return "Coming Soon"
         case .continueWatching:
             return LocalizedStringResource(
                 "homeRow.continueWatching",

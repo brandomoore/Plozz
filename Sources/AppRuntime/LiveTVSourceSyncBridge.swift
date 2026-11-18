@@ -99,7 +99,7 @@ public final class LiveTVSourceSyncBridge {
                 throw error
             }
         }
-        guard snapshot.authority == epoch, SyncSetupFeatureFlag(defaults: defaults).isEnabled,
+        guard snapshot.authority == epoch, SyncSetupFeatureFlag(defaults: defaults).allowsAutomaticSync,
               profiles.rootNamespaceOwnerID == root else { throw CancellationError() }
         return result
     }
@@ -253,7 +253,9 @@ public final class LiveTVSourceSyncBridge {
         let pending = profiles.pendingSyncedDeletionProfileIDs
         guard let value = defaults.object(forKey: removedKey) else { return pending }
         guard let ids = value as? [String] else { throw LiveTVPortableStateError.invalidRecord }
-        return Set(ids).union(pending)
+        // Match portable-state removal: a restored roster entry supersedes an old
+        // removal marker, but a pending deletion placeholder still cannot publish.
+        return Set(ids).subtracting(profiles.profilesForSync.map(\.id)).union(pending)
     }
 
     private func admit(_ snapshot: SyncChannelSnapshot) throws {
@@ -262,7 +264,7 @@ public final class LiveTVSourceSyncBridge {
             throw LiveTVPortableStateError.tooLarge
         }
         guard !Task.isCancelled, snapshot.authority == epoch, epoch != "invalid",
-              SyncSetupFeatureFlag(defaults: defaults).isEnabled,
+              SyncSetupFeatureFlag(defaults: defaults).allowsAutomaticSync,
               snapshot.sequence >= latestSequence else { throw CancellationError() }
         latestSequence = snapshot.sequence
     }
@@ -276,7 +278,7 @@ public final class LiveTVSourceSyncBridge {
 
     private func check(_ id: String, snapshot: SyncChannelSnapshot, root: String?) throws {
         guard !Task.isCancelled, snapshot.authority == epoch, profiles.rootNamespaceOwnerID == root,
-              SyncSetupFeatureFlag(defaults: defaults).isEnabled,
+              SyncSetupFeatureFlag(defaults: defaults).allowsAutomaticSync,
               profiles.profiles.contains(where: { $0.id == id }), !(try removedProfiles()).contains(id) else {
             throw CancellationError()
         }

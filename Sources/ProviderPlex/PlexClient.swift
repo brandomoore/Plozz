@@ -15,7 +15,8 @@ public enum PlexOfflineTranscodeURLBuilder {
         maximumHeight: Int,
         audioStreamID: Int?,
         textSubtitleStreamID: Int?,
-        includesTextSubtitle: Bool
+        includesTextSubtitle: Bool,
+        includesAllAudioTracks: Bool = false
     ) -> URL? {
         guard var components = URLComponents(
             url: hlsURL,
@@ -75,9 +76,13 @@ public enum PlexOfflineTranscodeURLBuilder {
         setQueryItem("X-Plex-Client-Profile-Name", "Generic")
         setQueryItem(
             "X-Plex-Client-Profile-Extra",
-            "add-transcode-target(type=videoProfile&context=static&protocol=http&container=mp4&videoCodec=h264&audioCodec=aac&subtitleCodec=mov_text&replace=true)"
+            clientProfile(context: "static", includesAllAudioTracks: includesAllAudioTracks)
         )
-        if let audioStreamID {
+        if includesAllAudioTracks {
+            items.removeAll {
+                $0.name.caseInsensitiveCompare("audioStreamID") == .orderedSame
+            }
+        } else if let audioStreamID {
             setQueryItem("audioStreamID", String(audioStreamID))
         }
         if includesTextSubtitle, let textSubtitleStreamID {
@@ -92,6 +97,17 @@ public enum PlexOfflineTranscodeURLBuilder {
         }
         components.queryItems = items
         return components.url
+    }
+
+    public static func downloadQueueProfile(includesAllAudioTracks: Bool) -> String {
+        clientProfile(context: "all", includesAllAudioTracks: includesAllAudioTracks)
+    }
+
+    private static func clientProfile(context: String, includesAllAudioTracks: Bool) -> String {
+        let target = "add-transcode-target(type=videoProfile&context=\(context)&protocol=http&container=mp4&videoCodec=h264&audioCodec=aac&subtitleCodec=mov_text&replace=true)"
+        return includesAllAudioTracks
+            ? target + "+add-settings(DirectPlayStreamSelection=true)"
+            : target
     }
 
     public static func makeDownloadQueueURL(from progressiveURL: URL) -> URL? {
@@ -365,7 +381,7 @@ public struct PlexClient: Sendable {
             (data, response) = try await http.sendRaw(
                 Endpoint(
                     method: method, path: path, queryItems: query, headers: liveHeaders,
-                    redirectPolicy: .sameOrigin
+                    redirectPolicy: .sameOrigin, allowsRequestCoalescing: false
                 ),
                 baseURL: await resolvedBaseURL()
             )
@@ -438,13 +454,14 @@ public struct PlexClient: Sendable {
         let enriched = Endpoint(
             path: path,
             queryItems: query + [URLQueryItem(name: streamParameter, value: "Stream")],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: true
         )
         do {
             return try await decode(T.self, enriched)
         } catch AppError.invalidResponse {
             PlozzLog.networking.error("Plex rejected \(streamParameter)=Stream on \(path); retrying lean")
-            let lean = Endpoint(path: path, queryItems: query, headers: headers)
+            let lean = Endpoint(path: path, queryItems: query, headers: headers, allowsRequestCoalescing: true)
             return try await decode(T.self, lean)
         }
     }
@@ -453,7 +470,7 @@ public struct PlexClient: Sendable {
 
     /// `GET /library/sections` — top-level libraries.
     func sections() async throws -> [PlexDirectory] {
-        let endpoint = Endpoint(path: "/library/sections", headers: headers)
+        let endpoint = Endpoint(path: "/library/sections", headers: headers, allowsRequestCoalescing: true)
         do {
             return try await decode(PlexMediaContainerResponse.self, endpoint)
                 .MediaContainer.Directory ?? []
@@ -497,7 +514,8 @@ public struct PlexClient: Sendable {
         let endpoint = Endpoint(
             path: "/library/metadata/\(ratingKeys.joined(separator: ","))",
             queryItems: [URLQueryItem(name: "includeGuids", value: "1")],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: false
         )
         return try await decode(PlexMediaContainerResponse.self, endpoint)
             .MediaContainer.Metadata ?? []
@@ -567,7 +585,9 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "includeGuids", value: "1"),
                 URLQueryItem(name: "includePreferences", value: "1")
             ] + (includeChapters ? [URLQueryItem(name: "includeChapters", value: "1")] : []),
-            headers: headers
+            headers: headers,
+            // Reset arbitration also uses this read; it must not join an older response.
+            allowsRequestCoalescing: false
         )
         return try await HTTPResponseDiagnostics.$route.withValue(.itemDetail) {
             let container = try await decode(PlexMediaContainerResponse.self, endpoint, using: interactiveHTTP).MediaContainer
@@ -822,9 +842,11 @@ public struct PlexClient: Sendable {
             .init(name: "X-Plex-Container-Size", value: String(limit)),
             .init(name: "includeGuids", value: "1")
         ]
-        let container = try await decodeStreamEnriched(
-            PlexMediaContainerResponse.self, path: parts.path, query: query
-        ).MediaContainer
+        let container = try await HTTPResponseDiagnostics.$route.withValue(.homeShelfPage) {
+            try await decodeStreamEnriched(
+                PlexMediaContainerResponse.self, path: parts.path, query: query
+            ).MediaContainer
+        }
         guard container.Metadata != nil || (container.Hub?.count ?? 0) <= 1 else {
             throw AppError.invalidResponse
         }
@@ -1306,7 +1328,10 @@ public struct PlexClient: Sendable {
         if let playSessionID, !playSessionID.isEmpty {
             requestHeaders["X-Plex-Session-Identifier"] = playSessionID
         }
-        let endpoint = Endpoint(path: "/:/timeline", queryItems: query, headers: requestHeaders)
+        let endpoint = Endpoint(
+            path: "/:/timeline", queryItems: query, headers: requestHeaders,
+            allowsRequestCoalescing: false
+        )
         _ = try await send(endpoint)
     }
 
@@ -1327,7 +1352,8 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "state", value: state),
                 URLQueryItem(name: "X-Plex-Token", value: token)
             ],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: false
         )
         _ = try await send(endpoint)
     }
@@ -1367,7 +1393,23 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library"),
                 URLQueryItem(name: "X-Plex-Token", value: token)
             ],
-            headers: headers
+            headers: headers,
+            allowsRequestCoalescing: false
+        )
+        _ = try await send(endpoint)
+    }
+
+    func setMusicRating(_ rating: Double?, ratingKey: String) async throws {
+        let endpoint = Endpoint(
+            path: "/:/rate",
+            queryItems: [
+                URLQueryItem(name: "key", value: ratingKey),
+                URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library"),
+                URLQueryItem(name: "rating", value: rating.map { String($0) } ?? "-1"),
+                URLQueryItem(name: "X-Plex-Token", value: token)
+            ],
+            headers: headers,
+            allowsRequestCoalescing: false
         )
         _ = try await send(endpoint)
     }
@@ -2095,7 +2137,7 @@ public struct PlexClient: Sendable {
             path: "/video/:/transcode/universal/ping",
             queryItems: [.init(name: "session", value: sessionID)],
             headers: pingHeaders,
-            redirectPolicy: .sameOrigin
+            redirectPolicy: .sameOrigin, allowsRequestCoalescing: false
         ))
         try Task.checkCancellation()
     }
@@ -2107,7 +2149,7 @@ public struct PlexClient: Sendable {
             _ = try await send(Endpoint(
                 path: "/video/:/transcode/universal/stop",
                 queryItems: [.init(name: "session", value: sessionID)],
-                headers: headers
+                headers: headers, allowsRequestCoalescing: false
             ))
         }.value
     }
@@ -2174,6 +2216,14 @@ public struct PlexClient: Sendable {
     static func canDirectStreamAudio(codec: String) -> Bool {
         let codec = codec.lowercased()
         return alwaysDecodableAudioCodecs.contains(codec) || ["ac3", "eac3", "ec3"].contains(codec)
+    }
+
+    func canDirectPlayLiveTV(videoCodec: String?, audioCodec: String?) -> Bool {
+        guard let videoCodec, let audioCodec,
+              let codec = Self.directPlayVideoCodec(forPlexCodec: videoCodec),
+              codec == .h264 || codec == .hevc else { return false }
+        return capabilities.allowedDirectPlayVideoCodecs.contains(codec)
+            && Self.canDirectStreamAudio(codec: audioCodec)
     }
 
     private func canDirectStreamVideo(media: PlexMedia, part: PlexPart) -> Bool {

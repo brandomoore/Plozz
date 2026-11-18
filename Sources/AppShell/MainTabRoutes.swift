@@ -19,10 +19,8 @@ import MALService
 import LastFmService
 
 /// A navigation value for opening an item's detail page **from a library tile**,
-/// carrying the library's owning `Account.id` so the detail/playback default to
-/// that server's copy (the cross-server picker still lets the user switch). Home
-/// and Search push the bare ``MediaItem`` instead, which keeps the smart
-/// best-version default.
+/// carrying the library's owning `Account.id` to identify untagged native items.
+/// Ordinary library, Home and Search entry share the same source-selection policy.
 struct LibraryDetailRoute: Hashable {
     let item: MediaItem
     /// The owning `Account.id` of the library this item was opened from, or `nil`
@@ -46,9 +44,8 @@ struct PersonRoute: Hashable {
 /// A navigation value for opening a *series* page focused on one of its
 /// episodes. Tapping a lone episode (e.g. from "Recently Added") routes through
 /// this instead of pushing the episode itself, so the user always lands on the
-/// rich series/season page — with the tapped episode fronted in the hero, its
-/// season selected, the episode row pre-scrolled to it, and Play focused at the
-/// top — rather than a dead-end single-episode page.
+/// rich series/season page with the current provider resume target, rather than
+/// pinning Play to a potentially stale card or opening a single-episode page.
 struct EpisodeContextRoute: Hashable {
     let episode: MediaItem
     let originAccountID: String?
@@ -61,8 +58,7 @@ struct EpisodeContextRoute: Hashable {
 /// A navigation value for opening a *series* page focused on a specific season.
 /// Tapping a season item (e.g. from "Recently Added") routes through this instead
 /// of pushing the season itself, so the user always lands on the rich series page —
-/// with the tapped season selected, and the "next up" episode for that season
-/// fronted in the hero.
+/// with the tapped season selected, and its "next up" episode selected for Play.
 struct SeasonContextRoute: Hashable {
     let season: MediaItem
     let originAccountID: String?

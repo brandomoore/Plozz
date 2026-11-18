@@ -9,6 +9,7 @@ public struct ResponseDecodingDiagnostic: Encodable, Equatable, Sendable {
         case resumeItems, nextUp
         case itemDetail, playbackInventory, serverDiscovery, serverAuthentication
         case search, searchLibraries, searchCatalog, searchAuthentication
+        case homeContentPage, homeShelfPage
     }
     public enum Payload: String, Encodable, Sendable { case empty, object, array, scalar, nonJSON }
     public enum Reason: String, Encodable, Sendable { case missingKey, wrongType, nullValue, corruptedData, other }
@@ -178,7 +179,9 @@ public struct ResponseValidationDiagnostic: Encodable, Equatable, Sendable {
 }
 
 public struct LibraryLoadDiagnostic: Equatable, Sendable {
-    public enum Operation: String, Encodable, Sendable { case libraryRecommendations, libraryBrowse, homeContinueWatching }
+    public enum Operation: String, Encodable, Sendable {
+        case libraryRecommendations, libraryBrowse, homeContinueWatching, customHomeRowPreview
+    }
     public enum Section: String, Encodable, Sendable {
         case continueWatching, recommendations, recentlyAdded
         case browse, collections, playlists, collectionMembers, playlistMembers

@@ -65,11 +65,14 @@ final class MediaAliasShellIntegrationTests: XCTestCase {
         // a second service instance.
         let schemas = sync?.channelSchemas ?? []
         let stateFileURLs = sync?.channelStateFileURLs ?? []
-        var expectedSchemas: [CloudSyncSchemaDescriptor] = [.configV3, .mediaStateV1, .trackerTokensV1]
+        var expectedSchemas: [CloudSyncSchemaDescriptor] = [
+            .configV3, .mediaStateV1, .trackerTokensV1, .providerCredentialsV1
+        ]
         var expectedFiles = [
             "cloud-config-v3.json",
             "cloud-media-state-v1.json",
-            "cloud-tracker-tokens-v1.json"
+            "cloud-tracker-tokens-v1.json",
+            "cloud-provider-credentials-v1.sealed"
         ]
         expectedSchemas.append(.liveTVStateV1)
         expectedFiles.append("cloud-live-tv-state-v1.json")
@@ -87,11 +90,11 @@ final class MediaAliasShellIntegrationTests: XCTestCase {
             "channel zones must be disjoint"
         )
 
-        // Both credential-bearing channels must use encrypted payloads.
+        // Every credential-bearing channel must use encrypted payloads.
         XCTAssertEqual(
             schemas.filter(\.encryptsValue),
-            [.trackerTokensV1, .liveTVSourcesV1],
-            "tracker tokens and complete Live TV sources carry encrypted payloads"
+            [.trackerTokensV1, .providerCredentialsV1, .liveTVSourcesV1],
+            "tracker tokens, server sign-ins and complete Live TV sources carry encrypted payloads"
         )
     }
 

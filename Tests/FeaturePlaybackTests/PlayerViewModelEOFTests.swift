@@ -11,6 +11,734 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    func testPlayerUpscalingChangesResolveAutomaticWithoutReloadingThePlayerModel() async {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let item = MediaItem(id: "animation", title: "Animation fixture", kind: .movie, genres: ["Animation"])
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!),
+                kind: kind
+            )
+            let engine = SpyVideoEngine()
+            engine.canChangeVideoUpscaling = true
+            engine.capabilities.insert(.audioDelay)
+            let model = PlayerViewModel(
+                provider: provider, itemID: item.id,
+                playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: .standard),
+                engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+            )
+            await model.load()
+            engine.currentTime = 137
+            engine.pause()
+            model.setSubtitleDelay(0.25)
+            model.setAudioDelay(-0.15)
+            for selection in [VideoUpscaling.off, .animation, .automatic] {
+                model.setVideoUpscaling(selection)
+                await model.videoUpscalingTask?.value
+                XCTAssertEqual(model.controls.upscaling.selection, selection)
+                XCTAssertNil(model.controls.upscaling.error)
+            }
+            XCTAssertEqual(engine.upscalingChanges, [.off, .animation, .animation])
+            XCTAssertEqual(engine.loadCount, 1)
+            XCTAssertEqual(engine.currentTime, 137)
+            XCTAssertTrue(engine.isPaused)
+            XCTAssertEqual(model.controls.subtitleDelaySeconds, 0.25)
+            XCTAssertEqual(model.controls.audioDelaySeconds, -0.15)
+            XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, .standard)
+            await model.stop()
+        }
+    }
+
+    func testUpscalingFailureAndStoppedReloadDoNotPublishAnUnappliedSelection() async {
+        let item = MediaItem(id: "upscale", title: "Fixture", kind: .movie)
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!)
+        )
+        let engine = SpyVideoEngine()
+        engine.canChangeVideoUpscaling = true
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(useCommunityMarkers: false),
+            engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+        )
+        await model.load()
+        engine.upscalingError = .serverUnreachable
+        model.setVideoUpscaling(.off)
+        await model.videoUpscalingTask?.value
+        XCTAssertEqual(model.controls.upscaling.selection, .automatic)
+        XCTAssertNotNil(model.controls.upscaling.error)
+        engine.upscalingError = nil
+        let gate = PreCommitYieldGate()
+        engine.upscalingGate = gate
+        let entered = expectation(description: "Upscaling correction entered")
+        engine.upscalingStarted = { entered.fulfill() }
+        model.setVideoUpscaling(.animation)
+        let pending = model.videoUpscalingTask
+        await fulfillment(of: [entered], timeout: 3)
+        model.setVideoUpscaling(.off)
+        XCTAssertEqual(gate.entryCount, 1, "Only one correction may rebuild the session at a time.")
+        await model.stop()
+        gate.releaseNext()
+        await pending?.value
+        XCTAssertEqual(model.controls.upscaling.selection, .automatic)
+        XCTAssertNil(model.controls.upscaling.error)
+        XCTAssertFalse(model.controls.upscaling.isChanging)
+    }
+
+    func testAudioSyncHonorsEngineSupportRangeAndReset() async {
+        let (model, engine, _) = makeViewModel()
+        await model.load()
+        model.setAudioDelay(1)
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        engine.capabilities.insert(.audioDelay)
+        for (requested, expected) in [(0.05, 0.05), (-0.05, -0.05), (3.0, 3.0), (-3.0, -3.0),
+                                      (10.0, 10.0), (-10.0, -10.0), (11.0, 10.0), (-11.0, -10.0), (0.0, 0.0)] {
+            model.setAudioDelay(requested)
+            XCTAssertEqual(engine.audioDelaySeconds, expected)
+            XCTAssertEqual(model.controls.audioDelaySeconds, expected)
+        }
+        engine.onTracksChanged?()
+        engine.isSessionReloading = true
+        engine.capabilities = []
+        engine.onTracksChanged?()
+        engine.onProgress?()
+        XCTAssertTrue(model.controls.engineCapabilities.contains(.audioDelay))
+        model.setAudioDelay(1)
+        XCTAssertEqual(engine.audioDelaySeconds, 0, "A visible control still checks current engine support.")
+        engine.isSessionReloading = false
+        engine.onTracksChanged?()
+        XCTAssertFalse(model.controls.engineCapabilities.contains(.audioDelay))
+        engine.capabilities.insert(.audioDelay)
+        model.setAudioDelay(.nan)
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        await model.stop()
+        model.setAudioDelay(1)
+        XCTAssertEqual(engine.audioDelaySeconds, 0)
+    }
+
+    func testLiveAudioSyncNeverFallsBackToTheReloadingSetter() async {
+        let (model, engine, _) = makeViewModel()
+        await model.load()
+        engine.capabilities.insert(.audioDelay)
+        let initialChanges = engine.audioDelayChanges
+        XCTAssertFalse(model.setAudioDelayLive(0.01))
+        XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+        XCTAssertEqual(engine.audioDelayChanges, initialChanges)
+        engine.acceptsLiveAudioDelay = true
+        for (requested, expected) in [(0.01, 0.01), (-0.01, -0.01), (3.0, 3.0), (-3.0, -3.0),
+                                      (11.0, 10.0), (-11.0, -10.0), (0, 0)] {
+            XCTAssertTrue(model.setAudioDelayLive(requested))
+            XCTAssertEqual(model.controls.audioDelaySeconds, expected)
+        }
+        XCTAssertFalse(model.setAudioDelayLive(.nan))
+        engine.capabilities = []
+        XCTAssertFalse(model.setAudioDelayLive(1))
+        engine.capabilities.insert(.audioDelay)
+        await model.stop()
+        XCTAssertFalse(model.setAudioDelayLive(1))
+        XCTAssertEqual(engine.audioDelayChanges, initialChanges)
+    }
+
+    func testAudioSyncHoldUsesFineStepsAcceleratesAndCommitsOnlyOnce() {
+        var adjustment = PlayerAudioSyncAdjustment()
+        XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: false), 0.01)
+        for index in 1...11 {
+            XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: true),
+                           Double(index + 1) / 100, accuracy: 0.000001)
+        }
+        XCTAssertEqual(adjustment.nudge(from: 0, forward: true, repeating: true), 0.17)
+        XCTAssertEqual(adjustment.finish(), 0.17)
+        XCTAssertNil(adjustment.finish(), "Release and recognizer reset must not apply twice.")
+        XCTAssertEqual(adjustment.nudge(from: 0.17, forward: false, repeating: false), 0.16)
+        XCTAssertNil(adjustment.finish(cancelled: true))
+        XCTAssertNil(adjustment.value)
+        XCTAssertEqual(adjustment.nudge(from: 2, forward: true, repeating: false), 2.01)
+        _ = adjustment.finish(cancelled: true)
+        XCTAssertEqual(adjustment.nudge(from: 10, forward: true, repeating: false), 10)
+        _ = adjustment.finish(cancelled: true)
+        XCTAssertEqual(adjustment.nudge(from: -10, forward: false, repeating: false), -10)
+        adjustment.set(.nan)
+        adjustment.set(.infinity)
+        XCTAssertEqual(adjustment.finish(), -10)
+    }
+
+    func testLiveTVAudioSyncPreservesItsLimitForPreviewAndCommit() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(range: PlayerAudioSyncAdjustment.liveRange,
+                                          sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        for (index, requested) in [10.0, -10.0].enumerated() {
+            editor.beginEditing()
+            editor.change(to: requested, current: 0, applyLive: { _ in false }, commit: commit)
+            XCTAssertEqual(editor.value, requested > 0 ? 2 : -2)
+            XCTAssertNil(editor.commitTask)
+            editor.endEditing(commit: commit)
+            await clock.waitForSleeps(index + 1)
+            let pending = editor.commitTask
+            clock.advance(by: .milliseconds(600))
+            await pending?.value
+        }
+        XCTAssertEqual(applied, [2, -2])
+    }
+
+    func testAudioSyncRapidReleasesCommitOnceAfterQuietPeriodPlayingOrPaused() async {
+        for paused in [false, true] {
+            let (model, engine, _) = makeViewModel()
+            await model.load()
+            engine.capabilities.insert(.audioDelay)
+            if paused { engine.pause() } else { engine.play() }
+            let baseline = engine.audioDelayChanges
+            let clock = AudioSyncTestClock()
+            let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+
+            editor.nudge(from: 0, forward: false, repeating: false,
+                         applyLive: model.setAudioDelayLive, commit: model.setAudioDelay)
+            editor.endEditing(commit: model.setAudioDelay)
+            let first = editor.commitTask
+            await clock.waitForSleeps(1)
+            clock.advance(by: .milliseconds(300))
+            editor.nudge(from: model.controls.audioDelaySeconds, forward: false, repeating: false,
+                         applyLive: model.setAudioDelayLive, commit: model.setAudioDelay)
+            editor.endEditing(commit: model.setAudioDelay)
+            let last = editor.commitTask
+            await clock.waitForSleeps(2)
+            XCTAssertEqual(editor.value, -0.02, "Separate presses accumulate the pending value, not engine readback.")
+            XCTAssertEqual(model.controls.audioDelaySeconds, 0)
+            clock.advance(by: .milliseconds(300))
+            await first?.value
+            XCTAssertEqual(engine.audioDelayChanges, baseline, "The superseded deadline cannot apply.")
+            clock.advance(by: .milliseconds(299))
+            XCTAssertEqual(engine.audioDelayChanges, baseline)
+            clock.advance(by: .milliseconds(1))
+            await last?.value
+            XCTAssertEqual(engine.audioDelayChanges, baseline + [-0.02])
+            XCTAssertNil(editor.value)
+            XCTAssertEqual(engine.isPaused, paused)
+            await model.stop()
+        }
+    }
+
+    func testAudioSyncHoldDoesNotReloadDuringInitialGapOrAtBound() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        editor.nudge(from: 9.99, forward: true, repeating: false, applyLive: { _ in false }, commit: commit)
+        clock.advance(by: .seconds(1))
+        XCTAssertNil(editor.commitTask, "An active hold has no reload deadline, including its initial gap.")
+        for _ in 0..<20 {
+            editor.nudge(from: 9.99, forward: true, repeating: true, applyLive: { _ in false }, commit: commit)
+            clock.advance(by: .milliseconds(80))
+        }
+        XCTAssertEqual(editor.value, 10)
+        XCTAssertTrue(applied.isEmpty)
+        editor.endEditing(commit: commit)
+        await clock.waitForSleeps(1)
+        let pending = editor.commitTask
+        clock.advance(by: .milliseconds(600))
+        await pending?.value
+        XCTAssertEqual(applied, [10])
+    }
+
+    func testAudioSyncLiveCorrectionAndReturnToActualValueNeedNoReload() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var actual = 0.0
+        var reloads: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { reloads.append($0) }
+        editor.nudge(from: actual, forward: true, repeating: false, applyLive: { actual = $0; return true },
+                     commit: commit)
+        editor.endEditing(commit: commit)
+        XCTAssertEqual(actual, 0.01)
+        XCTAssertNil(editor.commitTask)
+        editor.change(to: -0.2, current: actual, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(1)
+        let obsolete = editor.commitTask
+        editor.change(to: actual, current: actual, applyLive: { _ in XCTFail("Already applied"); return false },
+                      commit: commit)
+        clock.advance(by: .seconds(1))
+        await obsolete?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(reloads.isEmpty)
+    }
+
+    func testAudioSyncResetAndCancellationSupersedePendingChanges() async {
+        let clock = AudioSyncTestClock()
+        let editor = PlayerAudioSyncEditor(sleep: { await clock.sleep(for: $0) })
+        var applied: [TimeInterval] = []
+        let commit: (TimeInterval) -> Void = { applied.append($0) }
+        editor.change(to: 0.5, current: 0.2, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(1)
+        let obsolete = editor.commitTask
+        editor.cancel()
+        editor.change(to: 0, current: 0.2, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(2)
+        let reset = editor.commitTask
+        clock.advance(by: .milliseconds(600))
+        await obsolete?.value
+        await reset?.value
+        XCTAssertEqual(applied, [0])
+
+        editor.change(to: 0.1, current: 0, applyLive: { _ in false }, commit: commit)
+        await clock.waitForSleeps(3)
+        let cancelled = editor.commitTask
+        editor.cancel()
+        clock.advance(by: .seconds(1))
+        await cancelled?.value
+        XCTAssertEqual(applied, [0])
+        XCTAssertNil(editor.value)
+    }
+
+    func testAudioSyncPendingCommitIsCancelledBeforeNewPlaybackAndStop() async {
+        let (model, engine, _) = makeViewModel()
+        engine.capabilities.insert(.audioDelay)
+        let editor = model.controls.audioSyncAdjustment
+        var applied: [TimeInterval] = []
+        editor.change(to: 0.5, current: 0, applyLive: { _ in false }, commit: { applied.append($0) })
+        let beforeLoad = editor.commitTask
+        await model.load()
+        await beforeLoad?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(applied.isEmpty)
+        editor.change(to: 0.2, current: 0, applyLive: { _ in false }, commit: { applied.append($0) })
+        let beforeStop = editor.commitTask
+        await model.stop()
+        await beforeStop?.value
+        XCTAssertNil(editor.value)
+        XCTAssertTrue(applied.isEmpty)
+    }
+
+    func testProfileUpscalingChoiceIsAppliedBeforeEngineLoadAcrossProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for mode in VideoUpscaling.allCases {
+                let item = MediaItem(id: "upscaling", title: "Upscaling fixture", kind: .movie)
+                var request = PlaybackRequest(
+                    item: item, streamURL: URL(string: "https://fixture.invalid/movie.mkv")!
+                )
+                request.videoUpscaling = .animation
+                let provider = RecordingPlaybackProvider(request: request, kind: kind)
+                let engine = SpyVideoEngine()
+                let model = PlayerViewModel(
+                    provider: provider, itemID: item.id,
+                    playbackSettings: .init(videoUpscaling: mode),
+                    engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+                )
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(
+                    engine.lastLoadedRequest?.videoUpscaling,
+                    mode == .automatic ? .standard : mode
+                )
+                await model.stop()
+            }
+        }
+    }
+
+    func testAutomaticUpscalingUsesTheEpisodeParentWithoutOverridingStandard() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for mode in [VideoUpscaling.automatic, .standard] {
+                var episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: "series")
+                episode.sourceAccountID = "account"
+                var series = MediaItem(id: "series", title: "Series", kind: .series, genres: ["Animation"])
+                series.sourceAccountID = "account"
+                let url = URL(string: "https://fixture.invalid/video.mkv")!
+                let provider = RecordingPlaybackProvider(
+                    request: .init(item: episode, streamURL: url), kind: kind,
+                    requestsByItemID: ["series": .init(item: series, streamURL: url)]
+                )
+                let engine = SpyVideoEngine()
+                let model = PlayerViewModel(
+                    provider: provider, itemID: episode.id,
+                    playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: mode),
+                    engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+                )
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, mode == .automatic ? .animation : .standard)
+                await model.stop()
+            }
+        }
+    }
+
+    func testAutomaticUpscalingFallsBackForMissingSeriesButDoesNotLoadAfterCancellation() async {
+        for error in [AppError.notFound, .cancelled] {
+            let episode = MediaItem(id: "episode", title: "Episode", kind: .episode, seriesID: "series")
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: episode, streamURL: URL(string: "https://fixture.invalid/video.mkv")!)
+            )
+            await provider.setItemError(error)
+            let engine = SpyVideoEngine()
+            let model = PlayerViewModel(
+                provider: provider, itemID: episode.id,
+                playbackSettings: .init(useCommunityMarkers: false, videoUpscaling: .automatic),
+                engineFactory: .init(makeNative: { _ in engine }, makePlozzigen: { engine })
+            )
+            await model.load()
+            if error == .cancelled {
+                XCTAssertNil(engine.lastLoadedRequest)
+            } else {
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.videoUpscaling, .standard)
+            }
+            await model.stop()
+        }
+    }
+
+    func testPostCreditsTailPreservesOrdinaryEOFAutoplayAcrossProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            for autoplay in [true, false] {
+                let first = MediaItem(id: "first", title: "First", kind: .episode, runtime: 300)
+                let next = MediaItem(id: "next", title: "Next", kind: .episode)
+                let provider = RecordingPlaybackProvider(
+                    request: .init(item: first, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+                    kind: kind, segments: [.init(id: "credits", kind: .credits, start: 100, end: 250)]
+                )
+                let engine = SpyVideoEngine()
+                engine.duration = 300
+                let model = PlayerViewModel(
+                    provider: provider, itemID: first.id, episodeItem: first,
+                    playbackSettings: .init(useCommunityMarkers: false, autoPlayNextEpisode: autoplay),
+                    engineFactory: .init(makeNative: { _ in engine }),
+                    neighborResolver: { (nil, next) }
+                )
+                await model.load()
+                let deadline = ContinuousClock.now + .seconds(3)
+                while model.controls.skipSegments.segments.isEmpty, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                XCTAssertEqual(model.controls.skipSegments.segments.first?.end, 250)
+                XCTAssertEqual(model.nextEpisode?.id, next.id)
+                model.controls.currentSeconds = 120
+                XCTAssertFalse(model.controls.upNextActive)
+                model.controls.currentSeconds = 275
+                XCTAssertFalse(model.controls.upNextActive)
+                XCTAssertNil(model.controls.activeSkipSegment)
+                engine.currentTime = 300
+                engine.onEnded?()
+                XCTAssertEqual(model.pendingNextEpisode?.id, autoplay ? next.id : nil)
+                XCTAssertEqual(model.shouldDismiss, !autoplay)
+                await model.stop()
+            }
+        }
+    }
+
+    #if canImport(UIKit)
+    func testMoviePreferencesUseSelectedAccountWhenResolvedItemIsUntagged() async throws {
+        let suite = "TitleAccountMemory-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = SeriesTrackPreferenceStore(defaults: defaults)
+        let tracks = [
+            MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "eng", isDefault: true),
+            MediaTrack(id: 2, kind: .audio, displayTitle: "French", language: "fra")
+        ]
+        for account in ["secondary", "primary", "secondary"] {
+            let item = MediaItem(id: "1", title: "Film", kind: .movie,
+                                 providerIDs: ["Imdb": account == "secondary" ? "tt123" : "tt456"])
+            var selected = item
+            selected.sourceAccountID = account
+            let engine = SpyVideoEngine()
+            engine.supportsActivePictureAnalysis = true
+            engine.audioTracks = tracks
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mp4")!,
+                               audioTracks: tracks), kind: .plex
+            )
+            let model = PlayerViewModel(
+                provider: provider, itemID: item.id, episodeItem: selected,
+                seriesTrackStore: store, seriesAccountFallbackID: "primary",
+                engineFactory: .init(makeNative: { _ in engine })
+            )
+            await model.load()
+            XCTAssertEqual(model.phase, .ready)
+            if account == "primary" {
+                XCTAssertFalse(engine.lastLoadedRequest?.preferredAudioLanguages.contains("fr") ?? false)
+                XCTAssertEqual(model.controls.videoZoom.settings, .onDemandDefault)
+            } else {
+                model.selectAudioOption(id: 2)
+                model.controls.videoZoom.setCustomPercent(117)
+                let memory = SeriesTrackMemory(store: store, accountFallbackID: account,
+                                               rememberAudio: false, rememberSubtitle: false)
+                XCTAssertEqual(memory.rememberedAudioLanguage(for: item), "fr")
+                XCTAssertEqual(store.preference(forKey: try XCTUnwrap(memory.localKey(for: item)))?.videoZoom,
+                               .init(mode: .custom, customPercent: 117))
+            }
+            await model.stop()
+        }
+    }
+
+    func testMovieLanguageAndZoomRestoreBeforeLoadAcrossProfilesAndProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let suite = "TitlePlayback-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let item = MediaItem(id: "movie", title: "Film", kind: .movie, providerIDs: ["Imdb": "tt123"])
+            let tracks = [
+                MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "eng", isDefault: true),
+                MediaTrack(id: 2, kind: .audio, displayTitle: "French", language: "fra")
+            ]
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mp4")!,
+                               audioTracks: tracks), kind: kind
+            )
+            for visit in 0..<3 {
+                let engine = SpyVideoEngine()
+                engine.supportsActivePictureAnalysis = true
+                engine.audioTracks = tracks
+                let store = SeriesTrackPreferenceStore(defaults: defaults, namespace: visit == 2 ? "other" : nil)
+                var zoomDefaults = VideoZoomDefaults()
+                zoomDefaults[.current] = .init(mode: .stretch)
+                let model = PlayerViewModel(
+                    provider: provider, itemID: item.id,
+                    playbackSettings: .init(rememberAudioTrackPerSeries: false, videoZoom: zoomDefaults),
+                    seriesTrackStore: store, engineFactory: .init(makeNative: { _ in engine })
+                )
+                let expected = visit == 1 ? PlayerVideoZoom(mode: .custom, customPercent: 117) : .init(mode: .stretch)
+                engine.onLoad = { [weak model] in
+                    XCTAssertEqual(model?.controls.videoZoom.settings, expected, "Restore before engine load.")
+                }
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                XCTAssertEqual(engine.lastLoadedRequest?.preferredAudioLanguages.contains("fr"), visit == 1)
+                if visit == 0 {
+                    XCTAssertNil(defaults.data(forKey: "com.plozz.seriesTrackPreferences"),
+                                 "The automatic default must not create title records.")
+                    model.selectAudioOption(id: 2)
+                    model.controls.videoZoom.setCustomPercent(117)
+                }
+                await model.stop()
+            }
+        }
+    }
+
+    func testAutoCropFramingFollowsTheProfileAcrossDifferentMoviesBeforeLoad() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let suite = "MovieAutoCrop-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let visits: [(id: String, namespace: String?, expectedSafe: Bool, pinchToEdges: Bool?)] = [
+                ("first", nil, false, false),
+                ("second", nil, true, nil),
+                ("old-title", nil, true, true),
+                ("first", nil, false, nil),
+                ("second", "guest", false, nil)
+            ]
+            for visit in visits {
+                let settings = PlaybackSettingsModel(store: PlaybackSettingsStore(
+                    defaults: defaults, namespace: visit.namespace
+                ))
+                let titles = SeriesTrackPreferenceStore(defaults: defaults, namespace: visit.namespace)
+                let item = MediaItem(id: visit.id, title: "Film", kind: .movie,
+                                     sourceAccountID: "account")
+                if visit.id == "old-title" {
+                    let memory = SeriesTrackMemory(store: titles, accountFallbackID: "account",
+                                                   rememberAudio: false, rememberSubtitle: false)
+                    memory.recordVideoZoom(.init(mode: .picture), for: item)
+                }
+                let engine = SpyVideoEngine()
+                engine.supportsActivePictureAnalysis = true
+                let provider = RecordingPlaybackProvider(
+                    request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/movie.mp4")!),
+                    kind: kind
+                )
+                let model = PlayerViewModel(
+                    provider: provider, itemID: item.id, episodeItem: item,
+                    playbackSettings: settings.settings, seriesTrackStore: titles,
+                    engineFactory: .init(makeNative: { _ in engine })
+                )
+                model.controls.videoZoom.bindAutoCropFraming(to: settings, platform: .current)
+                engine.onLoad = { [weak model] in
+                    XCTAssertEqual(model?.controls.videoZoom.settings.mode, .picture)
+                    XCTAssertEqual(model?.controls.videoZoom.settings.pictureFitsInsideSafeArea, visit.expectedSafe,
+                                   "Apply shared framing before the first frame, even for an old title preference.")
+                }
+                await model.load()
+                XCTAssertEqual(model.phase, .ready)
+                if let fillsScreen = visit.pinchToEdges {
+                    model.controls.videoZoom.setPinchZoom(fillsScreen: fillsScreen)
+                }
+                await model.stop()
+            }
+        }
+    }
+
+    func testDiscPlaylistSelectionIsBoundToCatalogAndSuppressesLibraryProgress() async throws {
+        let request = try discRequest()
+        let item = request.item
+        let provider = RecordingPlaybackProvider(request: request)
+        let engine = SpyVideoEngine()
+        let video = DiscVideo(playlist: 2, duration: 6, chapterCount: 1)
+        engine.discVideoCatalog = [video]
+        let stopped = PlaybackStoppedRecorder()
+        let discarded = PlaybackStoppedRecorder()
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            engineFactory: .init(makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine }),
+            onPlaybackStopped: { stopped.record(position: $0, percent: $1) },
+            onPlaybackStoppedWithoutProgress: { discarded.record(position: 0, percent: 0) }
+        )
+        await model.load()
+        XCTAssertTrue(model.hasDiscVideos)
+        XCTAssertThrowsError(try model.playDiscVideo(video))
+        let catalog = try await model.loadDiscVideos()
+        XCTAssertEqual(catalog, [video])
+        XCTAssertThrowsError(try model.playDiscVideo(.init(playlist: 3, duration: 6, chapterCount: 1)))
+        engine.currentTime = 8
+        try model.playDiscVideo(video)
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != 2 || model.phase != .ready {
+            await Task.yield()
+        }
+        let selected = try XCTUnwrap(engine.lastLoadedRequest)
+        XCTAssertEqual(selected.discPlaylistOverride, 2)
+        XCTAssertTrue(selected.suppressOrdinaryWatchReporting)
+        XCTAssertNil(selected.item.runtime)
+        XCTAssertEqual(engine.currentTime, 0)
+        XCTAssertThrowsError(try model.playDiscVideo(video), "Old catalogs cannot control a replacement attempt")
+        let before = await provider.reports
+        XCTAssertEqual(before.last?.event, .stop)
+        XCTAssertEqual(before.last?.progress.positionSeconds, 8)
+        engine.currentTime = 5
+        engine.onProgress?()
+        model.playVideoWithoutMenus()
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != nil || model.phase != .ready {
+            await Task.yield()
+        }
+        XCTAssertNil(engine.lastLoadedRequest?.discPlaylistOverride)
+        XCTAssertEqual(engine.lastLoadedRequest?.suppressOrdinaryWatchReporting, false)
+        XCTAssertEqual(engine.currentTime, 8, "Returning to the feature restores its own timeline")
+        _ = try await model.loadDiscVideos()
+        try model.playDiscVideo(video)
+        for _ in 0..<1000 where engine.lastLoadedRequest?.discPlaylistOverride != 2 || model.phase != .ready {
+            await Task.yield()
+        }
+        let beforeEnd = await provider.reports
+        engine.onEnded?()
+        XCTAssertTrue(model.shouldDismiss)
+        XCTAssertNil(model.pendingNextEpisode)
+        await model.stop()
+        let after = await provider.reports
+        XCTAssertEqual(after.count, beforeEnd.count)
+        XCTAssertEqual(stopped.count, 0, "A disc extra must not update the shell's movie progress")
+        XCTAssertNotNil(discarded.onlyCall, "Release the previously registered feature session without a mutation")
+        await model.stop()
+        XCTAssertEqual(discarded.count, 1)
+    }
+
+    private func discRequest() throws -> PlaybackRequest {
+        let item = MediaItem(id: "disc", title: "Disc", kind: .movie, runtime: 120)
+        let anchor = try NetworkFileLocator(
+            accountID: "fixture", sourceID: "fixture", credentialRevision: CredentialRevision(),
+            relativePath: "Movie/BDMV/index.bdmv",
+            representation: .init(
+                size: 40, identity: .init(kind: .strongETag, value: "\"index\""), consistency: .changeDetecting
+            ), formatHint: .init(container: "bdmv")
+        )
+        let disc = try NetworkDiscLocator(anchor: anchor, files: [.init(path: "BDMV/index.bdmv", locator: anchor)])
+        var request = PlaybackRequest(item: item, streamURL: URL(fileURLWithPath: "/fixture/index.bdmv"))
+        request.playbackSource = .networkDisc(disc)
+        return request
+    }
+
+    func testFailedDiscRetryKeepsShellProgressSuppressedWithoutARequest() async throws {
+        var request = try discRequest()
+        request.discPlaylistOverride = 2
+        let provider = RecordingPlaybackProvider(request: request)
+        let engine = SpyVideoEngine()
+        let stopped = PlaybackStoppedRecorder()
+        let discarded = PlaybackStoppedRecorder()
+        let model = PlayerViewModel(
+            provider: provider, itemID: request.item.id,
+            engineFactory: .init(makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine }),
+            onPlaybackStopped: { stopped.record(position: $0, percent: $1) },
+            onPlaybackStoppedWithoutProgress: { discarded.record(position: 0, percent: 0) }
+        )
+        await model.load()
+        engine.currentTime = 45
+        engine.onProgress?()
+        model.handoffSetPhase(.failed(.unknown("Fixture disc failure")))
+        await provider.setPlaybackInfoError(.notFound)
+        model.retryPlayback()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while model.phase == .loading, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .failed = model.phase else { return XCTFail("Expected failed resolution") }
+        await model.stop()
+        XCTAssertEqual(stopped.count, 0)
+        XCTAssertEqual(discarded.count, 1)
+    }
+    #endif
+
+    func testSongTapStopsOnPauseSeekAndStopAcrossProviders() async throws {
+        for kind in [ProviderKind.jellyfin, .plex] {
+            let item = MediaItem(id: "song", title: "Song fixture", kind: .movie)
+            let provider = RecordingPlaybackProvider(
+                request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+                kind: kind
+            )
+            let engine = SpyVideoEngine()
+            engine.providesSongTap = true
+            engine.duration = 120
+            let model = PlayerViewModel(provider: provider, itemID: item.id, engineFactory: .init(makeNative: { _ in engine }))
+            await model.load()
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertTrue(engine.songTapActive)
+            XCTAssertTrue(model.controls.songRecognition.isAvailable)
+            model.controls.songRecognition.state = .found(.init(title: "Current", artist: nil, artworkURL: nil, appleMusicURL: nil))
+            model.setPaused(true)
+            XCTAssertFalse(engine.songTapActive)
+            XCTAssertNotEqual(model.controls.songRecognition.state, .idle, "Pause retains the current card without processing audio.")
+            model.requestSeek(to: 20, origin: "song-test")
+            XCTAssertEqual(model.controls.songRecognition.state, .idle)
+            XCTAssertTrue(model.controls.songRecognition.isAvailable, "A seek must preserve the song slot's geometry.")
+            XCTAssertFalse(engine.songTapActive)
+            model.setPaused(false)
+            XCTAssertFalse(engine.songTapActive, "Resuming during a pending seek must not analyze pre-seek audio.")
+            let deadline = ContinuousClock.now + .seconds(2)
+            while !engine.songTapActive, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertTrue(engine.songTapActive)
+            let installs = engine.songTapInstalls
+            await model.handoffPlayResolved(
+                .init(item: item, streamURL: URL(string: "https://fixture.invalid/reloaded.mp4")!),
+                engineKind: .native, startPosition: 20
+            )
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertGreaterThan(engine.songTapInstalls, installs, "Engine handoffs must replace the old recognition owner.")
+            XCTAssertTrue(engine.songTapActive)
+            engine.onEnded?()
+            XCTAssertFalse(engine.songTapActive, "Natural EOF must immediately stop recognition.")
+            await model.stop()
+            XCTAssertFalse(engine.songTapActive)
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertFalse(engine.songTapActive, "Cancelled recognition must not resurrect after stop.")
+        }
+    }
+
+    func testDisabledSongRecognitionNeverInstallsATap() async throws {
+        let item = MediaItem(id: "song-off", title: "Song fixture", kind: .movie)
+        let provider = RecordingPlaybackProvider(request: .init(
+            item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!
+        ))
+        let engine = SpyVideoEngine()
+        engine.providesSongTap = true
+        var settings = PlaybackSettings()
+        settings.identifySongs = false
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id, playbackSettings: settings,
+            engineFactory: .init(makeNative: { _ in engine })
+        )
+        await model.load()
+        model.setPaused(true)
+        model.setPaused(false)
+        model.requestSeek(to: 10, origin: "song-off-test")
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(engine.songTapInstalls, 0)
+        XCTAssertFalse(model.controls.songRecognition.isAvailable)
+        await model.stop()
+    }
+
     func testLocalPlaybackBypassesServerResolutionAcrossProviders() async {
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
         let localURL = URL(fileURLWithPath: "/fixture/download.mp4")
@@ -1834,6 +2562,26 @@ final class PlayerViewModelEOFTests: XCTestCase {
         await viewModel.stop()
     }
 
+    func testSDRHintAndConfirmedSDRUseFrameRatePreferenceForEntryAndExit() async throws {
+        for frameRate in [false, true] {
+            let request = try makeNetworkFileRequest(
+                metadata: MediaSourceMetadata(video: .init(videoRangeType: "SDR")))
+            let engine = SpyVideoEngine()
+            let model = PlayerViewModel(
+                provider: RecordingPlaybackProvider(request: request), itemID: request.item.id,
+                playbackSettings: .init(fadeOnFrameRateChange: frameRate),
+                engineFactory: EngineFactory(
+                    makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine }))
+            await model.load()
+            XCTAssertEqual(model.effectiveDynamicRange, .awaitingEngineProbe(hint: .sdr))
+            XCTAssertEqual(model.fadesOnFrameRateChange, frameRate)
+            XCTAssertEqual(model.exitVeilKind, frameRate ? .frameRate : nil)
+            engine.onProbedSourceFactsChanged?(.init(range: .sdr))
+            XCTAssertEqual(model.exitVeilKind, frameRate ? .frameRate : nil)
+            await model.stop()
+        }
+    }
+
     func testExitVeilKindFollowsTheProfilesFadeToggles() async throws {
         // Both fades off: leaving any title dismisses immediately, no black.
         let request = try makeNetworkFileRequest(
@@ -2585,6 +3333,36 @@ final class PlayerViewModelEOFTests: XCTestCase {
 }
 
 @MainActor
+private final class AudioSyncTestClock {
+    private var now: Duration = .zero
+    private var sleeps: [(deadline: Duration, continuation: CheckedContinuation<Void, Never>)] = []
+    private var observers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var count = 0
+
+    func sleep(for duration: Duration) async {
+        await withCheckedContinuation { continuation in
+            sleeps.append((now + duration, continuation))
+            count += 1
+            let ready = observers.filter { $0.count <= count }
+            observers.removeAll { $0.count <= count }
+            ready.forEach { $0.continuation.resume() }
+        }
+    }
+
+    func waitForSleeps(_ count: Int) async {
+        guard self.count < count else { return }
+        await withCheckedContinuation { observers.append((count, $0)) }
+    }
+
+    func advance(by duration: Duration) {
+        now += duration
+        let ready = sleeps.filter { $0.deadline <= now }
+        sleeps.removeAll { $0.deadline <= now }
+        ready.forEach { $0.continuation.resume() }
+    }
+}
+
+@MainActor
 private final class PreCommitYieldGate {
     private var continuations: [CheckedContinuation<Void, Never>] = []
     private(set) var entryCount = 0
@@ -2640,6 +3418,7 @@ private actor RecordingPlaybackProvider: MediaProvider {
     private var childErrors: [String: any Error] = [:]
     private var itemError: (any Error)?
     private var playbackInfoGate: PreCommitYieldGate?
+    private var playbackInfoError: AppError?
     private var childGates: [String: PreCommitYieldGate] = [:]
     private var childIDs: [String] = []
     private var playlistMemberError: AppError?
@@ -2708,15 +3487,18 @@ private actor RecordingPlaybackProvider: MediaProvider {
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
         playbackInfoCallCount += 1
+        if let playbackInfoError { throw playbackInfoError }
         return requestsByItemID[itemID] ?? request
     }
     func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
         playbackInfoCallCount += 1
         await playbackInfoGate?.suspend()
+        if let playbackInfoError { throw playbackInfoError }
         return requestsByItemID[itemID] ?? request
     }
 
     func setPlaybackInfoGate(_ gate: PreCommitYieldGate) { playbackInfoGate = gate }
+    func setPlaybackInfoError(_ error: AppError) { playbackInfoError = error }
     func itemCallCountValue() -> Int { itemCallCount }
     func playbackInfoCallCountValue() -> Int { playbackInfoCallCount }
     func hasReport(itemID: String, event: PlaybackEvent) -> Bool {
@@ -2816,6 +3598,53 @@ private struct LocalPlaybackFixture: OfflinePlaybackResolving {
 
 @MainActor
 private final class SpyVideoEngine: VideoEngine {
+    var isSessionReloading = false
+    var capabilities: PlayerEngineCapabilities = []
+    var canChangeVideoUpscaling = false
+    var upscalingChanges: [VideoUpscaling] = []
+    var upscalingError: AppError?
+    var upscalingGate: PreCommitYieldGate?
+    var upscalingStarted: (() -> Void)?
+    var audioDelaySeconds: TimeInterval = 0
+    var audioDelayChanges: [TimeInterval] = []
+    var acceptsLiveAudioDelay = false
+    func setAudioDelay(_ seconds: TimeInterval) {
+        audioDelayChanges.append(seconds)
+        audioDelaySeconds = seconds
+    }
+    func setAudioDelayLive(_ seconds: TimeInterval) -> Bool {
+        guard acceptsLiveAudioDelay else { return false }
+        audioDelaySeconds = seconds
+        return true
+    }
+    func setVideoUpscaling(_ selection: VideoUpscaling) async throws {
+        upscalingStarted?()
+        await upscalingGate?.suspend()
+        try Task.checkCancellation()
+        if let upscalingError { throw upscalingError }
+        upscalingChanges.append(selection)
+    }
+    var supportsActivePictureAnalysis = false
+    var onLoad: (() -> Void)?
+    #if canImport(UIKit)
+    var discVideoCatalog: [DiscVideo] = []
+    func discVideos() async throws -> [DiscVideo] { discVideoCatalog }
+    #endif
+    var providesSongTap = false
+    var songTapActive = false
+    var songTapInstalls = 0
+    private var songContinuation: AsyncStream<SongTapChunk>.Continuation?
+    func installSongTap() -> AsyncStream<SongTapChunk>? {
+        songTapInstalls += 1
+        guard providesSongTap else { return nil }
+        songTapActive = true
+        return AsyncStream { songContinuation = $0 }
+    }
+    func removeSongTap() {
+        songTapActive = false
+        songContinuation?.finish()
+        songContinuation = nil
+    }
     var maximumPlaybackSpeed = 4.0
     var backgroundAudioEnabled = false
     func setBackgroundAudioEnabled(_ enabled: Bool) { backgroundAudioEnabled = enabled }
@@ -2847,6 +3676,7 @@ private final class SpyVideoEngine: VideoEngine {
     var lastLoadedRequest: PlaybackRequest?
 
     func load(request: PlaybackRequest, startPosition: TimeInterval) async {
+        onLoad?()
         loadCount += 1
         lastLoadedRequest = request
         if let failureDuringLoad { status = .failed(failureDuringLoad) }
@@ -2895,6 +3725,12 @@ private final class PlaybackStoppedRecorder: @unchecked Sendable {
 
     private let lock = NSLock()
     private var calls: [Call] = []
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls.count
+    }
 
     var onlyCall: Call? {
         lock.lock()

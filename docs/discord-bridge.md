@@ -305,8 +305,12 @@ and release-catalog checks, commit declarations, and revert detection. It querie
 App Store Connect read-only: external beta membership/state is distinct from an
 App Store version in `READY_FOR_SALE` / `READY_FOR_DISTRIBUTION`. Approval, preorder,
 pending release, main merge, GitHub release publication and issue closure alone
-never establish App Store delivery. Builds without a published source tag are
-reported as unverifiable, not guessed. A reopened issue cannot reuse an older
+never establish App Store delivery. Apple can retain the distribution state on
+superseded versions; only the highest distributed marketing version per platform
+is used, not a newer pending version or response order. Builds without a published
+source tag or whose tagged source predates the release catalog are reported as
+unverifiable and excluded, not guessed. Missing referenced tags or invalid existing
+catalogs still fail visibly. A reopened issue cannot reuse an older
 fix declaration. Expired beta builds alone do not keep an issue In beta.
 Closed reports without verified delivery and issues labeled `duplicate` are
 omitted rather than misrepresented as Released.
@@ -377,6 +381,16 @@ notes plus a full-notes link when the GitHub release is published. Shared bullet
 appear once. Platform-specific bullets are labeled when both platforms are
 available; notes for a platform still waiting for review are not displayed.
 If a platform has no applicable changes, the message says so.
+
+After the website board is live, set repository variable
+`DISCORD_ROADMAP_LINK_ENABLED=true` to include a concise
+[Roadmap](https://plozz.app/roadmap/) link in every version announcement, including
+hotfixes, partial-platform availability, and builds without published GitHub notes.
+Leave it unset or `false` until the production page is activated and verified.
+This switch is independent of `DISCORD_ROADMAP_ENABLED`: it never enables the
+long-list Discord roadmap publisher. The link reserves space before inline notes
+are fitted to Discord's limit. Enabling or disabling it updates existing eligible
+announcements in place on the next sync without posting duplicates.
 
 Published releases read the catalog from their exact release tag
 and validate its release ID, build, and Apple version against TestFlight. The

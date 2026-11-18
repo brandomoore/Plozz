@@ -1,6 +1,6 @@
 @testable import FeatureSettings
 import CoreModels
-import CoreUI
+@testable import CoreUI
 @testable import AppShell
 import FeatureProfiles
 import Observation
@@ -11,6 +11,158 @@ import XCTest
 
 @MainActor
 final class SettingsDetailNavigationHostedTests: XCTestCase {
+    func testHomeShortcutReturnRestoresAnAvailableRootCategoryWithoutChangingProfiles() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let navigation = SettingsNavigationModel()
+        let chrome = NavigationChromeModel()
+        let probes = PageMotionProbes()
+        let root = SettingsWorkspace(navigation: navigation) {
+            SettingsSearchTelevisionView {
+                SettingsSectionGroup {
+                    SettingsSectionButton(title: Text("Playback"), icon: "play", route: .playback)
+                    SettingsSectionButton(
+                        title: Text("Screens & Navigation"), icon: "rectangle.3.group", route: .screensNavigation
+                    )
+                    .background { PageMotionProbe(id: "screens-category", probes: probes) }
+                }
+            }
+        } detail: { _ in
+            Button("Customize Home") {}
+                .settingsWorkspaceEntry()
+        }
+        window.rootViewController = UIHostingController(rootView:
+            NavigationRailShell(
+                profile: Profile(name: "Viewer"), entries: [], destinations: [.home, .settings],
+                selection: .constant(.settings), onOpenProfileSwitcher: {}, chrome: chrome,
+                content: root, contentDestination: .settings
+            )
+            .environment(chrome)
+            .environment(\.plozzNavigationStyle, .rail)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for _ in 0..<2 {
+            navigation.openHomeCustomization()
+            let entered = ContinuousClock.now + .seconds(5)
+            while !navigation.focusInDetail, ContinuousClock.now < entered {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(navigation.focusInDetail)
+            navigation.pages.pop()
+            let returned = ContinuousClock.now + .seconds(5)
+            while (navigation.pages.isTransitioning || navigation.restoringSidebar || navigation.focusInDetail),
+                  ContinuousClock.now < returned {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(navigation.path.isEmpty)
+            XCTAssertEqual(navigation.section, .screensNavigation)
+            let category = try XCTUnwrap(probes.frame("screens-category", in: window))
+            let item = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            let focused = try XCTUnwrap(NavigationRowFocusRequester.frame(
+                of: item, relativeTo: window
+            ))
+            XCTAssertTrue(category.contains(CGPoint(x: focused.midX, y: focused.midY)),
+                          "Returning from the shortcut must leave an enabled, natively focused root category.")
+        }
+    }
+
+    func testBackEntryGatePreservesAppearanceAndReleasesNativeFocus() async throws {
+        for usesGlass in [false, true] {
+            let state = SettingsBackEntryTestState()
+            let probes = PageMotionProbes()
+            try await withProfileDestination(.playback, direction: .leftToRight) {
+                SettingsBackEntryFixture(state: state, probes: probes, usesGlass: usesGlass)
+            } inspect: { window in
+                let back = try XCTUnwrap(probes.frame("back", in: window)).integral
+                @MainActor func backPixels() throws -> [UInt8] {
+                    let format = UIGraphicsImageRendererFormat()
+                    format.scale = 1
+                    let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                        XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                    }
+                    let crop = try XCTUnwrap(image.cgImage?.cropping(to: back))
+                    var pixels = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+                    try pixels.withUnsafeMutableBytes {
+                        let context = try XCTUnwrap(CGContext(
+                            data: $0.baseAddress, width: crop.width, height: crop.height,
+                            bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                            space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                        ))
+                        context.draw(crop, in: CGRect(origin: .zero, size: back.size))
+                    }
+                    return pixels
+                }
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                state.focusBack = true
+                try await Task.sleep(for: .milliseconds(100))
+                let gatedItem = try XCTUnwrap(system.focusedItem)
+                let gatedFrame = try XCTUnwrap(
+                    NavigationRowFocusRequester.frame(of: gatedItem, relativeTo: window)
+                )
+                XCTAssertFalse(back.contains(CGPoint(x: gatedFrame.midX, y: gatedFrame.midY)),
+                               "Back must reject native entry focus.")
+                state.focusBack = false
+                try await Task.sleep(for: .milliseconds(100))
+                let before = try backPixels()
+                state.entering = false
+                try await Task.sleep(for: .milliseconds(250))
+                XCTAssertEqual(try XCTUnwrap(probes.frame("back", in: window)).integral, back)
+                let after = try backPixels()
+                XCTAssertEqual(before.count, after.count)
+                let difference = zip(before, after).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+                XCTAssertLessThan(Double(difference) / Double(max(before.count, 1)), 1,
+                                  "Entry gating must not dim or restyle the native Back button.")
+                state.focusBack = true
+                try await Task.sleep(for: .milliseconds(100))
+                let focused = try XCTUnwrap(system.focusedItem)
+                let frame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focused, relativeTo: window))
+                XCTAssertTrue(back.contains(CGPoint(x: frame.midX, y: frame.midY)),
+                              "Released Back must accept native focus: focused \(frame), Back \(back)")
+            }
+        }
+    }
+
+    func testNewSettingsPageFocusesFirstControlInsteadOfBack() async throws {
+        let probes = PageMotionProbes()
+        var recorder: SettingsEntryFocusRecorder?
+        defer { recorder?.stop() }
+        try await withProfileDestination(.playback, direction: .leftToRight, onPresent: {
+            recorder = SettingsEntryFocusRecorder(window: $0)
+        }) {
+            SettingsFormLayout(title: Text("Playback"), rows: [
+                SettingsSplitRow(id: "first", title: "First setting") {
+                    Button("First setting") {}
+                        .buttonStyle(SettingsFormButtonStyle())
+                        .background { PageMotionProbe(id: "first", probes: probes) }
+                }.labeledControl(),
+                SettingsSplitRow(id: "second", title: "Second setting") {
+                    Button("Second setting") {}
+                        .buttonStyle(SettingsFormButtonStyle())
+                }.labeledControl()
+            ])
+        } inspect: { window in
+            let first = try XCTUnwrap(probes.frame("first", in: window))
+            let item = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            let focused = try XCTUnwrap(NavigationRowFocusRequester.frame(of: item, relativeTo: window))
+            XCTAssertTrue(first.contains(CGPoint(x: focused.midX, y: focused.midY)),
+                          "New pages must focus the first setting, not Back: \(focused), first: \(first)")
+            let frames = try XCTUnwrap(recorder).frames
+            XCTAssertFalse(frames.isEmpty)
+            XCTAssertFalse(frames.contains { $0.midY < first.minY },
+                           "Back must never briefly take focus during first entry: \(frames)")
+            _ = try self.captureLabels(window, name: "settings-first-entry")
+        }
+    }
+
     func testFullScreenResultDismissalPreservesQueryAndReturnSource() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -610,7 +762,8 @@ final class SettingsDetailNavigationHostedTests: XCTestCase {
 
     private func withProfileDestination<Content: View>(
         _ route: SettingsRoute, direction: LayoutDirection,
-        @ViewBuilder content: () -> Content, inspect: (UIWindow) throws -> Void
+        onPresent: ((UIWindow) -> Void)? = nil,
+        @ViewBuilder content: () -> Content, inspect: @MainActor (UIWindow) async throws -> Void
     ) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -643,11 +796,12 @@ final class SettingsDetailNavigationHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
+        onPresent?(window)
         navigation.pages.push(route)
         try await Task.sleep(for: .milliseconds(750))
         window.layoutIfNeeded()
         XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
-        try inspect(window)
+        try await inspect(window)
     }
 
     private func captureLabels(_ window: UIWindow, name: String) throws -> [(text: String, frame: CGRect)] {
@@ -910,6 +1064,61 @@ private struct SettingsDialogDismissProbe: View {
                 probe.inheritsSettingsPage = context != nil
                 probe.dismiss = dismiss
             }
+    }
+}
+
+@MainActor
+@Observable
+private final class SettingsBackEntryTestState {
+    var entering = true
+    var focusBack = false
+}
+
+private struct SettingsBackEntryFixture: View {
+    let state: SettingsBackEntryTestState
+    let probes: PageMotionProbes
+    let usesGlass: Bool
+    @FocusState private var backFocused: Bool
+
+    var body: some View {
+        VStack {
+            SettingsBackButton(usesGlass: usesGlass) {}
+                .focused($backFocused)
+                .background { PageMotionProbe(id: "back", probes: probes) }
+            Button("Page control") {}.padding(.top, 100)
+        }
+        .environment(\.settingsPageContext, SettingsPageContext(
+            isCurrent: true, depth: 1, requestsEntryFocus: state.entering,
+            returnSourceID: nil, returnGeneration: 0, pageIDs: [],
+            push: { _, _, _ in }, remove: { _ in }, pop: {}
+        ))
+        .onChange(of: state.focusBack) { _, value in backFocused = value }
+    }
+}
+
+@MainActor
+private final class SettingsEntryFocusRecorder: NSObject {
+    private weak var window: UIWindow?
+    private(set) var frames: [CGRect] = []
+
+    init(window: UIWindow) {
+        self.window = window
+        super.init()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(didUpdateFocus(_:)),
+            name: UIFocusSystem.didUpdateNotification, object: nil
+        )
+    }
+
+    func stop() {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func didUpdateFocus(_ notification: Notification) {
+        guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+            as? UIFocusUpdateContext, let item = context.nextFocusedItem, let window,
+            let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window) else { return }
+        frames.append(frame)
     }
 }
 

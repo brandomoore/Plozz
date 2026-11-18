@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 
 /// The set of tracker keychain accounts this device knows about, so a sync
 /// channel can carry them without reaching into each tracker's service module.
@@ -106,5 +107,26 @@ public final class SyncedTokenRegistry: @unchecked Sendable {
             fallbackToPerUser: false,
             synchronizable: true
         )
+    }
+
+    /// Copy while consent is still enabled; never delete or modify the shared item.
+    public static func preserveDeviceSignIns(_ accounts: [Account]) throws {
+        for account in accounts {
+            try preserveDeviceSignIn(
+                account: account.account, source: store(for: account),
+                local: KeychainStore(service: account.service, userIndependent: false, fallbackToPerUser: false),
+                signedOut: shared.isSignedOut(account)
+            )
+        }
+    }
+
+    static func preserveDeviceSignIn(
+        account: String, source: any SecureStoring, local: any SecureStoring, signedOut: Bool = false
+    ) throws {
+        if signedOut {
+            try local.removeValue(for: account)
+        } else if let raw = try source.readString(for: account) {
+            try local.setString(raw, for: account)
+        }
     }
 }

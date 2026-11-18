@@ -24,18 +24,23 @@ public struct AutomaticSignInToggle: View {
     }
 
     public var body: some View {
-        Toggle(isOn: settings.isEnabled) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Automatically Sign In")
-                if showsDescription {
+        Group {
+            if showsDescription {
+                SettingsDescribedControl {
+                    toggle
+                } description: {
                     Text("Sign in to the last-used profile automatically on this device.")
-                        .font(.footnote)
-                        .settingsRowSecondary()
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+            } else {
+                toggle
             }
         }
-        .accessibilityIdentifier("profiles.automaticallySignIn").settingsSearchAnchor("automatic-sign-in")
+        .settingsSearchAnchor("automatic-sign-in")
+    }
+
+    private var toggle: some View {
+        Toggle("Automatically Sign In", isOn: settings.isEnabled)
+            .accessibilityIdentifier("profiles.automaticallySignIn")
     }
 }
 

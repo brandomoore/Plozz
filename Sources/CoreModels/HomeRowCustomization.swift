@@ -78,6 +78,15 @@ public struct HomeRowChoice: Identifiable, Equatable, Sendable {
         ]
     }
 
+    public func renamed(to name: String) -> Self {
+        Self(
+            id: id, title: name, library: library,
+            isProviderDefault: isProviderDefault, isLegacyDefault: isLegacyDefault,
+            serverRow: serverRow, collectionSection: collectionSection,
+            hasCollectionCovers: hasCollectionCovers
+        )
+    }
+
     public init(serverRow: HomeServerRowDefinition) {
         self.init(
             id: serverRow.id, title: serverRow.section.title ?? serverRow.section.kind.rawValue,
@@ -88,7 +97,8 @@ public struct HomeRowChoice: Identifiable, Equatable, Sendable {
 
     public init(collectionSection: CollectionSection, library: AggregatedLibrary? = nil) {
         self.init(
-            id: collectionSection.rowID, title: collectionSection.title, library: library,
+            id: collectionSection.rowID, title: collectionSection.title,
+            localizedTitle: collectionSection.localizedTitle, library: library,
             isProviderDefault: false, isLegacyDefault: false, collectionSection: collectionSection
         )
     }
@@ -169,6 +179,7 @@ public struct HomeRowCustomization: Codable, Equatable, Sendable {
     public func isVisible(_ id: HomeRowID, providerDefault: Bool) -> Bool {
         if hidden.contains(id) { return false }
         if shown.contains(id) { return true }
+        if id == .global(.comingSoon) { return true }
         switch defaults {
         case .matchServer:
             guard let resolvedDefaults else { return providerDefault }

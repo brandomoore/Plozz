@@ -34,7 +34,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         }
     }
 
-    func testSegmentedTracksKeepNativeFillsAndRoundEverySectionWithoutInternalCutouts() async throws {
+    func testSegmentedTracksKeepNativeFillsWithSoftVerticalInternalCuts() async throws {
         XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.10)
         try await withWindow { window in
             for performance in [false, true] {
@@ -45,12 +45,16 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                         background: background
                     )
                     let unmarked = try await render(in: window)
-                    model.skipSegments.segments = [.init(kind: .intro, start: 12.5, end: 87.5)]
+                    model.skipSegments.segments = [
+                        .init(kind: .intro, start: 12.5, end: 37.5),
+                        .init(kind: .credits, start: 62.5, end: 87.5)
+                    ]
                     let frame = try await render(in: window)
                     let top = focused ? 580 : 584
                     let bottom = focused ? 600 : 596
                     for y in frame.pixels(top..<bottom) {
-                        for x in [479, 480, 481, 1439, 1440, 1441].flatMap({ frame.pixels($0..<($0 + 1)) }) {
+                        for x in [479, 480, 481, 799, 800, 801, 1119, 1120, 1121, 1439, 1440, 1441]
+                            .flatMap({ frame.pixels($0..<($0 + 1)) }) {
                             XCTAssertEqual(frame.colorAtPixel(x, y), frame.colorAtPixel(x, frame.pixel(450)),
                                            "The entire gap, including the glass backing, reveals the picture.")
                         }
@@ -63,7 +67,10 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                             }
                         }
                     }
-                    XCTAssertEqual(frame.color(483, top), frame.color(483, 450), "The new section has rounded corners.")
+                    XCTAssertNotEqual(frame.color(482, top), frame.color(482, 590),
+                                      "The internal cut retains a small rounded corner.")
+                    XCTAssertNotEqual(frame.color(483, top + 3), frame.color(483, 450),
+                                      "The cut is straight below its corner, not fully pill-shaped.")
                     XCTAssertNotEqual(frame.color(483, 590), frame.color(483, 450))
                     XCTAssertEqual(frame.color(832, 590), [255, 255, 255])
                     attach(frame.image, name: "Rounded sections - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
@@ -75,7 +82,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         }
     }
 
-    func testTinyOpeningSectionUsesSoftMatchingCornersAndKeepsRoomyJoinsRounded() async throws {
+    func testTinyOpeningCutIsSuppressedButRoomyBoundaryRemains() async throws {
         try await withWindow { window in
             for performance in [false, true] {
                 for focused in [false, true] {
@@ -83,37 +90,85 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                     let model = showTrack(
                         in: window, focused: focused, performance: performance, background: background
                     )
+                    let plain = try await render(in: window)
                     model.skipSegments.segments = [.init(kind: .intro, start: 0.5, end: 25)]
                     let frame = try await render(in: window)
                     let top = focused ? 580 : 584
-                    let widerSectionStart = focused ? 330 : 329
-                    XCTAssertNotEqual(frame.color(widerSectionStart + 2, top + 1), frame.color(widerSectionStart + 2, 450),
-                                      "The wide section must not use an oversized cap beside the tiny opening.")
-                    XCTAssertEqual(frame.color(widerSectionStart, top), frame.color(widerSectionStart, 450),
-                                   "The constrained join must still have a visibly rounded top corner.")
-                    if focused {
-                        XCTAssertEqual(frame.color(widerSectionStart, top + 1), frame.color(widerSectionStart, 450),
-                                       "Focus must grow the corner curve vertically instead of leaving it boxy.")
-                        let backdrop = frame.color(widerSectionStart + 1, 450)
-                        let corner = frame.color(widerSectionStart + 1, top + 1)
-                        let solid = frame.color(widerSectionStart + 1, 590)
-                        for channel in 0..<3 {
-                            XCTAssertLessThan(
-                                2 * (Int(corner[channel]) - Int(backdrop[channel])),
-                                Int(solid[channel]) - Int(backdrop[channel]),
-                                "The wider corner should reveal more picture than track at its outer curve."
-                            )
+                    for y in frame.pixels(588..<592) {
+                        for x in frame.pixels(326..<330) {
+                            XCTAssertEqual(frame.colorAtPixel(x, y), plain.colorAtPixel(x, y),
+                                           "A tiny opening must not become a detached cap.")
                         }
                     }
-                    for y in frame.pixels(top..<(focused ? 600 : 596)) {
-                        for x in frame.pixels(326..<widerSectionStart) {
-                            XCTAssertEqual(frame.colorAtPixel(x, y), frame.colorAtPixel(x, frame.pixel(450)))
-                        }
-                    }
-                    XCTAssertEqual(frame.color(643, top), frame.color(643, 450),
-                                   "The other intro boundary still has room for maximum rounding.")
+                    XCTAssertEqual(frame.color(640, 590), frame.color(640, 450),
+                                   "The isolated boundary remains at its actual timestamp.")
+                    XCTAssertNotEqual(frame.color(642, top), frame.color(642, 590),
+                                      "The roomy internal edge uses the same small corner.")
                     XCTAssertNotEqual(frame.color(643, 590), frame.color(643, 450))
-                    attach(frame.image, name: "Soft matching opening cut - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
+                    attach(frame.image, name: "Suppressed opening cut - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
+                }
+            }
+        }
+    }
+
+    func testCrowdedCreditsStayContinuousAcrossPlaybackScrubbingAndFocus() async throws {
+        let credits: [MediaSegment] = [
+            .init(kind: .credits, start: 7_754.39, end: 7_784.39),
+            .init(kind: .credits, start: 7_816.39, end: 7_852.39),
+            .init(kind: .credits, start: 7_962.39, end: 8_032.39),
+            .init(kind: .credits, start: 8_072.39, end: 8_110.39)
+        ]
+        try await withWindow { window in
+            for performance in [false, true] {
+                for (focused, scrubbing) in [(false, false), (true, false), (true, true)] {
+                    let model = showTrack(
+                        in: window, focused: focused, performance: performance,
+                        background: Color(red: 0.15, green: 0.35, blue: 0.6)
+                    )
+                    model.duration = 8_142.656
+                    model.isScrubbing = scrubbing
+                    for fraction in [0.4, 0.98] {
+                        model.currentSeconds = model.duration * fraction
+                        model.scrubSeconds = model.currentSeconds
+                        model.bufferedSeconds = model.currentSeconds
+                        model.skipSegments.segments = []
+                        let plain = try await render(in: window)
+                        model.skipSegments.segments = credits
+                        let marked = try await render(in: window)
+                        XCTAssertTrue(marked.bytes == plain.bytes,
+                                      "Dense cuts must stay absent as progress, focus, and scrubbing change.")
+                        XCTAssertEqual(model.skipSegments.segments, credits,
+                                       "The display must not rewrite actual skip ranges.")
+                    }
+                }
+            }
+        }
+    }
+
+    func testLongFinalCreditsKeepTheirCutBesideAnUnreadableEarlierWindow() async throws {
+        let duration = 3_116.96
+        let longCredits = MediaSegment(kind: .credits, start: 2_809.416, end: duration)
+        try await withWindow { window in
+            for performance in [false, true] {
+                for focused in [false, true] {
+                    let model = showTrack(
+                        in: window, focused: focused, performance: performance,
+                        background: Color(red: 0.15, green: 0.35, blue: 0.6)
+                    )
+                    model.duration = duration
+                    model.currentSeconds = 2_629.416
+                    model.bufferedSeconds = model.currentSeconds
+                    model.skipSegments.segments = [longCredits]
+                    let reference = try await render(in: window)
+                    model.skipSegments.segments.insert(
+                        .init(kind: .credits, start: 2_749.416, end: 2_773.416), at: 0
+                    )
+                    let actual = try await render(in: window)
+                    XCTAssertTrue(actual.bytes == reference.bytes,
+                                  "The real One Piece timeline must keep the long credits boundary.")
+                    let boundary = Int((320 + 1280 * longCredits.start / duration).rounded())
+                    XCTAssertEqual(actual.color(boundary, 590), actual.color(boundary, 450))
+                    XCTAssertNotEqual(actual.color(boundary + 10, 590), actual.color(boundary + 10, 450))
                 }
             }
         }

@@ -86,6 +86,31 @@ final class NativeFocusRegionObserverTests: XCTestCase {
         withExtendedLifetime(window) {}
     }
 
+    func testIgnoringPresentedFocusPreservesEntryUntilFocusLeavesInRootContent() {
+        let (window, root, observer) = fixture()
+        let controller = UIViewController()
+        controller.view = root
+        window.rootViewController = controller
+        window.addSubview(root)
+        let season = button(in: root, x: 80, y: 285)
+        let hero = button(in: root, x: 80, y: 160)
+        let overlay = button(in: window, x: 80, y: 285)
+        var exits = 0
+        observer.onFocusExited = { exits += 1 }
+        observer.ignoresPresentedFocus = true
+        observer.isEnabled = true
+        XCTAssertTrue(observer.containsFocus(season))
+        observer.reportFocus(season)
+        observer.reportFocus(overlay, reportsExit: true)
+        observer.reportFocus(nil, reportsExit: true)
+        observer.reportFocus(season, reportsExit: true)
+        XCTAssertEqual(exits, 0, "A presented menu must not reset the underlying region's entry gate.")
+        observer.reportFocus(hero, reportsExit: true)
+        XCTAssertEqual(exits, 1, "A real handoff to another root-content region must still reset the gate.")
+        observer.stop()
+        withExtendedLifetime(window) {}
+    }
+
     private func fixture() -> (UIWindow, UIView, NativeFocusRegionObserver.ObserverView) {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         let root = UIView(frame: window.bounds)

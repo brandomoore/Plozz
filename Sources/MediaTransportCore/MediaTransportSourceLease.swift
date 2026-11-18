@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 
 public protocol MediaTransportByteSource: AnyObject, Sendable {
     var byteSize: Int64 { get }
@@ -344,6 +345,7 @@ public final class MediaTransportSourceCursor: @unchecked Sendable {
     }
 
     public func read(at offset: Int64, length: Int) async throws -> Data {
+        try OfflineMode.shared.requireNetworkAccess()
         try Task.checkCancellation()
         guard offset >= 0, length > 0 else {
             throw MediaTransportError.invalidInput(reason: "invalid byte range")
@@ -356,6 +358,7 @@ public final class MediaTransportSourceCursor: @unchecked Sendable {
     public func readWholeFile(
         consume: @escaping @Sendable (Data) async throws -> Void
     ) async throws {
+        try OfflineMode.shared.requireNetworkAccess()
         _ = try await performRead { [lease] in
             try await lease.readWholeFile(consume: consume)
             return Data()

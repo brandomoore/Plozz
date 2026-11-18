@@ -63,6 +63,54 @@ final class SubtitleTrackControllerTests: XCTestCase {
 
     // MARK: - Subtitle OFF
 
+    #if canImport(UIKit)
+    func testDiscAuthoredSubtitleIsRestoredAfterLoadResetsTheLiveOverlay() {
+        for selectedID: Int? in [9, nil] {
+            let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
+            let disc = DiscMenuPlaybackState()
+            engine.discMenu = disc
+            engine.subtitleTracks = [embeddedText(9, language: "ja")]
+            disc.hasSubtitleSelection = true
+            disc.subtitleTrackID = selectedID
+            sut.loadTrackOptions()
+            sut.resetForNewLoad()
+            host.liveSubtitles.clear()
+            let request = PlaybackRequest(
+                item: .init(id: "disc", title: "Disc", kind: .movie),
+                streamURL: URL(fileURLWithPath: "/fixture/index.bdmv")
+            )
+            sut.applyInitialSubtitleForNewLoad(for: request)
+            XCTAssertEqual(sut.selectedSubtitleTrackID, selectedID)
+            XCTAssertEqual(host.liveSubtitles.rendersPrimary, selectedID != nil)
+            XCTAssertTrue(host.recordedSubtitle.isEmpty)
+        }
+    }
+
+    func testDiscSelectionsOwnTheOverlayWithoutChangingRememberedPreferences() {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
+        let disc = DiscMenuPlaybackState()
+        engine.discMenu = disc
+        engine.subtitleTracks = [embeddedText(5), embeddedText(9, language: "ja")]
+        engine.audioTracks = [audio(1, language: "en"), audio(2, language: "ja")]
+        engine.currentAudioTrackID = 1
+        disc.hasSubtitleSelection = true
+        disc.subtitleTrackID = 9
+        sut.loadTrackOptions()
+        XCTAssertEqual(sut.selectedSubtitleTrackID, 9)
+        XCTAssertEqual(engine.lastSelectedSubtitleID, 9)
+        XCTAssertTrue(host.recordedSubtitle.isEmpty)
+        disc.subtitleTrackID = nil
+        sut.loadTrackOptions()
+        XCTAssertNil(sut.selectedSubtitleTrackID)
+        XCTAssertTrue(engine.lastSubtitleSelectionCleared)
+        sut.selectAudioOption(id: 2)
+        XCTAssertTrue(host.recordedAudioLanguage.isEmpty)
+        XCTAssertEqual(sut.selectedAudioTrackID, 1, "Disc controls reflect confirmed playback, not an optimistic pick")
+        sut.queueImportedAudio(language: "ja")
+        XCTAssertEqual(engine.audioSelections.count, 1, "Series memory must not override disc navigation")
+    }
+    #endif
+
     func testAudioSelectionImportAndRestorationUseHostRouting() {
         for action in 0..<3 {
             let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
@@ -81,6 +129,18 @@ final class SubtitleTrackControllerTests: XCTestCase {
             XCTAssertEqual(routedIDs, [4])
             XCTAssertEqual(engine.currentAudioTrackID, 3, "The host owns server-rendition replacement.")
         }
+    }
+
+    func testManualAudioMemoryKeepsTitleWhenRenditionSwitchRetiresRequest() {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
+        engine.audioTracks = [audio(1, language: "eng"), audio(2, language: "fra")]
+        let item = MediaItem(id: "movie", title: "Film", kind: .movie)
+        host.request = .init(item: item, streamURL: URL(string: "https://fixture.invalid/master.m3u8")!)
+        host.audioSelectionHandler = { _ in host.request = nil; return true }
+        sut.selectAudioOption(id: 2)
+        XCTAssertEqual(host.recordedAudioLanguage, ["fra"])
+        XCTAssertEqual(host.recordedAudioItems.first??.id, item.id)
+        XCTAssertTrue(sut.viewerChangedAudioThisSession)
     }
 
     func testServerBurnInKeepsSelectionWithoutClientRenderingOrTimingControls() {
@@ -516,6 +576,69 @@ final class SubtitleTrackControllerTests: XCTestCase {
 
     // MARK: - Dual (secondary) subtitle
 
+    func testProviderVersionTagsReachPrimaryAndEngineDecodedSecondaryMenus() {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
+        engine.subtitleTracks = [10, 11].map {
+            MediaTrack(id: $0, kind: .subtitle, displayTitle: "French", language: "fr",
+                       codec: "subrip", isForced: true)
+        }
+        host.request = PlaybackRequest(
+            item: MediaItem(id: "movie", title: "Movie", kind: .movie),
+            streamURL: URL(string: "https://fixture.test/movie.mkv")!,
+            subtitleTracks: ["VFF", "VFQ"].enumerated().map {
+                MediaTrack(id: $0.offset + 10, kind: .subtitle, displayTitle: "French (\($0.element))",
+                           language: "fr", codec: "subrip", isForced: true)
+            }
+        )
+        sut.loadTrackOptions()
+        for options in [host.controls.subtitleOptions, host.controls.secondarySubtitleOptions] {
+            XCTAssertEqual(options.map(\.id), [-1, 10, 11])
+            XCTAssertEqual(options.dropFirst().map(\.nativeTitle), ["French (VFF, Forced)", "French (VFQ, Forced)"])
+            XCTAssertEqual(options.filter(\.isSelected).map(\.id), [-1])
+        }
+        sut.selectSubtitleOption(id: 10)
+        sut.selectSecondarySubtitleOption(id: 11)
+        sut.loadTrackOptions()
+        XCTAssertEqual(engine.lastSelectedSubtitleID, 10)
+        XCTAssertEqual(engine.secondarySelections.last.flatMap { $0 }?.id, 11)
+        XCTAssertEqual(host.controls.subtitleOptions.filter(\.isSelected).map(\.nativeTitle), ["French (VFF, Forced)"])
+        XCTAssertEqual(host.controls.secondarySubtitleOptions.map(\.id), [-1, 11])
+        XCTAssertEqual(host.controls.secondarySubtitleOptions.filter(\.isSelected).map(\.nativeTitle), ["French (VFQ, Forced)"])
+        XCTAssertEqual(engine.subtitleTracks.map(\.displayTitle), ["French", "French"])
+    }
+
+    func testSessionReloadPreservesSecondaryUntilReplacementTracksAreReady() {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
+        let primary = embeddedText(7)
+        let secondary = embeddedText(8, language: "ja")
+        engine.subtitleTracks = [primary, secondary]
+        sut.selectSubtitleOption(id: primary.id)
+        sut.selectSecondarySubtitleOption(id: secondary.id)
+        let style = host.style
+        let secondarySelections = engine.secondarySelections.count
+        let options = host.controls.secondarySubtitleOptions
+
+        engine.isSessionReloading = true
+        engine.subtitleTracks = []
+        sut.loadTrackOptions()
+        XCTAssertEqual(sut.selectedSecondarySubtitleTrackID, secondary.id)
+        XCTAssertEqual(host.style, style)
+        XCTAssertEqual(engine.secondarySelections.count, secondarySelections)
+        XCTAssertEqual(host.controls.secondarySubtitleOptions, options)
+
+        engine.subtitleTracks = [primary, secondary]
+        engine.isSessionReloading = false
+        sut.loadTrackOptions()
+        XCTAssertEqual(sut.selectedSecondarySubtitleTrackID, secondary.id)
+        XCTAssertEqual(host.style, style)
+        XCTAssertEqual(host.controls.secondarySubtitleOptions.filter(\.isSelected).map(\.id), [secondary.id])
+
+        engine.subtitleTracks = [primary]
+        sut.loadTrackOptions()
+        XCTAssertNil(sut.selectedSecondarySubtitleTrackID)
+        XCTAssertNil(host.style.secondary)
+    }
+
     func testSelectSecondaryEnablesStylingAndLoadingStatus() {
         let (sut, host, engine) = makeSUT(engineKind: .native)   // non-dual engine → sidecar overlay
         let secondary = textSidecar(8, language: "ja")
@@ -582,6 +705,7 @@ private final class SpyTrackHost: SubtitleTrackControllerHost, SubtitleOverlayLo
     var rule = SubtitlePolicy.Rule()
 
     private(set) var recordedAudioLanguage: [String?] = []
+    private(set) var recordedAudioItems: [MediaItem?] = []
     var audioSelectionHandler: ((MediaTrack) -> Bool)?
     private(set) var recordedSubtitle: [RememberedSubtitleSelection?] = []
     private(set) var refreshDelayCalls = 0
@@ -615,7 +739,10 @@ private final class SpyTrackHost: SubtitleTrackControllerHost, SubtitleOverlayLo
     }
     func trackRememberedSubtitle(for item: MediaItem) -> RememberedSubtitleSelection? { remembered }
     func trackEffectiveSubtitleRule(for item: MediaItem) -> SubtitlePolicy.Rule { rule }
-    func trackRecordAudioSelection(language: String?) { recordedAudioLanguage.append(language) }
+    func trackRecordAudioSelection(language: String?, request: PlaybackRequest?) {
+        recordedAudioLanguage.append(language)
+        recordedAudioItems.append(request?.item)
+    }
     func trackSelectAudioTrack(_ track: MediaTrack) -> Bool {
         if let audioSelectionHandler { return audioSelectionHandler(track) }
         engine.selectAudioTrack(track)
@@ -648,6 +775,7 @@ private final class SpyTrackHost: SubtitleTrackControllerHost, SubtitleOverlayLo
 private final class SpyTrackEngine: VideoEngine {
     let displayName = "track-spy"
     var status: VideoEngineStatus = .ready
+    var isSessionReloading = false
     var isPaused = false
     var preventsDisplaySleep = false
     var currentTime: TimeInterval = 0
@@ -657,6 +785,9 @@ private final class SpyTrackEngine: VideoEngine {
     var audioTracks: [MediaTrack] = []
     var subtitleTracks: [MediaTrack] = []
     var currentAudioTrackID: Int?
+    #if canImport(UIKit)
+    var discMenu: DiscMenuPlaybackState?
+    #endif
 
     var onProgress: (@MainActor () -> Void)?
     var onFailure: (@MainActor (AppError) -> Void)?

@@ -162,6 +162,79 @@ final class SeriesTrackPreferenceStoreTests: XCTestCase {
 
     // MARK: - Persistence + isolation
 
+    func testZoomPersistsAlongsideLegacyTracksAndKeepsProfilesSeparate() throws {
+        let defaults = makeDefaults()
+        let storageKey = "com.plozz.seriesTrackPreferences"
+        defaults.set(Data(#"{"a:show":{"audioLanguage":"fr","subtitle":{"off":{}}}}"#.utf8), forKey: storageKey)
+        let store = SeriesTrackPreferenceStore(defaults: defaults)
+        XCTAssertEqual(store.preference(forKey: "a:show")?.audioLanguage, "fr")
+        XCTAssertEqual(store.preference(forKey: "a:show")?.subtitle, .off)
+        XCTAssertNil(store.preference(forKey: "a:show")?.videoZoom)
+        for zoom in [VideoZoomPreference(mode: .custom, customPercent: 117), .init(mode: .fit),
+                     .init(mode: .picture), .init(mode: .picture, pictureFitsInsideSafeArea: true)] {
+            store.setVideoZoom(zoom, forKey: "a:show")
+            let reopened = SeriesTrackPreferenceStore(defaults: defaults)
+            XCTAssertEqual(reopened.preference(forKey: "a:show"),
+                           .init(audioLanguage: "fr", subtitle: .off, videoZoom: zoom))
+            XCTAssertNil(SeriesTrackPreferenceStore(defaults: defaults, namespace: "other").preference(forKey: "a:show"))
+        }
+        store.setAudioLanguage(nil, forKey: "a:show")
+        store.setSubtitle(nil, forKey: "a:show")
+        XCTAssertEqual(store.preference(forKey: "a:show")?.videoZoom?.mode, .picture)
+    }
+
+    func testInvalidStoredZoomDoesNotEraseExistingPreferencesOnWrite() {
+        let defaults = makeDefaults()
+        let key = "com.plozz.seriesTrackPreferences"
+        let data = Data(#"{"a:show":{"audioLanguage":"fr","videoZoom":{"mode":999}}}"#.utf8)
+        defaults.set(data, forKey: key)
+        let store = SeriesTrackPreferenceStore(defaults: defaults)
+        XCTAssertNil(store.preference(forKey: "a:show"))
+        store.setVideoZoom(.init(mode: .fit), forKey: "other")
+        XCTAssertEqual(defaults.data(forKey: key), data)
+    }
+
+    func testDecodedCustomZoomIsClamped() throws {
+        for (percent, expected) in [(-20, 50), (999, 200)] {
+            let data = Data("{\"mode\":3,\"customPercent\":\(percent)}".utf8)
+            let zoom = try JSONDecoder().decode(VideoZoomPreference.self, from: data)
+            XCTAssertEqual(zoom, .init(mode: .custom, customPercent: expected))
+        }
+    }
+
+    func testLegacyAutoCropResetsToNormalAndNewSafeChoiceRoundTrips() throws {
+        let legacy = try JSONDecoder().decode(VideoZoomPreference.self, from: Data(#"{"mode":4}"#.utf8))
+        XCTAssertEqual(legacy, .onDemandDefault)
+        XCTAssertFalse(legacy.pictureFitsInsideSafeArea)
+        let safe = VideoZoomPreference(mode: .picture, pictureFitsInsideSafeArea: true)
+        let encoded = try JSONEncoder().encode(safe)
+        XCTAssertEqual(try JSONDecoder().decode(VideoZoomPreference.self, from: encoded), safe)
+    }
+
+    func testLegacyTitleMigrationOnlyResetsAutoCropAndAllowsOptingBackIn() throws {
+        let defaults = makeDefaults()
+        let key = "com.plozz.seriesTrackPreferences"
+        let store = SeriesTrackPreferenceStore(defaults: defaults)
+        for mode in VideoZoomPreference.Mode.allCases {
+            let data = Data("""
+            {"a:movie":{"audioLanguage":"fr","subtitle":{"off":{}},
+             "videoZoom":{"mode":\(mode.rawValue),"customPercent":117,"pictureFitsInsideSafeArea":true}}}
+            """.utf8)
+            defaults.set(data, forKey: key)
+            let preference = try XCTUnwrap(store.preference(forKey: "a:movie"))
+            XCTAssertEqual(preference.audioLanguage, "fr")
+            XCTAssertEqual(preference.subtitle, .off)
+            XCTAssertEqual(preference.videoZoom?.mode, mode == .picture ? .fit : mode)
+            XCTAssertEqual(preference.videoZoom?.customPercent, 117)
+            XCTAssertEqual(preference.videoZoom?.pictureFitsInsideSafeArea, true)
+            store.setVideoZoom(.init(mode: .picture), forKey: "a:movie")
+            let reopened = SeriesTrackPreferenceStore(defaults: defaults)
+            XCTAssertEqual(reopened.preference(forKey: "a:movie")?.videoZoom?.mode, .picture)
+            XCTAssertEqual(reopened.preference(forKey: "a:movie")?.audioLanguage, "fr")
+            XCTAssertEqual(reopened.preference(forKey: "a:movie")?.subtitle, .off)
+        }
+    }
+
     func testPersistsAcrossStoreInstances() {
         let defaults = makeDefaults()
         let key = SeriesTrackPreferenceKey.make(sourceAccountID: "a", seriesID: "show")

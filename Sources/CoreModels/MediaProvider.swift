@@ -20,6 +20,8 @@ public protocol MediaProvider: Sendable {
     /// Catalog/search cards may expose one external ID but omit the other
     /// namespaces needed to match a title across providers. Fetch full details
     /// before publishing those cards as complete identity-index/search evidence.
+    /// Fresh cards with a complete provider-supplied identity can opt out via
+    /// `MediaItem.catalogIdentityIsComplete`; inferred IDs alone cannot.
     var catalogIdentityRequiresEnrichment: Bool { get }
 
     /// Catalog cards omit resume positions. History discovery must supplement
@@ -32,6 +34,10 @@ public protocol MediaProvider: Sendable {
 
     // MARK: Library browsing
 
+    /// False for profile-local projections such as downloaded media, whose
+    /// libraries must not read or replace the shared server-viewer inventory.
+    var sharesLibraryInventoryAcrossProfiles: Bool { get }
+
     /// Top-level libraries/views available to the user.
     func libraries() async throws -> [MediaLibrary]
 
@@ -39,6 +45,10 @@ public protocol MediaProvider: Sendable {
     /// `Int.max` requests the complete feed; network providers must page with
     /// bounded request sizes rather than send that value as a server limit.
     func continueWatching(limit: Int) async throws -> [MediaItem]
+
+    /// The same Resume/Next Up feeds, optionally omitting extra parent-series
+    /// recency reads. Use `Int.max` when membership, rather than ordering, is needed.
+    func continueWatching(limit: Int, includeSeriesRecency: Bool) async throws -> [MediaItem]
 
     /// Recently added items across the user's libraries.
     func latest(limit: Int) async throws -> [MediaItem]
@@ -510,6 +520,7 @@ public extension MediaProvider {
     var catalogIdentityRequiresEnrichment: Bool { false }
     var catalogResumeRequiresEnrichment: Bool { false }
     var playbackInventoryRequiresEnrichment: Bool { false }
+    var sharesLibraryInventoryAcrossProfiles: Bool { true }
 
     func playbackItem(id: String) async throws -> MediaItem {
         try await item(id: id)
@@ -585,6 +596,10 @@ public extension MediaProvider {
         limit: Int, inLibraries libraryIDs: [String]?, separateNextUp: Bool
     ) async throws -> [MediaItem] {
         try await continueWatching(limit: limit, inLibraries: libraryIDs)
+    }
+
+    func continueWatching(limit: Int, includeSeriesRecency: Bool) async throws -> [MediaItem] {
+        try await continueWatching(limit: limit)
     }
 
     func homeNextUp(libraryID: String, limit: Int) async throws -> [MediaItem] { [] }

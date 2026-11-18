@@ -168,6 +168,54 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
 }
 
 public extension Array where Element == MediaSegment {
+    /// Validates and removes exact duplicates without treating separate windows
+    /// as competing reports. Never extends a skip across unmarked content.
+    func normalizedSkipMarkers(
+        duration: TimeInterval? = nil,
+        protecting postCredits: MediaSegment? = nil
+    ) -> [MediaSegment] {
+        let duration = duration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        let protected = postCredits.flatMap { segment -> MediaSegment? in
+            guard segment.start.isFinite, segment.end.isFinite,
+                  segment.start > 0, segment.end > segment.start else { return nil }
+            return segment
+        }
+        var result: [MediaSegment] = []
+        for var segment in self {
+            guard segment.isSkippable, segment.start.isFinite, segment.end.isFinite,
+                  segment.start >= 0, segment.end > segment.start else { continue }
+            if let duration { segment.end = Swift.min(segment.end, duration) }
+            guard segment.end > segment.start else { continue }
+            if segment.kind == .credits, let protected,
+               protected.start < segment.end, protected.end > segment.start {
+                if segment.start < protected.start {
+                    var before = segment
+                    before.end = protected.start
+                    result.append(before)
+                }
+                if protected.end < segment.end {
+                    var after = segment
+                    after.id += "-after-post-credits"
+                    after.start = protected.end
+                    result.append(after)
+                }
+            } else {
+                result.append(segment)
+            }
+        }
+        let sorted = result.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end < $1.end }
+            if $0.kind != $1.kind { return $0.kind.rawValue < $1.kind.rawValue }
+            return $0.id < $1.id
+        }
+        return sorted.reduce(into: []) { unique, segment in
+            if let previous = unique.last, previous.kind == segment.kind,
+               previous.start == segment.start, previous.end == segment.end { return }
+            unique.append(segment)
+        }
+    }
+
     /// This list with `fallback`'s segments added for every kind this list has
     /// none of. Used to layer community markers (IntroDB / TheIntroDB) under the
     /// server's own: the server wins per kind, the fallback fills the gaps.

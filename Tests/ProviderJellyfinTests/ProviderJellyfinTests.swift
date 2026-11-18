@@ -128,10 +128,10 @@ final class JellyfinProviderMappingTests: XCTestCase {
             XCTAssertEqual(track.language, "fr")
             XCTAssertEqual(track.displayTitle, "French DTS 5.1 VFQ")
             XCTAssertEqual(
-                TrackLabeling.audioLabel(displayTitle: track.displayTitle, language: track.language,
+                TrackLabeling.audioLabel(displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language,
                                         codec: track.codec, channels: track.channels, trackID: track.id,
                                         locale: Locale(identifier: "fr")),
-                TrackLabel(base: .content("Français"), qualifiers: [.audioVersion("VFQ"), .format("DTS 5.1")])
+                TrackLabel(base: .content("Français"), qualifiers: [.version("VFQ"), .format("DTS 5.1")])
             )
         }
     }
@@ -151,6 +151,58 @@ final class JellyfinProviderMappingTests: XCTestCase {
         let plain = try JSONDecoder.plozz.decode(MediaStreamDto.self, from: Data(
             #"{"Index":1,"Type":"Subtitle","Codec":"subrip","Language":"hin","Title":"Hindi"}"#.utf8))
         XCTAssertFalse(provider.map(stream: plain).isHearingImpaired)
+    }
+
+    func testContainerNamesSurviveJellyfinAndEmbyMappingPaths() throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            var session = makeSession()
+            session.server.provider = kind
+            let provider = JellyfinProvider(session: session, http: StubHTTPClient())
+            for (type, title) in [("Audio", "Director Commentary"), ("Subtitle", "Signs & Songs")] {
+                let json = """
+                {"Index":3,"Type":"\(type)","Codec":"\(type == "Audio" ? "aac" : "subrip")",
+                 "Language":"eng","DisplayTitle":"English","Title":"\(title)"}
+                """
+                let dto = try JSONDecoder.plozz.decode(MediaStreamDto.self, from: Data(json.utf8))
+                XCTAssertEqual(provider.map(stream: dto).sourceTitle, title)
+                if type == "Subtitle" {
+                    let track = try provider.map(subtitleStream: dto, itemID: "movie", sourceID: "file")
+                    XCTAssertEqual(track.sourceTitle, title)
+                    XCTAssertNotNil(track.deliverySource)
+                }
+            }
+        }
+    }
+
+    func testSubtitleVersionsSurviveBothJellyfinAndEmbyMappingPaths() throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            var session = makeSession()
+            session.server.provider = kind
+            let provider = JellyfinProvider(session: session, http: StubHTTPClient())
+            for version in ["VFF", "VFQ"] {
+                let json = """
+                {"Index":3,"Type":"Subtitle","Codec":"subrip","Language":"fr","DisplayTitle":"French (Forced)",
+                 "Title":"French (\(version))","IsForced":true,"IsExternal":true}
+                """
+                let dto = try JSONDecoder.plozz.decode(MediaStreamDto.self, from: Data(json.utf8))
+                let sidecar = try provider.map(subtitleStream: dto, itemID: "movie", sourceID: "file")
+                XCTAssertNotNil(sidecar.deliverySource)
+                XCTAssertTrue(sidecar.isExternal)
+                for track in [provider.map(stream: dto), sidecar] {
+                    XCTAssertEqual(track.id, 3)
+                    XCTAssertEqual(track.language, "fr")
+                    XCTAssertTrue(track.isForced)
+                    XCTAssertEqual(
+                        TrackLabeling.subtitleLabel(
+                            displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language, codec: track.codec,
+                            isForced: track.isForced, isImageBased: track.isImageBasedSubtitle,
+                            trackID: track.id, locale: Locale(identifier: "en")
+                        ),
+                        TrackLabel(base: .content("French"), qualifiers: [.version(version), .forced])
+                    )
+                }
+            }
+        }
     }
 
     func testEpisodeCountsUseUnplayedCountNotSeriesChildCount() async throws {
@@ -350,6 +402,35 @@ final class JellyfinProviderMappingTests: XCTestCase {
         let query = try XCTUnwrap(stub.queryItems(forPathSuffix: "/Shows/NextUp"))
         XCTAssertEqual(query.first(where: { $0.name == "EnableResumable" })?.value, "false",
                        "NextUp must exclude resumable items so it complements, not duplicates, Resume")
+    }
+
+    func testNextUpPrefixesAndUnlimitedBrowsingPreserveAllBoundedPages() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            for limit in [100, 120, 235, Int.max] {
+                let expectedCount = min(limit, 300)
+                let stub = StubHTTPClient()
+                let pages = stride(from: 0, to: expectedCount, by: 100).map { start in
+                    let items = (start..<min(start + 100, expectedCount)).map {
+                        #"{"Id":"next-\#($0)","Type":"Episode"}"#
+                    }.joined(separator: ",")
+                    return #"{"Items":[\#(items)],"TotalRecordCount":300}"#
+                }
+                stub.stubSequence(pathSuffix: "/Shows/NextUp", jsons: pages)
+                var session = makeSession()
+                session.server.provider = kind
+                let provider = JellyfinProvider(session: session, http: stub)
+                let items = try await provider.homeNextUp(libraryID: "shows", limit: limit)
+                XCTAssertEqual(items.map(\.id), (0..<expectedCount).map { "next-\($0)" })
+                XCTAssertEqual(stub.sentPaths.count, pages.count)
+                XCTAssertTrue(stub.sentQueryItems.allSatisfy {
+                    $0.first { $0.name == "ParentId" }?.value == "shows"
+                })
+                XCTAssertEqual(
+                    stub.sentQueryItems.compactMap { $0.first { $0.name == "Limit" }?.value },
+                    stride(from: 0, to: expectedCount, by: 100).map { String(min(100, limit - $0)) }
+                )
+            }
+        }
     }
 
     func testContinueWatchingDedupesItemPresentInBothResumeAndNextUp() async throws {
@@ -671,6 +752,24 @@ final class JellyfinProviderMappingTests: XCTestCase {
         XCTAssertEqual(episodeQueries.first?.first { $0.name == "Limit" }?.value, "1")
     }
 
+    func testHistoryMembershipCanSkipRecencyEnrichmentWithoutDroppingNextUp() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: """
+        {"Items":[{"Id":"resumed","Type":"Episode","SeriesId":"first-show",
+          "UserData":{"PlaybackPositionTicks":1200000000}}],"TotalRecordCount":1}
+        """)
+        stub.stub(pathSuffix: "/Shows/NextUp", json: """
+        {"Items":[{"Id":"next","Type":"Episode","SeriesId":"returning-show"}],"TotalRecordCount":1}
+        """)
+        let provider: any MediaProvider = JellyfinProvider(session: makeSession(), http: stub)
+
+        let items = try await provider.continueWatching(limit: .max, includeSeriesRecency: false)
+
+        XCTAssertEqual(Set(items.map(\.id)), ["resumed", "next"])
+        XCTAssertEqual(Set(items.compactMap(\.seriesID)), ["first-show", "returning-show"])
+        XCTAssertEqual(stub.sentPaths.count, 2, "Membership must not fetch parent dates or latest played episodes")
+    }
+
     func testOlderNextUpSeriesMovesBackWithoutBeingRemoved() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items/Resume", json: #"{"Items":[],"TotalRecordCount":0}"#)
@@ -811,14 +910,55 @@ final class JellyfinProviderMappingTests: XCTestCase {
         XCTAssertTrue(items[0].artworkSelections.isEmpty)
     }
 
-    private func backdropItems(tags: String) async throws -> [MediaItem] {
+    func testMovieAndSeriesThumbHasItsOwnLandscapePlacementOnJellyfinAndEmby() async throws {
+        for providerKind in [ProviderKind.jellyfin, .emby] {
+            for type in ["Movie", "Series"] {
+                for tags in ["[]", #"["tagA"]"#, #"["tagA","tagB"]"#] {
+                    let items = try await backdropItems(
+                        tags: tags, type: type, thumb: true, providerKind: providerKind
+                    )
+                    let item = try XCTUnwrap(items.first)
+                    guard case .remote(let thumb)? = item.artworkReferences(for: .landscapeCard).first else {
+                        return XCTFail("Expected advertised native Thumb for \(providerKind) \(type)")
+                    }
+                    XCTAssertEqual(thumb.path, "/Items/m1/Images/Thumb")
+                    XCTAssertTrue(thumb.absoluteString.contains("maxWidth=3840"))
+                    if tags.contains("tagB") {
+                        guard case .remote(let home)? = item.artworkReferences(for: .homeHero).first else {
+                            return XCTFail("Expected the existing first backdrop")
+                        }
+                        XCTAssertEqual(home.path, "/Items/m1/Images/Backdrop")
+                        XCTAssertTrue(home.absoluteString.contains("tag=tagA"))
+                        guard case .remote(let detail)? = item.artworkReferences(for: .detailBackdrop).first else {
+                            return XCTFail("Expected the existing second backdrop")
+                        }
+                        XCTAssertEqual(detail.path, "/Items/m1/Images/Backdrop/1")
+                    }
+                }
+            }
+        }
+    }
+
+    func testEpisodeThumbDoesNotBecomeSeriesLandscapeKeyArt() async throws {
+        let items = try await backdropItems(tags: "[]", type: "Episode", thumb: true)
+        XCTAssertTrue(items[0].artworkReferences(for: .landscapeCard).isEmpty)
+    }
+
+    private func backdropItems(
+        tags: String, type: String = "Movie", thumb: Bool = false, providerKind: ProviderKind = .jellyfin
+    ) async throws -> [MediaItem] {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items", json: """
         {"Items":[
-          {"Id":"m1","Name":"Alien","Type":"Movie","BackdropImageTags":\(tags)}
+          {"Id":"m1","Name":"Alien","Type":"\(type)","BackdropImageTags":\(tags),
+           "ImageTags":\(thumb ? #"{"Thumb":"thumb-tag"}"# : "{}")}
         ],"TotalRecordCount":1}
         """)
-        let provider = JellyfinProvider(session: makeSession(), http: stub)
+        let session = UserSession(
+            server: .init(id: "s", name: "Home", baseURL: URL(string: "http://host:8096")!, provider: providerKind),
+            userID: "u1", userName: "Alice", deviceID: "d1", accessToken: "TOKEN"
+        )
+        let provider = JellyfinProvider(session: session, http: stub)
         return try await provider.items(
             in: "lib1",
             kind: .movie,
@@ -1580,6 +1720,31 @@ final class JellyfinQuickConnectClientTests: XCTestCase {
 }
 
 final class JellyfinRemoteSubtitleTests: XCTestCase {
+    func testSubtitleDiscoveryUsesExactSourceForBothProvidersWithoutPlaybackInfo() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/Users/u1/Items/i1", json: """
+            {"Id":"i1","Type":"Movie","MediaSources":[
+              {"Id":"first","MediaStreams":[{"Index":3,"Type":"Subtitle","Codec":"srt","IsExternal":true}]},
+              {"Id":"selected","MediaStreams":[{"Index":8,"Type":"Subtitle","Codec":"subrip","Language":"fr","IsExternal":true,"IsForced":true,"IsHearingImpaired":true}]}
+            ]}
+            """)
+            let provider = JellyfinProvider(session: makeSession(provider: kind), http: stub)
+            let tracks = try await provider.subtitleTracks(context: .init(itemID: "i1", mediaSourceID: "selected"))
+            XCTAssertEqual(tracks.map(\.id), [8])
+            XCTAssertTrue(tracks[0].isForced)
+            XCTAssertTrue(tracks[0].isHearingImpaired)
+            guard case .authenticatedHTTP(let source)? = tracks[0].deliverySource else { return XCTFail("Missing delivery") }
+            XCTAssertEqual(source.mediaSourceID, "selected")
+            XCTAssertEqual(source.formatHint.container, "srt")
+            do {
+                _ = try await provider.subtitleTracks(context: .init(itemID: "i1", mediaSourceID: "missing"))
+                XCTFail("Never fall back to another source")
+            } catch { XCTAssertEqual(error as? AppError, .notFound) }
+            XCTAssertTrue(stub.sentPaths.allSatisfy { $0.hasSuffix("/Users/u1/Items/i1") })
+        }
+    }
+
     private func makeSession(provider: ProviderKind = .jellyfin) -> UserSession {
         UserSession(
             server: MediaServer(id: "s", name: "Home", baseURL: URL(string: "http://host:8096")!, provider: provider),

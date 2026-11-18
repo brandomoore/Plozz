@@ -518,9 +518,10 @@ public struct MediaPlaybackIndicatorState: Equatable, Sendable {
     public init(_ item: MediaItem) {
         kind = item.kind
         isPlayed = item.isPlayed
-        playedPercentage = item.playedPercentage ?? item.resumeProgressFraction
+        let showsPlaybackProgress = item.hasVisiblePlaybackProgress
+        playedPercentage = showsPlaybackProgress ? item.playedPercentage ?? item.resumeProgressFraction : nil
         unwatchedEpisodeCount = item.unwatchedEpisodeCount
-        resumePosition = item.resumePosition
+        resumePosition = showsPlaybackProgress ? item.resumePosition : nil
         // Same shared classifier the corner mark and the detail page use, so a card
         // and its page can't disagree. Cards judge the item alone (no index work in
         // a card path), which is exactly `identitySources: []`.
@@ -581,13 +582,9 @@ enum MediaPlaybackIndicatorPresentation {
 
     /// Whether this card should wear a progress bar.
     ///
-    /// A saved resume point is progress however small it looks as a fraction. The
-    /// old test asked only whether the percentage cleared one percent, which on a
-    /// feature-length film is the first minute — so starting something, or
-    /// restarting something already seen, produced a card indistinguishable from an
-    /// untouched one, while the server's own app showed a bar. The place the viewer
-    /// left off is the single most useful thing a card can say, and it does not
-    /// become less true for being early.
+    /// The snapshot already suppresses positions below the shared display
+    /// threshold. An admitted position can still be less than one percent of a
+    /// long title, so a separate percentage floor must not hide that progress.
     ///
     /// The upper bound stays: something watched through has no resume point of its
     /// own and reports a full percentage, and it should wear the watched mark

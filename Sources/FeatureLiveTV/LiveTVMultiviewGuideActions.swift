@@ -63,6 +63,7 @@ struct LiveTVMultiviewGuideExit: ViewModifier {
 struct LiveTVMultiviewFavoritesView: View {
     let model: LiveTVPrototypeModel
     let open: (LiveTVMultiviewFavorite) -> Void
+    var isPortrait = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.themePalette) private var palette
     @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 30
@@ -143,7 +144,7 @@ struct LiveTVMultiviewFavoritesView: View {
                             Text(favorite.name).lineLimit(2)
                             HStack {
                                 Text("\(favorite.channelIDs.count) channels")
-                                Text(favorite.layout.title)
+                                Text(favorite.layout.title(count: favorite.channelIDs.count, isPortrait: isPortrait))
                             }
                             #if os(tvOS)
                             .font(.system(size: detailSize))

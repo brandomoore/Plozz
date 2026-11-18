@@ -53,6 +53,7 @@ public final class SyncSetupService {
     private let isConfigured: @MainActor () -> Bool
 
     public private(set) var isEnabled: Bool
+    public private(set) var needsOnboardingChoice: Bool
     #if canImport(OSLog)
     private static let logger = Logger(subsystem: "com.plozz.app", category: "sync")
     #endif
@@ -76,6 +77,7 @@ public final class SyncSetupService {
         self.configProvider = configProvider
         self.secretsProvider = secretsProvider
         self.isEnabled = flag.isEnabled
+        self.needsOnboardingChoice = flag.needsOnboardingChoice
     }
 
     // MARK: Opt-in
@@ -100,9 +102,11 @@ public final class SyncSetupService {
     /// device is configured, it publishes a presence beacon so other devices can
     /// offer to continue here.
     public func setEnabled(_ on: Bool) {
+        let wasEnabled = isEnabled
         var f = flag; f.isEnabled = on
         isEnabled = on
-        if on { publishPresence() } else { beaconStore.clear() }
+        needsOnboardingChoice = false
+        if on { publishPresence() } else if wasEnabled { beaconStore.clear() }
     }
 
     // MARK: Presence beacon
@@ -110,7 +114,7 @@ public final class SyncSetupService {
     /// Publish a NON-SECRET beacon reflecting the current config, so a fresh
     /// device on the same Apple ID can offer "bring your setup here".
     public func publishPresence() {
-        guard isEnabled else { return }
+        guard isEnabled, !OfflineMode.shared.isEnabled else { return }
         let cfg: LocalConfig
         do {
             cfg = try configProvider()

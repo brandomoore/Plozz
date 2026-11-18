@@ -17,6 +17,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     /// Plozz scans the files itself and synthesises everything a first-class
     /// backend would hand us. See docs/media-share-proposal.md.
     case mediaShare
+    case subsonic
 
     public var displayName: String {  // l10n:content — brand/format name (Jellyfin/Emby/Plex), never translated; "Media Share" is grouped in for a uniform type
         switch self {
@@ -24,6 +25,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
         case .emby: return "Emby"
         case .plex: return "Plex"
         case .silo: return "Silo"
+        case .subsonic: return "Navidrome (Subsonic)"
         case .iptv: return "IPTV"
         case .mediaShare: return "Media Share"
         }
@@ -44,7 +46,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     /// beats a richer one that buffers.
     public var metadataRichnessRank: Int {
         switch self {
-        case .jellyfin, .emby, .plex, .silo: return 1
+        case .jellyfin, .emby, .plex, .silo, .subsonic: return 1
         case .mediaShare, .iptv: return 0
         }
     }
@@ -57,7 +59,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
 
     public var supportsAccountReauthentication: Bool {
         switch self {
-        case .jellyfin, .emby, .plex, .silo: true
+        case .jellyfin, .emby, .plex, .silo, .subsonic: true
         case .iptv, .mediaShare: false
         }
     }
@@ -84,7 +86,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     ///   re-resolved.
     public var playbackInfoIsIdempotent: Bool {
         switch self {
-        case .plex, .mediaShare: return true
+        case .plex, .mediaShare, .subsonic: return true
         case .jellyfin, .emby, .silo, .iptv: return false
         }
     }

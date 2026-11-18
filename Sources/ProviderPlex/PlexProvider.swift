@@ -7,7 +7,7 @@ import CoreNetworking
 /// Holds an authenticated `PlexClient` and maps Plex `Metadata`/`Directory`
 /// onto the provider-agnostic `CoreModels` types. Feature modules depend only on
 /// `MediaProvider`; this is the single place Plex specifics live.
-public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
+public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
     public let kind: ProviderKind = .plex
     public let session: UserSession
     public let accountID: String
@@ -657,6 +657,24 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         let t = (title ?? "").lowercased()
         let titlePhrases = ["continue watching", "keep watching", "on deck", "recently added"]
         return titlePhrases.contains { t.contains($0) }
+    }
+
+    public func libraryItems(ids: [String]) async throws -> [MediaItem] {
+        try Task.checkCancellation()
+        let requested = Set(ids)
+        guard !requested.isEmpty else { return [] }
+        guard requested.count <= 50,
+              requested.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy { (48...57).contains($0) } })
+        else { throw AppError.invalidResponse }
+        let metadata = try await client.metadata(ratingKeys: requested.sorted())
+        try Task.checkCancellation()
+        var seen = Set<String>()
+        for record in metadata {
+            guard let id = record.ratingKey, requested.contains(id), seen.insert(id).inserted else {
+                throw AppError.invalidResponse
+            }
+        }
+        return await stampExtras(metadata.map { map(metadata: $0) })
     }
 
     public func item(id: String) async throws -> MediaItem {
@@ -1989,13 +2007,25 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
     /// from a single `metadata` fetch — no transcode session. Used to observe a
     /// just-downloaded subtitle so it can be hot-loaded into the running player.
     public func subtitleTracks(forItemID itemID: String) async throws -> [MediaTrack] {
-        let detail = try await client.metadata(ratingKey: itemID)
-        let media = detail.Media?.first
+        try await subtitleTracks(context: .init(itemID: itemID))
+    }
+
+    public func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        let detail = try await client.metadata(ratingKey: context.itemID)
+        let media: PlexMedia?
+        if let sourceID = context.mediaSourceID {
+            guard let selected = detail.Media?.first(where: { $0.id.map(String.init) == sourceID }) else {
+                throw AppError.notFound
+            }
+            media = selected
+        } else {
+            media = detail.Media?.first
+        }
         let streams = media?.Part?.first?.Stream ?? []
         return try streams.filter { $0.streamType == 3 }.map {
             try map(
                 stream: $0,
-                itemID: itemID,
+                itemID: context.itemID,
                 mediaSourceID: media?.id.map(String.init)
             )
         }
@@ -2726,9 +2756,10 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
         return MediaTrack(
             id: dto.index ?? dto.id ?? 0,
             kind: isSubtitle ? .subtitle : .audio,
-            displayTitle: isSubtitle ? title : TrackLabeling.audioDisplayTitle(
+            displayTitle: TrackLabeling.trackDisplayTitle(
                 title, sourceTitles: [dto.title, dto.displayTitle]
             ),
+            sourceTitle: dto.title,
             language: language,
             codec: dto.codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(
@@ -2741,6 +2772,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding, Ser
                 || TrackLabeling.isHearingImpaired(dto.title)
                 || TrackLabeling.isHearingImpaired(dto.extendedDisplayTitle)
                 || TrackLabeling.isHearingImpaired(dto.displayTitle),
+            isVisualImpaired: !isSubtitle && dto.visualImpaired == true,
             deliverySource: deliverySource,
             isImageBasedSubtitle: isSubtitle && !isTextSubtitleCodec(dto.codec),
             isExternal: isSubtitle && dto.key != nil

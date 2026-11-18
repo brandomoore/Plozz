@@ -2,6 +2,53 @@ import XCTest
 @testable import CoreModels
 
 final class MediaSegmentTests: XCTestCase {
+    func testNormalizationPreservesSeparateCreditsAndCommercialBreaks() {
+        let segments: [MediaSegment] = [
+            .init(id: "credits-a", kind: .credits, start: 100, end: 200),
+            .init(id: "duplicate", kind: .credits, start: 100, end: 200),
+            .init(id: "credits-b", kind: .credits, start: 250, end: 300),
+            .init(id: "ad-a", kind: .commercial, start: 20, end: 30),
+            .init(id: "ad-b", kind: .commercial, start: 50, end: 60)
+        ]
+        let normalized = segments.normalizedSkipMarkers(duration: 310)
+        XCTAssertEqual(normalized.map(\.id), ["ad-a", "ad-b", "credits-a", "credits-b"])
+        XCTAssertNil(normalized.activeSkippable(at: 225))
+        XCTAssertNil(normalized.activeSkippable(at: 305), "Even a short unmarked tail remains content.")
+        XCTAssertEqual(normalized.last?.end, 300, "Never extend credits to EOF.")
+    }
+
+    func testNormalizationDoesNotInventAWindowFromOverlappingReports() {
+        let segments: [MediaSegment] = [
+            .init(id: "one", kind: .credits, start: 100, end: 200),
+            .init(id: "two", kind: .credits, start: 120, end: 180)
+        ]
+        XCTAssertEqual(segments.normalizedSkipMarkers(), segments)
+    }
+
+    func testNormalizationRejectsInvalidRangesAndBoundsSkipToDuration() {
+        let normalized: [MediaSegment] = [
+            .init(kind: .intro, start: -.infinity, end: 30),
+            .init(kind: .intro, start: 0, end: .nan),
+            .init(kind: .intro, start: -1, end: 20),
+            .init(kind: .intro, start: 20, end: 10),
+            .init(kind: .credits, start: 110, end: 120),
+            .init(id: "valid", kind: .credits, start: 90, end: 110)
+        ].normalizedSkipMarkers(duration: 100)
+        XCTAssertEqual(normalized, [.init(id: "valid", kind: .credits, start: 90, end: 100)])
+    }
+
+    func testExplicitSceneSplitsOnlyItsOwnOverlappingCredits() {
+        let credits = MediaSegment(id: "credits", kind: .credits, start: 100, end: 300)
+        let scene = MediaSegment(kind: .unknown, start: 200, end: 250)
+        let normalized = [credits].normalizedSkipMarkers(protecting: scene)
+        XCTAssertEqual(normalized.map(\.start), [100, 250])
+        XCTAssertEqual(normalized.map(\.end), [200, 300])
+        XCTAssertNotEqual(normalized[0].id, normalized[1].id)
+        XCTAssertNil(normalized.activeSkippable(at: 225))
+        XCTAssertEqual([credits].normalizedSkipMarkers(protecting:
+            .init(kind: .unknown, start: 0, end: 250)), [credits])
+    }
+
     func testEveryKnownKindIsSkippable() {
         for kind in MediaSegment.Kind.skippable {
             XCTAssertTrue(MediaSegment(kind: kind, start: 0, end: 5).isSkippable, "\(kind)")

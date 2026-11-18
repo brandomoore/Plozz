@@ -23,6 +23,12 @@ public struct ProportionalWrapLayout: Layout {
     /// Below this, the preferred share is abandoned in favour of fewer columns.
     public var minimumCellWidth: CGFloat
     public var spacing: CGFloat
+    public var rowSpacing: CGFloat?
+    /// Let a trailing information/action tile complete the final row.
+    public var lastSubviewFillsRemainingColumns: Bool
+    /// Optional reading-width limit for a trailing prose tile.
+    public var maximumLastSubviewSpan: Int?
+    public var fillsProposedHeight: Bool
     /// A floor on the layout's own height, so it can be made to match a sibling
     /// column without depending on the container stretching it. Rows divide any
     /// surplus between them, so the tiles grow rather than leaving a gap.
@@ -37,12 +43,20 @@ public struct ProportionalWrapLayout: Layout {
         preferredColumns: Int,
         minimumCellWidth: CGFloat,
         spacing: CGFloat,
-        minimumHeight: CGFloat = 0
+        minimumHeight: CGFloat = 0,
+        rowSpacing: CGFloat? = nil,
+        lastSubviewFillsRemainingColumns: Bool = false,
+        maximumLastSubviewSpan: Int? = nil,
+        fillsProposedHeight: Bool = false
     ) {
         self.preferredColumns = max(1, preferredColumns)
         self.minimumCellWidth = max(1, minimumCellWidth)
         self.spacing = max(0, spacing)
         self.minimumHeight = max(0, minimumHeight)
+        self.rowSpacing = rowSpacing.map { max(0, $0) }
+        self.lastSubviewFillsRemainingColumns = lastSubviewFillsRemainingColumns
+        self.maximumLastSubviewSpan = maximumLastSubviewSpan.map { max(1, $0) }
+        self.fillsProposedHeight = fillsProposedHeight
     }
 
     /// Columns that fit, and the width each one gets.
@@ -69,17 +83,12 @@ public struct ProportionalWrapLayout: Layout {
         guard !subviews.isEmpty else { return .zero }
         let width = proposal.width ?? minimumCellWidth * CGFloat(preferredColumns)
         let (columns, cellWidth) = metrics(forWidth: width)
-        let rows = Int(ceil(Double(subviews.count) / Double(columns)))
-        // Uniform row height: tiles in a row should agree, and the tallest is the
-        // only height that fits all of them.
-        let rowHeight = subviews
-            .map { $0.sizeThatFits(.init(width: cellWidth, height: nil)).height }
-            .max() ?? 0
-        let natural = rowHeight * CGFloat(rows) + spacing * CGFloat(max(0, rows - 1))
-        // The height is ours to report, and it ignores the proposal entirely: the
-        // caller measures this value to size the column beside it, so growing into
-        // whatever was proposed would feed that measurement back into itself.
-        return CGSize(width: width, height: max(natural, minimumHeight))
+        let heights = rowHeights(subviews, columns: columns, cellWidth: cellWidth)
+        let natural = heights.reduce(0, +) + (rowSpacing ?? spacing) * CGFloat(max(0, heights.count - 1))
+        // Natural-size probes stay intrinsic; only opt-in layouts fill an
+        // explicitly allocated height, without geometry-preference feedback.
+        let allocatedHeight = fillsProposedHeight ? proposal.height ?? 0 : 0
+        return CGSize(width: width, height: max(natural, minimumHeight, allocatedHeight))
     }
 
     public func placeSubviews(
@@ -90,30 +99,42 @@ public struct ProportionalWrapLayout: Layout {
     ) {
         guard !subviews.isEmpty else { return }
         let (columns, cellWidth) = metrics(forWidth: bounds.width)
-        let rows = Int(ceil(Double(subviews.count) / Double(columns)))
-        let naturalRowHeight = subviews
-            .map { $0.sizeThatFits(.init(width: cellWidth, height: nil)).height }
-            .max() ?? 0
-        // Grow rows to fill the height on offer. Side by side with About the row
-        // is as tall as the taller of the two, and tiles that kept their natural
-        // height left a gap under them; sharing the surplus keeps the two columns
-        // ending on the same line however many ratings there are.
-        let available = bounds.height - spacing * CGFloat(max(0, rows - 1))
-        let rowHeight = rows > 0
-            ? max(naturalRowHeight, available / CGFloat(rows))
-            : naturalRowHeight
+        let heights = rowHeights(subviews, columns: columns, cellWidth: cellWidth)
+        let gap = rowSpacing ?? spacing
+        let natural = heights.reduce(0, +) + gap * CGFloat(max(0, heights.count - 1))
+        let surplus = max(0, bounds.height - natural) / CGFloat(heights.count)
+        var rowY = bounds.minY
         for (index, subview) in subviews.enumerated() {
             let column = index % columns
             let row = index / columns
+            if column == 0, row > 0 { rowY += heights[row - 1] + surplus + gap }
+            let rowHeight = heights[row] + surplus
+            let width = itemWidth(at: index, count: subviews.count, columns: columns, cellWidth: cellWidth)
             let origin = CGPoint(
                 x: bounds.minX + CGFloat(column) * (cellWidth + spacing),
-                y: bounds.minY + CGFloat(row) * (rowHeight + spacing)
+                y: rowY
             )
             subview.place(
                 at: origin,
-                proposal: ProposedViewSize(width: cellWidth, height: rowHeight)
+                proposal: ProposedViewSize(width: width, height: rowHeight)
             )
         }
+    }
+
+    private func rowHeights(_ subviews: Subviews, columns: Int, cellWidth: CGFloat) -> [CGFloat] {
+        var heights = Array(repeating: CGFloat.zero, count: (subviews.count + columns - 1) / columns)
+        for (index, subview) in subviews.enumerated() {
+            let width = itemWidth(at: index, count: subviews.count, columns: columns, cellWidth: cellWidth)
+            let height = subview.sizeThatFits(.init(width: width, height: nil)).height
+            heights[index / columns] = max(heights[index / columns], height)
+        }
+        return heights
+    }
+
+    private func itemWidth(at index: Int, count: Int, columns: Int, cellWidth: CGFloat) -> CGFloat {
+        let span = lastSubviewFillsRemainingColumns && index == count - 1
+            ? min(columns - index % columns, maximumLastSubviewSpan ?? columns) : 1
+        return CGFloat(span) * cellWidth + CGFloat(span - 1) * spacing
     }
 }
 #endif

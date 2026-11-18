@@ -1,5 +1,22 @@
 # AppShell
 
+Mobile Downloads, Discover, and Music use a large leading title beside their
+circular page actions. This single header row scrolls with the content. More
+navigation and the regular-width sidebar toggle retain their native bar.
+Profiles, the Downloads gear and Discover filter share
+[CoreUI's page-action geometry](../CoreUI/README.md). Header owners do not add
+separate page-specific top or horizontal padding.
+
+Search uses the same header and action geometry, including its editing Cancel
+button. Its field, section headings, and artwork share the header's horizontal
+inset. The title still collapses while searching, and results scroll behind the
+transparent field header without replacing the text field.
+
+On iOS, tapping the selected navigation item returns the current page's vertical
+scroller to the top, including with the opaque tab bar. Switching destinations
+preserves their scroll positions. Horizontal media rows remain untouched, Settings
+remains an action, and native navigation/delegate handling is preserved.
+
 The composition root. Wires every other module into a single running app
 and owns the top-level navigation, profile selection, and provider
 registry.
@@ -37,10 +54,71 @@ registry.
 - `PlayerPresentation` handles Back only while preparing the initial playback
   version. Once it creates the player model, it removes that handler so the
   player's menus, controls, and video surface own their normal Back sequence.
+- `PlaybackPresentationHost` serializes shell playback requests. A warm deep
+  link dismisses the outgoing player before presenting the latest request or
+  resume dialog. Dismissal cannot clear a newer queued request, and repeated
+  links to the same title get a fresh presentation identity. Resume preferences,
+  account resolution and profile authorization still apply. Request producers
+  clear the competing play/resume binding synchronously, so coalesced updates
+  preserve the latest intent rather than inferring its order during rendering.
+- `ShareLocationList` recycles native folder rows. Viewport-height and edge-fade
+  updates invalidate only its container, not the hosted row content. Rows rebuild
+  for focus, press, or environment changes, not repeated identical UIKit state.
 - `AppInfo` — version / build / display-name helpers read from
   `Info.plist`.
 
 ## Invariants
+
+- **Account setup stays above its originating Settings page.** Sidebar Settings
+  uses a native full-screen cover, which owns the account-setup overlay while
+  presented. The root relinquishes that overlay until the cover closes; there
+  must not be a second hidden chooser or disabled Sources page covering it.
+  Cancel returns to the retained Sources or Libraries page in every navigation style.
+
+- **First-run iCloud opt-in shows restoration, not an empty setup page.**
+  Both shells use `InitialSetupRestoration` and `ICloudRestorationView` until
+  the initial configuration, provider credentials, Live TV sources and queued
+  provider sign-in attempts finish. Watchlist/media state, tracker checks,
+  publication and inventory reconciliation follow in the background. A scoped
+  initial fetch never confirms the unfetched channels or permits publication.
+  Progress appears after 250 ms, without a minimum display time. Healthy
+  restoration has no action button. Only after 60 seconds without observable
+  progress does it explain the delay and offer Set up manually as a secondary
+  recovery action. Cloud fetch batches/stages and provider sign-in attempts
+  reset that inactivity window, even when the displayed activity is unchanged.
+  Resumed progress hides the recovery action again. This is a conservative
+  inactivity fallback, not proof of a hang; CloudKit exposes no byte-level
+  transfer progress here. Failures offer primary Retry and secondary manual setup.
+  One short detail names the actual iCloud fetch/apply work or active server
+  sign-in. Concurrent zone fetches keep the current detail until that work
+  finishes; there is no timed checklist, percentage, or estimated completion.
+  Live TV restoration transfers source settings and imported playlist files,
+  not channel indexing or programme-guide downloads. Those remain owned by
+  the presented Live TV runtime rather than the onboarding gate.
+  Manual setup persists a temporary automatic-sync pause without changing
+  consent, drains restoration before revealing setup, and resumes only after
+  explicit manual completion for the authorized profile (including after a
+  relaunch). Partially restored profiles review Libraries in the existing setup
+  flow without resetting their saved preferences; already-restored readiness
+  alone cannot resume sync.
+  An interrupted first restore resumes after relaunch. Other ordinary launches
+  and Settings toggles do not show this interstitial.
+  A finished attempt does not assert every server signed in or another device
+  received changes; existing per-server manual setup remains available.
+
+- **Each root owns content-refresh coordination.** `RootView` and
+  `PlozziOSRootView` inject `ContentRefreshCoordinator`, reset it on profile
+  changes, and mount
+  `ContentRefreshLifecycleReader`; app shells do not decide refresh timing.
+  Home/detail views register their visible surface and perform the typed action.
+  Follow [state management](../../docs/state-management.md).
+
+- **TV guide progress stays with setup and its source.** Playlist setup reserves
+  inline space above Continue; leaving setup never cancels guide preparation.
+  Settings shows progress and the resulting status beside the playlist and in
+  its details, without a persistent TV overlay. iPhone/iPad retain their toast.
+  Live-only IPTV profiles default to Live TV, including when discovery is
+  configured; actual movie/show libraries retain the normal Home default.
 
 - **Discover is optional and adult-profile-only.** Every navigation style uses
   the shared navigation policy: Seerr configuration enables Discover by default,
@@ -85,6 +163,28 @@ registry.
   presentation fence and native content-focus request as selecting a rail
   destination, rather than relying on automatic focus after the overlay disappears.
 
+- **Pinned navigation can enter pages without media.** Live TV setup cards and
+  Settings categories remain reachable by Select and Right. The page has its own
+  native focus section so SwiftUI keeps its controls discoverable while the rail
+  owns focus, including scroll-contained controls. A declared entry region awaiting
+  native layout keeps its render handoff for explicit navigation as well as startup; actual
+  data-loading regions wait for their existing readiness notification.
+  `EmptyPinnedNavigationTests` covers entry, return, cold startup, and retained
+  Live TV while switching back to Settings and empty Home.
+
+- **Live TV owns the guide-to-categories directional handoff.** The native guide
+  declares horizontal-input ownership while it has a category exit, so pinned
+  navigation cannot interpret a held Left or swipe as an unused page-edge move.
+  Categories remain outside that ownership: a subsequent Left can open navigation,
+  and Back retains its existing navigation behavior.
+
+- **Native Sidebar owns its screen insets.** Its startup focus host fills the
+  window so the native sidebar, scrim, controls and scrolling page viewport do
+  not inherit a second overscan inset. Keep content-first startup and cover
+  dismissal handling without constraining the native `TabView` to the outer
+  SwiftUI safe area. Hosted coverage compares the focus-host and full-bleed page
+  bounds with the unwrapped native sidebar.
+
 - **Signing in does not change the starting page.** TV and mobile navigation
   availability uses the active profile's configured account metadata, not its
   credential-ready playback providers. A pending Plex Home identity or another
@@ -121,7 +221,54 @@ registry.
 - **Mac navigation leaves the artwork uncovered.** The iOS-on-Mac tab shell
   hides the tab-bar background and, on iOS 26 and later, the top scroll-edge
   effect. Native sidebar, tab, and profile controls remain available with their
-  system appearance. iPhone/iPad backgrounds and other scroll edges are unchanged.
+  system appearance. Other scroll edges are unchanged.
+
+- **Compact Home hero top reflections soften into the status area.** The still-artwork
+  blur begins eight points below the 24-point top reflection seam, eases upward
+  through the seam, and becomes stronger toward the top. It filters only artwork,
+  not profile/mute controls, and does not add a material or tint. Bottom reflections,
+  stage geometry, landscape artwork and trailers remain unchanged. Reduced
+  transparency retains the sharp reflection. Detail heroes keep their sharp top
+  reflection and native navigation treatment; Home's added artwork blur must not
+  be applied there.
+
+- **iPad tabs and profile actions share the native top row.** Apply opaque
+  navigation chrome inside each tab's `NavigationStack`, not around the stack:
+  an outer background host prevents UIKit from integrating the navigation bar
+  with the top tabs. Sidebar transitions retain native placement. On iOS 26 and
+  later, profile actions match the rendered size of neighboring circular toolbar
+  controls, but keep their own circular glass surface separate from neighboring
+  header actions. The shared page-action surface retains a two-point surround
+  around the avatar; the shared toolbar
+  background is hidden for this item so it cannot merge or stretch the circle.
+  No second glass button style is added. Photos, emoji, and symbols keep their
+  original colors; reduced-transparency and pre-iOS 26 systems use the shared frosted surface.
+  Home uses Apple's native scroll-edge effect, with no additional material, tint,
+  or custom blur mask. The system owns its rendering and extent. With a native
+  toolbar, `.soft` prevents a hard boundary on newer systems.
+  On compact horizontal layouts, Home's profile and trailer-mute actions
+  sit in the scrolling content, like the other browse-page actions. They overlay
+  the top of the hero below the status bar, or precede the rows when the hero is
+  disabled. The navigation bar is hidden there. Like other browse pages, the
+  scroll view respects the top safe area and uses the automatic edge treatment;
+  only the hero artwork extends upward behind the status bar. Trailer pause
+  thresholds use distance scrolled from the resting inset.
+  Empty/error pages retain their settings
+  entry, and regular-width and vertical toolbars retain native placement.
+  Reduced-transparency and Mac behavior remain unchanged. Home hides
+  the regular-width tab-bar background so the hero stays visible behind that row.
+  The individual native glass controls remain; other destinations and compact
+  bottom-tab backgrounds retain their existing treatment. Search's collapsing
+  title row does not clip the profile control's native pressed expansion.
+
+- **Detail navigation uses Apple's native top scroll-edge blur.** The detail
+  page hides the navigation-bar background while leaving the system scroll-edge
+  effect enabled. It adds no custom material or blur overlay; the system owns
+  the blur's strength and scrolling behavior. Reduced Transparency retains its
+  scroll-linked, non-blurred status-text fade. Native toolbar controls, Home's
+  blur and the bottom scroll edge are unchanged.
+  The destination owns its appearance rather than inheriting Home's toolbar
+  preference during a push.
 
 - **Mac rails fit complete cards plus a next-card preview.** Home, library
   recommendations, related titles, extras, episodes, and cast derive widths from
@@ -205,6 +352,57 @@ registry.
   codes remain readable when focus inverts the surface. The QR, nearby devices,
   and manual code entry stay on one page in distinct sections.
 
+- **Automatic server sign-ins.** TV and mobile use AppRuntime's
+  `ProviderCredentialSync`, separately from non-secret server descriptors.
+  Private CloudKit encrypted fields carry managed-server tokens, portable
+  share credentials and Silo bootstrap authority; local copies stay in
+  Keychain and encrypted ledgers. Endpoint authority comes from the encrypted
+  record, never from an advisory descriptor. Restoration checks server/user
+  identity, consent, household removal, local dismissal and parental authority,
+  including after asynchronous enrollment. Generated SSH keys remain local;
+  Silo requires bound independent-device enrollment and never transfers PIN
+  proofs. Failed automatic sign-ins retain manual setup. Publication checks a
+  device-local, household-visible owner for each server sign-in against the
+  verified CloudKit account. Authentication and cloud restoration establish
+  ownership bound to the credential revision and a private Keychain digest of
+  the authorized material. Silo's automatic token refresh retains its login
+  identity; explicit credential replacements cannot inherit an old grant,
+  even after a partial metadata write. Household playback access does not
+  grant export permission, including on a TV system user's first launch.
+  Credential snapshots are per-system-user, and identity/authority fences reject
+  stale captures, restoration and permission responses after account changes.
+  Channel capture and verified-account permission discovery perform their
+  Keychain reads and record encoding on a serial utility queue, not the UI
+  executor. These are fresh reads, not a credential/ownership cache. Before
+  publication they recheck ownership, credential material, current accounts,
+  household removals, cloud identity, authority, cancellation and intervening
+  consent/state mutations. Permission presentation remains main-actor owned.
+  Explicit sign-in, consent, restoration and account-reset writes retain their
+  existing synchronous commit boundaries.
+  Only fresh account verification can admit publication; cached snapshots cannot
+  reopen withdrawn admission. Account switches reverify identity after resetting
+  admission, rather than authorizing new fences with a pre-reset lookup.
+  Restoration persists its ownership grant before
+  exposing credentials, and migration responses bind the displayed credential
+  material as well as its revision. Background server-name or route refreshes
+  retain the pending consent request for the same server/user identities and
+  credentials, so a response from the visible native alert stays valid.
+  Changed credentials, account sets or iCloud authority still invalidate it.
+  Existing sign-ins without ownership require one explicit permission before
+  upload. The same safe fallback applies when a local sign-in completes before
+  an iCloud identity can be verified. Declining preserves local playback and is
+  remembered for that credential revision. Consent cannot claim a known foreign
+  owner; it is permission, not proof of who created an older sign-in. Mobile's
+  legacy Keychain publication observes the same server ownership gate, captures
+  immutable authorized bytes, and cancels queued writes before backgrounding
+  and foreground account revalidation.
+  Encryption
+  does not imply Apple lacks key access without Advanced Data Protection.
+  The CloudKit schema must include `PlozzProviderCredentialsV1Record` with
+  `kind` (String), `editedAt` (Int64), and `value` (Encrypted Bytes). Deploy that
+  schema to Production before distributing this channel through TestFlight or
+  the App Store; Development schema availability alone is not sufficient.
+
 - **Bounded setup summaries.** Both sending and receiving use CoreUI's shared
   scrolling summary on TV and mobile. Group accounts by physical server, retain
   per-server transfer scope and pending sign-in state, and wrap full server and
@@ -261,6 +459,24 @@ no style field, which still decode as Classic rows with their saved hero choice.
 iPhone and iPad retain their existing carousel presentation.
 
 ## Navigation planning
+
+All three TV navigation styles enter the first usable page item on cold entry.
+The handoff waits for presentation and loading entry regions, including Home's
+Spotlight and first-row placeholders. Empty and failed pages retain their recovery
+actions. Startup uses the shared native focus owner and stops after entry or user
+navigation; later content refreshes must not pull focus back to the first item.
+Loading regions suspend the request until readiness changes; mounted content
+finishes its native render handoff before the request is retired. Inactive hosts
+cannot block the visible page's entry.
+The root holds startup entry until introductions, release notes, and queued root
+covers finish dismissing. Input in those covers must not cancel the pending page
+entry. Covered shells retain the unconsumed request; dismissal starts a fresh
+native presentation handoff, without restarting entry after normal navigation.
+
+Explicitly selecting Home again resets its root scroll position and enters its
+first content item in every navigation style. Opening or dismissing a sidebar
+without selecting Home does not request that reset; the custom rail preserves
+its prior content focus.
 
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.
@@ -332,9 +548,10 @@ While Settings owns the shell, hidden navigation cancels focus handoffs and
 cannot overwrite the selected Settings destination.
 The focus owner's exit direction defaults to Right for pinned navigation and
 is Down for the horizontal strip; Left/Right never trigger a page handoff there.
-Initial focus resolves the selected destination, including a scrolled-off library,
-before allowing neighboring controls. Live TV's first-use preview choice waits
-for explicit content entry; its presentation owns focus until the choice finishes.
+Returning to navigation resolves the selected destination, including a scrolled-off
+library, before allowing neighboring controls. Live TV's first-use preview choice
+opens on content entry, including cold launch; its presentation owns focus until
+the choice finishes.
 Physical Down starts entry in the bar's native press recognizer, while actual
 focus belongs to that bar, instead of waiting for SwiftUI's move-command delivery.
 Native downward focus proposals also start that same handoff: the shared owner

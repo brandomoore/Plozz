@@ -6,6 +6,42 @@ import XCTest
 /// stable), that unknown values sink rather than float, and that it is honest
 /// about the fields it cannot reproduce.
 final class MediaItemSortOrderTests: XCTestCase {
+    func testPrecomputedNamesPreserveEverySortAndTieBreak() {
+        let items: [MediaItem] = (0..<120).map { index in
+            MediaItem(
+                id: "\(index % 60)", title: ["The Amélie 2", "Amelie 10", " An Alien ", "Zodiac"][index % 4],
+                kind: .movie, productionYear: index.isMultiple(of: 3) ? nil : 1990 + index % 20,
+                releaseDate: index.isMultiple(of: 5) ? nil : Date(timeIntervalSince1970: Double(index % 10)),
+                runtime: index.isMultiple(of: 7) ? nil : Double(index % 8) * 600,
+                sourceAccountID: "\(index / 60)"
+            )
+        }
+        for field in SortField.allCases {
+            for direction in [SortDirection.ascending, .descending] {
+                let sort = CoreModels.SortDescriptor(field: field, direction: direction)
+                XCTAssertEqual(
+                    MediaItemSortOrder.sorted(items, by: sort),
+                    items.sorted { MediaItemSortOrder.isOrderedBefore($0, $1, sort: sort) },
+                    "\(field) \(direction)"
+                )
+            }
+        }
+    }
+
+    func testSavedQueryCancellationInterruptsFilteringAndSorting() {
+        let items = (0..<2_000).map { item("Title \($0)") }
+        for query in [
+            HomeContentQuery(sort: .init(field: .name, direction: .descending)),
+            HomeContentQuery(media: .movies, filters: .init(filter: .unwatched))
+        ] {
+            var checks = 0
+            XCTAssertThrowsError(try query.applying(to: items, checkCancellation: {
+                checks += 1
+                if checks == 3 { throw CancellationError() }
+            })) { XCTAssertTrue($0 is CancellationError) }
+            XCTAssertEqual(checks, 3)
+        }
+    }
 
     private func item(
         _ title: String,

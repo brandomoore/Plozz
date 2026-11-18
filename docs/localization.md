@@ -1,6 +1,6 @@
 # Localization
 
-Plozz ships English today and is being localized incrementally. This document is
+Plozz supports English and 38 non-English localizations. This document is
 the contract: how strings get from Swift source into a translator's hands and back
 into the app, and the handful of rules that keep that pipeline working.
 
@@ -234,6 +234,13 @@ Spanish while another keeps English on the same Apple TV.
 `.environment(\.locale,)` also does **not** change `Locale.current`. Any non-view
 code that formats, compares or sorts text must be handed a locale explicitly
 rather than reading the process-wide one.
+
+At a UIKit string boundary, resolve a `LocalizedStringResource` whose `locale`
+is the current SwiftUI environment locale. Passing `locale` directly to
+`String(localized:locale:)` controls formatting, not the lookup language.
+For example, the Seerr account chooser resolves
+`String(localized: LocalizedStringResource("Request as", locale: locale))`
+when presenting, so its labels follow the active profile's language.
 
 ## Verifying
 

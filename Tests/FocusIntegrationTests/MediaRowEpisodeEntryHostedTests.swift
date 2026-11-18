@@ -164,6 +164,92 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
         try await assertCaptionMotion(loading: true)
     }
 
+    func testEpisodeDescriptionsRemainVisibleUntilFocusOnlyIsEnabled() async throws {
+        try await assertDescriptionVisibility(reduceMotion: false)
+    }
+
+    func testEpisodeDescriptionVisibilityWithReducedMotion() async throws {
+        try await assertDescriptionVisibility(reduceMotion: true)
+    }
+
+    private func assertDescriptionVisibility(reduceMotion: Bool) async throws {
+        let artwork = try await seedImage()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        defer { previous?.makeKeyAndVisible() }
+        for style in [CardFocusStyle.highlight, .system] {
+            let model = EpisodeEntryFixture()
+            model.focusStyle = style
+            model.reduceMotion = reduceMotion
+            model.resumeTarget = "first"
+            model.phase = .ready
+            model.items = [
+                MediaItem(id: "first", title: "First episode", kind: .episode,
+                          overview: "First summary stays visible.", episodeNumber: 1, posterURL: artwork),
+                MediaItem(id: "second", title: "Second episode", kind: .episode,
+                          overview: "Second summary stays visible.", episodeNumber: 2, posterURL: artwork)
+            ]
+            let host = EpisodeEntryHost(model: model)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+            host.view.layoutIfNeeded()
+            await waitUntil { model.appeared && host.heroIsFocused }
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            func visibleText() async throws -> String {
+                try await Task.sleep(for: .milliseconds(500))
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(screenshot(window).cgImage)).perform([request])
+                return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            }
+            var text = try await visibleText()
+            XCTAssertTrue(text.contains("First summary"), text)
+            XCTAssertTrue(text.contains("Second summary"), text)
+            XCTAssertTrue(host.heroIsFocused)
+            capture(window, system: system, name: "episode-descriptions-always-\(style)")
+
+            model.captions.episodeDescriptionsOnFocus = true
+            text = try await visibleText()
+            XCTAssertFalse(text.contains("summary"), text)
+            XCTAssertTrue(text.contains("First episode"), text)
+            host.prefersRow = true
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            await waitUntil { model.events.last == "first" }
+            text = try await visibleText()
+            XCTAssertTrue(text.contains("First summary"), text)
+            XCTAssertFalse(text.contains("Second summary"), text)
+            host.prefersRow = false
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            await waitUntil { host.heroIsFocused }
+            text = try await visibleText()
+            XCTAssertFalse(text.contains("summary"), text)
+
+            model.captions.episodeDescriptionsOnFocus = false
+            text = try await visibleText()
+            XCTAssertTrue(text.contains("First summary"), text)
+            XCTAssertTrue(text.contains("Second summary"), text)
+            model.captions.setOverride(.hide, for: .episodes)
+            text = try await visibleText()
+            XCTAssertFalse(text.contains("summary"), text)
+            XCTAssertFalse(text.contains("First episode"), text)
+            model.captions.setOverride(.show, for: .episodes)
+            model.spoilers = SpoilerSettings(isEnabled: true, mode: .placeholder)
+            text = try await visibleText()
+            XCTAssertFalse(text.contains("summary"), text)
+            XCTAssertFalse(text.contains("First episode"), text)
+        }
+    }
+
     private func assertCaptionMotion(loading: Bool) async throws {
         let artwork = try await seedImage()
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -174,6 +260,7 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
         for style in CardFocusStyle.allCases {
             let model = EpisodeEntryFixture()
             model.focusStyle = style
+            model.captions.episodeDescriptionsOnFocus = true
             model.resumeTarget = "episode-motion"
             var episode = MediaItem(
                 id: model.resumeTarget, title: "The Hidden Room", kind: .episode,
@@ -912,6 +999,9 @@ private final class EpisodeEntryFixture {
     var palette = ThemePalette.dark
     var pinnedSidebarActive = false
     var navigationInset: CGFloat = 0
+    var captions = CardCaptionSettings.default
+    var spoilers = SpoilerSettings.default
+    var reduceMotion = UIAccessibility.isReduceMotionEnabled
     @ObservationIgnored var appeared = false
     @ObservationIgnored var events: [String] = []
 }
@@ -921,6 +1011,7 @@ private struct EpisodeEntryFixtureView: View {
     var body: some View {
         MediaRowView(
             title: nil, items: model.items, presentation: .episodeColumn,
+            spoilerSettings: model.spoilers,
             initialScrollID: model.resumeTarget, defaultFocusID: model.resumeTarget,
             focusResetToken: model.resetToken,
             onFocusEntered: { model.active = false },
@@ -938,6 +1029,8 @@ private struct EpisodeEntryFixtureView: View {
         .environment(\.plozzCardFocusStyle, model.focusStyle)
         .environment(\.themePalette, model.palette)
         .environment(\.plozzCardCaptionView, .episodes)
+        .environment(\.plozzCardCaptionSettings, model.captions)
+        .environment(\._accessibilityReduceMotion, model.reduceMotion)
         .preferredColorScheme(.dark)
         .environment(\.plozzPinnedSidebarActive, model.pinnedSidebarActive)
         .environment(\.plozzNavigationContentInset, model.navigationInset)

@@ -295,6 +295,116 @@ final class IdentityIndexTests: XCTestCase {
 
     // MARK: Atomic rebuild (shadow bucket)
 
+    func testUnchangedRebuildPreservesRevisionButRefreshesFreshness() async throws {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let index = IdentityIndex(now: { clock })
+        let item = movie("j1", account: "jf", tmdb: "42")
+        await index.ingest([item], accountID: "jf")
+        await index.finishRebuild(for: "jf")
+        let first = await index.snapshot(ifChangedSince: 0)
+        let revision = try XCTUnwrap(first).revision
+
+        clock = clock.addingTimeInterval(601)
+        await index.beginRebuild(for: "jf")
+        await index.ingest([item], accountID: "jf")
+        await index.finishRebuild(for: "jf")
+        let unchanged = await index.snapshot(ifChangedSince: revision)
+        XCTAssertNil(unchanged)
+        let stale = await index.staleAccounts(olderThan: 600)
+        XCTAssertTrue(stale.isEmpty)
+        let exported = await index.export()
+        XCTAssertEqual(exported.builtAtByAccount["jf"], clock)
+
+        let unpublished = await index.snapshot(ifChangedSince: 0)
+        XCTAssertEqual(unpublished?.revision, revision)
+        XCTAssertEqual(unpublished?.snapshot, first?.snapshot)
+    }
+
+    func testDuplicateIngestAndShadowWorkDoNotAdvanceLiveRevision() async throws {
+        let index = IdentityIndex()
+        let item = movie("j1", account: "jf", tmdb: "42")
+        await index.ingest([item], accountID: "jf")
+        let first = await index.snapshot(ifChangedSince: 0)
+        let revision = try XCTUnwrap(first).revision
+        await index.ingest([item], accountID: "jf")
+        await index.removeAccount("missing")
+        let duplicate = await index.snapshot(ifChangedSince: revision)
+        XCTAssertNil(duplicate)
+
+        await index.beginRebuild(for: "jf")
+        await index.ingest([movie("new", account: "jf", tmdb: "43")], accountID: "jf")
+        let inFlight = await index.snapshot(ifChangedSince: revision)
+        XCTAssertNil(inFlight)
+        await index.finishRebuild(for: "jf")
+        let changed = await index.snapshot(ifChangedSince: revision)
+        XCTAssertEqual(changed?.revision, revision + 1)
+        XCTAssertEqual(changed?.snapshot.sourceRefs(for: item), [])
+    }
+
+    func testMetadataChangesAdvanceRevisionWithoutChangingSourceCount() async throws {
+        let index = IdentityIndex()
+        var item = movie("j1", account: "jf", tmdb: "42")
+        var info = SourceServerInfo(
+            providerKind: .jellyfin, serverName: "Server", accountName: "Viewer", locality: .remote
+        )
+        await index.ingest([item], accountID: "jf", serverInfo: info)
+        let initial = await index.snapshot(ifChangedSince: 0)
+        var previous = try XCTUnwrap(initial)
+        var changes: [(MediaItem, SourceServerInfo)] = []
+        info.serverName = "Renamed"
+        changes.append((item, info))
+        info.accountName = "Other viewer"
+        changes.append((item, info))
+        info.locality = .local
+        changes.append((item, info))
+        info.providerKind = .plex
+        changes.append((item, info))
+        item.title = "Different film"
+        changes.append((item, info))
+        item.productionYear = 2021
+        changes.append((item, info))
+        item.providerIDs = ["Tmdb": "43"]
+        changes.append((item, info))
+        item.kind = .series
+        changes.append((item, info))
+
+        for (nextItem, nextInfo) in changes {
+            await index.beginRebuild(for: "jf")
+            await index.ingest([nextItem], accountID: "jf", serverInfo: nextInfo)
+            await index.finishRebuild(for: "jf")
+            let next = await index.snapshot(ifChangedSince: previous.revision)
+            let update = try XCTUnwrap(next)
+            XCTAssertEqual(update.revision, previous.revision + 1)
+            XCTAssertNotEqual(update.snapshot, previous.snapshot)
+            XCTAssertEqual(update.snapshot.sourceRefs(for: nextItem).count, 1)
+            previous = update
+        }
+    }
+
+    func testRevisionTracksPruningAndRemovalButNotAnEmptyRebuild() async throws {
+        let index = IdentityIndex()
+        await index.beginRebuild(for: "empty")
+        await index.finishRebuild(for: "empty")
+        let empty = await index.snapshot(ifChangedSince: 0)
+        XCTAssertNil(empty)
+        let warm = await index.isWarm("empty")
+        XCTAssertTrue(warm)
+
+        let item = movie("j1", account: "jf", tmdb: "42")
+        await index.ingest([item], accountID: "jf")
+        await index.ingest([movie("p1", account: "plex", tmdb: "42")], accountID: "plex")
+        let first = await index.snapshot(ifChangedSince: 0)
+        let revision = try XCTUnwrap(first).revision
+        await index.retainAccounts(["jf"])
+        let pruned = await index.snapshot(ifChangedSince: revision)
+        XCTAssertEqual(pruned?.revision, revision + 1)
+        XCTAssertEqual(pruned?.snapshot.indexedAccountIDs, ["jf"])
+        await index.removeAccount("jf")
+        let removed = await index.snapshot(ifChangedSince: revision + 1)
+        XCTAssertEqual(removed?.revision, revision + 2)
+        XCTAssertEqual(removed?.snapshot, .empty)
+    }
+
     func testRebuildKeepsExistingSourcesLiveUntilFinish() async {
         let index = IdentityIndex()
         await index.ingest([movie("old", account: "jf", tmdb: "42")], accountID: "jf")
@@ -339,10 +449,7 @@ final class IdentityIndexTests: XCTestCase {
     }
 
     func testRebuildDoesNotUndercountIndexedAccountsMidWave() async {
-        // r6-warm-progressive-stall: while account "b" re-scans, the snapshot's
-        // indexed-account set must not lose "b", or the monotonic publish guard
-        // (accountCount >= published) would reject every publish for the rest of the
-        // warm wave and pin a stale snapshot.
+        // While account "b" re-scans, its last-known membership stays available.
         let index = IdentityIndex()
         await index.ingest([movie("a1", account: "a", tmdb: "1")], accountID: "a")
         await index.finishRebuild(for: "a")
@@ -548,6 +655,49 @@ final class IdentityIndexTests: XCTestCase {
         XCTAssertTrue(result.indexable.isEmpty)
     }
 
+    func testCompleteCatalogIdentityOnlySkipsItsOwnForcedEnrichment() async {
+        var complete = series("complete", account: "silo", tvdb: "7")
+        complete.catalogIdentityIsComplete = true
+        let partial = series("partial", account: "iptv", tvdb: "8")
+        XCTAssertFalse(partial.catalogIdentityIsComplete)
+        let result = await IdentityEnrichment.prepare(
+            [complete, partial], enrichIdentifiedItems: true
+        ) { item in
+            XCTAssertEqual(item.id, "partial")
+            var full = item
+            full.providerIDs["Tmdb"] = "9"
+            return full
+        }
+        XCTAssertFalse(result.inconclusive)
+        XCTAssertEqual(Set(result.indexable.map(\.id)), ["complete", "partial"])
+        XCTAssertEqual(result.indexable.first { $0.id == "partial" }?.providerID(.tmdb), "9")
+    }
+
+    func testCompleteCatalogHintCannotMakeAnIdentitylessSeriesConclusive() async {
+        var item = guidlessPlexSeries("no-id", account: "silo")
+        item.catalogIdentityIsComplete = true
+        let result = await IdentityEnrichment.prepare(
+            [item], enrichIdentifiedItems: true
+        ) { _ in nil }
+        XCTAssertTrue(result.inconclusive)
+        XCTAssertTrue(result.indexable.isEmpty)
+    }
+
+    func testCatalogIdentityCompletenessIsNotPersisted() async throws {
+        var fresh = series("complete", account: "silo", tvdb: "7")
+        fresh.catalogIdentityIsComplete = true
+        let data = try JSONEncoder().encode(fresh)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(object["catalogIdentityIsComplete"])
+        let restored = try JSONDecoder().decode(MediaItem.self, from: data)
+        XCTAssertFalse(restored.catalogIdentityIsComplete)
+        XCTAssertEqual(restored.providerIDs, fresh.providerIDs)
+        let result = await IdentityEnrichment.prepare(
+            [restored], enrichIdentifiedItems: true
+        ) { _ in nil }
+        XCTAssertTrue(result.inconclusive, "Stored IDs are not proof that a live refresh is complete")
+    }
+
     func testIdentityHydrationRejectsDifferentItemOrKind() async {
         let partial = series("series-tvdb-7", account: "silo", tvdb: "7")
         for changesKind in [false, true] {
@@ -661,6 +811,75 @@ final class IdentityIndexTests: XCTestCase {
         XCTAssertLessThanOrEqual(peak, 2, "concurrency cap must bound in-flight enrichment fetches")
         XCTAssertEqual(result.indexable.count, 12, "every item still enriched")
         XCTAssertFalse(result.inconclusive)
+    }
+
+    func testEnrichmentStopsQueuedWorkOnProviderRefusalAndKeepsCompletedItems() async {
+        actor Calls {
+            var ids: [String] = []
+            func record(_ id: String) { ids.append(id) }
+        }
+        for failure in [AppError.rateLimited(retryAfter: 120), .unauthorized, .cancelled] {
+            let calls = Calls()
+            let items = (0..<200).map { guidlessPlexSeries("p\($0)", account: "plex") }
+            let result = await IdentityEnrichment.prepare(items, concurrency: 1) { item in
+                await calls.record(item.id)
+                if item.id == "p1" { throw failure }
+                var full = item
+                full.providerIDs = ["Tvdb": "123"]
+                return full
+            }
+            let requested = await calls.ids
+            XCTAssertEqual(requested, ["p0", "p1"])
+            XCTAssertEqual(result.indexable.map(\.id), ["p0"])
+            XCTAssertTrue(result.inconclusive)
+            XCTAssertEqual(result.interruption, failure)
+        }
+    }
+
+    func testEnrichmentRateLimitOnlyAdmitsTheInitialConcurrentWindow() async {
+        actor Calls {
+            var count = 0
+            func record() { count += 1 }
+        }
+        let calls = Calls()
+        let items = (0..<200).map { guidlessPlexSeries("p\($0)", account: "plex") }
+        let result = await IdentityEnrichment.prepare(items, concurrency: 5) { _ in
+            await calls.record()
+            throw AppError.rateLimited(retryAfter: 60)
+        }
+        let count = await calls.count
+        XCTAssertGreaterThan(count, 0)
+        XCTAssertLessThanOrEqual(count, 5)
+        XCTAssertEqual(result.interruption, .rateLimited(retryAfter: 60))
+        XCTAssertTrue(result.inconclusive)
+        XCTAssertTrue(result.indexable.isEmpty)
+    }
+
+    func testCancelledEnrichmentDoesNotStartRequests() async {
+        let items = [guidlessPlexSeries("p0", account: "plex")]
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await IdentityEnrichment.prepare(items) { _ in
+                XCTFail("Cancelled work must not fetch")
+                return nil
+            }
+        }
+        let result = await task.value
+        XCTAssertEqual(result.interruption, .cancelled)
+        XCTAssertTrue(result.inconclusive)
+    }
+
+    func testEnrichmentItemFailureDoesNotStopUnrelatedItems() async {
+        let items = (0..<3).map { guidlessPlexSeries("p\($0)", account: "plex") }
+        let result = await IdentityEnrichment.prepare(items, concurrency: 1) { item in
+            if item.id == "p1" { throw AppError.notFound }
+            var full = item
+            full.providerIDs = ["Tvdb": "123"]
+            return full
+        }
+        XCTAssertEqual(Set(result.indexable.map(\.id)), ["p0", "p2"])
+        XCTAssertTrue(result.inconclusive)
+        XCTAssertNil(result.interruption)
     }
 
     // MARK: Snapshot store (the @Sendable bridge)

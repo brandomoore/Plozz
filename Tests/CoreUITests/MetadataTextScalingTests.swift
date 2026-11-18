@@ -75,7 +75,7 @@ final class MetadataTextScalingTests: XCTestCase {
 
     func testFamilyGuidanceScalesAndCompactBadgeStylingRemainsIndependent() {
         let baseline = size(of: FamilyGuidanceAgeBadge(age: 12))
-        for scale: CGFloat in [0.75, 1.25, 1.5] {
+        for scale: CGFloat in [0.75, 1, 1.25, 1.5] {
             let scaled = size(of: FamilyGuidanceAgeBadge(age: 12).environment(\.metadataTextScale, scale))
             XCTAssertEqual(scaled.height, baseline.height * scale, accuracy: 1)
             XCTAssertEqual(scaled.width, baseline.width * scale, accuracy: 3)
@@ -83,7 +83,9 @@ final class MetadataTextScalingTests: XCTestCase {
             let combined = size(of: MediaBadgeChip(badge: badge)
                 .environment(\.mediaBadgeScale, 0.8)
                 .environment(\.metadataTextScale, scale))
-            XCTAssertEqual(combined.height, (22 * 0.8 * scale).rounded(.up), accuracy: 0.01)
+            // Native hosting rounds to display pixels, not necessarily whole points.
+            let expected = size(of: Color.clear.frame(width: 1, height: 22 * 0.8 * scale))
+            XCTAssertEqual(combined.height, expected.height, accuracy: 0.01)
         }
     }
 }

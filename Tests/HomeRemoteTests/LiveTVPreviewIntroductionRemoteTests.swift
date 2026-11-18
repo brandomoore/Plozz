@@ -160,18 +160,15 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         exerciseNativeSidebar(rtl: false, topBar: true)
     }
 
-    func testHorizontalSetupActionsRequireExplicitEntry() {
+    func testHorizontalSetupStartsOnTheFirstAction() {
         let app = launch(
             suite: "HorizontalSetup.\(UUID().uuidString)", reset: true,
             nativeTopBar: true, emptySources: true
         )
         defer { app.terminate() }
         let navigation = app.buttons["top-navigation-liveTV"]
-        assertFocused(navigation)
         let playlist = app.buttons["live-tv-setup-playlist"]
         XCTAssertTrue(playlist.waitForExistence(timeout: 10))
-        XCTAssertFalse(playlist.isEnabled)
-        XCUIRemote.shared.press(.down)
         assertFocused(playlist)
         XCUIRemote.shared.press(.right)
         assertFocused(app.buttons["live-tv-setup-server"])
@@ -211,10 +208,6 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
             nativeSidebar: !topBar, nativeTopBar: topBar
         )
         defer { app.terminate() }
-        if topBar {
-            assertFocused(app.buttons["top-navigation-liveTV"])
-            XCUIRemote.shared.press(.down)
-        }
         assertFocused(app.buttons["live-tv-preview-enable"])
         XCUIRemote.shared.press(.select)
         _ = focusFirstGuideContent(in: app, rtl: rtl)
@@ -309,10 +302,6 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
             app.terminate()
         }
         let leading: XCUIRemote.Button = rtl ? .right : .left
-        if topBar {
-            assertFocused(app.buttons["top-navigation-liveTV"])
-            XCUIRemote.shared.press(.down)
-        }
         assertFocused(app.buttons["live-tv-preview-enable"])
         if !preview {
             XCUIRemote.shared.press(

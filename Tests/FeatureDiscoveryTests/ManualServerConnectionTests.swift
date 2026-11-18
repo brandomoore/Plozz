@@ -8,6 +8,48 @@ import FoundationNetworking
 
 @MainActor
 final class ManualServerConnectionTests: XCTestCase {
+    func testRealTransportErrorsPermitOnlySafeManualDiscoveryFallback() async throws {
+        let fallbackCodes: [URLError.Code] = [
+            .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut,
+            .networkConnectionLost, .notConnectedToInternet, .secureConnectionFailed
+        ]
+        let terminalCodes: [URLError.Code] = [
+            .serverCertificateHasBadDate, .serverCertificateUntrusted,
+            .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid,
+            .clientCertificateRejected, .clientCertificateRequired, .cancelled, .badURL
+        ]
+        for provider in [ProviderKind.jellyfin, .emby] {
+            for code in fallbackCodes + terminalCodes {
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.protocolClasses = [ManualDiscoveryTransportProtocol.self]
+                let session = URLSession(configuration: configuration)
+                defer { session.invalidateAndCancel() }
+                let validator = ServerValidator(
+                    provider: provider, http: URLSessionHTTPClient(session: session)
+                )
+                // The path chooses the URLProtocol error without shared mutable state.
+                for address in ["fixture.invalid:8096", "http://fixture.invalid:8096"] {
+                    do {
+                        let server = try await validator.resolveManualAddress("\(address)/\(code.rawValue)")
+                        XCTAssertTrue(fallbackCodes.contains(code), "Terminal error must not reach HTTP: \(code)")
+                        XCTAssertEqual(server.baseURL.scheme, "http")
+                        XCTAssertEqual(server.baseURL.port, 8096)
+                        XCTAssertEqual(server.provider, provider)
+                    } catch {
+                        XCTAssertFalse(fallbackCodes.contains(code), "Expected HTTP fallback for \(code): \(error)")
+                        if code == .cancelled { XCTAssertEqual(error as? AppError, .cancelled) }
+                    }
+                }
+                do {
+                    _ = try await validator.resolveManualAddress("https://fixture.invalid:8096/\(code.rawValue)")
+                    XCTFail("Explicit HTTPS must never fall back to HTTP")
+                } catch {
+                    if code == .cancelled { XCTAssertEqual(error as? AppError, .cancelled) }
+                }
+            }
+        }
+    }
+
     func testDiagnosticReportRetainsFailedCandidatesAndSuccessfulFallback() async throws {
         for provider in [ProviderKind.jellyfin, .emby] {
             let diagnostics = ServerConnectionDiagnostics()
@@ -25,6 +67,28 @@ final class ManualServerConnectionTests: XCTestCase {
             XCTAssertEqual(facts.compactMap { $0["provider"] as? String }, [provider.rawValue, provider.rawValue])
             XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("private.example"))
         }
+    }
+
+    private final class ManualDiscoveryTransportProtocol: URLProtocol {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            guard let url = request.url,
+                  let component = url.path.split(separator: "/").first,
+                  let code = Int(component) else {
+                client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+                return
+            }
+            if url.scheme == "https" {
+                client?.urlProtocol(self, didFailWithError: URLError(URLError.Code(rawValue: code)))
+            } else {
+                let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data(#"{"Id":"server","ServerName":"Home"}"#.utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            }
+        }
+        override func stopLoading() {}
     }
 
     func testDiagnosticReportDistinguishesTrustRejection() async throws {

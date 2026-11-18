@@ -20,6 +20,109 @@ private let profileA = "test.tokens\0trakt.oauth.A"
 private let profileB = "test.tokens\0trakt.oauth.B"
 
 final class TrackerSharedRefreshTests: XCTestCase {
+    func testOptedOutSignOutRetiresPendingLocalAuthenticationAcrossRestart() async throws {
+        let cloud = FakeTraktCloud()
+        try await cloud.seed(sharedFresh, scope: profileA)
+        let store = SharedTestTokenStore(scope: profileA)
+        let journal = FakeTraktJournal()
+        let initial = TrackerTokenCoordinator(sharedConfiguration: .init(transport: cloud, journal: journal))
+        try await initial.synchronizeShared(store: store)
+        let local = TrackerTokenCoordinator(sharedConfiguration: .init(
+            transport: cloud, journal: journal, allowsDiscovery: { false }))
+        let context = try await local.prepareConnection(store: store)
+        try await local.save(sharedFresh, store: store, context: context)
+        _ = try await local.disconnect(store: store)
+        XCTAssertNil(store.load())
+        let restarted = TrackerTokenCoordinator(sharedConfiguration: .init(transport: cloud, journal: journal))
+        try await restarted.synchronizeShared(store: store)
+        XCTAssertNil(store.load())
+        let peer = SharedDevice(cloud: cloud)
+        try await peer.coordinator.synchronizeShared(store: peer.store)
+        XCTAssertNil(peer.store.load())
+    }
+
+    func testLocalRefreshRecoversJournaledSuccessorAfterStoreFailureAndRestart() async throws {
+        let cloud = FakeTraktCloud()
+        try await cloud.seed(sharedFresh, scope: profileA)
+        let store = SharedTestTokenStore(scope: profileA)
+        let journal = FakeTraktJournal()
+        let initial = TrackerTokenCoordinator(sharedConfiguration: .init(transport: cloud, journal: journal))
+        try await initial.synchronizeShared(store: store)
+        let configuration = TrackerSharedRefreshConfiguration(
+            transport: cloud, journal: journal, allowsDiscovery: { false })
+        let local = TrackerTokenCoordinator(sharedConfiguration: configuration)
+        let context = try await local.prepareConnection(store: store)
+        try await local.save(sharedExpired, store: store, context: context)
+        store.failSuccessorOnce = true
+        let http = SharedRefreshHTTP()
+        let auth = TraktAuthService(config: TraktConfig(clientID: "test"), http: http)
+        do {
+            _ = try await local.accessToken(store: store, auth: auth)
+            XCTFail("The first token-store write must fail")
+        } catch SharedStorageFailure.write {}
+        let restarted = TrackerTokenCoordinator(sharedConfiguration: configuration)
+        let recovered = try await restarted.accessToken(store: store, auth: auth)
+        XCTAssertEqual(recovered, "next-access")
+        let exchanges = await http.count
+        XCTAssertEqual(exchanges, 1)
+    }
+
+    func testOptedOutReauthenticationDoesNotPublishThroughAnExistingSharedJournal() async throws {
+        let cloud = FakeTraktCloud()
+        try await cloud.seed(sharedFresh, scope: profileA)
+        let store = SharedTestTokenStore(scope: profileA)
+        let journal = FakeTraktJournal()
+        let initial = TrackerTokenCoordinator(sharedConfiguration: .init(transport: cloud, journal: journal))
+        try await initial.synchronizeShared(store: store)
+        let readsBefore = await cloud.readCount
+        let local = TrackerTokenCoordinator(sharedConfiguration: .init(
+            transport: cloud, journal: journal, allowsDiscovery: { false }))
+        let context = try await local.prepareConnection(store: store)
+        let replacement = TrackerTokens(
+            accessToken: "local-only-access", refreshToken: "local-only-refresh",
+            expiresAt: .distantFuture, accountIdentity: "another-account")
+        try await local.save(replacement, store: store, context: context)
+        try await local.synchronizeShared(store: store)
+        XCTAssertEqual(store.load(), replacement)
+        let readsAfter = await cloud.readCount
+        XCTAssertEqual(readsAfter, readsBefore)
+        let peer = SharedDevice(cloud: cloud)
+        try await peer.coordinator.synchronizeShared(store: peer.store)
+        XCTAssertEqual(peer.store.load(), sharedFresh)
+        let reenabled = TrackerTokenCoordinator(sharedConfiguration: .init(transport: cloud, journal: journal))
+        try await reenabled.synchronizeShared(store: store)
+        XCTAssertEqual(store.load(), replacement)
+        let newPeer = SharedDevice(cloud: cloud)
+        try await newPeer.coordinator.synchronizeShared(store: newPeer.store)
+        XCTAssertEqual(newPeer.store.load(), replacement)
+    }
+
+    func testDeclinedConsentDoesNotDiscoverSharedSignIn() async throws {
+        let cloud = FakeTraktCloud()
+        try await cloud.seed(sharedFresh, scope: profileA)
+        let store = SharedTestTokenStore(scope: profileA)
+        let coordinator = TrackerTokenCoordinator(sharedConfiguration: .init(
+            transport: cloud, journal: FakeTraktJournal(), allowsDiscovery: { false }))
+        try await coordinator.synchronizeShared(store: store)
+        let access = try await coordinator.accessToken(
+            store: store, auth: TraktAuthService(config: TraktConfig(clientID: "test"), http: SharedRefreshHTTP()))
+        XCTAssertNil(access)
+        XCTAssertNil(store.load())
+        let reads = await cloud.readCount
+        XCTAssertEqual(reads, 0)
+    }
+
+    func testDeclinedConsentKeepsNewExplicitSignInLocal() async throws {
+        let cloud = FakeTraktCloud()
+        let store = SharedTestTokenStore(scope: profileA)
+        let coordinator = TrackerTokenCoordinator(sharedConfiguration: .init(
+            transport: cloud, journal: FakeTraktJournal(), allowsDiscovery: { false }))
+        let context = try await coordinator.prepareConnection(store: store)
+        try await coordinator.save(sharedFresh, store: store, context: context)
+        XCTAssertEqual(store.load(), sharedFresh)
+        let records = await cloud.recordCount
+        XCTAssertEqual(records, 0)
+    }
     func testCloudErasureAlsoDrainsAnAlreadySupersededOperation() async throws {
         let cloud = FakeTraktCloud()
         try await cloud.seed(sharedExpired, scope: profileA)

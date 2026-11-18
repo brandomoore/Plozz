@@ -187,7 +187,7 @@ struct PlozziOSSyncSetupSettingsView: View {
                     }
                 }
             } footer: {
-                Text("Syncs profiles, settings, and servers. Logins stay on each device.")
+                Text("Keep profiles, settings, watchlist, and supported sign-ins in sync across your devices.")
             }
 
             SettingsSectionGroup("Set Up Another Device") {

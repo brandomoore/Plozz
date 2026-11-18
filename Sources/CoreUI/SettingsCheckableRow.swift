@@ -34,6 +34,8 @@ public struct SettingsCheckableRow: View {
     /// hugging the card's border. Default true (flush-left, for split panes).
     var flushLeading: Bool = true
     var size: SettingsRowSize = .standard
+    /// Owns mobile group insets; TV retains the group's clearance outside its focus target.
+    var usesGroupInsets = false
     let action: () -> Void
     @Environment(\.settingsFormRowsFlushLeading) private var groupFlushLeading
     @ScaledMetric(relativeTo: .footnote) private var sourceMarkSize: CGFloat = 20
@@ -42,7 +44,7 @@ public struct SettingsCheckableRow: View {
         title: Text, subtitle: Text? = nil, subtitleProvider: ProviderKind? = nil, titleLineLimit: Int? = 1,
         subtitleLineLimit: Int? = 2, icon: String? = nil, isChecked: Bool,
         isEnabled: Bool = true, prominence: SettingsRowProminence = .primary,
-        flushLeading: Bool = true, size: SettingsRowSize = .standard,
+        flushLeading: Bool = true, size: SettingsRowSize = .standard, usesGroupInsets: Bool = false,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -56,6 +58,7 @@ public struct SettingsCheckableRow: View {
         self.prominence = prominence
         self.flushLeading = flushLeading
         self.size = size
+        self.usesGroupInsets = usesGroupInsets
         self.action = action
     }
 
@@ -68,14 +71,22 @@ public struct SettingsCheckableRow: View {
     private var iconSize: CGFloat { prominence == .primary ? 24 : 20 }
     private var iconFrame: CGFloat { prominence == .primary ? 34 : 30 }
     private var titleFont: Font {
+        if usesGroupInsets { return .body.weight(.medium) }
         #if os(tvOS)
-        SettingsRowMetrics.titleFont
+        return SettingsRowMetrics.titleFont
         #else
-        prominence == .primary ? .headline.weight(.semibold) : .callout.weight(.medium)
+        return prominence == .primary ? .headline.weight(.semibold) : .callout.weight(.medium)
         #endif
     }
     private var minRowHeight: CGFloat { SettingsRowMetrics.minHeight(prominence) }
     private var verticalPadding: CGFloat { SettingsRowMetrics.verticalPadding(prominence) }
+    private var ownsGroupInsets: Bool {
+        #if os(tvOS)
+        false
+        #else
+        usesGroupInsets
+        #endif
+    }
 
     public var body: some View {
         Button(action: action) {
@@ -106,16 +117,17 @@ public struct SettingsCheckableRow: View {
                 Spacer(minLength: rowSpacing)
                 SettingsCheckmark(isChecked: isChecked, prominence: prominence)
             }
-            .frame(minHeight: minRowHeight)
-            .padding(.vertical, verticalPadding)
-            .padding(.horizontal, labelInset)
+            .frame(minHeight: ownsGroupInsets ? 44 : minRowHeight)
+            .padding(.vertical, ownsGroupInsets ? 12 : verticalPadding)
+            .padding(.horizontal, ownsGroupInsets ? 16 : labelInset)
             .contentShape(Rectangle())
             .opacity(isEnabled ? 1 : 0.35)
         }
         .buttonStyle(SettingsFocusButtonStyle(size: size))
         .disabled(!isEnabled)
-        .padding(.leading, flushLeading && groupFlushLeading ? -labelInset : 0)
+        .padding(.leading, !usesGroupInsets && flushLeading && groupFlushLeading ? -labelInset : 0)
         .accessibilityAddTraits(isChecked ? .isSelected : [])
+        .containerValue(\.settingsContentOwnsInsets, ownsGroupInsets)
     }
 }
 

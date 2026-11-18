@@ -3,6 +3,50 @@ import XCTest
 @testable import CoreModels
 
 final class LibraryDiagnosticJournalTests: XCTestCase {
+    func testHomePreviewFailuresIdentifyFeedsWithoutExportingSourceIdentity() throws {
+        let journal = LibraryDiagnosticJournal()
+        let source = HomeContentSource(
+            feed: .recommendation(sectionID: "PRIVATE-shelf", kind: .movie),
+            accountID: "PRIVATE-account", serverUserID: "PRIVATE-viewer",
+            libraryID: "PRIVATE-library", title: "PRIVATE-title"
+        )
+        journal.recordHomeContent(
+            source: source, provider: .plex, start: 0, limit: 7, snapshotAvailable: true,
+            failure: .init(section: .browse, error: .notFound,
+                           http: [.init(route: .homeShelfPage, httpStatus: 404)])
+        )
+        journal.recordHomeContent(
+            source: .init(home: .watchlist), provider: nil, start: 0, limit: 7,
+            snapshotAvailable: false, failure: .init(section: .browse, error: .notFound)
+        )
+        journal.recordHomeContent(
+            source: .init(home: .continueWatching), provider: nil, start: 0, limit: 7,
+            snapshotAvailable: true, failure: .init(section: .browse, error: .cancelled)
+        )
+        let export = journal.export(scope: DiagnosticExportScope())
+        let entries = try XCTUnwrap(try object(export)["entries"] as? [[String: Any]])
+        XCTAssertEqual(entries.count, 2)
+        let remote = try XCTUnwrap(entries.first?["facts"] as? [String: Any])
+        XCTAssertEqual(remote["operation"] as? String, "customHomeRowPreview")
+        XCTAssertEqual(remote["provider"] as? String, "plex")
+        let context = try XCTUnwrap(remote["homeContent"] as? [String: Any])
+        XCTAssertEqual(context["feed"] as? String, "recommendation")
+        XCTAssertEqual(context["snapshotAvailable"] as? Bool, true)
+        XCTAssertEqual(context["start"] as? Int, 0)
+        XCTAssertEqual(context["limit"] as? Int, 7)
+        let remoteFailure = try XCTUnwrap((remote["failures"] as? [[String: Any]])?.first)
+        XCTAssertEqual(remoteFailure["reason"] as? String, "notFound")
+        let http = try XCTUnwrap((remoteFailure["http"] as? [[String: Any]])?.first)
+        XCTAssertEqual(http["route"] as? String, "homeShelfPage")
+        XCTAssertEqual(http["httpStatus"] as? Int, 404)
+        let local = try XCTUnwrap(entries.last?["facts"] as? [String: Any])
+        XCTAssertNil(local["provider"])
+        let localContext = try XCTUnwrap(local["homeContent"] as? [String: Any])
+        XCTAssertEqual(localContext["feed"] as? String, "watchlist")
+        XCTAssertEqual(localContext["snapshotAvailable"] as? Bool, false)
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(export), as: UTF8.self).contains("PRIVATE"))
+    }
+
     func testLibraryDecodeAndPagingEvidenceSurvivesWithoutErrorDescriptionsOrPrivateKeys() throws {
         let journal = LibraryDiagnosticJournal()
         journal.record(diagnostic())

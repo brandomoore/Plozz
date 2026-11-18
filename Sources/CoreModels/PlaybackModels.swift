@@ -22,6 +22,8 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
     public var id: Int
     public var kind: Kind
     public var displayTitle: String
+    /// Original container track name, separate from a server-generated display label.
+    public var sourceTitle: String?
     /// BCP-47 / ISO language code if known (e.g. `en`, `fra`).
     public var language: String?
     /// Raw codec token from the source/demuxer, lowercased where known
@@ -47,6 +49,8 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
     /// `true` for commentary tracks (director/cast). Surfaces a "Commentary"
     /// qualifier on audio and subtitle labels.
     public var isCommentary: Bool
+    /// Explicit audio-description disposition; not inferred from a track name.
+    public var isVisualImpaired: Bool
     /// For subtitle tracks: credential-free instructions for loading subtitle
     /// text. Managed-provider credentials are resolved only when the engine or
     /// overlay begins I/O; local share sidecars reference their temporary file.
@@ -69,6 +73,7 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         id: Int,
         kind: Kind,
         displayTitle: String,
+        sourceTitle: String? = nil,
         language: String? = nil,
         codec: String? = nil,
         profile: String? = nil,
@@ -79,6 +84,7 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         isDTSX: Bool = false,
         isHearingImpaired: Bool = false,
         isCommentary: Bool = false,
+        isVisualImpaired: Bool = false,
         deliverySource: SubtitleDeliverySource? = nil,
         isImageBasedSubtitle: Bool = false,
         isExternal: Bool = false
@@ -86,6 +92,7 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         self.id = id
         self.kind = kind
         self.displayTitle = displayTitle
+        self.sourceTitle = sourceTitle
         self.language = language
         self.codec = codec
         self.profile = profile
@@ -96,6 +103,7 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         self.isDTSX = isDTSX
         self.isHearingImpaired = isHearingImpaired
         self.isCommentary = isCommentary
+        self.isVisualImpaired = isVisualImpaired
         self.deliverySource = deliverySource
         self.isImageBasedSubtitle = isImageBasedSubtitle
         self.isExternal = isExternal
@@ -350,6 +358,14 @@ public struct PlaybackServerDecision: Codable, Hashable, Sendable {
 /// direct-play or transcode and hands back either a legacy resolved URL or a
 /// credential-free typed source.
 public struct PlaybackRequest: Hashable, Sendable {
+    /// Host-selected policy for this playback, not provider metadata. Preview/live callers stay conservative.
+    public var dolbyVisionFELConversion: Bool = false
+    /// Host preference; nil leaves the choice to the engine's playback context.
+    public var videoUpscaling: VideoUpscaling?
+    public var discPlayback: DiscPlaybackBehavior = .playVideo
+    public var discRegionOverride: UInt32? = nil
+    public var discPlaylistOverride: Int? = nil
+    public var usesUnidentifiedDiscTimeline: Bool { discPlayback == .openMenu || discPlaylistOverride != nil }
     /// Bounded server negotiation facts, retained for optional diagnostic exports.
     public var serverDecision: PlaybackServerDecision?
     /// Library channels own a separate interval-based reporting path; accidental
@@ -382,6 +398,11 @@ public struct PlaybackRequest: Hashable, Sendable {
     public var playSessionID: String?
     public var audioTracks: [MediaTrack]
     public var subtitleTracks: [MediaTrack]
+    /// Ephemeral, independently readable SRT URLs for an external-player handoff.
+    /// May contain server-issued grants; never persist or log them.
+    public var externalSubtitleURLs: [URL] = []
+    /// Exact SRT resources for an explicitly admitted app-owned streaming session.
+    public var externalSubtitleLocators: [NetworkFileLocator] = []
     /// Optional server-authored chapters. Empty sources expose no chapter controls.
     public var chapters: [MediaChapter] = []
     /// Provider stream index already encoded into this rendition's video pixels.
@@ -540,7 +561,7 @@ public struct PlaybackRequest: Hashable, Sendable {
             return playbackSource
         case .networkFile:
             return playbackSource
-        case .publicURL, .dlnaResource, .authenticatedHTTP, .none:
+        case .publicURL, .dlnaResource, .authenticatedHTTP, .networkDisc, .none:
             return nil
         }
     }

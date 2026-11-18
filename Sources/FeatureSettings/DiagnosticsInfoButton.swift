@@ -11,20 +11,55 @@ public struct DiagnosticsInfoButton: View {
         Button {
             showsInformation = true
         } label: {
-            Label("About Diagnostic Sharing", systemImage: "info.circle")
+            Label("About Diagnostic Sharing", systemImage: "info")
                 .labelStyle(.iconOnly)
-                .font(.body)
-                .frame(minWidth: 44, minHeight: 44)
+                .modifier(DiagnosticsControlLabelSize())
         }
-        #if os(tvOS)
-        .buttonStyle(.bordered)
-        #else
-        .buttonStyle(.borderless)
-        #endif
+        .plozzActionButton(role: .secondary)
+        .buttonBorderShape(.circle)
+        .controlSize(.regular)
+        .modifier(DiagnosticsControlSize(isCircular: true))
         .accessibilityIdentifier("diagnostics-information-button")
         .plozzSheet(isPresented: $showsInformation) {
             DiagnosticsInformationView()
         }
+    }
+}
+
+struct DiagnosticsControlLabelSize: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            // The label must accept the proposal for native glass to fill the control.
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+struct DiagnosticsControlSize: ViewModifier {
+    var isCircular = false
+    @ScaledMetric(relativeTo: .body) private var height = 44
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            content
+                .buttonSizing(.flexible)
+                .fixedSize(horizontal: !isCircular, vertical: false)
+                .frame(width: isCircular ? height : nil, height: height)
+        } else {
+            content.frame(minWidth: 44, minHeight: 44)
+        }
+        #else
+        content.frame(minWidth: 44, minHeight: 44)
+        #endif
     }
 }
 
@@ -39,6 +74,7 @@ private struct DiagnosticsInformationView: View {
                         Text("Automatic Reports").font(.headline)
                         Text(SettingsCopy.automaticDiagnostics)
                         Text(SettingsCopy.automaticDiagnosticsExclusions)
+                        Text("Sharing is optional. Change anytime in Settings > Help & Diagnostics.")
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Manual Reports").font(.headline)

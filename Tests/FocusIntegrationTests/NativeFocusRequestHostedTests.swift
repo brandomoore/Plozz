@@ -9,6 +9,281 @@ import CoreModels
 
 @MainActor
 final class NativeFocusRequestHostedTests: XCTestCase {
+    func testNativeMenuRetainsItsListAndUsesFreshActions() throws {
+        let coordinator = NativeMediaItemMenuCoordinator()
+        let button = UIButton(type: .custom)
+        let container = UIView()
+        container.addSubview(button)
+        let locale = Locale(identifier: "en_US")
+        var item = MediaItem(id: "episode", title: "Episode", kind: .episode, sourceAccountID: "first")
+        var received = 0
+        coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 1 }),
+                           locale: locale, button: button, interactionView: container)
+        let menu = try XCTUnwrap(coordinator.menu)
+        let interaction = try XCTUnwrap(coordinator.interaction)
+        let originalAction = try XCTUnwrap(menu.children.first as? UIAction)
+        coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 2 }),
+                           locale: locale, button: button, interactionView: container)
+        XCTAssertTrue(coordinator.menu === menu, "Callback refresh must not replace the visible menu.")
+        let activation = UIButton(type: .custom)
+        activation.addAction(originalAction, for: .primaryActionTriggered)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 2)
+
+        item.overview = "Refreshed episode metadata."
+        coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 4 }),
+                           locale: locale, button: button, interactionView: container)
+        XCTAssertTrue(coordinator.menu === menu, "Unrelated metadata must not interrupt a pending hold.")
+        XCTAssertTrue(coordinator.interaction === interaction)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 4)
+
+        item.sourceAccountID = "second"
+        coordinator.update(.init(item: item, actions: [.markWatched], perform: { _ in received = 3 }),
+                           locale: locale, button: button, interactionView: container)
+        XCTAssertFalse(coordinator.menu === menu)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 4, "An old menu must not act in a replacement account context.")
+        let currentAction = try XCTUnwrap(coordinator.menu?.children.first as? UIAction)
+        activation.removeAction(originalAction, for: .primaryActionTriggered)
+        activation.addAction(currentAction, for: .primaryActionTriggered)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 3)
+        coordinator.update(nil, locale: locale, button: button, interactionView: container)
+        XCTAssertNil(coordinator.menu)
+        XCTAssertNil(coordinator.interaction)
+        XCTAssertFalse(container.interactions.contains { $0 === interaction })
+        received = 0
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(received, 0)
+    }
+
+    func testNativeMenuPreservesGroupingRolesAndLocaleUpdates() throws {
+        let coordinator = NativeMediaItemMenuCoordinator()
+        let button = UIButton(type: .custom)
+        let container = UIView()
+        container.addSubview(button)
+        let configuration = NativeMediaItemMenu(
+            item: MediaItem(id: "episode", title: "Episode", kind: .episode),
+            actions: [.markWatched, .removeDownload, .removeFromContinueWatching], perform: { _ in }
+        )
+        coordinator.update(configuration, locale: Locale(identifier: "en_US"), button: button, interactionView: container)
+        let menu = try XCTUnwrap(coordinator.menu)
+        let destructive = try XCTUnwrap(menu.children[1] as? UIAction)
+        XCTAssertTrue(destructive.attributes.contains(.destructive))
+        let separated = try XCTUnwrap(menu.children.last as? UIMenu)
+        XCTAssertTrue(separated.options.contains(.displayInline))
+        XCTAssertEqual(separated.children.count, 1)
+        let locale = Locale(identifier: "de")
+        coordinator.update(configuration, locale: locale, button: button, interactionView: container)
+        XCTAssertFalse(coordinator.menu === menu)
+        XCTAssertEqual(coordinator.menu?.children.first?.title,
+                       NativePosterText.localized(MediaItemAction.markWatched.title).resolve(locale: locale))
+    }
+
+    func testNativeMenuDistinguishesSiblingMetadataFromActionScopeChanges() throws {
+        let coordinator = NativeMediaItemMenuCoordinator()
+        let button = UIButton(type: .custom)
+        let container = UIView()
+        container.addSubview(button)
+        let item = MediaItem(id: "episode-2", title: "Episode 2", kind: .episode)
+        var sibling = MediaItem(id: "episode-1", title: "Episode 1", kind: .episode)
+        let locale = Locale(identifier: "en_US")
+        var calls = 0
+        func update(_ siblings: [MediaItem]) {
+            coordinator.update(.init(
+                item: item, actions: [.markWatched], context: .init(orderedSiblings: siblings),
+                perform: { _ in calls += 1 }
+            ), locale: locale, button: button, interactionView: container)
+        }
+        update([sibling, item])
+        let menu = try XCTUnwrap(coordinator.menu)
+        let interaction = try XCTUnwrap(coordinator.interaction)
+        sibling.overview = "New metadata."
+        update([sibling, item])
+        XCTAssertTrue(coordinator.menu === menu)
+        XCTAssertTrue(coordinator.interaction === interaction)
+        let activation = UIButton(type: .custom)
+        activation.addAction(try XCTUnwrap(menu.children.first as? UIAction), for: .primaryActionTriggered)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(calls, 1)
+        update([item, sibling])
+        XCTAssertFalse(coordinator.menu === menu)
+        XCTAssertTrue(coordinator.interaction === interaction)
+        activation.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(calls, 1, "The old ordered-action scope must no longer execute.")
+    }
+
+    func testNativeEpisodeMenuUsesAWholeCardPreview() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        fixture.window.rootViewController = UIHostingController(rootView:
+            EpisodeColumnCard(item: MediaItem(
+                id: "episode", title: "Episode title", kind: .episode,
+                overview: "The episode description remains below its artwork throughout the native preview."
+            )) {}
+                .environment(\.plozzCardFocusStyle, .system)
+                .frame(width: EpisodeColumnCard.slotWidth, alignment: .topLeading)
+        )
+        try await waitUntil { self.nativePoster(in: fixture.window) != nil }
+        fixture.window.layoutIfNeeded()
+        let button = try XCTUnwrap(nativePoster(in: fixture.window))
+        let container = try XCTUnwrap(button.superview)
+        let caption = try XCTUnwrap(container.subviews.first { $0 !== button })
+        XCTAssertEqual(button.bounds.width, EpisodeColumnCard.artworkSize.width, accuracy: 1)
+        XCTAssertEqual(button.bounds.height, EpisodeColumnCard.artworkSize.height, accuracy: 1)
+        XCTAssertGreaterThan(caption.bounds.height, 80)
+        XCTAssertEqual(caption.center.y - caption.bounds.height / 2, button.frame.maxY, accuracy: 1)
+        XCTAssertEqual(container.bounds.height, caption.center.y + caption.bounds.height / 2, accuracy: 1)
+        let coordinator = NativeMediaItemMenuCoordinator()
+        coordinator.update(
+            .init(item: MediaItem(id: "episode", title: "Episode", kind: .episode),
+                  actions: [.markWatched], perform: { _ in }),
+            locale: Locale(identifier: "en_US"), button: button, interactionView: container
+        )
+        let interaction = try XCTUnwrap(coordinator.interaction)
+        XCTAssertTrue(interaction.view === container, "The enclosing view owns holds; the button owns ordinary clicks.")
+        XCTAssertNil(button.menu, "A control menu does not provide the contextual thumbnail lift.")
+        let configuration = try XCTUnwrap(coordinator.contextMenuInteraction(
+            interaction, configurationForMenuAtLocation: .zero
+        ))
+        let highlight = try XCTUnwrap(coordinator.contextMenuInteraction(
+            interaction, configuration: configuration, highlightPreviewForItemWithIdentifier: configuration.identifier
+        ))
+        let dismissal = try XCTUnwrap(coordinator.contextMenuInteraction(
+            interaction, configuration: configuration, dismissalPreviewForItemWithIdentifier: configuration.identifier
+        ))
+        XCTAssertTrue(highlight.view === container)
+        XCTAssertTrue(dismissal.view === container)
+        XCTAssertFalse(highlight.view.bounds.isEmpty)
+    }
+
+    func testNativeCaptionMovesInTheSameFocusUpdateAsItsArtwork() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let host = CaptionFocusHost()
+        fixture.window.rootViewController = host
+        let poster = NativePosterButton(
+            image: UIGraphicsImageRenderer(size: CGSize(width: 480, height: 270)).image { _ in
+                UIColor.gray.setFill()
+                UIRectFill(CGRect(x: 0, y: 0, width: 480, height: 270))
+            },
+            masksFocusEffectToContents: false
+        )
+        poster.contentSize = CGSize(width: 480, height: 270)
+        let container = NativeTVPoster<EmptyView>.Container(poster: poster)
+        container.captionFocusOffset = 16
+        container.updateCaption(UIHostingConfiguration { Text("Episode caption") }.margins(.all, 0))
+        container.frame = CGRect(x: 80, y: 300, width: 480, height: 320)
+        let other = UIButton(type: .system)
+        other.setTitle("Other", for: .normal)
+        other.frame = CGRect(x: 700, y: 300, width: 200, height: 80)
+        host.view.addSubview(container)
+        host.view.addSubview(other)
+        fixture.window.layoutIfNeeded()
+        let caption = try XCTUnwrap(container.caption)
+        let system = try XCTUnwrap(UIFocusSystem(for: poster))
+        host.target = other
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { other.isFocused }
+        XCTAssertEqual(caption.transform.ty, -16)
+        host.target = poster
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { poster.isFocused }
+        XCTAssertEqual(caption.transform.ty, 0, "The native focus update must move the caption without a SwiftUI render.")
+        container.setMenuPresented(true)
+        host.target = other
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { other.isFocused }
+        XCTAssertEqual(caption.transform.ty, 0, "Menu focus must not collapse the lifted caption.")
+        container.setMenuPresented(false)
+        XCTAssertEqual(caption.transform.ty, -16)
+        container.captionFocusOffset = 0
+        XCTAssertEqual(caption.transform.ty, 0, "Reduced motion removes caption travel.")
+    }
+
+    private final class CaptionFocusHost: UIViewController {
+        weak var target: UIView?
+        override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+            target.map { [$0] } ?? super.preferredFocusEnvironments
+        }
+    }
+
+    func testNativeMenuRetainsCaptionPresentationUntilDismissalCompletes() throws {
+        let coordinator = NativeMediaItemMenuCoordinator()
+        let button = UIButton(type: .custom)
+        let container = UIView()
+        container.addSubview(button)
+        var presented = false
+        coordinator.update(.init(
+            item: MediaItem(id: "episode", title: "Episode", kind: .episode),
+            actions: [.markWatched], perform: { _ in },
+            onPresentationChanged: { presented = $0 }
+        ), locale: .current, button: button, interactionView: container)
+        let interaction = try XCTUnwrap(coordinator.interaction)
+        let configuration = UIContextMenuConfiguration(identifier: nil, previewProvider: nil, actionProvider: nil)
+        coordinator.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: nil)
+        XCTAssertTrue(presented)
+        let dismissal = MenuDismissalAnimator()
+        coordinator.contextMenuInteraction(interaction, willEndFor: configuration, animator: dismissal)
+        XCTAssertTrue(presented, "Caption focus must survive the native rollback animation.")
+        coordinator.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: nil)
+        dismissal.complete()
+        XCTAssertTrue(presented, "An older dismissal cannot collapse a reopened card's caption.")
+        coordinator.update(nil, locale: .current, button: button, interactionView: container)
+        XCTAssertFalse(presented)
+    }
+
+    func testNativeMenuDismantleInvalidatesActionsWithoutNotifyingRemovedContent() throws {
+        for presented in [false, true] {
+            let coordinator = NativeMediaItemMenuCoordinator()
+            let button = UIButton(type: .custom)
+            let container = UIView()
+            container.addSubview(button)
+            var nativeEvents: [Bool] = []
+            var contentEvents: [Bool] = []
+            var actions = 0
+            coordinator.onPresentationChanged = { nativeEvents.append($0) }
+            coordinator.update(.init(
+                item: MediaItem(id: "episode", title: "Episode", kind: .episode),
+                actions: [.markWatched], perform: { _ in actions += 1 },
+                onPresentationChanged: { contentEvents.append($0) }
+            ), locale: .current, button: button, interactionView: container)
+            let interaction = try XCTUnwrap(coordinator.interaction)
+            let action = try XCTUnwrap(coordinator.menu?.children.first as? UIAction)
+            let configuration = UIContextMenuConfiguration(identifier: nil, previewProvider: nil, actionProvider: nil)
+            let dismissal = MenuDismissalAnimator()
+            if presented {
+                coordinator.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: nil)
+                coordinator.contextMenuInteraction(interaction, willEndFor: configuration, animator: dismissal)
+            }
+            let previousNativeEvents = nativeEvents
+            let previousContentEvents = contentEvents
+            coordinator.dismantle()
+            dismissal.complete()
+            XCTAssertEqual(nativeEvents, previousNativeEvents)
+            XCTAssertEqual(contentEvents, previousContentEvents)
+            XCTAssertNil(coordinator.menu)
+            XCTAssertNil(coordinator.interaction)
+            XCTAssertFalse(container.interactions.contains { $0 === interaction })
+            let activation = UIButton(type: .custom)
+            activation.addAction(action, for: .primaryActionTriggered)
+            activation.sendActions(for: .primaryActionTriggered)
+            XCTAssertEqual(actions, 0)
+        }
+    }
+
+    private final class MenuDismissalAnimator: NSObject, UIContextMenuInteractionAnimating {
+        var previewViewController: UIViewController? { nil }
+        private var completion: (() -> Void)?
+        func addAnimations(_ animations: @escaping () -> Void) { animations() }
+        func addCompletion(_ completion: @escaping () -> Void) { self.completion = completion }
+        func complete() { completion?() }
+    }
+
     func testCinematicGuardBlocksNativeDirectionsButAllowsSourceRestoration() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -87,14 +362,94 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         @ObservationIgnored var receivedRevision: Int?
     }
 
+    func testNavigatorOverridePreservesInheritanceAndDisablesReplacedRoute() async throws {
+        let fixture = try await makeFixture()
+        let parent = NavigatorRefreshState()
+        let child = NavigatorRefreshState()
+        child.enabled = false
+        defer {
+            child.navigator = nil
+            fixture.close()
+        }
+        fixture.window.rootViewController = UIHostingController(
+            rootView: InheritedNavigatorFixture(parent: parent, child: child)
+        )
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { child.navigator != nil }
+        let inherited = child.navigator
+        child.navigator?(child.item)
+        XCTAssertEqual(parent.receivedRevision, 0)
+        XCTAssertNil(child.receivedRevision)
+
+        child.enabled = true
+        try await waitUntil { child.navigator != nil && child.navigator != inherited }
+        let override = child.navigator
+        child.revision = 1
+        try await Task.sleep(for: .milliseconds(100))
+        child.navigator?(child.item)
+        XCTAssertEqual(child.receivedRevision, 1)
+        XCTAssertEqual(parent.receivedRevision, 0, "The child override must not replace its ancestor's callback.")
+        XCTAssertEqual(child.navigator, override)
+
+        child.enabled = false
+        try await waitUntil { child.navigator == inherited }
+        child.receivedRevision = nil
+        override?(child.item)
+        XCTAssertNil(child.receivedRevision, "A removed override must not retain an actionable stale route.")
+        parent.revision = 2
+        try await Task.sleep(for: .milliseconds(100))
+        child.navigator?(child.item)
+        XCTAssertEqual(parent.receivedRevision, 2)
+
+        parent.enabled = false
+        try await waitUntil { child.navigator == nil }
+        parent.receivedRevision = nil
+        inherited?(child.item)
+        XCTAssertNil(parent.receivedRevision)
+    }
+
+    func testNilNavigatorClearsInheritedRouteByDefault() async throws {
+        let fixture = try await makeFixture()
+        let parent = NavigatorRefreshState()
+        let child = NavigatorRefreshState()
+        defer {
+            child.navigator = nil
+            fixture.close()
+        }
+        fixture.window.rootViewController = UIHostingController(
+            rootView: InheritedNavigatorFixture(parent: parent, child: child, preservingInherited: false)
+        )
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { child.navigator != nil }
+        child.enabled = false
+        try await waitUntil { child.navigator == nil }
+        XCTAssertTrue(parent.enabled, "An active ancestor must not override explicit navigation removal.")
+    }
+
+    private struct InheritedNavigatorFixture: View {
+        let parent: NavigatorRefreshState
+        let child: NavigatorRefreshState
+        var preservingInherited = true
+
+        var body: some View {
+            NavigatorRefreshFixture(
+                state: child, preservingInherited: preservingInherited, content: NavigatorProbe(state: child)
+            )
+            .mediaItemNavigator(parent.enabled ? { [revision = parent.revision] _ in
+                parent.receivedRevision = revision
+            } : nil)
+        }
+    }
+
     private struct NavigatorRefreshFixture<Content: View>: View {
         let state: NavigatorRefreshState
+        var preservingInherited = false
         let content: Content
         var body: some View {
             content
                 .mediaItemNavigator(state.enabled ? { [revision = state.revision] _ in
                     state.receivedRevision = revision
-                } : nil)
+                } : nil, preservingInherited: preservingInherited)
         }
     }
 
@@ -456,6 +811,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                         XCTAssertEqual(controls.filter(\.isEnabled).count, 1, label)
                         if cardStyle == .borderless {
                             let poster = try XCTUnwrap(control as? NativePosterButton, label)
+                            XCTAssertFalse(poster.artworkView.masksFocusEffectToContents, label)
                             let aspect: CGFloat = style == .poster ? 2 / 3
                                 : seriesArtwork ? ContinueWatchingCardShape.aspectRatio : 16 / 9
                             XCTAssertEqual(poster.artworkView.bounds.width / poster.artworkView.bounds.height,
@@ -540,18 +896,24 @@ final class NativeFocusRequestHostedTests: XCTestCase {
 
     private final class BitmapProbe {
         var createdImages: [UIImage?] = []
+        var createdIdentities: [String?] = []
+        var updates: [(image: UIImage?, identity: String?)] = []
     }
 
     private struct BitmapCreationProbe: UIViewRepresentable {
         let image: UIImage?
+        let identity: String?
         let probe: BitmapProbe
 
         func makeUIView(context: Context) -> UIView {
             probe.createdImages.append(image)
+            probe.createdIdentities.append(identity)
             return UIView()
         }
 
-        func updateUIView(_ view: UIView, context: Context) {}
+        func updateUIView(_ view: UIView, context: Context) {
+            probe.updates.append((image, identity))
+        }
     }
 
     private final class LogoHostProbe {
@@ -651,9 +1013,9 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                 pinIdentity: "native-bitmap-fixture",
                 content: { _ in EmptyView() }, placeholder: { EmptyView() }
             )
-            .resolvedBitmap { image in
+            .resolvedBitmap { image, identity in
                 NativeTVPoster(
-                    image: image, treatment: .original, aspectRatio: 2.0 / 3,
+                    image: image, artworkIdentity: identity, treatment: .original, aspectRatio: 2.0 / 3,
                     fallbackWidth: 280, title: .content("Native artwork"), subtitle: nil,
                     overlay: EmptyView(), focus: $focused, action: {}
                 )
@@ -756,12 +1118,13 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         let host = UIHostingController(rootView: FallbackAsyncImage(
             references: [reference], variant: .posterCard, artworkPolicy: policy, pinIdentity: identity,
             content: { _ in EmptyView() }, placeholder: { EmptyView() }
-        ).resolvedBitmap { value in
-            BitmapCreationProbe(image: value, probe: probe)
+        ).resolvedBitmap { value, identity in
+            BitmapCreationProbe(image: value, identity: identity, probe: probe)
         })
         _ = host.sizeThatFits(in: CGSize(width: 280, height: 420))
         XCTAssertEqual(probe.createdImages.count, 1)
         XCTAssertTrue(probe.createdImages.first.flatMap { $0 } === image)
+        XCTAssertEqual(probe.createdIdentities.first.flatMap { $0 }, key)
     }
 
     func testBitmapArrivalPreservesTheNativeFocusOwner() async throws {
@@ -796,6 +1159,46 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertTrue(original.isFocused)
         XCTAssertNil(outerResolution.image, "Native cards must not publish into an ancestor artwork bridge.")
         XCTAssertFalse(outerResolution.isResolved)
+    }
+
+    func testProgressiveBitmapKeepsTheDisplayedResolverIdentity() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let preview = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 150)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 100, height: 150))
+        }
+        let server = try LibraryArtworkServer(images: ["art": XCTUnwrap(preview.pngData())])
+        defer { server.stop() }
+        let port = try await server.start()
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/art/\(UUID())"))
+        let reference = ArtworkReference.remote(url)
+        let pin = UUID().uuidString
+        let policy = ArtworkPresentationPolicy()
+        func key(_ variant: ArtworkImageVariant) -> String {
+            ArtworkResolveKey.make(
+                references: [reference], variant: variant, maxAspectRatio: nil,
+                pinIdentity: pin, providerPolicyIdentity: policy.identity
+            )
+        }
+        ArtworkSeedMemo.store(preview, reference: reference, for: key(.posterPreview))
+        let probe = BitmapProbe()
+        let host = UIHostingController(rootView: FallbackAsyncImage(
+            references: [reference], variant: .posterCard, previewVariant: .posterPreview,
+            artworkPolicy: policy, pinIdentity: pin,
+            content: { _ in EmptyView() }, placeholder: { EmptyView() }
+        ).resolvedBitmap { image, identity in
+            BitmapCreationProbe(image: image, identity: identity, probe: probe)
+        }.frame(width: 280, height: 420))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        XCTAssertTrue(probe.createdImages.first.flatMap { $0 } === preview)
+        XCTAssertEqual(probe.createdIdentities.first.flatMap { $0 }, key(.posterCard))
+        try await waitUntil {
+            probe.updates.contains { $0.image != nil && $0.image !== preview }
+        }
+        XCTAssertTrue(probe.updates.allSatisfy { $0.image != nil && $0.identity == key(.posterCard) },
+                      "Preview and full decode must share the displayed source/policy identity without an empty update.")
     }
 
     private func hasBlueArtwork(_ image: UIImage?) -> Bool {
@@ -907,6 +1310,29 @@ final class NativeFocusRequestHostedTests: XCTestCase {
             if let match = view as? T { return [match] }
             return view.subviews.flatMap { descendants(type, in: $0) }
         }
+        // Measure focus on completed artwork, not a pending placeholder composition.
+        let artworkURL = try XCTUnwrap(URL(
+            string: "https://example.invalid/caption-clearance-\(UUID()).png"
+        ))
+        let artworkSize = CGSize(width: 200, height: 300)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let data = UIGraphicsImageRenderer(size: artworkSize, format: format).pngData {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(origin: .zero, size: artworkSize))
+        }
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let request = URLRequest(url: artworkURL)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: artworkURL, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        cache.storeCachedResponse(CachedURLResponse(response: response, data: data), for: request)
+        defer { cache.removeCachedResponse(for: request) }
+        for variant in [ArtworkImageVariant.posterCard, .landscapeCard] {
+            let warmed = await ArtworkImageCache.shared.image(for: artworkURL, variant: variant)
+            _ = try XCTUnwrap(warmed)
+        }
         for density in UIDensity.allCases {
             let metrics = PlozzMetrics(density: density)
             for style in [PosterCardView.Style.poster, .landscape] {
@@ -917,7 +1343,8 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                             PosterCardView(
                                 item: MediaItem(
                                     id: "caption-\(index)", title: "Media title", kind: .movie,
-                                    productionYear: 2020, allowsTitleBasedMetadataMatching: false
+                                    productionYear: 2020, posterURL: artworkURL,
+                                    allowsTitleBasedMetadataMatching: false
                                 ),
                                 style: style, enablesAsyncArtworkFallback: false,
                                 action: {}
@@ -944,10 +1371,13 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                 system.updateFocusIfNeeded()
                 try await waitUntil { posters[0].isFocused }
                 try await Task.sleep(for: .milliseconds(600))
+                try await waitUntil(timeout: .seconds(5)) {
+                    posters.allSatisfy { self.hasBlueArtwork($0.image) }
+                }
                 let poster = posters[1]
                 let caption = captions[1]
                 let slot = caption.convert(caption.bounds, to: fixture.window)
-                let bitmap = poster.image
+                let bitmap = try XCTUnwrap(poster.image)
                 let title = try XCTUnwrap(descendants(UILabel.self, in: caption.title).first)
                 let context = "\(density), \(style)"
                 for focused in [false, true, false] {

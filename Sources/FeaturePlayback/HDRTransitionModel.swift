@@ -28,6 +28,7 @@ final class HDRTransitionModel {
         /// to settle on the **enter** path. The safety net that prevents a
         /// permanent black screen.
         var maxBlackout: TimeInterval = 4.5
+        var frameRateMaxBlackout: TimeInterval = 2.0
         /// Minimum time the veil stays up after a settle signal, so a
         /// near-instant settle doesn't cause a visible flicker.
         var minVeil: TimeInterval = 0.35
@@ -50,12 +51,14 @@ final class HDRTransitionModel {
         var frameRateExitSettleTimeout: TimeInterval = 2.0
         init(
             maxBlackout: TimeInterval = 4.5,
+            frameRateMaxBlackout: TimeInterval = 2.0,
             minVeil: TimeInterval = 0.35,
             veilFade: TimeInterval = 0.35,
             exitSettleTimeout: TimeInterval = 5.0,
             frameRateExitSettleTimeout: TimeInterval = 2.0
         ) {
             self.maxBlackout = maxBlackout
+            self.frameRateMaxBlackout = frameRateMaxBlackout
             self.minVeil = minVeil
             self.veilFade = veilFade
             self.exitSettleTimeout = exitSettleTimeout
@@ -66,14 +69,18 @@ final class HDRTransitionModel {
     let configuration: Configuration
     private let sleep: @Sendable (TimeInterval) async throws -> Void
 
-    /// Whether the dynamic-range veil is allowed to be raised at all. Mirrors the
-    /// profile's `PlaybackSettings.fadeOnDynamicRangeChange`. When `false` every
-    /// enter-path entry point is a no-op (and any veil already up is dropped), so
-    /// a viewer who doesn't use Match Dynamic Range never waits behind black.
-    /// The exit path is gated by the caller, which also owns the frame-rate case.
+    /// Mirrors the profile's dynamic-range preference without suppressing a
+    /// separately enabled frame-rate fade. Exit preferences are gated by the caller.
     var isDynamicRangeFadeEnabled = true {
         didSet {
-            guard !isDynamicRangeFadeEnabled, oldValue, !isExiting else { return }
+            guard !isDynamicRangeFadeEnabled, oldValue, !isExiting, entryKind == .dynamicRange else { return }
+            lowerVeil()
+        }
+    }
+
+    var isFrameRateFadeEnabled = false {
+        didSet {
+            guard !isFrameRateFadeEnabled, oldValue, !isExiting, entryKind == .frameRate else { return }
             lowerVeil()
         }
     }
@@ -83,6 +90,8 @@ final class HDRTransitionModel {
     private var isAwaitingProbeResolution = false
     private var didSettleWhileAwaitingProbe = false
     private var preProbeDisplayMode: HDRDisplayMode?
+    private var preProbeHint: SourceDynamicRange?
+    private var entryKind: DisplayTransitionKind?
 
     /// True between `beginExit` and the moment the exit wait resolves (settle or
     /// timeout). While exiting, the veil is held fully black continuously and is
@@ -119,7 +128,7 @@ final class HDRTransitionModel {
     @discardableResult
     func beginTransition(from current: HDRDisplayMode, to next: HDRDisplayMode) -> Bool {
         guard Self.dynamicRangeWillSwitch(from: current, to: next) else { return false }
-        raiseVeil()
+        raiseVeil(kind: isDynamicRangeFadeEnabled ? .dynamicRange : .frameRate)
         return true
     }
 
@@ -129,8 +138,9 @@ final class HDRTransitionModel {
         inheritedPreservedRange: SourceDynamicRange? = nil
     ) {
         guard range.isAwaitingEngineProbe else { return }
-        beginProbeTransition(
-            replacing: inheritedPreservedRange.map(HDRDisplayMode.init) ?? .sdr
+        restartProbeTransition(
+            replacing: inheritedPreservedRange.map(HDRDisplayMode.init) ?? .sdr,
+            hint: range.bestAvailable
         )
     }
 
@@ -142,8 +152,9 @@ final class HDRTransitionModel {
         inheritedPreservedRange: SourceDynamicRange? = nil
     ) {
         if next.isAwaitingEngineProbe {
-            beginProbeTransition(
-                replacing: previous.bestAvailable.map(HDRDisplayMode.init)
+            restartProbeTransition(
+                replacing: previous.bestAvailable.map(HDRDisplayMode.init),
+                hint: next.bestAvailable
             )
             return
         }
@@ -172,7 +183,7 @@ final class HDRTransitionModel {
            next.authority != .engineProbe {
             // Plozzigen owns and clears its criteria before NativeVideoEngine
             // applies its own. Equal content classes still cross SDR in between.
-            raiseVeil()
+            raiseVeil(kind: isDynamicRangeFadeEnabled ? .dynamicRange : .frameRate)
             return
         }
         _ = beginTransition(
@@ -181,15 +192,14 @@ final class HDRTransitionModel {
         )
     }
 
-    /// Every Plozzigen load is pre-veiled before AetherEngine probes and writes
-    /// display criteria, including loads whose provider hint currently says SDR.
-    func beginProbeTransition(replacing displayMode: HDRDisplayMode? = nil) {
+    /// Known SDR uses only the frame-rate preference unless replacing HDR output.
+    func beginProbeTransition(replacing displayMode: HDRDisplayMode? = nil, hint: SourceDynamicRange? = nil) {
         guard !isAwaitingProbeResolution else { return }
-        restartProbeTransition(replacing: displayMode)
+        restartProbeTransition(replacing: displayMode, hint: hint)
     }
 
     /// Starts a fresh probe window even when the prior load was also pending.
-    func restartProbeTransition(replacing displayMode: HDRDisplayMode? = nil) {
+    func restartProbeTransition(replacing displayMode: HDRDisplayMode? = nil, hint: SourceDynamicRange? = nil) {
         cancelTasks()
         isExiting = false
         isAwaitingProbeResolution = true
@@ -197,7 +207,11 @@ final class HDRTransitionModel {
         if let displayMode {
             preProbeDisplayMode = displayMode
         }
-        armVeil()
+        preProbeHint = hint
+        let needsDynamicRangeFade = hint != .sdr || preProbeDisplayMode?.isHDR == true
+        let kind: DisplayTransitionKind? = needsDynamicRangeFade && isDynamicRangeFadeEnabled
+            ? .dynamicRange : (isFrameRateFadeEnabled ? .frameRate : nil)
+        armVeil(kind: kind)
     }
 
     private func resolveProbeTransition(
@@ -207,37 +221,51 @@ final class HDRTransitionModel {
     ) {
         guard isAwaitingProbeResolution else { return }
 
+        let didSettle = didSettleWhileAwaitingProbe
         isAwaitingProbeResolution = false
-        if preservedModeWasConfirmed
-            || (!range.isHDR
-                && inheritedPreservedRange == nil
-                && preProbeDisplayMode?.isHDR != true) {
+        if preservedModeWasConfirmed {
             lowerVeil()
-        } else if didSettleWhileAwaitingProbe {
-            scheduleRevealAfterSettle()
+        } else if !range.isHDR && inheritedPreservedRange == nil && preProbeDisplayMode?.isHDR != true {
+            if isFrameRateFadeEnabled {
+                // Keep the original deadline when an unknown source proves SDR.
+                if isVeiled { entryKind = .frameRate } else { armVeil(kind: .frameRate) }
+                if didSettle { scheduleRevealAfterSettle() }
+            } else {
+                lowerVeil()
+            }
+        } else {
+            // A provider's SDR hint may be corrected by the engine; do not suppress a real HDR change.
+            if range.isHDR, preProbeHint == .sdr, preProbeDisplayMode?.isHDR != true,
+               isDynamicRangeFadeEnabled, entryKind != .dynamicRange {
+                armVeil(kind: .dynamicRange)
+            }
+            if didSettle { scheduleRevealAfterSettle() }
         }
         didSettleWhileAwaitingProbe = false
     }
 
-    /// Raise the veil immediately and arm the safety timeout that guarantees it
-    /// will come back down even if no settle signal ever arrives. This is the
-    /// **enter** path (fade to black while the panel switches into HDR/DV, reveal
-    /// on settle); the safety timeout lowers the veil.
-    func raiseVeil() {
+    func beginFrameRateTransition() {
+        guard isFrameRateFadeEnabled, !isVeiled, !isExiting else { return }
+        raiseVeil(kind: .frameRate)
+    }
+
+    /// Raise the veil with a bounded wait for the corresponding display change.
+    func raiseVeil(kind: DisplayTransitionKind = .dynamicRange) {
         cancelTasks()
         isExiting = false
         isAwaitingProbeResolution = false
         didSettleWhileAwaitingProbe = false
-        armVeil()
+        let enabled = kind == .dynamicRange ? isDynamicRangeFadeEnabled : isFrameRateFadeEnabled
+        armVeil(kind: enabled ? kind : nil)
     }
 
-    private func armVeil() {
-        // Single choke point for the enter path: with the dynamic-range fade off,
-        // no veil is ever raised (the bookkeeping above stays inert without one).
-        guard isDynamicRangeFadeEnabled else { return }
-        veilOpacity = 1
+    private func armVeil(kind: DisplayTransitionKind?) {
+        cancelTasks()
+        entryKind = kind
+        veilOpacity = kind == nil ? 0 : 1
+        guard let kind else { return }
         let sleep = self.sleep
-        let timeout = configuration.maxBlackout
+        let timeout = kind == .frameRate ? configuration.frameRateMaxBlackout : configuration.maxBlackout
         safetyTask = Task { @MainActor [weak self] in
             try? await sleep(timeout)
             guard !Task.isCancelled else { return }
@@ -278,6 +306,8 @@ final class HDRTransitionModel {
         isAwaitingProbeResolution = false
         didSettleWhileAwaitingProbe = false
         preProbeDisplayMode = nil
+        preProbeHint = nil
+        entryKind = nil
         veilOpacity = 0
     }
 

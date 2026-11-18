@@ -25,6 +25,13 @@ first-class backends; co-equal with `ProviderJellyfin`.
 
 ## Invariants
 
+- HTTP sharing defaults off. Library sections and the
+  stream-enriched browse helper explicitly opt in at their request definitions.
+  Item/batch metadata, watched, rating, progress/timeline and transcode-session
+  GET operations remain independent. An older response still in flight cannot
+  stand in for a later write or session action, even when their URLs match. Metadata also authorizes
+  queued resets and must observe newer playback independently of pending reads.
+  Address retry is unchanged.
 - Manually verified alternate addresses supplement, rather than replace, Plex's
   advertised local/remote/relay candidates. Discovery refresh retains the manual
   set, and removed aliases cannot be resurrected by a last-reachable seed.
@@ -39,6 +46,9 @@ first-class backends; co-equal with `ProviderJellyfin`.
 - **Tokens never logged.** `X-Plex-Token` flows through `CoreNetworking`
   redaction; PIN values are never persisted (see `PlexPinFlow`).
 - **All errors become `AppError`.**
+- Lenient scalar decoders check key presence before trying alternate types.
+  Sparse stream records must not construct decoding errors for absent optional
+  fields; present values retain the existing conversion order and metadata.
 - **Co-equal with `ProviderJellyfin`.** Any new `MediaProvider` capability
   must ship for Plex whenever it ships for Jellyfin (and vice versa).
 - Home-user identity changes happen **in-memory only** — Plozz never
@@ -55,6 +65,14 @@ first-class backends; co-equal with `ProviderJellyfin`.
   account and effective credential revision. Sharing verification uses that
   Home-user token, never the server-scoped token, and rechecks identity after
   the cloud response before publishing an empty inventory.
+
+## Related card batches
+
+Related card reads support `LibraryItemBatchProviding` through the server's
+multi-rating-key metadata endpoint. Batches retain native titles, artwork, GUIDs
+and watch state, remain bounded to 50 distinct native numeric keys, and reject
+duplicate or unrequested responses. Global Discover IDs never enter this path;
+the shared loader retains individual/search recovery for unavailable copies.
 
 ## Extra resume fallback
 
@@ -79,6 +97,17 @@ Plex DVR tuning uses the lineup's native channel `id`, never its display number
 (`vcn`). Channels without display numbers remain playable. Native IDs are
 validated as a single path component; invalid IDs do not fall back to another
 channel or tuner.
+
+Tune responses may wrap `MediaGrabOperation` in `MediaSubscription`.
+Playback parsing follows that envelope but excludes its `Timeline` and
+`AlsoAiring` guide metadata: those records must not select a stream or change
+the owned session's cleanup identity.
+
+Live TV uses the native HLS player. Only known, native-compatible source codecs
+enable Plex's `directPlay` flag; MPEG-2, incompatible audio, and unknown codec
+metadata request H.264/AAC compatibility conversion. The decision and start
+requests share that profile and viewer identity. Compatible H.264/HEVC channels
+retain direct playback.
 
 Failed tune requests use the consent-gated playback diagnostics sink under
 `plexLiveTune`. Evidence retains HTTP status, numeric Plex failure status,
@@ -379,6 +408,15 @@ selection, quality limits, or server-transcode negotiation.
 
 Tests: `ProviderPlexTests` covers MKV and MP4 original-file playback, scrubbing,
 selected media versions, and the separately preserved offline-download URL.
+
+New reduced offline requests use a single native download-queue MP4 with
+H.264/AAC and `DirectPlayStreamSelection=true` in the all-context client profile.
+They retain every audio track without setting `audioStreamID` or changing the
+server's saved selection. The requested bitrate, resolution and exact media/part
+indices remain pinned. Actual audio inventory, resolution and complete media
+samples are validated before completion; playback uses the normal language
+preference against local tracks. Legacy single-audio requests remain compatible.
+See [MediaDownloads](../MediaDownloads/README.md#download-quality-and-tracks).
 
 ## Playback session reporting
 

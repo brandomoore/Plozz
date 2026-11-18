@@ -1,0 +1,141 @@
+#if canImport(SwiftUI)
+import CoreModels
+import XCTest
+@testable import CoreUI
+
+@MainActor
+final class DetailInformationPreviewTests: XCTestCase {
+    func testSparseContentDoesNotReserveMissingSections() {
+        let empty = MediaItem(id: "empty", title: "Video", kind: .video)
+        XCTAssertEqual(DetailInformationSections(item: empty, horizontalInset: 24).sectionIDs, [])
+        var rated = empty
+        rated.ratings = [.init(source: .tmdb, value: 8, scale: .outOfTen)]
+        XCTAssertEqual(DetailInformationSections(item: rated, horizontalInset: 24).sectionIDs, ["ratings"])
+    }
+
+    func testSectionsKeepOneReadingOrder() {
+        let item = MediaItem(
+            id: "film", title: "Film", kind: .movie, overview: "A synopsis.",
+            productionYear: 2020, people: [.init(id: "director", name: "Director", kind: "Director")],
+            ratings: [.init(source: .tmdb, value: 8, scale: .outOfTen)]
+        )
+        XCTAssertEqual(
+            DetailInformationSections(item: item, horizontalInset: 24).sectionIDs,
+            ["about", "ratings", "details", "crew"]
+        )
+    }
+
+    func testSingleScorePromotesDetailsButAvailabilityLeadsOtherSupportingSections() {
+        var item = MediaItem(
+            id: "film", title: "Film", kind: .movie, overview: "A synopsis.", productionYear: 2020,
+            people: [.init(id: "director", name: "Director", kind: "Director")],
+            ratings: [.init(source: .tmdb, value: 8, scale: .outOfTen)]
+        )
+        let availability = ExternalTitleAvailability(regionCode: "US", watchOffers: [
+            .init(providerID: 1, providerName: "Service", kind: .subscription, regionCode: "US")
+        ])
+        func sections() -> DetailInformationSections {
+            DetailInformationSections(item: item, horizontalInset: 24, externalAvailability: availability)
+        }
+        XCTAssertEqual(sections().sectionIDs, ["about", "ratings", "details", "availability", "crew"])
+        XCTAssertEqual(sections().informationGroups.first?.id, "availability")
+        item.ratings.append(.init(source: .imdb, value: 8, scale: .outOfTen))
+        XCTAssertEqual(sections().sectionIDs, ["about", "ratings", "availability", "details", "crew"])
+    }
+
+    func testConfirmedTitleFactsDoNotUseLocalCountsOrAudioTracks() throws {
+        var item = MediaItem(
+            id: "series", title: "Series", originalLanguage: "fr", seriesStatus: .returning,
+            catalogSeasonCount: 3, catalogEpisodeCount: 17, kind: .series, unwatchedEpisodeCount: 2
+        )
+        func facts() -> [InformationFact] {
+            DetailInformationSections(item: item, horizontalInset: 24)
+                .informationGroups.first { $0.id == "details" }?.facts ?? []
+        }
+        XCTAssertEqual(facts().first { $0.id == "series-status" }?.value, String(localized: MediaSeriesStatus.returning.displayName))
+        XCTAssertEqual(facts().first { $0.id == "seasons" }?.value, 3.formatted())
+        XCTAssertEqual(facts().first { $0.id == "episodes" }?.value, 17.formatted())
+        XCTAssertEqual(facts().first { $0.id == "original-language" }?.value,
+                       Locale.current.localizedString(forLanguageCode: "fr"))
+        item.catalogEpisodeCount = nil
+        item.catalogSeasonCount = 0
+        item.originalLanguage = "und"
+        item.seriesStatus = nil
+        XCTAssertTrue(facts().isEmpty)
+        item.kind = .movie
+        item.seriesStatus = .ended
+        item.catalogEpisodeCount = 17
+        XCTAssertTrue(facts().isEmpty)
+    }
+
+    func testCrewPreviewRetainsEveryNameForMore() throws {
+        let people = (1...60).map { MediaPerson(id: "\($0)", name: "Director \($0)", kind: "Director") }
+        let item = MediaItem(id: "series", title: "Series", kind: .series, people: people)
+        let group = try XCTUnwrap(DetailInformationSections(item: item, horizontalInset: 24)
+            .informationGroups.first { $0.id == "crew" })
+        let fact = try XCTUnwrap(group.facts.first)
+        XCTAssertEqual(fact.listValues?.count, 60)
+        XCTAssertTrue(fact.value.contains("Director 60"))
+        XCTAssertTrue(fact.value.contains("Director 4"))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: true))
+    }
+
+    func testTagsAreNotSilentlyDiscardedAfterSixteen() throws {
+        let tags = (1...30).map { "Tag \($0)" }
+        let item = MediaItem(id: "film", title: "Film", kind: .movie, tags: tags)
+        let group = try XCTUnwrap(DetailInformationSections(item: item, horizontalInset: 24)
+            .informationGroups.first { $0.id == "details" })
+        let fact = try XCTUnwrap(group.facts.first { $0.id == "tags" })
+        XCTAssertEqual(fact.listValues, tags)
+        XCTAssertTrue(fact.value.contains("Tag 30"))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: true))
+    }
+
+    func testShortValuesDoNotOfferRedundantExpansion() {
+        let fact = InformationFact(id: "runtime", label: "Runtime", value: "2h")
+        XCTAssertFalse(fact.needsExpansion(textTruncated: false))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: true))
+    }
+
+    func testShortListsAreNotCutOffByAnArbitraryNameCount() {
+        let names = ["Drama", "Crime", "Action", "Mystery"]
+        let fact = InformationFact(id: "genres", label: "Genres", value: names.joined(separator: ", "),
+                                   listValues: names)
+        XCTAssertFalse(fact.needsExpansion(textTruncated: false))
+        XCTAssertTrue(fact.needsExpansion(textTruncated: true))
+        XCTAssertEqual(fact.listValues, names)
+    }
+
+    func testLongFactGroupsRetainTheirCompleteData() {
+        let facts = (1...20).map { InformationFact(id: "\($0)", label: "Released", value: "Date \($0)") }
+        let group = InformationGroup(id: "availability", title: "Release & Availability", facts: facts)
+        XCTAssertEqual(group.previewFacts.count, 9)
+        XCTAssertEqual(group.facts.count, 20)
+        XCTAssertTrue(group.hasOmittedFacts)
+    }
+
+    func testRequiredAvailabilityAttributionStaysInThePreview() {
+        var facts = (1...20).map { InformationFact(id: "\($0)", label: "Released", value: "Date \($0)") }
+        facts.append(InformationFact(
+            id: "attribution", label: "Availability Data", value: "JustWatch", isRequiredAttribution: true
+        ))
+        let group = InformationGroup(id: "availability", title: "Release & Availability", facts: facts)
+        XCTAssertEqual(group.previewFacts.count, 9)
+        XCTAssertEqual(group.previewFacts.last?.value, "JustWatch")
+        XCTAssertEqual(group.facts.count, 21)
+        XCTAssertTrue(group.hasOmittedFacts)
+    }
+
+    func testVisibleServiceLogosDoNotPretendTheirNamesWereHidden() {
+        let names = ["One", "Two", "Three", "Four"]
+        let logos = names.map {
+            WatchProviderLogo(id: $0, name: $0, url: URL(string: "https://example.invalid/logo.png")!)
+        }
+        var fact = InformationFact(id: "streaming", label: "Streaming", value: names.joined(),
+                                   listValues: names, logos: logos)
+        XCTAssertFalse(fact.hasOmittedValues)
+        fact.listValues?.append("No logo")
+        XCTAssertTrue(fact.hasOmittedValues)
+    }
+}
+#endif

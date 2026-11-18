@@ -129,6 +129,7 @@ enum NavigationRailMetrics {
 /// comes from the profile's ``NavigationLibraryLayout``, so re-arranging is a value
 /// change rather than a code change.
 struct NavigationRailView: View {
+    private var navigationTitles = NavigationTitles()
     let profile: Profile
     let entries: [NavigationRailLibraryEntry]
     let destinations: [NavigationRailDestination]
@@ -447,6 +448,8 @@ struct NavigationRailView: View {
             item(.search, symbol: "magnifyingglass", label: Text(Self.searchTitle))
         case .watchlist:
             item(.watchlist, symbol: "bookmark.fill", label: Text(Self.watchlistTitle))
+        case .upcoming:
+            item(.upcoming, symbol: "calendar", label: Text("Upcoming"))
         case .discover:
             item(.discover, symbol: "sparkles", label: Text("Discover"))
         case .liveTV:
@@ -522,7 +525,8 @@ struct NavigationRailView: View {
         label: Text,
         isOffline: Bool = false
     ) -> some View {
-        Button {
+        let label = navigationTitles(NavigationRailPlan.key(for: destination), default: label)
+        return Button {
             onSelectDestination(destination)
         } label: {
             HStack(spacing: 0) {

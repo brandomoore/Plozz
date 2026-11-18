@@ -17,12 +17,16 @@ final class LargeNativeNavigationRemoteTests: XCTestCase {
         }
         defer { if !attach { app.terminate() } }
         XCTAssertTrue(app.buttons["top-navigation-home"].waitForExistence(timeout: 15))
+        if !app.buttons["top-navigation-home"].hasFocus {
+            assertFocused(app.buttons["large-navigation-content"], in: app)
+            XCUIRemote.shared.press(.menu)
+        }
         assertFocused(app.buttons["top-navigation-home"], in: app)
         var durations: [TimeInterval] = []
         for _ in 0..<3 {
             let start = ProcessInfo.processInfo.systemUptime
             for _ in 0..<15 { XCUIRemote.shared.press(.right) }
-            assertFocused(app.buttons["top-navigation-library:plex:10"], in: app)
+            assertFocused(app.buttons["top-navigation-library:plex:9"], in: app)
             for _ in 0..<15 { XCUIRemote.shared.press(.left) }
             assertFocused(app.buttons["top-navigation-home"], in: app)
             durations.append(ProcessInfo.processInfo.systemUptime - start)
@@ -103,6 +107,8 @@ final class LargeNativeNavigationRemoteTests: XCTestCase {
         defer { app.terminate() }
         let home = app.buttons["top-navigation-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 15))
+        assertFocused(app.buttons["large-navigation-content"], in: app)
+        XCUIRemote.shared.press(.menu)
         assertFocused(home, in: app)
         XCUIRemote.shared.press(.right)
         assertFocused(app.buttons["top-navigation-watchlist"], in: app)
@@ -318,6 +324,8 @@ final class LargeNativeNavigationRemoteTests: XCTestCase {
         let app = launch(arguments: ["--trace-tab-transitions"])
         defer { app.terminate() }
         XCTAssertTrue(app.buttons["top-navigation-home"].waitForExistence(timeout: 15))
+        assertFocused(app.buttons["large-navigation-content"], in: app)
+        XCUIRemote.shared.press(.menu)
         for _ in 0..<3 {
             assertFocused(app.buttons["top-navigation-home"], in: app)
             XCUIRemote.shared.press(.left)
@@ -325,6 +333,8 @@ final class LargeNativeNavigationRemoteTests: XCTestCase {
             XCTAssertFalse(app.buttons["profile-picker-settings"].exists)
             XCUIRemote.shared.press(.select)
             XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+            XCUIRemote.shared.press(.menu)
+            assertFocused(app.buttons["large-navigation-content"], in: app)
             XCUIRemote.shared.press(.menu)
             assertFocused(app.buttons["top-navigation-home"], in: app)
             for key in ["watchlist", "liveTV", "search"] {
@@ -345,6 +355,8 @@ final class LargeNativeNavigationRemoteTests: XCTestCase {
         defer { app.terminate() }
         let library = app.buttons["top-navigation-library:plex:20"]
         XCTAssertTrue(library.waitForExistence(timeout: 15))
+        assertFocused(app.buttons["large-navigation-content"], in: app)
+        XCUIRemote.shared.press(.menu)
         assertFocused(library, in: app)
         let bar = app.descendants(matching: .any)["top-navigation"]
         let settings = app.buttons["top-navigation-settings"]
@@ -372,8 +384,6 @@ final class LargeNativeNavigationRemoteTests: XCTestCase {
         defer { app.terminate() }
         let home = app.buttons["top-navigation-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 15))
-        assertFocused(home, in: app)
-        XCUIRemote.shared.press(.down)
         assertFocused(app.buttons["large-navigation-content"], in: app)
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.buttons["large-navigation-detail"].waitForExistence(timeout: 5))

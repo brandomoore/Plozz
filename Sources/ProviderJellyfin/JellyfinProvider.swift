@@ -7,7 +7,7 @@ import CoreNetworking
 /// Holds an authenticated `JellyfinClient` and maps Jellyfin DTOs onto the
 /// provider-agnostic `CoreModels` types. Feature modules depend only on
 /// `MediaProvider`; this is the single place Jellyfin specifics live.
-public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesResumeProviding, SeriesIdentityProviding, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
+public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProviding, SeriesResumeProviding, SeriesIdentityProviding, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
     public var playbackInventoryRequiresEnrichment: Bool { true }
 
     public let kind: ProviderKind
@@ -15,6 +15,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     public let accountID: String
     public let credentialRevision: CredentialRevision
     let client: JellyfinClient
+    let libraryRequests = JellyfinDiscoveryRequests<[MediaLibrary]>()
     let collectionLibraryCache = MediaBrowserCollectionLibraryCache()
     let videoPlaylistCache = VideoPlaylistSnapshotCache()
     let liveTVLeases = JellyfinLiveTVLeaseStore()
@@ -86,6 +87,12 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     }
 
     public func libraries() async throws -> [MediaLibrary] {
+        try await libraryRequests.run(key: session.userID) {
+            try await loadLibraries()
+        }
+    }
+
+    private func loadLibraries() async throws -> [MediaLibrary] {
         var libraries = try await client.userViews(userID: session.userID).map { dto in
             MediaLibrary(
                 id: dto.Id,
@@ -103,22 +110,45 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 id: collectionDirectoryID, title: "Collections", kind: .collection, synthesizedName: .collections
             ))
         }
-        for index in libraries.indices where libraries[index].kind == .collection {
-            do {
-                libraries[index].hasCollections = try await collectionDirectoryHasItems(
-                    in: libraries[index].id
-                )
-            } catch {
-                let failure = (error as? AppError) ?? .invalidResponse
-                if Task.isCancelled || error is CancellationError || failure == .cancelled {
-                    throw CancellationError()
-                }
-                PlozzLog.networking.error(
-                    "Collection availability failed provider=\(kind.rawValue) error=\(HandoffDiagnostics.errorCode(failure))"
-                )
+        let probes = libraries.enumerated().filter { $0.element.kind == .collection }
+            .map { (index: $0.offset, id: $0.element.id) }
+        let availability = try await withThrowingTaskGroup(of: (Int, Bool?).self) { group in
+            try Task.checkCancellation()
+            var next = min(4, probes.count)
+            for probe in probes.prefix(next) {
+                group.addTask { (probe.index, try await collectionAvailability(in: probe.id)) }
             }
+            var result: [Int: Bool] = [:]
+            for try await (index, available) in group {
+                try Task.checkCancellation()
+                if let available { result[index] = available }
+                if next < probes.count {
+                    let probe = probes[next]
+                    next += 1
+                    group.addTask { (probe.index, try await collectionAvailability(in: probe.id)) }
+                }
+            }
+            return result
+        }
+        for (index, available) in availability {
+            libraries[index].hasCollections = available
         }
         return libraries
+    }
+
+    private func collectionAvailability(in libraryID: String) async throws -> Bool? {
+        do {
+            return try await collectionDirectoryHasItems(in: libraryID)
+        } catch {
+            let failure = (error as? AppError) ?? .invalidResponse
+            if Task.isCancelled || error is CancellationError || failure == .cancelled {
+                throw CancellationError()
+            }
+            PlozzLog.networking.error(
+                "Collection availability failed provider=\(kind.rawValue) error=\(HandoffDiagnostics.errorCode(failure))"
+            )
+            return nil
+        }
     }
 
     public func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
@@ -166,7 +196,9 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 localizedTitle: localizedTitle,
                 items: Array(items.prefix(limit)),
                 isHomeDefault: forHome ? false : nil,
-                browseID: "\(recommendation.RecommendationType):\(recommendation.CategoryId ?? subject ?? "")"
+                // Emby reshuffles this endpoint without a continuation cursor.
+                browseID: kind == .emby ? nil
+                    : "\(recommendation.RecommendationType):\(recommendation.CategoryId ?? subject ?? "")"
             )
         }
     }
@@ -227,13 +259,20 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     /// ordered by effective recency. `Int.max` drains both feeds through bounded
     /// HTTP pages and deliberately applies no final cap.
     public func continueWatching(limit: Int) async throws -> [MediaItem] {
+        try await continueWatching(limit: limit, includeSeriesRecency: true)
+    }
+
+    public func continueWatching(limit: Int, includeSeriesRecency: Bool) async throws -> [MediaItem] {
         let outcome = try await continueWatchingDTOs(limit: limit, parentID: nil)
         guard outcome.successfulEndpointCount > 0,
               !outcome.items.isEmpty || outcome.firstError == nil else {
             throw outcome.firstError ?? AppError.invalidResponse
         }
         let merged = outcome.items
-        let seriesDates = try await seriesLastPlayedDatesBestEffort(for: merged)
+        var seriesDates: [String: Date] = [:]
+        if includeSeriesRecency {
+            seriesDates = try await seriesLastPlayedDatesBestEffort(for: merged)
+        }
         // Stamp NextUp recency BEFORE capping: a just-finished show's next episode
         // must be able to survive the `limit` cut on its stamped recency rather than
         // being dropped merely because in-progress Resume items filled the limit
@@ -425,7 +464,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
 
     /// Best-effort map of `seriesID → series last-played date`, used to stamp
     /// NextUp episodes with their series' true recency. Only series referenced by
-    /// this feed are fetched, in bounded batches, so an exhaustive Continue
+    /// this feed are fetched, with at most four concurrent requests, so an exhaustive Continue
     /// Watching load never becomes an exhaustive library scan.
     private func seriesLastPlayedDatesBestEffort(
         for items: [BaseItemDto]
@@ -460,36 +499,43 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             result[dto.Id] = date
         }
         let missing = seriesIDs.filter { result[$0] == nil }
-        for start in stride(from: 0, to: missing.count, by: 4) {
+        let dates = try await withThrowingTaskGroup(of: (String, Date?).self) { group in
             try Task.checkCancellation()
-            let batch = missing[start..<min(start + 4, missing.count)]
-            let dates = try await withThrowingTaskGroup(of: (String, Date?).self) { group in
-                for seriesID in batch {
-                    group.addTask {
-                        do {
-                            let episode = try await client.lastPlayedEpisode(userID: session.userID, seriesID: seriesID)
-                            return (seriesID, Self.parseDate(episode?.UserData?.LastPlayedDate))
-                        } catch let error as AppError where error == .cancelled {
-                            throw error
-                        } catch is CancellationError {
-                            throw CancellationError()
-                        } catch {
-                            PlozzLog.networking.error(
-                                "Continue Watching episode-recency lookup failed; keeping undated Next Up: \(String(describing: error))"
-                            )
-                            return (seriesID, nil)
-                        }
-                    }
-                }
-                var dates: [String: Date] = [:]
-                for try await (seriesID, date) in group {
-                    dates[seriesID] = date
-                }
-                return dates
+            var next = min(4, missing.count)
+            for seriesID in missing.prefix(next) {
+                group.addTask { try await lastPlayedDate(forSeriesID: seriesID) }
             }
-            result.merge(dates) { existing, _ in existing }
+            var dates: [String: Date] = [:]
+            for try await (seriesID, date) in group {
+                try Task.checkCancellation()
+                dates[seriesID] = date
+                if next < missing.count {
+                    let seriesID = missing[next]
+                    next += 1
+                    group.addTask { try await lastPlayedDate(forSeriesID: seriesID) }
+                }
+            }
+            return dates
         }
+        result.merge(dates) { existing, _ in existing }
         return result
+    }
+
+    private func lastPlayedDate(forSeriesID seriesID: String) async throws -> (String, Date?) {
+        do {
+            let episode = try await client.lastPlayedEpisode(userID: session.userID, seriesID: seriesID)
+            return (seriesID, Self.parseDate(episode?.UserData?.LastPlayedDate))
+        } catch let error as AppError where error == .cancelled {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            PlozzLog.networking.error(
+                "Continue Watching episode-recency lookup failed; keeping undated Next Up: \(String(describing: error))"
+            )
+            return (seriesID, nil)
+        }
     }
 
     /// Stamps a Continue Watching item that carries no play timestamp of its own —
@@ -677,6 +723,12 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             }
         }
         return Array(result.prefix(limit))
+    }
+
+    public func libraryItems(ids: [String]) async throws -> [MediaItem] {
+        let items = try await client.libraryItems(userID: session.userID, ids: ids)
+        try Task.checkCancellation()
+        return items.map { map(item: $0) }
     }
 
     public func item(id: String) async throws -> MediaItem {
@@ -1544,6 +1596,9 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         let confirmsAtmos = cachedProbe.completed
             && cachedProbe.facts?.audioIsAtmos == true
         var mappedItem = map(item: detail)
+        // A title's runtime may describe another cut, so it cannot validate this file.
+        mappedItem.runtime = JellyfinTicks.seconds(fromTicks: originalSource.RunTimeTicks)
+            .flatMap { $0 > 0 ? $0 : nil }
 
         let streams = source.MediaStreams ?? fallbackStreams
         var audio = streams.filter { $0.`Type` == "Audio" }.map(map(stream:))
@@ -2159,13 +2214,25 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
     /// fetched via a plain item lookup — no `PlaybackInfo`/transcode. Used to
     /// observe a just-downloaded subtitle so it can be hot-loaded.
     public func subtitleTracks(forItemID itemID: String) async throws -> [MediaTrack] {
-        let dto = try await client.item(userID: session.userID, id: itemID)
-        let source = dto.MediaSources?.first
-        let sourceID = source?.Id ?? itemID
-        let streams = source?.MediaStreams ?? dto.MediaStreams ?? []
+        try await subtitleTracks(context: .init(itemID: itemID))
+    }
+
+    public func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        let dto = try await client.item(userID: session.userID, id: context.itemID)
+        let source: MediaSourceInfo?
+        if let sourceID = context.mediaSourceID {
+            guard let selected = dto.MediaSources?.first(where: { $0.Id == sourceID }) else {
+                throw AppError.notFound
+            }
+            source = selected
+        } else {
+            source = dto.MediaSources?.first
+        }
+        let sourceID = source?.Id ?? context.itemID
+        let streams = source?.MediaStreams ?? (context.mediaSourceID == nil ? dto.MediaStreams : nil) ?? []
         return try streams
             .filter { $0.`Type` == "Subtitle" }
-            .map { try map(subtitleStream: $0, itemID: itemID, sourceID: sourceID) }
+            .map { try map(subtitleStream: $0, itemID: context.itemID, sourceID: sourceID) }
     }
 
     // MARK: - Mapping
@@ -2377,6 +2444,7 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
             id: dto.Id,
             title: dto.Name ?? "Untitled",
             originalTitle: dto.OriginalTitle,
+            seriesStatus: kind == .series ? dto.Status.flatMap(MediaSeriesStatus.init(providerValue:)) : nil,
             kind: kind,
             isTrailer: dto.Type == "Trailer" || MediaExtraKind(rawProviderValue: dto.ExtraType) == .trailer,
             overview: dto.Overview,
@@ -2653,6 +2721,13 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         for dto: BaseItemDto,
         client: JellyfinClient
     ) -> [ArtworkSelection] {
+        let landscape: [ArtworkSelection]
+        if dto.Type == "Movie" || dto.Type == "Series",
+           let thumb = imageURL(for: dto, kind: .thumb, maxWidth: 3840, client: client) {
+            landscape = [.init(placement: .landscapeCard, references: [.remote(thumb)])]
+        } else {
+            landscape = []
+        }
         var candidates: [HeroArtworkCandidate] = []
         for (index, tag) in (dto.BackdropImageTags ?? []).enumerated() {
             guard let url = client.imageURL(
@@ -2687,13 +2762,13 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
                 "jellyfin pool=\(candidates.count) backdropTags=\((dto.BackdropImageTags ?? []).count) "
                 + "thumb=\(dto.ImageTags?["Thumb"] != nil) title=\(dto.Name ?? "?") — NO SELECTION"
             }
-            return []
+            return landscape
         }
         HeroArtDiagnostics.emitOnce(stage: "jf-pool", key: dto.Id) {
             "jellyfin pool=\(candidates.count) backdropTags=\((dto.BackdropImageTags ?? []).count) "
             + "thumb=\(dto.ImageTags?["Thumb"] != nil) title=\(dto.Name ?? "?")"
         }
-        return HeroArtworkPlanner.selections(for: candidates)
+        return HeroArtworkPlanner.selections(for: candidates) + landscape
     }
 
     /// Builds an *item-owned* image URL only when the DTO actually advertises
@@ -2768,7 +2843,8 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         return MediaTrack(
             id: dto.Index,
             kind: isSubtitle ? .subtitle : .audio,
-            displayTitle: isSubtitle ? title : TrackLabeling.audioDisplayTitle(title, sourceTitles: [dto.Title]),
+            displayTitle: TrackLabeling.trackDisplayTitle(title, sourceTitles: [dto.Title]),
+            sourceTitle: dto.Title,
             language: dto.Language,
             codec: dto.Codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(
@@ -2806,7 +2882,10 @@ public struct JellyfinProvider: MediaProvider, ServerRatingsProviding, SeriesRes
         return MediaTrack(
             id: dto.Index,
             kind: .subtitle,
-            displayTitle: dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)",
+            displayTitle: TrackLabeling.trackDisplayTitle(
+                dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)", sourceTitles: [dto.Title]
+            ),
+            sourceTitle: dto.Title,
             language: dto.Language,
             codec: dto.Codec,
             isDefault: dto.IsDefault ?? false,
@@ -2974,10 +3053,42 @@ extension JellyfinProvider: SupplementalStreamFactsProviding {
 // MARK: - Watched state
 
 extension JellyfinProvider: WatchStateProviding {
-    /// Toggles an item's played/watched state on the server. For a season or
-    /// series id Jellyfin cascades the change to the contained episodes.
     public func setPlayed(_ played: Bool, itemID: String) async throws {
         try await client.setItemPlayed(played, userID: session.userID, itemID: itemID)
+    }
+
+    public func setPlayed(_ played: Bool, itemID: String, kind: MediaItemKind?, capturedAt: Date) async throws {
+        guard let kind, kind == .season || kind == .series else {
+            try await setPlayed(played, itemID: itemID)
+            return
+        }
+        let before = try await client.watchStateEpisodes(userID: session.userID, parentID: itemID, kind: kind)
+        try Task.checkCancellation()
+        try await WatchMutationDeliveryAuthorization.check()
+        try await setPlayed(played, itemID: itemID)
+
+        // A container/list summary can reflect the parent's new flag while the
+        // individual episode is unchanged. Confirm each leaf independently.
+        for episode in before {
+            let state = try await client.episodeWatchState(
+                userID: session.userID, itemID: episode.Id, parentID: itemID, kind: kind
+            )
+            if state.Played == played, (state.PlaybackPositionTicks ?? 0) <= 0 { continue }
+            try Task.checkCancellation()
+            try await WatchMutationDeliveryAuthorization.check()
+            if state.Played != played {
+                try await setPlayed(played, itemID: episode.Id)
+            }
+            try Task.checkCancellation()
+            try await WatchMutationDeliveryAuthorization.check()
+            try await setResumePosition(0, itemID: episode.Id, capturedAt: capturedAt)
+            let verified = try await client.episodeWatchState(
+                userID: session.userID, itemID: episode.Id, parentID: itemID, kind: kind
+            )
+            guard verified.Played == played, (verified.PlaybackPositionTicks ?? 0) <= 0 else {
+                throw AppError.invalidResponse
+            }
+        }
     }
 }
 

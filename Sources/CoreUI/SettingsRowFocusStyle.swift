@@ -75,11 +75,7 @@ public enum SettingsRowMetrics {
         #endif
     }
     public static var helperFont: Font {
-        #if os(tvOS)
         descriptionFont
-        #else
-        .callout
-        #endif
     }
     public static var descriptionFont: Font {
         #if os(tvOS)
@@ -147,7 +143,8 @@ public enum SettingsRowMetrics {
 /// FOCUSED state is the native tvOS "inverted card":
 /// - Dark mode focus: WHITE fill, BLACK foreground.
 /// - Light mode focus: BLACK fill, WHITE foreground.
-/// UNFOCUSED state is transparent and inherits normal foreground colors.
+/// UNFOCUSED state inherits normal foreground colors. Navigation rows own their
+/// resting settings surface; other row roles remain transparent.
 ///
 /// The highlight card normally bleeds slightly outward via negative padding;
 /// `.contained` keeps it within grouped-list row bounds. Content remains anchored
@@ -379,6 +376,11 @@ public struct SettingsFocusRow<Content: View>: View {
                         y: isFocused ? 6 : 0
                     )
             )
+            .background {
+                if effectiveSize == .navigation {
+                    Color.clear.settingsGroupSurface(cornerRadius: corner)
+                }
+            }
             .contentShape(Rectangle())
             // Primary foreground inverts on focus so untouched titles flip.
             // Explicit `.foregroundStyle(...)` on individual leaves (chips,
@@ -394,6 +396,10 @@ public struct SettingsFocusRow<Content: View>: View {
 
 private struct SettingsRowIsFocusedKey: EnvironmentKey {
     static let defaultValue: Bool = false
+}
+
+private struct SettingsRowIsDestructiveKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 private struct SettingsRowFocusForegroundKey: EnvironmentKey {
@@ -413,6 +419,11 @@ private struct SettingsFormTextInsetKey: EnvironmentKey {
 }
 
 public extension EnvironmentValues {
+    var settingsRowIsDestructive: Bool {
+        get { self[SettingsRowIsDestructiveKey.self] }
+        set { self[SettingsRowIsDestructiveKey.self] = newValue }
+    }
+
     /// Group-relative text and divider inset, consumed by already-padded row labels.
     var settingsFormTextInset: CGFloat {
         get { self[SettingsFormTextInsetKey.self] }
@@ -454,11 +465,8 @@ public struct SettingsRowSecondaryStyle: ViewModifier {
     }
 }
 
-/// Leading icon: rendered in the shared secondary text colour when the row is
-/// idle (so icons read as calm supporting glyphs, not bright accent blobs, and
-/// match the same tier on iOS), flipped to the focus foreground (black in dark
-/// mode focus, white in light mode focus) when focused so it stays legible on
-/// the inverted focus card.
+/// Mobile leading icons match primary titles with medium-weight monochrome
+/// symbols. TV keeps secondary idle icons and its inverted focus foreground.
 public struct SettingsRowIconStyle: ViewModifier {
     @Environment(\.settingsRowIsFocused) private var focused
     @Environment(\.settingsRowFocusForeground) private var focusFg
@@ -467,11 +475,18 @@ public struct SettingsRowIconStyle: ViewModifier {
     public init() {}
 
     public func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            .symbolRenderingMode(.monochrome)
+            .fontWeight(.medium)
+            .plozzForeground(.primary)
+        #else
         content.foregroundStyle(
             focused
             ? AnyShapeStyle(focusFg)
             : AnyShapeStyle(palette.secondaryText)
         )
+        #endif
     }
 }
 
@@ -546,12 +561,9 @@ public struct SettingsCheckmark: View {
     }
 }
 
-/// Label style for standard settings rows: the leading icon is rendered in the
-/// shared ``ThemePalette/secondaryText`` tier while the title keeps its inherited
-/// (primary) colour. Applied once at the group level so every plain
-/// `Label(title, systemImage:)` in a settings section gets calm, standardized
-/// icons on both platforms — no per-call-site styling. Rows that need a coloured
-/// icon (e.g. a destructive red row) opt out by setting their own `.labelStyle`.
+/// Shared settings labels pair mobile icons and titles in the primary tier.
+/// TV retains secondary icons and inherited titles. Semantic colored rows can
+/// opt out with their own label style.
 public struct SettingsIconLabelStyle: LabelStyle {
     @ScaledMetric(relativeTo: .body) private var iconColumnWidth = SettingsRowMetrics.iconColumnWidth
 
@@ -560,6 +572,10 @@ public struct SettingsIconLabelStyle: LabelStyle {
     public func makeBody(configuration: Configuration) -> some View {
         Label {
             configuration.title
+                #if os(iOS)
+                .plozzForeground(.primary)
+                .anchorPreference(key: SettingsRowTitleAnchorKey.self, value: .bounds) { [$0] }
+                #endif
         } icon: {
             configuration.icon
                 .frame(width: iconColumnWidth)
@@ -614,8 +630,7 @@ public extension View {
         #endif
     }
 
-    /// L3 — a **feature** description: the intro sentence under the pane's feature
-    /// title (e.g. under "Hero"). Readable but secondary.
+    /// Shared supporting-copy typography for settings controls and page introductions.
     func settingsHelperText() -> some View {
         font(SettingsRowMetrics.helperFont).plozzForeground(.secondary)
             .settingsFormTextLayout()

@@ -70,9 +70,9 @@ struct PlozziOSSyncSetupSendFlow: View {
                 .navigationTitle("Set Up Device")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .cancellationAction) {
                         if model.phase != .sent {
-                            Button("Cancel", action: close)
+                            Button("Cancel", systemImage: "xmark", action: close)
                                 .accessibilityIdentifier("setup-send-cancel")
                         }
                     }

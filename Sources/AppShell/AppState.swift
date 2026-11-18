@@ -3,6 +3,7 @@ import Observation
 import AppRuntime
 import CoreModels
 import CoreNetworking
+import CoreSecureStore
 import CoreUI
 import FeatureAuth
 import FeatureDiscovery
@@ -56,6 +57,18 @@ public final class AppState {
               self.plexHomeUsers.pendingPlexPINRequest == nil,
               !self.accountsProviders.activeProfileAwaitsIdentity else { return nil }
         return self.accountsProviders.liveTVProviderResolver()(id)
+    }
+
+    private static func seerrAccountConnectionStore() -> SeerAccountConnectionStore {
+        SeerAccountConnectionStore(secureStore: KeychainStore(service: "com.plozz.app.household"))
+    }
+
+    private static func currentSeerrProfiles() -> [String: SeerProfileConnections]? {
+        do { return try seerrAccountConnectionStore().exportAPIKeys() }
+        catch {
+            PlozzLog.auth.error("Seerr pairing could not read profile connections")
+            return nil
+        }
     }
     private let appAdmission: AppAdmissionModel
     @ObservationIgnored private var accountSetupOriginProfileID: String?
@@ -801,6 +814,13 @@ public final class AppState {
                         connectionID: trackerConnectionID, serverScope: serverScope
                     )) { await reconciler.drain() }
                 }
+            },
+            endWithoutProgress: { accountID, itemID in
+                Task {
+                    await reconciler.finishLiveSession(
+                        accountID: accountID, itemID: itemID, mutation: nil, serverScope: serverScope
+                    )
+                }
             }
         )
     }
@@ -872,6 +892,9 @@ public final class AppState {
             self?.drainWatchOutbox()
             self?.universalWatchlistIdentityDidUpdate()
             Task { await self?.synchronizeTrackerHistoryOnForeground() }
+        },
+        isWarmingAllowed: { [weak self] in
+            self?.profilesModel.activeProfile.needsSetup == false
         }
     )
 
@@ -906,6 +929,18 @@ public final class AppState {
     public private(set) lazy var cloudSync: CloudConfigSyncService? = Self.makeCloudSync(for: self)
 
     @ObservationIgnored
+    lazy var providerCredentialSync = ProviderCredentialSync(
+        accounts: accountsProviders.accountStore,
+        canRestore: { [weak self] in self?.profileFlow.managementRequiresParentalPIN == false },
+        didRestore: { [weak self] in
+            guard let self else { return }
+            accountsProviders.reloadAccounts()
+            apply(.accountsChanged(accountsProviders.accounts))
+            refreshPendingSyncedServers()
+        },
+        onProgress: { [weak self] in self?.initialSetupRestoration.recordProgress() })
+
+    @ObservationIgnored
     public private(set) lazy var liveTVPortableSync: LiveTVPortableSyncBridge? =
         Self.makeLiveTVPortableSync(profiles: profilesModel)
     @ObservationIgnored
@@ -930,6 +965,7 @@ public final class AppState {
 
     /// Observable CloudKit sync status for the iCloud Sync settings page.
     public let cloudSyncStatus = CloudSyncStatus()
+    public let initialSetupRestoration = InitialSetupRestoration()
 
     /// Observable facet for the CloudKit "needs sign-in" server UI, kept off
     /// `AppState` itself so its @Observable mutable-property budget stays flat.
@@ -975,9 +1011,25 @@ public final class AppState {
         // gated on an authorization — it travels with the bundle the user approved.
         if let seerr = received.secrets?.seerr {
             Self.installSeerrSecretIfAbsent(seerr)
+            if let url = URL(string: seerr.baseURL) {
+                do {
+                    try Self.seerrAccountConnectionStore().importLegacyIfAbsent(
+                        SeerConnection(baseURL: url, apiKey: seerr.apiKey),
+                        profiles: received.config.profiles.map(\.profile)
+                    )
+                } catch { PlozzLog.auth.error("Seerr legacy pairing could not restore profile connections") }
+            }
             // The service cached its config at init; reload so a connection that
             // arrived with this pairing is live now, not after the next launch.
             Task { [seerService] in await seerService.reloadConnection() }
+        }
+        if let seerrProfiles = received.secrets?.seerrProfiles {
+            do {
+                try Self.seerrAccountConnectionStore().importAPIKeysIfAbsent(
+                    seerrProfiles, allowedProfiles: Set(received.config.profiles.map(\.profile.id))
+                )
+                Task { [seerService] in await seerService.reloadConnection() }
+            } catch { PlozzLog.auth.error("Seerr pairing could not restore profile connections") }
         }
         var expected = 0, added = 0
         var failedAccountIDs: [String] = []
@@ -1079,6 +1131,7 @@ public final class AppState {
     public private(set) lazy var plexHomeUsers: PlexHomeUsersModel = PlexHomeUsersModel(
         accountsProviders: accountsProviders,
         profilesModel: profilesModel,
+        runtimeFeatureFlags: runtimeFeatureFlags,
         switchProfile: { [weak self] id in self?.profileFlow.switchProfile(to: id) },
         // Watching as someone else changes whose library, watch state and
         // watchlist this is — but neither the profile nor the account set moves,
@@ -1317,7 +1370,7 @@ public final class AppState {
                 return SyncSecretsBundle(
                     accounts: accts,
                     shares: shares,
-                    seerr: Self.currentSeerrSecret()
+                    seerrProfiles: Self.currentSeerrProfiles()
                 )
             }
         )
@@ -1356,9 +1409,10 @@ public final class AppState {
         // Seed other trackers with the same profile namespace.
         self.simklService = simklService ?? SimklServiceFactory.make(namespace: ns)
         self.wetrakrService = wetrakrService ?? WetrakrServiceFactory.make(namespace: ns)
-        self.publicMetaDBService = PublicMetaDBService(namespace: ns)
+        let publicMetaDBService = PublicMetaDBService(namespace: ns)
+        self.publicMetaDBService = publicMetaDBService
         self.ratingsProvider = ratingsProvider ?? PublicMetaDBRatingsProvider(
-            base: RatingsServiceFactory.make(), service: self.publicMetaDBService
+            base: RatingsServiceFactory.make(), service: publicMetaDBService
         )
         // Seerr uses ONE shared household connection (user-independent Keychain);
         // profiles differ only by which Seerr user they request as (per request).
@@ -1370,6 +1424,13 @@ public final class AppState {
             guard let profiles = resolvedProfilesModel else { return false }
             return profiles.activeProfile.isKids && profiles.enforcesKidsRestrictions
         }
+        self.seerService.configureProfiles(
+            store: seerService == nil
+                ? SeerAccountConnectionStore(secureStore: KeychainStore(service: "com.plozz.app.household"))
+                : InMemorySeerAccountConnectionStore(),
+            profiles: resolvedProfilesModel.profilesForSync,
+            current: { [resolvedProfilesModel] in resolvedProfilesModel.activeProfile }
+        )
         self.anilistService = anilistService ?? AniListServiceFactory.make(namespace: ns)
         self.malService = malService ?? MALServiceFactory.make(namespace: ns)
         // Last.fm is user-scoped like the trackers; seed it with the active
@@ -1389,6 +1450,7 @@ public final class AppState {
             )
         }
 
+        accountsProviders.configureAuthenticatedArtwork()
         defaultAuthenticatedHTTPResolver?.configure { [weak self] locator in
             guard let self,
                   let account = self.accountsProviders.accountStore.loadAccounts().first(where: {
@@ -1442,6 +1504,9 @@ public final class AppState {
         accountsProviders.cloudTokenResolver = { [weak self] account, revision in
             guard let self else { throw CancellationError() }
             return try await self.plexHomeUsers.resolveCloudToken(for: account, expectedRevision: revision)
+        }
+        accountsProviders.onLocalAccountAuthentication = { [weak self] accountID in
+            self?.providerCredentialSync.didAuthenticateLocally(accountID: accountID)
         }
         accountsProviders.onAccountsInvalidated = { [weak self] in
             self?.mediaItemActionHandler.invalidateAccountCaches()
@@ -1629,16 +1694,11 @@ public final class AppState {
             plexHomeUsers.ensurePlexIdentityForActiveProfile()
         }
 
-        // One-time migration of any legacy per-profile Seerr connection into the
-        // shared household slot, then an initial reachability probe. Runs on the
-        // main actor (inherited); safe because migration no-ops once the household
-        // slot is set. The result's `promotedUserID` is intentionally not applied:
-        // the legacy per-profile `userId` was off-by-default and never set by the
-        // connect UI, so it's always nil in practice; per-profile acting users are
-        // established via the (upcoming) Settings mapping, not migration.
-        let seerNamespaces: [String?] = [nil] + profilesModel.profiles.map { $0.id }
+        SeerProfileAuthentication.configure(
+            service: self.seerService, profiles: profilesModel,
+            accounts: accountsProviders, plex: plexHomeUsers
+        )
         Task { [seerService] in
-            await seerService.migrateLegacyConnectionIfNeeded(namespaces: seerNamespaces)
             await seerService.refreshStatus()
         }
 
@@ -1884,7 +1944,7 @@ public final class AppState {
             profileID: profilesModel.activeProfileID
         )
         addAccount(provider: server.provider)
-        if server.provider.usesMediaBrowserAPI || server.provider == .silo {
+        if server.provider.usesMediaBrowserAPI || server.provider == .silo || server.provider == .subsonic {
             apply(.serverSelected(server))
         }
     }
@@ -1947,11 +2007,12 @@ public final class AppState {
            previousAccount.credentialRevision != persisted.credentialRevision {
             mediaShare.accountService.retireCredential(for: previousAccount)
         }
-        accountsProviders.reloadAccounts()
-        selectNewlyAddedUserIfNeeded(account)
         // A (re)added server clears any household-removal tombstone for it, so its
         // descriptor syncs again and peers stop treating it as removed.
         clearRemovalTombstone(for: account.id)
+        providerCredentialSync.didAuthenticateLocally(accountID: account.id)
+        accountsProviders.reloadAccounts()
+        selectNewlyAddedUserIfNeeded(account)
         // Flow finished — next add-account starts at the chooser.
         pendingOnboardingProvider = nil
         pendingIPTVPlaylist = nil
@@ -2009,6 +2070,8 @@ public final class AppState {
         do {
             for session in sessions {
                 let registration = try accountsProviders.accountStore.registerAuthenticatedSession(session)
+                clearRemovalTombstone(for: registration.account.id)
+                providerCredentialSync.didAuthenticateLocally(accountID: registration.account.id)
                 if let previousAccount = registration.previousAccount,
                    previousAccount.credentialRevision != registration.account.credentialRevision {
                     mediaShare.accountService.retireCredential(for: previousAccount)
@@ -2024,7 +2087,6 @@ public final class AppState {
             return
         }
         accountsProviders.reloadAccounts()
-        addedIDs.forEach(clearRemovalTombstone)   // (re)add clears removal tombstones
         pendingOnboardingProvider = nil
         guard !addedIDs.isEmpty else {
             apply(.authenticationFailed(.unknown("")))
@@ -2184,6 +2246,7 @@ public final class AppState {
     /// never re-runs it.
     public func confirmFirstRunProfile() {
         profilesModel.markFirstRunProfileSetupComplete()
+        identityIndex.warmIdentityIndex()
         apply(accountsProviders.accounts.isEmpty && allowsStandalonePlayback
             ? .standaloneProfileConfirmed
             : .profileConfirmed)
@@ -2204,6 +2267,8 @@ public final class AppState {
         profileFlow.completeAppearanceSetup(for: profilesModel.activeProfileID)
         apply(.navigationSelected)
         plexHomeUsers.ensurePlexIdentityForActiveProfile()
+        initialSetupRestoration.completeManualSetup(for: profilesModel.activeProfileID)
+        continueManualICloudSetupIfReady()
     }
 
     /// Sets or clears (`nil`) a profile's PIN gate.
@@ -2236,14 +2301,22 @@ public final class AppState {
     /// Marks a profile's setup finished, releasing its watchlist import.
     public func completeProfileSetup(for id: String) {
         profileFlow.completeSetup(for: id)
+        if profilesModel.activeProfileID == id { identityIndex.warmIdentityIndex() }
     }
 
     public func completeProfileLibrariesInsideSetup(for id: String) {
         profileFlow.completeLibrariesInsideSetup(for: id)
+        if profilesModel.activeProfileID == id { identityIndex.warmIdentityIndex() }
     }
 
     public func finishProfileSetupFlow() {
+        let completedID = profileFlow.pendingSetupProfile?.id
         profileFlow.finishSetupFlow()
+        if let completedID, completedID == profilesModel.activeProfileID,
+           profilesModel.profiles.contains(where: { $0.id == completedID }) {
+            initialSetupRestoration.completeManualSetup(for: completedID)
+            continueManualICloudSetupIfReady()
+        }
     }
 
     public func completeProfileAppearanceSetup(for id: String) {
@@ -2733,6 +2806,8 @@ public final class AppState {
             apply(.accountsChanged(accountsProviders.accounts))
             return
         }
+        var pending = PendingSyncedServersStore()
+        pending.ignore(id)
         if let removedAccount {
             mediaShare.accountService.retireCredential(for: removedAccount)
         }
@@ -2800,6 +2875,13 @@ public final class AppState {
         apply(.accountsChanged(accountsProviders.accounts))
     }
 
+    @ObservationIgnored
+    var eraseLiveTVLastSeen: ([String]) throws -> Void = { profileIDs in
+        try LiveTVLastSeenStore.erase(
+            profileIDs: profileIDs, secureStore: LiveTVSourceStorage.catalogSecrets()
+        )
+    }
+
     /// Debug-only: wipes everything that gates the first-run experience —
     /// accounts, profiles (collapsed to a single pristine default), the
     /// first-run flag, and the recent-servers list — so the next server add
@@ -2830,6 +2912,12 @@ public final class AppState {
         }
         guard accountsProviders.accounts.isEmpty else {
             apply(.accountsChanged(accountsProviders.accounts))
+            return false
+        }
+        do {
+            try eraseLiveTVLastSeen(profilesModel.profiles.map(\.id))
+        } catch {
+            PlozzLog.app.error("First-run reset could not erase Live TV last-seen rows")
             return false
         }
         plexHomeUsers.resetAllForDebug()
@@ -2863,6 +2951,7 @@ public final class AppState {
     /// namespace. Delegates to `profileSettings`; a no-op there when settings
     /// models were injected (tests).
     func rebuildSettingsModels() {
+        seerService.synchronizeProfile()
         HandoffDiagnostics.emit(
             "profile REBUILD active=" + profilesModel.activeProfileID
                 + " ns=" + (profilesModel.activeNamespace ?? "ROOT")

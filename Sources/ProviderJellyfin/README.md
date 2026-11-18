@@ -4,6 +4,11 @@ Shared Jellyfin/Emby implementation of `CoreModels.MediaProvider`. Both use the
 MediaBrowser API lineage and intentionally share one implementation so every
 supported capability remains at parity.
 
+Home-row sources explicitly request `SortName`, `DateCreated`, `ProductionYear`,
+and `PremiereDate` for local saved sorting. Emby omits release metadata without
+those fields; assuming Jellyfin's default response silently turns release sorting
+into name sorting. This applies to library, collection, playlist, and Home feeds.
+
 ## Responsibility
 
 - `JellyfinProvider` (the `MediaProvider` conformer) — libraries, items,
@@ -17,6 +22,8 @@ supported capability remains at parity.
   result by source revision, and updates badges without delaying detail or Play.
 - `JellyfinDTOs` — server JSON shapes, mapped into `CoreModels` value types
   at the seam (no DTO ever leaks above this module).
+  Explicit series `Status` maps to production status on both Jellyfin and Emby;
+  missing/unknown values stay absent. `ChildCount` is never a catalog total.
 - `JellyfinDeviceProfile` + `JellyfinCapabilityProfile` — the
   direct-play / transcode capability matrix sent on `/PlaybackInfo`,
   parameterised by whether the on-device decode engine (Plozzigen) is linked
@@ -49,6 +56,43 @@ supported capability remains at parity.
 
 ## Invariants
 
+Known season/show watch actions carry their media kind through the shared watch
+capability. Jellyfin and Emby enumerate all episodes in validated, bounded pages,
+request the native container update, and independently read each episode's played
+flag and resume position. A list summary can reflect the parent's new flag while
+individual episode state is still unchanged; list data cannot confirm delivery.
+If the server acknowledges without cascading, only unfinished episodes receive
+individual writes, followed by another individual verification.
+Foreign descendants, incomplete pagination, unreadable flags and unchanged
+post-write state fail explicitly, keeping durable actions queued. Authorization
+and cancellation are rechecked between operations. Normal movie/episode writes
+do not acquire these container reads; other providers retain their existing
+timestamp-aware/native implementation. Verification is linear in episode count
+and uses sequential requests rather than flooding the server.
+
+The container remains one outbox destination, not a transaction or per-episode
+checkpoint. A partial failure retries the container action. Concurrent playback
+inside that season/show is not protected by a parent timestamp; do not extend
+the leaf-reset freshness guarantee to a bulk action.
+
+New reduced Emby offline downloads use `EmbyOfflineDownloadURLBuilder`: one
+progressive H.264 MP4 plus independent raw AAC requests for additional soundtracks.
+Each request names the exact media source and audio index, preserves the approved
+proxy prefix and authentication, and owns its encoding session. The client
+packages alternate tracks without another video encode. This is Emby-specific:
+Jellyfin's audio-only endpoint does not honor the selected index. Original and
+legacy HLS downloads are unchanged; see [MediaDownloads](../MediaDownloads/README.md).
+
+Playback requests use the selected source's runtime, not the title-level runtime
+or a stale detail version. Missing or nonpositive source runtimes remain unknown.
+This keeps reduced-download validation from rejecting a valid shorter or longer cut.
+
+Subtitle inventory preserves the source's external/embedded distinction while
+providing exact-source extraction locators for text tracks on both Jellyfin and
+Emby. Reduced offline downloads save those extractable embedded tracks as sidecars;
+Original retains them in the source file. Image tracks have no text extraction
+locator. Extraction uses the subtitle endpoint, not another video conversion.
+
 - Approved alternate addresses share one resolver across ordinary and interactive
   API requests. Artwork and newly resolved playback resources use the selected
   origin, including its reverse-proxy prefix. Public identity probes carry no
@@ -65,6 +109,42 @@ supported capability remains at parity.
   implemented here whenever it's implemented for Plex (and vice versa).
 
 ## Home browsing
+
+Collection-directory availability uses an unsorted, image-free one-row BoxSet
+probe, not a fully enriched collection page. At most four probes run at once;
+each completion frees a slot, library order is retained, and failed probes leave
+availability unknown rather than pretending the directory is empty.
+Series-recency lookups use the same four-slot scheduling pattern without changing
+membership, resume positions or the precedence of authoritative server dates.
+Next Up requests above 100 use validated bounded pages, including finite prefixes;
+small previews remain one request and unlimited browsing remains exhaustive.
+
+Exact-ID Related card reads use `LibraryItemBatchProviding` on both Jellyfin and
+Emby. Each bounded batch uses the authenticated viewer's Items endpoint, includes
+provider identity, images and user data, and rejects duplicate or unrequested
+records. It does not call PlaybackInfo or request media-source inventory. Missing
+records remain missing so the shared loader can retry/search without inventing
+ownership.
+
+Movie and series `Thumb` images populate the shared `landscapeCard` artwork
+placement, independently of Home/detail backdrop ordering. The same mapping
+applies to Emby. Only advertised images are used; episode thumbnails keep their
+existing placement. Shared row presentation decides whether to use that key art
+or a clean backdrop with a logo; it does not branch on the server brand.
+
+Simultaneous library discovery from navigation and Home shares in-flight Views
+and collection-availability work. Sharing is confined to the authenticated
+client/provider and requested server user; replacing credentials creates a new
+scope. Cancelling one reader does not interrupt other readers, but the last
+reader cancels the underlying work. Completed responses and failures are not
+retained: a subsequent refresh still asks the server. This is request
+coalescing, not the optional persistent metadata/artwork cache.
+The Views, Resume, Next Up, Latest and generic library-item request
+definitions also explicitly opt into transport sharing. Other endpoints retain
+the transport's independent-request default, including auth, playback actions,
+item detail and dedicated watch-state verification reads. Item detail also
+authorizes queued resets: it must see newer playback rather than join an older
+pending response. Do not blanket-enable all GETs.
 
 Home browse feeds and collection membership request `DateCreated` so client-side
 Date added sorting uses library dates on both Jellyfin and Emby, without changing
@@ -167,6 +247,9 @@ feed cannot turn that failure into authoritative empty history. Home and
 series-resume callers receive the failure instead. Support details identify
 Resume and Next Up separately; bounded recent activity records only scope,
 endpoint counts and the number of successful feeds, without media or account IDs.
+Upcoming requests the same complete membership with `includeSeriesRecency: false`.
+That skips parent-date and last-played-episode enrichment only; it must not drop
+Next Up, since series containers can omit otherwise valid viewing history.
 
 Series-specific resume lookups allow resumable `/Shows/NextUp` candidates.
 Compatible bridges can return an empty series-scoped `/Items/Resume` even when
@@ -198,6 +281,25 @@ identity is the recommendation type and its occurrence within that type, not
 the changing baseline movie title or category ID. This keeps a hidden
 "More like..." slot hidden when its subject changes. The library Recommended
 screen still uses the server's own category identities and full inventory.
+
+Jellyfin Home, row discovery, previews, and browsing can share completed
+`/Movies/Recommendations` responses through an explicit `HomeRecommendationScope`.
+Reuse is private to one authenticated client and keyed by Home owner/revision,
+server user, library, and **exact item limit**. Different limits can return
+different titles: this does not substitute larger cached prefixes, increase
+request limits, or prefetch categories. Emby and unscoped requests retain their
+existing fresh-request behavior; Plex keeps native paging.
+
+Successful category arrays are reusable for 60 seconds, with least-recently-used
+limits of 16 entries and 2,000 item records per client. Pruning is lazy, and the
+record limit is not a byte/peak-memory guarantee. Empty arrays, failures, and
+oversized responses are not retained; oversized responses are returned without
+truncation. Concurrent readers share work, individual cancellation preserves
+remaining readers, and the last departure cancels transport work. Home refresh,
+history changes, and owner retirement fence older generations. Explicit Retry
+bypasses reuse, including when a valid response lacks the selected shelf.
+See the [performance evidence](../../docs/performance-lab.md#jellyfin-home-recommendation-reuse)
+for measured benefits and the unchanged first-load limitation.
 
 Watched- and liked-movie similarity rows share the concise localized heading
 `More like [movie title]`. The server title remains unchanged apart from trimming
@@ -389,7 +491,7 @@ native-only remux path, and required conversions.
 This ownership was cross-checked against
 [Sodalite's stream selection](https://github.com/superuser404notfound/Sodalite/blob/31799bde53e2d93384216b3f9b2523600896ef2b/Sodalite/Player/PlaybackStreamSelection.swift),
 [Swiftfin's playback builder](https://github.com/jellyfin/Swiftfin/blob/b0cb3127b1cef57b6508581be1cfe9addd5539a2/Shared/Objects/MediaPlayerManager/MediaPlayerItem/MediaPlayerItem%2BBuild.swift),
-and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/45e37ed2e6b66ea520229a6fb8b0f973fe155fda/docs/architecture.md).
+and the [linked engine's pipeline contract](https://github.com/brandomoore/AetherEngine/blob/8c7f919a4cff9f0d27d27f464657578ec08fc221/docs/architecture.md).
 These are protocol/design references, not copied implementations. Client
 differences do not establish the cause of an individual playback failure.
 
@@ -492,6 +594,13 @@ unless the profile explicitly enables it in Libraries. Discovery retains the
 entry for that control; a later refresh shows newly populated directories.
 Failures are logged and remain unknown, never converted into an empty result.
 This check does not load collection members or populate the full browse cache.
+
+Collection picker choices are not reconstructed from saved IDs or direct item
+reads. A disabled Jellyfin Collections library can disappear from user views and
+return an empty BoxSet list even while a known collection and its members remain
+directly readable. Fresh discovery must clear cached choices in that case.
+The user-facing API does not distinguish disabled from genuinely empty here, so
+Plozz does not invent a disabled status or request administrative library settings.
 
 The synthetic directory ID is navigation identity only. Browsing it uses the same
 cached BoxSet listing without `ParentId`; the in-library shortcut still forwards

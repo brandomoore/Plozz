@@ -10,7 +10,7 @@ enum StreamingMediaPlaylist {
         configuration.timeoutIntervalForResource = 5
         configuration.httpCookieStorage = nil
         configuration.urlCredentialStorage = nil
-        return URLSessionHTTPClient(session: URLSession(configuration: configuration))
+        return URLSessionHTTPClient(session: OfflineNetworkSession.make(configuration: configuration))
     }()
 
     static func resolve(_ url: URL, using client: (any HTTPClient)? = nil) async throws -> URL? {

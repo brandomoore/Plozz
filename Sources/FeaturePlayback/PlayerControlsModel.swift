@@ -8,6 +8,17 @@ import CoreUI
 
 @MainActor
 @Observable
+public final class PlayerUpscalingModel {
+    public var selection: VideoUpscaling = .default
+    public var isAvailable = false
+    public var isChanging = false
+    public var error: LocalizedStringResource?
+
+    public init() {}
+}
+
+@MainActor
+@Observable
 public final class SubtitleAppearanceModel {
     public var style: SubtitleStyle = .default
     public var rendersHDR = false
@@ -142,6 +153,7 @@ public final class ControlBarEntryModel {
     public var infoCardOpen: Bool = false
     /// Episode browsing gets a longer idle window than the other bottom cards.
     public var episodeBrowserOpen: Bool = false
+    public var discVideosOpen: Bool = false
 
     public init() {}
 }
@@ -373,6 +385,11 @@ public final class SkipSegmentsModel {
 @MainActor
 @Observable
 public final class PlayerControlsModel {
+    public struct FELConversionState {
+        public var isAvailable = false
+        public var isEnabled = PlaybackSettings.default.dolbyVisionFELConversion
+    }
+    public var felConversion = FELConversionState()
     public var artworkPolicy = ArtworkPresentationPolicy(area: .playback)
     // MARK: Live playback (written by the view model)
     public var duration: TimeInterval = 0
@@ -489,6 +506,17 @@ public final class PlayerControlsModel {
     public var playbackSpeed: Double = 1.0
     /// Audio offset in seconds (positive = audio later than video).
     public var audioDelaySeconds: TimeInterval = 0
+    public let audioSyncAdjustment: PlayerAudioSyncEditor
+    public static let audioDelayRange = PlayerAudioSyncAdjustment.range
+    public var audioSyncHint: LocalizedStringResource {
+        Self.audioSyncHint(for: audioDelaySeconds)
+    }
+    public static func audioSyncHint(for seconds: TimeInterval) -> LocalizedStringResource {
+        if seconds < 0 { return "Audio plays earlier than the video." }
+        if seconds > 0 { return "Audio plays later than the video." }
+        return "Adjust audio earlier or later to match the video."
+    }
+    public let upscaling = PlayerUpscalingModel()
     /// Subtitle offset in seconds (positive = subs later than video).
     public var subtitleDelaySeconds: TimeInterval = 0
     /// Whether subtitle timing can actually be shifted right now: true when the
@@ -555,6 +583,7 @@ public final class PlayerControlsModel {
     /// Whether the live playback-diagnostics overlay is shown. Toggleable from
     /// the in-player control bar; seeded from the caller's initial preference.
     public var diagnosticsEnabled: Bool = false
+    public let songRecognition = SongRecognitionModel()
 
     // MARK: Up Next (closing-credits next-episode card)
     /// The closing-credits next-episode card's own state. A facet for the stored
@@ -569,10 +598,12 @@ public final class PlayerControlsModel {
 
     init(systemAudio: SystemPlaybackAudio) {
         self.systemAudio = systemAudio
+        audioSyncAdjustment = PlayerAudioSyncEditor()
     }
     #endif
 
-    public init() {
+    public init(audioDelayRange: ClosedRange<TimeInterval> = PlayerAudioSyncAdjustment.range) {
+        audioSyncAdjustment = PlayerAudioSyncEditor(range: audioDelayRange)
         #if os(tvOS)
         systemAudio = .shared
         #endif
@@ -597,7 +628,7 @@ public final class PlayerControlsModel {
         #if os(tvOS)
         if !systemAudio.availableSettings.isEmpty { return true }
         #endif
-        return hasSelectableAudio || engineCapabilities.contains(.dialogEnhance)
+        return hasSelectableAudio || !engineCapabilities.intersection([.dialogEnhance, .audioDelay]).isEmpty
     }
     public var hasSelectableSubtitles: Bool { !subtitleOptions.isEmpty }
 
@@ -657,13 +688,17 @@ public final class PlayerControlsModel {
         return segment
     }
 
-    /// Credits with a queued next episode are "owned" by Up Next: the Skip
+    /// Terminal credits with a queued next episode are "owned" by Up Next: the Skip
     /// Credits button is never offered for that window — the card, an auto-advance,
     /// or a dismissal handles it — so the two affordances can never both appear.
     /// (A deep seek into credits clears ``activeCreditsSegment``, so a deliberate
     /// jump still falls through to normal handling.)
     public var creditsOwnedByUpNext: Bool {
-        upNextCard.info != nil && activeCreditsSegment != nil
+        guard upNextCard.info != nil, let credits = activeCreditsSegment,
+              duration.isFinite, duration > 0 else { return false }
+        // A finite credits window can end at another scene, even when it is the
+        // last reported marker. Only a window reaching EOF can hand off early.
+        return credits.end >= duration
     }
 
     /// Seconds before the end at which the Up Next card appears when there is NO

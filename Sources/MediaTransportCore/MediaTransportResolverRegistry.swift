@@ -126,6 +126,7 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
     }
 
     public func lease(for key: MediaTransportSessionKey) async throws -> MediaTransportResolverLease {
+        try OfflineMode.shared.requireNetworkAccess()
         let scope = RevisionScope(
             accountID: key.accountID,
             credentialRevision: key.credentialRevision

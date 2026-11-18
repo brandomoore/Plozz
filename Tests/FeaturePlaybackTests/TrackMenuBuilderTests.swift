@@ -127,6 +127,236 @@ final class AudioMenuAvailabilityTests: XCTestCase {
 /// exclusion, engine-dual vs sidecar sourcing) that used to be buried in
 /// `PlayerViewModel.loadTrackOptions`.
 final class TrackMenuBuilderTests: XCTestCase {
+    func testOnlyCollidingLabelsGetStableTrackNumbersInAllMenus() {
+        let tracks = [
+            MediaTrack(id: 7, kind: .subtitle, displayTitle: "English", language: "en", codec: "srt"),
+            MediaTrack(id: 8, kind: .subtitle, displayTitle: "English", language: "en", codec: "srt", isExternal: true),
+            MediaTrack(id: 9, kind: .subtitle, displayTitle: "Spanish", language: "es", codec: "srt")
+        ]
+        for localeID in ["en", "es", "fr", "zh-Hans"] {
+            let locale = Locale(identifier: localeID)
+            let language = TrackLabeling.languageName(forCode: "en", in: locale)!
+            let primary = TrackMenuBuilder.subtitleOptions(
+                tracks: tracks, selectedID: 8, preferred: ["es"], detectedLanguages: [:], locale: locale
+            )
+            let secondary = TrackMenuBuilder.secondaryOptions(
+                eligible: tracks, selectedID: 8, preferred: ["es"], detectedLanguages: [:], locale: locale
+            )
+            let audioTracks = tracks.map { track in
+                var audio = track
+                audio.kind = .audio
+                audio.codec = nil
+                return audio
+            }
+            let audio = TrackMenuBuilder.audioOptions(
+                tracks: audioTracks, selectedID: 8, preferred: ["es"], locale: locale
+            )
+            for options in [primary, secondary, audio] {
+                let rows = options.filter { $0.id != PlayerTrackOption.offID }
+                XCTAssertEqual(rows.map(\.id), [9, 7, 8])
+                XCTAssertEqual(rows.filter(\.isSelected).map(\.id), [8])
+                XCTAssertEqual(rows[0].nativeTitle, TrackLabeling.languageName(forCode: "es", in: locale))
+                for row in rows.dropFirst() {
+                    let number = LocalizedStringResource("Track \(row.id)", locale: locale)
+                    XCTAssertEqual(row.nativeTitle, "\(language) (\(String(localized: number)))")
+                    XCTAssertEqual(row.title, Text(verbatim: language)
+                        + (Text(verbatim: " (") + Text(number) + Text(verbatim: ")")))
+                }
+            }
+            XCTAssertTrue(primary.first { $0.id == 8 }!.isExternal)
+        }
+    }
+
+    func testNumberedLabelsCannotCollideWithAnAuthoredNameOrOff() {
+        let tracks = [
+            MediaTrack(id: 1, kind: .subtitle, displayTitle: "English", language: "en"),
+            MediaTrack(id: 2, kind: .subtitle, displayTitle: "English", language: "en"),
+            MediaTrack(id: 3, kind: .subtitle, displayTitle: "English (Track 1)"),
+            MediaTrack(id: 4, kind: .subtitle, displayTitle: "Off")
+        ]
+        let options = TrackMenuBuilder.subtitleOptions(
+            tracks: tracks, selectedID: nil, preferred: [], detectedLanguages: [:], locale: Locale(identifier: "en")
+        )
+        XCTAssertEqual(options.map(\.nativeTitle), [
+            "Off", "English (Track 1) (Track 1)", "English (Track 2)", "English (Track 1)", "Off (Track 4)"
+        ])
+        XCTAssertEqual(Set(options.map(\.nativeTitle)).count, options.count)
+        XCTAssertEqual(options.filter(\.isSelected).map(\.id), [-1])
+    }
+
+    func testAudioDescriptionReachesNativeAndSwiftUIMenusWithoutChangingSelection() {
+        let options = TrackMenuBuilder.audioOptions(
+            tracks: [
+                .init(id: 1, kind: .audio, displayTitle: "English", language: "en"),
+                .init(id: 2, kind: .audio, displayTitle: "English", language: "en", isVisualImpaired: true)
+            ], selectedID: 1, preferred: [], locale: Locale(identifier: "en")
+        )
+        XCTAssertEqual(options.map(\.nativeTitle), ["English", "English (Audio Description)"])
+        XCTAssertEqual(options.filter(\.isSelected).map(\.id), [1])
+        XCTAssertEqual(options[1].title, Text(verbatim: "English") + Text(verbatim: " (")
+            + Text(LocalizedStringResource("Audio Description", locale: Locale(identifier: "en"))) + Text(verbatim: ")"))
+    }
+
+    func testSampledServerMetadataHasDistinctLabelsAndStableSelections() throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_TRACK_METADATA_CORPUS"] else {
+            throw XCTSkip("Set PLOZZ_TRACK_METADATA_CORPUS to a private, normalized metadata sample.")
+        }
+        struct Sample: Decodable {
+            let group: String
+            let id: Int
+            let kind: String
+            let displayTitle: String
+            let sourceTitle: String?
+            let language: String?
+            let codec: String?
+            let profile: String?
+            let channels: Int?
+            let isForced: Bool
+            let isHearingImpaired: Bool
+            let isCommentary: Bool
+            let isVisualImpaired: Bool
+            let isExternal: Bool
+            let isDefault: Bool
+
+            var track: MediaTrack {
+                MediaTrack(
+                    id: id, kind: kind == "audio" ? .audio : .subtitle,
+                    displayTitle: displayTitle, sourceTitle: sourceTitle, language: language,
+                    codec: codec, profile: profile, isDefault: isDefault, isForced: isForced, channels: channels,
+                    isHearingImpaired: isHearingImpaired, isCommentary: isCommentary,
+                    isVisualImpaired: isVisualImpaired, isExternal: isExternal
+                )
+            }
+        }
+        let samples = try JSONDecoder().decode([Sample].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        XCTAssertFalse(samples.isEmpty)
+        var collisions = 0
+        var menuCount = 0
+        var rendered: [[String: String]] = []
+        for localeID in ["en", "es", "fr", "zh-Hans"] {
+            let locale = Locale(identifier: localeID)
+            for group in Dictionary(grouping: samples, by: \.group).values {
+                let tracks = group.map(\.track)
+                let audio = tracks.filter { $0.kind == .audio }
+                let subtitles = tracks.filter { $0.kind == .subtitle }
+                let primary = TrackMenuBuilder.subtitleOptions(
+                    tracks: subtitles, selectedID: subtitles.last?.id, preferred: ["en"],
+                    detectedLanguages: [:], locale: locale
+                )
+                let secondary = TrackMenuBuilder.secondaryOptions(
+                    eligible: subtitles, selectedID: subtitles.last?.id, preferred: ["en"],
+                    detectedLanguages: [:], locale: locale
+                )
+                let options = TrackMenuBuilder.audioOptions(
+                    tracks: audio, selectedID: audio.last?.id, preferred: ["en"], locale: locale
+                )
+                for row in options + primary where row.id != PlayerTrackOption.offID {
+                    let kind = options.contains(where: { $0.id == row.id }) ? "audio" : "subtitle"
+                    if let sample = group.first(where: { $0.id == row.id && $0.kind == kind }) {
+                        rendered.append([
+                            "locale": localeID, "group": sample.group, "kind": sample.kind,
+                            "sourceTitle": sample.sourceTitle ?? "", "displayTitle": sample.displayTitle,
+                            "language": sample.language ?? "", "label": row.nativeTitle
+                        ])
+                    }
+                }
+                for (menu, input) in [(options, audio), (primary, subtitles), (secondary, subtitles)] {
+                    let rows = menu.filter { $0.id != PlayerTrackOption.offID }
+                    menuCount += 1
+                    collisions += rows.count - Set(rows.map(\.nativeTitle)).count
+                    XCTAssertEqual(rows.map(\.id), input.sortedByPreferredLanguage(["en"]).map(\.id))
+                    XCTAssertEqual(rows.filter(\.isSelected).map(\.id), input.last.map { [$0.id] } ?? [])
+                    XCTAssertTrue(rows.allSatisfy { !$0.nativeTitle.isEmpty })
+                }
+            }
+        }
+        print("Track corpus: \(samples.count) records, \(menuCount) menus, \(collisions) duplicate labels.")
+        if let output = ProcessInfo.processInfo.environment["PLOZZ_TRACK_LABEL_OUTPUT"] {
+            try JSONSerialization.data(withJSONObject: rendered, options: [.sortedKeys])
+                .write(to: URL(fileURLWithPath: output), options: .atomic)
+        }
+        XCTAssertEqual(collisions, 0, "Different selectable tracks must remain distinguishable.")
+    }
+
+    func testContainerNamesReachAudioAndBothSubtitleMenusWithoutChangingSelection() {
+        let locale = Locale(identifier: "en")
+        let provider = ["Full subs", "Signs & Songs"].enumerated().map { index, title in
+            MediaTrack(id: index + 10, kind: .subtitle, displayTitle: "English",
+                       sourceTitle: title, language: "en", codec: "srt")
+        }
+        let engine = provider.map {
+            MediaTrack(id: $0.id, kind: .subtitle, displayTitle: "English", language: "en", codec: "srt")
+        }
+        let primary = TrackMenuBuilder.subtitleOptions(
+            tracks: zip(engine, provider).map { $0.enriched(withProvider: $1) },
+            selectedID: 11, preferred: ["en"], detectedLanguages: [:], locale: locale
+        )
+        let secondary = TrackMenuBuilder.secondaryOptions(
+            eligible: engine, providerTracks: provider, selectedID: 11,
+            preferred: ["en"], detectedLanguages: [:], locale: locale
+        )
+        for options in [primary, secondary] {
+            XCTAssertEqual(options.map(\.id), [-1, 10, 11])
+            XCTAssertEqual(options.filter(\.isSelected).map(\.id), [11])
+            XCTAssertEqual(options.map(\.nativeTitle), ["Off", "English (Full subs)", "English (Signs & Songs)"])
+            XCTAssertEqual(options[2].title,
+                           Text(verbatim: "English") + Text(verbatim: " (")
+                               + Text(verbatim: "Signs & Songs") + Text(verbatim: ")"))
+        }
+        let audio = TrackMenuBuilder.audioOptions(
+            tracks: [.init(id: 4, kind: .audio, displayTitle: "English",
+                           sourceTitle: "Director Commentary", language: "en", codec: "aac", channels: 2)],
+            selectedID: 4, preferred: ["en"], locale: locale
+        )
+        XCTAssertEqual(audio[0].nativeTitle, "English (Director Commentary, AAC Stereo)")
+        XCTAssertTrue(audio[0].isSelected)
+        XCTAssertEqual(audio[0].title,
+                       Text(verbatim: "English") + Text(verbatim: " (")
+                           + (Text(verbatim: "Director Commentary") + Text(verbatim: ", ") + Text(verbatim: "AAC Stereo"))
+                           + Text(verbatim: ")"))
+    }
+
+    func testSubtitleVersionsReachBothMenusWithNativeAndTVParity() {
+        let versions = ["VFF", "VFQ"]
+        let provider = versions.enumerated().map { index, version in
+            MediaTrack(id: index + 10, kind: .subtitle, displayTitle: "French (\(version))",
+                       language: "fr", codec: "subrip", isForced: true, isExternal: true)
+        }
+        let engine = provider.map {
+            MediaTrack(id: $0.id, kind: .subtitle, displayTitle: "French",
+                       language: "fr", codec: "subrip", isForced: true, isExternal: true)
+        }
+        for localeID in ["en", "fr", "es"] {
+            let locale = Locale(identifier: localeID)
+            let language = TrackLabeling.languageName(forCode: "fr", in: locale)!
+            let primary = TrackMenuBuilder.subtitleOptions(
+                tracks: zip(engine, provider).map { $0.enriched(withProvider: $1) },
+                selectedID: 11, preferred: ["fr-CA"], detectedLanguages: [:], locale: locale
+            )
+            let secondary = TrackMenuBuilder.secondaryOptions(
+                eligible: engine, providerTracks: provider, selectedID: 11,
+                preferred: ["fr-CA"], detectedLanguages: [:], locale: locale
+            )
+            let forced = String(localized: LocalizedStringResource("Forced", locale: locale))
+            for options in [primary, secondary] {
+                XCTAssertEqual(options.map(\.id), [-1, 10, 11])
+                XCTAssertEqual(options.filter(\.isSelected).map(\.id), [11])
+                XCTAssertEqual(options.dropFirst().map(\.nativeTitle), versions.map { "\(language) (\($0), \(forced))" })
+                for (option, version) in zip(options.dropFirst(), versions) {
+                    XCTAssertEqual(
+                        option.title,
+                        Text(verbatim: language) + Text(verbatim: " (")
+                            + (Text(verbatim: version) + Text(verbatim: ", ")
+                               + Text(LocalizedStringResource("Forced", locale: locale)))
+                            + Text(verbatim: ")")
+                    )
+                }
+            }
+            XCTAssertTrue(primary.dropFirst().allSatisfy(\.isExternal))
+            XCTAssertTrue(secondary.allSatisfy { !$0.isExternal })
+        }
+    }
+
     func testFrenchVersionsHaveMatchingNativeAndTVLabelsAndStableSelection() {
         let versions = ["VFQ", "VFF", "VFI"]
         let tracks = versions.enumerated().map { index, version in

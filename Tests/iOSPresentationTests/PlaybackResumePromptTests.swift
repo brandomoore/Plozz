@@ -1,5 +1,7 @@
+import AppRuntime
 import CoreModels
 import CoreUI
+import FeatureHomeCore
 import SwiftUI
 import UIKit
 import XCTest
@@ -7,6 +9,70 @@ import XCTest
 
 @MainActor
 final class PlaybackResumePromptTests: XCTestCase {
+    func testHiddenBriefProgressKeepsTheSavedPlaybackRequestPosition() {
+        let suite = "PlaybackResumePromptTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode,
+            runtime: 3600, resumePosition: 2, sourceAccountID: "jellyfin"
+        )
+        let request = PlozziOSPlaybackRequest(
+            item: episode, startPosition: episode.resumePosition ?? 0,
+            versionPreferences: VersionPreferenceStore(defaults: defaults)
+        )
+        XCTAssertNil(request.item.resumeProgressFraction)
+        XCTAssertNil(request.item.resumeRemainingText)
+        XCTAssertEqual(request.startPosition, 2)
+        XCTAssertEqual(request.item.sourceAccountID, episode.sourceAccountID)
+    }
+
+    func testEpisodeHeroRequestKeepsResumeWhenDetailSourcesDescribeItsShow() {
+        let suite = "PlaybackResumePromptTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = VersionPreferenceStore(defaults: defaults)
+        let episode = MediaItem(
+            id: "episode", title: "Episode", kind: .episode, seriesID: "show",
+            runtime: 3_000, resumePosition: 867, playedPercentage: 0.289,
+            sourceAccountID: "jellyfin",
+            versions: [MediaVersion(id: "episode-file", height: 1080)]
+        )
+        let sources = [
+            MediaSourceRef(accountID: "jellyfin", itemID: "show", kind: .series),
+            MediaSourceRef(accountID: "plex", itemID: "other-show", kind: .series)
+        ]
+        let capabilities = MediaCapabilities.detected()
+        let source = DetailPlaybackSelection.preferredSource(
+            sourceOverride: nil, libraryOrigin: nil,
+            itemSourceAccountID: episode.sourceAccountID,
+            sources: sources, capabilities: capabilities
+        )
+        let versions = DetailPlaybackSelection.versions(
+            for: episode, sources: sources, activeAccountID: source?.accountID
+        )
+        let versionID = DetailPlaybackSelection.preferredVersionID(
+            for: episode, versions: versions, versionOverride: nil,
+            preferences: preferences, capabilities: capabilities
+        )
+        let selected = DetailPlaybackSelection.playItem(
+            for: episode, sources: sources, activeAccountID: source?.accountID,
+            versionID: versionID, explicit: false
+        )
+        let playable = PlaybackSourceSelection.bestPlayItem(
+            selected, accounts: [], identitySources: { _ in sources }
+        )
+        let request = PlozziOSPlaybackRequest(
+            item: playable, startPosition: playable.resumePosition ?? 0,
+            versionPreferences: preferences
+        )
+        XCTAssertEqual(request.item.id, episode.id)
+        XCTAssertEqual(request.item.sourceAccountID, episode.sourceAccountID)
+        XCTAssertEqual(request.startPosition, 867)
+        XCTAssertTrue(PlaybackSettings(askBeforeResuming: true)
+            .shouldAskBeforeResuming(at: request.startPosition))
+    }
+
     func testRestartChangesOnlyThePendingRequestsPosition() {
         let suite = "PlaybackResumePromptTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -31,11 +97,19 @@ final class PlaybackResumePromptTests: XCTestCase {
     }
 
     func testNativePromptPresentsResumeRestartAndCancelWithoutStartingPlayback() async throws {
+        try await verifyNativePrompt(anchorID: "play")
+    }
+
+    func testNonHeroRequestDoesNotBorrowTheHeroAnchor() async throws {
+        try await verifyNativePrompt(anchorID: nil)
+    }
+
+    private func verifyNativePrompt(anchorID: String?) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         let state = ResumePromptState()
-        let host = UIHostingController(rootView: ResumePromptFixture(state: state))
+        let host = UIHostingController(rootView: ResumePromptFixture(state: state, anchorID: anchorID))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -54,6 +128,18 @@ final class PlaybackResumePromptTests: XCTestCase {
         XCTAssertEqual(dialog.title, "Movie")
         XCTAssertEqual(dialog.actions.map(\.title), ["Resume", "Start Over", "Cancel"])
         XCTAssertNil(state.chosenPosition)
+        let popover = try XCTUnwrap(dialog.popoverPresentationController)
+        let source = try XCTUnwrap(popover.sourceView)
+        let anchor = source.convert(popover.sourceRect, to: window)
+        if anchorID != nil {
+            XCTAssertEqual(anchor.width, 180, accuracy: 1)
+            XCTAssertEqual(anchor.height, 44, accuracy: 1)
+            XCTAssertGreaterThan(anchor.midY, window.bounds.midY,
+                                 "The prompt must attach to Play, not another anchor or the page.")
+        } else {
+            XCTAssertEqual(anchor.width, window.bounds.width, accuracy: 1)
+            XCTAssertGreaterThan(anchor.height, 100, "Non-hero requests must retain their container anchor.")
+        }
         state.item = nil
         let dismissDeadline = ContinuousClock.now + .seconds(3)
         while host.presentedViewController != nil, ContinuousClock.now < dismissDeadline {
@@ -73,10 +159,23 @@ private final class ResumePromptState {
 
 private struct ResumePromptFixture: View {
     @Bindable var state: ResumePromptState
+    let anchorID: String?
 
     var body: some View {
-        Text("Fixture")
-            .resumePrompt(item: $state.item) { _, position in
+        VStack {
+            Spacer()
+            Text("Fixture")
+                .frame(width: 180, height: 44)
+                .resumePromptAnchor()
+        }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, 100)
+            .overlay(alignment: .topTrailing) {
+                Color.clear
+                    .frame(width: 80, height: 44)
+                    .resumePromptAnchor(id: "another-item")
+            }
+            .resumePrompt(item: $state.item, anchorID: anchorID) { _, position in
                 state.chosenPosition = position
             }
             .environment(\.locale, Locale(identifier: "en"))

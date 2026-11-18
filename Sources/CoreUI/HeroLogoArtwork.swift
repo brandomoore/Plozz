@@ -262,26 +262,30 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
 
     public var body: some View {
         #if canImport(UIKit)
-        ArtworkPolicyReader(policy: nil) { policy in
-        let logoPolicy = policy.forPlacement(.logo)
-        LoadedLogo(
-            references: references,
-            asyncFallbackURL: asyncFallbackURL?.localized(to: logoPolicy.logoLanguage),
-            prefersOnlineArtwork: logoPolicy.prefersOnlineArtwork,
-            providerPolicyIdentity: logoPolicy.identity,
-            backgroundSample: backgroundSample,
-            displayedArtworkID: displayedArtworkID,
-            maxWidth: maxWidth,
-            maxHeight: maxHeight,
-            constrainsToBounds: constrainsToBounds,
-            presentationPolicy: presentationPolicy,
-            alignment: alignment,
-            haloStyle: haloStyle,
-            logoNeedsHelp: logoNeedsHelp,
-            onResolve: onResolve,
-            textFallback: textFallback
-        )
-        .id(logoPolicy.identity)
+        ArtworkPolicyReader(policy: nil) { policy, sourceReady in
+            let logoPolicy = policy.forPlacement(.logo)
+            if sourceReady {
+                LoadedLogo(
+                    references: references,
+                    asyncFallbackURL: asyncFallbackURL?.localized(to: logoPolicy.logoLanguage),
+                    prefersOnlineArtwork: logoPolicy.prefersOnlineArtwork,
+                    providerPolicyIdentity: logoPolicy.identity,
+                    backgroundSample: backgroundSample,
+                    displayedArtworkID: displayedArtworkID,
+                    maxWidth: maxWidth,
+                    maxHeight: maxHeight,
+                    constrainsToBounds: constrainsToBounds,
+                    presentationPolicy: presentationPolicy,
+                    alignment: alignment,
+                    haloStyle: haloStyle,
+                    logoNeedsHelp: logoNeedsHelp,
+                    onResolve: onResolve,
+                    textFallback: textFallback
+                )
+                .id(logoPolicy.identity)
+            } else {
+                textFallback().opacity(presentationPolicy.showsTextWhileLoading ? 1 : 0)
+            }
         }
         #else
         textFallback()
@@ -306,13 +310,14 @@ enum HeroLogoMemo {
         let fallback: HeroLogoFallback.Identity?
         let prefersOnlineArtwork: Bool
         let providerPolicyIdentity: String
+        let displayIdentity: ArtworkDisplayIdentity
 
-        /// A richer request for the same subject may keep its visible logo while
-        /// resolving. Corrections, account changes and artwork preferences cannot.
+        /// Compatible enrichment must not replace a painted logo.
         func canRetainImage(from previous: Self) -> Bool {
             if self == previous { return true }
             guard prefersOnlineArtwork == previous.prefersOnlineArtwork,
                   providerPolicyIdentity == previous.providerPolicyIdentity,
+                  displayIdentity == previous.displayIdentity,
                   let next = fallback, let old = previous.fallback,
                   next.itemID == old.itemID, next.sourceAccountID == old.sourceAccountID else {
                 return false
@@ -320,7 +325,6 @@ enum HeroLogoMemo {
             let query = next.query
             let prior = old.query
             // Genres can change metadata routing without changing the subject.
-            // The exact request still resolves again; its visible logo stays.
             guard query.artworkLanguage == prior.artworkLanguage,
                   query.kind == prior.kind,
                   query.title == prior.title, query.alternateTitle == prior.alternateTitle,
@@ -348,7 +352,10 @@ enum HeroLogoMemo {
             references: references.map(\.privacySafeIdentity),
             fallback: fallback?.identity,
             prefersOnlineArtwork: fallback != nil && prefersOnlineArtwork,
-            providerPolicyIdentity: providerPolicyIdentity
+            providerPolicyIdentity: providerPolicyIdentity,
+            displayIdentity: ArtworkDisplayIdentity(
+                subject: "logo", policy: providerPolicyIdentity, references: references, variant: .original
+            )
         )
     }
 
@@ -405,7 +412,7 @@ private struct LoadedLogo<TextFallback: View>: View {
         // rebuild drew the styled title for at least one frame, because the
         // pipeline is an actor and even a cache hit costs a suspension.
         let retained = resolvedKey.map { taskKey.canRetainImage(from: $0) } == true ? image : nil
-        let cached = HeroLogoMemo.value(for: taskKey) ?? retained
+        let cached = retained ?? HeroLogoMemo.value(for: taskKey)
         let shown = cached.map { processed in
             guard let displayedArtworkID else { return processed }
             return HeroLogoAnalysis.refine(processed, backgroundSample: displayedArtwork?.sample(for: displayedArtworkID))
@@ -536,6 +543,9 @@ private struct LoadedLogo<TextFallback: View>: View {
         // Keep a visible logo during compatible enrichment, but never carry it
         // into another subject or artwork policy while the new request resolves.
         let key = taskKey
+        if image != nil, resolvedKey.map({ key.canRetainImage(from: $0) }) == true {
+            return
+        }
         if resolvedKey.map({ key.canRetainImage(from: $0) }) != true { image = nil }
         if let cached = HeroLogoMemo.value(for: key) {
             resolvedKey = key
@@ -1110,7 +1120,7 @@ actor HeroLogoPipeline {
     private static func fetchAndPrepare(_ reference: ArtworkReference, background: Bool) async -> PreparedLogo? {
         switch reference {
         case .remote(let url):
-            guard let (data, response) = try? await ArtworkSession.shared.data(from: url) else {
+            guard let (data, response) = try? await ArtworkSession.data(from: url) else {
                 return nil
             }
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {

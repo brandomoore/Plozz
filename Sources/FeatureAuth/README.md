@@ -15,6 +15,16 @@ session persistence.
   - `PasswordSignInService` + `PasswordSignInViewModel` +
     `PasswordSignInView` — username/password sign-in for Emby and the
     fallback for Jellyfin servers without Quick Connect.
+  - `SubsonicAuthViewModel` + `SubsonicSignInView` — direct
+    **Navidrome (Subsonic)** address/username/password-or-API-key sign-in.
+    Server address and credentials use separate shared form groups. A native
+    Password/API Key selector defaults to Password and clears the previous
+    secret when switched; only API Key shows a short compatibility note.
+    Offered separately below the primary mobile choices in development/TestFlight,
+    without a generic "music servers" submenu. Shared account reauthentication
+    retains profile, server/user identity and credential-revision checks.
+    Cancelled work cannot persist a late session; persistence failure remains
+    visible instead of dismissing the form.
 - **Session state machine** — `SessionStateMachine`. A pure `reduce`
   function over `(state, event) → state` (`launching → selectingServer →
   authenticating → authenticated → failed`). Unit-tested independently of
@@ -32,6 +42,9 @@ session persistence.
   per-flow views above. `BrandQRCodeView` renders the Quick Connect /
   Plex Link codes as scannable QR. `ConnectionCodeView` supplies the shared
   readable code panel for Quick Connect, Plex Link, Silo, and device setup.
+  Mobile sign-in forms use `settingsSignInFields()` for native placeholders,
+  persistent accessible names, and consistent input spacing. This does not
+  remove descriptive section context or change tvOS field presentation.
   `ServerAddressesView` uses the shared provider logo and Settings surfaces to
   separate server/sign-in identity, saved addresses, and address entry. Full
   addresses wrap without truncation, with the protocol labeled separately;
@@ -64,8 +77,10 @@ session persistence.
   20-point page insets and a 640-point content cap across the server flows.
   Welcome, Add Source, Silo, and IPTV page actions share `plozzPageActionLabel`
   inside native large buttons, including alternative sign-in methods.
-  The mobile navigation owner supplies top-leading Cancel at the modal root
-  and Back on subsequent steps. Silo and IPTV suppress their standalone
+  Navidrome's Sign In and Cancel actions also fill the form width on TV.
+  The mobile navigation owner supplies Cancel at the modal root and Back on
+  subsequent steps, using semantic cancellation placement and title-plus-symbol
+  labels so native bars can adapt their edge. Silo and IPTV suppress their standalone
   in-content cancellation when hosted in that flow; leaving a step cancels its
   authentication/import work. Plex preserves its selection-loss confirmation
   for both root Cancel and pushed Back.
@@ -159,6 +174,21 @@ in the default suite.
   than invalidating every provider and losing active Silo grants.
 - **Tokens NEVER leave the Keychain.** Never written to `UserDefaults`,
   never logged. `AccountStore` is split-storage by design.
+- **Offline entry retains normal profile and PIN authorization.** An online Plex
+  Home sign-in can establish a non-synchronizing, device-local Keychain proof for
+  that profile, account credential revision, device, and selected server user.
+  Protected users retain a salted `ProfileLock` verifier, not their PIN. Offline
+  entry restores only that user's server token; it does not install an owner or
+  cloud-discovery token, establish a new binding, or enable automatic sign-in.
+  A connection outage may use this proof in normal mode, so a saved, reachable
+  LAN server remains usable without plex.tv. Explicit credential rejection,
+  changed identity, cancellation, and TLS/protocol failures cannot authorize
+  cached entry. First-time sign-in still requires the provider to be reachable.
+  `RuntimeFeatureFlag.offlineMode` gates this fallback on both platforms.
+  Disabling it retains the proof but cannot use it to authorize entry or create
+  new offline proofs; ordinary online authentication is unchanged.
+  As with other offline authorization, remote PIN/account changes cannot be
+  learned until connectivity returns; an observed rejection revokes the proof.
 - **One Plex Home authorization across servers.** During one profile activation,
   a successful Home-user PIN authenticates that Plex login/user once. Other enabled
   servers with the same Plex account user ID and Home-user UUID reuse its in-memory

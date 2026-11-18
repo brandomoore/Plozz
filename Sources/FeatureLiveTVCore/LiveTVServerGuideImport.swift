@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 
 extension LiveTVPrototypeImportModel {
@@ -70,6 +71,10 @@ extension LiveTVPrototypeImportModel {
                 start = end
                 let missingIDs = globalIDs.filter {
                     if force { return true }
+                    if context.kind == .iptv,
+                       serverGuideCoveragePhases(
+                        channelID: $0, from: chunkStart, to: end, validatedAt: guideClock()
+                       ).contains(nil) { return true }
                     switch serverGuideState(channelID: $0, from: chunkStart, to: end) {
                     case .noListings: return false
                     case .loading:
@@ -124,6 +129,7 @@ extension LiveTVPrototypeImportModel {
                         catalog.programs = merged.values.sorted {
                             $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start
                         }
+                        catalog.pendingGuideChannelIDs.subtract(replaced)
                         cachedServerCatalogs[source.id] = catalog
                         do {
                             try validateCacheBudget()
@@ -136,7 +142,7 @@ extension LiveTVPrototypeImportModel {
                             result = .failed
                             finishServerGuideWindow(window.id, phase: .failed, failure: partialFailure)
                         } else {
-                            finishServerGuideWindow(window.id, phase: .loaded)
+                            finishServerGuideWindow(window.id, phase: .loaded, isEmpty: programs.isEmpty)
                         }
                         updateServerStatus(source.id) {
                             $0.programCount = catalog.programs.count
@@ -159,6 +165,7 @@ extension LiveTVPrototypeImportModel {
                         result = .failed
                         if failure == .permissionDenied {
                             cachedServerCatalogs[source.id]?.programs = []
+                            cachedServerCatalogs[source.id]?.pendingGuideChannelIDs = []
                             try? publishPlaylists(into: model)
                             removeServerGuideWindows(source.id)
                             serverGuideWindows.append(window)
@@ -199,7 +206,7 @@ extension LiveTVPrototypeImportModel {
     }
 
     private func serverGuideCoveragePhases(
-        channelID: String, from: Date, to: Date
+        channelID: String, from: Date, to: Date, validatedAt: Date? = nil
     ) -> [LiveTVImportPhase?] {
         guard let reference = serverChannelReferences[channelID] else { return [nil] }
         let windows = serverGuideWindows.filter {
@@ -207,7 +214,14 @@ extension LiveTVPrototypeImportModel {
         }
         let boundaries = Set([from, to] + windows.flatMap { [max(from, $0.from), min(to, $0.to)] }).sorted()
         return zip(boundaries, boundaries.dropFirst()).map { start, end in
-            windows.last { $0.from <= start && $0.to >= end }?.phase
+            guard let window = windows.last(where: { $0.from <= start && $0.to >= end }) else { return nil }
+            let lifetime = window.isEmpty ? XMLTVGuideCacheMetadata.emptyResultMaximumAge : XMLTVGuideCacheMetadata.maximumAge
+            if let validatedAt, window.phase == .loaded,
+               let refreshed = window.lastRefresh,
+               (validatedAt < refreshed || validatedAt.timeIntervalSince(refreshed) >= lifetime) {
+                return nil
+            }
+            return window.phase
         }
     }
 
@@ -265,6 +279,7 @@ extension LiveTVPrototypeImportModel {
         var window = LiveTVServerGuideWindowStatus(
             sourceID: sourceID, channelIDs: orderedIDs, from: from, to: to, lastRefresh: previous?.lastRefresh
         )
+        window.isEmpty = previous?.isEmpty ?? false
         window.phase = .loading
         serverGuideWindows.append(window)
         activeServerGuideRequests.insert(window.id)
@@ -278,14 +293,17 @@ extension LiveTVPrototypeImportModel {
     }
 
     private func finishServerGuideWindow(
-        _ id: UUID, phase: LiveTVImportPhase, failure: LiveTVServerImportError? = nil
+        _ id: UUID, phase: LiveTVImportPhase, failure: LiveTVServerImportError? = nil, isEmpty: Bool = false
     ) {
         activeServerGuideRequests.remove(id)
         guard let index = serverGuideWindows.firstIndex(where: { $0.id == id }) else { return }
         serverGuideWindows[index].phase = phase == .idle && serverGuideWindows[index].lastRefresh != nil
             ? .loaded : phase
         serverGuideWindows[index].failure = failure
-        if phase == .loaded { serverGuideWindows[index].lastRefresh = Date() }
+        if phase == .loaded {
+            serverGuideWindows[index].lastRefresh = guideClock()
+            serverGuideWindows[index].isEmpty = isEmpty
+        }
         updateServerGuidePhase(serverGuideWindows[index].sourceID)
     }
 

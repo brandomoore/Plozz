@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 import SMBClient
 import CoreNetworking
 
@@ -45,6 +46,11 @@ public final class SMBServiceDiscovery: @unchecked Sendable {
     /// `timeout` seconds (or when the consumer stops iterating).
     public func discover(timeout: TimeInterval = 6) -> AsyncStream<DiscoveredSMBServer> {
         AsyncStream { continuation in
+            guard !OfflineMode.shared.isEnabled else {
+                PlozzLog.networking.info("SMB discovery deferred in Offline Mode")
+                continuation.finish()
+                return
+            }
             let params = NWParameters()
             params.includePeerToPeer = true
             let browser = NWBrowser(

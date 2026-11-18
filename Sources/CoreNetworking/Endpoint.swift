@@ -13,7 +13,7 @@ public enum HTTPMethod: String, Sendable {
 /// Providers build `Endpoint`s and hand them to `HTTPClient`, which keeps the
 /// transport (URLSession), header redaction, and error mapping in one place.
 public struct Endpoint: Sendable {
-    public enum RedirectPolicy: Equatable, Sendable {
+    public enum RedirectPolicy: Hashable, Sendable {
         case follow
         case sameOrigin
         case doNotFollow
@@ -28,6 +28,9 @@ public struct Endpoint: Sendable {
     public var redirectPolicy: RedirectPolicy
     /// A GET that can initiate server work must not be replayed on another address.
     public var allowsAutomaticAddressRetry: Bool
+    /// Opt in only at a known-safe read definition. Stateful or unreviewed GETs
+    /// (including authentication exchanges) need their own transfer.
+    public var allowsRequestCoalescing: Bool
     /// Preserve proof that a one-time mutation never reached HTTP transmission.
     public var reportsUndeliveredRequests: Bool = false
     /// Personal tracker routes can contain viewing identities even after token redaction.
@@ -44,7 +47,8 @@ public struct Endpoint: Sendable {
         headers: [String: String] = [:],
         body: Data? = nil,
         redirectPolicy: RedirectPolicy = .follow,
-        allowsAutomaticAddressRetry: Bool = true
+        allowsAutomaticAddressRetry: Bool = true,
+        allowsRequestCoalescing: Bool = false
     ) {
         self.method = method
         self.path = path
@@ -53,6 +57,7 @@ public struct Endpoint: Sendable {
         self.body = body
         self.redirectPolicy = redirectPolicy
         self.allowsAutomaticAddressRetry = allowsAutomaticAddressRetry
+        self.allowsRequestCoalescing = allowsRequestCoalescing
     }
 
     /// Convenience for a JSON `POST`/`GET` carrying an `Encodable` body.

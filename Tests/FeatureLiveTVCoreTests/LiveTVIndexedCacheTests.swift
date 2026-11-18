@@ -992,6 +992,41 @@ final class LiveTVIndexedCacheTests: XCTestCase {
         XCTAssertTrue(forbidden.isEmpty)
     }
 
+    func testGuideStationSearchFindsAlternateNamesWithoutChangingIdentity() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let url = try XCTUnwrap(URL(string: "https://example.test/guide.xml"))
+        let xml = Data("""
+        <tv>
+          <channel id="g0"><display-name>Primary name</display-name><display-name>Alternate name</display-name></channel>
+          <channel id="g0"><display-name>Another alias</display-name></channel>
+          <channel id="g1"><display-name>Primary name</display-name><display-name>Other region</display-name></channel>
+          <channel id="private/token"><display-name>Private station</display-name></channel>
+        </tv>
+        """.utf8)
+        _ = try await fixture.cache.importGuide(
+            data: xml, sourceID: "guide", channels: [channel(0)], provider: nil, now: now, sourceURL: url
+        )
+        let reopened = fixture.reopen()
+        for query in ["Alternate", "Another alias", "g0"] {
+            let options = try await reopened.guideChannels(sourceID: "guide", query: query, sourceURL: url)
+            XCTAssertEqual(options.map(\.id), ["g0"], query)
+            XCTAssertEqual(options.map(\.name), ["Primary name"], query)
+        }
+        let ambiguous = try await reopened.guideChannels(sourceID: "guide", query: "Primary name", sourceURL: url)
+        XCTAssertEqual(Set(ambiguous.map(\.id)), ["g0", "g1"])
+        let privateID = try await reopened.guideChannels(sourceID: "guide", query: "private/token", sourceURL: url)
+        XCTAssertTrue(privateID.isEmpty)
+        let wrongSource = try await reopened.guideChannels(sourceID: "other", query: "Alternate", sourceURL: url)
+        XCTAssertTrue(wrongSource.isEmpty)
+        let wrongURL = try await reopened.guideChannels(
+            sourceID: "guide", query: "Alternate", sourceURL: URL(string: "https://example.test/replaced.xml")
+        )
+        XCTAssertTrue(wrongURL.isEmpty)
+        let mappings = try await reopened.mappingOverrides()
+        XCTAssertTrue(mappings.isEmpty, "Finding a station must never save a mapping automatically.")
+    }
+
     func testIndexedMillionProgrammeFixtureKeepsOnlyRequestedRowsInMemory() async throws {
         let fixture = try CacheFixture()
         defer { fixture.removeOwnedFiles() }

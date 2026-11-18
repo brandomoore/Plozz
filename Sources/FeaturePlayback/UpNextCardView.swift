@@ -265,12 +265,15 @@ struct PlayerOverVideoCardStyle: ButtonStyle {
     /// changing.
     var pressScale: CGFloat = 0.94
     var mediaGlass = false
+    var showsSurface = true
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return configuration.label
             .background {
-                PlayerOverVideoSurface(focused: focused, cornerRadius: cornerRadius, mediaGlass: mediaGlass)
+                if showsSurface {
+                    PlayerOverVideoSurface(focused: focused, cornerRadius: cornerRadius, mediaGlass: mediaGlass)
+                }
             }
             .overlay {
                 // Focus only. A resting hairline reads as an outline rather than

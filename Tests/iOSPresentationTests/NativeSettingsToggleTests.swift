@@ -12,6 +12,401 @@ import XCTest
 
 @MainActor
 final class NativeSettingsToggleTests: XCTestCase {
+    func testVideoUpscalingShowsProfileSelectionOnPhoneAndTablet() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let suite = "VideoUpscalingMobile-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let model = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        for width: CGFloat in [390, 834] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 1000)
+            window.rootViewController = UIHostingController(rootView:
+                SettingsSectionGroup {
+                    VideoUpscalingControl(selection: Binding(
+                        get: { model.settings.videoUpscaling },
+                        set: { model.settings.videoUpscaling = $0 }
+                    ))
+                }
+                .padding(16)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.colorScheme, .dark)
+                .background(.black)
+            )
+            window.makeKeyAndVisible()
+            for mode in [VideoUpscaling.automatic, .off] {
+                model.settings.videoUpscaling = mode
+                try await settle(window)
+                let text = try captureText(window, name: "Video-upscaling-\(width)-\(mode.rawValue)")
+                XCTAssertTrue(text.contains("Video upscaling"), text)
+                XCTAssertTrue(text.contains(mode == .automatic ? "Automatic" : "Off"), text)
+            }
+        }
+    }
+
+    func testDescribedControlsKeepPlainRowClearanceAndOneTrailingDivider() async throws {
+        final class Frames {
+            var plain = CGRect.zero
+            var group = CGRect.zero
+            var described = CGRect.zero
+            var description = CGRect.zero
+            var automatic = CGRect.zero
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width: CGFloat in [390, 834] {
+            for size in [DynamicTypeSize.large, .accessibility3] {
+                let frames = Frames()
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 1100)
+                window.rootViewController = UIHostingController(rootView:
+                    VStack(spacing: 28) {
+                        SettingsSectionGroup {
+                            Toggle("Prefer lossless audio", isOn: .constant(true))
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.plain = $0 }
+                        SettingsSectionGroup {
+                            SettingsDescribedControl {
+                                Toggle("Prefer lossless audio", isOn: .constant(true))
+                            } description: {
+                                Text("Turn off for surround sound over regular HDMI ARC, which requires compressed audio.")
+                                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.description = $0 }
+                            }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.described = $0 }
+                            Toggle("Next setting", isOn: .constant(false))
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.group = $0 }
+                        SettingsSectionGroup {
+                            AutomaticSignInToggle(settings: .init(isEnabled: .constant(true)))
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.automatic = $0 }
+                    }
+                    .padding(16)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.dynamicTypeSize, size)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .background(Color.black)
+                )
+                window.makeKeyAndVisible()
+                try await settle(window)
+                let controls = switches(in: window).map { $0.convert($0.bounds, to: window) }.sorted { $0.minY < $1.minY }
+                XCTAssertEqual(controls.count, 4)
+                guard controls.count == 4 else { continue }
+                XCTAssertEqual(controls[1].minY - frames.group.minY,
+                               controls[0].minY - frames.plain.minY, accuracy: 1,
+                               "A description must not remove the toggle's top inset.")
+                XCTAssertGreaterThan(frames.description.minY, controls[1].maxY)
+                XCTAssertEqual(frames.described.maxY - frames.description.maxY, 8, accuracy: 1,
+                               "Descriptions share the normal row's bottom padding.")
+                if size == .large {
+                    XCTAssertEqual(controls[3].minY - frames.automatic.minY,
+                                   controls[0].minY - frames.plain.minY, accuracy: 1,
+                                   "Automatically Sign In must use the shared described-row clearance.")
+                    XCTAssertEqual(controls[1].minY - frames.group.minY,
+                                   frames.described.maxY + 4 - frames.description.maxY, accuracy: 1,
+                                   "The toggle and description share balanced outer padding.")
+                    XCTAssertLessThan(frames.description.minY - controls[1].maxY,
+                                      frames.described.maxY + 4 - frames.description.maxY,
+                                      "Supporting text must sit closer to its control than to the divider.")
+                }
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let cg = try XCTUnwrap(image.cgImage)
+                var bytes = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+                let context = try XCTUnwrap(CGContext(data: &bytes, width: cg.width, height: cg.height,
+                    bitsPerComponent: 8, bytesPerRow: cg.width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+                let scale = image.scale
+                let x = Int((frames.group.maxX - 4) * scale)
+                let firstY = Int((frames.group.minY + 12) * scale)
+                let lastY = Int((frames.described.maxY + 6) * scale)
+                let edges = (firstY..<lastY).filter { y in
+                    let value = Int(bytes[(y * cg.width + x) * 4])
+                    let before = Int(bytes[((y - 2) * cg.width + x) * 4])
+                    let after = Int(bytes[((y + 2) * cg.width + x) * 4])
+                    return value > max(before, after) + 8
+                }
+                XCTAssertFalse(edges.isEmpty, "The complete described row still needs a divider.")
+                XCTAssertTrue(edges.allSatisfy { CGFloat($0) / scale > frames.description.maxY },
+                              "No divider may split the toggle from its description.")
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Described settings \(width) \(size)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testSettingsIconsMatchPrimaryTitlesInLightAndDarkThemes() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let renderer = ImageRenderer(content:
+                SettingsSectionGroup {
+                    Button {} label: {
+                        Label("Appearance", systemImage: "paintpalette.fill")
+                    }
+                    .settingsActionRow()
+                    Button {} label: {
+                        Label("Profiles", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    .settingsActionRow()
+                }
+                .frame(width: 358)
+                .environment(\.themePalette, scheme == .dark ? .dark : .light)
+                .environment(\.colorScheme, scheme)
+                .environment(\.dynamicTypeSize, .large)
+                .environment(\.gradientBackgroundsEnabled, false)
+            )
+            renderer.scale = 3
+            let image = try XCTUnwrap(renderer.uiImage)
+            let cgImage = try XCTUnwrap(image.cgImage)
+            let width = cgImage.width
+            let height = cgImage.height
+            var bytes = [UInt8](repeating: 0, count: width * height * 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            func strongestInk(in columns: Range<Int>) -> Int {
+                let values = (12 * 3..<40 * 3).flatMap { y in
+                    columns.map { x in Int(bytes[(y * width + x) * 4]) }
+                }
+                return scheme == .dark ? values.max()! : values.min()!
+            }
+            XCTAssertEqual(
+                strongestInk(in: 16 * 3..<46 * 3),
+                strongestInk(in: 70 * 3..<150 * 3),
+                accuracy: 3,
+                "Leading icons should have the same foreground strength as titles."
+            )
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Settings monochrome icons \(scheme)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testSettingsListAndScrollShareMarginsAndSectionSpacing() async throws {
+        final class Frames {
+            var first = CGRect.zero
+            var second = CGRect.zero
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width: CGFloat in [390, 834] {
+            for scroll in [false, true] {
+                for size in [DynamicTypeSize.large, .accessibility3] {
+                    let frames = Frames()
+                    let groups = Group {
+                        SettingsSectionGroup {
+                            Button {} label: { Label("Appearance", systemImage: "paintpalette") }
+                                .settingsActionRow()
+                            Button {} label: { Label("Language", systemImage: "globe") }
+                                .settingsActionRow()
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.first = $0 }
+                        // Geometry instrumentation wraps the row; retain the group's List traits.
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        SettingsSectionGroup {
+                            Toggle("Auto switch", isOn: .constant(true))
+                            SettingsControlMenu {
+                                Button("System") {}
+                            } label: {
+                                SettingsMenuLabel("Appearance", value: "System")
+                            }
+                        } footer: {
+                            Text("Shared settings stay consistent.")
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.second = $0 }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
+                    window.frame = CGRect(x: 0, y: 0, width: width, height: 1000)
+                    window.rootViewController = UIHostingController(rootView:
+                        Group {
+                            if scroll {
+                                SettingsPageScroll { groups }
+                            } else {
+                                SettingsPageList { groups }
+                            }
+                        }
+                        .environment(\.themePalette, .dark)
+                        .environment(\.colorScheme, .dark)
+                        .environment(\.dynamicTypeSize, size)
+                        .environment(\.gradientBackgroundsEnabled, false)
+                    )
+                    window.makeKeyAndVisible()
+                    try await settle(window)
+                    XCTAssertEqual(frames.first.minX, 16, accuracy: 1)
+                    XCTAssertEqual(frames.first.width, width - 32, accuracy: 1)
+                    XCTAssertEqual(frames.second.minX, frames.first.minX, accuracy: 1)
+                    XCTAssertEqual(frames.second.minY - frames.first.maxY, 28, accuracy: 1)
+                    XCTAssertGreaterThanOrEqual(frames.first.height, 104)
+                    if size == .large {
+                        let nativeSwitch = try XCTUnwrap(switches(in: window).first)
+                        let frame = nativeSwitch.convert(nativeSwitch.bounds, to: window)
+                        XCTAssertEqual(frame.midY - frames.second.minY, 26, accuracy: 1)
+                    }
+                    let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                    })
+                    attachment.name = "Settings-layout-\(Int(width))-scroll-\(scroll)-\(size)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
+    }
+
+    func testSettingsSeparatorsFollowLabelsAndMirrorWithoutCrossingIcons() throws {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            for hasIcon in [true, false] {
+                let renderer = ImageRenderer(content:
+                    SettingsSectionGroup {
+                        ForEach(0..<2) { _ in
+                            Button {} label: {
+                                if hasIcon {
+                                    Label("Appearance", systemImage: "paintpalette")
+                                } else {
+                                    Text("Appearance")
+                                }
+                            }
+                            .settingsActionRow()
+                        }
+                    }
+                    .frame(width: 358)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.layoutDirection, direction)
+                    .environment(\.dynamicTypeSize, .large)
+                    .environment(\.displayScale, 3)
+                    .environment(\.gradientBackgroundsEnabled, false)
+                    .background(Color.black)
+                )
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.uiImage)
+                let cgImage = try XCTUnwrap(image.cgImage)
+                XCTAssertEqual(image.size.height, 104, accuracy: 1)
+                let width = cgImage.width
+                let height = cgImage.height
+                var bytes = [UInt8](repeating: 0, count: width * height * 4)
+                let context = try XCTUnwrap(CGContext(
+                    data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                    bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+                func dividerContrast(atLeading x: CGFloat) -> Int {
+                    let column = Int((direction == .leftToRight ? x : 358 - x) * 3)
+                    let background = Int(bytes[((height / 2 - 8) * width + column) * 4])
+                    return (-2...2).map { offset in
+                        abs(Int(bytes[((height / 2 + offset) * width + column) * 4]) - background)
+                    }.max() ?? 0
+                }
+                XCTAssertLessThan(dividerContrast(atLeading: 8), 3)
+                if hasIcon {
+                    XCTAssertLessThan(dividerContrast(atLeading: 32), 3, "Do not draw under the icon.")
+                } else {
+                    XCTAssertGreaterThan(dividerContrast(atLeading: 32), 3, "Text-only rows start at the text inset.")
+                }
+                XCTAssertGreaterThan(dividerContrast(atLeading: 120), 3)
+                XCTAssertGreaterThan(dividerContrast(atLeading: 340), 3, "Continue to the trailing group edge.")
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Settings group icons=\(hasIcon) direction=\(direction)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testPlayerTabsUseFiveIndependentNativeSwitchesAtPhoneAndTabletWidths() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let suite = "PlayerTabsMobile-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let store = PlaybackSettingsStore(defaults: defaults, namespace: "viewer")
+        let model = PlaybackSettingsModel(store: store)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        for width: CGFloat in [390, 834] {
+            model.settings = .default
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 844)
+            window.rootViewController = UIHostingController(rootView:
+                NavigationStack {
+                    SettingsPageList {
+                        PlayerTabSettingsControls(model: model)
+                    }
+                    .navigationTitle("Playback")
+                }
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            window.makeKeyAndVisible()
+            try await settle(window)
+            let controls = listedSwitches(in: window).sorted {
+                $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY
+            }
+            XCTAssertEqual(controls.count, 5)
+            let text = try captureText(window, name: "Player-tabs-settings-mobile-\(Int(width))")
+            for label in ["Player tabs", "Chapters", "Cast", "Episodes", "Playlist", "Continue Watching"] {
+                XCTAssertTrue(text.localizedCaseInsensitiveContains(label), text)
+            }
+            XCTAssertFalse(text.contains("Info"), text)
+            for (index, control) in controls.enumerated() {
+                XCTAssertTrue(control.isOn)
+                try assertGreenOnState(control, in: window)
+                control.setOn(false, animated: false)
+                control.sendActions(for: .valueChanged)
+                try await settle(window)
+                for (otherIndex, tab) in PlayerOptionalTab.allCases.enumerated() {
+                    XCTAssertEqual(
+                        model.settings[keyPath: tab.visibilityKeyPath], otherIndex > index,
+                        "Changing one native switch must not toggle a sibling."
+                    )
+                }
+                XCTAssertEqual(store.load(), model.settings)
+            }
+            XCTAssertTrue(model.settings.autoPlayNextEpisode)
+            XCTAssertTrue(model.settings.autoPlayNextPlaylistItem)
+            XCTAssertTrue(model.settings.showUpNextCard)
+        }
+    }
+
     @Observable
     final class Model {
         var isOn = false

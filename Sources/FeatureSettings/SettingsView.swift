@@ -396,6 +396,7 @@ public struct SettingsView: View {
             destination(for: route)
         }
         .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
+        .environment(themeMusic)
         .task { await reloadLibraries() }
         .onAppear { MainThreadStallProbe.context = "settings" }
         .onChange(of: activeProfile.id) { _, _ in
@@ -566,9 +567,16 @@ public struct SettingsView: View {
                     }
                 case .language:
                     AppLanguagePicker(model: appLanguage, isCategoryRow: true)
+                case .seerr:
+                    if !activeProfile.isKids {
+                        SettingsSectionButton(title: Text(verbatim: "Seerr"), icon: category.symbol, assetIcon: "SeerrIcon",
+                                              value: seerrRowValue, route: .seerr)
+                    }
                 default:
-                    sectionRow(category.title, icon: category.symbol,
-                               subtitle: category.summary.map { Text($0) }, route: category.settingsRoute)
+                    if let title = category.localizedTitle {
+                        sectionRow(title, icon: category.symbol,
+                                   subtitle: category.summary.map { Text($0) }, route: category.settingsRoute)
+                    }
                 }
             }
             // The profile's own PIN gate. Belongs to the profile (it travels with
@@ -578,7 +586,7 @@ public struct SettingsView: View {
         }
     }
 
-    /// The **Everyone** container: everything shared by every profile — server
+    /// The **Manage Plozz** container: everything shared by every profile — server
     /// sign-ins (shared Keychain via `AccountStore`) and profile management (the
     /// roster; the launch picker lives one level in, on the Profiles screen). It
     /// follows the profile card, because the profile holds what people actually
@@ -586,27 +594,19 @@ public struct SettingsView: View {
     /// belongs to a single profile; a profile only picks which of these servers
     /// it watches (see the profile's Libraries section).
     ///
-    /// Named for its audience, not the hardware. Most of what's in here syncs, so
-    /// "This Apple TV" was only ever true when iCloud Sync was off — see
-    /// `SettingsCopy.everyone`. The heading is fixed and the *subtitle* carries the
-    /// reach, so flipping Sync never appears to move a row into another scope.
+    /// Individual settings explain their device and sync scope.
     @ViewBuilder
     private var everyoneSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             // "Identity on top", mirroring the profile card's avatar header. The
-            // glyph tracks reach the same way the subtitle does: people when these
+            // glyph tracks reach: people when these
             // settings span the user's devices, a lone Apple TV when they don't.
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: SettingsWorkspaceHeaderMetrics.labelSpacing) {
-                    SettingsWorkspaceScopeBadge(syncEnabled: syncEnabled)
-                        .accessibilityIdentifier("settings-everyone-icon")
-                    Text(SettingsCopy.everyone)
-                        .font(SettingsWorkspaceHeaderMetrics.titleFont)
-                        .accessibilityIdentifier("settings-everyone-name")
-                }
-                Text(SettingsCopy.everyoneScope(syncEnabled: syncEnabled, deviceName: Self.deviceName))
-                    .font(.caption)
-                    .plozzForeground(.secondary)
+            HStack(spacing: SettingsWorkspaceHeaderMetrics.labelSpacing) {
+                SettingsWorkspaceScopeBadge(syncEnabled: syncEnabled)
+                    .accessibilityIdentifier("settings-everyone-icon")
+                Text(SettingsCopy.everyone)
+                    .font(SettingsWorkspaceHeaderMetrics.titleFont)
+                    .accessibilityIdentifier("settings-everyone-name")
             }
             .padding(SettingsWorkspaceHeaderMetrics.contentInset)
 
@@ -636,14 +636,6 @@ public struct SettingsView: View {
                 sectionRow(KidsProfileCopy.parentalPIN, icon: "figure.and.child.holdinghands",
                        value: hasParentalPIN ? Text(ProfileLockCopy.on) : Text(ProfileLockCopy.off),
                        route: .parentalPIN)
-
-                // Seerr is one shared admin connection powering the Home hero's
-                // trending row + requests for everyone on this Apple TV, so it's
-                // a household concern — not a per-profile tracker. The per-profile
-                // "requests are made as" mapping is managed inside its page.
-                SettingsSectionButton(title: Text(verbatim: "Seerr"), icon: "sparkles.tv", assetIcon: "SeerrIcon",
-                       value: seerrRowValue,
-                       route: .seerr)
 
                 // Cross-device sync + device pairing, combined under one entry that
                 // drills into a detail page (matches the Settings hierarchy).
@@ -945,7 +937,9 @@ public struct SettingsView: View {
         case .circadian: authorizedDestination(for: .nightShift)
         case .allScreens: authorizedDestination(for: .allScreens)
         case .navigation: authorizedDestination(for: .navigationLayout)
-        case .home, .hero, .heroContent, .heroRatings, .heroTrailers, .heroDiscovery,
+        case .heroTrailers:
+            TrailersAndMusicSettingsView(background: heroBackground, themeMusic: themeMusic)
+        case .home, .hero, .heroContent, .heroRatings, .heroDiscovery,
              .heroLibraries, .heroCollections, .homeRows, .homeRowStyle, .homeFiltering, .homeLabels, .continueWatching:
             HomeRowsSettingsView(
                 libraries: librariesStore.state.value ?? [], accounts: homeRowAccounts, visibility: homeVisibility,
@@ -1167,8 +1161,12 @@ public struct SettingsView: View {
                 )
             }
         case let .seerUserPicker(profileID):
-            if let profile = profiles.first(where: { $0.id == profileID }) {
-                SeerUserPickerView(seer: seer, profile: profile, onSelect: { onSetSeerrUser(profileID, $0) })
+            if profileID == seer.activeProfileID {
+                SeerConnectionsView(seer: seer)
+            } else {
+                SeerSettingsPage {
+                    Text("Switch to this profile to sign in to Seerr.")
+                }
             }
         case .releaseNotes:
             ReleaseNotesSettingsView(model: .shared)
@@ -1224,7 +1222,7 @@ public struct SettingsView: View {
                 if let onSetSyncEnabled {
                     SettingsPanel(
                         title: "iCloud Sync",
-                        footer: "Syncs profiles, settings, and servers. Logins stay on each device."
+                        footer: "Keep profiles, settings, watchlist, and supported sign-ins in sync across your devices."
                     ) {
                         Toggle("Sync With iCloud", isOn: Binding(
                             get: { syncEnabled }, set: { onSetSyncEnabled($0) }
@@ -1373,7 +1371,7 @@ public struct SettingsView: View {
         return hosts
     }
 
-    /// Right-hand summary for the This Apple TV › Seerr row. `savedBaseURLString`
+    /// Right-hand summary for the active profile's Seerr row. `savedBaseURLString`
     /// is loaded synchronously from the stored config at launch and cleared on
     /// disconnect, so it's a reliable "is a server configured?" signal without
     /// waiting on an async status refresh.
@@ -1474,6 +1472,7 @@ private extension ProfileSettingsCategory {
         case .appearance: .appearance
         case .screensNavigation: .screensNavigation
         case .trackers: .integrations
+        case .seerr: .seerr
         case .language: .language
         }
     }

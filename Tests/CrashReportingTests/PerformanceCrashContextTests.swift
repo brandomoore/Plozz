@@ -257,6 +257,81 @@ final class PerformanceCrashContextTests: XCTestCase {
         XCTAssertEqual((cleaned["recent"] as? [Any])?.count, 0)
     }
 
+    func testProtectedHomeAndUIEvidenceAreStrictlyRebuilt() throws {
+        var raw = context()
+        var home = record()
+        home["operation"] = "homePublish"
+        home["private"] = "Private title"
+        raw["homeRecent"] = [home, record()]
+        raw["homeSlow"] = [] as [Any]
+        raw["homeDropped"] = 4
+        raw["homeUIDropped"] = 2
+        var window = homeUI()
+        window["profile"] = "Private viewer"
+        var metrics = try XCTUnwrap(window["metrics"] as? [String: Any])
+        metrics["server"] = "https://private.invalid"
+        window["metrics"] = metrics
+        raw["homeUI"] = [window]
+        let clean = try XCTUnwrap(CrashPerformanceContext.scrub(raw))
+        XCTAssertEqual((clean["homeRecent"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual(clean["homeDropped"] as? Int, 4)
+        let windows = try XCTUnwrap(clean["homeUI"] as? [[String: Any]])
+        XCTAssertEqual(windows.count, 1)
+        XCTAssertEqual(Set(try XCTUnwrap(windows.first).keys), ["startedMilliseconds", "elapsedMilliseconds", "metrics"])
+        XCTAssertEqual((windows.first?["metrics"] as? [String: Any])?.count, 9)
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: clean), as: UTF8.self)
+        XCTAssertFalse(text.localizedCaseInsensitiveContains("private"))
+        XCTAssertFalse(text.contains("https"))
+    }
+
+    func testMalformedHomeWindowsAndUnboundedHistoriesAreRejected() throws {
+        for key in [
+            "samples", "delayedSamples", "maximumDelayMilliseconds", "scrollingSamples", "loadingSamples",
+            "heightChanges", "maximumHeightDeltaPoints", "maximumActiveScans", "maximumActiveListers"
+        ] {
+            for value: Any in [true, "1", -1, 0.5, Double.infinity, Int.max, NSNull()] {
+                var window = homeUI()
+                var metrics = try XCTUnwrap(window["metrics"] as? [String: Any])
+                metrics[key] = value
+                window["metrics"] = metrics
+                var raw = context()
+                raw["homeUI"] = [window]
+                XCTAssertEqual((CrashPerformanceContext.scrub(raw)?["homeUI"] as? [Any])?.count, 0, key)
+            }
+        }
+        for (key, value) in [("samples", 0), ("scrollingSamples", 11), ("loadingSamples", 11),
+                             ("delayedSamples", 11), ("maximumDelayMilliseconds", 901)] {
+            var window = homeUI()
+            var metrics = try XCTUnwrap(window["metrics"] as? [String: Any])
+            metrics[key] = value
+            window["metrics"] = metrics
+            var raw = context()
+            raw["homeUI"] = [window]
+            XCTAssertEqual((CrashPerformanceContext.scrub(raw)?["homeUI"] as? [Any])?.count, 0)
+        }
+        for (key, count) in [("homeRecent", 17), ("homeSlow", 17), ("homeUI", 61)] {
+            var raw = context()
+            raw[key] = Array(repeating: homeUI(), count: count)
+            XCTAssertNil(CrashPerformanceContext.scrub(raw))
+        }
+        for key in ["homeDropped", "homeUIDropped"] {
+            var raw = context()
+            raw[key] = true
+            XCTAssertNil(CrashPerformanceContext.scrub(raw))
+        }
+    }
+
+    private func homeUI() -> [String: Any] {
+        [
+            "startedMilliseconds": 10, "elapsedMilliseconds": 900,
+            "metrics": [
+                "samples": 10, "delayedSamples": 1, "maximumDelayMilliseconds": 180,
+                "scrollingSamples": 8, "loadingSamples": 10, "heightChanges": 2,
+                "maximumHeightDeltaPoints": 250, "maximumActiveScans": 2, "maximumActiveListers": 8
+            ]
+        ]
+    }
+
     private func assertRecordRejected(_ item: [String: Any], file: StaticString = #filePath, line: UInt = #line) throws {
         var raw = context()
         raw["recent"] = [item]

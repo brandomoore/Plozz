@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import uuid
+from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,12 +31,139 @@ FLAGS = [
     "ONLY_ACTIVE_ARCH=YES", "CODE_SIGNING_ALLOWED=NO",
 ]
 METRICS = ("wallMilliseconds", "cpuMilliseconds", "residentBytes", "residentDeltaBytes")
+MEMORY_METRICS = (
+    "residentBytes", "physicalFootprintBytes", "internalBytes", "externalBytes",
+    "compressedBytes", "reusableBytes", "mallocInUseBytes", "mallocAllocatedBytes",
+    "mallocBlocksInUse",
+)
 HOME_HOST_FITTING_COUNTERS = [
     "motionSizeThatFitsCalls", "rowHostFitCalls", "columnHostFitCalls", "maskSizeThatFitsCalls",
     "rowHostFittingNanoseconds", "columnHostFittingNanoseconds",
     "hostFittingMaxNanoseconds", "hostFittingReentrantCalls",
 ]
 SCENARIOS = {
+    **{
+        f"related-{state}-scroll": {
+            "suite": "ui",
+            "test": f"RelatedTitlesPerformanceTests/testPerformance{state.title()}RecommendationsWhileScrolling",
+            "file": "Tests/PerformancePresentationSupport/RelatedTitlesPerformanceTests.swift",
+            "description": "Load the production Related row from 24 recommendations and a Plex/Jellyfin index while traversing its mounted native row; synthetic latency, server metadata preserved.",
+            "counters": ["items", "searchRequests", "detailRequests", "recommendationRequests", "publications",
+                         "batchRequests", "accountCount", "primaryDetailRequests", "maxNativeInFlight",
+                         "firstRowMicroseconds", "fullRowMicroseconds", "finishedMicroseconds", "scrollTargets",
+                         "maxMainActorGapMicroseconds", "scrollCPUTimeMicroseconds"],
+        }
+        for state in ("cached", "cold")
+    },
+    **{
+        f"related-{name}-scroll": {
+            "suite": "ui",
+            "test": f"RelatedTitlesPerformanceTests/testPerformance{test}WhileScrolling",
+            "file": "Tests/PerformancePresentationSupport/RelatedTitlesPerformanceTests.swift",
+            "description": description,
+            "counters": ["items", "searchRequests", "detailRequests", "recommendationRequests", "publications",
+                         "batchRequests", "accountCount", "primaryDetailRequests", "maxNativeInFlight",
+                         "firstRowMicroseconds", "fullRowMicroseconds", "finishedMicroseconds", "scrollTargets",
+                         "maxMainActorGapMicroseconds", "scrollCPUTimeMicroseconds"],
+        }
+        for name, test, description in (
+            ("mixed-servers", "MixedServers",
+             "Related across two Plex accounts, Jellyfin, Emby, Silo and a share, including overlapping native IDs and non-batch providers."),
+            ("detail-open", "DetailOpening",
+             "Production detail model opens a seeded movie with 250-ms initial metadata and 350-ms cold recommendations while the native Related row scrolls."),
+        )
+    },
+    "disc-java-flush": {
+        "suite": "ui",
+        "test": "DiscGraphicsHostedTests/testPerformanceJavaRepeatedFlushes",
+        "file": "Tests/SubtitlePresentationSupport/DiscGraphicsHostedTests.m",
+        "description": "Compose 200 original 960x540 Java menu updates, with 20 changing frames; measure synchronous producer work, not presentation FPS.",
+        "counters": ["frames", "changedFrames", "pixelsPerFrame"],
+    },
+    "identity-unchanged-servers": {
+        "suite": "core", "target": "AppRuntimeTests",
+        "test": "IdentityIndexRefreshTests/testPerformanceRevalidatingTwentyUnchangedServers",
+        "file": "Tests/AppRuntimeTests/IdentityIndexRefreshTests.swift",
+        "description": "Restore and revalidate 4,000 unchanged titles across twenty Plex/Jellyfin accounts; require complete membership and every catalog request.",
+        "counters": ["accounts", "items", "providerRequests", "publications"],
+    },
+    "mobile-home-startup-diagnostics": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeMultiServerLoadingTests/testPerformanceScrollingWhileTwentyServersLoadWithDiagnostics",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": "The twenty-server startup scrolling workload with consent-gated Home observation enabled; require retained scrolling, loading and publication evidence.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "maxMainActorGapMicroseconds", "loadingScrollTargets", "finishedRowsWhileScrolling",
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds", "homeUISamples",
+                     "diagnosticScrollingSamples", "diagnosticLoadingSamples"],
+    },
+    **{
+        f"silo-identity-{cards}": {
+            "suite": "network", "target": "ProviderSiloTests",
+            "test": f"SiloProviderTests/testPerformance{cards.title()}CatalogIdentity",
+            "file": "Tests/ProviderSiloTests/SiloIdentityEnrichmentTests.swift",
+            "description": f"Index 200 {cards} Silo catalog cards while loading native Home, with 75-ms synthetic HTTP latency; require all cross-namespace matches and Home items.",
+            "counters": ["items", "matchedItems", "homeItems", "catalogRequests",
+                         "detailRequests", "homeRequests", "maxInFlight"],
+        }
+        for cards in ("modern", "legacy", "mixed")
+    },
+    **{
+        f"song-card-{state}": {
+            "suite": "ui",
+            "test": f"PlayerSongLayoutPreviewTests/testPerformanceSongCard{state.title()}",
+            "file": "Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift",
+            "description": "Complete player controls over advancing native video, with seeded repeated song reports and decoded local artwork; no fingerprint matching.",
+            "counters": ["playbackMilliseconds", "acceptedReports", "songVisible"],
+        }
+        for state in ("hidden", "visible")
+    },
+    **{
+        f"song-recognition-{state}": {
+            "suite": "ui",
+            "explicitOnly": state.startswith("soak-"),
+            "isolatedProcess": state.startswith("soak-"),
+            "test": f"SongRecognitionPerformanceTests/testPerformanceRecognition{state.title().replace('-', '')}",
+            "file": "Tests/PerformancePresentationSupport/SongRecognitionPerformanceTests.swift",
+            "description": (
+                "Repeat six 25-second playback/pause/resume cycles with real local recognition; verify paused feed stops and stopped Shazam sessions are released."
+                if state == "lifecycle" else
+                "Ten-minute off/tap/full lifecycle control in a fresh host process, with post-stop memory and weak ownership checks."
+                if state.startswith("soak-") else
+                "Play the same 1080p30 synthetic video with recognition off, unpaced/paced tap controls, or source-paced local Shazam matching; verify continuous feed and displayable matches."
+            ),
+            "counters": ["audioFrames", "matches", "confirmedSongs", "maxSourceGapMilliseconds",
+                         "maxFeedLeadMilliseconds", "liveSessions", "displayCallbacks",
+                         "maxDisplayGapMilliseconds", "hasDropTelemetry", "droppedFrames",
+                         "windowMilliseconds", "playbackMilliseconds"],
+        }
+        for state in ("enabled", "disabled", "tap-only", "tap-paced", "lifecycle",
+                      "soak-enabled", "soak-disabled", "soak-tap-only")
+    },
+    **{
+        f"music-{provider}-live": {
+            "suite": "ui", "explicitOnly": True,
+            "test": f"MusicPlaybackPerformanceTests/testPerformance{provider.title()}Music",
+            "file": "Tests/PerformancePresentationSupport/MusicPlaybackPerformanceTests.swift",
+            "description": "Authorized internal music: real provider resolution and AVQueuePlayer cold, next, previous, arbitrary, new-queue and rapid switches; require sustained playback.",
+            "counters": ["completedTransitions", "maxResolveMilliseconds"] + [
+                f"{action}{metric}Milliseconds"
+                for action in ("cold", "next", "previous", "jump", "newQueue", "rapid")
+                for metric in ("Playback", "Ready", "OldStop", "Reset")
+            ],
+        }
+        for provider in ("plex", "jellyfin", "subsonic")
+    },
+    "home-jellyfin-live": {
+        "suite": "network", "target": "FeatureHomeCoreTests", "explicitOnly": True,
+        "test": "JellyfinHomePerformanceTests/testPerformanceLiveHome",
+        "file": "Tests/FeatureHomeCoreTests/JellyfinHomePerformanceTests.swift",
+        "description": "Explicitly authorized live Jellyfin: cold layout discovery and warm Home refresh; count real requests and content-ready time, not rendered frames.",
+        "counters": ["coldRequests", "warmRequests", "coldBytes", "warmBytes",
+                     "coldViewsRequests", "warmViewsRequests", "coldDuplicateRequests", "warmDuplicateRequests",
+                     "coldFirstRowMicroseconds", "warmFirstRowMicroseconds",
+                     "coldAllRowsMicroseconds", "warmAllRowsMicroseconds", "libraries", "rows", "items"],
+    },
     **{
         f"active-picture-{players}-{state}": {
             "suite": "ui",
@@ -123,6 +251,90 @@ SCENARIOS = {
         "description": "Traverse 181 posters forward/backward with repeated overlapping windows across Jellyfin, Emby, Plex, and TMDB URLs.",
         "counters": ["candidateVisits", "distinctURLChecks", "queuedPreviews"],
     },
+    "home-recommendation-navigation": {
+        "suite": "network", "target": "ProviderJellyfinTests",
+        "test": "JellyfinRecommendationPerformanceTests/testPerformanceHomeRecommendationNavigation",
+        "file": "Tests/ProviderJellyfinTests/JellyfinRecommendationPerformanceTests.swift",
+        "description": "Production recommendation decoding/mapping across Home, picker, preview and two-shelf browsing; 5-ms synthetic transport, exact ordered contents.",
+        "counters": ["requests", "bytes", "items"],
+    },
+    "home-single-collection-row": {
+        "suite": "core", "target": "FeatureHomeCoreTests",
+        "test": "CollectionSectionLoadingTests/testPerformanceSingleCollectionRow",
+        "file": "Tests/FeatureHomeCoreTests/CollectionSectionLoadingTests.swift",
+        "description": "Load a production authored Home row from a collection returning two items per page; verify twenty ordered items and bounded lookahead.",
+        "counters": ["rows", "items", "requests"],
+    },
+    "home-multi-source-row": {
+        "suite": "core", "target": "FeatureHomeCoreTests",
+        "test": "HomeContentPagerTests/testPerformanceMultipleSources",
+        "file": "Tests/FeatureHomeCoreTests/HomeContentPagerTests.swift",
+        "description": "Load 21 unique cards from 2, 8 and 32 sources of 100,000 titles, with bounded parallel requests.",
+        "counters": ["items", "requests", "fetched", "maximumConcurrent"],
+    },
+    **{
+        f"home-network-{name}": {
+            "suite": "network", "target": "AppRuntimeTests",
+            "test": f"MultiServerNetworkPerformanceTests/testPerformance{method}",
+            "file": "Tests/AppRuntimeTests/MultiServerNetworkPerformanceTests.swift",
+            "description": "Production Home aggregation, navigation discovery and overlapping detail reads against independent loopback Jellyfin/Emby origins; all owned listeners stop after each sample.",
+            "counters": [
+                "servers", "libraries", "items", "failedAccounts", "wireRequests", "responseBytes",
+                "peakServerRequests", "detailTransfers", "firstContentMicroseconds", "allContentMicroseconds",
+                "detailMicroseconds", "maximumMainActorGapMicroseconds", "sampledPeakFootprintBytes",
+            ],
+        }
+        for name, method in [
+            ("one", "OneServer"), ("three", "ThreeServers"), ("ten", "TenServers"),
+            ("twenty", "TwentyServers"), ("large", "LargeResponses"), ("adverse", "AdverseServers"),
+        ]
+    },
+    "home-overlapping-source-browse": {
+        "suite": "core", "target": "FeatureHomeCoreTests",
+        "test": "HomeContentPagerTests/testPerformanceOverlappingSourcesBrowse",
+        "file": "Tests/FeatureHomeCoreTests/HomeContentPagerTests.swift",
+        "description": "Complete an eight-source browse of 1,600 overlapping records into 200 playable titles.",
+        "counters": ["items", "requests", "fetched", "maximumConcurrent"],
+    },
+    "home-rapid-row-queries": {
+        "suite": "network", "target": "FeatureHomeCoreTests",
+        "test": "HomeContentPagerTests/testPerformanceRapidSavedRowQueries",
+        "file": "Tests/FeatureHomeCoreTests/HomeContentPagerTests.swift",
+        "description": "Cancel and replace four 20,000-title queries, filter mixed watch states, and measure main-actor scheduling.",
+        "counters": ["items", "heartbeatTicks", "maximumMainActorGapNanoseconds"],
+    },
+    **{
+        f"home-live-{provider}-queries": {
+            "suite": "network", "target": "AppRuntimeTests", "explicitOnly": True,
+            "test": f"LiveHomeContentTests/testPerformance{provider.title()}SavedQueries",
+            "file": "Tests/AppRuntimeTests/LiveHomeContentTests.swift",
+            "description": "Authorized real-server row inventory, eight sorts, watch/media filters and cancelled query replacement.",
+            "counters": ["items", "sources", "pages", "datedItems", "releaseYearItems", "runtimeItems", "coldNanoseconds",
+                         "warmEightQueriesNanoseconds", "maximumMainActorGapNanoseconds"],
+        }
+        for provider in ("jellyfin", "emby", "plex", "silo", "combined")
+    },
+    **{
+        f"home-live-{provider}-{strategy}-inventory": {
+            "suite": "network", "target": "AppRuntimeTests", "explicitOnly": True,
+            "test": f"LiveHomeContentTests/testPerformance{provider.title()}{strategy.title()}Inventory",
+            "file": "Tests/AppRuntimeTests/LiveHomeContentTests.swift",
+            "description": "Real-server eager/deferred comparison including full card fidelity, scrolling and sort changes.",
+            "counters": ["items", "firstDisplayNanoseconds", "next180CardsNanoseconds", "eightSortsNanoseconds",
+                         "maximumSortNanoseconds", "cachedReplayNanoseconds", "firstDisplayRequests",
+                         "firstDisplayBytes", "totalRequests", "totalBytes"],
+        }
+        for provider in ("plex", "combined")
+        for strategy in ("eager", "deferred")
+    },
+    "home-saved-row-queries": {
+        "suite": "network", "target": "FeatureHomeCoreTests",
+        "test": "HomeContentPagerTests/testPerformanceSavedRowQueries",
+        "file": "Tests/FeatureHomeCoreTests/HomeContentPagerTests.swift",
+        "description": "Complete 20,000 custom-row titles, reuse inventory for four sorts, and apply a watch mutation.",
+        "counters": ["items", "requests", "fetched", "coldNanoseconds",
+                     "warmFourQueriesNanoseconds", "mutationNanoseconds"],
+    },
     "collection-discovery": {
         "suite": "network", "target": "ProviderJellyfinTests",
         "test": "CollectionDiscoveryPerformanceTests/testPerformanceCollectionDiscovery",
@@ -150,6 +362,15 @@ SCENARIOS = {
         "file": "Tests/ProviderShareTests/ShareScannerIncrementalTests.swift",
         "description": "Warm incremental scan of 1,000 films; then verify a newly added file.",
         "counters": ["directoryListings", "assets", "inventoryUpdates"],
+    },
+    "multi-share-scanning": {
+        "suite": "core", "target": "ProviderShareTests",
+        "test": "ShareScanLifecycleTests/testPerformanceTwentyShareScans",
+        "file": "Tests/ProviderShareTests/ShareScanLifecycleTests.swift",
+        "description": "Twenty production share catalogs scan 3,840 files with synthetic 30-ms listings while cached reads and main-actor probes continue.",
+        "counters": ["shares", "completedScans", "assets", "directoryListings", "peakListings",
+                     "cachedReads", "maximumCachedReadMicroseconds", "mainActorSamples",
+                     "mainActorMaxDelayMicroseconds"],
     },
     "catalog-import": {
         "suite": "core", "target": "ProviderIPTVTests",
@@ -253,6 +474,19 @@ SCENARIOS = {
                      "castFocusUpdateMicroseconds", "castMaxMainActorGapMicroseconds"],
         "timing": ["cpuMilliseconds"],
     },
+    **{
+        f"player-continue-watching-{mode}": {
+            "suite": "ui", "platforms": ["tvOS"],
+            "test": f"PlayerEpisodeArtworkHostedTests/testPerformanceContinueWatching{method}",
+            "file": "Tests/FocusIntegrationTests/PlayerEpisodeArtworkHostedTests.swift",
+            "description": "Fresh production controls, 180 Home items across twelve accounts, transport reveal and native tab round trips; no decoding or remote artwork.",
+            "counters": ["items", "tabVisits", "providerRequests", "snapshotReads", "revealSnapshotReads",
+                         "revealMicroseconds", "revealMaxMainActorGapMicroseconds",
+                         "focusUpdateMicroseconds", "navigationMaxMainActorGapMicroseconds"],
+            "timing": ["cpuMilliseconds"],
+        }
+        for mode, method in (("controls", "Controls"), ("disabled", "Disabled"))
+    },
     "player-controls-cold-reveal": {
         "suite": "ui", "platforms": ["tvOS"],
         "test": "PlayerControlsRevealPerformanceTests/testPerformanceColdControlsReveal",
@@ -323,6 +557,14 @@ SCENARIOS = {
         "description": "The same 24 loading cards with implicit animations disabled; verify stable pixels before measuring idle CPU.",
         "counters": ["placeholders", "observationMilliseconds"], "timing": ["cpuMilliseconds"],
     },
+    "artwork-first-paint": {
+        "suite": "ui", "explicitOnly": True,
+        "test": "ArtworkStabilityHostedTests/testPerformanceFirstPaintAndLateMetadata",
+        "file": "Tests/PerformancePresentationSupport/ArtworkStabilityHostedTests.swift",
+        "description": "Mount production artwork with a 150-ms preferred-source lookup and twelve late candidate updates; local generated images, not live provider latency.",
+        "counters": ["mountedImages", "metadataUpdates", "sourceLookups", "distinctSelections", "firstPaintMicroseconds"],
+        "timing": ["wallMilliseconds", "cpuMilliseconds"],
+    },
     "cards-idle": {
         "suite": "ui", "test": "CardPerformanceTests/testPerformanceIdle",
         "file": "Tests/PerformancePresentationSupport/CardPerformanceTests.swift",
@@ -340,6 +582,20 @@ SCENARIOS = {
         "file": "Tests/PerformancePresentationSupport/CardPerformanceTests.swift",
         "description": "Repeated mount/unmount; weak host and view checks must release.",
         "counters": ["cycles", "survivingHosts"],
+    },
+    "cards-lifecycle-soak": {
+        "suite": "ui", "explicitOnly": True, "isolatedProcess": True,
+        "test": "CardPerformanceTests/testPerformanceLifecycleSoak",
+        "file": "Tests/PerformancePresentationSupport/CardPerformanceTests.swift",
+        "description": "180 production-row mount/unmount cycles in a fresh test process, including 30 discarded warmup cycles; weak hosts and views must release.",
+        "counters": ["cycles", "survivingHosts"],
+    },
+    "home-focus-discovery": {
+        "suite": "ui", "platforms": ["tvOS"],
+        "test": "HomeLayoutInvalidationPerformanceTests/testPerformanceShowcaseFocusDiscovery",
+        "file": "Tests/FocusIntegrationTests/HomeLayoutInvalidationPerformanceTests.swift",
+        "description": "24 actual native focus changes across production Showcase rows; count gutter discovery scans and container queries.",
+        "counters": ["focusMoves", "rowScans", "containerQueries"],
     },
     "home-artwork-layout": {
         "suite": "ui", "platforms": ["tvOS"],
@@ -367,6 +623,20 @@ SCENARIOS = {
         "counters": ["realizedArtworkHosts", "rowContentSizeQueries", "rowContentPlacements",
                      "cardInputBuilds", "outerHostLayoutPasses"] + HOME_HOST_FITTING_COUNTERS,
     },
+    "home-series-artwork-identity": {
+        "suite": "ui",
+        "test": "HomeMetadataPerformanceTests/testPerformanceSeriesArtworkIdentity",
+        "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
+        "description": "Four complete identity passes over 408 metadata-bearing movie/episode artwork sources; no network or rendering.",
+        "counters": ["items", "identities", "identityBytes"],
+    },
+    "home-continue-watching-refresh": {
+        "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceContinueWatchingRefresh",
+        "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
+        "description": "Revalidate eight Continue Watching titles while Recently Added takes 400 ms; measure model publication and complete all requests.",
+        "counters": ["providerRequests", "continueWatchingItems", "continueWatchingMicroseconds",
+                     "allContentMicroseconds"],
+    },
     "home-metadata-publication": {
         "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceHomeMetadataPublication",
         "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
@@ -392,6 +662,12 @@ SCENARIOS = {
                      "stateNotifications", "continueWatchingItems", "metadataPeople",
                      "mainActorSchedulingSamples", "mainActorMaxSchedulingDelayMicroseconds",
                      "observedRowUpdates", "parentBodies", "cardInputBuilds"],
+    },
+    "home-multi-source-presentation": {
+        "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceMultiSourceRowPresentation",
+        "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
+        "description": "Update the mounted production row with 20 titles merged from eight sources and 640 metadata credits.",
+        "counters": ["rootUpdates", "parentBodies", "cardInputBuilds", "rowItems", "metadataPeople"],
     },
     "home-row-metadata-updates": {
         "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceProductionRowMetadataUpdates",
@@ -419,6 +695,51 @@ SCENARIOS = {
         "description": "Update a production mobile Continue Watching rail 24 times with 180 episodes across twelve synthetic source identities and cached artwork.",
         "counters": ["rootUpdates", "items", "accounts", "seriesSourceBuilds"],
     },
+    "mobile-home-multi-server-loading": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeMultiServerLoadingTests/testPerformanceHomeLoadingAcrossTwentyServers",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": "Load forty production Home rows from twenty synthetic providers while scrolling; require all 800 items and completed navigation.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "maxMainActorGapMicroseconds"],
+    },
+    **{f"mobile-home-{count}-server-startup-scroll": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": f"HomeMultiServerLoadingTests/testPerformanceScrollingWhile{method}",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": f"Traverse Home while {count} staggered providers fill their rows; verify every request, item and completed navigation.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "loadingScrollTargets", "finishedRowsWhileScrolling", "maxMainActorGapMicroseconds",
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds",
+                     "firstRowMicroseconds", "allRowsMicroseconds", "scrollableDistancePoints"],
+    } for count, method in [
+        ("one", "OneServerLoads"), ("three", "ThreeServersLoad"), ("ten", "TenServersLoad")
+    ]},
+    "mobile-home-multi-server-startup-scroll": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeMultiServerLoadingTests/testPerformanceScrollingWhileTwentyServersLoad",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": "Traverse the whole Home page while twenty staggered providers progressively fill forty rows; require completed content after scrolling.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "loadingScrollTargets", "finishedRowsWhileScrolling", "maxMainActorGapMicroseconds",
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds",
+                     "firstRowMicroseconds", "allRowsMicroseconds", "scrollableDistancePoints"],
+    },
+    "mobile-home-library-row-comparison": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeLoadingLayoutTests/testPerformanceLibraryRowComparison",
+        "file": "Tests/iOSPresentationTests/HomeLoadingLayoutTests.swift",
+        "description": "Compare production library-row inputs with independently decoded complete metadata; preserve deep changes and owner scope.",
+        "counters": ["comparisons", "items", "metadataPeople"],
+    },
+    "mobile-home-multi-server-scroll": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeMultiServerLoadingTests/testPerformanceScrollingAcrossTwentyServers",
+        "file": "Tests/iOSPresentationTests/HomeMultiServerLoadingTests.swift",
+        "description": "Load forty Home rows with cached artwork then traverse the complete page in both directions.",
+        "counters": ["servers", "loadedRows", "items", "providerRequests", "scrollTargets",
+                     "scrollCPUTimeMicroseconds", "scrollWallMicroseconds", "maxMainActorGapMicroseconds"],
+    },
     "mobile-home-loading-scroll": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "HomeLoadingLayoutTests/testPerformanceLoadingWhileScrolling",
@@ -434,12 +755,35 @@ SCENARIOS = {
         "description": "Apply 24 active/inactive preference batches through the mobile app model; count synchronous account, index and download invalidations.",
         "counters": ["batches", "appliedPreferences", "accountInvalidations", "indexResets", "downloadTransitions"],
     },
+    "mobile-home-lifecycle": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "HomeModelLifetimeTests/testPerformanceRetiredHomeModels",
+        "file": "Tests/iOSPresentationTests/HomeModelLifetimeTests.swift",
+        "description": "Perform twenty profile switches per window; require retired Home, settings, and download models to release, then allow one second for queued work. Empty fixture accounts, not populated Home navigation.",
+        "counters": ["replacements", "survivingModels"],
+    },
     "mobile-profile-selection": {
         "suite": "ui", "platforms": ["iOS"],
         "test": "ProfileSelectionPerformanceTests/testPerformanceProfileSelection",
         "file": "Tests/iOSPresentationTests/ProfileSelectionPerformanceTests.swift",
         "description": "Activate sixteen profiles through the mobile app model and verify current Plex PIN gating; measure synchronous selection separately from 5-ms fixture metadata.",
         "counters": ["selections", "selectionMicroseconds", "maxSelectionMicroseconds"],
+    },
+    "mobile-profile-library-selection": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "ProfileSelectionPerformanceTests/testPerformanceManyServerLibrarySelection",
+        "file": "Tests/iOSPresentationTests/ProfileSelectionPerformanceTests.swift",
+        "description": "Mounted profile Libraries page with twenty synthetic servers and 120 libraries; four native server-switch actions and twelve library-selection mutations.",
+        "counters": ["servers", "libraries", "serverToggles", "libraryToggles",
+                     "providerConstructions", "libraryRequests", "maxMainActorGapMicroseconds"],
+    },
+    "mobile-profile-library-shell": {
+        "suite": "ui", "platforms": ["iOS"],
+        "test": "ProfileSelectionPerformanceTests/testPerformanceLibrarySelectionWithAppShell",
+        "file": "Tests/iOSPresentationTests/ProfileSelectionPerformanceTests.swift",
+        "description": "Full mobile root and profile setup Libraries cover with twenty synthetic servers; count covered Home feed requests during native server switches and library edits.",
+        "counters": ["servers", "libraries", "serverToggles", "libraryToggles",
+                     "homeRequests", "libraryRequests", "maxMainActorGapMicroseconds"],
     },
     "mobile-profile-picker-entrance": {
         "suite": "ui", "platforms": ["iOS"],
@@ -461,6 +805,20 @@ SCENARIOS = {
         "file": "Tests/PerformancePresentationSupport/PlaybackSourceMenuPerformanceTests.swift",
         "description": "Build actual source-menu version presentations, preserving every displayed title and supplemental fact.",
         "counters": ["versions", "menuUpdates", "presentedRows"],
+    },
+    "detail-selection-legacy": {
+        "suite": "ui",
+        "test": "PlaybackSourceMenuPerformanceTests/testPerformanceLegacyDetailSelectionComposition",
+        "file": "Tests/PerformancePresentationSupport/PlaybackSourceMenuPerformanceTests.swift",
+        "description": "Compose existing detail selection primitives as a same-binary control; verify exact picker and playback identities.",
+        "counters": ["selections", "presentedVersions", "playTargets"],
+    },
+    "detail-selection-resolved": {
+        "suite": "ui",
+        "test": "PlaybackSourceMenuPerformanceTests/testPerformanceResolvedDetailSelectionComposition",
+        "file": "Tests/PerformancePresentationSupport/PlaybackSourceMenuPerformanceTests.swift",
+        "description": "Resolve identical detail picker and playback inputs through the shared composition; not a whole-detail startup measurement.",
+        "counters": ["selections", "presentedVersions", "playTargets"],
     },
     "native-poster-composition": {
         "suite": "ui", "platforms": ["tvOS"],
@@ -524,6 +882,8 @@ def select(suite, names, platform=None):
             raise Failure("Choose --suite or --scenario, not both.")
         if len(names) != len(set(names)) or not set(names) <= SCENARIOS.keys():
             raise Failure("Unknown or duplicate scenario. Run 'list' for supported names.")
+        if len(names) != 1 and any(SCENARIOS[name].get("isolatedProcess") for name in names):
+            raise Failure("Isolated-process scenarios require one --scenario per run.")
         unsupported = [name for name in names
                        if platform and platform not in SCENARIOS[name].get("platforms", ("tvOS", "iOS"))]
         if unsupported:
@@ -531,6 +891,7 @@ def select(suite, names, platform=None):
         return sorted(names)
     return [name for name, spec in SCENARIOS.items()
             if (suite == "all" or spec["suite"] == (suite or "core"))
+            and not spec.get("explicitOnly", False)
             and (not platform or platform in spec.get("platforms", ("tvOS", "iOS")))]
 
 
@@ -556,6 +917,12 @@ def validate_report(report, spec):
             if key != "residentDeltaBytes" and value < 0:
                 raise Failure(f"Negative measurement: {key}.")
         counters = sample.get("counters")
+        if "memory" in sample:
+            memory = sample["memory"]
+            if not isinstance(memory, dict) or set(memory) != set(MEMORY_METRICS):
+                raise Failure("Incomplete process-memory snapshot.")
+            if any(type(value) is not int or value < 0 for value in memory.values()):
+                raise Failure("Process-memory snapshots must contain non-negative integers.")
         if not isinstance(counters, dict) or set(counters) != set(spec["counters"]):
             raise Failure("Missing or unexpected workload counters.")
         if any(type(value) is not int or value < 0 for value in counters.values()):
@@ -607,6 +974,16 @@ def configure_scheme(tree):
         action.remove(old)
     variables = ET.SubElement(action, "EnvironmentVariables")
     ET.SubElement(variables, "EnvironmentVariable", key="PLOZZ_PERFORMANCE", value="1", isEnabled="YES")
+    for name in ("PLOZZ_JELLYFIN_HOME_BROKER", "PLOZZ_MUSIC_BROKER", "PLOZZ_LIVE_HOME_BROKER"):
+        broker = os.environ.get(name)
+        if not broker:
+            continue
+        parsed = urlparse(broker)
+        if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port
+                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            raise Failure("Live Home broker must be an explicit loopback HTTP URL without credentials or a query.")
+        ET.SubElement(variables, "EnvironmentVariable", key=name,
+                      value=broker, isEnabled="YES")
     return tree
 
 
@@ -885,8 +1262,15 @@ class Lane:
         derived = self.root / ".build/performance-derived-data/tvOS/ui"
         bundle_id = "com.thatcube.Plozz.FocusHost"
         workload = getattr(self.args, "workload", "home-navigation")
+        if workload == "jellyfin-home":
+            if not self.env.get("PLOZZ_JELLYFIN_HOME_BROKER"):
+                raise Failure("Live Home UI profiling requires an authorized loopback broker.")
+            ET.SubElement(tree.getroot().find("TestAction/EnvironmentVariables"), "EnvironmentVariable",
+                          key="PLOZZ_LIVE_HOME_RUN_ID", value=self.output.name, isEnabled="YES")
         test = (
-            "LargeNativeNavigationRemoteTests/testProfileRapidHorizontalNavigation"
+            "LiveJellyfinHomeRemoteTests/testProfileRealHome"
+            if workload == "jellyfin-home"
+            else "LargeNativeNavigationRemoteTests/testProfileRapidHorizontalNavigation"
             if workload == "horizontal-navigation"
             else "DetailReturnFocusRemoteTests/testProfilePopulatedShowcaseDetailReturns"
             if workload == "detail-return"
@@ -926,7 +1310,11 @@ class Lane:
             self.command("fixture-install", ["xcrun", "simctl", "install", self.args.sim_id, str(app)], 120)
             arguments = ["--production-home-fixture", "--home-performance-fixture", "--distinct-home-artwork",
                          "--home-artwork-cache-namespace=" + self.output.name]
-            if workload == "detail-return":
+            if workload == "jellyfin-home":
+                arguments = ["--live-jellyfin-home"]
+                self.env["SIMCTL_CHILD_PLOZZ_JELLYFIN_HOME_BROKER"] = self.env["PLOZZ_JELLYFIN_HOME_BROKER"]
+                self.env["SIMCTL_CHILD_PLOZZ_LIVE_HOME_RUN_ID"] = self.output.name
+            elif workload == "detail-return":
                 arguments = [
                     "--production-home-fixture", "--top-bar-home", "--return-focus-trace",
                     "--immersive-home", "--progressive-library-rows", "--populated-home-return",
@@ -990,6 +1378,17 @@ class Lane:
             _, data_container = self.command("fixture-data-container", [
                 "xcrun", "simctl", "get_app_container", self.args.sim_id, bundle_id, "data",
             ])
+            live_metrics = {}
+            if workload == "jellyfin-home":
+                live_metrics = json.loads((Path(data_container.strip()) / "Library/Caches/live-home-ui.json").read_text())
+                for key in ("firstDataMicroseconds", "items", "mountedArtworkImages", "decodedServerArtwork", "navigationCallbacks"):
+                    if live_metrics.get(key, 0) <= 0:
+                        raise Failure("Live Home UI did not complete its real-data/artwork workload: " + key)
+                if live_metrics.get("navigationFocusChanges", 0) < 12:
+                    raise Failure("Live Home UI did not complete enough native focus transitions.")
+                if any(live_metrics.get(key, -1) != 0 for key in ("discoveryFailures", "layoutFailures", "rowFailures")):
+                    raise Failure("Live Home UI encountered a provider failure.")
+                write_json(folder / "live-home-ui.json", live_metrics)
             journal = Path(data_container.strip()) / "Library/Caches/Plozz/playback-trace.log"
             if workload == "detail-return" and not journal.is_file():
                 raise Failure("Detail-return profiling is missing its native focus journal.")
@@ -999,6 +1398,7 @@ class Lane:
                 return {
                     "pid": pid, "bundleID": bundle_id, "arguments": arguments, "template": self.args.template,
                     "workload": workload,
+                    "liveMetrics": live_metrics,
                     "stacks": stack_sample_summary(sample_path, pid), "sample": str(sample_path),
                     "note": "Sampled simulator navigation, not device frame pacing or a full multi-provider app session.",
                 }
@@ -1017,6 +1417,7 @@ class Lane:
             return {
                 "pid": pid, "bundleID": bundle_id, "arguments": arguments, "template": self.args.template,
                 "workload": workload,
+                "liveMetrics": live_metrics,
                 "cpu": trace_tools.sample_summary(samples, pid), "trace": str(trace),
                 "note": "Instrumented simulator navigation, not device frame pacing or a full multi-provider app session.",
             }
@@ -1134,7 +1535,7 @@ def main(argv=None):
     profile.add_argument("--sim-id", required=True)
     profile.add_argument("--timeout", type=int, default=2400)
     profile.add_argument("--template", choices=("Time Profiler", "SwiftUI", "Process Sample"), default="Process Sample")
-    profile.add_argument("--workload", choices=("home-navigation", "detail-return", "horizontal-navigation"), default="home-navigation")
+    profile.add_argument("--workload", choices=("home-navigation", "detail-return", "horizontal-navigation", "jellyfin-home"), default="home-navigation")
     comparison = commands.add_parser("compare", help="Compare saved runs; never updates a baseline.")
     comparison.add_argument("baseline", type=Path)
     comparison.add_argument("candidate", type=Path)

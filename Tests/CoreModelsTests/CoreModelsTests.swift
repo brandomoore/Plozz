@@ -134,12 +134,14 @@ final class HandoffDiagnosticsRedactionTests: XCTestCase {
 
 final class ProviderKindTests: XCTestCase {
     func testDedicatedServersAreFirstClassProviders() {
-        XCTAssertEqual(Set(ProviderKind.allCases), [.jellyfin, .emby, .plex, .silo, .iptv, .mediaShare])
-        XCTAssertEqual(ProviderKind.allCases, [.jellyfin, .plex, .emby, .silo, .iptv, .mediaShare])
+        XCTAssertEqual(Set(ProviderKind.allCases), [.jellyfin, .emby, .plex, .silo, .iptv, .mediaShare, .subsonic])
+        XCTAssertEqual(ProviderKind.allCases, [.jellyfin, .plex, .emby, .silo, .iptv, .mediaShare, .subsonic])
         XCTAssertEqual(ProviderKind.jellyfin.displayName, "Jellyfin")
         XCTAssertEqual(ProviderKind.emby.displayName, "Emby")
         XCTAssertEqual(ProviderKind.plex.displayName, "Plex")
         XCTAssertEqual(ProviderKind.silo.displayName, "Silo")
+        XCTAssertEqual(ProviderKind.subsonic.displayName, "Navidrome (Subsonic)")
+        XCTAssertFalse(ProviderKind.subsonic.usesMediaBrowserAPI)
         XCTAssertFalse(ProviderKind.silo.usesMediaBrowserAPI)
         XCTAssertEqual(ProviderKind.mediaShare.displayName, "Media Share")
         XCTAssertTrue(ProviderKind.emby.usesMediaBrowserAPI)
@@ -209,6 +211,15 @@ final class SpoilerSettingsTests: XCTestCase {
         let item = episode(percentage: nil, resume: 120)
         XCTAssertFalse(enabled.shouldHideThumbnail(for: item))
         XCTAssertTrue(enabled.shouldHideText(for: item))
+    }
+
+    func testBriefPlayKeepsSpoilerProtectionUntilTheResumeThreshold() {
+        for position in [2.0, 59, 60] {
+            let item = episode(percentage: position / 3600, resume: position)
+            XCTAssertEqual(enabled.shouldHideThumbnail(for: item), position < 60)
+            XCTAssertTrue(enabled.shouldHideText(for: item))
+            XCTAssertFalse(enabled.shouldHideThumbnail(for: episode(played: true, resume: position)))
+        }
     }
 
     func testNegligiblePercentageIsStillUnwatched() {
@@ -584,12 +595,9 @@ final class SeasonEpisodeLabelTests: XCTestCase {
         )
     }
 
-    /// Comma-separated, not dotted. The chip already joins with `·` to attach the
-    /// duration, so the dotted `subtitle` form would render "S4 · E1 · 22m" and
-    /// read as three unrelated facts — while a bare space runs the two numbers
-    /// together as "S4 E1 · 22m".
-    func testPairsTheNumbersWithACommaSoTheyReadAsOneDesignation() {
-        XCTAssertEqual(episode(season: 4, number: 1).seasonEpisodeLabel, "S4, E1")
+    func testPairsSeasonAndEpisodeWithASpace() {
+        XCTAssertEqual(episode(season: 1, number: 3).seasonEpisodeLabel, "S1 E3")
+        XCTAssertEqual(episode(season: 4, number: 1).seasonEpisodeLabel, "S4 E1")
         XCTAssertEqual(episode(season: 4, number: 1).subtitle, "S4 · E1", "subtitle keeps its dotted form")
     }
 

@@ -61,7 +61,7 @@ public struct HomeAggregator: Sendable {
         watchlistLimit: Int = 10_000,
         visibility: HomeLibraryVisibility = .default,
         forceLibraryScoping: Bool = false,
-        identitySources: @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
+        identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         onContinueWatching: @escaping @Sendable (String, [MediaItem]) async -> Void = { _, _ in },
         onProgress: @escaping @Sendable (Progress) async -> Void = { _ in }
     ) async -> Content {
@@ -85,6 +85,19 @@ public struct HomeAggregator: Sendable {
     /// metadata — used by the Settings checklist. Resilient per account.
     public func libraries(from accounts: [ResolvedAccount]) async -> [AggregatedLibrary] {
         await libraryDiscovery(from: accounts).libraries
+    }
+
+    public static func cachedLibraries(
+        from accounts: [ResolvedAccount]
+    ) -> (libraries: [AggregatedLibrary], accountIDs: Set<String>) {
+        var libraries: [AggregatedLibrary] = []
+        var accountIDs: Set<String> = []
+        for resolved in accounts {
+            guard let cached = LibraryInventoryStore.shared.load(for: resolved) else { continue }
+            accountIDs.insert(resolved.account.id)
+            libraries += cached.map { aggregated($0, from: resolved) }
+        }
+        return (libraries, accountIDs)
     }
 
     /// The result of a cross-account library discovery: the flattened library list
@@ -130,6 +143,11 @@ public struct HomeAggregator: Sendable {
             case let .unreachable(accountID, error):
                 unreachable.insert(accountID)
                 failures[accountID] = error
+                if error == .serverUnreachable,
+                   let resolved = accounts.first(where: { $0.account.id == accountID }),
+                   let cached = LibraryInventoryStore.shared.load(for: resolved) {
+                    libraries += cached.map { Self.aggregated($0, from: resolved) }
+                }
             }
         }
         return LibraryDiscovery(libraries: libraries, unreachableAccountIDs: unreachable, failures: failures)
@@ -145,11 +163,17 @@ public struct HomeAggregator: Sendable {
 
     private static func libraryOutcome(from resolved: ResolvedAccount) async -> AccountLibraryOutcome {
         do {
-            let libs = try await resolved.provider.libraries()
+            let libs = try await libraryInventory(from: resolved)
             return .libraries(libs.map { aggregated($0, from: resolved) })
         } catch {
             PlozzLog.app.error("Aggregation: failed to list libraries for account \(resolved.account.id)")
             return .unreachable(resolved.account.id, (error as? AppError) ?? .unknown(""))
+        }
+    }
+
+    private static func libraryInventory(from resolved: ResolvedAccount) async throws -> [MediaLibrary] {
+        try await LibraryInventoryStore.shared.refresh(for: resolved) {
+            try await resolved.provider.libraries()
         }
     }
 
@@ -229,7 +253,7 @@ public struct HomeAggregator: Sendable {
         watchlistLimit: Int = 10_000,
         perLibraryLimit: Int = 20,
         visibility: HomeLibraryVisibility = .default,
-        identitySources: @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
+        identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         onContinueWatching: @escaping @Sendable (String, [MediaItem]) async -> Void = { _, _ in },
         onProgress: @escaping @Sendable (Progress) async -> Void = { _ in }
     ) async -> UnmergedContent {
@@ -348,6 +372,7 @@ public struct HomeAggregator: Sendable {
     private enum RequestLane: Hashable, Sendable {
         case global(HomeRowKind)
         case libraryRows
+        case customRows
     }
 
     private struct ServerBatchKey: Hashable {
@@ -361,13 +386,14 @@ public struct HomeAggregator: Sendable {
         case feed(Int, Feed, libraryIDs: [String]?)
         case library(Int, AggregatedLibrary, LibraryHomeRowKind)
         case server(Int, [HomeServerRowDefinition])
-        case collection(Int, CollectionSection)
+        case collection(CollectionSection, [HomeGlobalRow: Result<[MediaItem], AppError>])
 
         var lane: RequestLane {
             switch self {
             case .libraries: .global(.libraries)
             case .feed(_, let feed, _): .global(feed.row)
-            case .library, .server, .collection: .libraryRows
+            case .library, .server: .libraryRows
+            case .collection: .customRows
             }
         }
     }
@@ -382,7 +408,7 @@ public struct HomeAggregator: Sendable {
         case feed(Int, Feed, Result<FeedItems, AppError>, LibraryLoadDiagnostic?)
         case library(String, LibraryHomeRowKind, Result<[LibrarySection], AppError>)
         case server([HomeRowID: Result<HomeRowPreview, AppError>])
-        case collection(String, Result<HomeRowPreview, AppError>)
+        case collection(HomeCollectionRow)
     }
 
     private struct LibraryContent {
@@ -434,7 +460,7 @@ public struct HomeAggregator: Sendable {
         perLibraryLimit: Int?,
         visibility: HomeLibraryVisibility,
         forceLibraryScoping: Bool = false,
-        identitySources: @Sendable (MediaItem) -> [MediaSourceRef],
+        identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
         onContinueWatching: @escaping @Sendable (String, [MediaItem]) async -> Void,
         onProgress: @escaping @Sendable (Progress) async -> Void
     ) async -> UnmergedContent {
@@ -451,6 +477,10 @@ public struct HomeAggregator: Sendable {
 
         return await withTaskCancellationHandler {
             await withTaskGroup(of: (RequestLane, Response).self) { group in
+                let collectionSession = HomeContentPageLoader.Session(
+                    accounts: accounts, visibility: visibility, cachesPages: true,
+                    homeSnapshot: { _ in throw AppError.notFound }
+                )
                 var requests = accounts.indices.map(Request.libraries)
                 for index in accounts.indices {
                     for feed in Feed.allCases where feed != .latest || !scopedDiscoveryAccounts.contains(index) {
@@ -460,25 +490,18 @@ public struct HomeAggregator: Sendable {
                 var running: [RequestLane: Int] = [:]
                 var perAccount = accounts.map { _ in AccountContent() }
                 var perLibrary: [String: LibraryContent] = [:]
-                let definitions = (visibility.rowCustomization?.availableServerRows ?? []).filter { definition in
-                    guard case .server = definition.id else { return false }
-                    return visibility.isHomeRowVisible(HomeRowChoice(serverRow: definition))
-                        && definition.section.libraryID.map {
-                            visibility.isEnabled("\(definition.accountID):\($0)")
-                        } != false
-                }
+                let definitions = HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
                 var serverRows: [HomeRowID: HomeServerRow] = [:]
-                let collectionDefinitions = visibility.collectionSections.filter {
-                    $0.source.serverUserID != nil
-                        && visibility.isHomeRowVisible(HomeRowChoice(collectionSection: $0))
-                        && $0.source.libraryKey.map(visibility.isEnabled) != false
-                        && accounts.contains(where: $0.source.matches)
-                }
+                let collectionDefinitions = HomeCollectionRow.plannedDefinitions(accounts: accounts, visibility: visibility)
                 var collectionRows: [String: HomeCollectionRow] = [:]
+                var pendingCollectionDefinitions: [CollectionSection] = []
                 for definition in collectionDefinitions {
-                    guard let index = accounts.firstIndex(where: definition.source.matches) else { continue }
                     collectionRows[definition.id] = .init(definition: definition, isLoading: true)
-                    requests.append(.collection(index, definition))
+                    if definition.sources.contains(where: { $0.home != nil }) {
+                        pendingCollectionDefinitions.append(definition)
+                    } else {
+                        requests.append(.collection(definition, [:]))
+                    }
                 }
                 var serverBatches: [ServerBatchKey: [HomeServerRowDefinition]] = [:]
                 var batchOrder: [ServerBatchKey] = []
@@ -505,7 +528,7 @@ public struct HomeAggregator: Sendable {
 
                 func enqueueAvailable() {
                     while !Task.isCancelled, let index = requests.firstIndex(where: {
-                        running[$0.lane, default: 0] < accountFanoutLimit
+                        running[$0.lane, default: 0] < ($0.lane == .customRows ? 1 : accountFanoutLimit)
                     }) {
                         let request = requests.remove(at: index)
                         let lane = request.lane
@@ -517,6 +540,7 @@ public struct HomeAggregator: Sendable {
                                 latestLimit: latestLimit, perLibraryLimit: perLibraryLimit ?? 20,
                                 visibility: visibility,
                                 seriesIdentities: seriesIdentities,
+                                collectionSession: collectionSession, identitySources: identitySources,
                                 onContinueWatching: onContinueWatching
                             )
                             return (lane, response)
@@ -602,14 +626,8 @@ public struct HomeAggregator: Sendable {
                             case let .failure(error): serverRows[id]?.failure = error
                             }
                         }
-                    case let .collection(id, result):
-                        collectionRows[id]?.isLoading = false
-                        switch result {
-                        case let .success(preview):
-                            collectionRows[id]?.items = preview.items
-                            collectionRows[id]?.hasMore = preview.hasMore
-                        case let .failure(error): collectionRows[id]?.failure = error
-                        }
+                    case let .collection(row):
+                        collectionRows[row.definition.id] = row
                     }
                     // Refill before publication so drawing a completed row never stalls
                     // the request queue for the remaining libraries.
@@ -693,6 +711,27 @@ public struct HomeAggregator: Sendable {
                     }
                     content.serverRows = definitions.compactMap { serverRows[$0.id] }
                     content.collectionRows = collectionDefinitions.compactMap { collectionRows[$0.id] }
+                    if publishedRows.isSuperset(of: [.continueWatching, .watchlist, .recentlyAdded]),
+                       !pendingCollectionDefinitions.isEmpty {
+                        let items: [HomeGlobalRow: [MediaItem]] = [
+                            .continueWatching: content.continueWatching,
+                            .watchlist: content.watchlist,
+                            .recentlyAdded: HomeRecentlyAddedPolicy.items(
+                                content.recentlyAddedCandidates ?? content.latest,
+                                hideWatched: visibility.hideWatchedRecentlyAdded, limit: .max
+                            )
+                        ]
+                        var snapshots = items.mapValues { Result<[MediaItem], AppError>.success($0) }
+                        for (kind, row) in [(HomeGlobalRow.continueWatching, HomeRowKind.continueWatching),
+                                            (.watchlist, .watchlist), (.recentlyAdded, .recentlyAdded)] {
+                            if items[kind]?.isEmpty == true, let error = failures[row] {
+                                snapshots[kind] = .failure(error)
+                            }
+                        }
+                        requests += pendingCollectionDefinitions.map { .collection($0, snapshots) }
+                        pendingCollectionDefinitions = []
+                        enqueueAvailable()
+                    }
                     merging?.finish(.succeeded, metrics: .init(
                         items: content.continueWatching.count + content.latest.count + content.watchlist.count,
                         rows: content.librarySections.reduce(0) { $0 + $1.sections.count } + content.serverRows.count
@@ -730,6 +769,8 @@ public struct HomeAggregator: Sendable {
         perLibraryLimit: Int,
         visibility: HomeLibraryVisibility,
         seriesIdentities: [SeriesIdentities],
+        collectionSession: HomeContentPageLoader.Session,
+        identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
         onContinueWatching: @escaping @Sendable (String, [MediaItem]) async -> Void
     ) async -> Response {
         let previewRequestLimit = perLibraryLimit < .max ? perLibraryLimit + 1 : perLibraryLimit
@@ -737,7 +778,7 @@ public struct HomeAggregator: Sendable {
         case let .libraries(index):
             let resolved = accounts[index]
             return .libraries(index, await fetch("libraries", from: resolved) {
-                try await resolved.provider.libraries()
+                try await libraryInventory(from: resolved)
             })
         case let .feed(index, feed, libraryIDs):
             let resolved = accounts[index]
@@ -889,17 +930,48 @@ public struct HomeAggregator: Sendable {
                 }
                 return prepared
             })
-        case let .collection(index, definition):
-            let resolved = accounts[index]
-            return .collection(definition.id, await fetch("collection-section", from: resolved) {
-                let page = try await CollectionPreviewLoader.load(
-                    selection: definition.source, limit: previewRequestLimit,
-                    provider: resolved.provider, visibility: visibility
+        case let .collection(definition, snapshots):
+            do {
+                let expandedSession = HomeContentPageLoader.Session(
+                    accounts: accounts, visibility: visibility, expandsRecentlyAdded: true,
+                    identitySources: identitySources, homeSnapshot: { kind in
+                        guard let snapshot = snapshots[kind] else { throw AppError.notFound }
+                        return try snapshot.get()
+                    }
                 )
-                return HomeRowPreview(
-                    page.items.filter { $0.kind == .movie || $0.kind == .series }, limit: perLibraryLimit
+                let pager = HomeContentPager(
+                    sources: definition.availableSources(accounts: accounts, visibility: visibility),
+                    serverInfo: accounts.sourceServerInfo(), identitySources: identitySources
+                ) { source, start, limit in
+                    if !definition.query.isDefault, source.home == .recentlyAdded {
+                        return try await expandedSession.load(source, start: start, limit: limit)
+                    }
+                    if let kind = source.home {
+                        guard let snapshot = snapshots[kind] else { throw AppError.notFound }
+                        return .prefix(try snapshot.get(), startIndex: start, limit: limit)
+                    }
+                    return try await collectionSession.load(source, start: start, limit: limit)
+                }
+                let result = try await pager.load(
+                    limit: previewRequestLimit, query: definition.query, watchlistDates: definition.usesWatchlistDates
                 )
-            })
+                try Task.checkCancellation()
+                let failure = definition.sources.compactMap { result.failures[$0.id] }.first
+                if failure != nil { PlozzLog.app.error("Some custom Home row sources could not be loaded") }
+                var row = HomeCollectionRow(
+                    definition: definition, items: Array(result.items.prefix(perLibraryLimit)),
+                    failure: failure, hasMore: result.hasMore || result.items.count > perLibraryLimit
+                )
+                row.sourceItems = definition.query.isDefault
+                    ? result.groups.mapValues { Array($0.prefix(perLibraryLimit)) } : result.groups
+                row.sourceFailures = result.failures
+                row.continuingSources = result.continuingSources
+                return .collection(row)
+            } catch {
+                let failure = error is CancellationError ? AppError.cancelled : (error as? AppError) ?? .invalidResponse
+                PlozzLog.app.error("Could not load custom Home row")
+                return .collection(.init(definition: definition, failure: failure))
+            }
         case let .server(index, definitions):
             let resolved = accounts[index]
             let batch = await fetch("server-sections", from: resolved, diagnosticOutcome: { results in
@@ -1191,15 +1263,7 @@ public struct HomeAggregator: Sendable {
     /// second of every group, and so on. Preserves each group's internal order
     /// and gives every account fair top-of-row placement.
     static func interleave<T>(_ groups: [[T]]) -> [T] {
-        let maxCount = groups.map(\.count).max() ?? 0
-        var result: [T] = []
-        result.reserveCapacity(groups.reduce(0) { $0 + $1.count })
-        for offset in 0..<maxCount {
-            for group in groups where offset < group.count {
-                result.append(group[offset])
-            }
-        }
-        return result
+        HomeContentPager.interleave(groups)
     }
 
     /// Whole milliseconds between two `ContinuousClock` instants, for PLZBOOT

@@ -21,6 +21,11 @@ protocol SeekScrubCoordinatorHost: AnyObject {
     var seekIntendsPlayback: Bool { get }
     var seekDidStop: Bool { get }
     func seekApplyPaused(_ paused: Bool)
+    func seekDidSettle()
+}
+
+extension SeekScrubCoordinatorHost {
+    func seekDidSettle() {}
 }
 
 /// Owns the committed-seek / scrub-commit pipeline extracted from
@@ -252,6 +257,7 @@ final class SeekScrubCoordinator {
                     self.controls.intendsPause = true
                 }
             }
+            self.host?.seekDidSettle()
             // `pendingSeekTarget` is cleared by the refresh poll once the
             // engine's `currentTime` arrives within tolerance of the target —
             // that's the moment it's safe to resume mirroring engine time.

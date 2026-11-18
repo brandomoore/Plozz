@@ -5,7 +5,9 @@ import SwiftUI
 import CoreUI
 
 struct PlozziOSSearchView: View {
+    private var navigationTitles = NavigationTitles()
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
@@ -32,10 +34,12 @@ struct PlozziOSSearchView: View {
                         ?? []
                 },
                 seerSearch: { [seer = appModel.seerService] query in
-                    (try? await seer.search(query)) ?? []
+                    guard !OfflineMode.shared.isEnabled else { return [] }
+                    return (try? await seer.search(query)) ?? []
                 },
                 seerRequestAvailability: { [seer = appModel.seerService] item in
-                    await seer.requestAvailability(for: item)
+                    guard !OfflineMode.shared.isEnabled else { return nil }
+                    return await seer.requestAvailability(for: item)
                 }
             )
         )
@@ -48,6 +52,7 @@ struct PlozziOSSearchView: View {
                 isFocused: $isSearchFocused,
                 onShowSettings: onShowSettings
             )
+            .zIndex(1)
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
@@ -65,8 +70,9 @@ struct PlozziOSSearchView: View {
                 PlozziOSSettingsToolbarItem(action: onShowSettings)
             }
         }
-        .navigationTitle(horizontalSizeClass == .compact && !isOverflowDestination ? Text(verbatim: "") : Text("Search"))
-        .toolbarTitleDisplayMode(isOverflowDestination ? .inline : .large)
+        .navigationTitle(isOverflowDestination
+            ? navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search")) : Text(verbatim: ""))
+        .toolbarTitleDisplayMode(.inline)
         .environment(\.plozzCardCaptionView, .search)
         .task(id: viewModel.query) {
             await viewModel.search()
@@ -118,7 +124,10 @@ struct PlozziOSSearchView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
                 ForEach(sections) { section in
-                    PlozziOSMediaSection(title: Text(section.title)) {
+                    PlozziOSMediaSection(
+                        title: Text(section.title), horizontalInset: PlozziOSPageHeaderLayout.horizontalInset,
+                        onHeadingTap: { isSearchFocused = false }
+                    ) {
                         LazyVGrid(
                             columns: appModel.settings.density.density.iOSPosterGridColumns(
                                 horizontalSizeClass: horizontalSizeClass, isRunningOnMac: metrics.usesDesktopSizing
@@ -132,13 +141,16 @@ struct PlozziOSSearchView: View {
                                 )
                             }
                         }
-                        .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass))
+                        .padding(.horizontal, PlozziOSMediaRailLayout.artworkAlignedInset(
+                            PlozziOSPageHeaderLayout.horizontalInset, metrics: metrics, cardStyle: cardStyle
+                        ))
                     }
                 }
             }
             .padding(.vertical)
         }
         .scrollDismissesKeyboard(.interactively)
+        .scrollClipDisabled()
     }
 
     private func provider(for item: MediaItem) -> (any MediaProvider)? {
@@ -151,7 +163,10 @@ struct PlozziOSSearchView: View {
 
 /// Keep a local Settings entry only when native navigation does not expose it.
 private struct PlozziOSSearchHeader: View {
+    private var navigationTitles = NavigationTitles()
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.hasVisibleSettingsNavigationEntry) private var hasVisibleSettingsNavigationEntry
     @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @Environment(\.plozziOSIsOverflowDestination) private var isOverflowDestination
@@ -160,47 +175,97 @@ private struct PlozziOSSearchHeader: View {
     let onShowSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .plozzForeground(.secondary)
-                TextField(
-                    "Movies, shows, and episodes",
-                    text: $query,
-                    prompt: Text("Movies, shows, and episodes").foregroundColor(palette.secondaryText)
-                )
-                .focused($isFocused)
-                .textFieldStyle(.plain)
-                .foregroundStyle(palette.primaryText)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .accessibilityLabel("Search your libraries")
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .plozzForeground(.secondary)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
+        VStack(spacing: 0) {
+            PlozziOSPageHeader(navigationTitles(NavigationLibraryLayout.searchKey, default: Text("Search"))) {
+                if !hasVisibleSettingsNavigationEntry && !usesVerticalToolbar && !isOverflowDestination {
+                    PlozziOSSettingsAvatarButton(action: onShowSettings)
+                        .accessibilityIdentifier("search-settings-avatar")
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 44)
-            .plozzSurface(.raised, cornerRadius: PlozzTheme.Metrics.Radius.card)
-            .frame(maxWidth: .infinity)
+            .padding(.bottom, hidesTitle ? 0 : 12)
+            .frame(height: hidesTitle ? 0 : nil, alignment: .top)
+            .opacity(hidesTitle ? 0 : 1)
+            .allowsHitTesting(!hidesTitle)
+            .accessibilityHidden(hidesTitle)
 
-            if !hasVisibleSettingsNavigationEntry && !usesVerticalToolbar && !isOverflowDestination {
-                PlozziOSSettingsAvatarButton(action: onShowSettings)
-                    .accessibilityIdentifier("search-settings-avatar")
+            HStack(spacing: PlozziOSPageHeaderLayout.actionSpacing) {
+                searchField
+                if isActive {
+                    cancelButton
+                        .transition(.opacity)
+                }
+            }
+            .padding(.horizontal, PlozziOSPageHeaderLayout.horizontalInset)
+        }
+        .padding(.bottom, 10)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.4), value: isActive)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .plozzForeground(.secondary)
+            TextField(
+                "Movies, shows, and episodes",
+                text: $query,
+                prompt: Text("Movies, shows, and episodes").foregroundColor(palette.secondaryText)
+            )
+            .focused($isFocused)
+            .textFieldStyle(.plain)
+            .foregroundStyle(palette.primaryText)
+            .autocorrectionDisabled()
+            .submitLabel(.search)
+            .accessibilityLabel("Search your libraries")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .plozzForeground(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background { fieldBackground }
+        .contentShape(Capsule())
+        .onTapGesture { isFocused = true }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var hidesTitle: Bool { isActive || isOverflowDestination }
+
+    private var isActive: Bool {
+        isFocused || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var cancelButton: some View {
+        Button("Cancel search", systemImage: "xmark") {
+            query = ""
+            isFocused = false
+        }
+        .plozziOSPageAction()
+    }
+
+    @ViewBuilder
+    private var fieldBackground: some View {
+        let flat = Color.clear.settingsGroupSurface(in: Capsule())
+        if #available(iOS 26.0, *), !reduceTransparency {
+            // Keep both surfaces mounted; replacing the field on focus loses
+            // its first responder and can interrupt typing.
+            ZStack {
+                flat.opacity(isActive ? 0 : 1)
+                Color.clear
+                    .glassEffect(.regular, in: Capsule())
+                    .opacity(isActive ? 1 : 0)
+            }
+        } else {
+            flat
+        }
     }
 }
 
@@ -212,7 +277,7 @@ private struct PlozziOSSearchResultCard: View {
     var body: some View {
         Group {
             if let provider {
-                MediaArtworkZoomLink(id: item.stablePresentationID) {
+                NavigationLink {
                     PlozziOSItemDetailView(
                         appModel: appModel,
                         provider: provider,
@@ -232,7 +297,7 @@ private struct PlozziOSSearchResultCard: View {
     private var card: some View {
         VStack(alignment: .leading, spacing: 6) {
             PlozziOSPosterCard(
-                item: item
+                item: item, captionHorizontalInset: 0
             )
             if let cue = SearchSection.availabilityCue(for: item) {
                 Label(cue, systemImage: "rectangle.stack.badge.plus")

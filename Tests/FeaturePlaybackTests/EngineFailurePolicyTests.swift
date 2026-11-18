@@ -70,6 +70,35 @@ final class EngineFailurePolicyTests: XCTestCase {
 
     // MARK: Network-file fresh-retry (Plozzigen only, once)
 
+    func testMediaServicesResetRebuildsTheSameEngineOnceWithoutUsingCompatibilityFallbacks() {
+        for kind in [PlaybackEngineKind.native, .plozzigen] {
+            for transcoding in [false, true] {
+                var state = EngineFallbackState()
+                func reset(tokenMatches: Bool = true, hasRequest: Bool = true) -> EngineFailureAction {
+                    EngineFailurePolicy.decide(
+                        tokenMatches: tokenMatches, hasRequest: hasRequest,
+                        isNetworkFile: kind == .plozzigen, isTranscoding: transcoding,
+                        hasExternalAudio: true, currentEngineKind: kind,
+                        alternateEngineKind: kind == .native ? .plozzigen : .native,
+                        resume: 0.5, allowsCompatibilityFallback: false,
+                        mediaServicesReset: true, state: &state
+                    )
+                }
+                XCTAssertEqual(reset(tokenMatches: false), .ignoreStale)
+                XCTAssertEqual(reset(hasRequest: false), .failNoRequest)
+                XCTAssertEqual(state, .init())
+                XCTAssertEqual(reset(), .retryMediaServices(kind: kind, resume: 0.5))
+                XCTAssertEqual(reset(), .exhausted)
+                XCTAssertEqual(state, .init(hasRetriedMediaServices: true))
+            }
+        }
+    }
+
+    func testAResetDoesNotConsumeLaterGenuineCompatibilityRecovery() {
+        var state = EngineFallbackState(hasRetriedMediaServices: true)
+        XCTAssertEqual(decide(resume: 42, state: &state), .swapAlternate(kind: .plozzigen, resume: 42))
+    }
+
     func testNetworkFileOnPlozzigenRetriesFreshOnce() {
         var state = EngineFallbackState()
         let first = decide(

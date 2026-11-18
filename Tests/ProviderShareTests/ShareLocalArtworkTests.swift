@@ -391,6 +391,40 @@ final class ShareLocalArtworkTests: XCTestCase {
         let detail = (landscape + backdrop).filter { $0.placement == .detailBackdrop }.sorted { $0.rank < $1.rank }
         XCTAssertEqual(home.first?.artworkRelPath, "Movies/Film/landscape.jpg")
         XCTAssertEqual(detail.first?.artworkRelPath, "Movies/Film/fanart.jpg")
+        XCTAssertEqual(landscape.filter { $0.placement == .landscapeCard }.count, 1)
+        XCTAssertTrue(backdrop.filter { $0.placement == .landscapeCard }.isEmpty)
+    }
+
+    func testExistingLandscapeAssociationsUpgradeWithoutARescan() async throws {
+        let fixture = ShareCatalogSQLiteFixture()
+        defer { fixture.cleanup() }
+        let revision = CredentialRevision()
+        let store = fixture.makeStore()
+        await store.configureArtworkReferenceContext(accountID: "art-account", credentialRevision: revision)
+        let asset = movie()
+        await store.upsert([asset], scanID: 1)
+        await store.upsertArtwork([candidate("Movies/Film/thumb.jpg")], scanID: 1)
+        try fixture.execute("""
+            UPDATE local_artwork_files SET probe_status='validated',width=1920,height=1080;
+            DELETE FROM local_artwork_associations WHERE placement='landscapeCard';
+            DELETE FROM metadata_values WHERE field='artwork.landscapeCard';
+            UPDATE meta SET key='artwork_reference_context_v2' WHERE key='artwork_reference_context_v3';
+            """)
+        let reopened = fixture.makeStore()
+        await reopened.configureArtworkReferenceContext(accountID: "art-account", credentialRevision: revision)
+        let loaded = await reopened.item(id: ShareCatalogID.file(asset.relPath))
+        let item = try XCTUnwrap(loaded)
+        guard case .networkFile(let reference)? = item.artworkReferences(for: .landscapeCard).first else {
+            return XCTFail("Existing native landscape art must be rematerialized")
+        }
+        XCTAssertEqual(reference.accountID, "art-account")
+        XCTAssertEqual(reference.credentialRevision, revision)
+        let locator = await reopened.artworkLocator(for: reference)
+        XCTAssertEqual(locator?.relativePath, "Movies/Film/thumb.jpg")
+        XCTAssertEqual(try fixture.integer("SELECT last_scan FROM local_artwork_files;"), 1)
+        await reopened.configureArtworkReferenceContext(accountID: "art-account", credentialRevision: revision)
+        let preparations = await reopened.artworkReferenceContextPreparationCountForTesting()
+        XCTAssertEqual(preparations, 1)
     }
 
     func testOnlineArtworkPreferenceOffKeepsLocalArtworkFirst() throws {
@@ -1058,7 +1092,7 @@ final class ShareLocalArtworkTests: XCTestCase {
             WHERE item_id='\(itemID)' AND field='artwork.poster' AND source='localArtwork';
             """)
         let marker = try fixture.text("""
-            SELECT value FROM meta WHERE key='artwork_reference_context_v2';
+            SELECT value FROM meta WHERE key='artwork_reference_context_v3';
             """)
         for _ in 0..<3 {
             await firstStore.configureArtworkReferenceContext(
@@ -1086,7 +1120,7 @@ final class ShareLocalArtworkTests: XCTestCase {
             before
         )
         XCTAssertEqual(
-            try fixture.text("SELECT value FROM meta WHERE key='artwork_reference_context_v2';"),
+            try fixture.text("SELECT value FROM meta WHERE key='artwork_reference_context_v3';"),
             marker
         )
     }

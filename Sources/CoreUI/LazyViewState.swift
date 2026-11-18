@@ -45,6 +45,12 @@ public final class LazyViewState<Value> {
         storedKey == AnyHashable(key) ? stored : nil
     }
 
+    public func discard(onDiscard: (Value) -> Void = { _ in }) {
+        if let stored { onDiscard(stored) }
+        stored = nil
+        storedKey = nil
+    }
+
     /// The held value, building it with `make` on first use only.
     public func value(_ make: () -> Value) -> Value {
         value(forKey: 0, make)
@@ -61,9 +67,14 @@ public final class LazyViewState<Value> {
     /// launch, theme-music settings the next). Hoisting the box to a stable
     /// owner and giving it an explicit key makes the lifetime say what it means:
     /// rebuild when the account/profile scope changes, and at no other time.
-    public func value(forKey key: some Hashable, _ make: () -> Value) -> Value {
+    public func value(
+        forKey key: some Hashable,
+        onDiscard: (Value) -> Void = { _ in },
+        _ make: () -> Value
+    ) -> Value {
         let key = AnyHashable(key)
         if let stored, storedKey == key { return stored }
+        if let stored { onDiscard(stored) }
         let built = make()
         stored = built
         storedKey = key

@@ -95,6 +95,9 @@ public struct MediaPerson: Codable, Hashable, Identifiable, Sendable {
     ///
     /// Optional, so records persisted before it existed still decode.
     public var externalID: String?
+    /// Title-scoped cross-provider credit match, used only to join portrait cards.
+    /// Never replaces the source's person route or biography handle.
+    public var creditIdentity: String?
     /// A short factual line about the person — birth year and birthplace, when
     /// the source keeps them. Already formatted, because what is available
     /// varies by source and only the source knows which parts it has.
@@ -108,7 +111,8 @@ public struct MediaPerson: Codable, Hashable, Identifiable, Sendable {
         imageURL: URL? = nil,
         biography: String? = nil,
         externalID: String? = nil,
-        lifeSummary: String? = nil
+        lifeSummary: String? = nil,
+        creditIdentity: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -118,6 +122,7 @@ public struct MediaPerson: Codable, Hashable, Identifiable, Sendable {
         self.biography = biography
         self.externalID = externalID
         self.lifeSummary = lifeSummary
+        self.creditIdentity = creditIdentity
     }
 
     /// True for on-screen/voice talent (vs. crew), used to build the "Cast" row.
@@ -214,6 +219,12 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// English title here. Used as an extra cross-server discovery query so a
     /// title named differently on each server is still found and matched by id.
     public var originalTitle: String?
+    /// Confirmed original language, not an available audio track or classification heuristic.
+    public var originalLanguage: String?
+    public var seriesStatus: MediaSeriesStatus?
+    /// Whole-title catalog totals, never counts of locally available or unwatched episodes.
+    public var catalogSeasonCount: Int?
+    public var catalogEpisodeCount: Int?
     public var kind: MediaItemKind
     /// Explicit provider/presentation classification, never inferred from a title.
     public var isTrailer: Bool = false
@@ -331,6 +342,9 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// External database identifiers (e.g. `["Imdb": "tt0111161", "Tmdb": "278"]`),
     /// used by enrichment services to look up additional ratings/metadata.
     public var providerIDs: [String: String]
+    /// A fresh catalog response includes all external IDs the provider knows.
+    /// Transient: persisted cards must not suppress a later identity refresh.
+    public var catalogIdentityIsComplete = false
     /// Discovery-feed attribution, independent of playable server ownership.
     public var discoverySources: [HeroDiscoverySource]
     public var discoveryURLs: [String: URL]
@@ -485,6 +499,10 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// provider/server default source".
     public var selectedVersionID: String?
 
+    /// One-play intent, excluded from persisted media metadata.
+    public var discPlaybackOverride: DiscPlaybackBehavior? = nil
+    public var externalPlayerOverride: ExternalPlayer? = nil
+
     /// Every server that holds this same title, captured by the cross-server
     /// merge (``MediaItemMerger``). Primary source first (it backs this card's
     /// id/artwork), then the de-duplicated alternates. Each ref carries **that
@@ -525,10 +543,16 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// from a remote/Tailscale library still plays from a same-LAN copy when one
     /// exists. `false` for every non-picked item (Home / Search / auto default).
     public var explicitSourceSelection: Bool
+    /// Transient proof of a manual file choice, separate from a pinned server or edition.
+    public var explicitVersionSelection: Bool = false
     public init(
         id: String,
         title: String,  // l10n:content — media title (server/provider content)
         originalTitle: String? = nil,
+        originalLanguage: String? = nil,
+        seriesStatus: MediaSeriesStatus? = nil,
+        catalogSeasonCount: Int? = nil,
+        catalogEpisodeCount: Int? = nil,
         kind: MediaItemKind,
         isTrailer: Bool = false,
         isExtra: Bool = false,
@@ -607,6 +631,10 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.fileBrowserContainerID = fileBrowserContainerID
         self.title = title
         self.originalTitle = originalTitle
+        self.originalLanguage = originalLanguage
+        self.seriesStatus = seriesStatus
+        self.catalogSeasonCount = catalogSeasonCount
+        self.catalogEpisodeCount = catalogEpisodeCount
         self.kind = kind
         self.isTrailer = isTrailer
         self.isExtra = isExtra || isTrailer
@@ -691,6 +719,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case watchlistAddedAt
         case fileBrowserContainerID, artworkLookupSubject
         case originalTitle, seriesSynopsis
+        case originalLanguage, seriesStatus, catalogSeasonCount, catalogEpisodeCount
         case isTrailer
         case isExtra
         case productionYear, releaseDate, officialRating, genres, people, studios, tags, taglines
@@ -729,6 +758,11 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         )
         title = try container.decode(String.self, forKey: .title)
         originalTitle = try container.decodeIfPresent(String.self, forKey: .originalTitle)
+        originalLanguage = try container.decodeIfPresent(String.self, forKey: .originalLanguage)
+        seriesStatus = try container.decodeIfPresent(String.self, forKey: .seriesStatus)
+            .flatMap(MediaSeriesStatus.init(rawValue:))
+        catalogSeasonCount = try container.decodeIfPresent(Int.self, forKey: .catalogSeasonCount)
+        catalogEpisodeCount = try container.decodeIfPresent(Int.self, forKey: .catalogEpisodeCount)
         kind = try container.decode(MediaItemKind.self, forKey: .kind)
         isTrailer = try container.decodeIfPresent(Bool.self, forKey: .isTrailer) ?? false
         isExtra = (try container.decodeIfPresent(Bool.self, forKey: .isExtra) ?? false) || isTrailer
@@ -901,6 +935,13 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
             }
         }
         references.append(contentsOf: legacy)
+        if placement == .landscapeCard {
+            references = references.filter {
+                guard case .networkFile(let file) = $0 else { return true }
+                guard let dimensions = file.dimensions else { return false }
+                return (4.0 / 3.0...3).contains(dimensions.aspectRatio)
+            }
+        }
         var seen = Set<ArtworkReference>()
         return references.filter { seen.insert($0).inserted }
     }
@@ -1176,6 +1217,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     public func selectingVersion(_ versionID: String?) -> MediaItem {
         var copy = self
         copy.selectedVersionID = versionID
+        if versionID == nil { copy.explicitVersionSelection = false }
         return copy
     }
 
@@ -1267,6 +1309,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         } else {
             copy.selectedVersionID = nil
         }
+        copy.explicitVersionSelection = explicit && copy.selectedVersionID != nil
         // Keep proof of an explicit target through the later live-source router,
         // even when the identity index has not learned this physical edition yet.
         if explicit, !copy.sources.contains(where: { $0.id == source.id }) {
@@ -1403,12 +1446,14 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// Returns a copy whose `resumePosition` is the cross-server furthest-progress
     /// resume for `sources` (see ``MediaItemMerger/playbackResumePosition(from:)``),
     /// so the routed play item resumes at the unified position regardless of which
-    /// server backs it. A no-op when `sources` is empty (a single-server item that
-    /// was never merged keeps its own resume).
+    /// server backs it. Sources of another media kind cannot contribute watch
+    /// state; a detail page may supply its show's sources while playing an episode.
+    /// With no eligible sources, the item's own resume is preserved.
     func reconcilingPlaybackResume(acrossSources sources: [MediaSourceRef]) -> MediaItem {
-        guard !sources.isEmpty else { return self }
+        let compatible = sources.filter { $0.kind == nil || $0.kind == kind }
+        guard !compatible.isEmpty else { return self }
         var copy = self
-        copy.resumePosition = MediaItemMerger.playbackResumePosition(from: sources)
+        copy.resumePosition = MediaItemMerger.playbackResumePosition(from: compatible)
         return copy
     }
 
@@ -1515,17 +1560,15 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         )
     }
 
-    /// The episode's place in the run, comma-separated — `S4, E1`.
+    /// The episode's place in the run — `S4 E1`.
     ///
     /// A tighter sibling of ``subtitle`` for places that already join with `·`,
     /// where the dotted form would produce "S4 · E1 · 22m" and read as three
-    /// separate facts instead of one designation and a duration. The comma keeps
-    /// the season and episode visibly paired — bare "S4 E1 · 22m" runs the two
-    /// numbers together. `nil` unless both are known: a half-built "S4" says
-    /// nothing useful.
+    /// separate facts instead of one designation and a duration.
+    /// `nil` unless both numbers are known.
     public var seasonEpisodeLabel: String? {  // l10n:content — "S"/"E" abbreviations are hand-built formatting, not copy
         guard let season = seasonNumber, let episode = episodeNumber else { return nil }
-        return "S\(season), E\(episode)"
+        return "S\(season) E\(episode)"
     }
 
     /// On-screen / voice talent, in billing order (crew filtered out).

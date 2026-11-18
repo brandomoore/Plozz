@@ -26,14 +26,22 @@ final class ProfileSetupLibrariesLoader {
     func reload(appState: AppState) async {
         revision += 1
         let mine = revision
+        let authorization = appState.accountsProviders.liveTVAuthorizationID
         let scoped = appState.accountsProviders.resolvedActiveAccounts.filter {
             appState.profileFlow.isAccountIncludedInActiveProfile($0.account.id)
         }
-        refreshingAccountIDs = Set(scoped.map(\.account.id))
-        if state.value == nil { state = .loading }
-        let discovered = await discovery.libraryDiscovery(from: scoped)
-        guard mine == revision else { return }
-        refreshingAccountIDs = []
+        let accountIDs = Set(appState.accountsProviders.navigationAccounts.map(\.id))
+        let cached = discovery.cachedLibraries(from: scoped)
+        refreshingAccountIDs = accountIDs.subtracting(cached.accountIDs)
+        state = cached.libraries.isEmpty
+            ? (refreshingAccountIDs.isEmpty ? .empty : .loading)
+            : .loaded(cached.libraries)
+        unreachableAccountIDs = []
+        libraryFailures = [:]
+        defer { if mine == revision { refreshingAccountIDs = [] } }
+        let discovered = await discovery.libraryDiscovery(from: scoped, expectedAccountIDs: accountIDs)
+        guard !Task.isCancelled, mine == revision,
+              authorization == appState.accountsProviders.liveTVAuthorizationID else { return }
         unreachableAccountIDs = discovered.unreachableAccountIDs
         libraryFailures = discovered.failures
         state = .loaded(discovered.libraries)

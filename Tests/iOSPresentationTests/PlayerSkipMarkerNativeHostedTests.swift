@@ -69,6 +69,11 @@ final class PlayerSkipMarkerNativeHostedTests: XCTestCase {
                                              "Continuous sections must contain visible glass, not transparent holes.")
                     }
                     for fraction in retained {
+                        let besideCut = frame.color(
+                            x: marked.minX + fraction * width + 2.5, y: marked.midY - height / 2 + 3
+                        )
+                        XCTAssertGreaterThan(colorDistance(besideCut, backdrop), 8,
+                                             "The inner edge is filled below its small corner, even on the expanded track.")
                         for offset in stride(from: -height / 2 + 1, through: height / 2 - 1, by: 1) {
                             let gap = frame.color(x: marked.minX + fraction * width, y: marked.midY + offset)
                             assertColor(gap, matches: backdrop, accuracy: 2,

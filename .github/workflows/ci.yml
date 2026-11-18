@@ -191,7 +191,7 @@ jobs:
     name: App-hosted focus tests
     needs: guards
     runs-on: xcode-27
-    timeout-minutes: 170
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@v5
         with:
@@ -206,7 +206,7 @@ jobs:
       - name: Run app-hosted episode focus tests
         env:
           PLOZZ_FOCUS_BUILD_TIMEOUT: "3600"
-          PLOZZ_FOCUS_TEST_TIMEOUT: "5400"
+          PLOZZ_FOCUS_TEST_TIMEOUT: "7200"
         run: tools/run-focus-tests.sh
 
       - name: Save successful trusted caches

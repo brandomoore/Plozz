@@ -5,13 +5,16 @@ import Foundation
 /// resolves an `accountID` to its `MediaProvider` (for played / resume writes) and
 /// mirrors to external trackers (Trakt, Simkl, AniList, MAL).
 ///
-/// Each method **throws on failure** so the reconciler keeps the target queued and
+/// Each write **throws on failure** so the reconciler keeps the target queued and
 /// retries later. A throw is the *only* signal to retry — returning normally is
 /// treated as a confirmed write (so a Trakt 409 must be swallowed as success by the
 /// implementation, never rethrown).
 public protocol WatchMutationApplying: Sendable {
     func reportTrackerPlayback(_ delivery: TrackerPlaybackDelivery) async throws
     func requireServerScope(_ scope: WatchMutationServerScope) async throws
+    /// A newer server play can supersede a queued reset without being a local
+    /// outbox entry. Read failures must throw, not authorize the stale write.
+    func serverPlaybackSupersedes(_ mutation: WatchMutation, on target: WatchMutationTarget) async throws -> Bool
     /// Marks `target` played/unplayed on its server (addressed by `target.itemID`).
     func setPlayed(_ played: Bool, on target: WatchMutationTarget) async throws
     /// Marks `target` played/unplayed with the play's real `capturedAt`, for a
@@ -19,6 +22,7 @@ public protocol WatchMutationApplying: Sendable {
     /// last-writer-wins (the SMB share). Defaults to the timestamp-less
     /// ``setPlayed(_:on:)`` for a server-backed provider that ignores capture time.
     func setPlayed(_ played: Bool, on target: WatchMutationTarget, capturedAt: Date) async throws
+    func setPlayed(_ played: Bool, on target: WatchMutationTarget, kind: MediaItemKind?, capturedAt: Date) async throws
     /// Writes a resume position (seconds) to `target`'s server, session-lessly.
     /// `capturedAt` is the play's real timestamp (see ``ResumeStateWriting``), used
     /// for the server's recency stamp so an offline-drained write doesn't falsely
@@ -50,6 +54,7 @@ public extension WatchMutationApplying {
     func reportTrackerPlayback(_ delivery: TrackerPlaybackDelivery) async throws {
         throw TrackerPlaybackDeliveryError.unsupportedIdentity
     }
+    func serverPlaybackSupersedes(_ mutation: WatchMutation, on target: WatchMutationTarget) async throws -> Bool { false }
     func requireServerScope(_ scope: WatchMutationServerScope) async throws {
         throw WatchMutationServerScopeError.unsupportedApplier
     }
@@ -59,6 +64,9 @@ public extension WatchMutationApplying {
 
     func setPlayed(_ played: Bool, on target: WatchMutationTarget, capturedAt: Date) async throws {
         try await setPlayed(played, on: target)
+    }
+    func setPlayed(_ played: Bool, on target: WatchMutationTarget, kind: MediaItemKind?, capturedAt: Date) async throws {
+        try await setPlayed(played, on: target, capturedAt: capturedAt)
     }
     func expandTargets(for mutation: WatchMutation) async -> WatchTargetExpansion { .none }
     func scrobbleTrakt(_ intent: TraktScrobbleIntent, source: WatchMutationTarget?) async throws {
@@ -225,9 +233,11 @@ public actor WatchStateReconciler {
     /// Replace queued progress with the final stop before lifting the live guard.
     /// Draining first would write the old checkpoint back over a finished episode.
     public func finishLiveSession(
-        accountID: String?, itemID: String, mutation: WatchMutation?, serverScope: WatchMutationServerScope? = nil
+        accountID: String?, itemID: String, mutation: WatchMutation?,
+        serverScope: WatchMutationServerScope? = nil,
+        onPersisted: @Sendable () -> Void = {}
     ) async {
-        if let mutation { await enqueue(mutation) }
+        if let mutation { await enqueue(mutation, onPersisted: onPersisted) }
         if let accountID {
             let session = LiveSession(
                 target: WatchMutationTarget(accountID: accountID, itemID: itemID),
@@ -551,11 +561,11 @@ public actor WatchStateReconciler {
 
     private struct SupersededSource: Error {}
 
-    private func withSourceAuthorization(
+    private func withSourceAuthorization<Result: Sendable>(
         _ mutation: WatchMutation,
         target: WatchMutationTarget,
-        operation: @Sendable () async throws -> Void
-    ) async throws {
+        operation: @Sendable () async throws -> Result
+    ) async throws -> Result {
         let parent = WatchMutationDeliveryAuthorization.current
         let permission = WatchMutationDeliveryAuthorization(
             serverScope: mutation.serverScope, sourceRequirement: mutation.authorization
@@ -567,7 +577,7 @@ public actor WatchStateReconciler {
                 throw SupersededSource()
             }
         }
-        try await WatchMutationDeliveryAuthorization.$current.withValue(permission, operation: operation)
+        return try await WatchMutationDeliveryAuthorization.$current.withValue(permission, operation: operation)
     }
 
     private func retireIfUnreferenced(_ mutation: WatchMutation) {
@@ -654,6 +664,7 @@ public actor WatchStateReconciler {
         // The copies the older state reached still hold that older state, and the
         // newer state gets its own full retry window.
         merged.appliedTargetIDs = []
+        merged.supersededTargetIDs = []
         merged.expansionStartedAt = nil
         if merged.episodeOrigin == nil { merged.episodeOrigin = existing.episodeOrigin }
         merged.attempts = existing.attempts
@@ -960,9 +971,24 @@ public actor WatchStateReconciler {
             var outcome = ""
             let capturedAt = mutation.capturedAt
             do {
+                let candidate = mutation
+                let superseded = try await withSourceAuthorization(candidate, target: target) { [applier] in
+                    try await applier.serverPlaybackSupersedes(candidate, on: target)
+                }
+                try await WatchMutationDeliveryAuthorization.check()
+                if superseded {
+                    mutation.appliedTargetIDs.insert(target.id)
+                    mutation.supersededTargetIDs.insert(target.id)
+                    if state.appliedRecency[target.id]?.serverScope == mutation.serverScope {
+                        state.appliedRecency[target.id] = nil
+                    }
+                    FanoutDiagnostics.emit(FanoutDiagnostics.drainTargetLine(target, outcome: "skip(newer server playback)"))
+                    continue
+                }
                 if let played = mutation.played {
+                    let kind = mutation.kind
                     try await withSourceAuthorization(mutation, target: target) { [applier] in
-                        try await applier.setPlayed(played, on: target, capturedAt: capturedAt)
+                        try await applier.setPlayed(played, on: target, kind: kind, capturedAt: capturedAt)
                     }
                     outcome += "setPlayed(\(played))=OK "
                     try await WatchMutationDeliveryAuthorization.check()

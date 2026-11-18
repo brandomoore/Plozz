@@ -10,6 +10,90 @@ import XCTest
 
 @MainActor
 final class HomeLayoutInvalidationPerformanceTests: XCTestCase {
+    func testShowcaseFocusDiscoveryFollowsAdjacentRowsAfterReorder() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.close() }
+        try await fixture.prepare()
+        var scannedRows = Set<String>()
+        fixture.probe.measurement.onFocusScan = { id, _ in scannedRows.insert(id) }
+        defer { fixture.probe.measurement.onFocusScan = nil }
+
+        for (row, expected) in [(0, Set(["row-1"])), (1, Set(["row-0", "row-2"])), (0, Set(["row-1"]))] {
+            let card = try fixture.poster(named: "Layout \(row)-1")
+            fixture.host.target = card
+            fixture.focusSystem.requestFocusUpdate(to: fixture.host)
+            fixture.focusSystem.updateFocusIfNeeded()
+            try await Fixture.waitUntil { fixture.focusSystem.focusedItem === card }
+            scannedRows.removeAll()
+            NotificationCenter.default.post(name: UIFocusSystem.didUpdateNotification, object: fixture.focusSystem)
+            XCTAssertEqual(scannedRows, expected, "Unrelated rows must not query UIKit's focus hierarchy.")
+        }
+        fixture.state.rows.swapAt(1, 4)
+        try await Fixture.waitUntil {
+            fixture.window.layoutIfNeeded()
+            scannedRows.removeAll()
+            NotificationCenter.default.post(name: UIFocusSystem.didUpdateNotification, object: fixture.focusSystem)
+            return scannedRows == ["row-4"]
+        }
+        XCTAssertEqual((fixture.focusSystem.focusedItem as? UIView)?.accessibilityLabel, "Layout 0-1")
+        let loaded = fixture.state.rows[1]
+        fixture.state.rows[1] = FocusHeroRow(id: loaded.id, itemIDs: [], leadItem: nil, isPlaceholder: true)
+        try await Fixture.waitUntil {
+            fixture.window.layoutIfNeeded()
+            scannedRows.removeAll()
+            NotificationCenter.default.post(name: UIFocusSystem.didUpdateNotification, object: fixture.focusSystem)
+            return scannedRows == ["row-2"]
+        }
+        fixture.state.rows[1] = FocusHeroRow(
+            id: loaded.id, itemIDs: loaded.itemIDs, leadItem: loaded.leadItem,
+            items: loaded.items, isPlaceholder: true
+        )
+        try await Fixture.waitUntil {
+            fixture.window.layoutIfNeeded()
+            scannedRows.removeAll()
+            NotificationCenter.default.post(name: UIFocusSystem.didUpdateNotification, object: fixture.focusSystem)
+            return scannedRows == ["row-4"]
+        }
+        XCTAssertEqual((fixture.focusSystem.focusedItem as? UIView)?.accessibilityLabel, "Layout 0-1")
+    }
+
+    func testPerformanceShowcaseFocusDiscovery() async throws {
+        try PerformanceProbe.requireEnabled()
+        let fixture = try await Fixture.make()
+        defer { fixture.close() }
+        try await fixture.prepare()
+        try await PerformanceProbe.measure(self, scenario: "home-focus-discovery") {
+            var scans = 0
+            var queries = 0
+            fixture.probe.measurement.onFocusScan = { _, count in
+                scans += 1
+                queries += count
+            }
+            defer { fixture.probe.measurement.onFocusScan = nil }
+            var moves = 0
+            for row in [0, 1, 2, 1] {
+                for index in [1, 2, 3, 2, 1, 0] {
+                    let card = try fixture.poster(named: "Layout \(row)-\(index)")
+                    fixture.host.target = card
+                    fixture.focusSystem.requestFocusUpdate(to: fixture.host)
+                    fixture.focusSystem.updateFocusIfNeeded()
+                    try await Fixture.waitUntil { fixture.focusSystem.focusedItem === card }
+                    moves += 1
+                }
+            }
+            XCTAssertEqual(moves, 24)
+            XCTAssertGreaterThan(scans, 0)
+            XCTAssertGreaterThan(queries, 0)
+            return ["focusMoves": moves, "rowScans": scans, "containerQueries": queries]
+        }
+        let first = try fixture.poster(named: "Layout 0-0")
+        fixture.host.target = first
+        fixture.focusSystem.requestFocusUpdate(to: fixture.host)
+        fixture.focusSystem.updateFocusIfNeeded()
+        try await Fixture.waitUntil { fixture.focusSystem.focusedItem === first }
+        try await fixture.checkContentAndFocus()
+    }
+
     func testPerformanceArtworkPublicationLayout() async throws {
         try PerformanceProbe.requireEnabled()
         try await run(duplicates: false)
@@ -205,6 +289,8 @@ final class HomeLayoutInvalidationPerformanceTests: XCTestCase {
                         onFocusChange: { if let item = $0 { reporter.focusedItem(item) } },
                         onCardFocused: reporter.cardFocused,
                         statusCue: { _ in probe.counts.cardInputs += 1; return nil },
+                        loadingPlaceholderCount: row.isPlaceholder ? 5 : 0,
+                        reservesLoadingFocus: row.id == state.rows.first?.id,
                         onSelect: { _ in }
                     )
                     .background(EnvironmentCapture(probe: probe, rowID: row.id))
@@ -572,7 +658,7 @@ final class HomeLayoutInvalidationPerformanceTests: XCTestCase {
                            "The overscan gutter must paint the real bitmap through the 10% sidebar feather.")
         }
 
-        private func poster(named title: String) throws -> NativePosterButton {
+        func poster(named title: String) throws -> NativePosterButton {
             try XCTUnwrap(descendants(NativePosterButton.self, in: window).first { $0.accessibilityLabel == title })
         }
 
@@ -606,7 +692,7 @@ final class HomeLayoutInvalidationPerformanceTests: XCTestCase {
             return [r, g, b]
         }
 
-        private static func waitUntil(
+        static func waitUntil(
             file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool
         ) async throws {
             let deadline = ContinuousClock.now + .seconds(8)

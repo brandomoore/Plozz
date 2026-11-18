@@ -38,7 +38,7 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
         hasSource && !isLoading && decoderGeneration == generation
             && status == .ready && underlyingEngine.hasPresentedVideoFrame
     }
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     public func previewVideoFrame() -> CVPixelBuffer? {
         hasPresentedVideoFrame ? underlyingEngine.previewVideoFrame() : nil
     }
@@ -48,6 +48,9 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
     #endif
     public var subtitlePresentationTime: TimeInterval { underlyingEngine.subtitlePresentationTime }
     public var supportsActivePictureAnalysis: Bool { underlyingEngine.supportsActivePictureAnalysis }
+    public var activePictureSourceID: UUID? {
+        hasSource && decoderGeneration == generation ? underlyingEngine.activePictureSourceID : generation
+    }
     public func sampleActivePicture() async -> VideoActivePictureState {
         guard hasPresentedVideoFrame else { return .unavailable }
         let stamp = generation
@@ -548,6 +551,7 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
 
     public var displayName: String { underlyingEngine.displayName }
     public var capabilities: PlayerEngineCapabilities { underlyingEngine.capabilities }
+    public var isSessionReloading: Bool { underlyingEngine.isSessionReloading }
     public var isPaused: Bool { !hasSource || intendedPause || underlyingEngine.isPaused }
     public var preventsDisplaySleep: Bool {
         hasSource && !isLoading && !isPaused
@@ -574,6 +578,8 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
     public func selectSecondarySubtitleTrack(_ track: MediaTrack?) { underlyingEngine.selectSecondarySubtitleTrack(track) }
     public func setPlaybackSpeed(_ rate: Double) { underlyingEngine.setPlaybackSpeed(rate) }
     public func setAudioDelay(_ seconds: TimeInterval) { underlyingEngine.setAudioDelay(seconds) }
+    public var audioDelaySeconds: TimeInterval { underlyingEngine.audioDelaySeconds }
+    public func setAudioDelayLive(_ seconds: TimeInterval) -> Bool { underlyingEngine.setAudioDelayLive(seconds) }
     public func setSubtitleDelay(_ seconds: TimeInterval) { underlyingEngine.setSubtitleDelay(seconds) }
     public func updateSubtitleStyle(_ style: SubtitleStyle) { underlyingEngine.updateSubtitleStyle(style) }
     public func setDialogEnhanceEnabled(_ enabled: Bool) { underlyingEngine.setDialogEnhanceEnabled(enabled) }

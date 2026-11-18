@@ -63,6 +63,9 @@ public struct Profile: Codable, Hashable, Identifiable, Sendable {
     /// this dict (authoritative) AND mirror the just-written entry to the
     /// legacy fields so older readers stay coherent.
     public var plexHomeUserBindings: [String: PlexHomeUserBinding]?
+    /// Non-authorizing import provenance, shared so another device can reuse this
+    /// profile after an explicit import of the same Plex Home. Never a login binding.
+    public var plexHomeImportIdentity: PlexHomeImportIdentity?
 
     /// Optional real photo for the profile (opt-in). When non-nil the picker
     /// tile and Settings hero render this image (a Plex Home-user avatar or
@@ -349,7 +352,8 @@ public struct Profile: Codable, Hashable, Identifiable, Sendable {
         parentalPINRevision: ProfileLockRevision? = nil,
         kidsProfileRevision: ProfileLockRevision? = nil,
         isKidsProfile: Bool? = nil,
-        isAwaitingSetup: Bool? = nil
+        isAwaitingSetup: Bool? = nil,
+        plexHomeImportIdentity: PlexHomeImportIdentity? = nil
     ) {
         self.id = id
         self.name = name
@@ -377,6 +381,7 @@ public struct Profile: Codable, Hashable, Identifiable, Sendable {
         self.kidsProfileRevision = kidsProfileRevision
         self.isKidsProfile = isKidsProfile
         self.isAwaitingSetup = isAwaitingSetup
+        self.plexHomeImportIdentity = plexHomeImportIdentity
     }
 
     /// Whether opening this profile needs a PIN.
@@ -387,6 +392,16 @@ public struct Profile: Codable, Hashable, Identifiable, Sendable {
     /// legacy un-suffixed keys; every other profile namespaces by `id`.
     public func settingsNamespace(isDefault: Bool) -> String? {
         isDefault ? nil : id
+    }
+}
+
+public struct PlexHomeImportIdentity: Codable, Hashable, Sendable {
+    public let ownerUserID: String
+    public let homeUserID: String
+
+    public init(ownerUserID: String, homeUserID: String) {
+        self.ownerUserID = ownerUserID
+        self.homeUserID = homeUserID
     }
 }
 
@@ -839,6 +854,9 @@ extension Profile {
     /// last entry clears the legacy fields too.
     public func settingHomeUserBinding(_ binding: PlexHomeUserBinding?, forPlexAccount accountID: String) -> Profile {
         var copy = self
+        if let origin = copy.plexHomeImportIdentity, binding?.homeUserID != origin.homeUserID {
+            copy.plexHomeImportIdentity = nil
+        }
         var dict = copy.plexHomeUserBindings ?? [:]
         // Seed dict from legacy fields on first migration so we don't lose
         // an existing single mapping when we add a NEW per-account entry.

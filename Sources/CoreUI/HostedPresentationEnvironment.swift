@@ -20,6 +20,7 @@ public extension EnvironmentValues {
         plozzCardStyle = source.plozzCardStyle
         plozzCardFocusStyle = source.plozzCardFocusStyle
         copyCardCaptionPresentation(from: source)
+        plozzContinueWatchingPresentation = source.plozzContinueWatchingPresentation
         plozzContinueWatchingPlaybackDetails = source.plozzContinueWatchingPlaybackDetails
         plozzArtworkSettings = source.plozzArtworkSettings
         plozzArtworkProviders = source.plozzArtworkProviders
@@ -33,6 +34,7 @@ public extension EnvironmentValues {
         plozzReduceTransparency = source.plozzReduceTransparency
         plozzNavigationStyle = source.plozzNavigationStyle
         plozzNavigationContentInset = source.plozzNavigationContentInset
+        plozzNavigationRootContentInset = source.plozzNavigationRootContentInset
         plozzTopNavigationContentInsets = source.plozzTopNavigationContentInsets
         plozzTopNavigationScroll = source.plozzTopNavigationScroll
         mediaRowHeaderTrailingInset = source.mediaRowHeaderTrailingInset

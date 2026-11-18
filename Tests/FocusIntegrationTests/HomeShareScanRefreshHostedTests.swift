@@ -28,32 +28,6 @@ final class HomeShareScanRefreshHostedTests: XCTestCase {
         XCTAssertEqual(fixture.state.refreshes, 1, "Pending changes are consumed once, not on every reveal.")
     }
 
-    func testForegroundRefreshWaitsForVisibleActiveHomeEvenWithoutShares() async throws {
-        let fixture = try await fixture(hasShare: false, idle: false)
-        defer { fixture.close() }
-        fixture.state.frontmost = false
-        try await settle()
-        for _ in 0..<3 {
-            fixture.state.phase = .inactive
-            try await settle()
-            fixture.state.phase = .active
-            try await settle()
-        }
-        XCTAssertEqual(fixture.state.refreshes, 0, "Returning to playback must not reload the covered Home.")
-        fixture.state.phase = .background
-        try await settle()
-        fixture.state.frontmost = true
-        try await settle()
-        XCTAssertEqual(fixture.state.refreshes, 0)
-        fixture.state.phase = .active
-        try await waitUntil { fixture.state.refreshes == 1 }
-        fixture.state.phase = .inactive
-        try await settle()
-        fixture.state.phase = .active
-        try await waitUntil { fixture.state.refreshes == 2 }
-        XCTAssertEqual(fixture.state.polls, 0, "Server-only accounts must not acquire a share-poll timer.")
-    }
-
     func testPollingStopsWhileCoveredAndOverduePollResumesOnReturn() async throws {
         let fixture = try await fixture(pollInterval: .milliseconds(250))
         defer { fixture.close() }

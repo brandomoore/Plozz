@@ -177,9 +177,11 @@ enum HTTPDecodeDiagnostics {
 /// `URLSession`-backed `HTTPClient`.
 public struct URLSessionHTTPClient: HTTPClient {
     private let session: URLSession
+    private let lane: String
 
     public init(session: URLSession = .plozzDefault) {
         self.session = session
+        self.lane = String(UInt(bitPattern: ObjectIdentifier(session)))
     }
 
     public func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
@@ -208,6 +210,7 @@ public struct URLSessionHTTPClient: HTTPClient {
     /// `(data, response)` for **every** HTTP status (only transport failures
     /// throw), so callers that need the error body/status can inspect them.
     public func sendRaw(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        try OfflineMode.shared.requireNetworkAccess()
         var request = try Self.makeRequest(endpoint, baseURL: baseURL)
         let started = HTTPResponseDiagnostics.isCapturing ? ProcessInfo.processInfo.systemUptime : nil
         var capturedStatus: Int?
@@ -248,7 +251,7 @@ public struct URLSessionHTTPClient: HTTPClient {
                 delegate = NoHTTPRedirectDelegate(evidence: delivery)
             }
             if let limit = endpoint.maximumResponseBytes {
-                guard limit > 0 else { throw AppError.invalidResponse }
+                guard limit > 0 else { throw URLError(.dataLengthExceedsMaximum) }
                 let (bytes, received) = try await session.bytes(for: request, delegate: delegate)
                 defer { bytes.task.cancel() }
                 guard received.expectedContentLength <= limit else { throw URLError(.dataLengthExceedsMaximum) }
@@ -259,9 +262,29 @@ public struct URLSessionHTTPClient: HTTPClient {
                 }
                 try Task.checkCancellation()
                 (data, response) = (receivedData, received)
+            } else if endpoint.method == .get, request.httpBody == nil,
+               endpoint.allowsAutomaticAddressRetry, endpoint.allowsRequestCoalescing,
+               !endpoint.reportsUndeliveredRequests,
+               let url = request.url {
+                let key = HTTPRequestCoalescer.Key(
+                    method: endpoint.method.rawValue, url: url.absoluteString,
+                    headers: Self.coalescingHeaderFingerprint(request.allHTTPHeaderFields ?? [:]),
+                    lane: lane, redirectPolicy: endpoint.redirectPolicy
+                )
+                let boxedDelegate = UncheckedSendableDelegate(delegate: delegate)
+                let boxedRequest = request
+                let session = self.session
+                let shared = try await HTTPRequestCoalescer.shared.perform(key: key) {
+                    let (data, response) = try await session.data(
+                        for: boxedRequest, delegate: boxedDelegate.delegate
+                    )
+                    return HTTPRequestCoalescer.Payload(data: data, response: response)
+                }
+                (data, response) = (shared.payload.data, shared.payload.response)
             } else {
                 (data, response) = try await session.data(for: request, delegate: delegate)
             }
+            try Task.checkCancellation()
         } catch let urlError as URLError {
             capturedNetworkCode = urlError.errorCode
             HTTPResponseDiagnostics.recordTransportFailure(urlError)
@@ -279,7 +302,7 @@ public struct URLSessionHTTPClient: HTTPClient {
                      .clientCertificateRejected, .clientCertificateRequired:
                     throw HTTPServerTrustFailure()
                 default:
-                    break
+                    throw urlError
                 }
             }
             throw Self.map(urlError)
@@ -288,6 +311,7 @@ public struct URLSessionHTTPClient: HTTPClient {
             throw AppError.cancelled
         } catch {
             diagnostic?.finish(.failed)
+            if endpoint.reportsServerTrustFailures { throw error }
             throw AppError.serverUnreachable
         }
 
@@ -308,6 +332,11 @@ public struct URLSessionHTTPClient: HTTPClient {
                 + "\(requestLabel) bytes=\(data.count)"
         )
         return (data, http)
+    }
+
+    /// Request identity stays in memory; credentials must never be logged.
+    static func coalescingHeaderFingerprint(_ headers: [String: String]) -> String {
+        headers.map { "\($0.key.lowercased())=\($0.value)" }.sorted().joined(separator: "\n")
     }
 
     static func makeRequest(_ endpoint: Endpoint, baseURL: URL) throws -> URLRequest {
@@ -355,6 +384,11 @@ final class NoHTTPRedirectDelegate: HTTPDeliveryTaskDelegate, @unchecked Sendabl
     }
 }
 
+/// The concrete task delegates are Sendable; their Foundation existential is not.
+private struct UncheckedSendableDelegate: @unchecked Sendable {
+    let delegate: (any URLSessionTaskDelegate)?
+}
+
 /// Per-task protection for endpoints carrying credentials or tuner ownership.
 /// A blocked redirect is returned as its original non-success HTTP response.
 final class SameOriginHTTPRedirectDelegate: HTTPDeliveryTaskDelegate, @unchecked Sendable {
@@ -392,7 +426,7 @@ final class SameOriginHTTPRedirectDelegate: HTTPDeliveryTaskDelegate, @unchecked
 public extension URLSession {
     /// Session tuned for tvOS: short-ish timeouts so the UI can fail fast and
     /// show a graceful "server unreachable" state instead of hanging.
-    static var plozzDefault: URLSession {
+    static let plozzDefault: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 20
@@ -403,8 +437,8 @@ public extension URLSession {
         // keeps the pool from becoming the bottleneck on a fast LAN.
         config.httpMaximumConnectionsPerHost = 8
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
-    }
+        return OfflineNetworkSession.make(configuration: config)
+    }()
 
     /// Dedicated lane for FOREGROUND, user-blocking fetches — specifically opening
     /// a detail page (`item`/`metadata`). It has its OWN connection pool, so a
@@ -416,15 +450,15 @@ public extension URLSession {
     /// ForResource` (30s) would even fire — this isolated pool removes that queue
     /// entirely. Short timeouts so a genuinely slow server fails fast into a
     /// graceful error instead of a long blank hang.
-    static var plozzInteractive: URLSession {
+    static let plozzInteractive: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10
         config.timeoutIntervalForResource = 12
         config.httpMaximumConnectionsPerHost = 6
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.waitsForConnectivity = false
-        return URLSession(configuration: config)
-    }
+        return OfflineNetworkSession.make(configuration: config)
+    }()
 
     /// Session for probing discovery candidates: very short timeouts so we can
     /// race several candidate URLs per server and fail fast on the wrong ones
@@ -436,7 +470,7 @@ public extension URLSession {
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.waitsForConnectivity = false
         config.allowsConstrainedNetworkAccess = true
-        return URLSession(configuration: config)
+        return OfflineNetworkSession.make(configuration: config)
     }
 }
 

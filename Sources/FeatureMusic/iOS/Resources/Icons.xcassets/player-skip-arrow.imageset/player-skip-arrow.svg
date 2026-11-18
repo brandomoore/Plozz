@@ -1,0 +1,15 @@
+<!--
+  The arrow half of Tabler's `player-skip-forward`, kept on that icon's own
+  24x24 grid so it lands exactly over `player-skip-bar` when the two are drawn
+  at the same size. Split out so the player can move the arrow into the end bar
+  on a skip while the bar itself stays put. Occupies x 3-16.5.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="currentColor"
+>
+  <path d="M3 5v14a1 1 0 0 0 1.504 .864l12 -7a1 1 0 0 0 0 -1.728l-12 -7a1 1 0 0 0 -1.504 .864z" />
+</svg>

@@ -45,5 +45,6 @@ struct WatchOutboxBridge: Sendable {
     /// main-actor read keeps validation and snapshot selection atomic with a switch.
     var identitySources: (@MainActor @Sendable (MediaItem) -> [MediaSourceRef])? = nil
     var trackerPlayback: @MainActor @Sendable (TrackerPlaybackSample) -> Void = { _ in }
+    var endWithoutProgress: @MainActor @Sendable (_ accountID: String?, _ itemID: String) -> Void = { _, _ in }
 }
 #endif

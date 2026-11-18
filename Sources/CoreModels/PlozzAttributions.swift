@@ -48,6 +48,25 @@ public struct PlozzAttribution: Identifiable, Sendable {
 }
 
 public enum PlozzAttributions {
+    private static let experimentalJavaEntries: [PlozzAttribution] = {
+        #if PLOZZ_EXPERIMENTAL_BDJ && DEBUG
+        [
+            PlozzAttribution(
+                title: "OpenJDK & DejaVu",
+                detail:
+                    "This experimental build uses the OpenJDK Zero interpreter under GPL-2.0, "
+                    + "with exceptions applying to designated components, plus DejaVu fonts. "
+                    + "Sources and build adaptations are recorded in "
+                    + "tools/disc-menu-lab/dependencies.json and tools/build-disc-runtime.py. "
+                    + "Complete component notices are bundled in DiscRuntime/legal.",
+                licenses: [.init("GPL-2.0; component-specific exceptions", family: .gpl)]
+            ),
+        ]
+        #else
+        []
+        #endif
+    }()
+
     public static let introduction =
         "Plozz is free and open source under the GPL-3.0 license with an App Store "
         + "exception. It is not affiliated with, endorsed, or certified by any of "
@@ -78,7 +97,7 @@ public enum PlozzAttributions {
                 "Playback is powered by AetherEngine by Vincent Herbst, under "
                 + "LGPL-3.0 with an Apple Store exception. "
                 + "Upstream: https://github.com/superuser404notfound/AetherEngine. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/7cd91ee1a55401d59ca385e247a5c6308b7d27ea",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/cc3cb49f4014a208f841bde8d1e0a5af0ff885e9",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -86,17 +105,17 @@ public enum PlozzAttributions {
             detail:
                 "FFmpeg n8.1.3 provides libavcodec, libavformat, libavutil, "
                 + "libswresample, libswscale and libavfilter for media decoding "
-                + "and the playback bridge. Packaged by FFmpegBuild 3.11.1. "
+                + "and the playback bridge. Packaged by FFmpegBuild 3.15.0. "
                 + "Source and component notices: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1. "
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.15.0. "
                 + "Upstream: https://ffmpeg.org.",
             licenses: [.init("LGPL-2.1+", family: .lgpl)]
         ),
         PlozzAttribution(
             title: "libdovi",
             detail:
-                "Dolby Vision metadata parsing uses libdovi, packaged by LibDovi 2.1.0. "
-                + "Source: https://github.com/superuser404notfound/LibDovi/tree/2.1.0.",
+                "Dolby Vision metadata parsing uses libdovi, packaged by LibDovi 2.2.0. "
+                + "Source: https://github.com/superuser404notfound/LibDovi/tree/2.2.0.",
             licenses: [.init("MIT", family: .mit)]
         ),
         PlozzAttribution(
@@ -130,11 +149,21 @@ public enum PlozzAttributions {
             ]
         ),
         PlozzAttribution(
+            title: "libbluray",
+            detail:
+                "Disc navigation uses libbluray 1.5.0 and its bundled libudfread. "
+                + "This build does not include decryption libraries. "
+                + "Source: https://download.videolan.org/pub/videolan/libbluray/1.5.0/. "
+                + "Complete license texts are bundled in LibblurayNotices.txt.",
+            licenses: [.init("LGPL-2.1-or-later", family: .lgpl)]
+        ),
+    ] + experimentalJavaEntries + [
+        PlozzAttribution(
             title: "dav1d",
             detail:
                 "AV1 video decoding uses dav1d 1.5.4 by VideoLAN and contributors. "
                 + "Source and notices are included in FFmpegBuild: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1.",
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.15.0.",
             licenses: [.init("BSD-2-Clause", family: .bsd)]
         ),
         PlozzAttribution(
@@ -142,7 +171,7 @@ public enum PlozzAttributions {
             detail:
                 "Image scaling and color conversion use zimg 3.0.6 under the WTFPL. "
                 + "Source: https://github.com/sekrit-twc/zimg. "
-                + "License: https://github.com/superuser404notfound/FFmpegBuild/blob/3.11.1/LICENSES/zimg.WTFPL.txt."
+                + "License: https://github.com/superuser404notfound/FFmpegBuild/blob/3.15.0/LICENSES/zimg.WTFPL.txt."
         ),
         PlozzAttribution(
             title: "libzvbi",
@@ -151,7 +180,7 @@ public enum PlozzAttributions {
                 + "The library is LGPL-2.0-or-later, distributed under LGPL-2.1; "
                 + "ure.c uses the MIT license. "
                 + "Source, build modifications and notices: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.11.1/LICENSES.",
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.15.0/LICENSES.",
             licenses: [
                 .init("LGPL-2.1", family: .lgpl),
                 .init("MIT", family: .mit),

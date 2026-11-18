@@ -89,7 +89,10 @@ struct LiveTVPreviewIntroductionFixture: View {
                 chrome: chrome
             )
         } else {
-            nativeTabs.tabViewStyle(.sidebarAdaptable)
+            NativeSidebarNavigation(
+                selection: nativeSelection, handoff: nativeHandoff,
+                content: nativeTabs.tabViewStyle(.sidebarAdaptable)
+            )
         }
     }
 

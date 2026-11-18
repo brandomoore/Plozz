@@ -216,6 +216,7 @@ public struct LiveTVProgramDetails: Codable, Equatable, Sendable {
 @MainActor
 @Observable
 private final class LiveTVPrototypePreferencesState {
+    var cleanChannelNames = LiveTVViewSettings().cleanChannelNames
     var recentChannelIDs: [String] = []
     var favoriteIDs: Set<String> = []
     var favoriteMultiviews: [LiveTVMultiviewFavorite] = []
@@ -231,6 +232,7 @@ private final class LiveTVPrototypePreferencesState {
 private final class LiveTVPrototypeGuideState {
     var programs: [String: [LiveTVPrototypeProgram]] = [:]
     var knownChannelIDs: Set<String> = []
+    var pendingChannelIDs: Set<String> = []
 }
 
 private struct LiveTVCatalogIndex<Entry: Identifiable> {
@@ -247,6 +249,8 @@ private struct LiveTVCatalogIndex<Entry: Identifiable> {
         return entries[ordinal - 1]
     }
 }
+
+extension LiveTVCatalogIndex: Sendable where Entry: Sendable, Entry.ID: Sendable {}
 
 public struct LiveTVBrowseCategory: Identifiable, Equatable, Sendable {
     public let name: String
@@ -353,6 +357,15 @@ public final class LiveTVPrototypeModel {
         }
     }
 
+    public var cleanChannelNames: Bool {
+        get { preferences.cleanChannelNames }
+        set {
+            guard preferences.cleanChannelNames != newValue else { return }
+            preferences.cleanChannelNames = newValue
+            rebuildCatalog()
+        }
+    }
+
     public var scenario: LiveTVPrototypeScenario {
         didSet {
             if guideOnly && scenario != oldValue { refreshVisibleChannels() }
@@ -366,7 +379,7 @@ public final class LiveTVPrototypeModel {
         }
     }
 
-    private struct FilteredCatalog {
+    private struct FilteredCatalog: Sendable {
         let channels: [LiveTVPrototypeChannel]
         let categories: [String]
         var categoryCounts: [String: Int] = [:]
@@ -376,16 +389,33 @@ public final class LiveTVPrototypeModel {
     public var visibleChannels: [LiveTVPrototypeChannel] { filteredCatalog.channels }
     public var matchingCategories: [String] { filteredCatalog.categories }
     public var browsingCategories: [LiveTVBrowseCategory] {
-        categories.compactMap { name in
-            guard let count = filteredCatalog.categoryCounts[name], count > 0 else { return nil }
+        let summary = provisionalBrowse ?? browseSummary
+        return summary.categories.compactMap { name in
+            guard let count = summary.categoryCounts[name], count > 0 else { return nil }
             return LiveTVBrowseCategory(name: name, channelCount: count)
         }
+    }
+    /// Category counts to show while only the rows last on screen have been published.
+    /// They describe the whole lineup those rows came from.
+    public private(set) var provisionalBrowse: LiveTVBrowseSummary? {
+        get { organizationState.provisionalBrowse }
+        set { organizationState.provisionalBrowse = newValue }
+    }
+    public func setProvisionalBrowse(_ summary: LiveTVBrowseSummary?) {
+        if provisionalBrowse != summary { provisionalBrowse = summary }
+    }
+    public var browseSummary: LiveTVBrowseSummary {
+        LiveTVBrowseSummary(
+            categories: categories, categoryCounts: filteredCatalog.categoryCounts,
+            totalCount: filteredCatalog.totalCount
+        )
     }
     public var matchingCategoryResults: [LiveTVBrowseCategory] {
         matchingCategories.map { LiveTVBrowseCategory(name: $0, channelCount: categoryChannelCount($0)) }
     }
     public func categoryChannelCount(_ category: String?) -> Int {
-        category.map { filteredCatalog.categoryCounts[$0, default: 0] } ?? filteredCatalog.totalCount
+        let summary = provisionalBrowse ?? browseSummary
+        return category.map { summary.categoryCounts[$0, default: 0] } ?? summary.totalCount
     }
     public private(set) var guideChannels: [LiveTVGuideChannel] = []
     @ObservationIgnored private var orderedGuideRowIDs: [LiveTVGuideRowID] = []
@@ -557,6 +587,9 @@ public final class LiveTVPrototypeModel {
     @ObservationIgnored private var categoryChannelIndices: [String: [Int]] = [:]
     @ObservationIgnored private var isBatchingFilterChanges = false
     @ObservationIgnored private var suppliedChannels: [LiveTVPrototypeChannel]?
+    @ObservationIgnored private var preparedBuild: CatalogBuild?
+    /// How many publications installed a background build rather than deriving on the main actor.
+    @ObservationIgnored private(set) var preparedInstallCount = 0
     @ObservationIgnored private let preferencesStore: (any LiveTVPreferencesStoring)?
     @ObservationIgnored private var preferencesLoaded = false
     @ObservationIgnored private var pendingPreferences: LiveTVPreferences?
@@ -628,9 +661,10 @@ public final class LiveTVPrototypeModel {
         if guideOnly { refreshVisibleChannels() }
     }
 
-    public func setKnownGuideChannels(_ ids: Set<String>) {
-        guard knownGuideChannelIDs != ids else { return }
+    public func setKnownGuideChannels(_ ids: Set<String>, pending: Set<String> = []) {
+        guard knownGuideChannelIDs != ids || guideState.pendingChannelIDs != pending else { return }
         knownGuideChannelIDs = ids
+        guideState.pendingChannelIDs = pending
         catalogRevision &+= 1
         if guideOnly { refreshVisibleChannels() }
     }
@@ -700,7 +734,7 @@ public final class LiveTVPrototypeModel {
             recentChannelIDs: recentChannelIDs,
             hiddenChannels: hiddenChannels,
             favoriteOrder: favoriteOrder + (favorites.contains(id) ? [id] : []),
-            favoriteChannels: favoriteChannels + (channelsByID[id].map { [.init(id: id, name: $0.name)] } ?? []),
+            favoriteChannels: favoriteChannels + (channelsByID[id].map { [.init(id: id, name: savedName(for: $0))] } ?? []),
             channelOverrides: channelOverrides, browse: browsePreferences, favoriteMultiviews: favoriteMultiviews,
             organization: organization
         )) else { return }
@@ -737,7 +771,7 @@ public final class LiveTVPrototypeModel {
     public func hideChannel(_ channel: LiveTVPrototypeChannel) -> Bool {
         let current = currentPreferences
         guard !current.hiddenChannelIDs.contains(channel.id) else { return true }
-        guard persistPreferences(current.hidingChannel(id: channel.id, name: channel.name)) else {
+        guard persistPreferences(current.hidingChannel(id: channel.id, name: savedName(for: channel))) else {
             return false
         }
         refreshOrganization()
@@ -748,6 +782,13 @@ public final class LiveTVPrototypeModel {
 
     public func dismissPreferencesIssue() {
         preferencesIssue = nil
+    }
+
+    private func savedName(for channel: LiveTVPrototypeChannel) -> String {
+        // Recovery labels must remain reversible even while the source is unavailable.
+        channelOverrides[channel.id]?.name
+            ?? suppliedChannels?.first(where: { $0.id == channel.id })?.name
+            ?? channel.name
     }
 
     @discardableResult
@@ -846,6 +887,7 @@ public final class LiveTVPrototypeModel {
     /// channels. A failed pending mutation is retried first so re-entry never
     /// silently discards it.
     public func reloadPreferences() {
+        let previousInputs = suppliedChannels.flatMap(catalogInputs(supplied:))
         if let pendingPreferences, let preferencesStore {
             do {
                 let latest = try preferencesStore.load()
@@ -856,6 +898,9 @@ public final class LiveTVPrototypeModel {
         } else {
             loadPreferences()
         }
+        // Returning to Live TV with nothing changed keeps the lists already derived.
+        if let previousInputs, let suppliedChannels, preparedBuild == nil,
+           previousInputs == catalogInputs(supplied: suppliedChannels) { return }
         rebuildCatalog()
     }
 
@@ -1099,6 +1144,14 @@ public final class LiveTVPrototypeModel {
 
     private func rebuildCatalog() {
         catalogRevision &+= 1
+        let prepared = preparedBuild
+        preparedBuild = nil
+        if let prepared, let suppliedChannels,
+           prepared.inputs == catalogInputs(supplied: suppliedChannels) {
+            install(prepared)
+            preparedInstallCount += 1
+            return
+        }
         #if DEBUG
         if let suppliedChannels {
             if isLargeCatalog, !suppliedChannels.isEmpty {
@@ -1128,31 +1181,151 @@ public final class LiveTVPrototypeModel {
         #else
         channels = suppliedChannels ?? []
         #endif
-        let channelOverrides = channelOverrides
-        if !channelOverrides.isEmpty {
-            channels = channels.map { channel in
-                guard let value = channelOverrides[channel.id] else { return channel }
-                return LiveTVPrototypeChannel(
-                    id: channel.id, number: channel.number, name: value.name ?? channel.name,
-                    category: value.category ?? channel.category, symbol: channel.symbol, accent: channel.accent,
-                    source: channel.source, tagline: channel.tagline, logoURL: channel.logoURL,
-                    streamURL: channel.streamURL, logoNeedsDarkBackground: channel.logoNeedsDarkBackground,
-                    guideID: channel.guideID, guideName: channel.guideName, httpHeaders: channel.httpHeaders,
-                    playlistSourceID: channel.playlistSourceID, language: value.language ?? channel.language,
-                    country: value.country ?? channel.country, groups: value.category.map { [$0] } ?? channel.groups,
-                    plozzChannelMood: channel.plozzChannelMood
-                )
-            }
-        }
+        channels = Self.named(channels, cleaning: cleanChannelNames, overrides: channelOverrides)
         channelsByID = LiveTVCatalogIndex(channels)
         refreshOrganization()
         refreshCategories()
+        dropRemovedPlayback()
+        refreshVisibleChannels()
+    }
+
+    private func dropRemovedPlayback() {
         if let playingChannelID, channelsByID[playingChannelID] == nil {
             stop()
         } else if let previousChannelID, channelsByID[previousChannelID] == nil {
             self.previousChannelID = nil
         }
-        refreshVisibleChannels()
+    }
+
+    // MARK: Background catalogue build
+
+    private struct BrowseFilter: Equatable, Sendable {
+        var query: String
+        var category: String?
+        var source: LiveTVPrototypeSource?
+        var language: String?
+        var country: String?
+        var playlistSourceID: String?
+        var favoritesOnly: Bool
+        var guideOnly: Bool
+        var sort: LiveTVPrototypeSort
+    }
+
+    /// Everything a lineup's derived lists are computed from.
+    private struct CatalogInputs: Equatable, Sendable {
+        var supplied: [LiveTVPrototypeChannel]
+        var cleanNames: Bool
+        var overrides: [String: LiveTVChannelMetadataOverride]
+        var organization: LiveTVChannelOrganization
+        var hiddenChannels: [LiveTVHiddenChannel]
+        var scanHidden: Set<String>
+        var explicitFavorites: Set<String>
+        var filter: BrowseFilter
+        var recentIDs: [String]
+        var favoriteOrder: [String]
+    }
+
+    private struct CatalogBuild: Sendable {
+        let inputs: CatalogInputs
+        let channels: [LiveTVPrototypeChannel]
+        let index: LiveTVCatalogIndex<LiveTVPrototypeChannel>
+        let organization: OrganizationResult
+        let categories: CategoryResult
+        let filtered: FilteredCatalog
+        let rows: GuideRows
+    }
+
+    private var browseFilter: BrowseFilter {
+        BrowseFilter(
+            query: query, category: category, source: source, language: language, country: country,
+            playlistSourceID: playlistSourceID, favoritesOnly: favoritesOnly, guideOnly: guideOnly, sort: sort
+        )
+    }
+
+    /// `nil` when the lists depend on state a background build cannot see.
+    private func catalogInputs(supplied: [LiveTVPrototypeChannel]) -> CatalogInputs? {
+        // Guide-only browsing follows listings that keep arriving; filter batches defer their refresh.
+        guard !guideOnly, !isBatchingFilterChanges, !isLargeCatalog else { return nil }
+        return CatalogInputs(
+            supplied: supplied, cleanNames: cleanChannelNames, overrides: channelOverrides,
+            organization: organization, hiddenChannels: hiddenChannels, scanHidden: scanHiddenChannelIDs,
+            explicitFavorites: preferences.favoriteIDs, filter: browseFilter,
+            recentIDs: showsRecentChannels ? recentChannelIDs : [], favoriteOrder: favoriteOrder
+        )
+    }
+
+    /// Derives a lineup's lists off the main actor, so that publishing it only installs them.
+    /// A large lineup otherwise holds the main actor for the whole derivation. The result is
+    /// used only if nothing it was derived from has changed by the time the lineup is published.
+    public func prepareCatalog(channels: [LiveTVPrototypeChannel]) async {
+        guard suppliedChannels != channels, let inputs = catalogInputs(supplied: channels) else { return }
+        let build = await Task.detached(priority: .userInitiated) { Self.build(inputs) }.value
+        guard !Task.isCancelled else { return }
+        preparedBuild = build
+    }
+
+    private nonisolated static func build(_ inputs: CatalogInputs) -> CatalogBuild {
+        let channels = named(inputs.supplied, cleaning: inputs.cleanNames, overrides: inputs.overrides)
+        let index = LiveTVCatalogIndex(channels)
+        let manuallyHidden = Set(inputs.hiddenChannels.map(\.id))
+        let organization = organizationResult(
+            channels: channels, index: index, organization: inputs.organization,
+            manuallyHidden: manuallyHidden, scanHidden: inputs.scanHidden, hiddenChannels: inputs.hiddenChannels
+        )
+        let hidden = manuallyHidden.union(inputs.scanHidden).union(organization.hidden)
+        let categories = categoryResult(channels: channels, hidden: hidden)
+        let favoriteIDs = inputs.explicitFavorites.union(organization.favorites)
+        let filtered = filteredCatalog(
+            channels: channels, filter: inputs.filter, hidden: hidden, favoriteIDs: favoriteIDs,
+            categories: categories.categories, categoryIndices: categories.indices,
+            previous: FilteredCatalog(channels: [], categories: []), refreshCategoryCounts: true,
+            hasGuide: { _ in true }
+        )
+        let rows = guideRows(
+            visible: filtered.channels, recentIDs: inputs.recentIDs,
+            favoriteOrder: inputs.favoriteOrder, favoriteIDs: favoriteIDs
+        )
+        return CatalogBuild(
+            inputs: inputs, channels: channels, index: index, organization: organization,
+            categories: categories, filtered: filtered, rows: rows
+        )
+    }
+
+    /// The same assignments, in the same order, as a rebuild on the main actor.
+    private func install(_ build: CatalogBuild) {
+        channels = build.channels
+        channelsByID = build.index
+        install(build.organization)
+        install(build.categories)
+        dropRemovedPlayback()
+        if preferencesLoaded, savedBrowse != browsePreferences {
+            _ = persistPreferences(currentPreferences)
+        }
+        filteredCatalog = build.filtered
+        install(build.rows)
+    }
+
+    private nonisolated static func named(
+        _ channels: [LiveTVPrototypeChannel], cleaning cleanChannelNames: Bool,
+        overrides channelOverrides: [String: LiveTVChannelMetadataOverride]
+    ) -> [LiveTVPrototypeChannel] {
+        guard cleanChannelNames || !channelOverrides.isEmpty else { return channels }
+        return channels.map { channel in
+            let value = channelOverrides[channel.id]
+            let name = value?.name ?? (cleanChannelNames && channel.source == .iptv
+                ? IPTVChannelName.cleaned(channel.name) : channel.name)
+            guard value != nil || name != channel.name else { return channel }
+            return LiveTVPrototypeChannel(
+                id: channel.id, number: channel.number, name: name,
+                category: value?.category ?? channel.category, symbol: channel.symbol, accent: channel.accent,
+                source: channel.source, tagline: channel.tagline, logoURL: channel.logoURL,
+                streamURL: channel.streamURL, logoNeedsDarkBackground: channel.logoNeedsDarkBackground,
+                guideID: channel.guideID, guideName: channel.guideName, httpHeaders: channel.httpHeaders,
+                playlistSourceID: channel.playlistSourceID, language: value?.language ?? channel.language,
+                country: value?.country ?? channel.country, groups: value?.category.map { [$0] } ?? channel.groups,
+                plozzChannelMood: channel.plozzChannelMood
+            )
+        }
     }
 
     private func refreshVisibleChannels(refreshCategoryCounts: Bool = true) {
@@ -1160,23 +1333,34 @@ public final class LiveTVPrototypeModel {
         if preferencesLoaded, savedBrowse != browsePreferences {
             _ = persistPreferences(currentPreferences)
         }
-        let normalizedQuery = Self.normalized(query)
+        filteredCatalog = Self.filteredCatalog(
+            channels: channels, filter: browseFilter, hidden: effectiveHiddenChannelIDs, favoriteIDs: favoriteIDs,
+            categories: categories, categoryIndices: categoryChannelIndices, previous: filteredCatalog,
+            refreshCategoryCounts: refreshCategoryCounts, hasGuide: { hasGuide(for: $0) }
+        )
+        refreshGuideChannels()
+    }
+
+    private nonisolated static func filteredCatalog(
+        channels: [LiveTVPrototypeChannel], filter: BrowseFilter, hidden: Set<String>, favoriteIDs: Set<String>,
+        categories: [String], categoryIndices: [String: [Int]], previous: FilteredCatalog,
+        refreshCategoryCounts: Bool, hasGuide: (LiveTVPrototypeChannel) -> Bool
+    ) -> FilteredCatalog {
+        let normalizedQuery = Self.normalized(filter.query)
         let categoryMatches = normalizedQuery.isEmpty ? [] : categories.filter {
             Self.normalized($0).contains(normalizedQuery)
         }
         let matchingCategoryNames = Set(categoryMatches)
         var visibleCategoryMatches = Set<String>()
-        let selectedCategory = category.map(Self.normalized)
-        let hiddenChannelIDs = effectiveHiddenChannelIDs
-        let language = language.map(Self.normalized)
-        let country = country.map(Self.normalized)
-        let source = source
-        let playlistSourceID = playlistSourceID
-        let favoritesOnly = favoritesOnly
-        let favoriteIDs = favoriteIDs
-        let guideOnly = guideOnly
-        let sort = sort
-        let channels = channels
+        let selectedCategory = filter.category.map(Self.normalized)
+        let hiddenChannelIDs = hidden
+        let language = filter.language.map(Self.normalized)
+        let country = filter.country.map(Self.normalized)
+        let source = filter.source
+        let playlistSourceID = filter.playlistSourceID
+        let favoritesOnly = filter.favoritesOnly
+        let guideOnly = filter.guideOnly
+        let sort = filter.sort
 
         func isEligible(_ channel: LiveTVPrototypeChannel) -> Bool {
             !hiddenChannelIDs.contains(channel.id)
@@ -1185,29 +1369,42 @@ public final class LiveTVPrototypeModel {
                 && (country == nil || channel.countries.contains(where: { Self.normalized($0) == country }))
                 && (playlistSourceID == nil || channel.playlistSourceID == playlistSourceID)
                 && (!favoritesOnly || favoriteIDs.contains(channel.id))
-                && (!guideOnly || hasGuide(for: channel))
+                && (!guideOnly || hasGuide(channel))
         }
 
-        var counts = filteredCatalog.categoryCounts
-        var total = filteredCatalog.totalCount
+        var counts = previous.categoryCounts
+        var total = previous.totalCount
         if refreshCategoryCounts {
             var normalizedCounts: [String: Int] = [:]
             var eligibleCategories = Set<String>()
             total = 0
+            // A large lineup repeats a few hundred category names; fold each one once.
+            var normalizedNames: [String: String] = [:]
+            func normalizedName(_ category: String) -> String {
+                if let known = normalizedNames[category] { return known }
+                let value = Self.normalized(category)
+                normalizedNames[category] = value
+                return value
+            }
             for channel in channels where isEligible(channel) {
                 total += 1
-                eligibleCategories.formUnion(channel.categories)
-                for name in Set(channel.categories.map(Self.normalized)) {
-                    normalizedCounts[name, default: 0] += 1
+                let categories = channel.categories
+                eligibleCategories.formUnion(categories)
+                if categories.count == 1 {
+                    normalizedCounts[normalizedName(categories[0]), default: 0] += 1
+                } else {
+                    for name in Set(categories.map(normalizedName)) {
+                        normalizedCounts[name, default: 0] += 1
+                    }
                 }
             }
             counts = Dictionary(uniqueKeysWithValues: eligibleCategories.map {
-                ($0, normalizedCounts[Self.normalized($0), default: 0])
+                ($0, normalizedCounts[normalizedName($0), default: 0])
             })
         }
 
         // Category/query changes reuse counts and the category index, even for large lineups.
-        let candidates = selectedCategory.map { categoryChannelIndices[$0] ?? [] } ?? Array(channels.indices)
+        let candidates = selectedCategory.map { categoryIndices[$0] ?? [] } ?? Array(channels.indices)
         let visibleChannels = candidates.compactMap {
             index -> (index: Int, rank: Int, number: Int, id: String, name: String)? in
             let channel = channels[index]
@@ -1254,16 +1451,34 @@ public final class LiveTVPrototypeModel {
             return lhs.id < rhs.id
         }
         .map { channels[$0.index] }
-        filteredCatalog = FilteredCatalog(
+        return FilteredCatalog(
             channels: visibleChannels,
             categories: categoryMatches.filter { visibleCategoryMatches.contains($0) },
             categoryCounts: counts, totalCount: total
         )
-        refreshGuideChannels()
+    }
+
+    private struct CategoryResult: Sendable {
+        let indices: [String: [Int]]
+        let categories: [String]
+        let languages: [String]
+        let countries: [String]
     }
 
     private func refreshCategories() {
-        let hiddenChannelIDs = effectiveHiddenChannelIDs
+        install(Self.categoryResult(channels: channels, hidden: effectiveHiddenChannelIDs))
+    }
+
+    private func install(_ result: CategoryResult) {
+        categoryChannelIndices = result.indices
+        categories = result.categories
+        languages = result.languages
+        countries = result.countries
+    }
+
+    private nonisolated static func categoryResult(
+        channels: [LiveTVPrototypeChannel], hidden hiddenChannelIDs: Set<String>
+    ) -> CategoryResult {
         var categoryValues = Set<String>()
         var languageValues = Set<String>()
         var countryValues = Set<String>()
@@ -1282,22 +1497,50 @@ public final class LiveTVPrototypeModel {
             if let language = channel.language { languageValues.insert(language) }
             if let country = channel.country { countryValues.insert(country) }
         }
-        categoryChannelIndices = categoryIndices
-        categories = categoryValues.sorted {
-            Self.normalized($0) < Self.normalized($1)
-        }
-        languages = Set(languageValues.flatMap(LiveTVPrototypeChannel.metadataValues)).sorted()
-        countries = Set(countryValues.flatMap(LiveTVPrototypeChannel.metadataValues)).sorted()
+        return CategoryResult(
+            indices: categoryIndices,
+            categories: categoryValues.sorted { Self.normalized($0) < Self.normalized($1) },
+            languages: Set(languageValues.flatMap(LiveTVPrototypeChannel.metadataValues)).sorted(),
+            countries: Set(countryValues.flatMap(LiveTVPrototypeChannel.metadataValues)).sorted()
+        )
+    }
+
+    private struct OrganizationResult: Sendable {
+        let favorites: Set<String>
+        let hidden: Set<String>
+        let summaries: [LiveTVCategorySummary]
+        let entries: [LiveTVHiddenChannelEntry]
+        let countries: [String]
+        let languages: [String]
     }
 
     private func refreshOrganization() {
+        install(Self.organizationResult(
+            channels: channels, index: channelsByID, organization: organization,
+            manuallyHidden: hiddenChannelIDs, scanHidden: scanHiddenChannelIDs, hiddenChannels: hiddenChannels
+        ))
+    }
+
+    private func install(_ result: OrganizationResult) {
+        categoryFavoriteIDs = result.favorites
+        organizationHiddenChannelIDs = result.hidden
+        categorySummaries = result.summaries
+        hiddenChannelEntries = result.entries
+        organizationCountries = result.countries
+        organizationLanguages = result.languages
+    }
+
+    private nonisolated static func organizationResult(
+        channels: [LiveTVPrototypeChannel], index channelsByID: LiveTVCatalogIndex<LiveTVPrototypeChannel>,
+        organization: LiveTVChannelOrganization, manuallyHidden: Set<String>, scanHidden scanHiddenChannelIDs: Set<String>,
+        hiddenChannels: [LiveTVHiddenChannel]
+    ) -> OrganizationResult {
         var summaries = organization.categories.mapValues { (rule: $0, total: 0, visible: 0) }
         var favorites = Set<String>()
         var hidden = Set<String>()
         var entries: [LiveTVHiddenChannelEntry] = []
         var countryValues = organization.region.countries
         var languageValues = organization.region.languages
-        let manuallyHidden = hiddenChannelIDs
         var categoryKeys: [String: [String: String]] = [:]
         for channel in channels {
             let metadata = channel.organizationMetadata
@@ -1334,28 +1577,49 @@ public final class LiveTVPrototypeModel {
         for channel in hiddenChannels where channelsByID[channel.id] == nil {
             entries.append(.init(id: channel.id, name: channel.name, reason: .channel))
         }
-        categoryFavoriteIDs = favorites
-        organizationHiddenChannelIDs = hidden
-        categorySummaries = summaries.values.map {
-            .init(rule: $0.rule, channelCount: $0.total, visibleCount: $0.visible)
-        }.sorted {
-            ($0.rule.sourceID ?? "", LiveTVRegionMetadata.normalized($0.rule.name), $0.id)
-                < ($1.rule.sourceID ?? "", LiveTVRegionMetadata.normalized($1.rule.name), $1.id)
-        }
-        hiddenChannelEntries = entries.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
-        organizationCountries = countryValues.sorted()
-        organizationLanguages = languageValues.sorted()
+        // Sort keys are derived once: a rule's identifier is a digest, not a stored value.
+        return OrganizationResult(
+            favorites: favorites, hidden: hidden,
+            summaries: summaries.values.map { value in
+                (key: (value.rule.sourceID ?? "", LiveTVRegionMetadata.normalized(value.rule.name), value.rule.id),
+                 summary: LiveTVCategorySummary(
+                    rule: value.rule, channelCount: value.total, visibleCount: value.visible))
+            }.sorted { $0.key < $1.key }.map(\.summary),
+            entries: entries.sorted { ($0.name, $0.id) < ($1.name, $1.id) },
+            countries: countryValues.sorted(), languages: languageValues.sorted()
+        )
+    }
+
+    private struct GuideRows: Sendable {
+        let rows: [LiveTVGuideChannel]
+        let ids: [LiveTVGuideRowID]
+        let index: LiveTVCatalogIndex<LiveTVGuideChannel>
     }
 
     private func refreshGuideChannels() {
-        let recentIDs = showsRecentChannels ? recentChannelIDs : []
+        install(Self.guideRows(
+            visible: visibleChannels, recentIDs: showsRecentChannels ? recentChannelIDs : [],
+            favoriteOrder: favoriteOrder, favoriteIDs: favoriteIDs
+        ))
+    }
+
+    private func install(_ result: GuideRows) {
+        orderedGuideRowIDs = result.ids
+        // Share the row array with presentation; the lookup retains only offsets.
+        guideEntries = result.index
+        guideChannels = result.rows
+    }
+
+    private nonisolated static func guideRows(
+        visible visibleChannels: [LiveTVPrototypeChannel], recentIDs: [String],
+        favoriteOrder: [String], favoriteIDs: Set<String>
+    ) -> GuideRows {
         let retainedIDs = Set(recentIDs).union(favoriteOrder)
         let visibleByID = retainedIDs.isEmpty ? [:] : Dictionary(
             uniqueKeysWithValues: visibleChannels.lazy.filter { retainedIDs.contains($0.id) }.map { ($0.id, $0) }
         )
         let recent = recentIDs.compactMap { visibleByID[$0] }
         let orderedIDs = Set(favoriteOrder)
-        let favoriteIDs = favoriteIDs
         let favorites = favoriteOrder.compactMap { visibleByID[$0] }
             + visibleChannels.filter { favoriteIDs.contains($0.id) && !orderedIDs.contains($0.id) }
         let groups: [(LiveTVGuideSection, [LiveTVPrototypeChannel])] = [
@@ -1368,16 +1632,15 @@ public final class LiveTVPrototypeModel {
                 updated.append(LiveTVGuideChannel(channel: channel, section: section, startsSection: index == 0))
             }
         }
-        orderedGuideRowIDs = updated.map(\.id)
-        // Share the row array with presentation; the lookup retains only offsets.
-        guideEntries = LiveTVCatalogIndex(updated)
-        guideChannels = updated
+        return GuideRows(rows: updated, ids: updated.map(\.id), index: LiveTVCatalogIndex(updated))
     }
 
     private func hasGuide(for channel: LiveTVPrototypeChannel) -> Bool {
         // Imported channels use only provider listings, never synthetic schedules.
         if usesPublicStreams {
-            return knownGuideChannelIDs.contains(channel.id) || importedPrograms[channel.id]?.isEmpty == false
+            // Filtering must not hide channels before demand loading can discover their guide.
+            return knownGuideChannelIDs.contains(channel.id) || guideState.pendingChannelIDs.contains(channel.id)
+                || importedPrograms[channel.id]?.isEmpty == false
         }
         #if DEBUG
         switch scenario {
@@ -1445,7 +1708,7 @@ public final class LiveTVPrototypeModel {
     }
     #endif
 
-    private static func normalized(_ value: String) -> String {
+    private nonisolated static func normalized(_ value: String) -> String {
         value
             .folding(
                 options: [.caseInsensitive, .diacriticInsensitive],
@@ -1517,4 +1780,33 @@ public final class LiveTVPrototypeModel {
         ("Next Stop", "A compact journey to a newly imagined destination.")
     ]
     #endif
+}
+
+/// Catalog task identity stays stable when a hidden preload becomes visible.
+public struct LiveTVCatalogActivation: Sendable {
+    public let isActive: Bool
+    public let hasBeenActive: Bool
+    public let preloadsCatalog: Bool
+    public let isAuthorized: Bool
+
+    public init(isActive: Bool, hasBeenActive: Bool, preloadsCatalog: Bool, isAuthorized: Bool) {
+        self.isActive = isActive
+        self.hasBeenActive = hasBeenActive
+        self.preloadsCatalog = preloadsCatalog
+        self.isAuthorized = isAuthorized
+    }
+
+    public var loadsCatalog: Bool { isActive || (preloadsCatalog && !hasBeenActive) }
+
+    public func taskID(reloadRequest: Int) -> Int {
+        loadsCatalog && isAuthorized ? reloadRequest : -1
+    }
+
+    public static func mountsDestination(isActive: Bool, hasAppeared: Bool) -> Bool {
+        isActive || hasAppeared
+    }
+
+    public static func shouldPreload(preloads: Bool, hasAppeared: Bool) -> Bool {
+        preloads && !hasAppeared
+    }
 }

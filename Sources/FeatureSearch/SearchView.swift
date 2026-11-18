@@ -84,7 +84,7 @@ public struct SearchView: View {
                                     item: item,
                                     style: .poster,
                                     spoilerSettings: spoilerSettings,
-                                    statusCue: SearchSection.availabilityCue(for: item)
+                                    statusCue: SearchSection.availabilityCue(for: item).map { Text($0) }
                                 ) {
                                     onSelect(item)
                                 }

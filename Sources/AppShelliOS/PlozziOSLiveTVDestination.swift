@@ -17,6 +17,7 @@ struct PlozziOSLiveTVDestination: View {
 
     @Environment(ProfilesModel.self) private var profiles
     @Environment(\.mediaItemNavigator) private var navigateToItem
+    @Environment(\.plozziOSUsesVerticalToolbar) private var usesVerticalToolbar
     @State private var isExpanded = false
     @State private var liveOutputGroup = LiveChannelOutputGroup()
     @State private var network: LiveTVMobileNetworkController
@@ -78,6 +79,7 @@ struct PlozziOSLiveTVDestination: View {
     private func liveTVContent(cache: LiveTVIndexedCache, runtime: LiveTVLibraryRuntime) -> some View {
         LiveTVPrototypeView(
             isActive: isActive,
+            preloadsCatalog: false,
             preferencesStore: preferencesStore,
             viewSettingsStore: viewSettingsStore,
             sourceStore: sourceStore,
@@ -96,6 +98,9 @@ struct PlozziOSLiveTVDestination: View {
             playbackUnavailableReason: effectiveNetworkBlock?.playbackMessage,
             restoreDestination: restoreDestination,
             catalogCache: cache,
+            lastSeenStore: LiveTVLastSeenStore(
+                profileID: profileID, secureStore: LiveTVSourceStorage.catalogSecrets()
+            ),
             sourceLoader: LiveTVCatalogStorage.loader(profileID: profileID, namespace: preferencesNamespace),
             importModel: importModel,
             profileID: profileID,
@@ -123,7 +128,10 @@ struct PlozziOSLiveTVDestination: View {
                     runtime.makeEngine(
                         engine: try PlozzigenVideoEngine(
                             authenticatedHTTPResolver: playback.authenticatedHTTPResolver,
-                            liveBufferPreference: { LivePlaybackBufferStore().load() }
+                            liveBufferPreference: { LivePlaybackBufferStore().load() },
+                            videoUpscalingPreference: { [preferencesNamespace] in
+                                PlaybackSettingsStore(namespace: preferencesNamespace).load().videoUpscaling
+                            }
                         ),
                         onCompleted: { [profiles, profileID, preferencesNamespace,
                                         completeLibraryChannelPlayback, weak runtime] item, token in
@@ -167,6 +175,9 @@ struct PlozziOSLiveTVDestination: View {
                 countsAsWatching: playback.countsAsWatching,
                 isMultiview: playback.isMultiview,
                 trackPreferences: runtime.trackPreferences,
+                displayTransitionSettings: {
+                    PlaybackSettingsStore(namespace: preferencesNamespace).load()
+                },
                 touchSkipIntervals: {
                     let settings = PlaybackSettingsStore(namespace: preferencesNamespace).load()
                     return (settings.skipBackwardInterval, settings.skipForwardInterval)
@@ -221,6 +232,11 @@ struct PlozziOSLiveTVDestination: View {
             isActive: isActive && isCurrentProfileScope
         )
         .toolbar(isExpanded ? .hidden : .visible, for: .tabBar)
+        .toolbar {
+            if usesVerticalToolbar && !isExpanded {
+                PlozziOSSettingsToolbarItem(action: onShowSettings)
+            }
+        }
         .onAppear {
             network.start()
         }

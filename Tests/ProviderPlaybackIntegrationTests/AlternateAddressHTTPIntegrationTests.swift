@@ -294,11 +294,14 @@ final class AlternateAddressHTTPIntegrationTests: XCTestCase {
                 request.target == "/probe" ? .json("{}")
                     : .init(status: status, headers: ["Location": foreignURL.absoluteString + "/foreign"])
             }
-            let (backup, second) = try await server { _ in .init(body: Data(), delay: .milliseconds(150)) }
+            let (backup, second) = try await server { _ in .init(body: Data()) }
             let http = client()
             let resolver = ServerAddressResolver(baseURL: first, alternatives: [second]) { url in
                 _ = try await http.send(Endpoint(path: "/probe", redirectPolicy: .sameOrigin), baseURL: url)
             }
+            // Confirm the challenged endpoint independently of probe scheduling.
+            let selected = try await resolver.resolved(excluding: second)
+            XCTAssertEqual(selected, first)
             let routed = ServerAddressHTTPClient(wrapped: http, resolver: resolver)
             do {
                 _ = try await routed.send(Endpoint(path: "/operation",

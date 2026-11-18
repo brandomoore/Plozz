@@ -5,6 +5,32 @@ import XCTest
 
 @MainActor
 final class DiscoveredLibrariesStoreTests: XCTestCase {
+    func testCachedEmptyAccountDoesNotShowLoadingWhileUncachedAccountRefreshes() {
+        let store = DiscoveredLibrariesStore()
+        store.seed(libraries: [], cachedAccountIDs: ["empty"], accountIDs: ["empty", "cold"])
+        let request = store.beginRefresh(accountIDs: ["cold"])
+        XCTAssertEqual(store.refreshingAccountIDs, ["cold"])
+        store.cancelRefresh(request)
+        store.seed(libraries: [], cachedAccountIDs: ["empty"], accountIDs: ["empty"])
+        store.beginRefresh(accountIDs: [])
+        XCTAssertEqual(store.state, .empty)
+        XCTAssertTrue(store.refreshingAccountIDs.isEmpty)
+    }
+
+    func testSeedingAnotherScopeDropsPreviousRowsAndFailureStatus() {
+        let store = DiscoveredLibrariesStore()
+        store.finishRefresh(with: [], unreachableAccountIDs: ["old"], failures: ["old": .unauthorized])
+        let cached = AggregatedLibrary(
+            accountID: "new", accountName: "Viewer", serverName: "Server", providerKind: .plex,
+            library: .init(id: "movies", title: "Movies", kind: .movie)
+        )
+        store.seed(libraries: [cached], cachedAccountIDs: ["new"], accountIDs: ["new"])
+        XCTAssertEqual(store.state.value, [cached])
+        XCTAssertTrue(store.failures.isEmpty)
+        store.seed(libraries: [cached], cachedAccountIDs: ["new"], accountIDs: [])
+        XCTAssertEqual(store.state, .empty)
+    }
+
     func testRefreshRetainsLoadedRowsAndTracksChangedAccount() {
         let existing = AggregatedLibrary(
             accountID: "existing",

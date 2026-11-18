@@ -29,6 +29,7 @@ struct ServerOnboardingPage<Content: View>: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .settingsPageSurface(horizontalInset: 20)
+        .settingsSignInFields()
     }
 }
 
@@ -56,6 +57,22 @@ struct ServerProviderChoices: View {
                     .frame(minHeight: 44)
                 }
                 .accessibilityIdentifier("add-server-provider-\(provider.rawValue)")
+            }
+        }
+        if AppReleaseChannel.current.isBeta {
+            SettingsSectionGroup {
+                Button {
+                    onSelect(.subsonic)
+                } label: {
+                    HStack(spacing: 16) {
+                        ProviderBrandMark(provider: .subsonic, size: 40).accessibilityHidden(true)
+                        Text(verbatim: ProviderKind.subsonic.displayName)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.forward").accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 44)
+                }
+                .accessibilityIdentifier("add-server-provider-subsonic")
             }
         }
     }

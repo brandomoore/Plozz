@@ -3,6 +3,53 @@ import CoreModels
 import CoreNetworking
 
 extension TrackerTokenCoordinator {
+    func recoverLocalAuthentication(store: any TrackerTokenStoring) throws {
+        guard let configuration = sharedRefresh, !configuration.allowsDiscovery(),
+              let journal = try loadSharedState(store.coordinationID, configuration: configuration),
+              journal.localAuthentication == true, let pending = journal.pending else { return }
+        if pending.kind == .connect, let tokens = pending.grant.tokens {
+            if store.load() != tokens { try store.save(tokens) }
+        } else if pending.kind == .disconnect {
+            try store.clear()
+        }
+    }
+
+    func retireLocalAuthentication(store: any TrackerTokenStoring) throws {
+        guard let configuration = sharedRefresh,
+              var journal = try loadSharedState(store.coordinationID, configuration: configuration),
+              journal.localAuthentication == true else { return }
+        journal.pending = .init(
+            kind: .disconnect,
+            grant: .init(epoch: UUID(), generation: (journal.accepted?.generation ?? 0) &+ 1,
+                         phase: .disconnected),
+            expectedEpoch: journal.accepted?.epoch,
+            needsBaseline: journal.accepted == nil)
+        try persistSharedState(journal, key: store.coordinationID, configuration: configuration)
+    }
+
+    func saveLocalRefresh(_ tokens: TrackerTokens, store: any TrackerTokenStoring) throws {
+        if let configuration = sharedRefresh,
+           try loadSharedState(store.coordinationID, configuration: configuration)?.localAuthentication == true {
+            try saveLocalAuthentication(tokens, store: store, configuration: configuration)
+        } else {
+            try store.save(tokens)
+        }
+    }
+
+    func saveLocalAuthentication(
+        _ tokens: TrackerTokens, store: any TrackerTokenStoring,
+        configuration: TrackerSharedRefreshConfiguration
+    ) throws {
+        if var journal = try loadSharedState(store.coordinationID, configuration: configuration) {
+            journal.pending = .init(
+                kind: .connect, grant: .ready(tokens),
+                expectedEpoch: journal.accepted?.epoch)
+            journal.localAuthentication = true
+            try persistSharedState(journal, key: store.coordinationID, configuration: configuration)
+        }
+        try store.save(tokens)
+    }
+
     func retireSharedStateForErasure(store: any TrackerTokenStoring) throws {
         guard let configuration = sharedRefresh,
               var journal = try loadSharedState(store.coordinationID, configuration: configuration) else { return }
@@ -103,6 +150,9 @@ extension TrackerTokenCoordinator {
                             proposed.generation = current.generation &+ 1
                             journal.pending?.grant = proposed
                             try persistSharedState(journal, key: key, configuration: configuration)
+                        }
+                        if pending.kind == .connect, !configuration.allowsDiscovery() {
+                            throw TrackerSharedRefreshError.superseded
                         }
                         _ = try await configuration.transport.compareAndSwap(
                             scope: key, accountID: account, expected: remote, value: proposed.encoded()
@@ -319,7 +369,7 @@ extension TrackerTokenCoordinator {
         guard revisions[key, default: 0] == revision else { throw CancellationError() }
     }
 
-    private func loadSharedState(
+    func loadSharedState(
         _ key: String, configuration: TrackerSharedRefreshConfiguration
     ) throws -> TrackerSharedJournalState? {
         if let retained = sharedJournalRecovery[key] { return retained }
@@ -381,6 +431,10 @@ extension TrackerTokenCoordinator {
         _ grant: TrackerSharedGrant, journal: inout TrackerSharedJournalState,
         store: any TrackerTokenStoring, configuration: TrackerSharedRefreshConfiguration
     ) throws -> String? {
+        if !configuration.allowsDiscovery(), grant.tokens != nil,
+           journal.accepted?.epoch != grant.epoch {
+            throw TrackerSharedRefreshError.superseded
+        }
         if let accepted = journal.accepted, accepted.epoch == grant.epoch,
            grant.generation < accepted.generation {
             throw TrackerSharedRefreshError.superseded
@@ -394,6 +448,7 @@ extension TrackerTokenCoordinator {
         }
         journal.accepted = grant
         journal.pending = nil
+        journal.localAuthentication = nil
         try persistSharedState(journal, key: store.coordinationID, configuration: configuration)
         return grant.tokens?.accessToken
     }

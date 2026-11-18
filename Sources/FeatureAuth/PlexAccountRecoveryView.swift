@@ -94,7 +94,7 @@ private struct PlexMobileRecoveryLinkView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel, action: onCancel)
+                    Button("Cancel", systemImage: "xmark", role: .cancel, action: onCancel)
                 }
             }
         }

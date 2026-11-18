@@ -7,8 +7,7 @@ import CoreModels
 /// *picture* of a theme, so it must always show that theme's own look no matter
 /// which theme is currently applied.
 struct ThemePreviewColors {
-    let bgTop: Color
-    let bgBottom: Color
+    let palette: ThemePalette
     let card: Color
     let cardBorder: Color
     let textPrimary: Color
@@ -20,8 +19,7 @@ struct ThemePreviewColors {
     static let accentBlue = Color(red: 0.20, green: 0.60, blue: 1.0)
 
     static let light = ThemePreviewColors(
-        bgTop: Color(white: 1.0),
-        bgBottom: Color(white: 0.93),
+        palette: .light,
         card: Color(white: 0.99),
         cardBorder: Color.black.opacity(0.10),
         textPrimary: Color.black.opacity(0.80),
@@ -29,8 +27,7 @@ struct ThemePreviewColors {
         accent: accentBlue
     )
     static let dark = ThemePreviewColors(
-        bgTop: Color(red: 0.17, green: 0.17, blue: 0.19),
-        bgBottom: Color(red: 0.10, green: 0.10, blue: 0.12),
+        palette: .dark,
         card: Color(red: 0.26, green: 0.26, blue: 0.29),
         cardBorder: Color.white.opacity(0.12),
         textPrimary: Color.white.opacity(0.90),
@@ -38,8 +35,7 @@ struct ThemePreviewColors {
         accent: accentBlue
     )
     static let pureBlack = ThemePreviewColors(
-        bgTop: .black,
-        bgBottom: .black,
+        palette: .pureBlack,
         card: Color(white: 0.11),
         cardBorder: Color.white.opacity(0.16),
         textPrimary: Color.white.opacity(0.92),
@@ -55,6 +51,7 @@ struct ThemePreviewColors {
 /// compact Settings size, and at half width (each side of the System split).
 private struct MiniPreview: View {
     let colors: ThemePreviewColors
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     var body: some View {
         GeometryReader { geo in
@@ -96,9 +93,16 @@ private struct MiniPreview: View {
             }
             .padding(pad)
             .frame(width: w, height: h, alignment: .topLeading)
-            .background(
-                LinearGradient(colors: [colors.bgTop, colors.bgBottom], startPoint: .top, endPoint: .bottom)
-            )
+            .background {
+                if gradientEnabled {
+                    // Render the shared mesh without registering a miniature tvOS backdrop viewport.
+                    AmbientGradientBackground.mesh(
+                        colors: AmbientGradientBackground.meshColors(tint: nil, palette: colors.palette)
+                    )
+                } else {
+                    colors.palette.backgroundBase
+                }
+            }
         }
     }
 }
@@ -291,6 +295,8 @@ public struct PreviewCard<Swatch: View>: View {
     private let swatchAspectRatio: CGFloat?
     private let titleLineLimit: Int?
     private let titleSizeGroup: [LocalizedStringResource]
+    private let cornerRadius: CGFloat
+    private let contentInset: CGFloat
     private let action: () -> Void
     private let swatch: () -> Swatch
 
@@ -304,6 +310,8 @@ public struct PreviewCard<Swatch: View>: View {
         swatchAspectRatio: CGFloat? = nil,
         titleLineLimit: Int? = 1,
         titleSizeGroup: [LocalizedStringResource] = [],
+        cornerRadius: CGFloat = PlozzTheme.Metrics.Radius.panel,
+        contentInset: CGFloat = PlozzTheme.Metrics.Radius.inset,
         action: @escaping () -> Void,
         @ViewBuilder swatch: @escaping () -> Swatch
     ) {
@@ -316,6 +324,8 @@ public struct PreviewCard<Swatch: View>: View {
         self.swatchAspectRatio = swatchAspectRatio
         self.titleLineLimit = titleLineLimit
         self.titleSizeGroup = titleSizeGroup
+        self.cornerRadius = cornerRadius
+        self.contentInset = contentInset
         self.action = action
         self.swatch = swatch
     }
@@ -361,12 +371,12 @@ public struct PreviewCard<Swatch: View>: View {
             }
             .frame(maxWidth: compact ? .infinity : nil)
             .frame(width: compact ? nil : 320)
-            .padding(PlozzTheme.Metrics.Radius.inset)
+            .padding(contentInset)
         }
         .buttonStyle(ThemeCardButtonStyle(
             accent: accent,
             isSelected: isSelected,
-            cornerRadius: PlozzTheme.Metrics.Radius.panel
+            cornerRadius: cornerRadius
         ))
         .focusEffectDisabled()
     }

@@ -1,8 +1,124 @@
 import UIKit
+import CoreImage
 import XCTest
 
 @MainActor
 final class PlayerEpisodeRowRemoteTests: XCTestCase {
+    func testSongCardFollowsInfoActionsAndOffersServiceSearchWithScannableFallback() throws {
+        continueAfterFailure = false
+        let app = launch(arguments: ["--production-player-input", "--song"])
+        defer { app.terminate() }
+        let song = app.descendants(matching: .any)["player-song"]
+        func focused(_ element: XCUIElement) {
+            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasFocus == true"), object: element)
+            XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed, app.debugDescription)
+        }
+        for _ in 0..<2 {
+            XCUIRemote.shared.press(.down)
+            XCTAssertTrue(app.buttons["Info"].waitForExistence(timeout: 5))
+            XCUIRemote.shared.press(.down)
+            focused(app.buttons["Restart"])
+            XCUIRemote.shared.press(.right)
+            focused(app.buttons["Next Episode"])
+            let restingBounds = song.frame
+            let restingImage = app.screenshot().image
+            XCUIRemote.shared.press(.right)
+            focused(song)
+            let focusedScreenshot = app.screenshot()
+            try assertSongFocusOverflows(restingBounds, before: restingImage, after: focusedScreenshot.image)
+            let capture = XCTAttachment(screenshot: focusedScreenshot)
+            capture.name = "Song focus overflow"
+            capture.lifetime = .keepAlways
+            add(capture)
+            XCUIRemote.shared.press(.menu)
+            XCTAssertEqual(XCTWaiter.wait(for: [
+                XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == 'Closed'"),
+                                          object: app.staticTexts["episode-row-drawer-state"])
+            ], timeout: 5), .completed)
+        }
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.down)
+        focused(app.buttons["Restart"])
+        XCUIRemote.shared.press(.right)
+        XCUIRemote.shared.press(.right)
+        focused(song)
+        XCUIRemote.shared.press(.select)
+        let spotify = app.buttons["song-service-spotify"]
+        XCTAssertTrue(spotify.waitForExistence(timeout: 5))
+        // Service actions are a vertical native menu below the song header.
+        for _ in 0..<5 {
+            if spotify.hasFocus { break }
+            XCUIRemote.shared.press(.down)
+        }
+        focused(spotify)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["This app couldn’t open the link. Scan with your phone."].waitForExistence(timeout: 5))
+        try assertSongPhoneLink("https://open.spotify.com/search/Test%20song%20Test%20artist", in: app)
+        for service in ["appleMusic", "youtubeMusic", "amazonMusic", "deezer", "tidal"] {
+            XCUIRemote.shared.press(.down)
+            let button = app.buttons["song-service-\(service)"]
+            focused(button)
+            XCTAssertTrue(button.isHittable, "The expanded list must keep \(service) reachable.")
+        }
+        XCUIRemote.shared.press(.select)
+        try assertSongPhoneLink("https://listen.tidal.com/search/Test%20song%20Test%20artist", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["Info"].waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.down)
+        focused(app.buttons["Restart"])
+    }
+
+    private func assertSongPhoneLink(_ url: String, in app: XCUIApplication) throws {
+        let detector = try XCTUnwrap(CIDetector(
+            ofType: CIDetectorTypeQRCode, context: CIContext(options: [.useSoftwareRenderer: true]),
+            options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
+        ))
+        let deadline = ContinuousClock.now + .seconds(10)
+        var decoded: String?
+        repeat {
+            let screenshot = app.screenshot()
+            let image = try XCTUnwrap(screenshot.image.cgImage)
+            decoded = (detector.features(in: CIImage(cgImage: image)).first as? CIQRCodeFeature)?.messageString
+            if decoded == url {
+                let capture = XCTAttachment(screenshot: screenshot)
+                capture.name = "Song service phone fallback \(try XCTUnwrap(URL(string: url)?.host))"
+                capture.lifetime = .keepAlways
+                add(capture)
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while ContinuousClock.now < deadline
+        XCTAssertEqual(decoded, url)
+    }
+
+    private func assertSongFocusOverflows(_ bounds: CGRect, before: UIImage, after: UIImage) throws {
+        func pixels(_ image: UIImage, rect: CGRect) throws -> [UInt8] {
+            let source = try XCTUnwrap(image.cgImage)
+            let scale = CGFloat(source.width) / 1920
+            let crop = try XCTUnwrap(source.cropping(to: CGRect(
+                x: rect.minX * scale, y: rect.minY * scale,
+                width: rect.width * scale, height: rect.height * scale
+            ).integral))
+            var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+            try bytes.withUnsafeMutableBytes {
+                let context = try XCTUnwrap(CGContext(
+                    data: $0.baseAddress, width: crop.width, height: crop.height,
+                    bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+            }
+            return bytes
+        }
+        for y in [bounds.minY - 24, bounds.maxY + 1] {
+            let region = CGRect(x: bounds.midX, y: y, width: 2, height: 23)
+            let old = try pixels(before, rect: region), new = try pixels(after, rect: region)
+            let difference = zip(old, new).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            XCTAssertGreaterThan(difference, 24, "Focused card pixels must overflow both edges of the Info stage.")
+        }
+    }
+
     func testUpUpDownKeepsEpisodeArtworkUnfocusedUntilRowEntry() throws {
         let app = launch(arguments: ["--long-season", "--production-player-input", "--capture-artwork"])
         defer { app.terminate() }

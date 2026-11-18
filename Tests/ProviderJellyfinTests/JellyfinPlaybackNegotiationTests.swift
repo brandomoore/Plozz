@@ -5,6 +5,69 @@ import XCTest
 @testable import ProviderJellyfin
 
 final class JellyfinPlaybackNegotiationTests: XCTestCase {
+    func testPlaybackRuntimeUsesSelectedSourceInsteadOfTitleOrOtherVersions() async throws {
+        for kind in [ProviderKind.emby, .jellyfin] {
+            for forceTranscode in [false, true] {
+                for duration in [5_400, 9_000] {
+                    let request = try await playbackWithSourceRuntime(
+                        kind: kind, ticks: Int64(duration) * 10_000_000,
+                        forceTranscode: forceTranscode
+                    )
+                    XCTAssertEqual(request.item.runtime, TimeInterval(duration))
+                    XCTAssertEqual(request.isTranscoding, forceTranscode)
+                    guard case .authenticatedHTTP(let original) = request.downloadableOriginalSource else {
+                        return XCTFail("Expected the selected original file")
+                    }
+                    XCTAssertEqual(original.mediaSourceID, "version")
+                }
+            }
+        }
+    }
+
+    func testMissingOrInvalidSourceRuntimeDoesNotBorrowAnotherCutsDuration() async throws {
+        for kind in [ProviderKind.emby, .jellyfin] {
+            for forceTranscode in [false, true] {
+                for ticks: Int64? in [nil, 0, -10_000_000] {
+                    let request = try await playbackWithSourceRuntime(
+                        kind: kind, ticks: ticks, forceTranscode: forceTranscode
+                    )
+                    XCTAssertNil(request.item.runtime)
+                }
+            }
+        }
+    }
+
+    private func playbackWithSourceRuntime(
+        kind: ProviderKind, ticks: Int64?, forceTranscode: Bool
+    ) async throws -> PlaybackRequest {
+        let http = StubHTTPClient()
+        http.stub(pathSuffix: "/Users/user/Items/movie", json: """
+        {"Id":"movie","Name":"Movie","Type":"Movie","RunTimeTicks":72000000000,
+         "MediaSources":[
+           {"Id":"other","RunTimeTicks":72000000000},
+           {"Id":"version","RunTimeTicks":72000000000}
+         ]}
+        """)
+        let runtime = ticks.map { "\"RunTimeTicks\":\($0)," } ?? ""
+        let rendition = forceTranscode
+            ? #""TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&VideoBitrate=2000000","# : ""
+        http.stub(pathSuffix: "/Items/movie/PlaybackInfo", json: """
+        {"MediaSources":[
+          {"Id":"other","Container":"mp4","RunTimeTicks":72000000000},
+          {"Id":"version","Container":"mp4","SupportsDirectPlay":true,"SupportsTranscoding":true,
+           \(runtime)\(rendition)
+           "MediaStreams":[
+             {"Index":0,"Type":"Video","Codec":"h264"},
+             {"Index":1,"Type":"Audio","Codec":"aac","Language":"eng","IsDefault":true},
+             {"Index":2,"Type":"Audio","Codec":"aac","Language":"fra"}
+           ]}
+        ]}
+        """)
+        return try await provider(kind, http: http, hybrid: true).playbackInfo(
+            for: "movie", mediaSourceID: "version", forceTranscode: forceTranscode
+        )
+    }
+
     func testEmbyMaximumDirectPlaysWithNonNullableServerBitrateSemantics() async throws {
         for bitrate in [1_166_625, 200_000_000] {
             for hybrid in [false, true] {

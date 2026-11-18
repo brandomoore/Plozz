@@ -4,6 +4,80 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class PipelineDiagnosticTests: XCTestCase {
+    func testEveryAudioOutcomeMapsWithoutInferringFromDecoderOrVideoRoute() {
+        let cases: [(AudioDelivery, EngineAudioDelivery?)] = [
+            (.none, nil), (.noAudioInSource, .noAudioInSource), (.streamCopy, .streamCopy),
+            (.bridged, .bridged), (.decoded, .decoded), (.droppedNoPipeline, .droppedNoPipeline),
+            (.playerManaged, .playerManaged)
+        ]
+        XCTAssertEqual(cases.count, AudioDelivery.allCases.count)
+        for (engine, expected) in cases {
+            XCTAssertEqual(PlozzigenVideoEngine.playbackAudioDelivery(engine), expected)
+        }
+    }
+
+    func testOverlayStatisticsKeepPlayedBitrateSeparateFromLocalDelivery() throws {
+        let value = try XCTUnwrap(PlozzigenVideoEngine.playbackStatistics(
+            snapshot(), route: .loopback, decoder: "AVPlayer"
+        ))
+        XCTAssertEqual(value.decoder, "AVPlayer")
+        XCTAssertEqual(value.recentBitrate, 50_000_000)
+        XCTAssertEqual(value.averageBitrate, 60_000_000)
+        XCTAssertNil(value.audioBridgeBitrate)
+        XCTAssertEqual(value.delivery, .local)
+        XCTAssertEqual(value.deliveryBitrate, 500_000_000)
+        XCTAssertEqual(value.deliveredBytes, 6_000_000)
+        XCTAssertEqual(value.sourceBytes, 9_000_000)
+        XCTAssertEqual(value.muxedBytes, 7_000_000)
+        XCTAssertEqual(value.servedBytes, 6_000_000)
+        XCTAssertEqual(value.serverRequests, 30)
+        XCTAssertEqual(value.producerRestarts, 1)
+        XCTAssertEqual(value.cachedBytes, 2_000_000)
+        XCTAssertEqual(value.audioBridgeBytes, 0)
+        XCTAssertEqual(value.residentMemoryBytes, 530 * 1_048_576)
+    }
+
+    func testBypassBandwidthDoesNotMasqueradeAsMeasuredPlayedBitrate() throws {
+        let value = try XCTUnwrap(PlozzigenVideoEngine.playbackStatistics(
+            snapshot(), route: .remoteBypass, decoder: "AVPlayer"
+        ))
+        XCTAssertNil(value.recentBitrate)
+        XCTAssertNil(value.averageBitrate)
+        XCTAssertNil(value.sourceBytes)
+        XCTAssertNil(value.muxedBytes)
+        XCTAssertNil(value.producerRestarts)
+        XCTAssertNil(value.muxAVGapMilliseconds)
+        XCTAssertEqual(value.delivery, .source)
+        XCTAssertEqual(value.deliveredBytes, 6_000_000)
+    }
+
+    func testSoftwareAndUnavailableStatisticsDoNotInventLocalPipelineCounters() throws {
+        let value = try XCTUnwrap(PlozzigenVideoEngine.playbackStatistics(
+            snapshot(), route: .software, decoder: "VideoToolbox"
+        ))
+        XCTAssertEqual(value.delivery, .source)
+        XCTAssertEqual(value.recentBitrate, 50_000_000)
+        XCTAssertEqual(value.sourceBytes, 9_000_000)
+        XCTAssertNil(value.serverRequests)
+        XCTAssertNil(value.muxedBytes)
+        XCTAssertNil(value.producerRestarts)
+        XCTAssertNil(value.muxAVGapMilliseconds)
+        let pending = PlozzigenVideoEngine.playbackStatistics(nil, route: .loopback, decoder: "AVPlayer")
+        XCTAssertEqual(pending?.decoder, "AVPlayer")
+        XCTAssertNil(pending?.sourceBytes)
+        XCTAssertNil(pending?.deliveryBitrate)
+        XCTAssertNil(PlozzigenVideoEngine.playbackStatistics(snapshot(), route: .none, decoder: nil))
+    }
+
+    func testBridgeRateSignedMuxGapAndFailedResidentMemoryRead() {
+        let value = PlozzigenVideoEngine.playbackStatistics(
+            snapshot(audioBitrate: 7.4, gap: -23.5, rss: 0), route: .loopback, decoder: "AVPlayer"
+        )
+        XCTAssertEqual(value?.audioBridgeBitrate, 7_400_000)
+        XCTAssertEqual(value?.muxAVGapMilliseconds, -23.5)
+        XCTAssertNil(value?.residentMemoryBytes, "The engine reports zero when its memory read fails")
+    }
+
     func testJournalSeparatesSourceMuxDeliveryAndTheActualAudioTrack() {
         let line = PlozzigenVideoEngine.pipelineDiagnosticLine(
             telemetry: snapshot(), instance: "fixture", phase: "rebuffering", route: "loopback", position: 2190,
@@ -32,14 +106,14 @@ final class PipelineDiagnosticTests: XCTestCase {
         XCTAssertTrue(line.contains("audioID=unknown audioCodec=unknown audioChannels=unknown"))
     }
 
-    private func snapshot() -> LiveTelemetry {
+    private func snapshot(audioBitrate: Double? = nil, gap: Double? = nil, rss: Int = 530) -> LiveTelemetry {
         LiveTelemetry(
-            instantBitrateMbps: 50, averageBitrateMbps: 60, audioBridgeBitrateMbps: nil,
+            instantBitrateMbps: 50, averageBitrateMbps: 60, audioBridgeBitrateMbps: audioBitrate,
             observedFps: nil, droppedFrameCount: nil, forwardBufferSeconds: 0.1,
             readerWindowAheadBytes: 1_048_576, cachedBytes: 2_000_000,
-            networkThroughputMbps: 500, networkTransferredBytes: 6_000_000, avSyncGapMs: nil,
+            networkThroughputMbps: 500, networkTransferredBytes: 6_000_000, avSyncGapMs: gap,
             producerRestartCount: 1, muxedBytesLifetime: 7_000_000, serverBytesSentLifetime: 6_000_000,
-            serverRequestCount: 30, demuxerBytesFetched: 9_000_000, audioBridgeLiveBytes: 0, rssMb: 530
+            serverRequestCount: 30, demuxerBytesFetched: 9_000_000, audioBridgeLiveBytes: 0, rssMb: rss
         )
     }
 }

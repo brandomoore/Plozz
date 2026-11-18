@@ -22,6 +22,21 @@ final class LiveWatchProgressTests: XCTestCase {
         try await verify(.plex)
     }
 
+    @MainActor
+    func testJellyfinUnwatchedResetPersistsAcrossHomeAndOutboxRecreation() async throws {
+        try await verifyUnwatchedReset(.jellyfin)
+    }
+
+    @MainActor
+    func testEmbyUnwatchedResetPersistsAcrossHomeAndOutboxRecreation() async throws {
+        try await verifyUnwatchedReset(.emby)
+    }
+
+    @MainActor
+    func testPlexUnwatchedResetPersistsAcrossHomeAndOutboxRecreation() async throws {
+        try await verifyUnwatchedReset(.plex)
+    }
+
     private struct Configuration: Decodable {
         let baseURL: URL
         let username: String
@@ -30,6 +45,7 @@ final class LiveWatchProgressTests: XCTestCase {
         let deviceID: String
         let token: String
         let allowWatchStateWrites: Bool
+        let resetEpisodeIDs: [String]?
     }
 
     private struct InvalidConfiguration: Error {}
@@ -38,6 +54,7 @@ final class LiveWatchProgressTests: XCTestCase {
         let provider: any MediaProvider
         let raw: any MediaProvider
         var rebuild: (() throws -> PlexProvider)?
+        var resetEpisodeIDs: [String] = []
     }
 
     private func provider(_ kind: ProviderKind) async throws -> Fixture {
@@ -79,7 +96,7 @@ final class LiveWatchProgressTests: XCTestCase {
             return Fixture(provider: try rebuild(), raw: PlexProvider(session: session), rebuild: rebuild)
         }
         let provider = JellyfinProvider(session: session, playbackRequests: .init())
-        return Fixture(provider: provider, raw: provider)
+        return Fixture(provider: provider, raw: provider, resetEpisodeIDs: config.resetEpisodeIDs ?? [])
     }
 
     private func verify(_ kind: ProviderKind) async throws {
@@ -146,6 +163,171 @@ final class LiveWatchProgressTests: XCTestCase {
             if abs((item.resumePosition ?? 0) - position) <= 1 || ContinuousClock.now >= deadline { return item }
             try await Task.sleep(for: .milliseconds(100))
         }
+    }
+
+    @MainActor
+    private func verifyUnwatchedReset(_ kind: ProviderKind) async throws {
+        let fixture = try await provider(kind)
+        let provider = fixture.provider
+        let writer = try XCTUnwrap(provider as? any ResumeStateWriting)
+        let watched = try XCTUnwrap(provider as? any WatchStateProviding)
+        let libraries = try await provider.libraries()
+        for itemKind in [MediaItemKind.movie, .episode] {
+            let libraryKind: MediaItemKind = itemKind == .movie ? .movie : .series
+            let library = try XCTUnwrap(libraries.first { $0.kind == libraryKind && !$0.isMusic })
+            let candidates: [MediaItem]
+            if itemKind == .episode, !fixture.resetEpisodeIDs.isEmpty {
+                var episodes: [MediaItem] = []
+                for id in fixture.resetEpisodeIDs.prefix(2) {
+                    let episode = try await provider.item(id: id)
+                    XCTAssertEqual(episode.kind, .episode)
+                    episodes.append(episode)
+                }
+                candidates = episodes
+            } else {
+                candidates = try await resetCandidates(provider, libraryID: library.id, kind: itemKind)
+            }
+            let selected = try XCTUnwrap(candidates.first, "A bounded sample must contain the requested fixture.")
+            let control = try XCTUnwrap(candidates.dropFirst().first, "A second item verifies reset isolation.")
+            let baseline = try await provider.item(id: selected.id)
+            let controlBefore = try await provider.item(id: control.id)
+            do {
+                for previouslyWatched in [false, true] {
+                    let failuresBefore = testRun?.failureCount
+                    try await watched.setPlayed(previouslyWatched, itemID: selected.id)
+                    let marked = try await provider.item(id: selected.id)
+                    XCTAssertEqual(marked.isPlayed, previouslyWatched)
+                    try await writer.setResumePosition(120, itemID: selected.id, capturedAt: Date())
+                    var started = try await readPosition(120, itemID: selected.id, provider: provider)
+                    XCTAssertEqual(started.resumePosition ?? 0, 120, accuracy: 1)
+                    started.sourceAccountID = "test-origin"
+                    let backend = InMemorySecureStore()
+                    let profileID = UUID().uuidString
+                    let store = try DurableWatchMutationStore(
+                        store: DurableLocalStateStore(secureStore: backend), profileID: profileID
+                    )
+                    let applier = AppShellWatchMutationApplier(
+                        resolveProvider: { $0 == "test-origin" ? provider : nil },
+                        applyTrakt: { _ in throw InvalidConfiguration() },
+                        applySimkl: { _ in throw InvalidConfiguration() },
+                        applyAniList: { _ in throw InvalidConfiguration() },
+                        applyMAL: { _ in throw InvalidConfiguration() },
+                        allAccountIDs: { ["test-origin"] }
+                    )
+                    let outbox = WatchStateReconciler(store: store, applier: applier)
+                    let home = resetHome(provider, pending: { await outbox.snapshot().pending })
+                    await home.load()
+                    XCTAssertTrue(home.state.value?.continueWatching.contains {
+                        $0.id == selected.id && ($0.resumePosition ?? 0) > 0
+                    } == true, "The seeded item must be on the actual Home row before resetting it.")
+                    var queued: [WatchMutation] = []
+                    let coordinator = MediaItemActionCoordinator(
+                        providerResolver: { $0 == "test-origin" ? provider : nil },
+                        providerCapabilityResolver: { accountID in
+                            guard accountID == "test-origin" else { return nil }
+                            return (provider is any WatchStateProviding, provider is any WatchlistProviding, false)
+                        },
+                        primaryAccountID: { "test-origin" },
+                        crossServerWatchSyncEnabled: { false },
+                        enqueueWatchMutation: { queued.append($0) }
+                    )
+                    let menu = coordinator.actions(for: started, context: .none)
+                    XCTAssertTrue(menu.contains(.markWatched))
+                    XCTAssertTrue(menu.contains(.markUnwatched))
+                    XCTAssertTrue(menu.contains(.removeFromContinueWatching))
+                    let observer = NotificationCenter.default.addObserver(
+                        forName: .mediaItemDidMutate, object: nil, queue: .main
+                    ) { note in
+                        MainActor.assumeIsolated {
+                            if let mutation = MediaItemMutation.from(note) {
+                                home.applyWatchedState(mutation)
+                            }
+                        }
+                    }
+                    coordinator.perform(.markUnwatched, on: started, context: .none)
+                    NotificationCenter.default.removeObserver(observer)
+                    XCTAssertFalse(home.state.value?.continueWatching.contains { $0.id == selected.id } == true)
+                    let mutation = try XCTUnwrap(queued.first)
+                    XCTAssertEqual(queued.count, 1)
+                    XCTAssertEqual(mutation.targets.map(\.id), ["test-origin:\(selected.id)"])
+                    XCTAssertTrue(mutation.clearResume)
+                    XCTAssertNil(mutation.trakt)
+                    let enqueued = await outbox.enqueue(mutation)
+                    XCTAssertTrue(enqueued)
+
+                    let restoredStore = try DurableWatchMutationStore(
+                        store: DurableLocalStateStore(secureStore: backend), profileID: profileID
+                    )
+                    let restored = WatchStateReconciler(store: restoredStore, applier: applier)
+                    let pendingHome = resetHome(provider, pending: { await restored.snapshot().pending })
+                    await pendingHome.load()
+                    let persistedPending = await restored.snapshot().pending
+                    if let stale = pendingHome.state.value?.continueWatching.first(where: { $0.id == selected.id }) {
+                        print("Live \(kind.rawValue): pending=\(persistedPending.count), accountMatches=\(stale.sourceAccountID == "test-origin"), serverTimeAhead=\(stale.lastPlayedAt?.timeIntervalSince(mutation.capturedAt) ?? 0).")
+                    }
+                    XCTAssertFalse(pendingHome.state.value?.continueWatching.contains {
+                        $0.id == selected.id && ($0.resumePosition ?? 0) > 0
+                    } == true, "A recreated outbox must suppress the real server's still-stale progress.")
+                    await restored.drain()
+                    let remaining = await restored.snapshot().pending
+                    XCTAssertTrue(remaining.isEmpty, "Both real server writes must finish, not merely queue.")
+
+                    let fresh = try await self.provider(kind)
+                    let persisted = try await readPosition(0, itemID: selected.id, provider: fresh.raw)
+                    XCTAssertFalse(persisted.isPlayed)
+                    XCTAssertEqual(persisted.resumePosition ?? 0, 0, accuracy: 0.1)
+                    let reopenedHome = resetHome(fresh.provider)
+                    await reopenedHome.load()
+                    XCTAssertFalse(reopenedHome.state.value?.continueWatching.contains {
+                        $0.id == selected.id && ($0.resumePosition ?? 0) > 0
+                    } == true, "Fresh server data must not restore the old progress after reopening Home.")
+                    let controlAfter = try await fresh.raw.item(id: control.id)
+                    XCTAssertEqual(controlAfter.isPlayed, controlBefore.isPlayed)
+                    XCTAssertEqual(controlAfter.resumePosition, controlBefore.resumePosition)
+                    if testRun?.failureCount == failuresBefore {
+                        print("Live \(kind.rawValue) \(itemKind.rawValue), previouslyWatched=\(previouslyWatched): menu, immediate Home removal, durable replay, server reset, fresh Home and other-item isolation verified.")
+                    }
+                }
+                try await restore(baseline, writer: writer, watched: watched)
+            } catch {
+                try await restore(baseline, writer: writer, watched: watched)
+                throw error
+            }
+        }
+    }
+
+    private func resetCandidates(
+        _ provider: any MediaProvider, libraryID: String, kind: MediaItemKind
+    ) async throws -> [MediaItem] {
+        if kind == .movie {
+            return try await provider.items(in: libraryID, kind: .movie, page: .init(limit: 20))
+                .items.filter { $0.kind == .movie && !$0.isExtra && ($0.runtime ?? 0) >= 600 }
+        }
+        let shows = try await provider.items(in: libraryID, kind: .series, page: .init(limit: 3)).items
+        for show in shows.prefix(3) {
+            let seasons = try await provider.children(of: show.id).filter { $0.kind == .season }
+            for season in seasons.prefix(2) {
+                let episodes = try await provider.children(of: season.id).prefix(20).filter {
+                    $0.kind == .episode && !$0.isExtra && ($0.runtime ?? 0) >= 600
+                }
+                if episodes.count >= 2 { return episodes }
+            }
+        }
+        return []
+    }
+
+    @MainActor
+    private func resetHome(
+        _ provider: any MediaProvider,
+        pending: @escaping @Sendable () async -> [WatchMutation] = { [] }
+    ) -> HomeViewModel {
+        HomeViewModel(
+            accounts: [.init(account: .init(id: "test-origin", from: provider.session), provider: provider)],
+            profileNamespace: "live-reset-\(UUID().uuidString)",
+            layoutStore: InMemoryHomeLayoutStore(), contentStore: InMemoryHomeContentStore(),
+            currentVisibility: { .init(mergeLibrariesOnHome: true) },
+            pendingWatchMutations: pending
+        )
     }
 
     private func verifyTrailer(

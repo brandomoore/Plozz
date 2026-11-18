@@ -38,7 +38,7 @@ def collapsed_body(comment):
     match = matches[0]
     data = json.loads(match["data"])
     number = int(ISSUE_URL.fullmatch(comment["issue_url"])[1])
-    if not isinstance(data, dict) or data.get("schema_version") not in (1, 2) or data.get("issue_number") != number:
+    if not isinstance(data, dict) or data.get("schema_version") not in (1, 2, 3) or data.get("issue_number") != number:
         raise ValueError("Unsupported or mismatched triage record")
     before, after = body[:match.start()], body[match.end():]
     if before.endswith(OPEN) and after.startswith(CLOSE):

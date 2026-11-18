@@ -2,6 +2,19 @@ import Foundation
 import CoreModels
 import CoreNetworking
 
+extension JellyfinProvider: MusicFeedbackProviding {
+    public var musicFeedbackKind: MusicFeedbackKind { .favorite }
+
+    public func musicFeedback(for trackID: String) async throws -> MusicFeedback {
+        let item = try await client.item(userID: session.userID, id: trackID)
+        return .favorite(item.UserData?.IsFavorite ?? false)
+    }
+
+    public func setMusicFeedback(_ feedback: MusicFeedback, for trackID: String) async throws {
+        guard case let .favorite(value) = feedback else { throw AppError.invalidResponse }
+        try await client.setFavorite(value, userID: session.userID, itemID: trackID)
+    }
+}
 // MARK: - Jellyfin music support (additive, opt-in capability)
 //
 // `JellyfinProvider` already conforms to `MediaProvider` (video). This file adds
@@ -529,6 +542,7 @@ extension JellyfinProvider: MusicProvider {
             albumTitle: dto.Album,
             albumID: dto.AlbumId,
             artistName: dto.Artists?.first ?? dto.AlbumArtist,
+            artistID: dto.ArtistItems?.first?.Id ?? dto.AlbumArtists?.first?.Id,
             trackNumber: dto.IndexNumber,
             discNumber: dto.ParentIndexNumber,
             duration: JellyfinTicks.seconds(fromTicks: dto.RunTimeTicks),

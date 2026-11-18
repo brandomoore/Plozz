@@ -186,7 +186,8 @@ extension SiloProviderTests {
         let raw = try credential().encoded()
         let http = RateLimitedSiloHTTP(headers: ["Retry-After": "120"])
         let client = try SiloClient(
-            context: context(raw), store: SiloCredentialStub(raw), http: http, now: { clock.now() }
+            context: context(raw), store: SiloCredentialStub(raw), http: http,
+            now: { clock.now() }, uptime: { clock.now().timeIntervalSinceReferenceDate }
         )
         do { _ = try await client.send("/catalog/items/movie1"); XCTFail("Expected rate limiting") }
         catch { XCTAssertEqual(error as? AppError, .rateLimited(retryAfter: 120)) }
@@ -229,7 +230,8 @@ extension SiloProviderTests {
             let raw = try credential().encoded()
             let http = RateLimitedSiloHTTP(headers: headers)
             let client = try SiloClient(
-                context: context(raw), store: SiloCredentialStub(raw), http: http, now: { clock.now() }
+                context: context(raw), store: SiloCredentialStub(raw), http: http,
+                now: { clock.now() }, uptime: { clock.now().timeIntervalSinceReferenceDate }
             )
             do { _ = try await client.send("/user/libraries"); XCTFail("Expected rate limiting") }
             catch {

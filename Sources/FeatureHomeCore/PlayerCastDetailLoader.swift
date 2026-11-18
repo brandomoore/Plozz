@@ -15,6 +15,7 @@ import MetadataKit
 public func makeCastDetailLoader(
     for item: MediaItem,
     accounts: [ResolvedAccount],
+    metadataLanguage: @escaping @MainActor @Sendable () -> String = { "en" },
     /// The viewer's own copies of a credit, from the eager identity index. See
     /// `PersonDetailViewModel.librarySources` for why a credits row cannot answer
     /// "do I own this?" from a server's person query alone. Defaults to "cannot
@@ -44,6 +45,8 @@ public func makeCastDetailLoader(
     let cache = PlayerCastDetailCache()
 
     return { person in
+        let language = metadataLanguage()
+        let cacheKey = "\(language)|\(person.id)"
         // What is playing, alongside who was opened. Without it a trace can say
         // a person had no credits but not what they had no credits IN, which
         // makes a report impossible to reconstruct afterwards.
@@ -81,7 +84,7 @@ public func makeCastDetailLoader(
             // only relaunching the app cleared it. A cached miss is exactly the
             // thing worth NOT remembering, so an incomplete entry falls through
             // and asks again.
-            if let cached = cache.value(for: person.id), cached.artworkIsComplete {
+            if let cached = cache.value(for: cacheKey), cached.artworkIsComplete {
                 PersonDiagnostics.emit("cast.cache-hit person=\(person.name)")
                 continuation.yield(cached)
                 continuation.finish()
@@ -92,6 +95,7 @@ public func makeCastDetailLoader(
             // biography lookup that may take a second or never answer at all.
             model.onProgress = { continuation.yield(snapshot(model)) }
             let task = Task { @MainActor in
+                await model.updateMetadataLanguage(language)
                 await model.load()
                 let final = snapshot(model, isComplete: true)
                 // Only the finished answer is kept. Caching a partial one would
@@ -101,7 +105,7 @@ public func makeCastDetailLoader(
                 // Stored even when artwork is incomplete, so a second open still
                 // gets the row instantly — but `artworkIsComplete` means it is
                 // re-resolved rather than replayed.
-                cache.store(final, for: person.id)
+                cache.store(final, for: cacheKey)
                 continuation.yield(final)
                 continuation.finish()
             }

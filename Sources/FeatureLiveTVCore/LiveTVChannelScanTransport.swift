@@ -1,3 +1,4 @@
+import CoreNetworking
 import CoreModels
 import Foundation
 #if canImport(FoundationNetworking)
@@ -162,7 +163,7 @@ public final class LiveTVScanURLSessionTransport: LiveTVScanHTTPTransport, @unch
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil
-        session = URLSession(configuration: configuration)
+        session = OfflineNetworkSession.make(configuration: configuration)
         permits = LiveTVScanRequestPermits(maximum: limits.concurrentChannels, perHost: limits.requestsPerHost)
     }
 

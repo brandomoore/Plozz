@@ -6,6 +6,44 @@ final class CloudSyncFailuresTests: XCTestCase {
     private let zone = CKRecordZone.ID(zoneName: "config")
     private let otherZone = CKRecordZone.ID(zoneName: "tokens")
 
+    func testLocalCaptureFailureRequiresSameChannelPreparationToRecover() {
+        var failures = CloudSyncFailures()
+        failures.record(CloudSyncFailures.LocalCaptureFailure(
+            zoneID: zone, underlying: CocoaError(.fileReadCorruptFile)
+        ), for: .captureZone(zone))
+        failures.record(nil, for: .sendChanges)
+        failures.record(nil, for: .fetchDatabase)
+        failures.record(nil, for: .fetchZone(zone))
+        failures.record(nil, for: .captureZone(otherZone))
+        failures.resolveUnneededSaves { _ in false }
+        failures.removeZone(zone)
+        XCTAssertEqual(failures.phase(hasPendingChanges: false), .error)
+        XCTAssertFalse(failures.canRetryAutomatically)
+        XCTAssertNotNil(failures.error as? CloudSyncFailures.LocalCaptureFailure)
+        failures.record(nil, for: .captureZone(zone))
+        XCTAssertEqual(failures.phase(hasPendingChanges: true), .syncing)
+        XCTAssertEqual(failures.phase(hasPendingChanges: false), .idle)
+    }
+
+    func testOnlyRetryableCloudFailuresReceiveAutomaticRecoveryGrace() {
+        for code in [CKError.Code.zoneBusy, .serviceUnavailable, .requestRateLimited,
+                     .serverRecordChanged, .networkFailure, .networkUnavailable] {
+            var failures = CloudSyncFailures()
+            failures.record(CKError(code), for: .saveZone(zone))
+            XCTAssertTrue(failures.canRetryAutomatically)
+            XCTAssertEqual(failures.phase(hasPendingChanges: false), .error,
+                           "Retry grace must not discard the unresolved failure")
+            failures.record(CKError(.permissionFailure), for: .fetchZone(otherZone))
+            XCTAssertFalse(failures.canRetryAutomatically)
+        }
+        XCTAssertFalse(CloudSyncFailures.isRetryable(CKError(.serverRejectedRequest)))
+        XCTAssertTrue(CloudSyncFailures.isRetryable(CKError(
+            .serverRejectedRequest, userInfo: [CKErrorRetryAfterKey: 2.0])))
+        XCTAssertFalse(CloudSyncFailures.isRetryable(CKError(
+            .serverRejectedRequest, userInfo: [CKErrorRetryAfterKey: Double.infinity])))
+        XCTAssertFalse(CloudSyncFailures().canRetryAutomatically)
+    }
+
     func testFailedRecordSaveSurvivesSendCompletionAndUnrelatedSuccessfulFetch() {
         var failures = CloudSyncFailures()
         let record = CKRecord.ID(recordName: "profile", zoneID: zone)

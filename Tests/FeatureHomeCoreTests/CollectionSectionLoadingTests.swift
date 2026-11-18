@@ -1,8 +1,28 @@
 import CoreModels
 import XCTest
 @testable import FeatureHomeCore
+@testable import TestSupportPerformance
 
 final class CollectionSectionLoadingTests: XCTestCase {
+    @MainActor
+    func testPerformanceSingleCollectionRow() async throws {
+        try await PerformanceProbe.measure(self, scenario: "home-single-collection-row") {
+            let provider = SectionProvider()
+            let account = ResolvedAccount(account: Account(id: "account", from: provider.session), provider: provider)
+            let definition = self.section()
+            let content = await HomeAggregator().unmergedContent(
+                from: [account], perLibraryLimit: 20, visibility: self.visibility(definition)
+            )
+            let row = try XCTUnwrap(content.collectionRows.first)
+            XCTAssertEqual(row.items.map(\.id), (0..<20).map { "item-\($0)" })
+            XCTAssertTrue(row.hasMore)
+            XCTAssertNil(row.failure)
+            let requests = await provider.requests
+            XCTAssertEqual(requests.count, 11)
+            return ["rows": content.collectionRows.count, "items": row.items.count, "requests": requests.count]
+        }
+    }
+
     private func section(viewer: String = "viewer") -> CollectionSection {
         .init(id: "section", source: .init(
             accountID: "account", libraryID: "movies", collectionID: "collection",
@@ -67,7 +87,7 @@ final class CollectionSectionLoadingTests: XCTestCase {
         let cancelled = Task {
             withUnsafeCurrentTask { $0?.cancel() }
             return try await CollectionPreviewLoader.load(
-                selection: section.source, limit: 5, provider: provider, visibility: .default
+                selection: try XCTUnwrap(section.collectionSources.first), limit: 5, provider: provider, visibility: .default
             )
         }
         do {
@@ -99,7 +119,9 @@ final class CollectionSectionLoadingTests: XCTestCase {
             XCTAssertEqual(row.section.items, [item])
             XCTAssertEqual(row.browseItem?.id, "collection")
         } else { XCTFail("Expected authored Featured row") }
-        section.source = .init(accountID: "account", collectionID: "another", title: "Another", serverUserID: "viewer")
+        section.sources = [.init(collection: .init(
+            accountID: "account", collectionID: "another", title: "Another", serverUserID: "viewer"
+        ))]
         XCTAssertTrue(HomePresentationRow.resolve(rows: [], content: content, visibility: visibility(section)).isEmpty)
     }
 
@@ -158,7 +180,7 @@ final class CollectionSectionLoadingTests: XCTestCase {
         for page in invalidPages {
             do {
                 _ = try await CollectionPreviewLoader.load(
-                    selection: section().source, limit: 5,
+                    selection: try XCTUnwrap(section().collectionSources.first), limit: 5,
                     provider: SectionProvider(pageOverride: page), visibility: .default
                 )
                 XCTFail("Malformed membership must fail instead of showing an empty or partial success.")
@@ -167,7 +189,7 @@ final class CollectionSectionLoadingTests: XCTestCase {
             }
         }
         let empty = try await CollectionPreviewLoader.load(
-            selection: section().source, limit: 5,
+            selection: try XCTUnwrap(section().collectionSources.first), limit: 5,
             provider: SectionProvider(pageOverride: .init(items: [], startIndex: 0, totalCount: 0)),
             visibility: .default
         )
@@ -314,9 +336,9 @@ final class CollectionSectionLoadingTests: XCTestCase {
         XCTAssertEqual(content.sectionIssues.first { $0.id == server.id }?.reason, .failed(.invalidResponse))
         XCTAssertEqual(HomePresentationRow.resolve(rows: [], content: content, visibility: settings).map(\.id),
                        [server.id, section.rowID])
-        settings.collectionSections[0].source = .init(
+        settings.collectionSections[0].sources = [.init(collection: .init(
             accountID: "account", collectionID: "different", title: "Different", serverUserID: "viewer"
-        )
+        ))]
         XCTAssertEqual(HomePresentationRow.resolve(rows: [], content: content, visibility: settings).map(\.id), [server.id])
         settings.rowCustomization?.setVisible(false, for: server.id)
         XCTAssertTrue(HomePresentationRow.resolve(rows: [], content: content, visibility: settings).isEmpty)

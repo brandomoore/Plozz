@@ -2,7 +2,7 @@ import CoreModels
 import CoreNetworking
 import Foundation
 
-extension JellyfinProvider: StreamingQualityProviding {
+extension JellyfinProvider: StreamingSessionReleasing {
     public func playbackInfo(
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
         streaming: StreamingPlaybackOptions
@@ -15,6 +15,10 @@ extension JellyfinProvider: StreamingQualityProviding {
 
     public func releaseStreamingSession(_ request: PlaybackRequest) async {
         guard let id = request.streamingSessionID else { return }
+        await releaseStreamingSession(id: id)
+    }
+
+    public func releaseStreamingSession(id: String) async {
         await releaseStreamingEncoding(id)
     }
 

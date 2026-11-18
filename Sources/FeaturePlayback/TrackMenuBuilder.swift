@@ -51,9 +51,10 @@ enum TrackMenuBuilder {
         preferred: [String?],
         locale: Locale = .current
     ) -> [PlayerTrackOption] {
-        tracks.sortedByPreferredLanguage(preferred).map { track in
+        let options = tracks.sortedByPreferredLanguage(preferred).map { track in
             let label = presentation(for: TrackLabeling.audioLabel(
                     displayTitle: track.displayTitle,
+                    sourceTitle: track.sourceTitle,
                     language: track.language,
                     codec: track.codec,
                     profile: track.profile,
@@ -61,6 +62,7 @@ enum TrackMenuBuilder {
                     isAtmos: track.isAtmos,
                     isDTSX: track.isDTSX,
                     isCommentary: track.isCommentary,
+                    isVisualImpaired: track.isVisualImpaired,
                     trackID: track.id,
                     locale: locale
                 ), locale: locale)
@@ -69,6 +71,7 @@ enum TrackMenuBuilder {
                 isSelected: track.id == selectedID, nativeTitle: label.nativeTitle
             )
         }
+        return disambiguatedOptions(options, locale: locale)
     }
 
     /// Primary subtitle picker rows: "Off" pinned first, real tracks
@@ -92,7 +95,7 @@ enum TrackMenuBuilder {
                 isExternal: track.isExternal, nativeTitle: label.nativeTitle
             )
         })
-        return options
+        return disambiguatedOptions(options, locale: locale)
     }
 
     /// Second-line (dual) subtitle picker rows: "Off" pinned first, eligible
@@ -100,6 +103,7 @@ enum TrackMenuBuilder {
     /// always renders through Plozz's overlay.
     static func secondaryOptions(
         eligible: [MediaTrack],
+        providerTracks: [MediaTrack] = [],
         selectedID: Int?,
         preferred: [String?],
         detectedLanguages: [Int: String],
@@ -108,6 +112,7 @@ enum TrackMenuBuilder {
         guard !eligible.isEmpty else { return [] }
         var options = [subtitleOffOption(isSelected: selectedID == nil, locale: locale)]
         options.append(contentsOf: eligible.sortedByPreferredLanguage(preferred).map { track in
+            let track = track.enriched(withProvider: providerTracks.first { $0.id == track.id })
             let label = subtitlePresentation(track, detectedLanguages: detectedLanguages, locale: locale)
             return PlayerTrackOption(
                 id: track.id,
@@ -115,7 +120,7 @@ enum TrackMenuBuilder {
                 isSelected: track.id == selectedID, nativeTitle: label.nativeTitle
             )
         })
-        return options
+        return disambiguatedOptions(options, locale: locale)
     }
 
     /// The tracks a second subtitle line can show.
@@ -167,6 +172,26 @@ enum TrackMenuBuilder {
 
     // MARK: - Private
 
+    private static func disambiguatedOptions(_ options: [PlayerTrackOption], locale: Locale) -> [PlayerTrackOption] {
+        let counts = Dictionary(grouping: options, by: \.nativeTitle).mapValues(\.count)
+        // Reserve authored labels too: a numbered fallback must not copy another track's title.
+        var occupied = Set(options.map(\.nativeTitle))
+        return options.map { option in
+            guard option.id != PlayerTrackOption.offID, counts[option.nativeTitle, default: 0] > 1 else {
+                return option
+            }
+            let number = presentation(for: TrackLabel(base: .trackNumber(option.id)), locale: locale)
+            let suffix = LabelPresentation(content: " (") + number + .init(content: ")")
+            var result = option
+            repeat {
+                result.title = result.title + suffix.text
+                result.nativeTitle += suffix.nativeTitle
+            } while occupied.contains(result.nativeTitle)
+            occupied.insert(result.nativeTitle)
+            return result
+        }
+    }
+
     private static func bitmapPrimary(
         selectedPrimaryID: Int?,
         engineTracks: [MediaTrack],
@@ -192,6 +217,7 @@ enum TrackMenuBuilder {
                                              locale: Locale) -> LabelPresentation {
         presentation(for: TrackLabeling.subtitleLabel(
             displayTitle: track.displayTitle,
+            sourceTitle: track.sourceTitle,
             language: track.language,
             codec: track.codec,
             isForced: track.isForced,
@@ -239,9 +265,11 @@ enum TrackMenuBuilder {
             resource = .init("SDH", comment: "Subtitle/audio track qualifier for a hearing-impaired (SDH) track.")
         case .commentary:
             resource = .init("Commentary", comment: "Audio/subtitle track qualifier for a commentary track.")
+        case .audioDescription:
+            resource = .init("Audio Description", comment: "Audio track with narration describing visual content.")
         case .autoDetected:
             resource = .init("auto", comment: "Subtitle track qualifier appended when the shown language was guessed from the file's content rather than tagged by the provider.")
-        case .format(let value), .audioVersion(let value):
+        case .format(let value), .version(let value), .title(let value):
             return .init(content: value)
         case .channelCount(let channels):
             resource = .init(

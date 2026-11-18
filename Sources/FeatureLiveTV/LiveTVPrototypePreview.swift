@@ -213,6 +213,32 @@ struct PrototypePreviewLayout {
     }
 }
 
+/// Interpolate layout proposals so embedded video surfaces resize on every frame,
+/// rather than jumping to their final bounds underneath an animated SwiftUI frame.
+struct PrototypeVideoPlacement: ViewModifier, Animatable {
+    var frame: CGRect
+    var focus: VideoCardFocus?
+
+    var animatableData: AnimatablePair<
+        AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>>, CGFloat
+    > {
+        get { .init(.init(.init(frame.origin.x, frame.origin.y), .init(frame.width, frame.height)),
+                    focus?.horizontalInset ?? 0) }
+        set {
+            frame = CGRect(x: newValue.first.first.first, y: newValue.first.first.second,
+                           width: newValue.first.second.first, height: newValue.first.second.second)
+            focus?.horizontalInset = newValue.second
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.videoCardFocus, focus)
+            .frame(width: max(0, frame.width), height: max(0, frame.height))
+            .position(x: frame.midX, y: frame.midY)
+    }
+}
+
 struct PrototypeVideoClip: Shape {
     var reflectionHeight: CGFloat
     var topReflectionHeight: CGFloat = 0

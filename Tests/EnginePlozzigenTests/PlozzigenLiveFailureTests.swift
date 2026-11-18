@@ -22,7 +22,7 @@ final class PlozzigenLiveFailureTests: XCTestCase {
         )
         let diagnostic = try XCTUnwrap(buffer.last)
         XCTAssertEqual(diagnostic.code, -50)
-        XCTAssertEqual(diagnostic.domain, .other)
+        XCTAssertEqual(diagnostic.domain, .osstatus)
         XCTAssertEqual(diagnostic.engineFailure, .audioSessionFailed)
         XCTAssertNil(diagnostic.httpStatus)
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(diagnostic), as: UTF8.self).contains("private"))

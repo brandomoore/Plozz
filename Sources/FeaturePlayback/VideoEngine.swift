@@ -79,14 +79,28 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
 ///    lives above the engine, not inside it.
 @MainActor
 public protocol VideoEngine: AnyObject {
+    var canChangeDolbyVisionFELConversion: Bool { get }
+    var canChangeVideoUpscaling: Bool { get }
+    func setVideoUpscaling(_ selection: VideoUpscaling) async throws
+    #if canImport(UIKit)
+    var discMenu: DiscMenuPlaybackState? { get }
+    func discVideos() async throws -> [DiscVideo]
+    #endif
+    /// Decoded playback audio for song identification (#351); nil when the engine
+    /// can't provide it. Call `removeSongTap()` when done.
+    func installSongTap() -> AsyncStream<SongTapChunk>?
+    func removeSongTap()
     var supportsActivePictureAnalysis: Bool { get }
+    /// Stable through seeks and analysis resets; changes on source replacement or stop.
+    /// Nil disables retaining the last confirmed picture through unavailable samples.
+    var activePictureSourceID: UUID? { get }
     func sampleActivePicture() async -> VideoActivePictureState
     func stopActivePictureAnalysis()
     /// Optional association for system Now Playing; custom decoders use the
     /// app-level center and still receive transport through this protocol.
     var nowPlayingPlayer: AVPlayer? { get }
 
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     /// Borrowed software output for infrequent preview-color analysis, not a second decoder.
     func previewVideoFrame() -> CVPixelBuffer?
     var previewFrameGeneration: UInt64? { get }
@@ -95,6 +109,8 @@ public protocol VideoEngine: AnyObject {
     /// iOS opt-in for audio to continue without PiP or an external display.
     func setBackgroundAudioEnabled(_ enabled: Bool)
     var needsBackgroundReload: Bool { get }
+    /// An established session's tracks and capabilities are temporarily unavailable.
+    var isSessionReloading: Bool { get }
     var maximumPlaybackSpeed: Double { get }
     var streamingFailure: StreamingPlaybackFailure? { get }
     var streamingOutputDynamicRange: SourceDynamicRange? { get }
@@ -168,6 +184,9 @@ public protocol VideoEngine: AnyObject {
     /// negative = audio earlier). No-op when the engine doesn't advertise
     /// `.audioDelay`.
     func setAudioDelay(_ seconds: TimeInterval)
+    /// Attempt immediate audio-only correction; false never triggers a seek/reload.
+    func setAudioDelayLive(_ seconds: TimeInterval) -> Bool
+    var audioDelaySeconds: TimeInterval { get }
 
     /// Shifts subtitles relative to video by `seconds` (positive = subs later,
     /// negative = subs earlier). No-op when the engine doesn't advertise
@@ -226,6 +245,8 @@ public protocol VideoEngine: AnyObject {
 
     /// Current playback position in seconds (`0` when unknown).
     var currentTime: TimeInterval { get }
+    /// Rendered position on the source-PTS axis used by decoded audio taps.
+    var audioTapPresentationTime: TimeInterval { get }
     /// Clock on the emitted subtitle cues' axis, following the presented picture
     /// rather than a transport position advanced to a pending seek target.
     var subtitlePresentationTime: TimeInterval { get }
@@ -377,10 +398,23 @@ public protocol VideoEngine: AnyObject {
 }
 
 public extension VideoEngine {
+    var canChangeDolbyVisionFELConversion: Bool { false }
+    var canChangeVideoUpscaling: Bool { false }
+    func setVideoUpscaling(_ selection: VideoUpscaling) async throws {
+        throw AppError.unknown("This playback route cannot change upscaling.")
+    }
+    #if canImport(UIKit)
+    var discMenu: DiscMenuPlaybackState? { nil }
+    func discVideos() async throws -> [DiscVideo] { throw CocoaError(.featureUnsupported) }
+    #endif
+    func installSongTap() -> AsyncStream<SongTapChunk>? { nil }
+    func removeSongTap() {}
     var supportsActivePictureAnalysis: Bool { false }
+    var activePictureSourceID: UUID? { nil }
     func sampleActivePicture() async -> VideoActivePictureState { .unsupported }
     func stopActivePictureAnalysis() {}
     var subtitlePresentationTime: TimeInterval { currentTime }
+    var audioTapPresentationTime: TimeInterval { currentTime }
     func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {}
     func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool { true }
     var streamingFailure: StreamingPlaybackFailure? { nil }
@@ -392,9 +426,10 @@ public extension VideoEngine {
         set {}
     }
     var needsBackgroundReload: Bool { true }
+    var isSessionReloading: Bool { false }
     var maximumPlaybackSpeed: Double { 4 }
     var nowPlayingPlayer: AVPlayer? { nil }
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     func previewVideoFrame() -> CVPixelBuffer? { nil }
     var previewFrameGeneration: UInt64? { nil }
     #endif
@@ -472,6 +507,8 @@ public extension VideoEngine {
     var capabilities: PlayerEngineCapabilities { [] }
     func setPlaybackSpeed(_ rate: Double) {}
     func setAudioDelay(_ seconds: TimeInterval) {}
+    func setAudioDelayLive(_ seconds: TimeInterval) -> Bool { false }
+    var audioDelaySeconds: TimeInterval { 0 }
     func setSubtitleDelay(_ seconds: TimeInterval) {}
     func updateSubtitleStyle(_ style: SubtitleStyle) {}
     func setDialogEnhanceEnabled(_ enabled: Bool) {}

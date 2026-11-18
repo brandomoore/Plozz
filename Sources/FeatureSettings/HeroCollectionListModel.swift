@@ -49,11 +49,11 @@ struct HeroCollectionPickerSource: Identifiable, Hashable {
     let libraryTitle: String? // l10n:content — server-provided library name
     var providerKind: ProviderKind? = nil
 
-    static func available(libraries: [AggregatedLibrary], accounts: [ResolvedAccount]) -> [Self] {
+    static func available(libraries: [AggregatedLibrary], accounts: [ResolvedAccount], playlists: Bool = false) -> [Self] {
         accounts.flatMap { account in
             let capabilities = (account.provider as? any CapabilityReporting)?.capabilities ?? .videoOnly
             var sources: [Self] = []
-            if capabilities.contains(.personalCollections) {
+            if !playlists && capabilities.contains(.personalCollections) {
                 sources.append(Self(
                     id: ID(accountID: account.account.id, libraryID: nil),
                     accountName: account.provider.session.userName,
@@ -61,7 +61,7 @@ struct HeroCollectionPickerSource: Identifiable, Hashable {
                     providerKind: account.account.server.provider
                 ))
             }
-            if capabilities.contains(.libraryCollections) {
+            if capabilities.contains(playlists ? .videoPlaylists : .libraryCollections) {
                 sources += libraries.filter {
                     $0.accountID == account.account.id && ($0.library.kind == .movie || $0.library.kind == .series)
                 }.map {
@@ -84,11 +84,13 @@ final class HeroCollectionListModel {
     public private(set) var error: AppError?
     private let provider: any MediaProvider
     private let libraryID: String?
+    private let playlists: Bool
     private var nextIndex = 0
 
-    public init(provider: any MediaProvider, libraryID: String?) {
+    public init(provider: any MediaProvider, libraryID: String?, playlists: Bool = false) {
         self.provider = provider
         self.libraryID = libraryID
+        self.playlists = playlists
     }
 
     public func loadNextPage() async {
@@ -100,7 +102,11 @@ final class HeroCollectionListModel {
             let request = PageRequest(startIndex: nextIndex, limit: 50)
             let page: MediaPage
             if let libraryID {
-                page = try await provider.collections(in: libraryID, page: request)
+                page = playlists
+                    ? try await provider.videoPlaylists(in: libraryID, page: request)
+                    : try await provider.collections(in: libraryID, page: request)
+            } else if playlists {
+                throw AppError.invalidResponse
             } else {
                 page = try await provider.personalCollections(page: request)
             }
@@ -109,7 +115,8 @@ final class HeroCollectionListModel {
             guard page.startIndex == nextIndex, page.totalCount >= 0,
                   page.items.count <= request.limit, page.endIndex <= page.totalCount,
                   page.items.allSatisfy({
-                      $0.kind == .collection && !$0.id.isEmpty && seen.insert($0.id).inserted
+                      $0.kind == (playlists ? .playlist : .collection)
+                          && !$0.id.isEmpty && seen.insert($0.id).inserted
                   }),
                   !page.items.isEmpty || nextIndex >= page.totalCount else {
                 throw AppError.invalidResponse

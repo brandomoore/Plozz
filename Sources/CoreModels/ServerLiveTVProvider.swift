@@ -3,6 +3,8 @@ import Foundation
 /// Optional capability of an authenticated media provider. Discovery never
 /// opens a tuner; playback is a separate, explicitly owned operation.
 public protocol ServerLiveTVProviding: Sendable {
+    /// Whole-lineup warmup would issue one network request per channel.
+    var usesPerChannelLiveTVGuide: Bool { get }
     /// Read an already committed lineup without authentication, refresh, guide requests, or tuning.
     func cachedLiveTVCatalog() async throws -> ServerLiveTVCatalogSnapshot?
     func liveTVAvailability() async throws -> ServerLiveTVAvailability
@@ -22,13 +24,20 @@ public protocol ServerLiveTVProviding: Sendable {
     ) async throws -> [ServerLiveTVProgramme]
     /// Require revalidation on the next guide request, retaining usable saved listings.
     func invalidateLiveTVGuideCache() async
+    /// Bring a guide that is already saved up to date when the profile's automatic update
+    /// interval has passed, without per-channel requests. An account's saved lineup is
+    /// brought up to date on the same interval. Returns when either next falls due; nil
+    /// when there is nothing to keep up to date.
+    func updateSavedLiveTVGuide() async throws -> Date?
     func openLiveTVChannel(id: String) async throws -> any LiveTVStreamLease
 }
 
 public extension ServerLiveTVProviding {
+    var usesPerChannelLiveTVGuide: Bool { false }
     func cachedLiveTVCatalog() async throws -> ServerLiveTVCatalogSnapshot? { nil }
     func completeLiveTVGuideDiscovery() async throws -> Bool? { nil }
     func invalidateLiveTVGuideCache() async {}
+    func updateSavedLiveTVGuide() async throws -> Date? { nil }
 
     func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
         try await liveTVAvailability()

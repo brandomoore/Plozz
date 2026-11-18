@@ -10,6 +10,13 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
         case homeLoad, homeFetch, homeMerge, homePublish, serverRequest, serverDecode
         case shareScan, playlistFetch, playlistParse, playlistImport, playlistCommit, guideFetch
         case liveTVRefresh, automaticChannels, search
+
+        public var isHomePresentation: Bool {
+            switch self {
+            case .homeLoad, .homeMerge, .homePublish: true
+            default: false
+            }
+        }
     }
 
     public enum Outcome: String, Codable, Sendable {
@@ -53,6 +60,9 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
     public static let maximumActive = 32
     public static let maximumRecent = 16
     public static let maximumSlow = 16
+    public static let reservedHomeActive = 4
+    public static let maximumHomeUI = 60
+    public static let homeDelayThresholdMilliseconds = 50
     public static let slowMilliseconds = 250
     public static let maximumCount = 1_000_000_000_000
     /// All elapsed/relative times saturate after 30 days; no wall-clock timestamp is collected.
@@ -83,10 +93,89 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
         public let recent: [Record]
         /// Reserved for slow completions so a fast flood cannot displace all slow evidence.
         public let slow: [Record]
+        public let homeRecent: [Record]
+        public let homeSlow: [Record]
+        public let homeDropped: Int
+        public let homeUI: [HomeUIRecord]
+        public let homeUIDropped: Int
         fileprivate let generation: UUID
 
         private enum CodingKeys: String, CodingKey {
             case schema, elapsedMilliseconds, maxActive, dropped, active, recent, slow
+            case homeRecent, homeSlow, homeDropped, homeUI, homeUIDropped
+        }
+    }
+
+    /// Sampled main-actor wake-up delay, not frame timing or CPU attribution.
+    public struct HomeUIMetrics: Codable, Equatable, Sendable {
+        public var samples = 0
+        public var delayedSamples = 0
+        public var maximumDelayMilliseconds = 0
+        public var scrollingSamples = 0
+        public var loadingSamples = 0
+        public var heightChanges = 0
+        public var maximumHeightDeltaPoints = 0
+        public var maximumActiveScans = 0
+        public var maximumActiveListers = 0
+
+        public init() {}
+
+        fileprivate var isValid: Bool {
+            (1...PerformanceDiagnostics.maximumCount).contains(samples)
+                && [delayedSamples, scrollingSamples, loadingSamples].allSatisfy { (0...samples).contains($0) }
+                && (0...PerformanceDiagnostics.maximumMilliseconds).contains(maximumDelayMilliseconds)
+                && [heightChanges, maximumHeightDeltaPoints, maximumActiveScans, maximumActiveListers]
+                    .allSatisfy { (0...PerformanceDiagnostics.maximumCount).contains($0) }
+        }
+    }
+
+    public struct HomeUIRecord: Encodable, Sendable {
+        public let startedMilliseconds: Int
+        public let elapsedMilliseconds: Int
+        public let metrics: HomeUIMetrics
+    }
+
+    /// One visible Home owner. Replacement, stop and consent changes invalidate late samples.
+    public final class HomeObservation: Sendable {
+        private let owner: PerformanceDiagnostics
+        private let generation: UUID
+        private let id: UInt64
+
+        fileprivate init(owner: PerformanceDiagnostics, generation: UUID, id: UInt64) {
+            self.owner = owner
+            self.generation = generation
+            self.id = id
+        }
+
+        public var isCurrent: Bool {
+            owner.lock.withLock { owner.generation == generation && owner.homeObservationID == id }
+        }
+
+        /// False means the owner ended or the bounded measurements were rejected.
+        @discardableResult
+        public func record(_ metrics: HomeUIMetrics) -> Bool {
+            owner.lock.withLock {
+                guard owner.generation == generation, owner.homeObservationID == id, metrics.isValid else { return false }
+                let now = owner.uptime()
+                let elapsed = PerformanceDiagnostics.milliseconds(from: owner.homeWindowStarted, to: now)
+                guard metrics.maximumDelayMilliseconds <= elapsed else { return false }
+                let entry = HomeUIRecord(
+                    startedMilliseconds: PerformanceDiagnostics.milliseconds(from: owner.epoch, to: owner.homeWindowStarted),
+                    elapsedMilliseconds: elapsed, metrics: metrics
+                )
+                if owner.homeUI.append(entry) {
+                    owner.homeUIDropped = min(PerformanceDiagnostics.maximumCount, owner.homeUIDropped + 1)
+                }
+                owner.homeWindowStarted = now
+                return true
+            }
+        }
+
+        public func stop() {
+            owner.lock.withLock {
+                guard owner.generation == generation, owner.homeObservationID == id else { return }
+                owner.homeObservationID = nil
+            }
         }
     }
 
@@ -135,13 +224,13 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
         }
     }
 
-    private struct Ring {
-        var entries: [Entry?]
+    private struct Ring<Value> {
+        var entries: [Value?]
         var next = 0
 
         init(capacity: Int) { entries = Array(repeating: nil, count: capacity) }
 
-        mutating func append(_ entry: Entry) -> Bool {
+        mutating func append(_ entry: Value) -> Bool {
             let replaced = entries[next] != nil
             entries[next] = entry
             next = (next + 1) % entries.count
@@ -157,8 +246,15 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
     private var startedAt = Date.distantFuture
     private var nextID: UInt64 = 0
     private var active: [UInt64: Entry] = [:]
-    private var recent = Ring(capacity: PerformanceDiagnostics.maximumRecent)
-    private var slow = Ring(capacity: PerformanceDiagnostics.maximumSlow)
+    private var recent = Ring<Entry>(capacity: PerformanceDiagnostics.maximumRecent)
+    private var slow = Ring<Entry>(capacity: PerformanceDiagnostics.maximumSlow)
+    private var homeRecent = Ring<Entry>(capacity: PerformanceDiagnostics.maximumRecent)
+    private var homeSlow = Ring<Entry>(capacity: PerformanceDiagnostics.maximumSlow)
+    private var homeDropped = 0
+    private var homeUI = Ring<HomeUIRecord>(capacity: PerformanceDiagnostics.maximumHomeUI)
+    private var homeUIDropped = 0
+    private var homeObservationID: UInt64?
+    private var homeWindowStarted: UInt64 = 0
     private var maxActive = 0
     private var dropped = 0
 
@@ -191,6 +287,13 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
             active.removeAll(keepingCapacity: false)
             recent = Ring(capacity: Self.maximumRecent)
             slow = Ring(capacity: Self.maximumSlow)
+            homeRecent = Ring(capacity: Self.maximumRecent)
+            homeSlow = Ring(capacity: Self.maximumSlow)
+            homeDropped = 0
+            homeUI = Ring(capacity: Self.maximumHomeUI)
+            homeUIDropped = 0
+            homeObservationID = nil
+            homeWindowStarted = 0
             maxActive = 0
             dropped = 0
         }
@@ -202,8 +305,10 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
         let admission: (UUID, UInt64)? = lock.withLock {
             // Disabled calls do not read the clock/thread/task local, allocate a span, or collect metrics.
             guard let generation else { return nil }
-            guard active.count < Self.maximumActive else {
+            let limit = operation.isHomePresentation ? Self.maximumActive : Self.maximumActive - Self.reservedHomeActive
+            guard active.count < limit else {
                 dropped = min(Self.maximumCount, dropped + 1)
+                if operation.isHomePresentation { homeDropped = min(Self.maximumCount, homeDropped + 1) }
                 return nil
             }
             nextID &+= 1
@@ -234,6 +339,21 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
             let replaced = Self.milliseconds(from: entry.started, to: now) >= Self.slowMilliseconds
                 ? slow.append(entry) : recent.append(entry)
             if replaced { dropped = min(Self.maximumCount, dropped + 1) }
+            if entry.operation.isHomePresentation {
+                let homeReplaced = Self.milliseconds(from: entry.started, to: now) >= Self.slowMilliseconds
+                    ? homeSlow.append(entry) : homeRecent.append(entry)
+                if homeReplaced { homeDropped = min(Self.maximumCount, homeDropped + 1) }
+            }
+        }
+    }
+
+    public func beginHomeObservation() -> HomeObservation? {
+        lock.withLock {
+            guard let generation else { return nil }
+            nextID &+= 1
+            homeObservationID = nextID
+            homeWindowStarted = uptime()
+            return HomeObservation(owner: self, generation: generation, id: nextID)
         }
     }
 
@@ -241,15 +361,24 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
     /// boundaries are local attribution checks only and are never serialized.
     /// Takes a bounded value copy under the lock; encoding happens outside it.
     public func snapshot(forEventAt eventDate: Date? = nil) -> Snapshot? {
-        let captured = lock.withLock { () -> (UUID, UInt64, UInt64, Int, Int, [UInt64: Entry], Ring, Ring)? in
+        let captured = lock.withLock { () -> (
+            UUID, UInt64, UInt64, Int, Int, [UInt64: Entry], Ring<Entry>, Ring<Entry>,
+            Ring<Entry>, Ring<Entry>, Int, Ring<HomeUIRecord>, Int
+        )? in
             guard let generation else { return nil }
             if let eventDate {
                 guard eventDate.timeIntervalSinceReferenceDate.isFinite,
                       eventDate >= startedAt, eventDate <= wallClock() else { return nil }
             }
-            return (generation, epoch, uptime(), maxActive, dropped, active, recent, slow)
+            return (
+                generation, epoch, uptime(), maxActive, dropped, active, recent, slow,
+                homeRecent, homeSlow, homeDropped, homeUI, homeUIDropped
+            )
         }
-        guard let (generation, epoch, now, maxActive, dropped, active, recent, slow) = captured else { return nil }
+        guard let (
+            generation, epoch, now, maxActive, dropped, active, recent, slow,
+            homeRecent, homeSlow, homeDropped, homeUI, homeUIDropped
+        ) = captured else { return nil }
         func records(_ entries: [Entry]) -> [Record] {
             entries.sorted { $0.started < $1.started }.map { $0.record(epoch: epoch, now: now) }
         }
@@ -258,7 +387,11 @@ public final class PerformanceDiagnostics: @unchecked Sendable {
             maxActive: maxActive, dropped: dropped,
             active: records(Array(active.values)),
             recent: records(recent.entries.compactMap { $0 }),
-            slow: records(slow.entries.compactMap { $0 }), generation: generation
+            slow: records(slow.entries.compactMap { $0 }),
+            homeRecent: records(homeRecent.entries.compactMap { $0 }),
+            homeSlow: records(homeSlow.entries.compactMap { $0 }), homeDropped: homeDropped,
+            homeUI: homeUI.entries.compactMap { $0 }.sorted { $0.startedMilliseconds < $1.startedMilliseconds },
+            homeUIDropped: homeUIDropped, generation: generation
         )
     }
 

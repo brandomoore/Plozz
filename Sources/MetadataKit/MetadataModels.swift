@@ -15,12 +15,30 @@ public enum ArtworkKind: String, Sendable, Hashable, CaseIterable {
 }
 
 /// A provider-agnostic, `Sendable` snapshot of everything a metadata provider
-/// needs to resolve artwork for one item, normalized away from the backend shape.
+/// needs to resolve artwork and descriptive metadata, normalized away from the backend shape.
 ///
 /// Built once from a ``MediaItem`` so providers never re-derive the same fields
 /// (series-vs-episode title, season/episode numbers, the relevant external ids).
 public struct MetadataQuery: Sendable, Hashable {
+    /// Calendar reads have their own cache identity; they must never replace a
+    /// detail page's next-episode answer with an already-aired episode.
+    public private(set) var scheduleStartDate: Date?
+
+    public func forScheduleStarting(at date: Date) -> Self {
+        var copy = self
+        copy.scheduleStartDate = date
+        return copy
+    }
+
     public private(set) var artworkLanguage: String
+    /// External text only; native server/NFO metadata is never translated.
+    public private(set) var metadataLanguage: String
+
+    public func forMetadataLanguage(_ identifier: String) -> Self {
+        var copy = self
+        copy.metadataLanguage = Locale.canonicalLanguageIdentifier(from: identifier)
+        return copy
+    }
 
     public static func normalizedArtworkLanguage(_ identifier: String) -> String {
         Locale(identifier: identifier).language.languageCode?.identifier.lowercased() ?? "en"
@@ -65,9 +83,13 @@ public struct MetadataQuery: Sendable, Hashable {
         providerIDs: [String: String],
         episodeHints: [SeriesEpisodeHint] = [],
         titleAlternates: [String] = [],
-        artworkLanguage: String = Locale.current.identifier
+        artworkLanguage: String = Locale.current.identifier,
+        metadataLanguage: String = "en",
+        scheduleStartDate: Date? = nil
     ) {
         self.artworkLanguage = Self.normalizedArtworkLanguage(artworkLanguage)
+        self.metadataLanguage = Locale.canonicalLanguageIdentifier(from: metadataLanguage)
+        self.scheduleStartDate = scheduleStartDate
         self.contentType = contentType
         self.kind = kind
         self.title = title
@@ -87,6 +109,8 @@ public struct MetadataQuery: Sendable, Hashable {
     /// gathering more hints must never split a cache entry or a dedupe key.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.artworkLanguage == rhs.artworkLanguage
+            && lhs.scheduleStartDate == rhs.scheduleStartDate
+            && lhs.metadataLanguage == rhs.metadataLanguage
             && lhs.contentType == rhs.contentType && lhs.kind == rhs.kind && lhs.title == rhs.title
             && lhs.alternateTitle == rhs.alternateTitle && lhs.year == rhs.year
             && lhs.seasonNumber == rhs.seasonNumber && lhs.episodeNumber == rhs.episodeNumber
@@ -95,6 +119,8 @@ public struct MetadataQuery: Sendable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(artworkLanguage)
+        hasher.combine(scheduleStartDate)
+        hasher.combine(metadataLanguage)
         hasher.combine(contentType)
         hasher.combine(kind)
         hasher.combine(title)
@@ -137,7 +163,9 @@ public struct MetadataQuery: Sendable, Hashable {
             providerIDs: ids,
             episodeHints: episodeHints,
             titleAlternates: titleAlternates,
-            artworkLanguage: artworkLanguage
+            artworkLanguage: artworkLanguage,
+            metadataLanguage: metadataLanguage,
+            scheduleStartDate: scheduleStartDate
         )
     }
 
@@ -165,7 +193,9 @@ public struct MetadataQuery: Sendable, Hashable {
             providerIDs: providerIDs,
             episodeHints: episodeHints,
             titleAlternates: titleAlternates,
-            artworkLanguage: artworkLanguage
+            artworkLanguage: artworkLanguage,
+            metadataLanguage: metadataLanguage,
+            scheduleStartDate: scheduleStartDate
         )
     }
 
@@ -227,7 +257,8 @@ public struct MetadataQuery: Sendable, Hashable {
         if kind == .thumbnail, let s = seasonNumber, let e = episodeNumber {
             parts.append("s\(s)e\(e)")
         }
-        if kind == .logo { parts.append("language-v1:\(artworkLanguage)") }
+        // Earlier logo selections could fall back to an unrelated language.
+        if kind == .logo { parts.append("language-v2:\(artworkLanguage)") }
         return parts.joined(separator: "|")
     }
 }
@@ -244,6 +275,8 @@ public protocol ArtworkProvider: Sendable {
     /// Hero-only selection from the provider's usual artwork response, without
     /// additional lookups: neutral portrait, neutral backdrop, then usable art.
     func portraitHeroURL(for query: MetadataQuery) async -> URL?
+    /// Existing title-bearing wide artwork, not a clean hero background or a composed logo.
+    func landscapeCardURL(for query: MetadataQuery) async -> URL?
     /// Ordered candidates for `kind`, best first, up to `limit`.
     ///
     /// A hero draws the show's logo over its backdrop, and the Home hero and the
@@ -258,6 +291,8 @@ public protocol ArtworkProvider: Sendable {
 }
 
 extension ArtworkProvider {
+    public func landscapeCardURL(for query: MetadataQuery) async -> URL? { nil }
+
     public func portraitHeroURL(for query: MetadataQuery) async -> URL? {
         await artworkURL(.hero, for: query)
     }

@@ -43,6 +43,9 @@ public struct ResilientEnrichmentProvider: MetadataEnrichmentProvider {
     public var id: MetadataSource { base.id }
     public var capabilities: Set<MetadataCapability> { base.capabilities }
     public var policy: ProviderPolicy { base.policy }
+    public func supports(_ field: MetadataField, at tier: MetadataWorkTier) -> Bool {
+        base.supports(field, at: tier)
+    }
 
     public func enrich(_ query: MetadataQuery, missing: Set<MetadataField>) async -> MetadataEnrichment {
         await enrichReporting(query, missing: missing).enrichment
@@ -74,11 +77,12 @@ public struct ResilientEnrichmentProvider: MetadataEnrichmentProvider {
 
         // 3. Cache only authoritative outcomes.
         if let cache {
+            let maximumAge = CachedEnrichmentProvider.maximumAge(for: query)
             switch response.health {
             case .ok:
-                await cache.store(response.enrichment, source: base.id, version: version, requestKey: requestKey, credential: credentialID)
+                await cache.store(response.enrichment, source: base.id, version: version, requestKey: requestKey, credential: credentialID, maximumAge: maximumAge)
             case .empty:
-                await cache.store(nil, source: base.id, version: version, requestKey: requestKey, credential: credentialID)
+                await cache.store(nil, source: base.id, version: version, requestKey: requestKey, credential: credentialID, maximumAge: maximumAge)
             case .failure:
                 break
             }

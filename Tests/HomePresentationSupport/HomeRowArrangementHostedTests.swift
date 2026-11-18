@@ -5,6 +5,7 @@ import CoreModels
 import HeroUI
 import MetadataKit
 #if os(tvOS)
+@testable import AppShell
 @testable import FeatureHome
 #elseif os(iOS)
 @testable import AppShelliOS
@@ -48,6 +49,571 @@ private struct ContinueWatchingChannelsProvider: MediaProvider {
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+@MainActor
+@Observable
+private final class ContentPickerSelectionFixture {
+    var sources: [HomeContentSource] = []
+    var path: [String] = ["content"]
+    var returns = 0
+}
+
+@MainActor
+extension HomeRowArrangementHostedTests {
+    func testContinueWatchingStatusDoesNotMoveTheHeadingOrCards() async throws {
+        var headingY: CGFloat?
+        var cardY: CGFloat?
+        let cases: [(String, Bool, AppError?)] = [
+            ("Ready", false, nil),
+            ("Refreshing", true, nil),
+            ("Unavailable source", false, .serverUnreachable)
+        ]
+        for (name, refreshing, failure) in cases {
+            #if os(tvOS)
+            let size = CGSize(width: 1280, height: 720)
+            #else
+            let size = CGSize(width: 390, height: 844)
+            #endif
+            try await withWindow(size: size) {
+                Group {
+                    #if os(tvOS)
+                    MediaRowSection(title: Text("Continue Watching"), insetsContent: true) {
+                        Text("Playable title").font(.body)
+                    }
+                    #else
+                    PlozziOSMediaSection(title: Text("Continue Watching")) {
+                        Text("Playable title").font(.body)
+                    }
+                    #endif
+                }
+                .environment(\.mediaRowRefreshStatus, MediaRowRefreshStatus(
+                    isRefreshing: refreshing, failure: failure, report: nil, onRetry: {}
+                ))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } inspect: { window in
+                let image = try await snapshot(window, name: "Continue Watching - \(name)")
+                let text = try recognizedText(in: image)
+                var headingBox = try XCTUnwrap(text.first { $0.0.contains("Continue Watching") }?.1)
+                let cardBox = try XCTUnwrap(text.first { $0.0.contains("Playable title") }?.1)
+                // Vision can group the status glyph with the heading; compare title ink only.
+                headingBox.size.width *= 0.4
+                let bitmap = try XCTUnwrap(image.cgImage)
+                let pixels = try rgba(bitmap)
+                let heading = try textInkBounds(headingBox, bitmap: bitmap, pixels: pixels)
+                let card = try textInkBounds(cardBox, bitmap: bitmap, pixels: pixels)
+                if let headingY, let cardY {
+                    XCTAssertEqual(heading.minY, headingY, accuracy: 1)
+                    XCTAssertEqual(card.minY, cardY, accuracy: 1)
+                } else {
+                    headingY = heading.minY
+                    cardY = card.minY
+                }
+                XCTAssertNil(window.rootViewController?.presentedViewController,
+                             "A source failure must not present an unsolicited sheet or alert.")
+            }
+        }
+    }
+
+    func testUpcomingToolbarStaysAtTopWhileTheAgendaScrolls() async throws {
+        let today = Calendar.current.startOfDay(for: Date())
+        let interval = DateInterval(start: today, duration: 60 * 86_400)
+        let releases = (0..<30).flatMap { index in
+            UpcomingReleaseBuilder.movies(
+                [.init(kind: .digital, date: today.addingTimeInterval(Double(index) * 86_400), regionCode: "US")],
+                for: MediaItem(id: "release-\(index)", title: "Release \(index)", kind: .movie),
+                interests: [.watchlist], regionCode: "US"
+            )
+        }
+        #if os(iOS)
+        let cases = [
+            (CGSize(width: 390, height: 844), false),
+            (CGSize(width: 700, height: 900), false),
+            (CGSize(width: 834, height: 1194), false),
+            (CGSize(width: 1194, height: 834), false),
+            (CGSize(width: 834, height: 1194), true)
+        ]
+        #else
+        let cases = [(CGSize(width: 1920, height: 1080), false)]
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "toolbar-test", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        #endif
+        for (size, reducedTransparency) in cases {
+            #if os(iOS)
+            let fixture = UpcomingCaptureState(releases: releases)
+            await fixture.load()
+            #endif
+            try await withWindow(size: size) {
+                #if os(iOS)
+                fixture.shell
+                    .environment(fixture.app)
+                    .environment(fixture.trailer)
+                    .environment(fixture.sidebar)
+                    .environment(\.plozzMetrics, .touch(density: .standard))
+                    .environment(\.plozzReduceTransparency, reducedTransparency)
+                    .environment(\.horizontalSizeClass, size.width >= 800 ? .regular : .compact)
+                #else
+                NavigationStack {
+                    UpcomingView(model: model, interval: interval)
+                }
+                #endif
+            } inspect: { window in
+                func descendants(_ view: UIView) -> [UIView] {
+                    [view] + view.subviews.flatMap(descendants)
+                }
+                #if os(iOS)
+                func controllers(_ controller: UIViewController) -> [UIViewController] {
+                    [controller] + controller.children.flatMap(controllers)
+                }
+                try await Task.sleep(for: .milliseconds(500))
+                fixture.app.screenshotDirector.tab = "upcoming"
+                for controller in controllers(try XCTUnwrap(window.rootViewController)) {
+                    (controller as? UITabBarController)?.sidebar.isHidden = true
+                }
+                #endif
+                let initial = try await self.capture(window, name: "Upcoming toolbar \(size.width)")
+                XCTAssertFalse(initial.contains { ["All", "Shows", "Movies"].contains($0.0) })
+                #if os(iOS)
+                let inlinePicker = descendants(window).compactMap { $0 as? UIDatePicker }.first
+                XCTAssertEqual(inlinePicker != nil, size.width >= 800)
+                let inlineFrame = inlinePicker.map { $0.convert($0.bounds, to: window) }
+                var barItems: [UIBarButtonItem] = []
+                for controller in controllers(try XCTUnwrap(window.rootViewController)) {
+                    let item = controller.navigationItem
+                    barItems += item.leftBarButtonItems ?? []
+                    barItems += item.rightBarButtonItems ?? []
+                    let groups = item.leadingItemGroups + item.centerItemGroups + item.trailingItemGroups
+                    barItems += groups.flatMap(\.barButtonItems)
+                    XCTAssertNotEqual(item.title, "Upcoming")
+                }
+                for title in ["Calendar", "Filters"] {
+                    XCTAssertTrue(barItems.contains { $0.title == title }, title)
+                }
+                XCTAssertFalse(barItems.contains { $0.title == "Today" })
+                let navigationBar = try XCTUnwrap(descendants(window).compactMap { $0 as? UINavigationBar }.first {
+                    guard !$0.isHidden, $0.alpha > 0, $0.bounds.width > 0, let item = $0.topItem else {
+                        return false
+                    }
+                    let actions = (item.rightBarButtonItems ?? []) + item.trailingItemGroups.flatMap(\.barButtonItems)
+                    return ["Calendar", "Filters"].allSatisfy { title in actions.contains { $0.title == title } }
+                })
+                XCTAssertLessThanOrEqual(
+                    navigationBar.convert(navigationBar.bounds, to: window).maxY,
+                    window.safeAreaInsets.top + 64
+                )
+                let profile = try XCTUnwrap(descendants(navigationBar).first {
+                    String(describing: type(of: $0)).hasPrefix("UIKitBarItemHost<")
+                }, "Upcoming must use the shared profile toolbar control")
+                let pageActions = descendants(navigationBar).compactMap { $0 as? UIButton }.filter {
+                    !$0.isDescendant(of: profile) && !$0.isHidden && $0.bounds.width > 0
+                }
+                let filter = try XCTUnwrap(pageActions.max {
+                    $0.convert($0.bounds, to: window).maxX < $1.convert($1.bounds, to: window).maxX
+                }, "The native page actions must remain alongside the profile")
+                let profileFrame = profile.convert(profile.bounds, to: window)
+                let filterFrame = filter.convert(filter.bounds, to: window)
+                XCTAssertGreaterThanOrEqual(profileFrame.minX - filterFrame.maxX, 8,
+                                            "Profile belongs in a separate group to the right of the page actions")
+                XCTAssertEqual(profileFrame.midY, filterFrame.midY, accuracy: 2)
+                let controls: [UIView] = [navigationBar, profile]
+                #else
+                XCTAssertNil(descendants(window).first { $0.accessibilityIdentifier == "upcoming.today" })
+                let controls = try ["upcoming.calendar", "upcoming.filters"].map { id in
+                    try XCTUnwrap(descendants(window).first { $0.accessibilityIdentifier == id }, id)
+                }
+                #endif
+                let frames = controls.map { $0.convert($0.bounds, to: window) }
+                for frame in frames {
+                    XCTAssertGreaterThan(frame.width, 0)
+                    XCTAssertLessThan(frame.maxY, size.height * 0.25)
+                }
+                let scroll = try XCTUnwrap(descendants(window).compactMap { $0 as? UIScrollView }.first {
+                    $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height + 100
+                })
+                scroll.setContentOffset(
+                    CGPoint(x: 0, y: scroll.contentSize.height - scroll.bounds.height),
+                    animated: false
+                )
+                _ = try await self.snapshot(window, name: "Upcoming scrolled \(size.width)")
+                for (control, before) in zip(controls, frames) {
+                    XCTAssertEqual(control.convert(control.bounds, to: window).minY, before.minY, accuracy: 2)
+                }
+                #if os(iOS)
+                if let inlinePicker, let inlineFrame {
+                    XCTAssertEqual(inlinePicker.convert(inlinePicker.bounds, to: window).minY, inlineFrame.minY, accuracy: 2)
+                }
+                XCTAssertNil(descendants(window).first {
+                    $0.accessibilityIdentifier == "upcoming.navigationBackdrop"
+                }, "Upcoming must not stack a material overlay over the system scroll edge")
+                if #available(iOS 26.0, *) {
+                    XCTAssertEqual(scroll.topEdgeEffect.isHidden, reducedTransparency)
+                    XCTAssertEqual(scroll.topEdgeEffect.style, .soft)
+                }
+                let calendar = try XCTUnwrap(barItems.first { $0.title == "Calendar" })
+                if inlinePicker == nil {
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                }
+                #else
+                let calendar = try XCTUnwrap(controls[0] as? UIControl)
+                calendar.sendActions(for: .primaryActionTriggered)
+                #endif
+                let opened = try await self.capture(window, name: "Upcoming native calendar")
+                #if os(iOS)
+                XCTAssertFalse(opened.contains { ["Calendar", "Done"].contains($0.0) })
+                let picker = try XCTUnwrap(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                XCTAssertGreaterThanOrEqual(picker.bounds.width, 280)
+                XCTAssertLessThanOrEqual(picker.bounds.width, 400)
+                XCTAssertGreaterThan(picker.bounds.height, 250)
+                XCTAssertLessThan(picker.bounds.height, 450)
+                XCTAssertTrue(window.bounds.contains(picker.convert(picker.bounds, to: window)))
+                let selected = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: picker.date))
+                picker.setDate(selected, animated: false)
+                picker.sendActions(for: .valueChanged)
+                _ = try await self.snapshot(window, name: "Upcoming selected date")
+                if inlinePicker == nil {
+                    let deadline = ContinuousClock.now + .seconds(3)
+                    while picker.window != nil, ContinuousClock.now < deadline {
+                        try await Task.sleep(for: .milliseconds(10))
+                    }
+                }
+                XCTAssertEqual(picker.window != nil, inlinePicker != nil)
+                if inlinePicker != nil {
+                    let expandedWidth = scroll.bounds.width
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                    _ = try await self.snapshot(window, name: "Upcoming minimized calendar")
+                    XCTAssertNil(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                    XCTAssertGreaterThan(scroll.bounds.width, expandedWidth + 300)
+                    XCTAssertTrue(UIApplication.shared.sendAction(
+                        try XCTUnwrap(calendar.action), to: calendar.target, from: calendar, for: nil
+                    ))
+                    _ = try await self.snapshot(window, name: "Upcoming restored calendar")
+                    let restored = try XCTUnwrap(descendants(window).compactMap { $0 as? UIDatePicker }.first)
+                    XCTAssertTrue(Calendar.current.isDate(restored.date, inSameDayAs: selected))
+                    XCTAssertEqual(scroll.bounds.width, expandedWidth, accuracy: 2)
+                }
+                #else
+                XCTAssertTrue(opened.contains { $0.0 == "Cancel" })
+                #endif
+            }
+        }
+    }
+
+    #if os(iOS)
+    func testUpcomingHomeCuesLocalizeEpisodeCountsAndKeepMovieDatesAsContent() async throws {
+        let date = Date(timeIntervalSince1970: 1_799_928_000)
+        let movieDate = date.addingTimeInterval(4 * 86_400)
+        let series = MediaItem(id: "localized-series", title: "Fixture Series", kind: .series)
+        let episodes = (1...5).map {
+            UpcomingEpisode(
+                seriesIdentity: .external(source: "tvmaze", value: "42"),
+                seasonNumber: 2, episodeNumber: $0, airDate: date,
+                datePrecision: .dateOnly, source: .tvmaze, refreshedAt: date
+            )
+        }
+        let episodeRelease = try XCTUnwrap(UpcomingReleaseBuilder.episodes(episodes, for: series).first)
+        let movieRelease = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: movieDate, regionCode: "US")],
+            for: MediaItem(id: "localized-film", title: "Fixture Film", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        for (identifier, expectedSubtitle, visibleSeason) in [
+            ("en_US", "Season 2 · 5 episodes", "Season 2"),
+            ("de_DE", "Staffel 2 · 5 Folgen", "Staffel 2"),
+        ] {
+            let locale = Locale(identifier: identifier)
+            var subtitle = try XCTUnwrap(episodeRelease.subtitle)
+            subtitle.locale = locale
+            XCTAssertEqual(String(localized: subtitle), expectedSubtitle)
+            let expectedDate = movieDate.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+            try await withWindow(size: CGSize(width: 1024, height: 768)) {
+                UpcomingHomeRow(releases: [episodeRelease, movieRelease], onSeeAll: {})
+                    .environment(\.locale, locale)
+                    .environment(\.plozzMetrics, .touch(density: .standard))
+                    .environment(\.plozzCardStyle, .borderless)
+            } inspect: { window in
+                let lines = try await self.capture(window, name: "Upcoming localized cues \(identifier)", scale: 2)
+                let rendered = lines.map(\.0).joined(separator: " | ")
+                XCTAssertTrue(rendered.contains(visibleSeason), rendered)
+                XCTAssertTrue(rendered.contains(expectedDate), rendered)
+                XCTAssertFalse(rendered.contains("upcoming.release.status"), rendered)
+                if identifier == "de_DE" {
+                    XCTAssertFalse(rendered.contains("Season 2"), rendered)
+                }
+            }
+        }
+    }
+
+    func testUpcomingHomeRowUsesStandardRailGeometry() async throws {
+        let release = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: Date(), regionCode: "US")],
+            for: MediaItem(id: "saved-movie", title: "Saved movie", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        let choice = HomeRowChoice(id: .global(.comingSoon), title: "Coming Soon", isProviderDefault: false)
+        let row = HomeLibrarySectionGroup.Row(
+            section: LibrarySection(id: "coming-soon", title: "Coming Soon", style: .landscape, items: [release.item]),
+            isLoading: false, failure: nil
+        )
+        var upcomingHeight: CGFloat = 0
+        var standardHeight: CGFloat = 0
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            ScrollView {
+                VStack(spacing: PlozziOSMediaRailLayout.sectionSpacing) {
+                    PlozziOSMediaSection(title: Text("Before")) { Color.clear.frame(height: 50) }
+                    PlozziOSHomeRowSlot(
+                        presentation: HomePresentationRow(choice: choice, source: .library(row)),
+                        captions: .default, continueWatchingLayout: .landscape,
+                        continueWatchingUsesSeriesArtwork: true
+                    ) {
+                        UpcomingHomeRow(releases: [release], onSeeAll: {})
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { upcomingHeight = $0 }
+                    PlozziOSHomeRowSlot(
+                        presentation: HomePresentationRow(
+                            choice: HomeRowChoice(
+                                id: .global(.recentlyAdded), title: "After", isProviderDefault: false
+                            ),
+                            source: .library(.init(
+                                section: LibrarySection(
+                                    id: "after", title: "After", style: .landscape, items: [release.item]
+                                ),
+                                isLoading: false, failure: nil
+                            ))
+                        ),
+                        captions: .default, continueWatchingLayout: .landscape,
+                        continueWatchingUsesSeriesArtwork: true
+                    ) {
+                        HomeRowPreviewView(title: Text("After"), items: [release.item], style: .landscape)
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { standardHeight = $0 }
+                }
+            }
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+        } inspect: { window in
+            let text = try await self.capture(window, name: "Coming Soon between ordinary Home rows")
+            let before = try XCTUnwrap(text.first { $0.0 == "Before" }).1
+            let upcoming = try XCTUnwrap(text.first { $0.0.hasPrefix("Coming Soon") }).1
+            let after = try XCTUnwrap(text.first { $0.0 == "After" }).1
+            XCTAssertEqual(upcoming.minX, before.minX, accuracy: 0.01)
+            XCTAssertEqual(upcoming.minX, after.minX, accuracy: 0.01)
+            XCTAssertGreaterThan(standardHeight, 0)
+            XCTAssertEqual(upcomingHeight, standardHeight, accuracy: 1)
+        }
+    }
+
+    func testUpcomingAgendaUsesSharedRowTypography() async throws {
+        let now = Date()
+        let release = try XCTUnwrap(UpcomingReleaseBuilder.movies(
+            [.init(kind: .digital, date: now, regionCode: "US")],
+            for: MediaItem(id: "saved-movie", title: "Matching title", kind: .movie),
+            interests: [.watchlist], regionCode: "US"
+        ).first)
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "typography-test", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: [release])
+        }
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            VStack {
+                PlozziOSMediaSection(title: Text("Today")) {
+                    PosterCardView(item: release.item, enablesAsyncArtworkFallback: false) {}
+                        .frame(width: PlozzMetrics.touch(density: .standard).cardSlotWidth(
+                            for: .poster, cardStyle: .borderless
+                        ))
+                }
+                UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
+            }
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            .environment(\.plozzCardStyle, .borderless)
+        } inspect: { window in
+            let text = try await self.capture(window, name: "Shared Upcoming typography")
+            for label in ["Today", "Matching title"] {
+                let labels = text.filter { $0.0 == label }.sorted { $0.1.midY > $1.1.midY }
+                XCTAssertEqual(labels.count, 2)
+                if let first = labels.first, let last = labels.last {
+                    XCTAssertEqual(first.1.height, last.1.height, accuracy: 0.004, label)
+                }
+            }
+        }
+    }
+
+    func testUpcomingPostersStayAdjacentAndWrapBusyDates() async throws {
+        let now = Calendar.current.startOfDay(for: Date())
+        let titles = ["First show", "Second show", "Third show", "Fourth show", "Fifth show"]
+        let releases = titles.enumerated().flatMap { index, title in
+            UpcomingReleaseBuilder.episodes(
+                [.init(
+                    seriesIdentity: .external(source: "fixture", value: "\(index)"),
+                    seasonNumber: 1, episodeNumber: index + 1, title: nil,
+                    airDate: now, datePrecision: .dateOnly, source: .tvmaze,
+                    sourceURL: nil, refreshedAt: now
+                )],
+                for: MediaItem(id: "\(index)", title: title, kind: .series, allowsTitleBasedMetadataMatching: false)
+            )
+        }
+        let model = UpcomingFeedModel()
+        await model.refresh(scope: "poster-layout", namespace: nil, isCurrent: { true }) {
+            UpcomingFeedSnapshot(releases: releases)
+        }
+        let metrics = PlozzMetrics.touch(density: .standard)
+        for width: CGFloat in [390, 1194] {
+            let agendaWidth = width > 800 ? width - 336 : width
+            let columns = width < 600 ? 3 : 5
+            let pageInset = PlozziOSMediaRailLayout.pageInset(for: width > 600 ? .regular : .compact)
+            let pitch = (agendaWidth - 2 * pageInset + PlozziOSMediaRailLayout.visibleSpacing) / CGFloat(columns)
+            try await withWindow(size: CGSize(width: width, height: 1000)) {
+                UpcomingView(model: model, interval: DateInterval(start: now, duration: 86_400))
+                    .environment(\.plozzMetrics, metrics)
+                    .environment(\.plozzCardStyle, .borderless)
+                    .environment(\.horizontalSizeClass, width > 600 ? .regular : .compact)
+            } inspect: { window in
+                let text = try await self.capture(window, name: "Upcoming poster groups \(width)")
+                let frames = try titles.map { title in
+                    try XCTUnwrap(text.first { $0.0 == title }, title).1
+                }
+                XCTAssertEqual(frames[0].midY, frames[1].midY, accuracy: 0.005)
+                XCTAssertEqual((frames[1].minX - frames[0].minX) * width, pitch, accuracy: 3)
+                XCTAssertEqual(
+                    frames[0].minX * width, pageInset + metrics.posterCaptionHorizontalInset, accuracy: 3
+                )
+                if width < 600 {
+                    XCTAssertEqual(frames[2].midY, frames[0].midY, accuracy: 0.005)
+                    XCTAssertLessThan(frames[3].midY, frames[0].midY)
+                    XCTAssertEqual(frames[3].minX, frames[0].minX, accuracy: 0.005)
+                } else {
+                    XCTAssertEqual(frames[4].midY, frames[0].midY, accuracy: 0.005)
+                }
+                XCTAssertTrue(text.contains { $0.0.contains("S1") && $0.0.contains("E1") })
+            }
+        }
+    }
+    #endif
+
+    func testMultiSourcePickerRetainsSelectionsAndNativeFocus() async throws {
+        let suite = "ContentPicker.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let provider = ContinueWatchingChannelsProvider()
+        let account = ResolvedAccount(account: provider.account, provider: provider)
+        let selected = ContentPickerSelectionFixture()
+        try await withWindow {
+            @Bindable var selected = selected
+            let picker = HomeContentPickerView(
+                selections: Binding(get: { selected.sources }, set: { selected.sources = $0 }),
+                inventory: HomeSectionCatalogModel(), visibility: visibility, libraries: [], accounts: [account]
+            )
+            #if os(iOS)
+            NavigationStack(path: $selected.path) {
+                Text("Row editor").navigationDestination(for: String.self) { _ in picker }
+            }
+            #else
+            picker
+                .environment(\.settingsPageContext, SettingsPageContext(
+                    isCurrent: true, depth: 1, requestsEntryFocus: false, returnSourceID: nil,
+                    returnGeneration: 0, pageIDs: [], push: { _, _, _ in }, remove: { _ in },
+                    pop: { selected.returns += 1 }
+                ))
+            #endif
+        } inspect: { window in
+            let initial = try await self.capture(window, name: "Multi-source picker")
+            XCTAssertTrue(initial.contains { $0.0.contains("Collections") })
+            XCTAssertTrue(initial.contains { $0.0.contains("Playlists") })
+            let watchlist = try XCTUnwrap(initial.first { $0.0.contains("Watchlist") })
+            #if os(tvOS)
+            let point = CGPoint(x: watchlist.1.midX * window.bounds.width, y: (1 - watchlist.1.midY) * window.bounds.height)
+            let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            try await self.focus(target, in: window)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+            #else
+            XCTAssertGreaterThan(watchlist.1.height, 0.01)
+            #endif
+            selected.sources = [.init(home: .watchlist)]
+            selected.sources.append(.init(home: .continueWatching))
+            selected.sources.append(.init(
+                feed: .collection("weekend"), accountID: provider.account.id,
+                serverUserID: provider.session.userID, title: "Weekend picks"
+            ))
+            let changed = try await self.capture(window, name: "Multi-source selected feeds")
+            XCTAssertTrue(changed.contains { $0.0.localizedCaseInsensitiveContains("Selected") })
+            XCTAssertTrue(changed.contains { $0.0.contains("Weekend picks") })
+            XCTAssertTrue(changed.contains { $0.0.contains("Fixture") })
+            #if os(tvOS)
+            XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            XCTAssertTrue(changed.contains { $0.0 == "Done" })
+            #else
+            try self.activateEditorSave(in: window)
+            try await self.waitForEditor { selected.path.isEmpty }
+            #endif
+            XCTAssertEqual(selected.sources.map(\.home), [.watchlist, .continueWatching, nil],
+                           "Done returns without clearing or resaving the selected content.")
+        }
+    }
+
+    func testGroupedContentChoiceMatchesSettingsNavigationHeight() async throws {
+        var choiceHeight: CGFloat = 0
+        var navigationHeight: CGFloat = 0
+        try await withWindow {
+            VStack {
+                SettingsSectionGroup {
+                    SettingsCheckableRow(
+                        title: Text("Watchlist"), isChecked: true, flushLeading: false,
+                        size: .contained, usesGroupInsets: true, action: {}
+                    )
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { choiceHeight = $0 }
+                SettingsSectionGroup {
+                    Button {} label: { HomeEditorRowLabel(title: Text("Collections")) }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { navigationHeight = $0 }
+            }
+        } inspect: { window in
+            _ = try await self.capture(window, name: "Standard grouped choice height")
+            XCTAssertGreaterThan(choiceHeight, 0)
+            XCTAssertEqual(choiceHeight, navigationHeight, accuracy: 1,
+                           "Checkable and navigation rows must have the same single-line content height.")
+        }
+    }
+
+    #if os(tvOS)
+    func testTVSettingsGroupUsesBalancedInsets() async throws {
+        var group = CGRect.zero
+        var row = CGRect.zero
+        try await withWindow {
+            SettingsSectionGroup {
+                Button {} label: { HomeEditorRowLabel(title: Text("Collections")) }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { row = $0 }
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { group = $0 }
+            .frame(width: SettingsFormMetrics.pageWidth)
+        } inspect: { window in
+            _ = try await self.capture(window, name: "Custom row shared insets")
+            XCTAssertGreaterThan(row.height, 0)
+            let leading = row.minX - group.minX
+            let trailing = group.maxX - row.maxX
+            // The group reserves eight points before its surface, outside the row insets.
+            let top = row.minY - group.minY - 8
+            let bottom = group.maxY - row.maxY
+            let geometry = XCTAttachment(string:
+                "group=\(group) row=\(row) leading=\(leading) trailing=\(trailing) top=\(top) bottom=\(bottom)"
+            )
+            geometry.name = "Custom row shared inset geometry"
+            geometry.lifetime = .keepAlways
+            self.add(geometry)
+            XCTAssertEqual(leading, 16, accuracy: 1)
+            XCTAssertEqual(leading, trailing, accuracy: 1)
+            XCTAssertEqual(top, bottom, accuracy: 1)
+            XCTAssertEqual(leading, top, accuracy: 1, "The shared tvOS group must not add wider horizontal padding.")
+        }
+    }
+    #endif
+
 }
 
 #if os(tvOS)
@@ -519,6 +1085,13 @@ extension HomeRowArrangementHostedTests {
 }
 #endif
 
+@MainActor @Observable
+private final class SettingsInputFixtureState {
+    var name = "Movie night"
+    var address = "https://fixture.invalid"
+    var key = ""
+}
+
 #if os(tvOS)
 @MainActor
 @Observable
@@ -686,9 +1259,9 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             let headings = try await self.capture(window, name: "Full Home shelf", scale: 2)
             XCTAssertTrue(headings.contains { $0.0.contains("Library picks") })
             #if os(tvOS)
-            XCTAssertTrue(headings.contains { $0.0.contains("Default") })
+            XCTAssertTrue(headings.contains { $0.0.contains("Source order") })
             let title = try XCTUnwrap(headings.first { $0.0.contains("Library picks") }).1
-            let sort = try XCTUnwrap(headings.first { $0.0.contains("Default") }).1
+            let sort = try XCTUnwrap(headings.first { $0.0.contains("Source order") }).1
             let filter = try XCTUnwrap(headings.first { $0.0.hasSuffix("All") }, "\(headings.map(\.0))").1
             for control in [sort, filter] {
                 XCTAssertGreaterThan(control.minX, title.maxX)
@@ -767,6 +1340,125 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             XCTAssertFalse(labels.contains { $0.0.contains("See all") })
             XCTAssertGreaterThanOrEqual(headingFrame.height, 44)
             XCTAssertLessThanOrEqual(headingFrame.width, 350)
+        }
+    }
+
+    func testHomeRowHeadingHasOneContextMenuAcrossTitleAndChevron() async throws {
+        for browsable in [true, false] {
+            var browsingCount = 0
+            var headingFrame = CGRect.zero
+            try await withWindow(size: CGSize(width: 390, height: 844)) {
+                BrowseRowHeading(
+                    title: Text("Movie night"), action: browsable ? { browsingCount += 1 } : nil
+                )
+                .font(.title3.weight(.semibold))
+                .environment(\.homeRowEditAction, {})
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { headingFrame = $0 }
+            } inspect: { window in
+                func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
+                let lines = try await self.capture(window, name: "Editable Home heading \(browsable)")
+                let title = try XCTUnwrap(lines.first { $0.0.contains("Movie night") }).1
+                let point = CGPoint(x: title.midX * window.bounds.width, y: (1 - title.midY) * window.bounds.height)
+                let menus = views(window).flatMap { view in
+                    view.interactions.compactMap { $0 as? UIContextMenuInteraction }
+                }.filter { interaction in
+                    guard let view = interaction.view else { return false }
+                    return view.convert(view.bounds, to: window).contains(point)
+                }
+                let menu = try XCTUnwrap(menus.first)
+                XCTAssertEqual(menus.count, 1, "The title and chevron share one context menu.")
+                let view = try XCTUnwrap(menu.view)
+                let titlePoint = view.convert(point, from: window)
+                let trailingPoint = view.convert(
+                    CGPoint(x: headingFrame.maxX - 2, y: headingFrame.midY), from: window
+                )
+                XCTAssertNotNil(menu.delegate?.contextMenuInteraction(menu, configurationForMenuAtLocation: titlePoint))
+                XCTAssertNotNil(menu.delegate?.contextMenuInteraction(menu, configurationForMenuAtLocation: trailingPoint))
+                for offset in [-21.0, 21.0] {
+                    let edge = view.convert(CGPoint(x: headingFrame.midX, y: headingFrame.midY + offset), from: window)
+                    XCTAssertNotNil(menu.delegate?.contextMenuInteraction(menu, configurationForMenuAtLocation: edge),
+                                    "The menu target must be at least 44pt tall.")
+                }
+                XCTAssertEqual(browsingCount, 0, "Requesting Edit must not also browse.")
+            }
+        }
+    }
+
+    func testHomeRowEditDestinationResolvesOriginalNamesAndSourceIdentity() throws {
+        let first = AggregatedLibrary(
+            accountID: "one", accountName: "One", serverName: "Server",
+            providerKind: .plex, library: .init(id: "movies", title: "Movies", kind: .movie)
+        )
+        let second = AggregatedLibrary(
+            accountID: "two", accountName: "Two", serverName: "Server",
+            providerKind: .jellyfin, library: .init(id: "movies", title: "Movies", kind: .movie)
+        )
+        let section = LibrarySection(id: "picks", title: "Original picks", items: [])
+        var content = HomeViewModel.Content(
+            libraries: [first, second],
+            librarySections: [.init(library: first, sections: [section]), .init(library: second, sections: [section])]
+        )
+        let id = HomeRowID.library(key: second.key, section: section.id)
+        var visibility = HomeLibraryVisibility()
+        visibility.setHomeRowName("Movie night", for: id)
+        let choice = try XCTUnwrap(PlozziOSHomeRowSettingsDestination.choice(for: id, content: content, visibility: visibility))
+        XCTAssertEqual(choice.library?.accountID, "two")
+        XCTAssertEqual(choice.title, "Original picks", "The default-name placeholder is not the custom heading.")
+        let server = HomeServerRowDefinition(
+            accountID: "one", serverName: "Server", providerKind: .plex,
+            section: .init(id: "offline", kind: .recommendations, title: "Offline picks")
+        )
+        content.sectionIssues = [.init(choice: HomeRowChoice(serverRow: server), reason: .empty)]
+        XCTAssertEqual(PlozziOSHomeRowSettingsDestination.choice(
+            for: server.id, content: content, visibility: visibility
+        )?.serverRow, server)
+        XCTAssertEqual(PlozziOSHomeRowSettingsDestination.choice(
+            for: .global(.watchlist), content: content, visibility: visibility
+        )?.id, .global(.watchlist))
+        let collection = CollectionSection(
+            source: .init(accountID: "one", collectionID: "weekend", title: "Weekend")
+        )
+        visibility.collectionSections = [collection]
+        XCTAssertEqual(PlozziOSHomeRowSettingsDestination.choice(
+            for: collection.rowID, content: content, visibility: visibility
+        )?.collectionSection, collection)
+        XCTAssertNil(PlozziOSHomeRowSettingsDestination.choice(
+            for: .section("removed"), content: content, visibility: visibility
+        ))
+    }
+
+    func testHomeRowEditDestinationRejectsAnOldProfile() async throws {
+        let suite = "HomeRowEditRoute.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let otherProfile = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.watchlist) })
+        for currentProfile in [true, false] {
+            let route = PlozziOSHomeRowSettingsRoute(
+                rowID: choice.id,
+                profile: ObjectIdentifier(currentProfile ? app.settings.homeVisibility : otherProfile),
+                choice: choice, libraries: []
+            )
+            try await withWindow {
+                NavigationStack {
+                    PlozziOSHomeRowSettingsDestination(route: route, appModel: app)
+                }
+            } inspect: { window in
+                func fields(_ view: UIView) -> [UITextField] {
+                    (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+                }
+                let lines = try await self.capture(window, name: "Home row edit profile \(currentProfile)")
+                XCTAssertEqual(fields(window).count, currentProfile ? 1 : 0)
+                if currentProfile {
+                    XCTAssertTrue(lines.contains { $0.0.localizedCaseInsensitiveContains("Row name") })
+                } else {
+                    XCTAssertTrue(lines.contains { $0.0.contains("Setting unavailable") })
+                }
+            }
         }
     }
     #endif
@@ -1241,6 +1933,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     VStack(alignment: .leading, spacing: 28) {
                         MediaRowView(title: Text("Collection row"), items: [item], onSelect: { _ in })
                         HomeSectionStatusRow(issue: issue, onRetry: {})
+                            .environment(\.openHomeCustomization, {})
                     }
                 }
                 .environment(\.plozzPinnedSidebarActive, pinned)
@@ -1269,13 +1962,16 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 XCTAssertTrue(text.contains("No titles to show"), text)
                 XCTAssertTrue(text.contains("Collection server"), text)
                 for title in ["Details", "Retry"] {
-                    let label = try XCTUnwrap(lines.first { $0.0.contains(title) }, text).1
-                    let point = CGPoint(x: label.midX * window.bounds.width, y: (1 - label.midY) * window.bounds.height)
-                    let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
-                    XCTAssertTrue(target.canBecomeFocused)
-                    try await self.focus(target, in: window)
-                    XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+                    XCTAssertFalse(text.contains(title), "Empty content is not a failed request: \(text)")
                 }
+                let customize = try XCTUnwrap(lines.first { $0.0.contains("Customize Home") }, text).1
+                let point = CGPoint(
+                    x: customize.midX * window.bounds.width, y: (1 - customize.midY) * window.bounds.height
+                )
+                let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+                XCTAssertTrue(target.canBecomeFocused)
+                try await self.focus(target, in: window)
+                XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
             }
         }
     }
@@ -1418,7 +2114,146 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     }
     #endif
 
-    func testCollectionEditorPreviewsActualTitlesBesidePresentationChoices() async throws {
+    func testCollectionEditorStartsWithCompactSettingsAndNoPreview() async throws {
+        let suite = "EmptyCollectionEditor.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        #if os(iOS)
+        let sizes: [DynamicTypeSize] = [.large, .accessibility3]
+        #else
+        let sizes: [DynamicTypeSize] = [.large]
+        #endif
+        for size in sizes {
+            try await withWindow {
+                let editor = CollectionSectionCreationView(
+                    inventory: HomeSectionCatalogModel(), visibility: visibility,
+                    libraries: [], accounts: []
+                )
+                #if os(tvOS)
+                editor.frame(width: SettingsFormMetrics.pageWidth)
+                #else
+                NavigationStack { editor }
+                .environment(\.dynamicTypeSize, size)
+                #endif
+            } inspect: { window in
+                let lines = try await self.capture(window, name: "Create row \(size)")
+                let text = lines.map(\.0).joined(separator: " ")
+                XCTAssertFalse(text.contains("Choose content for this row"), text)
+                XCTAssertFalse(text.contains("No titles in this row"), text)
+                XCTAssertGreaterThan(try self.y("Content", in: lines), try self.y("Name", in: lines))
+                XCTAssertGreaterThan(try self.y("Name", in: lines), try self.y("Layout", in: lines))
+                #if os(tvOS)
+                let name = try XCTUnwrap(lines.first { $0.0 == "Name" }).1
+                let sort = try XCTUnwrap(lines.first { $0.0 == "Sort" }).1
+                XCTAssertEqual(
+                    name.minX * window.bounds.width, sort.minX * window.bounds.width, accuracy: 4,
+                    "Name must share the control-label keyline, not the group's outer inset."
+                )
+                let geometry = XCTAttachment(string:
+                    "Name x=\(name.minX * window.bounds.width), Sort x=\(sort.minX * window.bounds.width)"
+                )
+                geometry.name = "Custom row Name keyline"
+                geometry.lifetime = .keepAlways
+                self.add(geometry)
+                #endif
+                #if os(iOS)
+                XCTAssertFalse(try self.editorSaveItem(in: window).isEnabled)
+                let field = try XCTUnwrap(self.editorViews(in: window).compactMap { $0 as? UITextField }.first)
+                if !size.isAccessibilitySize {
+                    let name = try XCTUnwrap(lines.first { $0.0 == "Name" }).1
+                    let frame = field.convert(field.bounds, to: window)
+                    XCTAssertEqual(frame.midY, (1 - name.midY) * window.bounds.height, accuracy: 5,
+                                   "The name label and input must share one line.")
+                    let contentToName = try (self.y("Content", in: lines) - self.y("Name", in: lines))
+                        * window.bounds.height
+                    let nameToSort = try (self.y("Name", in: lines) - self.y("Sort", in: lines))
+                        * window.bounds.height
+                    XCTAssertEqual(contentToName, nameToSort, accuracy: 3,
+                                   "Content, Name, and Sort must have matching single-line row heights.")
+                }
+                #endif
+                XCTAssertTrue(visibility.visibility.collectionSections.isEmpty)
+            }
+        }
+    }
+
+    func testCollectionEditorKeepsGlobalSnapshotTitlesWhenRecommendationFails() async throws {
+        let provider = HomeSettingsLibraryProvider(name: "Preview server", kind: .plex)
+        let account = ResolvedAccount(account: .init(id: "preview-account", from: provider.session), provider: provider)
+        let recommendation = HomeContentSource(
+            feed: .recommendation(sectionID: "missing-shelf", kind: .movie),
+            accountID: account.account.id, serverUserID: provider.session.userID,
+            libraryID: "movies", title: "Recommendation"
+        )
+        let suite = "MixedPreview.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let inventory = HomeSectionCatalogModel()
+        let snapshot = EditorHomeSnapshot()
+        let section = CollectionSection(
+            name: "Mixed preview",
+            sources: [recommendation, .init(home: .continueWatching), .init(home: .watchlist)]
+        )
+        let libraries = [
+            AggregatedLibrary(
+                accountID: account.account.id, accountName: "Viewer", serverName: "Preview server",
+                providerKind: .plex, library: .init(id: "movies", title: "Movies", kind: .movie)
+            )
+        ]
+        try await withWindow {
+            CollectionSectionSettingsView(
+                section: section, isNew: true, inventory: inventory, visibility: visibility,
+                libraries: libraries, accounts: [account]
+            )
+            .environment(\.homeContentSnapshot, snapshot)
+            #if os(tvOS)
+            .frame(width: SettingsFormMetrics.pageWidth)
+            #elseif os(iOS)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            #endif
+        } inspect: { window in
+            func previewScroll(_ view: UIView) -> UIScrollView? {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height + 1 {
+                    return scroll
+                }
+                return view.subviews.lazy.compactMap(previewScroll).first
+            }
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                Set(snapshot.requests) == Set([.continueWatching, .watchlist])
+            }, object: nil)
+            _ = try await self.capture(window, name: "Mixed-source preview controls")
+            await fulfillment(of: [ready], timeout: 5)
+            let text = try await capture(window, name: "mixed-source-preview-partial-failure", beforeCapture: {
+                if let scroll = previewScroll(window) {
+                    scroll.setContentOffset(CGPoint(
+                        x: scroll.contentOffset.x,
+                        y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                    ), animated: false)
+                }
+            }).map(\.0).joined(separator: " ")
+            XCTAssertTrue(text.contains("Resume"), text)
+            XCTAssertTrue(text.contains("Saved"), text)
+            XCTAssertTrue(text.contains("Retry"), text)
+            XCTAssertEqual(Set(snapshot.requests), Set([.continueWatching, .watchlist]))
+        }
+    }
+
+    @MainActor
+    private final class EditorHomeSnapshot: HomeContentSnapshotProviding {
+        var requests: [HomeGlobalRow] = []
+
+        func contentSnapshot(for kind: HomeGlobalRow, visibility: HomeLibraryVisibility) throws -> [MediaItem] {
+            requests.append(kind)
+            return [.init(
+                id: kind.rawValue, title: kind == .continueWatching ? "Resume" : "Saved",
+                kind: .movie, allowsTitleBasedMetadataMatching: false
+            )]
+        }
+    }
+
+    func testCollectionEditorPreviewsActualTitlesBelowSettingsMenus() async throws {
         for style in CollectionSection.CardStyle.allCases {
             let requested = expectation(description: "Collection preview requested")
             let provider = HomeSettingsLibraryProvider(
@@ -1438,25 +2273,388 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+            #if os(tvOS)
+            let navigation = SettingsPageNavigation<String>()
+            #endif
             try await withWindow {
-                CollectionSectionSettingsView(
+                let editor = CollectionSectionSettingsView(
                     section: section, isNew: true, inventory: HomeSectionCatalogModel(),
                     visibility: visibility, libraries: [], accounts: [account]
                 )
                 #if os(tvOS)
-                .frame(width: SettingsFormMetrics.pageWidth)
+                SettingsPageStack(
+                    navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}
+                ) { editor } destination: { _ in EmptyView() }
                 #elseif os(iOS)
-                .environment(\.plozzMetrics, .touch(density: .standard))
+                editor.environment(\.plozzMetrics, .touch(density: .standard))
                 #endif
             } inspect: { window in
                 await self.fulfillment(of: [requested], timeout: 5)
                 let lines = try await self.capture(window, name: "Collection preview \(style.rawValue)")
                 let text = lines.map(\.0).joined(separator: " ")
                 XCTAssertTrue(text.contains("Weekend picks"), text)
-                XCTAssertTrue(text.contains("Orbit"), "Preview must display the provider's title: \(text)")
-                XCTAssertGreaterThan(try self.y("Posters", in: lines), try self.y("Orbit", in: lines))
+                XCTAssertTrue(text.contains(String(localized: style.title)), text)
+                let layoutY = try self.y("Layout", in: lines)
+                XCTAssertGreaterThan(try self.y("Content", in: lines), try self.y("Name", in: lines))
+                XCTAssertGreaterThan(try self.y("Name", in: lines), layoutY)
+                if style == .landscape {
+                    XCTAssertTrue(text.localizedCaseInsensitiveContains("Off"), text)
+                    XCTAssertFalse(text.contains("Automatic"), text)
+                    let logoY = try self.y("Logo", in: lines)
+                    XCTAssertGreaterThan(layoutY, logoY)
+                } else {
+                    XCTAssertFalse(text.contains("Logo"), text)
+                }
+                #if os(tvOS)
+                let sort = try XCTUnwrap(lines.first { $0.0 == "Sort" }).1
+                let sortTarget = try XCTUnwrap(self.focusTarget(at: CGPoint(
+                    x: sort.midX * window.bounds.width, y: (1 - sort.midY) * window.bounds.height
+                ), in: window))
+                let settingsLeading = sortTarget.frame.minX - 16
+                #endif
+                let previewLines = try await self.capture(window, name: "Scrolled collection preview \(style.rawValue)",
+                                                         beforeCapture: { try self.scrollToBottom(window) })
+                XCTAssertTrue(previewLines.contains { $0.0.contains("Orbit") },
+                              "Preview must display the provider's title: \(previewLines.map(\.0))")
+                XCTAssertGreaterThan(try self.y("Weekend picks", in: previewLines), try self.y("Orbit", in: previewLines))
+                #if os(tvOS)
+                let heading = try XCTUnwrap(previewLines.filter { $0.0 == "Weekend picks" }
+                    .min { $0.1.minX < $1.1.minX }).1
+                let image = try await self.snapshot(window, name: "Collection preview keyline \(style.rawValue)")
+                let bitmap = try XCTUnwrap(image.cgImage)
+                let headingLeading = try self.textInkBounds(
+                    heading, bitmap: bitmap, pixels: self.rgba(bitmap)
+                ).minX
+                XCTAssertGreaterThanOrEqual(
+                    headingLeading, settingsLeading - 5,
+                    "The preview heading must not bleed left of the settings surface."
+                )
+                XCTAssertLessThanOrEqual(headingLeading, settingsLeading + 5)
+                #endif
                 XCTAssertTrue(visibility.visibility.collectionSections.isEmpty, "Previewing does not save a section.")
             }
+        }
+    }
+
+    func testCustomRowPreviewMatchesHomeGeometry() async throws {
+        try await verifyCustomRowPreviewMatchesHomeGeometry(navigationInset: 0)
+    }
+
+    #if os(tvOS)
+    func testCustomRowPreviewKeepsScrolledCardsVisibleOutsideEditorColumn() async throws {
+        let items: [MediaItem] = (1...12).map {
+            .init(id: "orbit-\($0)", title: "Orbit \($0)", kind: .movie,
+                  productionYear: 2020, allowsTitleBasedMetadataMatching: false)
+        }
+        for style in CollectionSection.CardStyle.allCases {
+            let navigation = SettingsPageNavigation<String>()
+            var column = CGRect.zero
+            try await withWindow {
+                SettingsPageStack(
+                    navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}
+                ) {
+                    HomeRowPreviewView(title: Text("Weekend"), items: items, style: style)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
+                } destination: { _ in EmptyView() }
+                .environment(\.plozzCardStyle, .borderless)
+                .environment(\.plozzMetrics, .standard)
+            } inspect: { window in
+                _ = try await self.capture(window, name: "Full-width preview initial \(style)")
+                func scrollViews(_ view: UIView) -> [UIScrollView] {
+                    (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+                }
+                let scroll = try XCTUnwrap(scrollViews(window).first {
+                    $0.contentSize.width > $0.bounds.width
+                })
+                let initial = scroll.contentOffset
+                for distance: CGFloat in [900, 1_500, 900] {
+                    scroll.setContentOffset(CGPoint(x: initial.x + distance, y: initial.y), animated: false)
+                    let image = try await self.snapshot(window, name: "Full-width preview \(style) offset \(distance)")
+                    let bitmap = try XCTUnwrap(image.cgImage)
+                    let pixels = try self.rgba(bitmap)
+                    let centerY = scroll.convert(scroll.bounds, to: window).midY
+                    for range in [80..<Int(column.minX - 40), Int(column.maxX + 40)..<(bitmap.width - 80)] {
+                        var visible = 0
+                        var sampled = 0
+                        for y in Int(centerY - 40)..<Int(centerY + 40) {
+                            for x in range {
+                                let index = (y * bitmap.width + x) * 4
+                                if pixels[index] > 15 || pixels[index + 1] > 15 || pixels[index + 2] > 15 {
+                                    visible += 1
+                                }
+                                sampled += 1
+                            }
+                        }
+                        XCTAssertGreaterThan(Double(visible) / Double(sampled), 0.1,
+                                             "Card artwork must stay rendered beyond both editor edges, not disappear with its cropped caption.")
+                    }
+                }
+                scroll.setContentOffset(initial, animated: false)
+                let restored = try await self.capture(window, name: "Full-width preview restored \(style)")
+                XCTAssertTrue(restored.contains { $0.0 == "Orbit 1" }, "Returning left must restore the first card.")
+            }
+        }
+    }
+
+    func testCustomRowPreviewMatchesPinnedHomeGeometry() async throws {
+        try await verifyCustomRowPreviewMatchesHomeGeometry(navigationInset: 240)
+    }
+
+    func testCustomRowPreviewMatchesHomeWhenNavigationIsHidden() async throws {
+        try await verifyCustomRowPreviewMatchesHomeGeometry(
+            navigationInset: NavigationRailMetrics.contentInset, previewNavigationInset: 0
+        )
+    }
+    #endif
+
+    private func verifyCustomRowPreviewMatchesHomeGeometry(
+        navigationInset: CGFloat, previewNavigationInset: CGFloat? = nil
+    ) async throws {
+        let scenario = "inset-\(navigationInset)-settings-inset-\(previewNavigationInset ?? navigationInset)"
+        let items: [MediaItem] = [
+            .init(id: "orbit", title: "Orbit", kind: .movie, productionYear: 2020, runtime: 7_200,
+                  resumePosition: 300, allowsTitleBasedMetadataMatching: false),
+            .init(id: "comet", title: "Comet", kind: .series, productionYear: 2024,
+                  allowsTitleBasedMetadataMatching: false)
+        ]
+        let controller = HeroTrailerController()
+        let coordinator = FeaturedTrailerCoordinator()
+        defer { coordinator.stop() }
+        #if os(iOS)
+        let suite = "RowPreviewParity.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        #endif
+        for style in CollectionSection.CardStyle.allCases {
+            for cardStyle in [CardStyle.framed, .borderless] {
+                for density in [UIDensity.standard, .compact] {
+                    let browse: (() -> Void)? = density == .compact ? {} : nil
+                    var heights: [CGFloat] = []
+                    var labels: [[(String, CGRect)]] = []
+                    #if os(tvOS)
+                    var cards: [CGRect] = []
+                    var textSizes: [[String: CGSize]] = []
+                    #endif
+                    for preview in [false, true] {
+                        var height: CGFloat = 0
+                        #if os(tvOS)
+                        let navigation = SettingsPageNavigation<String>()
+                        var previewFrame = CGRect.zero
+                        #endif
+                        try await withWindow {
+                            Group {
+                                if preview {
+                                    #if os(tvOS)
+                                    SettingsPageStack(
+                                        navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}
+                                    ) {
+                                        HomeRowPreviewView(
+                                            title: Text("Weekend"), items: items, style: style, hasMore: browse != nil
+                                        )
+                                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                            previewFrame = $0
+                                            height = $0.height
+                                        }
+                                    } destination: { _ in EmptyView() }
+                                    #else
+                                    HomeRowPreviewView(title: Text("Weekend"), items: items, style: style, hasMore: browse != nil)
+                                    #endif
+                                } else if style == .featured {
+                                    FeaturedMediaRow(
+                                        title: Text("Weekend"), items: items, scope: ObjectIdentifier(controller),
+                                        coordinator: coordinator, controller: controller, settings: .default,
+                                        resolver: { _ in nil }, isActive: false, onSelect: { _ in }
+                                    ).browsingRow(browse)
+                                } else {
+                                    #if os(iOS)
+                                    PlozziOSHomeMediaRail(
+                                        title: Text("Weekend"), items: items,
+                                        style: style == .poster ? .poster : .landscape, appModel: app, onBrowse: browse
+                                    )
+                                    #else
+                                    MediaRowView(
+                                        title: Text("Weekend"), items: items,
+                                        style: style == .poster ? .poster : .landscape, onSelect: { _ in }
+                                    ).browsingRow(browse)
+                                    #endif
+                                }
+                            }
+                            #if os(iOS)
+                            .environment(app)
+                            .environment(\.plozzMetrics, .touch(density: density))
+                            .environment(\.plozzCardCaptionSettings, app.settings.cardStyle.captions)
+                            #else
+                            .environment(\.plozzMetrics, PlozzMetrics(density: density))
+                            #endif
+                            .environment(\.plozzCardStyle, cardStyle)
+                            .environment(\.plozzCardCaptionView, .home)
+                            #if os(tvOS)
+                            .environment(\.plozzNavigationStyle, navigationInset > 0 ? .rail : .tabBar)
+                            .environment(\.plozzNavigationRootContentInset, navigationInset)
+                            .environment(
+                                \.plozzNavigationContentInset,
+                                preview ? previewNavigationInset ?? navigationInset : navigationInset
+                            )
+                            .environment(\.plozzPinnedSidebarActive, navigationInset > 0)
+                            #endif
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                #if os(tvOS)
+                                if !preview { height = $0 }
+                                #else
+                                height = $0
+                                #endif
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            #if os(tvOS)
+                            // Match HomeView's rail-only trailing-safe-area expansion.
+                            .ignoresSafeArea(.container, edges: !preview && navigationInset > 0 ? .trailing : [])
+                            #endif
+                        } inspect: { window in
+                            labels.append(try await self.capture(
+                                window, name: "Home parity \(style)-\(cardStyle)-\(density)-\(scenario)-preview-\(preview)"
+                            ))
+                            heights.append(height)
+                            #if os(tvOS)
+                            let title = try XCTUnwrap(labels.last?.first { $0.0.hasPrefix("Orbit") }?.1)
+                            let target = try XCTUnwrap(self.focusTarget(at: CGPoint(
+                                x: title.midX * window.bounds.width,
+                                y: (1 - title.maxY) * window.bounds.height - 60
+                            ), in: window))
+                            try await self.focus(target.item, in: window)
+                            let view = try XCTUnwrap(target.item as? UIView)
+                            cards.append(CGRect(origin: view.convert(.zero, to: window), size: view.bounds.size))
+                            let focusedImage = try await self.snapshot(
+                                window, name: "Focused parity \(style)-\(cardStyle)-\(density)-\(scenario)-preview-\(preview)"
+                            )
+                            labels[labels.count - 1] = try self.recognizedText(in: focusedImage)
+                            let bitmap = try XCTUnwrap(focusedImage.cgImage)
+                            let pixels = try self.rgba(bitmap)
+                            var sizes: [String: CGSize] = [:]
+                            for title in ["Weekend", "Orbit"] {
+                                let box = try XCTUnwrap(labels.last?.first { $0.0 == title }?.1)
+                                sizes[title] = try self.textInkBounds(
+                                    box, bitmap: bitmap, pixels: pixels, minimumBrightness: 200, isolatesLine: true
+                                ).size
+                            }
+                            textSizes.append(sizes)
+                            if preview {
+                                var ancestor = view.superview
+                                while ancestor != nil && !(ancestor is UIScrollView) {
+                                    ancestor = ancestor?.superview
+                                }
+                                let scroll = try XCTUnwrap(ancestor as? UIScrollView)
+                                let viewport = scroll.convert(scroll.bounds, to: window)
+                                XCTAssertEqual(viewport.minX, 0, accuracy: 1, "Preview scrolling reaches the physical leading edge.")
+                                XCTAssertEqual(viewport.maxX, window.bounds.maxX, accuracy: 1, "Preview scrolling reaches the physical trailing edge.")
+                                let heading = try XCTUnwrap(labels.last?.first { $0.0 == "Weekend" }?.1)
+                                let leading = heading.minX * window.bounds.width - previewFrame.minX
+                                let cardLeading = view.convert(.zero, to: window).x - previewFrame.minX
+                                let keyline = XCTAttachment(string:
+                                    "\(style)-\(cardStyle)-\(density) \(scenario): settings=\(previewFrame), heading offset=\(leading), focused card offset=\(cardLeading)"
+                                )
+                                keyline.name = "Custom preview keyline parity"
+                                keyline.lifetime = .keepAlways
+                                add(keyline)
+                                XCTAssertGreaterThanOrEqual(leading, -3)
+                                XCTAssertLessThanOrEqual(leading, 5, "A Settings preview must not inherit Home's navigation gutter.")
+                                XCTAssertGreaterThanOrEqual(cardLeading, -24, "Native focus may extend its resting edge.")
+                                XCTAssertLessThanOrEqual(cardLeading, 5, "The preview rail must share its settings column's leading edge.")
+                            }
+                            #endif
+                        }
+                    }
+                    XCTAssertGreaterThan(heights[0], 0)
+                    XCTAssertEqual(heights[0], heights[1], accuracy: 1, "\(style)-\(cardStyle)-\(density)")
+                    #if os(tvOS)
+                    XCTAssertEqual(cards[0].width, cards[1].width, accuracy: 1, "\(style)-\(cardStyle)-\(density)")
+                    XCTAssertEqual(cards[0].height, cards[1].height, accuracy: 1, "\(style)-\(cardStyle)-\(density)")
+                    let geometry = XCTAttachment(string:
+                        "\(style)-\(cardStyle)-\(density) \(scenario): Home=\(cards[0]), constrained settings=\(cards[1]); Home glyphs=\(textSizes[0]), preview glyphs=\(textSizes[1])"
+                    )
+                    geometry.name = "Custom preview viewport parity"
+                    geometry.lifetime = .keepAlways
+                    add(geometry)
+                    #endif
+                    for title in ["Weekend", "Orbit"] {
+                        #if os(tvOS)
+                        let home = try XCTUnwrap(textSizes[0][title])
+                        let preview = try XCTUnwrap(textSizes[1][title])
+                        XCTAssertEqual(home.width, preview.width, accuracy: 2, title)
+                        XCTAssertEqual(home.height, preview.height, accuracy: 2, title)
+                        #else
+                        let home = try XCTUnwrap(labels[0].first { $0.0.hasPrefix(title) }?.1, "\(labels[0])")
+                        let preview = try XCTUnwrap(labels[1].first { $0.0.hasPrefix(title) }?.1, "\(labels[1])")
+                        XCTAssertEqual(home.minX, preview.minX, accuracy: 0.005, title)
+                        XCTAssertEqual(home.minY, preview.minY, accuracy: 0.005, title)
+                        XCTAssertEqual(home.width, preview.width, accuracy: 0.005, title)
+                        XCTAssertEqual(home.height, preview.height, accuracy: 0.005, title)
+                        #endif
+                    }
+                }
+            }
+        }
+    }
+
+    func testCollectionEditorRendersSavedQueryAndFiltersItsPreview() async throws {
+        let provider = HomeSettingsLibraryProvider(
+            name: "Query server", collectionItems: [
+                .init(id: "movie", title: "Hidden film", kind: .movie),
+                .init(id: "series", title: "Orbit", kind: .series)
+            ]
+        )
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        let section = CollectionSection(
+            source: .init(accountID: account.account.id, collectionID: "weekend", title: "Weekend",
+                          serverUserID: provider.session.userID),
+            cardStyle: .landscape, query: .init(sort: .default, media: .shows)
+        )
+        let suite = "QueryPreview.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        try await withWindow {
+            CollectionSectionSettingsView(
+                section: section, isNew: true, inventory: HomeSectionCatalogModel(),
+                visibility: visibility, libraries: [], accounts: [account]
+            )
+            #if os(tvOS)
+            .frame(width: SettingsFormMetrics.pageWidth)
+            #elseif os(iOS)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            #endif
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Saved row sort and filter preview")
+            let text = lines.map(\.0).joined(separator: " ")
+            XCTAssertTrue(text.contains("Sort"), text)
+            XCTAssertTrue(text.contains("Filter"), text)
+            XCTAssertTrue(text.contains("Ascending"), text)
+            XCTAssertTrue(text.contains("TV Shows"), text)
+            #if os(tvOS)
+            let frame = try XCTUnwrap(lines.first { $0.0 == "Sort" }).1
+            let point = CGPoint(x: frame.midX * window.bounds.width, y: (1 - frame.midY) * window.bounds.height)
+            let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            try await self.focus(target, in: window)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === target)
+            _ = try await self.snapshot(window, name: "Native saved row Sort focus")
+            #endif
+            let preview = try await self.capture(window, name: "Scrolled saved row query preview",
+                                                 beforeCapture: { try self.scrollToBottom(window) })
+            XCTAssertTrue(preview.contains { $0.0.contains("Orbit") }, "\(preview.map(\.0))")
+            XCTAssertFalse(preview.contains { $0.0.contains("Hidden film") })
+            #if os(tvOS)
+            let caption = try XCTUnwrap(preview.first { $0.0.contains("Orbit") }).1
+            let previewPoint = CGPoint(
+                x: caption.midX * window.bounds.width, y: (1 - caption.midY) * window.bounds.height - 100
+            )
+            let previewTarget = try XCTUnwrap(self.focusableItem(at: previewPoint, in: window))
+            try await self.focus(previewTarget, in: window)
+            XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === previewTarget)
+            _ = try await self.snapshot(window, name: "Focusable saved row preview")
+            #endif
         }
     }
 
@@ -1756,16 +2954,23 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     private func focusTarget(at point: CGPoint, in window: UIWindow) -> (item: any UIFocusItem, frame: CGRect)? {
         var containers: [any UIFocusItemContainer] = [window]
         var seen = Set<ObjectIdentifier>()
+        var candidates: [String] = []
         while let container = containers.popLast() {
             guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
             let bounds = container.coordinateSpace.convert(window.bounds, from: window)
             for item in container.focusItems(in: bounds) {
                 if let child = item.focusItemContainer { containers.append(child) }
                 if let view = item as? UIView { containers.append(view) }
-                let frame = container.coordinateSpace.convert(item.frame, to: window)
+                let frame = (item as? UIView).map { $0.convert($0.bounds, to: window) }
+                    ?? container.coordinateSpace.convert(item.frame, to: window)
+                candidates.append("\(type(of: item)) focusable=\(item.canBecomeFocused) frame=\(frame)")
                 if !(item is UIScrollView), item.canBecomeFocused, frame.contains(point) { return (item, frame) }
             }
         }
+        let attachment = XCTAttachment(string: "Point: \(point)\n" + candidates.joined(separator: "\n"))
+        attachment.name = "Unresolved native focus target"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         return nil
     }
     #endif
@@ -1983,6 +3188,582 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         }
     }
 
+    func testNavigationNameEditorSharesWatchlistNameAndRestoresDefault() async throws {
+        let suite = "NavigationNameEditor.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let navigation = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults),
+            layoutStore: NavigationLibraryLayoutStore(defaults: defaults)
+        )
+        visibility.setHomeRowName("Movie night", for: .global(.watchlist))
+        try await withWindow {
+            let editor = NavigationNameEditor(
+                key: NavigationLibraryLayout.watchlistKey, defaultTitle: Text("Watchlist"),
+                navigation: navigation, visibility: visibility
+            )
+            #if os(iOS)
+            NavigationStack { editor }
+            #else
+            editor.environment(\.settingsPageBackButton, AnyView(SettingsBackButton {}))
+            #endif
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Navigation name editor")
+            XCTAssertTrue(lines.contains { $0.0.contains("Movie night") })
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let field = try XCTUnwrap(fields(window).first)
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("Weekend queue")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            #if os(tvOS)
+            field.resignFirstResponder()
+            #endif
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(visibility.visibility.homeRowName(for: .global(.watchlist)), "Weekend queue")
+            #if os(iOS)
+            XCTAssertFalse(field.isFirstResponder)
+            #else
+            field.resignFirstResponder()
+            #endif
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("   ")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            #if os(tvOS)
+            field.resignFirstResponder()
+            #endif
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertNil(visibility.visibility.homeRowName(for: .global(.watchlist)))
+            XCTAssertEqual(field.text, "")
+            #if os(iOS)
+            XCTAssertFalse(field.isFirstResponder)
+            #else
+            field.resignFirstResponder()
+            #endif
+        }
+    }
+
+    func testPageActionsHaveLargerFullWidthGeometry() async throws {
+        #if os(iOS)
+        var addFrame = CGRect.zero
+        var continueFrame = CGRect.zero
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            try await withWindow(size: CGSize(width: 390, height: 844)) {
+                VStack(spacing: 16) {
+                    Button {} label: { Text("Add to Home").plozzPageActionLabel() }
+                        .plozzPageActionButton()
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { addFrame = $0 }
+                    Button {} label: { Text("Continue").plozzPageActionLabel() }
+                        .plozzPageActionButton(role: .secondary)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { continueFrame = $0 }
+                }
+                .padding(.horizontal, 24)
+                .environment(\.dynamicTypeSize, size)
+            } inspect: { window in
+                let lines = try await self.capture(window, name: "Large native page actions \(size)")
+                XCTAssertTrue(lines.contains { $0.0.contains("Add to Home") })
+                XCTAssertTrue(lines.contains { $0.0.contains("Continue") })
+                XCTAssertGreaterThanOrEqual(addFrame.height, 52)
+                XCTAssertGreaterThanOrEqual(continueFrame.height, 52)
+                XCTAssertEqual(addFrame.width, 342, accuracy: 1)
+                XCTAssertEqual(continueFrame.width, addFrame.width, accuracy: 1)
+            }
+        }
+        #endif
+    }
+
+    func testSettingsInputsKeepLabelsAndNativeEditingTraits() async throws {
+        let state = SettingsInputFixtureState()
+        try await withWindow {
+            @Bindable var state = state
+            SettingsSectionGroup {
+                SettingsInputRow("Row name") {
+                    TextField("Row name", text: $state.name)
+                        .accessibilityIdentifier("input-name")
+                }
+                SettingsInputRow("Server address") {
+                    TextField("Server address", text: $state.address)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("input-address")
+                }
+                SettingsInputRow("API key") {
+                    SecureField("API key", text: $state.key, prompt: Text(""))
+                        .textContentType(.password)
+                        .accessibilityIdentifier("input-key")
+                }
+            }
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Shared settings input labels")
+            for label in ["Row name", "Server address", "API key"] {
+                XCTAssertTrue(lines.contains { $0.0.contains(label) }, lines.map(\.0).joined(separator: " | "))
+            }
+            #if os(iOS)
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let controls = fields(window)
+            XCTAssertEqual(controls.count, 3)
+            let address = try XCTUnwrap(controls.first { $0.keyboardType == .URL })
+            XCTAssertEqual(address.autocapitalizationType, .none)
+            XCTAssertEqual(address.autocorrectionType, .no)
+            let key = try XCTUnwrap(controls.first(where: \.isSecureTextEntry))
+            XCTAssertEqual(key.textContentType, .password)
+            XCTAssertTrue(address.becomeFirstResponder())
+            address.selectAll(nil)
+            address.insertText("https://updated.invalid")
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(state.address, "https://updated.invalid")
+            XCTAssertEqual(state.name, "Movie night")
+            XCTAssertTrue(state.key.isEmpty)
+            XCTAssertTrue(fields(window).contains { $0 === address }, "Editing must retain the native field.")
+            address.resignFirstResponder()
+            let edited = try await self.capture(window, name: "Settings labels after typing")
+            XCTAssertTrue(edited.contains { $0.0.contains("Server address") })
+            #endif
+        }
+    }
+
+    func testSettingsInputLabelWrapsAtAccessibleTextSize() async throws {
+        try await withWindow(size: CGSize(width: 390, height: 844)) {
+            SettingsSectionGroup {
+                SettingsInputRow("TMDB v4 API Read Access Token") {
+                    SecureField("TMDB v4 API Read Access Token", text: .constant(""), prompt: Text(""))
+                }
+            }
+            .padding(.horizontal, 24)
+            .environment(\.dynamicTypeSize, .accessibility3)
+            .environment(\.colorScheme, .light)
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Settings input accessible text")
+            let text = lines.map(\.0).joined(separator: " ")
+            XCTAssertTrue(text.contains("TMDB"), text)
+            XCTAssertTrue(text.contains("Access Token"), text)
+            for (_, bounds) in lines {
+                XCTAssertGreaterThanOrEqual(bounds.minX, 0)
+                XCTAssertLessThanOrEqual(bounds.maxX, 1)
+            }
+        }
+    }
+
+    func testHomeRowRemoveActionIsSeparateAndFullWidth() async throws {
+        var actionFrame = CGRect.zero
+        var inputFrame = CGRect.zero
+        try await withWindow {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsSectionGroup {
+                    SettingsInputRow("Row name") {
+                        TextField("Row name", text: .constant("Movie night"))
+                    }
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { inputFrame = $0 }
+                Button("Save changes") {}
+                    .plozzActionButton()
+                HomeRowRemoveAction {}
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { actionFrame = $0 }
+            }
+            .padding(.horizontal, 24)
+        } inspect: { window in
+            let lines = try await self.capture(window, name: "Separate Home row removal")
+            let save = try XCTUnwrap(lines.first { $0.0.contains("Save changes") }).1
+            let remove = try XCTUnwrap(lines.first { $0.0.contains("Remove from Home") }).1
+            XCTAssertGreaterThanOrEqual((save.minY - remove.maxY) * window.bounds.height, 24)
+            XCTAssertGreaterThan(inputFrame.width, 0)
+            XCTAssertEqual(actionFrame.width, inputFrame.width, accuracy: 1)
+            #if os(tvOS)
+            let point = CGPoint(x: remove.midX * window.bounds.width, y: (1 - remove.midY) * window.bounds.height)
+            let target = try XCTUnwrap(self.focusableItem(at: point, in: window))
+            XCTAssertGreaterThanOrEqual(target.frame.width, actionFrame.width - 32)
+            let host = try XCTUnwrap(window.rootViewController as? HomeRowsFocusHost)
+            host.target = target
+            let system = try XCTUnwrap(UIFocusSystem(for: window))
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            let focused = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in system.focusedItem === target }, object: nil
+            )
+            await self.fulfillment(of: [focused], timeout: 2)
+            _ = try await self.snapshot(window, name: "Home row Remove focused")
+            #endif
+        }
+    }
+
+    func testRowNameEditorShowsSavedNameAndProfileScopedHeading() async throws {
+        let suite = "HomeRowNameEditor.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.watchlist) })
+        model.setHomeRowName("Movie night", for: choice.id)
+        try await withWindow {
+            let page = HomeRowSettingsView(
+                choice: choice, libraries: [], accounts: [], visibility: model
+            )
+            #if os(tvOS)
+            page.environment(\.settingsPageBackButton, AnyView(SettingsBackButton {}))
+            #else
+            NavigationStack { page }
+            #endif
+        } inspect: { window in
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let lines = try await self.capture(window, name: "Home row name editor")
+            XCTAssertTrue(lines.contains { $0.0.contains("Movie night") }, lines.map(\.0).joined(separator: " | "))
+            #if os(iOS)
+            XCTAssertFalse(lines.contains { $0.0.contains("Save changes") })
+            XCTAssertTrue(lines.contains { $0.0.localizedCaseInsensitiveContains("Row name") })
+            let field = try XCTUnwrap(fields(window).first)
+            XCTAssertEqual(field.text, "Movie night")
+            XCTAssertEqual(field.returnKeyType, .done)
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("  Weekend picks  ")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(model.visibility.homeRowName(for: choice.id), "Weekend picks")
+            XCTAssertEqual(field.text, "Weekend picks")
+            XCTAssertFalse(field.isFirstResponder)
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("   ")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertNil(model.visibility.homeRowName(for: choice.id))
+            XCTAssertFalse(field.isFirstResponder)
+            field.resignFirstResponder()
+            #else
+            XCTAssertFalse(lines.contains { $0.0.contains("Save changes") })
+            let field = try XCTUnwrap(fields(window).first)
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("Weekend picks")
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(model.visibility.homeRowName(for: choice.id), "Movie night")
+            field.resignFirstResponder()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(model.visibility.homeRowName(for: choice.id), "Weekend picks")
+            let saved = try await self.capture(window, name: "Home row autosaved name")
+            XCTAssertTrue(saved.contains { $0.0.contains("Saved") })
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.selectAll(nil)
+            field.insertText("   ")
+            try await Task.sleep(for: .milliseconds(100))
+            field.sendActions(for: .editingDidEndOnExit)
+            field.resignFirstResponder()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertNil(model.visibility.homeRowName(for: choice.id))
+            field.resignFirstResponder()
+            #endif
+            let reset = try await self.capture(window, name: "Home row default heading")
+            XCTAssertTrue(reset.contains { $0.0.contains("Watchlist") })
+        }
+    }
+
+    #if os(tvOS)
+    func testTVNameAutosaveFailureRetryAndFieldIsolation() async throws {
+        var attempts = 0
+        var shouldFail = true
+        var persisted = "Original"
+        try await withWindow {
+            HomeEditorPage(title: Text("Watchlist"), showsHeader: true) {
+                SettingsSectionGroup {
+                    HomeEditorAutosavingNameInput(
+                        "Row name", name: persisted, prompt: Text("Watchlist"), identifier: "autosave-test"
+                    ) { name in
+                        attempts += 1
+                        if shouldFail { throw AppError.notFound }
+                        persisted = name
+                    }
+                    TextField("Unrelated", text: .constant("Other"))
+                }
+            }
+            .environment(\.settingsPageBackButton, AnyView(SettingsBackButton {}))
+        } inspect: { window in
+            _ = try await self.snapshot(window, name: "TV autosave fields")
+            func fields(_ view: UIView) -> [UITextField] {
+                (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let input = try XCTUnwrap(fields(window).first { $0.text == "Original" })
+            let unrelated = try XCTUnwrap(fields(window).first { $0.text == "Other" })
+            func endEditing(_ field: UITextField) async throws {
+                field.resignFirstResponder()
+                window.rootViewController?.dismiss(animated: false)
+                try await Task.sleep(for: .milliseconds(600))
+            }
+            XCTAssertTrue(unrelated.becomeFirstResponder())
+            try await Task.sleep(for: .milliseconds(600))
+            try await endEditing(unrelated)
+            XCTAssertEqual(attempts, 0)
+            XCTAssertTrue(input.becomeFirstResponder())
+            try await Task.sleep(for: .milliseconds(600))
+            try await endEditing(input)
+            XCTAssertEqual(attempts, 0, "Opening and closing an unchanged field must not write.")
+            XCTAssertTrue(input.becomeFirstResponder())
+            input.selectAll(nil)
+            input.insertText("  Weekend  ")
+            try await Task.sleep(for: .milliseconds(600))
+            try await endEditing(input)
+            XCTAssertEqual(attempts, 1)
+            XCTAssertEqual(persisted, "Original")
+            XCTAssertEqual(input.text, "Weekend")
+            let failure = try await self.capture(window, name: "TV autosave failure and retry")
+            XCTAssertTrue(failure.contains { $0.0.contains("Couldn't save") })
+            XCTAssertTrue(failure.contains { $0.0.contains("Retry") })
+            XCTAssertFalse(failure.contains { $0.0.contains("Saved") })
+            shouldFail = false
+            XCTAssertTrue(input.becomeFirstResponder())
+            try await Task.sleep(for: .milliseconds(600))
+            input.sendActions(for: .editingDidEndOnExit)
+            try await Task.sleep(for: .milliseconds(100))
+            try await endEditing(input)
+            XCTAssertEqual(attempts, 2, "Submit and end-editing must not duplicate the save.")
+            XCTAssertEqual(persisted, "Weekend")
+            let saved = try await self.capture(window, name: "TV autosave recovered")
+            XCTAssertTrue(saved.contains { $0.0.contains("Saved") })
+            XCTAssertFalse(saved.contains { $0.0.contains("Retry") })
+        }
+    }
+
+    func testTVCollectionNameAutosavesWithoutCreatingDraftRows() async throws {
+        let suite = "TVCollectionAutosave.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let inventory = HomeSectionCatalogModel()
+        let provider = HomeSettingsLibraryProvider(name: "Collection server")
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        let section = CollectionSection(source: .init(
+            accountID: account.account.id, collectionID: "weekend",
+            title: "Weekend picks", serverUserID: account.provider.session.userID
+        ))
+        for isNew in [true, false] {
+            if !isNew { try visibility.saveCollectionSection(section, catalog: HomeSectionCatalog(libraries: [])) }
+            try await withWindow {
+                CollectionSectionSettingsView(
+                    section: section, isNew: isNew, inventory: inventory, visibility: visibility,
+                    libraries: [], accounts: [account]
+                )
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "TV collection editor")
+                func fields(_ view: UIView) -> [UITextField] {
+                    (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields)
+                }
+                let input = try XCTUnwrap(fields(window).first)
+                XCTAssertTrue(input.becomeFirstResponder())
+                input.selectAll(nil)
+                input.insertText("Movie night")
+                try await Task.sleep(for: .milliseconds(100))
+                input.resignFirstResponder()
+                try await Task.sleep(for: .milliseconds(100))
+                if isNew {
+                    XCTAssertTrue(visibility.visibility.collectionSections.isEmpty)
+                } else {
+                    XCTAssertEqual(visibility.visibility.collectionSections.first?.name, "Movie night")
+                    let reloaded = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+                    XCTAssertEqual(reloaded.visibility.collectionSections.first?.name, "Movie night")
+                }
+                let lines = try await self.capture(window, name: "TV collection \(isNew ? "draft" : "autosaved")")
+                XCTAssertEqual(lines.contains { $0.0.contains("Add to Home") }, isNew)
+                XCTAssertFalse(lines.contains { $0.0.contains("Save changes") })
+            }
+        }
+    }
+    #endif
+
+    #if os(iOS)
+    func testMobileNameEditorsSaveFromToolbarAndReturn() async throws {
+        let suite = "ToolbarNameSave.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let navigation = NavigationStyleSettingsModel(
+            store: NavigationStyleSettingsStore(defaults: defaults),
+            layoutStore: NavigationLibraryLayoutStore(defaults: defaults)
+        )
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.watchlist) })
+        for homeEditor in [true, false] {
+            for name in ["Weekend queue", "   "] {
+                visibility.setHomeRowName("Movie night", for: choice.id)
+                let route = HomeCatalogNavigationFixture()
+                route.path = ["editor"]
+                try await withWindow {
+                    @Bindable var route = route
+                    NavigationStack(path: $route.path) {
+                        Text("Editor parent")
+                            .navigationDestination(for: String.self) { _ in
+                                if homeEditor {
+                                    HomeRowSettingsView(choice: choice, libraries: [], accounts: [], visibility: visibility)
+                                } else {
+                                    NavigationNameEditor(
+                                        key: NavigationLibraryLayout.watchlistKey, defaultTitle: Text("Watchlist"),
+                                        navigation: navigation, visibility: visibility
+                                    )
+                                }
+                            }
+                    }
+                } inspect: { window in
+                        _ = try await self.snapshot(window, name: "Toolbar name editor before changes")
+                        XCTAssertFalse(try self.editorSaveItem(in: window).isEnabled)
+                    let field = try XCTUnwrap(self.editorViews(in: window).compactMap { $0 as? UITextField }.first)
+                    XCTAssertTrue(field.becomeFirstResponder())
+                    field.selectAll(nil)
+                    field.insertText(name)
+                    try await self.waitForEditor { self.findEditorSaveItem(in: window)?.isEnabled == true }
+                    field.resignFirstResponder()
+                    _ = try await self.snapshot(window, name: homeEditor ? "Home row toolbar save" : "Navigation toolbar save")
+                    try self.activateEditorSave(in: window)
+                    try await self.waitForEditor { route.path.isEmpty }
+                    XCTAssertEqual(visibility.visibility.homeRowName(for: choice.id), name == "   " ? nil : name)
+                    XCTAssertEqual(navigation.libraryLayout.customName(
+                        for: NavigationLibraryLayout.watchlistKey, homeVisibility: visibility.visibility
+                    ), name == "   " ? nil : name)
+                }
+            }
+        }
+    }
+
+    func testMobileCollectionEditorSavesDraftFromToolbar() async throws {
+        let suite = "ToolbarCollectionSave.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let visibility = HomeLibraryVisibilityModel(store: HomeLibraryVisibilityStore(defaults: defaults))
+        let inventory = HomeSectionCatalogModel()
+        let provider = HomeSettingsLibraryProvider(name: "Collection server")
+        let account = ResolvedAccount(account: Account(from: provider.session), provider: provider)
+        let section = CollectionSection(source: .init(
+            accountID: account.account.id, collectionID: "weekend",
+            title: "Weekend picks", serverUserID: account.provider.session.userID
+        ))
+        for isNew in [true, false] {
+            let route = HomeCatalogNavigationFixture()
+            route.path = ["editor"]
+            let saved = visibility.visibility.collectionSections.first ?? section
+            try await withWindow {
+                @Bindable var route = route
+                NavigationStack(path: $route.path) {
+                    Text("Editor parent")
+                        .navigationDestination(for: String.self) { _ in
+                            CollectionSectionSettingsView(
+                                section: saved, isNew: isNew, inventory: inventory, visibility: visibility,
+                                libraries: [], accounts: [account]
+                            )
+                        }
+                }
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "Collection toolbar \(isNew ? "create" : "edit")")
+                XCTAssertEqual(try self.editorSaveItem(in: window).isEnabled, isNew)
+                let field = try XCTUnwrap(self.editorViews(in: window).compactMap { $0 as? UITextField }.first)
+                XCTAssertTrue(field.becomeFirstResponder())
+                field.selectAll(nil)
+                field.insertText(isNew ? "Movie night" : "Weekend queue")
+                try await self.waitForEditor { self.findEditorSaveItem(in: window)?.isEnabled == true }
+                field.resignFirstResponder()
+                _ = try await self.snapshot(window, name: "Collection toolbar ready to save")
+                try self.activateEditorSave(in: window)
+                try await self.waitForEditor { route.path.isEmpty }
+                XCTAssertEqual(visibility.visibility.collectionSections.count, 1)
+                XCTAssertEqual(visibility.visibility.collectionSections.first?.name, isNew ? "Movie night" : "Weekend queue")
+            }
+        }
+    }
+
+    func testEditorSaveProgressFailureAndCancellation() async throws {
+        for outcome in ["success", "failure", "cancel"] {
+            let gate = HomeEditorSaveGate()
+            defer { gate.finish(.failure(CancellationError())) }
+            let route = HomeCatalogNavigationFixture()
+            route.path = ["editor"]
+            try await withWindow {
+                @Bindable var route = route
+                NavigationStack(path: $route.path) {
+                    Text("Editor parent")
+                        .navigationDestination(for: String.self) { _ in
+                            Text("Retained draft")
+                                .modifier(HomeEditorSaveAction(
+                                    isEnabled: true, identifier: "test-editor-save", action: gate.save
+                                ))
+                        }
+                }
+            } inspect: { window in
+                _ = try await self.snapshot(window, name: "Editor save ready")
+                try self.activateEditorSave(in: window)
+                try await self.waitForEditor { gate.calls == 1 }
+                _ = try await self.snapshot(window, name: "Editor saving progress")
+                let savingItem = try self.editorSaveItem(in: window)
+                if let action = savingItem.action {
+                    UIApplication.shared.sendAction(action, to: savingItem.target, from: savingItem, for: nil)
+                }
+                XCTAssertEqual(gate.calls, 1, "Repeated activation while saving must not submit twice.")
+                XCTAssertEqual(route.path, ["editor"], "Don't navigate while saving.")
+                XCTAssertTrue(self.editorViews(in: window).contains {
+                    $0 is UIActivityIndicatorView || $0.accessibilityLabel == "Saving…"
+                }, "The checkmark must be replaced by an accessible progress indicator.")
+                if outcome == "cancel" {
+                    route.path.removeAll()
+                    _ = try await self.snapshot(window, name: "Editor cancelled")
+                }
+                gate.finish(outcome == "failure" ? .failure(AppError.invalidResponse) : .success(()))
+                if outcome == "failure" {
+                    let lines = try await self.capture(window, name: "Editor save failure retains draft")
+                    XCTAssertTrue(lines.contains { $0.0.contains("Couldn't save changes") })
+                    XCTAssertEqual(route.path, ["editor"])
+                    XCTAssertEqual(gate.calls, 1)
+                } else {
+                    try await self.waitForEditor { route.path.isEmpty }
+                    XCTAssertEqual(gate.calls, 1)
+                }
+            }
+        }
+    }
+
+    private func editorViews(in view: UIView) -> [UIView] {
+        [view] + view.subviews.flatMap { editorViews(in: $0) }
+    }
+
+    private func editorSaveItem(in window: UIWindow) throws -> UIBarButtonItem {
+        try XCTUnwrap(findEditorSaveItem(in: window))
+    }
+
+    private func findEditorSaveItem(in window: UIWindow) -> UIBarButtonItem? {
+        editorViews(in: window).compactMap { $0 as? UINavigationBar }.compactMap { bar in
+            guard let item = bar.topItem else { return nil }
+            return item.rightBarButtonItems?.first
+                ?? item.trailingItemGroups.flatMap(\.barButtonItems).first
+                ?? item.pinnedTrailingGroup?.barButtonItems.first
+        }.first
+    }
+
+    private func activateEditorSave(in window: UIWindow) throws {
+        let item = try editorSaveItem(in: window)
+        XCTAssertTrue(item.isEnabled)
+        if let action = item.action {
+            XCTAssertTrue(UIApplication.shared.sendAction(action, to: item.target, from: item, for: nil))
+        } else {
+            let custom = try XCTUnwrap(item.customView)
+            let control = try XCTUnwrap(editorViews(in: custom).compactMap { $0 as? UIControl }.first)
+            control.sendActions(for: .primaryActionTriggered)
+        }
+    }
+
+    private func waitForEditor(_ predicate: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !predicate(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(predicate())
+    }
+    #endif
+
     func testContinueWatchingSectionOrdersArtworkAndGroupedControls() async throws {
         let suite = "HomeSectionLayout.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -2003,9 +3784,16 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             }
             .environment(\.horizontalSizeClass, .regular)
         } inspect: { window in
-            let lines = try await self.capture(window, name: "Continue Watching grouped section layout")
-            XCTAssertEqual(lines.filter { $0.0 == "Continue Watching" }.count, 1,
-                           "The section must not repeat its heading in the native navigation bar.")
+            let image = try await self.snapshot(window, name: "Continue Watching grouped section layout", scale: 2)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let lines = (request.results ?? []).compactMap { observation in
+                observation.topCandidates(1).first.map { ($0.string, observation.boundingBox) }
+            }
+            XCTAssertEqual(lines.filter { $0.0 == "Continue Watching" }.count, 2,
+                           "Show one page heading and one default-name placeholder, not a duplicate page heading.")
             #if os(tvOS)
             let actionTitle = "Center button action"
             #else
@@ -2853,22 +4641,45 @@ final class HomeRowArrangementHostedTests: XCTestCase {
     private func textInkBounds(
         _ observation: VNRecognizedTextObservation, bitmap: CGImage, pixels: [UInt8]
     ) throws -> CGRect {
+        try textInkBounds(observation.boundingBox, bitmap: bitmap, pixels: pixels)
+    }
+
+    private func textInkBounds(
+        _ box: CGRect, bitmap: CGImage, pixels: [UInt8], minimumBrightness: UInt8 = 80,
+        isolatesLine: Bool = false
+    ) throws -> CGRect {
         // Vision locates words; its approximate boxes are not glyph geometry.
-        let box = observation.boundingBox
         let search = CGRect(
             x: box.minX * CGFloat(bitmap.width), y: (1 - box.maxY) * CGFloat(bitmap.height),
             width: box.width * CGFloat(bitmap.width), height: box.height * CGFloat(bitmap.height)
         ).insetBy(dx: -12, dy: -12).intersection(CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
         var ink = CGRect.null
+        var lines: [CGRect] = []
         for y in Int(search.minY)..<Int(search.maxY) {
+            var rowInk = CGRect.null
             for x in Int(search.minX)..<Int(search.maxX) {
                 let offset = (y * bitmap.width + x) * 4
-                if pixels[offset] > 80, pixels[offset + 1] > 80, pixels[offset + 2] > 80 {
-                    ink = ink.union(CGRect(x: x, y: y, width: 1, height: 1))
+                if pixels[offset] > minimumBrightness,
+                   pixels[offset + 1] > minimumBrightness,
+                   pixels[offset + 2] > minimumBrightness {
+                    rowInk = rowInk.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+            ink = ink.union(rowInk)
+            if isolatesLine, !rowInk.isNull {
+                if let previous = lines.last, previous.maxY == CGFloat(y) {
+                    lines[lines.count - 1] = previous.union(rowInk)
+                } else {
+                    lines.append(rowInk)
                 }
             }
         }
         XCTAssertFalse(ink.isNull)
+        if isolatesLine {
+            // Borderless focus makes metadata white too; measure only the title's ink band.
+            let centerY = (1 - box.midY) * CGFloat(bitmap.height)
+            return try XCTUnwrap(lines.min { abs($0.midY - centerY) < abs($1.midY - centerY) })
+        }
         return ink
     }
 
@@ -2921,9 +4732,12 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
     }
 
-    private func snapshot(_ window: UIWindow, name: String, scale: CGFloat = 1) async throws -> UIImage {
+    private func snapshot(
+        _ window: UIWindow, name: String, scale: CGFloat = 1, beforeCapture: (() throws -> Void)? = nil
+    ) async throws -> UIImage {
         try await Task.sleep(for: .milliseconds(400))
         window.layoutIfNeeded()
+        try beforeCapture?()
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
@@ -2936,15 +4750,21 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         return image
     }
 
-    private func capture(_ window: UIWindow, name: String, scale: CGFloat = 1) async throws -> [(String, CGRect)] {
-        let image = try await snapshot(window, name: name, scale: scale)
+    private func capture(
+        _ window: UIWindow, name: String, scale: CGFloat = 1, beforeCapture: (() throws -> Void)? = nil
+    ) async throws -> [(String, CGRect)] {
+        let image = try await snapshot(window, name: name, scale: scale, beforeCapture: beforeCapture)
+        return try recognizedText(in: image, includesInverted: scale > 1)
+    }
+
+    private func recognizedText(in image: UIImage, includesInverted: Bool = false) throws -> [(String, CGRect)] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]
         request.minimumTextHeight = 0.001
         let original = try XCTUnwrap(image.cgImage)
         var images = [original]
-        if scale > 1 {
+        if includesInverted {
             let inverted = CIImage(cgImage: original).applyingFilter("CIColorInvert")
             images.append(try XCTUnwrap(CIContext().createCGImage(inverted, from: inverted.extent)))
         }
@@ -2962,6 +4782,23 @@ final class HomeRowArrangementHostedTests: XCTestCase {
 }
 
 #if os(iOS)
+@MainActor
+private final class HomeEditorSaveGate {
+    var calls = 0
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    func save() async throws {
+        calls += 1
+        try await withCheckedThrowingContinuation { continuation = $0 }
+        try Task.checkCancellation()
+    }
+
+    func finish(_ result: Result<Void, Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}
+
 @MainActor @Observable
 private final class HomeCatalogNavigationFixture {
     var path: [String] = []

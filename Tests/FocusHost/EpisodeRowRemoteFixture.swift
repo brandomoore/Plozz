@@ -15,6 +15,7 @@ struct EpisodeRowRemoteFixture: View {
     @State private var artworkCapture = ""
     @State private var captureRun = UUID().uuidString
     @State private var playbackSurfaceFocused = false
+    @State private var nativeFocusTrace: [String] = []
     @FocusState private var focus: PlayerControls.FocusSlot?
 
     init() {
@@ -48,6 +49,12 @@ struct EpisodeRowRemoteFixture: View {
             guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
                 as? UIFocusUpdateContext else { return }
             playbackSurfaceFocused = context.nextFocusedView is PlayerInputView
+            if ProcessInfo.processInfo.arguments.contains("--song") {
+                nativeFocusTrace.append(context.nextFocusedView.map {
+                    "\(type(of: $0)):\($0.accessibilityLabel ?? "-")"
+                } ?? "none")
+                nativeFocusTrace = Array(nativeFocusTrace.suffix(8))
+            }
             guard let cell = context.nextFocusedView as? PlayerEpisodeNativeCell,
                   let title = cell.accessibilityLabel, title.hasPrefix("Episode "),
                   let episode = Int(title.dropFirst("Episode ".count)) else { return }
@@ -75,6 +82,16 @@ struct EpisodeRowRemoteFixture: View {
             await prepareArtwork()
             if ProcessInfo.processInfo.arguments.contains("--production-player-input") {
                 await player.episodeBrowser?.loadIfNeeded()
+            }
+            if ProcessInfo.processInfo.arguments.contains("--song") {
+                player.controls.infoCard.headline = "Episode fixture"
+                player.controls.infoCard.hasPreviousEpisode = false
+                player.controls.infoCard.hasNextEpisode = true
+                player.controls.songRecognition.isAvailable = true
+                player.controls.songRecognition.state = .found(SongMatch(
+                    title: "Test song", artist: "Test artist", artworkURL: nil,
+                    appleMusicURL: URL(string: "https://music.apple.com/album/example?i=123")
+                ))
             }
             while !Task.isCancelled {
                 let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
@@ -151,6 +168,11 @@ struct EpisodeRowRemoteFixture: View {
                     .accessibilityIdentifier("episode-row-artwork-capture")
                 Text(verbatim: playbackSurfaceFocused ? "Playback" : "Controls")
                     .accessibilityIdentifier("episode-row-focus-owner")
+                if ProcessInfo.processInfo.arguments.contains("--song") {
+                    Text(verbatim: nativeFocusTrace.joined(separator: " > "))
+                        .font(.caption2)
+                        .accessibilityIdentifier("song-native-focus-trace")
+                }
             }
             .allowsHitTesting(false)
         }
@@ -276,7 +298,13 @@ private final class EpisodeInputFixtureEngine: VideoEngine {
     func stop() { status = .idle }
     func selectAudioTrack(_ track: MediaTrack?) {}
     func selectSubtitleTrack(_ track: MediaTrack?) {}
-    func makeVideoOutputView() -> UIView { UIView() }
+    func makeVideoOutputView() -> UIView {
+        let view = UIView()
+        if ProcessInfo.processInfo.arguments.contains("--song") {
+            view.backgroundColor = UIColor(red: 0.6, green: 0.65, blue: 0.7, alpha: 1)
+        }
+        return view
+    }
 }
 
 private actor EpisodeRemoteProvider: MediaProvider {

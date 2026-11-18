@@ -15,9 +15,21 @@ public enum CardArtworkPolicy: Hashable, Sendable {
     }
 
     func artworkFallback(
-        for item: MediaItem, style: PosterCardView.Style, router: ArtworkRouter = .shared
+        for item: MediaItem, style: PosterCardView.Style, router: ArtworkRouter = .shared,
+        policy: ArtworkPresentationPolicy = .init(), prefersLandscapeKeyArt: Bool = true
     ) -> (@Sendable () async -> URL?)? {
         guard allowsOnlineFallback, item.supportsExternalArtworkLookup else { return nil }
+        if prefersLandscapeKeyArt, usesLandscapeKeyArt(for: item, style: style) {
+            let allowsGenericFallback = policy.settings.preference(in: policy.area) != .recommended
+                || references(for: item, style: style).isEmpty
+            return {
+                if let url = await router.landscapeCardArtworkURL(for: item, language: policy.logoLanguage) {
+                    return url
+                }
+                guard !Task.isCancelled, allowsGenericFallback else { return nil }
+                return await router.artworkURL(for: item, placements: [.detailBackdrop, .poster])
+            }
+        }
         let placements: [ArtworkPlacement]
         switch style {
         case .poster:
@@ -57,7 +69,29 @@ public enum CardArtworkPolicy: Hashable, Sendable {
         }
     }
 
-    func references(for item: MediaItem, style: PosterCardView.Style) -> [ArtworkReference] {
+    func usesLandscapeKeyArt(for item: MediaItem, style: PosterCardView.Style) -> Bool {
+        self == .standard && style == .landscape && !item.isTrailer
+            && (item.kind == .movie || item.kind == .series)
+    }
+
+    func presentationPolicy(
+        for item: MediaItem, style: PosterCardView.Style, inheriting policy: ArtworkPresentationPolicy
+    ) -> ArtworkPresentationPolicy {
+        guard usesLandscapeKeyArt(for: item, style: style) else { return policy }
+        return policy.forPlacement(.landscapeCard)
+    }
+
+    func prefersPrimaryReference(
+        for item: MediaItem, style: PosterCardView.Style, policy: ArtworkPresentationPolicy
+    ) -> Bool {
+        usesLandscapeKeyArt(for: item, style: style)
+            && policy.settings.preference(in: policy.area) != .online
+            && !item.artworkReferences(for: .landscapeCard).isEmpty
+    }
+
+    func references(
+        for item: MediaItem, style: PosterCardView.Style, prefersLandscapeKeyArt: Bool = true
+    ) -> [ArtworkReference] {
         if self == .extra {
             // Primary belongs to this clip; detail/backdrop art can belong to its
             // parent movie. Keep every native fallback, but only after primary.
@@ -79,8 +113,10 @@ public enum CardArtworkPolicy: Hashable, Sendable {
             if item.kind == .episode {
                 return unique(item.artworkReferences(for: .episodeThumbnail) + item.seriesArtworkReferences())
             }
+            let landscape = prefersLandscapeKeyArt && usesLandscapeKeyArt(for: item, style: style)
+                ? item.artworkReferences(for: .landscapeCard) : []
             return unique(item.libraryArtworkReferences(
-                explicit(.detailBackdrop, for: item)
+                landscape + explicit(.detailBackdrop, for: item)
                     + remote([item.backdropURL, item.posterURL, item.fallbackArtworkURL])
                     + item.artworkReferences(for: .poster)
             ))

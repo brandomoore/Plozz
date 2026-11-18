@@ -47,9 +47,7 @@ public struct EpisodeColumnPresentation: Equatable, Sendable, CustomDebugStringC
         isUpcoming = item.isUpcomingUnaired
         let hidesText = spoilerSettings.shouldHideText(for: item)
         let hidesArtwork = spoilerSettings.shouldHideThumbnail(for: item)
-        let trimmedOverview = item.overview?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nonEmpty
+        let trimmedOverview = Self.compactOverview(item.overview)
 
         if hidesText {
             titleLine = Text(spoilerSettings.maskedTitle(for: item))
@@ -129,6 +127,10 @@ public struct EpisodeColumnPresentation: Equatable, Sendable, CustomDebugStringC
 
     public var debugDescription: String {   // l10n:content — debug description
         "EpisodeColumnPresentation(titleLine: \(titleLinePlain.debugDescription), metadataText: \(metadataText.debugDescription), progress: \(progress.debugDescription), isWatched: \(isWatched), artworkTreatment: \(artworkTreatment), overviewTreatment: \(overviewTreatment), visibleOverview: \(visibleOverview.debugDescription), accessibilityLabel: \(accessibilityLabel.debugDescription))"
+    }
+
+    static func compactOverview(_ overview: String?) -> String? {
+        overview?.split(whereSeparator: \.isWhitespace).joined(separator: " ").nonEmpty
     }
 }
 

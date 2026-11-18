@@ -1,17 +1,78 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+extension ContainerValues {
+    @Entry var settingsContentOwnsInsets = false
+}
+
 #if os(iOS)
-private extension ContainerValues {
-    @Entry var settingsActionOwnsInsets = false
+private extension EnvironmentValues {
+    @Entry var settingsUsesSignInFields = false
+}
+
+private struct SettingsSignInTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .textFieldStyle(.plain)
+            .frame(minHeight: 44)
+            .padding(.vertical, MobileSettingsMetrics.rowVerticalInset - MobileSettingsMetrics.controlVerticalInset)
+    }
+}
+
+public enum MobileSettingsMetrics {
+    public static let pageInset: CGFloat = 16
+    public static let sectionSpacing: CGFloat = 28
+    public static let groupCornerRadius: CGFloat = 26
+    public static let rowInset: CGFloat = 16
+    public static let rowVerticalInset: CGFloat = 10
+    public static let descriptionBottomInset: CGFloat = 12
+    public static let controlVerticalInset: CGFloat = 4
+    public static let rowMinHeight: CGFloat = 52
+    public static let previewGridInset: CGFloat = 8
+    public static let previewCardInset: CGFloat = 8
+    public static let previewCardCornerRadius = groupCornerRadius - previewGridInset
+    public static let previewContentCornerRadius = previewCardCornerRadius - previewCardInset
+}
+
+struct SettingsRowTitleAnchorKey: PreferenceKey {
+    static var defaultValue: [Anchor<CGRect>] { [] }
+    static func reduce(value: inout [Anchor<CGRect>], nextValue: () -> [Anchor<CGRect>]) {
+        value += nextValue()
+    }
+}
+
+private struct SettingsRowSeparator: View {
+    @Environment(\.themePalette) private var palette
+    @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.displayScale) private var displayScale
+    let titles: [Anchor<CGRect>]
+
+    var body: some View {
+        GeometryReader { geometry in
+            let inset = titles.map { anchor in
+                let rect = geometry[anchor]
+                return layoutDirection == .leftToRight ? rect.minX : geometry.size.width - rect.maxX
+            }.min() ?? MobileSettingsMetrics.rowInset
+            Rectangle()
+                .fill(palette.separator)
+                .frame(height: 1 / displayScale)
+                .padding(.leading, max(MobileSettingsMetrics.rowInset, inset))
+                .frame(maxHeight: .infinity, alignment: .bottom)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 private struct SettingsActionRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .plozzForeground(.primary)
+            .environment(\.settingsRowIsDestructive, configuration.role == .destructive)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, MobileSettingsMetrics.rowInset)
+            .padding(.vertical, MobileSettingsMetrics.rowVerticalInset)
+            .frame(minHeight: MobileSettingsMetrics.rowMinHeight)
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
@@ -19,11 +80,30 @@ private struct SettingsActionRowStyle: ButtonStyle {
 #endif
 
 public extension View {
+    /// Simple credential forms keep native placeholders and persistent accessible names.
+    @ViewBuilder func settingsSignInFields() -> some View {
+        #if os(iOS)
+        environment(\.settingsUsesSignInFields, true)
+            .textFieldStyle(SettingsSignInTextFieldStyle())
+        #else
+        self
+        #endif
+    }
+
     /// A single action owns its padded hit area; the containing group adds no second inset.
     @ViewBuilder func settingsActionRow() -> some View {
         #if os(iOS)
         buttonStyle(SettingsActionRowStyle())
-            .containerValue(\.settingsActionOwnsInsets, true)
+            .containerValue(\.settingsContentOwnsInsets, true)
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder func settingsPreviewRow() -> some View {
+        #if os(iOS)
+        padding(MobileSettingsMetrics.previewGridInset)
+            .containerValue(\.settingsContentOwnsInsets, true)
         #else
         self
         #endif
@@ -75,6 +155,89 @@ public struct SettingsMenuValue: View {
                 .accessibilityHidden(true)
         }
         .foregroundStyle(.primary)
+    }
+}
+
+/// A persistent label for a native settings input. The surrounding group owns its surface and insets.
+public struct SettingsInputRow<Input: View>: View {
+    private let title: LocalizedStringResource
+    private let status: Text?
+    private let axis: Axis
+    private let input: Input
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(iOS)
+    @Environment(\.settingsUsesSignInFields) private var usesSignInFields
+    #endif
+
+    public init(
+        _ title: LocalizedStringResource, status: Text? = nil, axis: Axis = .vertical,
+        @ViewBuilder input: () -> Input
+    ) {
+        self.title = title
+        self.status = status
+        self.axis = axis
+        self.input = input()
+    }
+
+    public var body: some View {
+        #if os(iOS)
+        if usesSignInFields {
+            VStack(alignment: .leading, spacing: 4) {
+                input
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(Text(title))
+                if let status { status.font(SettingsRowMetrics.descriptionFont) }
+            }
+        } else {
+            labeledInput
+        }
+        #else
+        labeledInput
+        #endif
+    }
+
+    @ViewBuilder private var labeledInput: some View {
+        if axis == .horizontal && !dynamicTypeSize.isAccessibilitySize {
+            LabeledContent {
+                VStack(alignment: .trailing, spacing: 4) {
+                    input
+                        .multilineTextAlignment(.trailing)
+                        #if os(iOS)
+                        .textFieldStyle(.plain)
+                        #endif
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .accessibilityLabel(Text(title))
+                    if let status { status.font(SettingsRowMetrics.descriptionFont) }
+                }
+            } label: {
+                Text(title)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+            }
+            .settingsFormRowLayout()
+        } else {
+            stackedInput
+        }
+    }
+
+    private var stackedInput: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .plozzForeground(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+                if let status {
+                    Spacer()
+                    status
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .font(SettingsRowMetrics.descriptionFont)
+            input
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .accessibilityLabel(Text(title))
+        }
     }
 }
 
@@ -187,8 +350,23 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
     }
 
     public var body: some View {
+        #if os(tvOS)
+        let cornerRadius = SettingsFormMetrics.groupCornerRadius
+        let horizontalInset = SettingsFormMetrics.groupInset
+        let verticalInset = SettingsFormMetrics.groupInset
+        let captionSpacing: CGFloat = 4
+        #elseif os(iOS)
+        let cornerRadius = MobileSettingsMetrics.groupCornerRadius
+        let horizontalInset = MobileSettingsMetrics.rowInset
+        let verticalInset = MobileSettingsMetrics.controlVerticalInset
+        let captionSpacing: CGFloat = 8
+        #else
         let cornerRadius: CGFloat = 18
-        VStack(alignment: .leading, spacing: 4) {
+        let horizontalInset: CGFloat = 16
+        let verticalInset: CGFloat = 12
+        let captionSpacing: CGFloat = 4
+        #endif
+        VStack(alignment: .leading, spacing: captionSpacing) {
             if title != nil || accessory != nil {
                 HStack(alignment: .firstTextBaseline) {
                     if let title {
@@ -203,7 +381,11 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                             .font(.footnote.weight(.semibold))
                     }
                 }
+                #if os(iOS)
+                .padding(.horizontal, horizontalInset)
+                #else
                 .padding(.top, 8)
+                #endif
             }
 
             VStack(spacing: 0) {
@@ -211,12 +393,10 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                     ForEach(subviews) { subview in
                         subview
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, subview.containerValues.settingsContentOwnsInsets ? 0 : horizontalInset)
+                            .padding(.vertical, subview.containerValues.settingsContentOwnsInsets ? 0 : verticalInset)
                             #if os(iOS)
-                            .padding(.horizontal, subview.containerValues.settingsActionOwnsInsets ? 0 : 16)
-                            .padding(.vertical, subview.containerValues.settingsActionOwnsInsets ? 0 : 12)
-                            #else
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+                            .frame(minHeight: MobileSettingsMetrics.rowMinHeight)
                             #endif
                             .contentShape(Rectangle())
                             #if os(iOS)
@@ -225,13 +405,21 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                                 isLast: subview.id == subviews.last?.id,
                                 cornerRadius: cornerRadius
                             ))
+                            .overlayPreferenceValue(SettingsRowTitleAnchorKey.self) { titles in
+                                if subview.id != subviews.last?.id {
+                                    SettingsRowSeparator(titles: titles)
+                                }
+                            }
+                            .transformPreference(SettingsRowTitleAnchorKey.self) { $0.removeAll() }
                             #endif
+                        #if !os(iOS)
                         if subview.id != subviews.last?.id {
                             Rectangle()
                                 .fill(palette.separator)
                                 .frame(height: 1)
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, horizontalInset)
                         }
+                        #endif
                     }
                 }
             }
@@ -239,11 +427,13 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
             // Subviews resolve their environment before the per-row modifiers are applied.
             .environment(\.settingsSearchRowOwnsHighlight, true)
             #endif
-            .buttonStyle(SettingsSectionButtonStyle())
             .labelStyle(SettingsIconLabelStyle())
             #if os(tvOS)
+            .buttonStyle(SettingsFormButtonStyle())
             .toggleStyle(SettingsSwitchToggleStyle(flushLeading: false))
+            .environment(\.settingsFormRowsFlushLeading, false)
             #else
+            .buttonStyle(SettingsSectionButtonStyle())
             .toggleStyle(SettingsSwitchToggleStyle())
             // A group is one List cell. Automatic pickers can claim the whole
             // cell's primary action, stealing taps from sibling controls.
@@ -252,15 +442,13 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
             .settingsGroupSurface(cornerRadius: cornerRadius)
 
             footer
-                #if os(tvOS)
                 .font(SettingsRowMetrics.helperFont)
-                #else
-                .font(.footnote)
-                #endif
                 .plozzForeground(.secondary)
                 .padding(.horizontal, 16)
         }
+        #if !os(iOS)
         .padding(.top, 8)
+        #endif
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
         #if !os(tvOS)

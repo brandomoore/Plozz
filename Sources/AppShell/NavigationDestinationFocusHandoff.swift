@@ -19,6 +19,7 @@ final class NavigationDestinationFocusHandoff {
     }
 
     private(set) var request: Request?
+    private(set) var completedRequest: Request?
     @ObservationIgnored private var generation: UInt64 = 0
 
     var isWaiting: Bool { request != nil }
@@ -26,16 +27,19 @@ final class NavigationDestinationFocusHandoff {
     func begin(_ destination: NavigationRailDestination, focusTarget: FocusTarget = .content) {
         guard request?.destination != destination || request?.focusTarget != focusTarget else { return }
         generation &+= 1
+        completedRequest = nil
         request = Request(destination: destination, generation: generation, focusTarget: focusTarget)
     }
 
     func complete(_ presented: Request) -> Bool {
         guard request == presented else { return false }
+        completedRequest = presented
         request = nil
         return true
     }
 
     func cancel() {
+        completedRequest = nil
         request = nil
     }
 }

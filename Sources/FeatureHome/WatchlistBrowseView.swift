@@ -40,7 +40,7 @@ public struct WatchlistBrowseView: View {
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
                 HStack {
-                    Text("Watchlist")
+                    (visibility.homeRowName(for: .global(.watchlist)).map { Text(verbatim: $0) } ?? Text("Watchlist"))
                         .font(.largeTitle.bold())
                         .accessibilityIdentifier("watchlist-title")
                     Spacer(minLength: PlozzTheme.Spacing.large)

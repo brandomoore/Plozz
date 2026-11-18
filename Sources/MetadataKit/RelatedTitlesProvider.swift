@@ -1,3 +1,4 @@
+import CoreNetworking
 import CoreModels
 import Foundation
 
@@ -113,7 +114,7 @@ public struct AniListRelatedProvider: RelatedTitlesProviding {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data(body.utf8)
-        return try? await URLSession.shared.data(for: request).0
+        return try? await OfflineNetworkSession.shared.data(for: request).0
     }
 
     // MARK: DTOs
@@ -219,7 +220,7 @@ public struct TraktRelatedProvider: RelatedTitlesProviding {
         var request = URLRequest(url: url)
         request.setValue("2", forHTTPHeaderField: "trakt-api-version")
         request.setValue(clientID, forHTTPHeaderField: "trakt-api-key")
-        return try? await URLSession.shared.data(for: request).0
+        return try? await OfflineNetworkSession.shared.data(for: request).0
     }
 
     private struct Entry: Decodable {

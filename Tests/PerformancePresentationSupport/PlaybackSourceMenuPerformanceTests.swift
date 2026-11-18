@@ -1,9 +1,97 @@
 import CoreModels
 @testable import CoreUI
+import FeatureHomeCore
 import XCTest
 
 @MainActor
 final class PlaybackSourceMenuPerformanceTests: XCTestCase {
+    func testPerformanceLegacyDetailSelectionComposition() async throws {
+        try await measureDetailSelection(resolved: false)
+    }
+
+    func testPerformanceResolvedDetailSelectionComposition() async throws {
+        try await measureDetailSelection(resolved: true)
+    }
+
+    private func measureDetailSelection(resolved: Bool) async throws {
+        try PerformanceProbe.requireEnabled()
+        let sources = (0..<4).map { account in
+            MediaSourceRef(
+                accountID: "account-\(account)", itemID: "movie-\(account)", kind: .movie,
+                versions: (0..<8).map { file in
+                    MediaVersion(id: "file-\(file)", height: 720 + file * 100, duration: 7200)
+                }
+            )
+        }
+        let item = MediaItem(
+            id: "movie-0", title: "Selection performance", kind: .movie,
+            runtime: 7200, sourceAccountID: "account-0", versions: sources[0].versions
+        )
+        let preferences = SelectionPreferences()
+        let capabilities = MediaCapabilities.detected()
+        let scenario = resolved ? "detail-selection-resolved" : "detail-selection-legacy"
+        try await PerformanceProbe.measure(self, scenario: scenario) {
+            var selections = 0
+            var presentedVersions = 0
+            var playTargets = 0
+            for _ in 0..<32 {
+                for source in sources {
+                    for version in source.selectableVersions {
+                        let choices: [MediaSourceRef]
+                        let versions: [MediaVersion]
+                        let selectedVersionID: String?
+                        let play: MediaItem
+                        if resolved {
+                            let selection = DetailPlaybackSelection.resolve(
+                                for: item, sources: sources, sourceOverride: source.accountID,
+                                versionOverride: version.id, libraryOrigin: nil,
+                                isLibraryOriginPinned: false, preferences: preferences,
+                                capabilities: capabilities
+                            )
+                            choices = selection.serverChoices
+                            versions = selection.versions
+                            selectedVersionID = selection.selectedVersionID
+                            play = selection.playItem
+                        } else {
+                            choices = DetailPlaybackSelection.serverChoices(from: sources)
+                            let selected = DetailPlaybackSelection.preferredSource(
+                                sourceOverride: source.accountID, libraryOrigin: nil,
+                                itemSourceAccountID: item.sourceAccountID, sources: sources,
+                                capabilities: capabilities, openingSource: item.editionOpeningSource
+                            )
+                            versions = DetailPlaybackSelection.versions(
+                                for: item, sources: sources, activeAccountID: selected?.accountID
+                            )
+                            selectedVersionID = DetailPlaybackSelection.preferredVersionID(
+                                for: item, versions: versions, versionOverride: version.id,
+                                preferences: preferences, capabilities: capabilities, sources: sources
+                            )
+                            play = DetailPlaybackSelection.playItem(
+                                for: item, sources: sources, activeAccountID: selected?.accountID,
+                                versionID: selectedVersionID, explicit: true, explicitVersion: true
+                            )
+                        }
+                        XCTAssertEqual(choices, sources)
+                        XCTAssertEqual(Set(versions.map(\.id)), Set(source.selectableVersions.map(\.id)))
+                        XCTAssertEqual(selectedVersionID, version.id)
+                        XCTAssertEqual(play.sourceAccountID, source.accountID)
+                        XCTAssertEqual(play.id, source.itemID)
+                        XCTAssertEqual(play.selectedVersionID, version.providerMediaSourceID)
+                        selections += 1
+                        presentedVersions += versions.count
+                        playTargets += 1
+                    }
+                }
+            }
+            return ["selections": selections, "presentedVersions": presentedVersions, "playTargets": playTargets]
+        }
+    }
+
+    private struct SelectionPreferences: VersionPreferenceStoring {
+        func preferredVersionID(forTitle titleID: String) -> String? { nil }
+        func setPreferredVersionID(_ versionID: String?, forTitle titleID: String) {}
+    }
+
     func testPerformanceVersionPresentation() async throws {
         try PerformanceProbe.requireEnabled()
         let versions = (0..<32).map { index in

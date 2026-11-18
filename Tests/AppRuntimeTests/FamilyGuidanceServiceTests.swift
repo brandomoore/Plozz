@@ -56,6 +56,7 @@ final class FamilyGuidanceServiceTests: XCTestCase {
                 accountsProviders: accounts, profilesModel: profiles,
                 plexHomeUserTokenCache: PlexHomeUserTokenCache(store: InMemorySecureStore()),
                 automaticSignInStore: AutomaticSignInStore(defaults: defaults, secureStore: InMemorySecureStore()),
+                offlineSignInStore: .init(secureStore: InMemorySecureStore()),
                 switchProfile: { _ in }
             )
             home.plexHomeUserSwitch = { _, _, _, _ in throw AppError.unauthorized }

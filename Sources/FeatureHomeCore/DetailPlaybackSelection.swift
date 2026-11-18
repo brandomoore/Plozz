@@ -3,6 +3,64 @@ import CoreModels
 
 /// Platform-neutral detail-page server and media-version selection.
 public enum DetailPlaybackSelection {
+    /// One synchronous selection for picker presentation and Play. Recompute from
+    /// current model state at activation; this is neither cached state nor authorization.
+    public struct Resolution: Sendable {
+        public let serverChoices: [MediaSourceRef]
+        public let source: MediaSourceRef?
+        public let versions: [MediaVersion]
+        public let selectedVersionID: String?
+        fileprivate let item: MediaItem
+        fileprivate let sources: [MediaSourceRef]
+        fileprivate let explicitSource: Bool
+        fileprivate let explicitVersion: Bool
+
+        /// Routing is deferred so presenting picker options does not construct
+        /// a playback item or reconcile resume state.
+        public var playItem: MediaItem {
+            DetailPlaybackSelection.playItem(
+                for: item, sources: sources, activeAccountID: source?.accountID,
+                versionID: selectedVersionID, explicit: explicitSource,
+                explicitVersion: explicitVersion
+            )
+        }
+    }
+
+    public static func resolve(
+        for item: MediaItem,
+        sources: [MediaSourceRef],
+        sourceOverride: String?,
+        versionOverride: String?,
+        libraryOrigin: String?,
+        isLibraryOriginPinned: Bool,
+        preferences: any VersionPreferenceStoring,
+        capabilities: MediaCapabilities
+    ) -> Resolution {
+        let source = preferredSource(
+            sourceOverride: sourceOverride,
+            libraryOrigin: libraryOrigin,
+            itemSourceAccountID: item.sourceAccountID,
+            sources: sources,
+            capabilities: capabilities,
+            openingSource: item.editionOpeningSource
+        )
+        let versions = versions(for: item, sources: sources, activeAccountID: source?.accountID)
+        let versionID = preferredVersionID(
+            for: item, versions: versions, versionOverride: versionOverride,
+            preferences: preferences, capabilities: capabilities, sources: sources
+        )
+        return Resolution(
+            serverChoices: serverChoices(from: sources),
+            source: source,
+            versions: versions,
+            selectedVersionID: versionID,
+            item: item,
+            sources: sources,
+            explicitSource: isLibraryOriginPinned || sourceOverride != nil || versionOverride != nil,
+            explicitVersion: versionOverride != nil || item.explicitVersionSelection
+        )
+    }
+
     public static func showsPlayPlaceholder(
         for item: MediaItem,
         hasPlayTarget: Bool,
@@ -84,16 +142,21 @@ public enum DetailPlaybackSelection {
     public static func versions(
         for item: MediaItem,
         sources: [MediaSourceRef],
-        activeAccountID: String?
+        activeAccountID: String?,
+        preserveServerOrder: Bool = false
     ) -> [MediaVersion] {
         guard let activeAccountID else {
-            return item.versions.sortedForPicker()
+            return preserveServerOrder ? item.versions : item.versions.sortedForPicker()
         }
-        let active = sources.filter {
+        var active = sources.filter {
             $0.accountID == activeAccountID && ($0.kind == nil || $0.kind == item.kind)
         }
         guard !active.isEmpty else {
-            return item.versions.sortedForPicker()
+            return preserveServerOrder ? item.versions : item.versions.sortedForPicker()
+        }
+        if preserveServerOrder {
+            // Discovery order must not put another edition ahead of the opened item.
+            active = active.filter { $0.itemID == item.id } + active.filter { $0.itemID != item.id }
         }
         let versions = active.flatMap { source -> [MediaVersion] in
             guard source.versions.isEmpty,
@@ -105,7 +168,8 @@ public enum DetailPlaybackSelection {
                 $0.qualified(accountID: source.accountID, itemID: source.itemID, edition: item.edition)
             }
         }
-        return versions.isEmpty ? item.versions.sortedForPicker() : versions.sortedForPicker()
+        let result = versions.isEmpty ? item.versions : versions
+        return preserveServerOrder ? result : result.sortedForPicker()
     }
 
     public static func preferredVersionID(
@@ -113,15 +177,24 @@ public enum DetailPlaybackSelection {
         versions: [MediaVersion],
         versionOverride: String?,
         preferences: any VersionPreferenceStoring,
-        capabilities: MediaCapabilities
+        capabilities: MediaCapabilities,
+        mode: PlaybackVersionSelectionMode? = nil,
+        sources: [MediaSourceRef]? = nil
     ) -> String? {
-        guard versions.count > 1 else { return nil }
+        let mode = mode ?? preferences.selectionMode
+        guard versions.count > 1 || (mode == .serverOrder && !versions.isEmpty) else { return nil }
         if let versionOverride, let selected = matchingVersion(versionOverride, in: versions, for: item) {
             return selected.id
         }
-        if let selectedID = item.selectedVersionID,
-           let selected = matchingVersion(selectedID, in: versions, for: item) {
-            return selected.id
+        if mode != .serverOrder || item.explicitVersionSelection,
+           let selectedID = item.selectedVersionID {
+            let owned = item.explicitVersionSelection ? versions.filter {
+                ($0.sourceAccountID == nil || $0.sourceAccountID == item.sourceAccountID)
+                    && ($0.sourceItemID == nil || $0.sourceItemID == item.id)
+            } : versions
+            if let selected = matchingVersion(selectedID, in: owned, for: item) {
+                return selected.id
+            }
         }
         let candidates: [MediaVersion]
         if let opening = item.editionOpeningSource {
@@ -134,6 +207,19 @@ public enum DetailPlaybackSelection {
             candidates = editionVersions.isEmpty ? versions : editionVersions
         } else {
             candidates = versions
+        }
+        if mode == .serverOrder {
+            let ordered = Self.versions(
+                for: item, sources: sources ?? item.sources,
+                activeAccountID: candidates.first?.sourceAccountID ?? item.sourceAccountID,
+                preserveServerOrder: true
+            )
+            for version in ordered where !version.isExternalSource {
+                if let match = matchingVersion(version.id, in: candidates, for: item) {
+                    return match.id
+                }
+            }
+            return nil
         }
         let key = versionPreferenceKey(for: item)
         // An exact file id, but ONLY for a title whose key is its own — a movie
@@ -191,7 +277,10 @@ public enum DetailPlaybackSelection {
         preferences: any VersionPreferenceStoring,
         capabilities: MediaCapabilities
     ) -> MediaItem {
-        guard item.selectedVersionID == nil, item.versions.count > 1 else { return item }
+        guard item.versions.count > 1,
+              item.selectedVersionID == nil
+                || (preferences.selectionMode == .serverOrder && !item.explicitVersionSelection)
+        else { return item }
         guard let id = preferredVersionID(
             for: item,
             versions: item.versions,
@@ -236,15 +325,18 @@ public enum DetailPlaybackSelection {
         sources: [MediaSourceRef],
         activeAccountID: String?,
         versionID: String?,
-        explicit: Bool
+        explicit: Bool,
+        explicitVersion: Bool? = nil
     ) -> MediaItem {
-        MediaItem.retargetedForPlayback(
+        var selected = MediaItem.retargetedForPlayback(
             item: item,
             sources: sources,
             activeAccountID: activeAccountID,
             versionID: versionID,
             explicit: explicit
         )
+        selected.explicitVersionSelection = (explicitVersion ?? explicit) && selected.selectedVersionID != nil
+        return selected
     }
 }
 

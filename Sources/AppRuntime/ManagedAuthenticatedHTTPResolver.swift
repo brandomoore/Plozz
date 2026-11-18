@@ -92,7 +92,7 @@ public final class ManagedAuthenticatedHTTPResolver: AuthenticatedHTTPResourceRe
             URLQueryItem(name: $0.name, value: $0.value)
         }
         switch locator.provider {
-        case .silo, .iptv:
+        case .silo, .iptv, .subsonic:
             guard let resolver = context.resourceResolver else {
                 throw MediaTransportError.authentication(reason: "inactive provider playback grant")
             }

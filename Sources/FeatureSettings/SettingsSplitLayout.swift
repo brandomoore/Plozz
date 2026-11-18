@@ -48,6 +48,13 @@ struct SettingsSplitRow: Identifiable {
     var childRows: (() -> [SettingsSplitRow])?
     var hasGroupedContent = false
     var hasIllustratedContent = false
+    var descriptionAccessory: AnyView?
+
+    func descriptionAccessory(_ accessory: () -> AnyView?) -> Self {
+        var row = self
+        row.descriptionAccessory = accessory()
+        return row
+    }
 
     func illustratedContent() -> Self {
         var row = self
@@ -157,6 +164,28 @@ struct SettingsSplitRow: Identifiable {
         self.sectionStart = sectionStart
         self.subpage = subpage
         self.detail = { AnyView(detail()) }
+    }
+}
+
+struct SettingsRowDescription: View {
+    let text: Text
+    var accessory: AnyView?
+
+    var body: some View {
+        if let accessory {
+            HStack(alignment: .center, spacing: 16) {
+                text
+                    .settingsHelperText()
+                    .fixedSize(horizontal: false, vertical: true)
+                accessory
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .tvOSFocusSection()
+        } else {
+            text
+                .settingsHelperText()
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -493,9 +522,7 @@ private struct SettingsDetailContent: View {
                 VStack(alignment: .leading, spacing: 12) {
                     row.title.settingsFeatureTitle()
                     if let description = row.description {
-                        description
-                            .settingsHelperText()
-                            .fixedSize(horizontal: false, vertical: true)
+                        SettingsRowDescription(text: description, accessory: row.descriptionAccessory)
                     }
                 }
                 row.detail()

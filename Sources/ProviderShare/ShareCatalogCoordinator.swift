@@ -39,6 +39,10 @@ public actor ShareCatalogCoordinator: ShareCatalogCoordinating {
     /// coordinator method — never the runtime instance.
     private var runtimes: [String: ShareCatalogRuntime] = [:]
     private let metadataScheduler: ShareMetadataWorkScheduler
+    // Bound the entire walk, including catalog reconciliation and transport
+    // teardown, rather than multiplying a four-connection pool by every account.
+    private let scanCapacity = ConcurrencyLimiter(limit: 2)
+    private let scanPacer = ShareScanPacer()
     private var automaticWorkScope: MediaShareWorkScope?
     private var automaticScopeRevision: UInt64 = 0
     private var preferredAccountRevision: UInt64 = 0
@@ -686,7 +690,7 @@ public actor ShareCatalogCoordinator: ShareCatalogCoordinating {
                         accountKey: accountKey,
                         metadataConfig: metadataConfig
                     ),
-                    pacer: ShareScanPacer(),
+                    pacer: scanPacer,
                     arbiter: arbiterFactory(accountKey)
                 )
                 runtimes[accountKey] = created
@@ -1056,6 +1060,10 @@ public actor ShareCatalogCoordinator: ShareCatalogCoordinating {
         return runtime.scanTasks.count + runtime.drainingScanTasks.count
     }
 
+    func scanPacerForTesting(_ accountKey: String) -> ShareScanPacer? {
+        runtimes[accountKey]?.pacer
+    }
+
     /// Test-only: stamp a cancellation reason for one task through the real
     /// no-overwrite stamp path (a racing playback/rescan does exactly this). Creates a
     /// runtime shell for the account if one does not exist yet — a TEST-ONLY seam that
@@ -1158,14 +1166,9 @@ public actor ShareCatalogCoordinator: ShareCatalogCoordinating {
     }
 
     public func noteInteractiveActivity(accountKey: String) async {
-        // Note interactive activity on the account's pacer when it is registered.
-        // An unregistered account has no scanner/pacer to pace, so there is nothing
-        // to note locally — and we never lazily create a runtime here (that would
-        // install an arbiter for an account with no store). The global scheduler
-        // activity signal is always delivered.
-        if let pacer = runtimes[accountKey]?.pacer {
-            await pacer.noteInteractiveActivity()
-        }
+        // Browsing competes with every scan on this device, not only this source.
+        // This also covers raw browsing before the account has a catalog runtime.
+        await scanPacer.noteInteractiveActivity()
         await metadataScheduler.noteInteractiveActivity(accountKey: accountKey)
     }
 
@@ -1306,6 +1309,7 @@ public actor ShareCatalogCoordinator: ShareCatalogCoordinating {
         }
         let taskID = UUID()
         let startGate = ShareScanStartGate()
+        let scanCapacity = scanCapacity
         let task = Task(priority: .utility) { [weak self] in
             await startGate.wait()
             guard !Task.isCancelled else {
@@ -1322,17 +1326,27 @@ public actor ShareCatalogCoordinator: ShareCatalogCoordinating {
                 await self?.clearScanTask(accountKey, taskID: taskID)
                 return
             }
-            ShareBackgroundActivity.scanStarted()
-            BrowseDiagnostics.event("scan+ \(accountKey) force=\(force)")
-            HandoffDiagnostics.emit("share-work SCAN account=\(HandoffDiagnostics.correlationID(accountKey)) explicit=\(force)")
             let outcome: ShareScanOutcome
-            if force {
-                outcome = await scanner.scan(scanGeneration: scanGeneration)
-            } else {
-                outcome = await scanner.scanIfStale(scanGeneration: scanGeneration)
+            do {
+                outcome = try await scanCapacity.runUnlessCancelled {
+                    ShareBackgroundActivity.scanStarted()
+                    BrowseDiagnostics.event("scan+ \(accountKey) force=\(force)")
+                    HandoffDiagnostics.emit("share-work SCAN account=\(HandoffDiagnostics.correlationID(accountKey)) explicit=\(force)")
+                    defer {
+                        ShareBackgroundActivity.scanFinished()
+                        BrowseDiagnostics.event("scan- \(accountKey)")
+                    }
+                    if force {
+                        return await scanner.scan(scanGeneration: scanGeneration)
+                    }
+                    return await scanner.scanIfStale(scanGeneration: scanGeneration)
+                }
+            } catch is CancellationError {
+                outcome = .cancelled(scanGeneration: nil)
+            } catch {
+                PlozzLog.app.error("Share scan admission failed")
+                outcome = .failedToStart
             }
-            ShareBackgroundActivity.scanFinished()
-            BrowseDiagnostics.event("scan- \(accountKey)")
             resource.markDrained()
             await scannerLease.finishAndWait()
             if shouldEnrich, !Task.isCancelled {

@@ -67,6 +67,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     public var resumeRewindInterval: ResumeRewindInterval
 
     public var askBeforeResuming: Bool
+    public var discPlayback: DiscPlaybackBehavior
 
     public func shouldAskBeforeResuming(at position: TimeInterval?, fromBeginning: Bool = false) -> Bool {
         askBeforeResuming && !fromBeginning && (position ?? 0) > 1
@@ -79,6 +80,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     public var volumeBrightnessGestures: Bool
     /// iPhone full-screen player preference. iPad follows system rotation.
     public var orientation: PlaybackOrientation
+    public var videoZoom: VideoZoomDefaults
     public var streaming: StreamingQualitySettings
     /// Legacy profile selection, decoded only for migration to device settings.
     public var externalPlayer: ExternalPlayerSettings
@@ -170,6 +172,19 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// counterpart to `rememberAudioTrackPerSeries`. ON by default.
     public var rememberSubtitleTrackPerSeries: Bool
 
+    /// Listen to the playing audio with ShazamKit and show the song in the
+    /// player's Info card (#351). Per profile, ON by default.
+    public var identifySongs: Bool
+    public var dolbyVisionFELConversion: Bool
+    public var videoUpscaling: VideoUpscaling
+
+    /// Optional player tabs, per profile. Availability still depends on content.
+    public var chaptersInPlayer: Bool
+    public var castInPlayer: Bool
+    public var episodesInPlayer: Bool
+    public var playlistInPlayer: Bool
+    public var continueWatchingInPlayer: Bool
+
     /// Fade to black around the HDMI handshake the TV performs when the **dynamic
     /// range** changes (SDR ⇄ HDR10 / HLG / Dolby Vision) — i.e. what tvOS calls
     /// *Match Dynamic Range*. ON by default: entering and leaving an HDR/DV title
@@ -177,11 +192,10 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// if you don't use Match Dynamic Range and prefer the snappiest transitions.
     public var fadeOnDynamicRangeChange: Bool
 
-    /// Fade to black when leaving playback of content whose dynamic range *isn't*
-    /// changing, to absorb the handshake blip the TV produces when tvOS's *Match
-    /// Frame Rate* drops the display back from the movie's rate (23.976/24/25 Hz)
-    /// to the UI's. There's no API that reports whether Match Frame Rate is on,
-    /// so this is ON by default (it's the setup that flashes) and OFF is the
+    /// Fade to black when opening or leaving playback whose dynamic range *isn't*
+    /// changing, to cover tvOS's *Match Frame Rate* switch between the content's
+    /// rate (23.976/24/25 Hz) and the UI's. There's no API that reports whether
+    /// Match Frame Rate is on, so this is ON by default and OFF is the
     /// escape hatch for anyone who has frame-rate matching disabled and would
     /// rather return to Home instantly.
     public var fadeOnFrameRateChange: Bool
@@ -199,6 +213,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         skipForwardInterval: SkipInterval = .ten,
         resumeRewindInterval: ResumeRewindInterval = .five,
         askBeforeResuming: Bool = false,
+        discPlayback: DiscPlaybackBehavior = .playVideo,
         syncWatchAcrossServers: Bool = true,
         seekWithoutPausing: Bool = true,
         autoPlayNextEpisode: Bool = true,
@@ -208,11 +223,20 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         audioLanguagePreference: AudioLanguagePreference = .original,
         rememberAudioTrackPerSeries: Bool = true,
         rememberSubtitleTrackPerSeries: Bool = true,
+        identifySongs: Bool = true,
+        dolbyVisionFELConversion: Bool = true,
+        videoUpscaling: VideoUpscaling = .default,
+        chaptersInPlayer: Bool = true,
+        castInPlayer: Bool = true,
+        episodesInPlayer: Bool = true,
+        playlistInPlayer: Bool = true,
+        continueWatchingInPlayer: Bool = true,
         fadeOnDynamicRangeChange: Bool = true,
         fadeOnFrameRateChange: Bool = true,
         backgroundAudio: Bool = false,
         volumeBrightnessGestures: Bool = true,
         orientation: PlaybackOrientation = .landscape,
+        videoZoom: VideoZoomDefaults = .init(),
         streaming: StreamingQualitySettings = .default,
         versionSelectionMode: PlaybackVersionSelectionMode? = nil,
         rememberVersionPerSeries: Bool = true,
@@ -236,6 +260,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.skipForwardInterval = skipForwardInterval
         self.resumeRewindInterval = resumeRewindInterval
         self.askBeforeResuming = askBeforeResuming
+        self.discPlayback = discPlayback
         self.syncWatchAcrossServers = syncWatchAcrossServers
         self.seekWithoutPausing = seekWithoutPausing
         self.autoPlayNextEpisode = autoPlayNextEpisode
@@ -245,11 +270,20 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.audioLanguagePreference = audioLanguagePreference
         self.rememberAudioTrackPerSeries = rememberAudioTrackPerSeries
         self.rememberSubtitleTrackPerSeries = rememberSubtitleTrackPerSeries
+        self.identifySongs = identifySongs
+        self.dolbyVisionFELConversion = dolbyVisionFELConversion
+        self.videoUpscaling = videoUpscaling
+        self.chaptersInPlayer = chaptersInPlayer
+        self.castInPlayer = castInPlayer
+        self.episodesInPlayer = episodesInPlayer
+        self.playlistInPlayer = playlistInPlayer
+        self.continueWatchingInPlayer = continueWatchingInPlayer
         self.fadeOnDynamicRangeChange = fadeOnDynamicRangeChange
         self.fadeOnFrameRateChange = fadeOnFrameRateChange
         self.backgroundAudio = backgroundAudio
         self.volumeBrightnessGestures = volumeBrightnessGestures
         self.orientation = orientation
+        self.videoZoom = videoZoom
         self.streaming = streaming
         self.versionSelectionMode = versionSelectionMode
         self.rememberVersionPerSeries = rememberVersionPerSeries
@@ -403,9 +437,11 @@ public extension PlaybackSettings {
         case skipForwardInterval
         case resumeRewindInterval
         case askBeforeResuming
+        case discPlayback
         case backgroundAudio
         case volumeBrightnessGestures
         case orientation
+        case videoZoom
         case streaming
         case externalPlayer
         case versionSelectionMode
@@ -422,6 +458,14 @@ public extension PlaybackSettings {
         case preferOriginalLanguageAudio
         case rememberAudioTrackPerSeries
         case rememberSubtitleTrackPerSeries
+        case identifySongs
+        case dolbyVisionFELConversion
+        case videoUpscaling
+        case chaptersInPlayer
+        case castInPlayer
+        case episodesInPlayer
+        case playlistInPlayer
+        case continueWatchingInPlayer
         case fadeOnDynamicRangeChange
         case fadeOnFrameRateChange
     }
@@ -505,11 +549,15 @@ public extension PlaybackSettings {
         self.backgroundAudio = try container.decodeIfPresent(Bool.self, forKey: .backgroundAudio) ?? false
         self.askBeforeResuming = try container.decodeIfPresent(Bool.self, forKey: .askBeforeResuming)
             ?? defaults.askBeforeResuming
+        self.discPlayback = (try? container.decode(DiscPlaybackBehavior.self, forKey: .discPlayback))
+            ?? defaults.discPlayback
         self.volumeBrightnessGestures =
             try container.decodeIfPresent(Bool.self, forKey: .volumeBrightnessGestures)
             ?? defaults.volumeBrightnessGestures
         self.orientation = (try? container.decode(PlaybackOrientation.self, forKey: .orientation))
             ?? defaults.orientation
+        self.videoZoom = try container.decodeIfPresent(VideoZoomDefaults.self, forKey: .videoZoom)
+            ?? defaults.videoZoom
         self.streaming = (try? container.decode(StreamingQualitySettings.self, forKey: .streaming)) ?? .default
         self.externalPlayer = (try? container.decodeIfPresent(ExternalPlayerSettings.self, forKey: .externalPlayer)) ?? .init()
         self.versionSelectionMode = try? container.decode(PlaybackVersionSelectionMode.self, forKey: .versionSelectionMode)
@@ -552,6 +600,29 @@ public extension PlaybackSettings {
         self.rememberSubtitleTrackPerSeries =
             (try? container.decodeIfPresent(Bool.self, forKey: .rememberSubtitleTrackPerSeries))
             .flatMap { $0 } ?? defaults.rememberSubtitleTrackPerSeries
+        self.identifySongs =
+            (try? container.decodeIfPresent(Bool.self, forKey: .identifySongs))
+            .flatMap { $0 } ?? defaults.identifySongs
+        self.dolbyVisionFELConversion =
+            (try? container.decodeIfPresent(Bool.self, forKey: .dolbyVisionFELConversion))
+            .flatMap { $0 } ?? defaults.dolbyVisionFELConversion
+        self.videoUpscaling = try container.decodeIfPresent(VideoUpscaling.self, forKey: .videoUpscaling)
+            ?? defaults.videoUpscaling
+        self.chaptersInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .chaptersInPlayer))
+            .flatMap { $0 } ?? defaults.chaptersInPlayer
+        self.castInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .castInPlayer))
+            .flatMap { $0 } ?? defaults.castInPlayer
+        self.episodesInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .episodesInPlayer))
+            .flatMap { $0 } ?? defaults.episodesInPlayer
+        self.playlistInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .playlistInPlayer))
+            .flatMap { $0 } ?? defaults.playlistInPlayer
+        self.continueWatchingInPlayer =
+            (try? container.decodeIfPresent(Bool.self, forKey: .continueWatchingInPlayer))
+            .flatMap { $0 } ?? defaults.continueWatchingInPlayer
         // Both fades default to `true` when absent so installs that predate the
         // toggles keep (dynamic range) / gain (frame rate) the smooth transition.
         self.fadeOnDynamicRangeChange =
@@ -591,9 +662,11 @@ public extension PlaybackSettings {
         try container.encode(skipForwardInterval, forKey: .skipForwardInterval)
         try container.encode(resumeRewindInterval, forKey: .resumeRewindInterval)
         try container.encode(askBeforeResuming, forKey: .askBeforeResuming)
+        try container.encode(discPlayback, forKey: .discPlayback)
         try container.encode(backgroundAudio, forKey: .backgroundAudio)
         try container.encode(volumeBrightnessGestures, forKey: .volumeBrightnessGestures)
         try container.encode(orientation, forKey: .orientation)
+        try container.encode(videoZoom, forKey: .videoZoom)
         try container.encode(streaming, forKey: .streaming)
         try container.encodeIfPresent(versionSelectionMode, forKey: .versionSelectionMode)
         try container.encode(rememberVersionPerSeries, forKey: .rememberVersionPerSeries)
@@ -606,6 +679,14 @@ public extension PlaybackSettings {
         try container.encode(audioLanguagePreference, forKey: .audioLanguagePreference)
         try container.encode(rememberAudioTrackPerSeries, forKey: .rememberAudioTrackPerSeries)
         try container.encode(rememberSubtitleTrackPerSeries, forKey: .rememberSubtitleTrackPerSeries)
+        try container.encode(identifySongs, forKey: .identifySongs)
+        try container.encode(dolbyVisionFELConversion, forKey: .dolbyVisionFELConversion)
+        try container.encode(videoUpscaling, forKey: .videoUpscaling)
+        try container.encode(chaptersInPlayer, forKey: .chaptersInPlayer)
+        try container.encode(castInPlayer, forKey: .castInPlayer)
+        try container.encode(episodesInPlayer, forKey: .episodesInPlayer)
+        try container.encode(playlistInPlayer, forKey: .playlistInPlayer)
+        try container.encode(continueWatchingInPlayer, forKey: .continueWatchingInPlayer)
         try container.encode(fadeOnDynamicRangeChange, forKey: .fadeOnDynamicRangeChange)
         try container.encode(fadeOnFrameRateChange, forKey: .fadeOnFrameRateChange)
     }

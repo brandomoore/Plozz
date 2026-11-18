@@ -92,11 +92,34 @@ one fresh sections response instead of caching content across watch changes.
 Single-row requests use `/home/sections/{id}/items` with the same older-server
 fallback. Servers lacking both Home endpoints retain ordinary provider defaults.
 
+Silo can retain seasonal or hide-watched rows in the layout while omitting them
+from the bulk content response. Missing batch rows are checked once through
+their individual items endpoint: a valid empty response is empty content, not
+`notFound`. Actual endpoint errors, mismatched row IDs, and missing item arrays
+remain failures; the batch is not fetched again. This omission behavior is
+documented in the [upstream Home handlers](https://github.com/Silo-Server/silo-server/blob/6d1562473336738009a91475ed3f33143670c249/internal/api/handlers/home_views_service.go).
+
 Only video cards are displayed. Disabled Plozz libraries require exact membership
 in an enabled library; title matches alone never establish membership. Continue
 Watching and Next Up resolve the server-selected playable episode and retain
 resume state and verified parent artwork. Shared Home composition still owns
 multi-server merging and explicit Plozz profile customizations.
+
+Within one batch refresh, enabled-library discovery, exact membership results
+(including exclusions), and playable-item details are reused across rows. They
+are discarded at the end of the refresh, never cached across logins or watch
+changes. Membership pagination stops once the exact content ID is found, not
+merely a matching title. A rate limit stops unfinished rows promptly while
+retaining rows that already succeeded.
+
+HTTP 429 establishes a browsing cooldown on the current provider client:
+`Retry-After` seconds or HTTP dates are converted to a monotonic deadline;
+missing or malformed delays use 60 seconds. Further browsing calls fail with
+the remaining delay instead of queueing, sleeping, or replaying requests.
+In-flight responses cannot shorten an established cooldown. Playback API
+requests remain separate so a browsing quota cannot suppress progress or stop
+cleanup; they still propagate their own server refusals. Other provider clients
+and logins are independent.
 
 Missing catalog items referenced by progress or playable Home/Next Up cards are
 skipped with a secret-safe diagnostic; a stale entry cannot fail the entire row.
@@ -111,6 +134,13 @@ The [native progress contract](https://github.com/Silo-Server/silo-server/blob/3
 orders entries by newest update first; bounded detail loading relies on that
 order. This reduces unnecessary traffic but does not bypass server rate limits.
 
+Background identity enrichment preserves rate limits and authorization failures.
+It stops admitting item requests after either refusal, cancels remaining
+in-flight enrichment, and stops the account scan before another page or library.
+Partial scans remain incomplete and are not persisted as a complete index.
+Ordinary item-level failures remain inconclusive without hiding unrelated
+successful identities. Later refreshes can retry after the provider cooldown.
+
 These Home and device-login contracts were checked at upstream revision
 `6144c45cd65ae0f49f9f3397bbc20f7e4d60a20e`.
 
@@ -123,32 +153,42 @@ These Home and device-login contracts were checked at upstream revision
 - Access tokens, rotating refresh tokens and profile-verification proofs live in
   the account Keychain entry. The raw PIN is never persisted. Refresh is
   single-flight and compare-and-set against the original login revision.
-  An uncertain refresh requires sign-in rather than replaying a possibly spent
-  token. A refresh proven by transport metrics not to have been transmitted
+  The client conservatively requires sign-in after an uncertain refresh. The
+  checked native server implementation does not consume the previous refresh
+  JWT; this client recovery policy is not a claim that Silo refresh is single-use.
+  A refresh proven by transport metrics not to have been transmitted
   restores the original credential for a later retry after an outage; missing
   evidence is never treated as proof. Library errors retain their real cause,
   so expired authentication offers sign-in rather than an endless offline retry.
-  Silo logins are not cloned through device-to-device credential transfer
-  or iCloud Keychain; another device pairs independently. Device setup still
-  imports the server descriptor and shows it as needing sign-in rather than
-  omitting it from the summary. Settings > iCloud Sync keeps that entry
-  available and opens Silo's native sign-in flow.
+  Silo logins are not cloned through device-to-device transfer or iCloud Keychain.
+  With iCloud Sync enabled, the shared encrypted provider channel can use an
+  existing login to approve an independent permanent device session. This
+  requires protocol 2 with explicit `session_binding` capability. The receiver
+  verifies the challenge binding, server, account, profile and non-temporary
+  purpose, and never copies a profile PIN proof. Protected profiles, older
+  servers and expired/revoked bootstrap credentials retain native manual sign-in
+  in Settings > iCloud Sync. Cancellation revokes only the new unused session.
+  The bound enrollment contract was checked against server revision
+  `0b579aa6192d49d7e8e0921dde5e955ac29ce302`.
 - Catalog requests use native cursor pagination and explicit `seek` windows.
   Lightweight cards inherit missing external identities from Silo's frozen
   provider-anchored content-ID scheme, so the identity index can match owned
   copies before a detail page is opened. Explicit detail fields win; an
   episode's embedded series anchor is never treated as its own episode ID.
-  Those anchors are partial identity, not a complete set of provider IDs. Library
-  indexing and on-demand ownership searches hydrate native item details with
-  bounded concurrency to join TVDB-anchored titles to TMDB/IMDb watchlist entries.
-  Background identity scans additionally space native GET attempts by at least
-  200 ms per connection. This trades a longer complete scan for reduced cold-start
-  request bursts; foreground search, detail, playback and writes do not queue
-  behind that background work. Cancellation, credential identity and any server
-  cooldown are rechecked after waiting. Full identity hydration and inconclusive
-  scan handling remain unchanged; pacing never overrides a server rate limit or
-  automatically replays a refused request. Local rate-limit diagnostics contain
-  bounded request counts and numeric advertised limits, not titles or credentials.
+  Those anchors are partial identity, not a complete set of provider IDs. Fresh
+  catalog/search cards with explicit external IDs carry the same known identity
+  set as detail ([Silo-Server/silo-server#3618](https://github.com/Silo-Server/silo-server/pull/3618)).
+  Library indexing and on-demand ownership searches reuse these cards without
+  a detail request per title. Unknown IDs are omitted by the server, so one
+  usable explicit ID is sufficient; completeness is checked per card, not inferred
+  for the server. Anchor-only, empty-ID, older-server and restored cards retain
+  bounded detail enrichment to join TVDB-anchored titles to TMDB/IMDb entries.
+  The completeness hint is transient, is not persisted, and is not applied to
+  native Home cards. Background identity scans space native GET attempts by at
+  least 200 ms per connection. Foreground reads, playback and writes do not wait
+  behind that pacing. Queued reads recheck cancellation, login identity and
+  the browsing cooldown before transmitting. Local rate-limit diagnostics count
+  requests and numeric advertised limits, not titles or credentials.
   Episode file resolution and coarse HDR/SDR fields fill missing track-level
   metadata for hero badges; detailed track facts take precedence. An explicit
   progress duration remains authoritative; otherwise a single movie/episode
@@ -207,6 +247,22 @@ These Home and device-login contracts were checked at upstream revision
   protocol-3 sessions without playback activity can expire independently of
   their signed URL's expiry. Progress samples are sequenced and stop
   requests carry an idempotent stop identifier.
+- External library playback uses the same validated native plan and exact file,
+  including mobile conversion limits. External negotiations request
+  `progress_persistence: client` so expiry/cleanup cannot invent playback history;
+  supported player callbacks feed the ordinary Plozz watch-state reconciler.
+  Original and HLS sessions both retain cleanup ownership. A restored,
+  credential-free receipt can release the session through the original
+  authorized account/profile without resolving another playback grant.
+  There is no background relay or fabricated heartbeat. Media requests sustain
+  the session, but a long pause can expire it; reopening playback requires a new
+  Plozz play intent. API-origin media also requires a current account bearer;
+  external eligibility requires its remaining lifetime and any advertised signed
+  grant expiry to cover the full source duration plus five minutes for startup.
+  Short-lived grants and unknown-duration API-origin media stay internal rather
+  than opening a stream the external player cannot refresh. See the upstream
+  [session-liveness contract](https://github.com/Silo-Server/silo-server/blob/baf9d4267043a2fa5f41f4fdebc4a175e564e793/docs/architecture/playback-protocol-v3.md#25-session-liveness).
+  Downloads and scheduled channels remain internal.
 - Watched state and the native Silo watchlist write back to Silo. Batched resume
   synchronization checks each result, not only HTTP success.
   Resume writes round to whole milliseconds rather than truncating floating-point
@@ -218,9 +274,8 @@ These Home and device-login contracts were checked at upstream revision
   Failed outbox targets retain their watch intent and use the shared persisted
   retry cooldown rather than retrying on every index or configuration update.
   HTTP 429 honors both numeric and HTTP-date `Retry-After` values.
-  The connection also refuses subsequent API reads and writes locally until
-  that cooldown expires, so background identity hydration cannot keep flooding
-  a rate-limited server. A missing or malformed delay uses a 60-second cooldown.
+  Until the connection's browsing cooldown expires, non-playback reads and
+  writes, including identity hydration and watched-state writes, fail locally.
   Expiry does not replay a request; the caller must explicitly try again.
 
 ### Watch indicators

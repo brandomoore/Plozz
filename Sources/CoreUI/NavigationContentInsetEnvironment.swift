@@ -34,7 +34,8 @@ private struct PlozzTopNavigationScrollKey: EnvironmentKey {
     static let defaultValue: TopNavigationScroll? = nil
 }
 
-/// The root scroll owner moves the custom top bar; detail chrome remains independent.
+/// The root scroll owner moves the custom top bar and resets Home on explicit
+/// navigation reselection. Sidebars use its reset without binding a chrome view.
 @MainActor @Observable
 public final class TopNavigationScroll {
     public struct StageTransition: Equatable {
@@ -192,6 +193,9 @@ public final class PlozzPinnedSidebarInteraction: ObservableObject {
 }
 
 public extension EnvironmentValues {
+    /// The root-page gutter remains stable while pushed pages hide the navigation chrome.
+    @Entry var plozzNavigationRootContentInset: CGFloat? = nil
+
     /// The leading inset the navigation chrome has applied to page content.
     var plozzNavigationContentInset: CGFloat {
         get { self[PlozzNavigationContentInsetKey.self] }

@@ -3,7 +3,8 @@ import XCTest
 
 @MainActor
 func waitForHostedLayout(
-    _ window: UIWindow, timeout: Duration = .seconds(4)
+    _ window: UIWindow, timeout: Duration = .seconds(4),
+    ignoringAnimationIn ignoredLayers: [CALayer] = []
 ) async throws {
     struct Geometry: Equatable {
         let identity: ObjectIdentifier
@@ -12,12 +13,17 @@ func waitForHostedLayout(
         let opacity: Float
     }
     func geometry(_ model: CALayer) -> [Geometry] {
+        if ignoredLayers.contains(where: { $0 === model }) {
+            return [Geometry(identity: ObjectIdentifier(model), frame: model.frame,
+                             bounds: model.bounds, opacity: model.opacity)]
+        }
         let layer = model.presentation() ?? model
         return [Geometry(identity: ObjectIdentifier(model), frame: layer.frame,
                          bounds: layer.bounds, opacity: layer.opacity)]
             + (model.sublayers ?? []).flatMap(geometry)
     }
     func animating(_ layer: CALayer) -> Bool {
+        if ignoredLayers.contains(where: { $0 === layer }) { return false }
         let pending = (layer.animationKeys() ?? []).contains { key in
             guard let animation = layer.animation(forKey: key) else { return false }
             // Native glass retains untimed geometry bindings even at rest.
@@ -80,6 +86,8 @@ final class HostedRenderingTests: XCTestCase {
         } catch is HostedRenderingTimeout {
             // The bounded wait must fail rather than capture a transient frame.
         }
+        try await waitForHostedLayout(window, ignoringAnimationIn: [view.layer])
+        XCTAssertNotNil(view.layer.animation(forKey: "nonsettling"))
         view.layer.removeAnimation(forKey: "nonsettling")
         let binding = CABasicAnimation(keyPath: "bounds")
         binding.fromValue = NSValue(cgRect: view.bounds)

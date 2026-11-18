@@ -8,6 +8,26 @@ import XCTest
 
 @MainActor
 final class PlexHomeOnboardingFlowTests: XCTestCase {
+    func testManualICloudSetupReviewsCompletedProfileWithoutResettingIt() throws {
+        let suite = "ManualICloudProfileSetup.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProfileStore(defaults: defaults)
+        store.setFirstRunProfileSetupComplete(true)
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()), profileStore: store
+        )
+        let original = app.profiles.activeProfile
+        XCTAssertFalse(original.needsSetup)
+        app.resumeProfileOnboardingIfNeeded(manualICloudSetup: true)
+        XCTAssertEqual(app.profileOnboardingID, original.id)
+        XCTAssertEqual(app.profileOnboardingStep, .libraries)
+        XCTAssertEqual(app.profiles.activeProfile, original)
+        app.cancelProfileOnboarding()
+        XCTAssertNil(app.profileOnboardingStep)
+        XCTAssertEqual(app.profiles.activeProfile, original)
+    }
+
     func testImportedSelectionRetargetsTheExistingSetupOwner() throws {
         let suite = "PlexHomeOnboardingOwnership.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

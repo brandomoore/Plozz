@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 import SQLite3
 
@@ -30,15 +31,32 @@ public protocol LibraryChannelSnapshotStaging: LibraryChannelSnapshotStoring {
 
 /// One actor-confined connection, indexed by profile and immutable snapshot ID.
 /// Recipes are elsewhere; cache eviction cannot silently invent a new schedule.
-public actor LibraryChannelSnapshotStore: LibraryChannelSnapshotStaging {
+public actor LibraryChannelSnapshotStore: LibraryChannelSnapshotStaging, ApplicationStorageParticipant {
     private let connection: LibrarySnapshotConnection
     private let cacheID: String
     private var revision = UUID()
     private var observedChanges: [Int64]?
+    private let storageLifecycle: ApplicationStorageLifecycle
 
-    public init(databaseURL: URL? = LibraryChannelSnapshotStore.defaultURL) {
-        connection = LibrarySnapshotConnection(url: databaseURL)
+    public init(
+        databaseURL: URL? = LibraryChannelSnapshotStore.defaultURL,
+        storageLifecycle: ApplicationStorageLifecycle = .shared
+    ) {
+        self.storageLifecycle = storageLifecycle
+        connection = LibrarySnapshotConnection(url: databaseURL, storageLifecycle: storageLifecycle)
         cacheID = databaseURL?.standardizedFileURL.path ?? UUID().uuidString
+        storageLifecycle.register(self)
+    }
+
+    public func prepareForSuspension() {
+        guard !storageLifecycle.isActive else { return }
+        do {
+            try connection.close()
+            observedChanges = nil
+            revision = UUID()
+        } catch {
+            PlozzLog.app.error("Library snapshot suspension close failed")
+        }
     }
 
     public static var defaultURL: URL {
@@ -202,12 +220,17 @@ private final class LibrarySnapshotConnection {
     private let url: URL?
     private var handle: OpaquePointer?
     private var openedFile: LiveTVSyncFileRevision?
+    private let storageLifecycle: ApplicationStorageLifecycle
 
-    init(url: URL?) { self.url = url }
+    init(url: URL?, storageLifecycle: ApplicationStorageLifecycle) {
+        self.url = url
+        self.storageLifecycle = storageLifecycle
+    }
     deinit { if let handle { sqlite3_close(handle) } }
     var changedRowCount: Int { Int(sqlite3_changes(handle)) }
 
     func open() throws {
+        try storageLifecycle.checkAccess()
         guard handle == nil else { return }
         if let url {
             try FileManager.default.createDirectory(
@@ -235,6 +258,15 @@ private final class LibrarySnapshotConnection {
         }
         handle = opened
         if let url { openedFile = try LiveTVSyncFileRevision.read(url) }
+    }
+
+    func close() throws {
+        // In-memory fixtures have no file locks and must retain their snapshots.
+        guard url != nil, let handle else { return }
+        guard sqlite3_get_autocommit(handle) != 0,
+              sqlite3_close(handle) == SQLITE_OK else { throw LibraryChannelError.storageFailed }
+        self.handle = nil
+        openedFile = nil
     }
 
     func checkFileIdentity() throws {

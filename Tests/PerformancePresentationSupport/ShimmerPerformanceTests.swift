@@ -1,5 +1,6 @@
 import CoreModels
 import CoreUI
+import Observation
 import SwiftUI
 import UIKit
 import XCTest
@@ -40,20 +41,21 @@ final class ShimmerPerformanceTests: XCTestCase {
     }
 
     func testCoveredShimmerStopsAndRestartsWithoutChangingLayout() async throws {
-        let visibility = Visibility()
-        let fixture = try await Fixture(content: VisibilityFixture(visibility: visibility))
+        let state = ShimmerState()
+        state.rowVisible = true
+        let fixture = try await Fixture(content: ControlledShimmer(state: state))
         defer { fixture.close() }
-        let visibleFrame = visibility.frame
+        let visibleFrame = state.frame
         XCTAssertFalse(visibleFrame.isEmpty)
         try await assertMotion(fixture, expected: true)
-        visibility.enabled = false
+        state.pageVisible = false
         try await Task.sleep(for: .milliseconds(150))
         try await assertMotion(fixture, expected: false)
-        XCTAssertEqual(visibility.frame, visibleFrame)
-        visibility.enabled = true
+        XCTAssertEqual(state.frame, visibleFrame)
+        state.pageVisible = true
         try await Task.sleep(for: .milliseconds(150))
         try await assertMotion(fixture, expected: true)
-        XCTAssertEqual(visibility.frame, visibleFrame)
+        XCTAssertEqual(state.frame, visibleFrame)
     }
 
     private func assertMotion(_ fixture: Fixture, expected: Bool) async throws {
@@ -67,14 +69,43 @@ final class ShimmerPerformanceTests: XCTestCase {
         XCTAssertEqual(changed, expected)
     }
 
-    @MainActor
-    private final class Visibility: ObservableObject {
-        @Published var enabled = true
+    func testEnvironmentPausesAndRestartsShimmer() async throws {
+        let state = ShimmerState()
+        let fixture = try await Fixture(content: ControlledShimmer(state: state))
+        defer { fixture.close() }
+        for _ in 0..<2 {
+            let paused = try fixture.snapshot()
+            try await Task.sleep(for: .milliseconds(600))
+            XCTAssertEqual(try fixture.snapshot(), paused)
+            state.rowVisible = true
+            try await Task.sleep(for: .milliseconds(100))
+            try await assertMotion(fixture, expected: true)
+            state.rowVisible = false
+            try await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
+    func testVisibilityDoesNotChangeReduceMotionAppearance() async throws {
+        let state = ShimmerState()
+        state.reduceMotion = true
+        let fixture = try await Fixture(content: ControlledShimmer(state: state))
+        defer { fixture.close() }
+        let paused = try fixture.snapshot()
+        state.rowVisible = true
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(try fixture.snapshot(), paused)
+    }
+
+    @MainActor @Observable
+    private final class ShimmerState {
+        var pageVisible = true
+        var rowVisible = false
+        var reduceMotion = false
         var frame = CGRect.zero
     }
 
-    private struct VisibilityFixture: View {
-        @ObservedObject var visibility: Visibility
+    private struct ControlledShimmer: View {
+        let state: ShimmerState
 
         var body: some View {
             RoundedRectangle(cornerRadius: 18)
@@ -82,9 +113,11 @@ final class ShimmerPerformanceTests: XCTestCase {
                 .frame(width: 200, height: 300)
                 .shimmering()
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
-                    visibility.frame = $0
+                    state.frame = $0
                 }
-                .environment(\.shimmerAnimationsEnabled, visibility.enabled)
+                .environment(\.shimmerAnimationsEnabled, state.pageVisible)
+                .environment(\.plozzShimmerEnabled, state.rowVisible)
+                .environment(\._accessibilityReduceMotion, state.reduceMotion)
         }
     }
 

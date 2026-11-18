@@ -56,6 +56,30 @@ representatives in one grouped catalog query rather than one lookup per movie.
 The earliest member still owns the group projection even when only another
 member has explicit IDs; conflicting IDs remain omitted.
 
+## Device-wide scan budget
+
+The app's catalog coordinator admits at most two directory scans at once across
+all registered shares. Each admitted scan retains its existing four-connection
+pool: adding more accounts no longer multiplies active scan I/O without a bound.
+The permit covers traversal, catalog reconciliation, and connection teardown.
+Cancellation cannot free capacity while the old scan is still draining.
+
+Waiting scans do not open transport connections or block cached catalog reads,
+raw browsing, or playback admission. Profile exclusion, account removal,
+credential replacement, and app suspension cancel queued work through the same
+generation fences as active scans. A cancelled wait never stamps completion.
+Eligible queued scans run in arrival order as capacity becomes available; a
+large or slow scan can delay indexing a later source, not reading its existing
+catalog. This deliberately trades total indexing speed for lower resource
+pressure.
+
+Browsing any share, including an unregistered raw-file source, signals the
+coordinator's shared scan pacer. All admitted scans briefly slow replacement
+directory requests, with bounded delays so continuous browsing cannot stop
+indexing indefinitely. Metadata retains its separate, already serialized
+scheduler. These limits do not throttle user-requested media-server or playback
+traffic.
+
 ## Explicit work
 
 `Scan now` authorizes the requested scan and its ensuing metadata pass, even
@@ -64,6 +88,7 @@ with that work through queueing and suspension; it is not an account-wide
 override and cannot leak into later automatic polls. Explicit item refresh
 similarly authorizes only that item. These user-requested actions still obey
 foreground, playback, credential, and account-removal fences.
+They also obey the combined scan budget.
 
 ## Verification
 
@@ -72,3 +97,5 @@ profile changes, startup admission, stale revisions, cancellation-insensitive
 I/O, cached reads, resume, one-off work on excluded sources, and the absence of
 idle polling. Preserve existing playback, foreground suspension, scan
 checkpoint, metadata retry, and cross-account serialization coverage.
+The twenty-share performance scenario and its limits are documented in the
+[simulator performance lab](performance-lab.md#many-share-scan-pressure).

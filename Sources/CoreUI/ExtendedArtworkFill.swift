@@ -823,7 +823,7 @@ private enum ExtendedArtworkWash {
 /// discontinuity as an edge — a Mach band — which is exactly the "harsh line"
 /// a scrim or a reflection wash must not have. Sampling an eased curve into
 /// several stops removes both kinks, so the ramp begins and ends invisibly.
-enum ArtworkGradientRamp {
+public enum ArtworkGradientRamp {
     /// Smoothstep: starts and finishes with zero slope, so a ramp built from it
     /// has no visible beginning or end.
     static func eased(_ t: CGFloat, bias: CGFloat) -> CGFloat {
@@ -839,7 +839,7 @@ enum ArtworkGradientRamp {
     ///   falls away. A reflection wants that: it is strongest where it meets the
     ///   picture and fades with distance, so easing it symmetrically would dim
     ///   the very part that makes it read as a reflection at all.
-    static func stops(
+    public static func stops(
         peak: CGFloat,
         from start: CGFloat,
         to end: CGFloat,

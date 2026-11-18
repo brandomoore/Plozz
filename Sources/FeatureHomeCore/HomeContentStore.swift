@@ -121,6 +121,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
     public var watchlistDiscoveryEnabled: Bool
     public var discoverySources: [HeroDiscoverySource]
     public var discoveryContentVersion: Int
+    public var metadataLanguage: String
     /// The libraries the viewer restricted the Random source to. Empty means "all
     /// currently-visible libraries". Included because narrowing it is a request
     /// for different titles — unlike the *resolved* library list, which changes
@@ -128,8 +129,10 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
     public var randomLibraryKeys: Set<String>
     public var collections: [HeroCollectionSelection]
 
-    public init(settings: HeroSettings?) {
+    public init(settings: HeroSettings?, language: String = "en") {
         allowsDiscovery = settings?.allowsDiscovery ?? true
+        metadataLanguage = settings?.isActive == true && settings?.isEnabled(.featured) == true
+            ? Locale.canonicalLanguageIdentifier(from: language) : "en"
         guard let settings, settings.isActive else {
             sources = []
             maxItems = 0
@@ -157,7 +160,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case sources, maxItems, hideWatched, randomLibraryKeys, watchlistDiscoveryEnabled, discoverySources
-        case discoveryContentVersion
+        case discoveryContentVersion, metadataLanguage
         case collections
         case allowsDiscovery
     }
@@ -171,6 +174,8 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         allowsDiscovery = try container.decodeIfPresent(Bool.self, forKey: .allowsDiscovery) ?? true
         sources = try container.decode([HeroSourceKind].self, forKey: .sources)
+        metadataLanguage = sources.contains(.featured)
+            ? try container.decodeIfPresent(String.self, forKey: .metadataLanguage) ?? "en" : "en"
         maxItems = try container.decode(Int.self, forKey: .maxItems)
         hideWatched = try container.decode(Bool.self, forKey: .hideWatched)
         watchlistDiscoveryEnabled = try container.decodeIfPresent(

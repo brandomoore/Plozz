@@ -2,6 +2,41 @@ import XCTest
 @testable import CoreModels
 
 final class CardCaptionSettingsTests: XCTestCase {
+    func testEpisodeDescriptionsDefaultToAlwaysVisibleForNewAndExistingProfiles() throws {
+        XCTAssertFalse(CardCaptionSettings.default.episodeDescriptionsOnFocus)
+        for json in [
+            #"{}"#,
+            #"{"showsLabels":true}"#,
+            #"{"preference":"hide","overrides":{"episodes":true},"homeDefaultVersion":1}"#
+        ] {
+            let settings = try JSONDecoder().decode(CardCaptionSettings.self, from: Data(json.utf8))
+            XCTAssertFalse(settings.episodeDescriptionsOnFocus)
+        }
+    }
+
+    func testEpisodeDescriptionPreferencePersistsAndTransfersWithoutAffectingOtherProfiles() throws {
+        try withDefaults { defaults in
+            let source = CardCaptionSettingsStore(defaults: defaults, namespace: "source")
+            for onFocus in [true, false] {
+                var settings = CardCaptionSettings(episodeDescriptionsOnFocus: onFocus)
+                settings.setOverride(.show, for: .episodes)
+                source.save(settings)
+                XCTAssertEqual(source.load(), settings)
+                let entries = ProfileSettingsTransfer.capture(namespace: "source", defaults: defaults)
+                ProfileSettingsTransfer.apply(entries, namespace: "target", defaults: defaults)
+                XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults, namespace: "target").load(), settings)
+                XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults, namespace: "unrelated").load(), .default)
+                XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults).load(), .default)
+                for preset in CardCaptionPreference.allCases {
+                    var changed = settings
+                    changed.applyPreset(preset)
+                    XCTAssertEqual(changed.episodeDescriptionsOnFocus, onFocus)
+                    XCTAssertEqual(changed.showsLabels(in: .episodes), preset != .hide)
+                }
+            }
+        }
+    }
+
     func testHomeLibrariesInheritHomeAndOverrideOnlyLibraryCards() throws {
         try withDefaults { defaults in
             let source = CardCaptionSettingsStore(defaults: defaults, namespace: "source")

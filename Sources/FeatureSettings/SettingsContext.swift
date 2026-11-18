@@ -259,6 +259,21 @@ public final class SettingsNavigationModel {
         reveal(.metadata)
     }
 
+    public func openHomeCustomization() {
+        #if os(tvOS)
+        searchQuery = ""
+        isSearching = false
+        #endif
+        resetPages()
+        #if os(tvOS)
+        select(.screensNavigation)
+        pages.push(.customizeHome)
+        enterDetail()
+        #else
+        reveal(.customizeHome)
+        #endif
+    }
+
     private func reveal(_ route: SettingsRoute) {
         select(route)
         enterDetail()
@@ -327,38 +342,14 @@ public final class SettingsNavigationModel {
 
 extension View {
     @ViewBuilder
-    func settingsWorkspaceEntry(_ isEntry: Bool = true, route: SettingsRoute? = nil) -> some View {
+    func settingsWorkspaceEntry(_ isEntry: Bool = true) -> some View {
         #if os(tvOS)
-        modifier(SettingsWorkspaceEntryFocus(isEntry: isEntry, route: route))
+        settingsPageEntryFocus(enabled: isEntry)
         #else
         self
         #endif
     }
 }
-
-#if os(tvOS)
-private struct SettingsWorkspaceEntryFocus: ViewModifier {
-    let isEntry: Bool
-    let route: SettingsRoute?
-    @Environment(SettingsNavigationModel.self) private var navigation: SettingsNavigationModel?
-    @FocusState private var focused: Bool
-    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
-
-    func body(content: Content) -> some View {
-        content
-            .focused($focused)
-            .task(id: navigation?.detailFocusRequest) {
-                guard searchRequest == nil, isEntry, let navigation, navigation.enteringDetail,
-                      navigation.path.last == route else { return }
-                focused = false
-                await Task.yield()
-                guard !Task.isCancelled, navigation.enteringDetail,
-                      navigation.path.last == route else { return }
-                focused = true
-            }
-    }
-}
-#endif
 
 extension EdgeInsets {
     /// The default uniform `SettingsPanel` inset — fine for text / non-row content.
@@ -526,17 +517,9 @@ struct ProviderIcon: View {
         // Delegates to the shared CoreUI mark so provider logos, brand tints,
         // the media-share drive glyph, and its transport badge have one
         // implementation across the app.
-        #if os(tvOS)
-        if provider == .iptv {
-            ProviderSiteIcon(url: siteURL, size: size) {
-                ProviderBrandMark(provider: provider, size: size)
-            }
-        } else {
-            ProviderBrandMark(provider: provider, size: size, mediaShareTransport: mediaShareTransport)
-        }
-        #else
-        ProviderBrandMark(provider: provider, size: size, mediaShareTransport: mediaShareTransport)
-        #endif
+        ProviderBrandMark(
+            provider: provider, size: size, mediaShareTransport: mediaShareTransport, siteURL: siteURL
+        )
     }
 
     static func tint(_ provider: ProviderKind) -> Color {

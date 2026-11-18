@@ -62,6 +62,8 @@ public struct ArtworkEnrichmentAdapter: MetadataEnrichmentProvider {
 public protocol TVDBEnriching: Sendable {
     func resolve(byTVDBID id: String, isMovie: Bool) async -> TVDBMetadata?
     func resolve(titles: [String], year: Int?, isMovie: Bool, episodeHints: [SeriesEpisodeHint]) async -> TVDBMetadata?
+    func resolve(byTVDBID id: String, isMovie: Bool, language: String) async -> TVDBMetadata?
+    func resolve(titles: [String], year: Int?, isMovie: Bool, episodeHints: [SeriesEpisodeHint], language: String) async -> TVDBMetadata?
     func backdropURL(title: String, year: Int?, isMovie: Bool, tvdbID: String?) async -> URL?  // l10n:content — media title used as a TheTVDB lookup key
     /// The series' next scheduled episode by a known TheTVDB id. TheTVDB's `nextAired`
     /// is a bare calendar day (`dateOnly`); the season/episode/title are filled
@@ -72,9 +74,34 @@ public protocol TVDBEnriching: Sendable {
     /// ``nextAired(byTVDBID:)`` because it fills the whole upcoming run in one pass;
     /// falls back to the single-next path when it yields nothing.
     func upcomingEpisodes(byTVDBID id: String, limit: Int) async -> TVDBUpcomingSchedule?
+    func scheduledEpisodes(byTVDBID id: String, from start: Date, limit: Int) async -> TVDBUpcomingSchedule?
 }
 
-extension TVDBClient: TVDBEnriching {}
+public extension TVDBEnriching {
+    func resolve(byTVDBID id: String, isMovie: Bool, language: String) async -> TVDBMetadata? {
+        guard LanguageMatch.matches(language, "en") else { return nil }
+        return await resolve(byTVDBID: id, isMovie: isMovie)
+    }
+
+    func resolve(titles: [String], year: Int?, isMovie: Bool, episodeHints: [SeriesEpisodeHint], language: String) async -> TVDBMetadata? {
+        guard LanguageMatch.matches(language, "en") else { return nil }
+        return await resolve(titles: titles, year: year, isMovie: isMovie, episodeHints: episodeHints)
+    }
+
+    func scheduledEpisodes(byTVDBID id: String, from start: Date, limit: Int) async -> TVDBUpcomingSchedule? {
+        await upcomingEpisodes(byTVDBID: id, limit: limit)
+    }
+}
+
+extension TVDBClient: TVDBEnriching {
+    public func resolve(byTVDBID id: String, isMovie: Bool) async -> TVDBMetadata? {
+        await resolve(byTVDBID: id, isMovie: isMovie, language: "en")
+    }
+
+    public func resolve(titles: [String], year: Int?, isMovie: Bool, episodeHints: [SeriesEpisodeHint]) async -> TVDBMetadata? {
+        await resolve(titles: titles, year: year, isMovie: isMovie, episodeHints: episodeHints, language: "en")
+    }
+}
 
 /// TheTVDB as the canonical primary source for movies + TV (and anime *identity*):
 /// external ids, canonical title/overview/genres, poster, and a hero backdrop. An
@@ -102,7 +129,7 @@ public struct TVDBEnrichmentProvider: MetadataEnrichmentProvider {
     /// version 2 would keep being served without the provider ever running again.
     public init(
         client: any TVDBEnriching,
-        policy: ProviderPolicy = ProviderPolicy(version: 4)
+        policy: ProviderPolicy = ProviderPolicy(version: 5)
     ) {
         self.client = client
         self.policy = policy
@@ -122,7 +149,7 @@ public struct TVDBEnrichmentProvider: MetadataEnrichmentProvider {
         var out = MetadataEnrichment()
         var meta: TVDBMetadata?
         if wantsResolveFields {
-            if let known = knownTVDB, let byID = await client.resolve(byTVDBID: known, isMovie: isMovie) {
+            if let known = knownTVDB, let byID = await client.resolve(byTVDBID: known, isMovie: isMovie, language: query.metadataLanguage) {
                 meta = byID
             } else if knownTVDB == nil {
                 // Most specific title first, then the stored one — a generic folder
@@ -131,7 +158,8 @@ public struct TVDBEnrichmentProvider: MetadataEnrichmentProvider {
                     titles: query.titleAlternates + [query.title],
                     year: query.year,
                     isMovie: isMovie,
-                    episodeHints: query.episodeHints
+                    episodeHints: query.episodeHints,
+                    language: query.metadataLanguage
                 )
             }
         }
@@ -175,15 +203,23 @@ public struct TVDBEnrichmentProvider: MetadataEnrichmentProvider {
             // The full listing first: it fills the whole upcoming run and the
             // cadence in one pass. `nextAired` remains the fallback for a series
             // whose listing is unavailable but whose next date is known.
-            if let schedule = await client.upcomingEpisodes(byTVDBID: tvdbID, limit: 24),
-               !schedule.episodes.isEmpty {
+            let schedule: TVDBUpcomingSchedule?
+            if let start = query.scheduleStartDate {
+                schedule = await client.scheduledEpisodes(byTVDBID: tvdbID, from: start, limit: .max)
+                out.calendarScheduleAvailable = schedule != nil
+                out.calendarScheduleComplete = schedule != nil
+            } else {
+                schedule = await client.upcomingEpisodes(byTVDBID: tvdbID, limit: 24)
+            }
+            if let schedule,
+               query.scheduleStartDate != nil || !schedule.episodes.isEmpty {
                 let mapped = schedule.episodes.map {
                     $0.upcomingEpisode(seriesIdentity: identity, source: .tvdb, refreshedAt: now)
                 }
                 out.upcomingEpisodes = mapped
                 out.upcomingEpisode = mapped.first
                 out.cadence = schedule.cadence
-            } else if let next = await client.nextAired(byTVDBID: tvdbID) {
+            } else if query.scheduleStartDate == nil, let next = await client.nextAired(byTVDBID: tvdbID) {
                 out.upcomingEpisode = next.upcomingEpisode(
                     seriesIdentity: identity,
                     source: .tvdb,
@@ -223,12 +259,11 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
     private let provider: any TMDbEnriching
     private let backdropLimit: Int
 
-    /// Version 3 adds scoped credits and descriptive facts; older cached cast
-    /// answers may describe the whole show rather than the requested episode.
+    /// Version 6 includes requested-language display titles.
     public init(
         provider: any TMDbEnriching,
         backdropLimit: Int = 4,
-        policy: ProviderPolicy = ProviderPolicy(version: 3)
+        policy: ProviderPolicy = ProviderPolicy(version: 6)
     ) {
         self.provider = provider
         self.backdropLimit = backdropLimit
@@ -255,7 +290,10 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
         if missing.contains(.episodeThumbnail), let url = await provider.artworkURL(.thumbnail, for: query) {
             out.episodeStillURL = SourcedValue(value: url, source: .tmdb)
         }
-        let detailFields = missing.intersection([.cast, .directors, .writers, .studios, .genres, .overview, .taglines])
+        let detailFields = missing.intersection([
+            .title, .cast, .directors, .writers, .producers, .composers, .studios, .genres, .overview, .taglines,
+            .originalLanguage, .seriesStatus, .catalogSeasonCount, .catalogEpisodeCount
+        ])
         if !detailFields.isEmpty {
             do {
                 out.fillMissing(from: try await provider.detailMetadata(for: query, missing: detailFields))
@@ -303,11 +341,15 @@ public struct AniListEnrichmentProvider: MetadataEnrichmentProvider {
     }
 
     public func enrich(_ query: MetadataQuery, missing: Set<MetadataField>) async -> MetadataEnrichment {
-        guard query.contentType == .anime, let media = await client.fetchMedia(for: query) else {
-            return MetadataEnrichment()
+        guard query.contentType == .anime else { return MetadataEnrichment() }
+        var out = MetadataEnrichment()
+        guard let media = await client.fetchMedia(for: query) else {
+            if missing.contains(.nextAiringEpisode), query.scheduleStartDate != nil {
+                out.calendarScheduleAvailable = false
+            }
+            return out
         }
         let sourceURL = media.id.flatMap { URL(string: "https://anilist.co/anime/\($0)") }
-        var out = MetadataEnrichment()
         if let anilist = media.id {
             out.externalIDs["AniList"] = SourcedValue(value: String(anilist), source: .anilist, sourceURL: sourceURL)
         }
@@ -326,6 +368,9 @@ public struct AniListEnrichmentProvider: MetadataEnrichmentProvider {
             if requestsBackdrop(missing) {
                 out.backdropCandidates = [SourcedValue(value: url, source: .anilist, sourceURL: sourceURL)]
             }
+        }
+        if missing.contains(.nextAiringEpisode), query.scheduleStartDate != nil {
+            out.calendarScheduleAvailable = true
         }
         if missing.contains(.nextAiringEpisode), let anilistID = media.id,
            let schedule = media.nextAiringEpisode,

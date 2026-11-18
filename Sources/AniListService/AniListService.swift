@@ -191,7 +191,9 @@ public final class AniListService: TrackerHistorySyncReading {
             if let session = pendingSession {
                 query.append(.init(name: "session", value: session))
             }
-            var endpoint = Endpoint(path: "/api/redeem", queryItems: query, redirectPolicy: .sameOrigin)
+            var endpoint = Endpoint(
+                path: "/api/redeem", queryItems: query, redirectPolicy: .sameOrigin, allowsAutomaticAddressRetry: false
+            )
             endpoint.redactsURLForLogging = true
             let (data, _) = try await http.send(endpoint, baseURL: relayURL)
             guard generation == profileGeneration else { return }
