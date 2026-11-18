@@ -516,10 +516,13 @@ final class PlayerViewModelEOFTests: XCTestCase {
             let suite = "MovieAutoCrop-\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
+            // Normal cropping is the shared default for every platform. A title
+            // preference saved before the schema version that introduced the
+            // opt-in is reset too, so no visit may resurrect Auto-crop.
             let visits: [(id: String, namespace: String?, expectedSafe: Bool, pinchToEdges: Bool?)] = [
                 ("first", nil, false, false),
-                ("second", nil, true, nil),
-                ("old-title", nil, true, true),
+                ("second", nil, false, nil),
+                ("old-title", nil, false, true),
                 ("first", nil, false, nil),
                 ("second", "guest", false, nil)
             ]
@@ -548,9 +551,9 @@ final class PlayerViewModelEOFTests: XCTestCase {
                 )
                 model.controls.videoZoom.bindAutoCropFraming(to: settings, platform: .current)
                 engine.onLoad = { [weak model] in
-                    XCTAssertEqual(model?.controls.videoZoom.settings.mode, .picture)
+                    XCTAssertEqual(model?.controls.videoZoom.settings.mode, .fit)
                     XCTAssertEqual(model?.controls.videoZoom.settings.pictureFitsInsideSafeArea, visit.expectedSafe,
-                                   "Apply shared framing before the first frame, even for an old title preference.")
+                                   "Apply shared framing before the first frame, including the Auto-crop reset.")
                 }
                 await model.load()
                 XCTAssertEqual(model.phase, .ready)
