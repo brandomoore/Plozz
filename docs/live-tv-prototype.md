@@ -63,13 +63,13 @@ direction in RTL, clamps to the cell, and does not invent progress for future
 programmes. Resting progress shading and custom-focus styles are unchanged.
 The TV logo column is 160 points wide, down from 200. Artwork has 20-point side
 clearance and four-point vertical clearance, giving compact marks more height
-without letting wide marks crowd the edges. System-focus logo labels let native glass fill the
-whole cell, rather than covering it with an opaque plate and exposing only a rim.
-Logos retain their original colours, including monochrome and mixed-colour ink.
-A small contrast backing protects transparent pale ink against bright focus,
-or dark ink against a dark resting surface; it never becomes a full-cell plate.
-Source backings take precedence and boxed artwork stays unchanged. Missing-artwork
-text uses the native foreground. Large preview artwork, mobile logo sizing,
+without letting wide marks crowd the edges. Logo labels retain their original
+full-tile backgrounds, using cached source-background colours or a restrained
+brand tint. Only the plate becomes partly translucent on focus, allowing the
+native control to illuminate it without a white replacement or small nested
+contrast patches. Artwork and text stay opaque with their original contrast
+treatment, including lightening near-black monochrome ink on dark plates.
+Large preview artwork, mobile logo sizing,
 and custom-focus backing treatments keep their existing presentation.
 
 Source details offers **Refresh guide**, which revalidates the guide without
@@ -1410,16 +1410,17 @@ is no prior in-memory history to migrate on the first updated launch.
   identities rather than pretending to be programmes. Subsequent playback/Search
   returns keep their remembered row; an explicit visit to a logo is still
   preserved when returning from browsing controls.
-  Native glass owns the focused station control's filled effect, not its resting background.
+  Native glass illuminates the focused station plate; resting plates have no glass.
   Artwork fits without stretching, with 20-point side and four-point vertical padding.
   Guide, Search, preview metadata and the player use the same `ChannelLogoArtwork`
-  component. Standalone artwork and custom-focus controls retain solid plates.
+  component. Every logo keeps its full-tile plate, including native-focus controls.
   Detected source backings are extended unchanged, including white boxes inside
   transparent margins. Otherwise a restrained, desaturated brand tint sits over
   a light or charcoal plate; even a small bright wordmark can require charcoal.
   A quiet perimeter stroke keeps
-  the standalone plate boundary visible. Native-control artwork instead keeps
-  original ink with a selective local contrast backing. Boxed source colours remain intact.
+  the standalone plate boundary visible. Native controls let the system focus
+  surface show through the plate without dimming the artwork or adding an outline.
+  Boxed source colours remain intact.
   The existing shared hero preparation cache and synchronous memo resolve the
   logo and its backing together, so a warmed guide logo appears immediately in
   the player without another fetch. Hero/search/player sizes and plates remain

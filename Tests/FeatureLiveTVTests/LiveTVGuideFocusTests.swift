@@ -56,7 +56,7 @@ final class LiveTVGuideFocusTests: XCTestCase {
         XCTAssertGreaterThan(elapsed - remaining, 100, "Remaining time must stay visibly distinct.")
     }
 
-    func testNativeStationFocusFillsOnlyTheFocusedTileWithoutReplacingItsOwner() async throws {
+    func testNativeStationFocusIlluminatesTheOriginalPlateWithoutReplacingItsOwner() async throws {
         try await requireNativeFocus()
         let channels = Array(LiveTVPrototypeModel().channels.prefix(2))
         XCTAssertEqual(channels.count, 2)
@@ -95,7 +95,7 @@ final class LiveTVGuideFocusTests: XCTestCase {
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         let attachment = XCTAttachment(image: image)
-        attachment.name = "Native filled station focus"
+        attachment.name = "Native focus through the original station plate"
         attachment.lifetime = .keepAlways
         add(attachment)
         func brightness(at y: CGFloat) throws -> Int {
@@ -112,11 +112,16 @@ final class LiveTVGuideFocusTests: XCTestCase {
                 return Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])
             }
         }
-        XCTAssertGreaterThan(try brightness(at: frame.minY), 500,
-                             "Native focus must fill the tile interior, not just its outer edge.")
+        let focusedBrightness = try brightness(at: frame.minY)
+        XCTAssertGreaterThan(focusedBrightness, 250,
+                             "Native focus must remain visible through the restored plate.")
+        XCTAssertLessThan(focusedBrightness, 550,
+                          "Focus must not replace the original plate with a white surface.")
         if #available(tvOS 26.1, *) {
             let direction: CGFloat = frame.midY < window.bounds.midY ? 1 : -1
-            XCTAssertLessThan(try brightness(at: frame.minY + direction * (frame.height + 16)), 200,
+            let restingBrightness = try brightness(at: frame.minY + direction * (frame.height + 16))
+            XCTAssertGreaterThan(focusedBrightness - restingBrightness, 90)
+            XCTAssertLessThan(restingBrightness, 200,
                               "Unfocused tiles must not keep the prominent glass background.")
         }
     }

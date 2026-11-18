@@ -45,19 +45,17 @@ struct PlozzChannelWordmark: View {
                     .font(.system(size: 10 * scale, weight: .semibold))
                     .tracking(0.3 * scale)
             }
-            .foregroundStyle(usesControlBackground ? AnyShapeStyle(.secondary)
-                : AnyShapeStyle(palette.primaryText.opacity(contrast == .increased ? 1 : 0.65)))
+            .foregroundStyle(palette.primaryText.opacity(contrast == .increased ? 1 : 0.65))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .foregroundStyle(usesControlBackground ? AnyShapeStyle(.primary) : AnyShapeStyle(palette.primaryText))
+        .foregroundStyle(palette.primaryText)
         .padding(.horizontal, size.width * 0.12)
         .padding(.vertical, 22 * scale)
         .frame(width: size.width, height: size.height)
         .background {
-            if !usesControlBackground {
-                palette.cardOpaqueSurface
-                    .overlay(mood.tint.opacity(palette.isLight ? 0.14 : 0.24))
-            }
+            palette.cardOpaqueSurface
+                .overlay(mood.tint.opacity(palette.isLight ? 0.14 : 0.24))
+                .modifier(ChannelLogoNativeBackdrop(enabled: usesControlBackground))
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
@@ -71,6 +69,16 @@ struct PlozzChannelWordmark: View {
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+struct ChannelLogoNativeBackdrop: ViewModifier {
+    let enabled: Bool
+    @Environment(\.isFocused) private var isFocused
+
+    func body(content: Content) -> some View {
+        // Let native focus illuminate the plate without replacing its colour or dimming the logo.
+        content.opacity(enabled && isFocused ? 0.72 : 1)
     }
 }
 #endif

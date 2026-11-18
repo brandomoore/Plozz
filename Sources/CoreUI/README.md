@@ -420,13 +420,13 @@ layout: a name-first title and inset pixel-mascot signature. Its optional
 Category tint blends over `themePalette.cardOpaqueSurface`, so Light, Dark,
 and Black keep their own brightness and foreground contrast. Supplied logos
 always retain precedence; external channels keep the ordinary name fallback.
-Native guide controls opt into `usesControlBackground` so the control owns its
-glass surface and focus fill. Logo ink keeps its original colours; only fallback
-text inherits native foreground contrast. Transparent artwork receives a small
-contrast backing when its measured ink would blend into the resting or focused
-surface. Detected source backings take precedence. Both stay behind the fitted
-logo, not across the whole control. Standalone
-artwork keeps its existing plate and colours by default.
+Native guide controls opt into `usesControlBackground` so native focus can
+illuminate the original full-tile plate. The plate stays opaque at rest and
+becomes partly translucent on focus; artwork and text stay opaque with their
+existing contrast treatment. The shared cached logo analysis supplies source
+background colours or a restrained brand tint, without additional image work.
+Generated Plozz wordmarks use the same backdrop behavior. Standalone artwork
+keeps its existing plate and colours by default.
 Independent `horizontalArtworkInset` lets dense guide cells reserve side clearance
 for wide marks without reducing the height available to square or tall marks.
 
