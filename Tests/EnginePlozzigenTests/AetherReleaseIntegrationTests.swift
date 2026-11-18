@@ -5,6 +5,40 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class AetherReleaseIntegrationTests: XCTestCase {
+    func testMP4SubtitleNamesDoNotCollideWithGeneratedNativeRenditionSuffixes() throws {
+        let demuxer = Demuxer()
+        defer { demuxer.close() }
+        try demuxer.open(url: XCTUnwrap(Bundle.module.url(
+            forResource: "track-name-collisions", withExtension: "mp4", subdirectory: "Fixtures"
+        )))
+        let tracks = demuxer.subtitleTrackInfos()
+        XCTAssertEqual(tracks.map(\.sourceTitle), ["English", "English", "English 2"])
+        let entries = tracks.map { track in
+            AetherEngine.NativeSubtitleTrackEntry(
+                sourceStreamIndex: track.id, language: track.language, isForced: track.isForced,
+                title: track.sourceTitle, isHearingImpaired: track.isHearingImpaired
+            )
+        }
+        let infos = AetherEngine.nativeSubtitleRenditionInfos(for: entries)
+        XCTAssertEqual(infos.count, 3)
+        XCTAssertEqual(Set(infos.map(\.name)).count, 3)
+        XCTAssertEqual(infos.map(\.language), tracks.map(\.language))
+        XCTAssertEqual(infos.map(\.isForced), tracks.map(\.isForced))
+        XCTAssertEqual(infos.map(\.isHearingImpaired), tracks.map(\.isHearingImpaired))
+        let last = try XCTUnwrap(tracks.last)
+        XCTAssertEqual(infos.last?.name, AetherEngine.nativeSubtitleRenditionBaseName(
+            language: last.language, title: last.sourceTitle
+        ))
+
+        let untagged = ["English", "English", "English 2", "English 3", "English"].map {
+            AetherEngine.NativeSubtitleTrackEntry(sourceStreamIndex: 0, language: nil, title: $0)
+        }
+        XCTAssertEqual(
+            AetherEngine.nativeSubtitleRenditionInfos(for: untagged).map(\.name),
+            ["English", "English 4", "English 2", "English 3", "English 5"]
+        )
+    }
+
     func testMP4AuthoredHandlerNamesReachTheEngine() throws {
         for name in ["track-names", "track-metadata-name"] {
             let demuxer = Demuxer()

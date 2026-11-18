@@ -402,13 +402,13 @@ public enum TrackLabeling {
             languageName(forCode: language, in: Locale(identifier: "en")) ?? "",
             trackLanguageName(forCode: language, in: Locale(identifier: "en")) ?? ""
         ]
-        if !versionTags(in: base).isEmpty { represented += versionTags(in: title) }
+        represented += versionTags(in: base)
         for qualifier in label.qualifiers {
             switch qualifier {
             case .format(let value), .title(let value):
                 represented.append(value)
             case .version(let value):
-                represented += [value] + versionTags(in: title)
+                represented.append(value)
             case .forced: represented.append("Forced")
             case .hearingImpaired: represented += ["SDH", "CC", "HOH", "Hearing Impaired"]
             case .commentary: represented.append("Commentary")

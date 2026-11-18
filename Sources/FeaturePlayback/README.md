@@ -614,6 +614,10 @@ groups, translation credits, regional/script variants, colored SDH and commentar
 names never change automatic selection or forced-subtitle disposition.
 Only colliding menu labels gain a localized track-number suffix; unique names,
 selection IDs, preferred-language ordering and external-subtitle markers are unchanged.
+Native subtitle renditions also reserve original names before numbering duplicates,
+so a title such as `English 2` cannot collide with a generated suffix.
+Source version tags are deduplicated only when actually shown in the label; conflicting
+source/display metadata is preserved, not interpreted as a correction or a language.
 Explicit audio-description flags from Plex, Plozzigen and native local audio
 selection appear as `Audio Description`, independently of commentary. Jellyfin/Emby
 titles remain intact; their current stream DTOs do not expose a separate equivalent
@@ -632,6 +636,8 @@ and `track-names.mkv` fixtures
 contain 0.2 seconds of generated silent AAC and the original cue
 `Track metadata fixture.` They verify actual demuxed names, default handlers and
 accessibility flags without downloading copyrighted media.
+`track-name-collisions.mp4` repeats the same original cue on three subtitle tracks
+to cover native rendition names that collide with numeric suffixes.
 Explicit French audio/subtitle version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
 `VOQ`) survive generated server titles, matching-track provider enrichment, and
 app-locale changes. These are source-authored community conventions, rendered

@@ -156,6 +156,32 @@ final class TrackLabelingTests: XCTestCase {
         )
     }
 
+    func testUnrepresentedSourceVersionsSurviveInconsistentDisplayMetadata() {
+        // Synthetic conflicting metadata: preserve the source, not a guessed correction.
+        for localeID in ["en", "es"] {
+            let locale = Locale(identifier: localeID)
+            for sourceTitle in ["French (VFQ)", "French (VFF VFQ)"] {
+                let subtitle = TrackLabeling.subtitleLabel(
+                    displayTitle: "French VFF", sourceTitle: sourceTitle, language: "fr", codec: "srt",
+                    isForced: false, isImageBased: false, trackID: 3, locale: locale
+                )
+                let audio = TrackLabeling.audioLabel(
+                    displayTitle: "French VFF", sourceTitle: sourceTitle, language: "fr",
+                    trackID: 3, locale: locale
+                )
+                XCTAssertTrue(subtitle.qualifiers.contains(.title(sourceTitle)), "\(localeID): \(sourceTitle)")
+                XCTAssertTrue(audio.qualifiers.contains(.title(sourceTitle)), "\(localeID): \(sourceTitle)")
+            }
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(
+                    displayTitle: "French VFF", sourceTitle: "VFF", language: "fr", trackID: 3, locale: locale
+                ),
+                TrackLabeling.audioLabel(displayTitle: "French VFF", language: "fr", trackID: 3, locale: locale),
+                "A version actually shown in the base or qualifiers should not be repeated."
+            )
+        }
+    }
+
     func testContainerAudioNamesRetainLanguageAndFormatWithoutDuplicatingExistingNames() {
         XCTAssertEqual(
             TrackLabeling.audioLabel(

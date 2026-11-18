@@ -647,12 +647,13 @@ final class PlexProviderMappingTests: XCTestCase {
 
     func testSubtitleMappingPreservesRawVersionsAlongsideForcedAndRegionalMetadata() throws {
         let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
-        for (metadata, version) in [
-            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFF)""#, "VFF"),
-            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFQ)""#, "VFQ"),
-            (#""extendedDisplayTitle":"French (Forced)","displayTitle":"French (VFQ)""#, "VFQ"),
-            (#""extendedDisplayTitle":"French (VFF)","title":"French (VFQ)""#, "VFF")
-        ] {
+        for (metadata, qualifiers) in [
+            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFF)""#, [.version("VFF"), .forced]),
+            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFQ)""#, [.version("VFQ"), .forced]),
+            (#""extendedDisplayTitle":"French (Forced)","displayTitle":"French (VFQ)""#, [.version("VFQ"), .forced]),
+            (#""extendedDisplayTitle":"French (VFF)","title":"French (VFQ)""#,
+             [.title("French (VFQ)"), .version("VFF"), .forced])
+        ] as [(String, [TrackLabel.Qualifier])] {
             let json = #"{"index":3,"streamType":3,"codec":"srt","languageTag":"fr-CA","forced":true,"# + metadata + "}"
             let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(json.utf8))
             let track = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
@@ -666,7 +667,7 @@ final class PlexProviderMappingTests: XCTestCase {
                     isForced: track.isForced, isImageBased: track.isImageBasedSubtitle,
                     trackID: track.id, locale: Locale(identifier: "en")
                 ),
-                TrackLabel(base: .content("French (Canada)"), qualifiers: [.version(version), .forced])
+                TrackLabel(base: .content("French (Canada)"), qualifiers: qualifiers)
             )
         }
     }
