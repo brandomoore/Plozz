@@ -1043,7 +1043,8 @@ struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
                 }
             }
             .overlay(alignment: .top) {
-                if surfaceRole == .home, topHeight > 0, !reduceTransparency {
+                if surfaceRole == .home || surfaceRole == .detail,
+                   topHeight > 0, !reduceTransparency {
                     topReflectionBlur(geometry, width: width, topHeight: topHeight,
                                       radius: topHeight / 6, from: 0, to: 0.55)
                     topReflectionBlur(geometry, width: width, topHeight: topHeight,
@@ -1203,11 +1204,26 @@ private struct PlozziOSPreparedHeroArtwork {
     let opacity: Double
 }
 
+private struct PlozziOSHeroArtworkReveal<Content: View>: View, Animatable {
+    var opacity: Double
+    @ViewBuilder let content: (Double) -> Content
+
+    var animatableData: Double {
+        get { opacity }
+        set { opacity = newValue }
+    }
+
+    var body: some View {
+        ZStack { content(opacity) }
+    }
+}
+
 private struct PlozziOSDetailHeroArtwork<Content: View>: View {
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var frozenReferences: [ArtworkReference]?
-    @State private var showedPlaceholder = false
+    @State private var pageIsVisible = false
+    @State private var showedPlaceholderAfterEntry = false
     @State private var hasRevealed = false
 
     let presentation: HeroPresentation
@@ -1218,8 +1234,16 @@ private struct PlozziOSDetailHeroArtwork<Content: View>: View {
     @ViewBuilder let content: (PlozziOSPreparedHeroArtwork) -> Content
 
     var body: some View {
+        // Keep appearance and interpolation outside the resolver's changing source-gate branch.
+        PlozziOSHeroArtworkReveal(opacity: hasRevealed ? 1 : 0) { opacity in
+            resolvedArtwork(revealOpacity: opacity)
+        }
+        .plozzOnPageAppearanceChange { pageIsVisible = $0 }
+    }
+
+    private func resolvedArtwork(revealOpacity: Double) -> some View {
         let references = presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area)
-        FallbackAsyncImage(
+        return FallbackAsyncImage(
             references: frozenReferences ?? references,
             prefersLandscape: style != .compactPortrait,
             maxAspectRatio: 3,
@@ -1241,17 +1265,26 @@ private struct PlozziOSDetailHeroArtwork<Content: View>: View {
         ) { _ in EmptyView() } placeholder: { EmptyView() }
         .resolvedBitmap(reportingHeroArtwork: presentation.itemID) { resolved, _ in
             let image = resolved ?? seedArtwork
+            let opacity = showedPlaceholderAfterEntry ? revealOpacity : 1
             content(PlozziOSPreparedHeroArtwork(
                 image: image.map(Image.init(uiImage:)),
-                opacity: showedPlaceholder && !hasRevealed ? 0 : 1
+                opacity: image == nil && !hasRevealed ? 0 : opacity
             ))
+                .task(id: image != nil) {
+                    guard image != nil, !hasRevealed, !Task.isCancelled else { return }
+                    let fades = showedPlaceholderAfterEntry && pageIsVisible && !reduceMotion
+                    withAnimation(fades ? .easeOut(duration: 0.15) : nil) {
+                        hasRevealed = true
+                    }
+                }
                 .onChange(of: image != nil, initial: true) { _, isReady in
-                    if isReady, !hasRevealed {
-                        withAnimation(showedPlaceholder && !reduceMotion ? .easeOut(duration: 0.15) : nil) {
-                            hasRevealed = true
-                        }
-                    } else if !isReady, !hasRevealed {
-                        showedPlaceholder = true
+                    if !isReady, !hasRevealed, pageIsVisible {
+                        showedPlaceholderAfterEntry = true
+                    }
+                }
+                .onChange(of: pageIsVisible) { _, isVisible in
+                    if isVisible, image == nil, !hasRevealed {
+                        showedPlaceholderAfterEntry = true
                     }
                 }
         }

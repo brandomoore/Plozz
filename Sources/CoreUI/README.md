@@ -629,8 +629,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   top for a softly faded reflection, shifting the original artwork below more
   of the status-bar chrome without moving metadata or growing the hero.
   Home and Details share this still-image layout, including swipe reflections.
-  Only Home adds progressive blur across the top reflection; Details keep it sharp
-  rather than stacking that treatment with native navigation chrome.
+  Home and Details share progressive blur across the top reflection, with the
+  same sharp fallback when Reduce Transparency is enabled.
   The bottom reflection and minimum dissolve span remain intact; trailers keep
   their full-stage presentation. Landscape and tvOS heroes are unchanged.
 
@@ -661,9 +661,12 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   it does not select or authorize a different preferred source.
   Mobile detail uses `FallbackAsyncImage.resolvedBitmap(reportingHeroArtwork:)`
   to share one resolved bitmap across the original and reflected images. Only a
-  late first image fades: the composed layer reveals over 0.15 seconds, or
-  immediately with Reduce Motion. Cached and handed-off images remain immediate,
-  and resolution upgrades do not restart the reveal.
+  late first image fades, after native entry completes with the artwork still
+  missing: the composed layer reveals over 0.15 seconds, or immediately with
+  Reduce Motion. Images arriving during navigation or while the page is covered,
+  cached and handed-off images remain immediate. Resolution upgrades do not
+  restart the reveal. `plozzOnPageAppearanceChange` shares the native lifecycle
+  reader; metadata opts into entry start while artwork observes entry completion.
   TV transition prefetches are reusable work, not permission to paint. The
   transition cover receives its image only from the ready destination renderer.
   `ArtworkDisplayIdentity` separates the visible subject/policy from changing

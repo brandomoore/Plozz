@@ -91,10 +91,11 @@ between Home and detail:
   must not fade when the slide changes or while the page is pulled. An
   opacity animation tied to `backdropResolved` on every slide causes dimming and
   black flashes during pull.
-- **Ready detail artwork stays immediate.** Only artwork arriving after a blank
-  first paint gets a 0.15-second fade, shared by the image and all reflections.
-  Cached and handed-off artwork, quality upgrades and return navigation do not
-  fade. Reduce Motion removes the fallback fade. Mobile detail starts its
+- **Ready detail artwork stays immediate.** Only artwork still missing when
+  native entry completes gets a 0.15-second arrival fade, shared by the image
+  and all reflections. Arrivals during navigation or while covered, cached and
+  handed-off artwork, quality upgrades and return navigation do not fade.
+  Reduce Motion removes the fallback fade. Mobile detail starts its
   grouped foreground entrance during native navigation, using available metadata;
   later enrichment and return navigation do not replay it.
 - **Reserve async action slots.** A trailer button (or any action resolved after

@@ -137,8 +137,10 @@ loading and reveal behavior stable:
 - Home's wordmark keeps its independent reveal and never gates its action row.
   Detail's late wordmark joins quietly instead of adding a second fade.
 - Ready artwork stays opaque on Home and detail. Mobile detail resolves one
-  bitmap for its primary image and every reflection. If the page first paints
-  blank, that composed artwork fades in together over 0.15 seconds, with no delay.
+  bitmap for its primary image and every reflection. Artwork arriving during
+  native entry paints immediately, without an extra fade. Only when entry
+  completes with artwork still missing does its later arrival fade in together
+  over 0.15 seconds, with no delay. Arrivals while covered paint immediately.
   Reduce Motion bypasses the fade; quality upgrades and returning to the page
   do not replay it. The selected artwork source still owns readiness.
 - Home hero taps can hand off the actual displayed bitmap as the detail's

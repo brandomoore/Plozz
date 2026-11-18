@@ -100,12 +100,7 @@ public struct PlozzFadeInOnAppear: ViewModifier {
             .allowsHitTesting(visible)
             .accessibilityHidden(!visible)
             #if os(iOS)
-            .background {
-                PlozzPageAppearanceReader { pageHasAppeared = $0 }
-                    .frame(width: 0, height: 0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
+            .plozzOnPageAppearanceChange(startsDuringTransition: true) { pageHasAppeared = $0 }
             #endif
             .task(id: canReveal) {
                 guard canReveal, !visible, !Task.isCancelled else { return }
@@ -127,21 +122,24 @@ public struct PlozzFadeInOnAppear: ViewModifier {
 }
 
 #if os(iOS)
-/// Start with native navigation, rather than waiting for its completion.
 private struct PlozzPageAppearanceReader: UIViewControllerRepresentable {
+    let startsDuringTransition: Bool
     let onChange: (Bool) -> Void
 
     func makeUIViewController(context: Context) -> Controller {
         let controller = Controller()
+        controller.startsDuringTransition = startsDuringTransition
         controller.onChange = onChange
         return controller
     }
 
     func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.startsDuringTransition = startsDuringTransition
         controller.onChange = onChange
     }
 
     final class Controller: UIViewController {
+        var startsDuringTransition = false
         var onChange: ((Bool) -> Void)?
 
         override func loadView() {
@@ -157,7 +155,7 @@ private struct PlozzPageAppearanceReader: UIViewControllerRepresentable {
 
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
-            onChange?(true)
+            onChange?(startsDuringTransition)
         }
 
         override func viewWillDisappear(_ animated: Bool) {
@@ -169,6 +167,21 @@ private struct PlozzPageAppearanceReader: UIViewControllerRepresentable {
 #endif
 
 public extension View {
+    #if os(iOS)
+    /// Reports native entry completion (or entry start when requested), and leaving the page.
+    func plozzOnPageAppearanceChange(
+        startsDuringTransition: Bool = false,
+        perform: @escaping (Bool) -> Void
+    ) -> some View {
+        background {
+            PlozzPageAppearanceReader(startsDuringTransition: startsDuringTransition, onChange: perform)
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+    #endif
+
     func plozzFadeInOnAppear(
         duration: Double = 0.24, isReady: Bool = true, hasRevealed: Binding<Bool>? = nil
     ) -> some View {

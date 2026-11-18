@@ -46,11 +46,14 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
-    func testLateArtworkAndReflectionsShareTheSameShortReveal() async throws {
+    func testArtworkArrivingDuringNavigationIsImmediatelyOpaque() async throws {
         XCTAssertFalse(UIAccessibility.isReduceMotionEnabled)
         for gated in [true, false] {
-            let fixture = try Fixture(size: CGSize(width: 390, height: 844))
+            let fixture = try Fixture(navigates: true, size: CGSize(width: 390, height: 844))
             defer { fixture.close() }
+            let navigation = try XCTUnwrap(fixture.navigation)
+            let root = try XCTUnwrap(navigation.viewControllers.first as? AppearanceHost)
+            try await waitUntil { root.hasAppeared }
             let url = try fixture.seedArtwork()
             if gated {
                 let cached = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
@@ -58,6 +61,49 @@ final class HeroLogoContinuityTests: XCTestCase {
             }
             let state = ArtworkState(url: gated ? url : nil, sourceReady: !gated)
             fixture.host.rootView = AnyView(ArtworkFixture(state: state))
+            navigation.pushViewController(fixture.host, animated: true)
+            await Task.yield()
+            XCTAssertLessThan(try fixture.artworkSample().values[1], 10)
+
+            state.item.posterURL = url
+            state.item.backdropURL = url
+            state.sourceReady = true
+            try await waitUntil { try fixture.artworkSample().values[1] > 0 }
+            let firstFrame = try fixture.artworkSample()
+            XCTAssertFalse(fixture.host.hasAppeared,
+                           "This case must resolve artwork before native entry completes (gated: \(gated)).")
+            let attachment = XCTAttachment(image: firstFrame.image)
+            attachment.name = "artwork-during-navigation-gated-\(gated)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTAssertGreaterThan(firstFrame.values[1], 230,
+                                 "An image arriving during entry must not receive an extra opacity fade.")
+            try await waitUntil { fixture.host.hasAppeared }
+            for _ in 0..<8 {
+                XCTAssertGreaterThan(try fixture.artworkSample().values[1], 230,
+                                     "Completing navigation must not restart the artwork reveal.")
+                try await Task.sleep(for: .milliseconds(16))
+            }
+        }
+    }
+
+    func testLateArtworkAndReflectionsShareTheSameShortReveal() async throws {
+        XCTAssertFalse(UIAccessibility.isReduceMotionEnabled)
+        for gated in [true, false] {
+            let fixture = try Fixture(navigates: true, size: CGSize(width: 390, height: 844))
+            defer { fixture.close() }
+            let navigation = try XCTUnwrap(fixture.navigation)
+            let root = try XCTUnwrap(navigation.viewControllers.first as? AppearanceHost)
+            try await waitUntil { root.hasAppeared }
+            let url = try fixture.seedArtwork()
+            if gated {
+                let cached = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+                XCTAssertNotNil(cached)
+            }
+            let state = ArtworkState(url: gated ? url : nil, sourceReady: !gated)
+            fixture.host.rootView = AnyView(ArtworkFixture(state: state))
+            navigation.pushViewController(fixture.host, animated: false)
+            try await waitUntil { fixture.host.hasAppeared }
             try await Task.sleep(for: .milliseconds(100))
             let baseline = try fixture.artworkSample().values
             state.item.posterURL = url
@@ -77,8 +123,15 @@ final class HeroLogoContinuityTests: XCTestCase {
                     (pair.0 - pair.1) / max(end - pair.1, 1)
                 }
             }
+            let measurements = XCTAttachment(string:
+                "baseline: \(baseline)\nfinal: \(final)\n" +
+                frames.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
+            )
+            measurements.name = "artwork-opacity-samples-gated-\(gated)"
+            measurements.lifetime = .keepAlways
+            add(measurements)
             let intermediate = try XCTUnwrap(normalized.firstIndex { $0[1] > 0.1 && $0[1] < 0.9 },
-                                             "Late artwork needs a rendered intermediate frame.")
+                                             "Late artwork needs a rendered intermediate frame (gated: \(gated)).")
             for (index, frame) in normalized.enumerated() where frame[1] > 0.1 && frame[1] < 0.9 {
                 for position in final.indices {
                     let expected = baseline[position] + (final[position] - baseline[position]) * frame[1]
@@ -92,21 +145,39 @@ final class HeroLogoContinuityTests: XCTestCase {
             attachment.name = "synchronized-artwork-reveal-gated-\(gated)"
             attachment.lifetime = .keepAlways
             add(attachment)
-            let measurements = XCTAttachment(string:
-                "baseline: \(baseline)\nfinal: \(final)\n" +
-                frames.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
-            )
-            measurements.name = "artwork-opacity-samples-gated-\(gated)"
-            measurements.lifetime = .keepAlways
-            add(measurements)
 
-            fixture.host.beginAppearanceTransition(false, animated: true)
-            fixture.host.endAppearanceTransition()
-            fixture.host.beginAppearanceTransition(true, animated: true)
-            try await Task.sleep(for: .milliseconds(20))
+            navigation.pushViewController(UIViewController(), animated: false)
+            navigation.popViewController(animated: false)
+            try await waitUntil { fixture.host.hasAppeared }
             XCTAssertEqual(try fixture.artworkSample().values[1], final[1], accuracy: 2)
-            fixture.host.endAppearanceTransition()
         }
+    }
+
+    func testArtworkArrivingWhileCoveredIsImmediatelyOpaqueOnReturn() async throws {
+        let fixture = try Fixture(defersAppearance: true, size: CGSize(width: 390, height: 844))
+        defer { fixture.close() }
+        let url = try fixture.seedArtwork()
+        let cached = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+        XCTAssertNotNil(cached)
+        let state = ArtworkState(url: url, sourceReady: false)
+        fixture.host.rootView = AnyView(ArtworkFixture(state: state))
+        fixture.host.view.layoutIfNeeded()
+        fixture.host.beginAppearanceTransition(true, animated: false)
+        fixture.host.endAppearanceTransition()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertLessThan(try fixture.artworkSample().values[1], 10)
+
+        fixture.host.beginAppearanceTransition(false, animated: true)
+        fixture.host.endAppearanceTransition()
+        try await Task.sleep(for: .milliseconds(50))
+        state.sourceReady = true
+        try await waitUntil { try fixture.artworkSample().values[1] > 0 }
+        XCTAssertGreaterThan(try fixture.artworkSample().values[1], 230,
+                             "Hidden arrivals must not animate or wait for the page to return.")
+        fixture.host.beginAppearanceTransition(true, animated: true)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertGreaterThan(try fixture.artworkSample().values[1], 230)
+        fixture.host.endAppearanceTransition()
     }
 
     func testCachedPreviewAndReducedMotionArtworkAreImmediatelyOpaque() async throws {
@@ -716,14 +787,35 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
+    private final class AppearanceHost: UIHostingController<AnyView> {
+        var hasAppeared = false
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            hasAppeared = false
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            hasAppeared = true
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            hasAppeared = false
+        }
+    }
+
     private final class Fixture {
         let window: UIWindow
-        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        let host = AppearanceHost(rootView: AnyView(EmptyView()))
+        private(set) var navigation: UINavigationController?
         let previous: UIWindow?
         private var urls: [URL] = []
 
         init(
             defersAppearance: Bool = false,
+            navigates: Bool = false,
             size: CGSize = CGSize(width: 400, height: 250)
         ) throws {
             let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -731,7 +823,12 @@ final class HeroLogoContinuityTests: XCTestCase {
             window = UIWindow(windowScene: scene)
             window.frame = CGRect(origin: .zero, size: size)
             host.safeAreaRegions = []
-            if defersAppearance {
+            if navigates {
+                let navigation = UINavigationController(rootViewController: AppearanceHost(rootView: AnyView(Color.black)))
+                navigation.setNavigationBarHidden(true, animated: false)
+                self.navigation = navigation
+                window.rootViewController = navigation
+            } else if defersAppearance {
                 let container = AppearanceContainer()
                 container.addChild(host)
                 container.view.addSubview(host.view)
@@ -834,10 +931,11 @@ final class HeroLogoContinuityTests: XCTestCase {
 
         private func pixels() throws -> (image: UIImage, bytes: [UInt8]) {
             window.layoutIfNeeded()
+            let surface: UIView = navigation == nil ? window : host.view
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1
-            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
-                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            let image = UIGraphicsImageRenderer(bounds: surface.bounds, format: format).image { _ in
+                surface.drawHierarchy(in: surface.bounds, afterScreenUpdates: false)
             }
             let cgImage = try XCTUnwrap(image.cgImage)
             var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
