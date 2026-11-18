@@ -385,6 +385,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     /// this remains true during stale-while-revalidate so cached rows can explain
     /// that their complete live contents are still arriving.
     public private(set) var isRefreshing = false
+    public private(set) var isRefreshingContinueWatching = false
     public private(set) var loadingRows: Set<HomeRowKind> = []
     public private(set) var rowFailures: [HomeRowKind: AppError] = [:]
     public private(set) var continueWatchingDiagnostic: LibraryLoadDiagnostic?
@@ -412,6 +413,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     @ObservationIgnored private var mutationsDuringLoad: [MediaItemMutation] = []
     @ObservationIgnored private var loadFailures: [HomeRowKind: AppError] = [:]
     @ObservationIgnored private var loadContinueWatchingDiagnostic: LibraryLoadDiagnostic?
+    @ObservationIgnored private var needsContentRefresh = false
     /// Exact unresolved Watchlist slots. Resolved cards remain fixed while these
     /// placeholders are replaced, matching ordinary paged library browsing.
     public private(set) var watchlistLoadingPlaceholderCount = 0
@@ -811,11 +813,15 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     /// change: hiding/showing/disabling a library, or flipping the merge switch.
     public func loadIfNeeded(
         for visibility: HomeLibraryVisibility,
-        trigger: String = "appear"
+        trigger: String = "appear",
+        forceRefresh: Bool = false
     ) async {
         guard canLoadContent else { return }
         if isLoading {
             if !Task.isCancelled { retryCancelledPreparation = true }
+            if forceRefresh, publishedLoadRows.contains(.continueWatching) {
+                wantsReloadAfterCurrent = true
+            }
             if loadingVisibility?.intent != visibility.intent {
                 wantsReloadAfterCurrent = true
                 aggregationTask?.cancel()
@@ -847,11 +853,11 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                 // reloading there would reshuffle the row under the viewer for
                 // nothing.
                 let age = lastLoadedAt.map { Date().timeIntervalSince($0) }
-                let isStale = (age ?? .infinity) >= policy.refreshAfter
+                let isStale = forceRefresh || needsContentRefresh || (age ?? .infinity) >= policy.refreshAfter
                 ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.refreshLine(
                     trigger: trigger,
                     willReload: isStale,
-                    reason: isStale
+                    reason: forceRefresh || needsContentRefresh ? "requested" : isStale
                         ? "stale age=\(age.map { String(format: "%.0fs", $0) } ?? "never") > \(Int(policy.refreshAfter))s"
                         : "fresh age=\(age.map { String(format: "%.0fs", $0) } ?? "never")"
                 ))
@@ -910,6 +916,11 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         await load(showLoadingState: true)
     }
 
+    /// Background catalogue changes invalidate the next visit, not the visible lineup.
+    public func setNeedsRefresh() {
+        needsContentRefresh = true
+    }
+
     /// Re-aggregates Home content. `showLoadingState` is `false` for a *silent*
     /// refresh (e.g. surfacing a brand-new resume after playback) — the currently
     /// loaded rows stay on screen until the fresh content swaps in, so there's no
@@ -937,6 +948,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         var diagnosticMetrics = PerformanceDiagnostics.Metrics()
         defer { diagnostic?.finish(diagnosticOutcome, metrics: diagnosticMetrics) }
         isLoading = true
+        needsContentRefresh = false
         needsReenrichmentAfterPause = false
         retryCancelledPreparation = false
         collectionRefreshTask?.cancel()
@@ -944,6 +956,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         collectionRefreshWorkerGeneration &+= 1
         collectionRefreshWaitingForDeadline = false
         isRefreshing = true
+        isRefreshingContinueWatching = true
         loadGeneration &+= 1
         let generation = loadGeneration
         publishedLoadRows = []
@@ -958,6 +971,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                 wantsReloadAfterCurrent = true
             }
             isLoading = false
+            isRefreshingContinueWatching = false
             loadingVisibility = nil
             retryCancelledPreparation = false
             if wantsReloadAfterCurrent, canLoadContent {
@@ -1094,7 +1108,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             guard !aggregationTask.isCancelled, canLoadContent,
                   generation == loadGeneration, currentVisibility() == visibility else { return }
             noteServerConfirmed(merged.continueWatching)
-            let reconciledCW = Self.reconcileContinueWatching(
+            let reconciledCW = publishedLoadRows.contains(.continueWatching)
+                ? state.value?.continueWatching ?? []
+                : Self.reconcileContinueWatching(
                 merged.continueWatching,
                 pending: pending,
                 appliedRecency: appliedRecency,
@@ -1149,7 +1165,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             guard !unmergedTask.isCancelled, canLoadContent,
                   generation == loadGeneration, currentVisibility() == visibility else { return }
             noteServerConfirmed(unmerged.continueWatching)
-            let reconciledCW = Self.reconcileContinueWatching(
+            let reconciledCW = publishedLoadRows.contains(.continueWatching)
+                ? state.value?.continueWatching ?? []
+                : Self.reconcileContinueWatching(
                 unmerged.continueWatching,
                 pending: pending,
                 appliedRecency: appliedRecency,
@@ -1236,13 +1254,14 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         continueWatchingDiagnostic = loadContinueWatchingDiagnostic
         if content.isEmpty, accounts.isEmpty {
             await scheduleSnapshotClear().value
-        } else if hasNoMediaContent, !showLoadingState, var previousContent {
+        } else if hasNoMediaContent, !showLoadingState, !loadFailures.isEmpty, var previousContent {
             PlozzLog.boot("HomeVM.load KEEP-CACHED silent-empty vm=\(UInt(bitPattern: ObjectIdentifier(self).hashValue))")
             lastLoadedVisibility = visibility
             lastLoadedAt = Date()
-            // The live sources were unavailable. Reveal the cached row rather than
-            // leaving a permanent loading placeholder with no refresh in flight.
+            // Stable discovery rows may survive an outage, but old Continue Watching
+            // cannot be promoted to a current answer by this fallback.
             let publication = PerformanceDiagnostics.shared.begin(.homePublish)
+            previousContent.continueWatching = content.continueWatching
             previousContent.sectionIssues = content.sectionIssues
             state = .loaded(previousContent)
             publication?.finish(.succeeded)
@@ -1251,7 +1270,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             isShowingCachedSnapshot = false
             return
         }
-        hasReceivedLiveContent = true
+        hasReceivedLiveContent = loadFailures[.continueWatching] == nil || !content.continueWatching.isEmpty
         hasCompletedHomeLoad = true
         receivedLiveRows = Self.retainedReadyRows(
             Set(HomeRowKind.allCases), content: content, failures: loadFailures, visibility: visibility
@@ -1384,9 +1403,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
               generation == loadGeneration, currentVisibility() == visibility else { return }
         loadFailures = progress.failures
         loadContinueWatchingDiagnostic = progress.continueWatchingDiagnostic
-        guard publishesProgress else { return }
         let ready = Set(HomeRowKind.allCases).subtracting(progress.loadingRows)
         let newlyReady = ready.subtracting(publishedLoadRows)
+        guard publishesProgress || newlyReady.contains(.continueWatching) else { return }
         var resume: [MediaItem]?
         if newlyReady.contains(.continueWatching) {
             let pending = await pendingWatchMutations()
@@ -1404,8 +1423,18 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             }
             hasReceivedLiveContent = progress.failures[.continueWatching] == nil
                 || !progress.content.continueWatching.isEmpty
+            isRefreshingContinueWatching = false
         }
         var content = state.value ?? Content()
+        if !publishesProgress {
+            if let resume { content.continueWatching = resume }
+            content = applyingLoadMutations(to: content)
+            publishedLoadRows.insert(.continueWatching)
+            rowFailures[.continueWatching] = progress.failures[.continueWatching]
+            continueWatchingDiagnostic = progress.continueWatchingDiagnostic
+            if state.value != content { state = .loaded(content) }
+            return
+        }
         let previousLibraryRowCount = content.librarySections.reduce(0) { $0 + $1.sections.count }
         content.mergeLibraries = !visibility.usesIndividualHomeRows
         content.serverRows = retainingServerRowContent(

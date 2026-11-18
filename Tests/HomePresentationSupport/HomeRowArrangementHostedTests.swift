@@ -61,6 +61,60 @@ private final class ContentPickerSelectionFixture {
 
 @MainActor
 extension HomeRowArrangementHostedTests {
+    func testContinueWatchingStatusDoesNotMoveTheHeadingOrCards() async throws {
+        var headingY: CGFloat?
+        var cardY: CGFloat?
+        let cases: [(String, Bool, AppError?)] = [
+            ("Ready", false, nil),
+            ("Refreshing", true, nil),
+            ("Unavailable source", false, .serverUnreachable)
+        ]
+        for (name, refreshing, failure) in cases {
+            #if os(tvOS)
+            let size = CGSize(width: 1280, height: 720)
+            #else
+            let size = CGSize(width: 390, height: 844)
+            #endif
+            try await withWindow(size: size) {
+                Group {
+                    #if os(tvOS)
+                    MediaRowSection(title: Text("Continue Watching"), insetsContent: true) {
+                        Text("Playable title").font(.body)
+                    }
+                    #else
+                    PlozziOSMediaSection(title: Text("Continue Watching")) {
+                        Text("Playable title").font(.body)
+                    }
+                    #endif
+                }
+                .environment(\.mediaRowRefreshStatus, MediaRowRefreshStatus(
+                    isRefreshing: refreshing, failure: failure, report: nil, onRetry: {}
+                ))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } inspect: { window in
+                let image = try await snapshot(window, name: "Continue Watching - \(name)")
+                let text = try recognizedText(in: image)
+                var headingBox = try XCTUnwrap(text.first { $0.0.contains("Continue Watching") }?.1)
+                let cardBox = try XCTUnwrap(text.first { $0.0.contains("Playable title") }?.1)
+                // Vision can group the status glyph with the heading; compare title ink only.
+                headingBox.size.width *= 0.4
+                let bitmap = try XCTUnwrap(image.cgImage)
+                let pixels = try rgba(bitmap)
+                let heading = try textInkBounds(headingBox, bitmap: bitmap, pixels: pixels)
+                let card = try textInkBounds(cardBox, bitmap: bitmap, pixels: pixels)
+                if let headingY, let cardY {
+                    XCTAssertEqual(heading.minY, headingY, accuracy: 1)
+                    XCTAssertEqual(card.minY, cardY, accuracy: 1)
+                } else {
+                    headingY = heading.minY
+                    cardY = card.minY
+                }
+                XCTAssertNil(window.rootViewController?.presentedViewController,
+                             "A source failure must not present an unsolicited sheet or alert.")
+            }
+        }
+    }
+
     func testUpcomingToolbarStaysAtTopWhileTheAgendaScrolls() async throws {
         throw XCTSkip(
             "The hosted Upcoming fixture has no agenda controls rendered on this "

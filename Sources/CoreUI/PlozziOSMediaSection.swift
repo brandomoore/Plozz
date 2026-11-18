@@ -190,6 +190,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
+                MediaRowRefreshIndicator()
                 if onBrowse == nil, let onSeeAll {
                     Spacer()
                     Button("See all", action: onSeeAll)
@@ -201,6 +202,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
                 ))
             content
                 .environment(\.homeRowEditAction, nil)
+                .environment(\.mediaRowRefreshStatus, nil)
                 .padding(.vertical, -artworkInset)
         }
     }

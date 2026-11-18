@@ -112,7 +112,7 @@ public struct ContentRefreshProfile: Sendable, Equatable {
 
     public static let tvOS = ContentRefreshProfile(
         home: .init(
-            foregroundAfter: 15,
+            foregroundAfter: 0,
             surfaceReturnAfter: 15,
             action: .reloadHome
         ),

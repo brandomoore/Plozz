@@ -566,7 +566,8 @@ struct PlozziOSHomeView: View {
             case .reloadHome:
                 await viewModel.loadIfNeeded(
                     for: appModel.settings.homeVisibility.visibility,
-                    trigger: request.reason.diagnosticTrigger
+                    trigger: request.reason.diagnosticTrigger,
+                    forceRefresh: true
                 )
             case .reloadSeriesContext, .refreshWatchStateOnly:
                 break
@@ -3261,6 +3262,16 @@ struct PlozziOSHomeRowView: View {
         return row.kind == .libraries || row.style == .landscape ? .landscape : .poster
     }
 
+    private var refreshStatus: MediaRowRefreshStatus? {
+        guard row.kind == .continueWatching else { return nil }
+        return .init(
+            isRefreshing: viewModel.isRefreshingContinueWatching,
+            failure: viewModel.rowFailures[.continueWatching],
+            report: viewModel.continueWatchingDiagnostic.map(PlaybackDiagnosticReport.library),
+            onRetry: { Task { await viewModel.load(showLoadingState: false) } }
+        )
+    }
+
     var body: some View {
         Group {
             if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
@@ -3321,6 +3332,7 @@ struct PlozziOSHomeRowView: View {
                 .environment(\.plozzArtworkArea, row.kind == .continueWatching ? .continueWatching : .homeRows)
             }
         }
+        .environment(\.mediaRowRefreshStatus, refreshStatus)
     }
 
     private var pendingWatchlistRemovalIDs: Set<String> {
