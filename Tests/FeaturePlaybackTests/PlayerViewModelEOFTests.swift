@@ -897,6 +897,93 @@ final class PlayerViewModelEOFTests: XCTestCase {
         }
     }
 
+    func testAutoSkipNeverChainsIntoAMarkerTheSkipLandedIn() async throws {
+        let item = MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 2_400)
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+            segments: [
+                .init(id: "intro", kind: .intro, start: 54.346, end: 82.5),
+                .init(id: "credits", kind: .credits, start: 82.5, end: 2_400)
+            ]
+        )
+        let engine = SpyVideoEngine()
+        engine.duration = 2_400
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(
+                skipIntros: .autoInstant, useCommunityMarkers: false, autoPlayNextEpisode: false
+            ),
+            engineFactory: .init(makeNative: { _ in engine })
+        )
+        await model.load()
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.controls.skipSegments.segments.count < 2, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        model.controls.currentSeconds = 60
+        XCTAssertEqual(model.controls.skipMode, .autoInstant)
+
+        model.autoSkipActiveSegment()
+
+        XCTAssertEqual(model.controls.pendingSeekTarget, 82.5)
+        XCTAssertEqual(model.controls.skipSegments.seekLanding?.segmentID, "credits")
+        XCTAssertTrue(model.controls.activeSkipWasSeekEntered)
+        XCTAssertEqual(
+            SkipPresentationDecision.action(
+                skipMode: model.controls.skipMode,
+                wasSeekEntered: model.controls.activeSkipWasSeekEntered,
+                presentingButton: false, focusIsSurface: true, isScrubbing: false,
+                autoDelayDeadlineReached: false
+            ),
+            .presentManual(stealFocus: false),
+            "Auto-skip skips only that segment: a marker the seek landed in offers a manual button, never another automatic jump."
+        )
+        await model.stop()
+    }
+
+    func testOneSkipPressSeeksToTheWholeSegmentEndOnceAndRemovesTheButton() async throws {
+        let item = MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 1_800)
+        // TheIntroDB's shape for The Paper S02E02: a finite 28-second intro.
+        let intro = MediaSegment(
+            id: "theintrodb-intro-0", kind: .intro, start: 54.346, end: 82.5
+        )
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+            segments: [intro]
+        )
+        let engine = SpyVideoEngine()
+        engine.duration = 1_800
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(skipIntros: .on, useCommunityMarkers: false),
+            engineFactory: .init(makeNative: { _ in engine })
+        )
+        await model.load()
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.controls.skipSegments.segments.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.controls.skipSegments.segments.map(\.end), [82.5])
+        model.controls.currentSeconds = 54.4
+        XCTAssertTrue(model.controls.skipButtonVisible)
+
+        model.skipActiveSegment()
+
+        XCTAssertEqual(
+            model.controls.pendingSeekTarget, 82.5,
+            "Skip seeks to the whole segment's end, never a ±skip interval."
+        )
+        XCTAssertFalse(model.controls.skipButtonVisible, "The button leaves after its single press.")
+        let seekDeadline = ContinuousClock.now + .seconds(3)
+        while engine.currentTime != 82.5, ContinuousClock.now < seekDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(engine.currentTime, 82.5)
+        XCTAssertEqual(model.controls.currentSeconds, 82.5)
+        XCTAssertNil(model.controls.activeSkipSegment, "One press skips the segment exactly once.")
+        await model.stop()
+    }
+
     func testDisabledSkipContentStillLoadsUpNextMarkersWithoutCommunityLookupOrSkipButton() async {
         let item = MediaItem(
             id: "movie", title: "Movie", kind: .movie, providerIDs: ["Imdb": "tt1234567"]

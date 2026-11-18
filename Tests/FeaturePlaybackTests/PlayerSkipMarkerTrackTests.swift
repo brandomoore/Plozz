@@ -561,6 +561,28 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     #endif
 
     #if os(tvOS)
+    func testDismissalSurvivesAMarkerListRefreshWithANewId() throws {
+        let model = PlayerControlsModel()
+        model.duration = 2_400
+        model.currentSeconds = 60
+        // A server-detected intro can end early; the live playhead is then still
+        // inside the community report for the same opening.
+        let original = MediaSegment(id: "server-intro", kind: .intro, start: 55, end: 63)
+        model.skipSegments.segments = [original]
+        model.skipSegments.dismissedSegmentID = original.id
+        model.skipSegments.dismissedWindow = .init(original)
+        XCTAssertNil(model.activeSkipSegment)
+
+        // Re-published after the press with a provider-specific id, and (in this
+        // report) a wider window: pressing must not bring the button back.
+        let replacement = MediaSegment(
+            id: "theintrodb-intro-0", kind: .intro, start: 54.346, end: 82.5
+        )
+        model.skipSegments.segments = [replacement]
+        XCTAssertNil(model.activeSkipSegment,
+                     "Re-publishing the same opening under a provider-specific id or window must not resurrect the button.")
+    }
+
     func testActualTVScrubBarShowsMarkersWithoutChangingSkipState() throws {
         let model = PlayerControlsModel()
         model.duration = 100

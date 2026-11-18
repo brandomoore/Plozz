@@ -802,7 +802,10 @@ cancelling a scrub restores the controls. TV's remote scrub presentation is unch
 Double-tap skip, speed, and unavailable-level feedback are Plozz components
 using native media glass and SF Symbols, not stock AVKit HUDs. They share the
 transport's foreground pairing: light ink on native media glass in either theme,
-theme-aware ink on the reduced-glass fallback.
+theme-aware ink on the reduced-glass fallback. A press that lands on the Skip
+button belongs to it, never to the shortcut surface, so it cannot become a
+±interval skip or pair into a double-tap; shortcuts stay live everywhere else
+while that button is visible.
 
 ## Skip-marker timeline
 
@@ -819,6 +822,14 @@ Up Next card. Each automatic marker uses its configured immediate or 1–30-seco
 delay, including the credits-based Up Next countdown when autoplay is enabled.
 Countdown deadlines and rings share that duration and remain tied to playback
 time, preserving pause, seek-entry, dismissal and focus behavior.
+
+One press, or one automatic skip, moves to the active segment's end and then
+dismisses that window for the rest of the load. Dismissal is keyed to the window
+rather than a report id, so markers re-published under another id — the server's
+list replaced by community markers, or a reload — cannot bring the button back
+or chain a second skip. A seek that lands inside a following marker offers only
+a manual button, and an opening marker that reaches the playback end is not a
+usable intro.
 
 Separate credits windows remain separate: a mid-credits scene is not a duplicate
 marker. Up Next owns only a credits window that reaches the known playback

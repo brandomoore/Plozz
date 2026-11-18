@@ -358,6 +358,30 @@ public final class SkipSegmentsModel {
     /// so it doesn't keep re-grabbing focus for the rest of that window.
     public var dismissedSegmentID: String?
 
+    /// The dismissed segment's window, independent of its provider/report id.
+    /// Community markers replace server markers after first paint, so the same
+    /// intro returns with a new id; comparing ids made the button reappear and
+    /// require a second press.
+    public struct DismissedWindow: Equatable, Sendable {
+        let kind: String
+        let start: TimeInterval
+        let end: TimeInterval
+
+        init(_ segment: MediaSegment) {
+            kind = segment.kind.rawValue
+            start = segment.start
+            end = segment.end
+        }
+
+        /// The same kind covering any part of the dismissed window. Community
+        /// reports refine a server marker's end by a fraction of a second and use
+        /// a different id, so exact equality would resurrect the button.
+        func overlaps(_ segment: MediaSegment) -> Bool {
+            kind == segment.kind.rawValue && start < segment.end && end > segment.start
+        }
+    }
+    public var dismissedWindow: DismissedWindow?
+
     /// Mirrors `CustomPlayerContainer.presentingSkipButton`: true only while the
     /// container has actually *presented* the Skip button (focused or the passive
     /// grace-seek present). The SwiftUI `SkipSegmentButton` renders on this — not
@@ -640,6 +664,7 @@ public final class PlayerControlsModel {
     public var activeSkipSegment: MediaSegment? {
         guard let segment = skipSegments.segments.activeSkippable(at: currentSeconds) else { return nil }
         if segment.id == skipSegments.dismissedSegmentID { return nil }
+        if skipSegments.dismissedWindow?.overlaps(segment) == true { return nil }
         // Deep-seek suppression: a seek that landed beyond the grace window of
         // this exact segment means the viewer jumped *into* it on purpose — honor
         // the seek and surface nothing. (Grace-window landings keep the segment so
