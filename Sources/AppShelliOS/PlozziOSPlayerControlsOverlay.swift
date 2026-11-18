@@ -18,6 +18,16 @@ private enum PlozziOSPlayerSheet: String, Identifiable {
     var id: Self { self }
 }
 
+/// The space `PlayerTouchGestureSurface` reports its tap locations in.
+private let playerTouchSurfaceSpace = "player-touch-surface"
+
+private struct SkipButtonFramePreference: PreferenceKey {
+    static var defaultValue: CGRect? { nil }
+    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
+        value = nextValue() ?? value
+    }
+}
+
 struct PlozziOSPlayerControlsOverlay: View {
     let viewModel: PlayerViewModel
     let keyboardActions: PlozziOSPlayerKeyboardActions
@@ -42,6 +52,9 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var autoHideTask: Task<Void, Never>?
     @State private var touchGestures = PlayerTouchGestureState()
     @State private var availableSize: CGSize = .zero
+    /// The Skip button's interactive frame, measured in the touch surface's space
+    /// so taps on it never become a ±skip shortcut or pair into a double-tap.
+    @State private var skipButtonFrame: CGRect?
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var pictureInPicture = PlozziOSPictureInPictureController()
 
@@ -80,6 +93,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                 canBoost: !viewModel.controls.intendsPause
                     && viewModel.controls.engineCapabilities.contains(.playbackSpeed),
                 canZoom: viewModel.controls.engineCapabilities.contains(.videoZoom),
+                shortcutExclusion: skipButtonFrame,
                 onTap: backgroundTapped,
                 onSkip: touchSkip,
                 onBoostChanged: touchBoostChanged,
@@ -204,6 +218,14 @@ struct PlozziOSPlayerControlsOverlay: View {
                         .font(.headline)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: SkipButtonFramePreference.self,
+                                    value: proxy.frame(in: .named(playerTouchSurfaceSpace))
+                                )
+                            }
+                        )
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.white)
@@ -213,6 +235,8 @@ struct PlozziOSPlayerControlsOverlay: View {
             }
 
         }
+        .coordinateSpace(name: playerTouchSurfaceSpace)
+        .onPreferenceChange(SkipButtonFramePreference.self) { skipButtonFrame = $0 }
         .onGeometryChange(for: CGSize.self) {
             $0.size
         } action: {
