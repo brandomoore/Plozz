@@ -56,8 +56,11 @@ public enum TrackLabeling {
     /// A short uppercase format hint for an image/subtitle codec token, or `nil`
     /// when nothing useful can be said. Text codecs return `nil` (the language is
     /// the useful fact); image codecs surface their family so a bitmap track
-    /// reads as "Spanish (PGS)" rather than a bare "Track 8".
-    public static func subtitleFormatHint(codec: String?, isImageBased: Bool) -> String? {
+    /// reads as "Spanish (PGS)" rather than a bare "Track 8". Menu collision
+    /// resolution can opt into text formats to distinguish SRT from ASS, etc.
+    public static func subtitleFormatHint(
+        codec: String?, isImageBased: Bool, includesTextFormats: Bool = false
+    ) -> String? {
         let token = (codec ?? "").lowercased()
         if token.contains("pgs") { return "PGS" }
         if token.contains("vob") { return "VobSub" }
@@ -66,6 +69,18 @@ public enum TrackLabeling {
         // Unknown image codec: still signal it's a bitmap so the viewer knows
         // why there's no language and that it can't be restyled.
         if isImageBased { return "Image" }
+        if includesTextFormats {
+            switch token {
+            case "srt", "subrip": return "SRT"
+            case "ass": return "ASS"
+            case "ssa": return "SSA"
+            case "webvtt", "vtt": return "WebVTT"
+            case "mov_text", "tx3g": return "TX3G"
+            case "ttml", "dfxp": return "TTML"
+            case "sami", "smi": return "SAMI"
+            default: break
+            }
+        }
         return nil
     }
 

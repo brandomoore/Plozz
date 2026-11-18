@@ -86,8 +86,9 @@ enum TrackMenuBuilder {
     ) -> [PlayerTrackOption] {
         guard !tracks.isEmpty else { return [] }
         var options = [subtitleOffOption(isSelected: selectedID == nil, locale: locale)]
-        options.append(contentsOf: tracks.sortedByPreferredLanguage(preferred).map { track in
-            let label = subtitlePresentation(track, detectedLanguages: detectedLanguages, locale: locale)
+        options.append(contentsOf: subtitlePresentations(
+            tracks.sortedByPreferredLanguage(preferred), detectedLanguages: detectedLanguages, locale: locale
+        ).map { track, label in
             return PlayerTrackOption(
                 id: track.id,
                 title: label.text,
@@ -111,9 +112,12 @@ enum TrackMenuBuilder {
     ) -> [PlayerTrackOption] {
         guard !eligible.isEmpty else { return [] }
         var options = [subtitleOffOption(isSelected: selectedID == nil, locale: locale)]
-        options.append(contentsOf: eligible.sortedByPreferredLanguage(preferred).map { track in
-            let track = track.enriched(withProvider: providerTracks.first { $0.id == track.id })
-            let label = subtitlePresentation(track, detectedLanguages: detectedLanguages, locale: locale)
+        let tracks = eligible.sortedByPreferredLanguage(preferred).map { track in
+            track.enriched(withProvider: providerTracks.first { $0.id == track.id })
+        }
+        options.append(contentsOf: subtitlePresentations(
+            tracks, detectedLanguages: detectedLanguages, locale: locale
+        ).map { track, label in
             return PlayerTrackOption(
                 id: track.id,
                 title: label.text,
@@ -213,9 +217,32 @@ enum TrackMenuBuilder {
         return PlayerTrackOption(id: PlayerTrackOption.offID, title: label.text, isSelected: isSelected, nativeTitle: label.nativeTitle)
     }
 
-    private static func subtitlePresentation(_ track: MediaTrack, detectedLanguages: [Int: String],
-                                             locale: Locale) -> LabelPresentation {
-        presentation(for: TrackLabeling.subtitleLabel(
+    private static func subtitlePresentations(
+        _ tracks: [MediaTrack], detectedLanguages: [Int: String], locale: Locale
+    ) -> [(MediaTrack, LabelPresentation)] {
+        var labels = tracks.map { subtitleLabel($0, detectedLanguages: detectedLanguages, locale: locale) }
+        let titles = labels.map { presentation(for: $0, locale: locale).nativeTitle }
+        let groups = Dictionary(grouping: tracks.indices, by: { titles[$0] })
+        for indices in groups.values where indices.count > 1 {
+            let formats = indices.map {
+                TrackLabeling.subtitleFormatHint(
+                    codec: tracks[$0].codec, isImageBased: tracks[$0].isImageBasedSubtitle,
+                    includesTextFormats: true
+                )
+            }
+            // Use known format differences before resorting to arbitrary track numbers.
+            guard Set(formats).count > 1 else { continue }
+            for (index, format) in zip(indices, formats) {
+                guard let format, !labels[index].qualifiers.contains(.format(format)) else { continue }
+                labels[index].qualifiers.append(.format(format))
+            }
+        }
+        return zip(tracks, labels).map { ($0, presentation(for: $1, locale: locale)) }
+    }
+
+    private static func subtitleLabel(_ track: MediaTrack, detectedLanguages: [Int: String],
+                                      locale: Locale) -> TrackLabel {
+        TrackLabeling.subtitleLabel(
             displayTitle: track.displayTitle,
             sourceTitle: track.sourceTitle,
             language: track.language,
@@ -227,7 +254,7 @@ enum TrackMenuBuilder {
             detectedLanguage: detectedLanguages[track.id],
             trackID: track.id,
             locale: locale
-        ), locale: locale)
+        )
     }
 
     /// Composes a structured ``TrackLabel`` (base + qualifiers) into the final

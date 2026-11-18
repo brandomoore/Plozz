@@ -612,8 +612,16 @@ omits them. Its generated language/codec and numbered fallback labels are not
 treated as authored names. Real-world metadata regression cases cover release
 groups, translation credits, regional/script variants, colored SDH and commentary;
 names never change automatic selection or forced-subtitle disposition.
-Only colliding menu labels gain a localized track-number suffix; unique names,
+Colliding subtitle labels first expose known format differences, such as SRT,
+ASS or WebVTT. Codec aliases normalize to the same format, and missing/unknown
+formats are not invented. Labels still identical after that gain a localized
+track-number suffix. This applies to primary and secondary subtitles, including
+the native mobile menu; unique names,
 selection IDs, preferred-language ordering and external-subtitle markers are unchanged.
+This keeps the useful title/language/format distinction found in
+[Kodi](https://github.com/xbmc/xbmc/blob/master/xbmc/video/dialogs/GUIDialogSubtitleSettings.cpp)
+and [mpv](https://github.com/mpv-player/mpv/blob/master/player/lua/select.lua)
+without adding format noise to every subtitle row.
 Native subtitle renditions also reserve original names before numbering duplicates,
 so a title such as `English 2` cannot collide with a generated suffix.
 Source version tags are deduplicated only when actually shown in the label; conflicting
