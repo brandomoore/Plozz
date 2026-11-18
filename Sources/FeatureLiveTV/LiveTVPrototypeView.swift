@@ -108,6 +108,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var channelSequence = LiveTVChannelSequence(channels: [])
     @State private var controlsActive = false
     @State private var categorySidebarCollapsed = false
+    @State private var categorySidebarRevealing = false
     @State private var toolbarControlsBottom: CGFloat?
     @State private var categoryFocusRequest = 0
     @State private var sidebarRestoresCategoryFocus = false
@@ -1795,6 +1796,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     focusRequest: toolbarFocusRequest, isSearching: isSearching,
                     categoryFocusRequest: categoryFocusRequest,
                     restoresCategoryFocus: sidebarRestoresCategoryFocus,
+                    isRevealing: categorySidebarRevealing,
                     search: { if isSearching { closeSearch() } else { openSearch() } },
                     enterGuide: enterGuide,
                     selectSource: selectBrowseSource,
@@ -1937,10 +1939,19 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private func revealCategories() {
         guard activity.acceptsInteraction, !isSearching, !preview.isRestoringGuideFocus,
               sheet == nil, !needsPreviewChoice else { return }
-        categorySidebarCollapsed = false
         sidebarRestoresCategoryFocus = true
-        controlsActive = true
         categoryFocusRequest &+= 1
+        let request = categoryFocusRequest
+        categorySidebarRevealing = true
+        withAnimation(reduceMotion ? nil : PrototypeLayout.sidebarAnimation, completionCriteria: .removed) {
+            categorySidebarCollapsed = false
+            controlsActive = true
+        } completion: {
+            guard categoryFocusRequest == request, controlsActive, !categorySidebarCollapsed,
+                  sidebarRestoresCategoryFocus, activity.acceptsInteraction,
+                  !isSearching, sheet == nil, !needsPreviewChoice else { return }
+            categorySidebarRevealing = false
+        }
     }
 
     #if os(tvOS)

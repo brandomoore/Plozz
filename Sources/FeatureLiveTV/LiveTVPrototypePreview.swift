@@ -304,7 +304,7 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
             }
             .frame(width: layout.guideWidth)
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: layout.hidesSidebar)
+        .animation(reduceMotion ? nil : PrototypeLayout.sidebarAnimation, value: layout.hidesSidebar)
         #else
         HStack(alignment: .top, spacing: layout.sidebarWidth > 0 ? PrototypeLayout.sectionGap : 0) {
             sidebarSlot

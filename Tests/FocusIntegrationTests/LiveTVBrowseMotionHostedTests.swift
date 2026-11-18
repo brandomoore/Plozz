@@ -173,6 +173,57 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
                        "A new explicit entry request must still restore the selected category.")
     }
 
+    func testCategoryFocusRequestWaitsForRevealCompletion() async throws {
+        let scene = try await foregroundScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let state = CategoryFocusFixtureState()
+        state.allowsExternalFocus = true
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = CategoryFocusHost(rootView: CategoryFocusPage(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        let deadline = ContinuousClock.now + .seconds(2)
+        while system.focusedItem == nil, ContinuousClock.now < deadline {
+            window.layoutIfNeeded()
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(250))
+        let scroll = try XCTUnwrap(categoryScrollView(in: window))
+        let selected = try XCTUnwrap(system.focusedItem)
+        let selectedFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: selected, relativeTo: scroll))
+        let guide = try XCTUnwrap(categoryFocusItems(in: window).first {
+            (NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.minX ?? 0) > 500
+        })
+        host.target = guide
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertTrue(system.focusedItem === guide)
+        host.target = nil
+
+        state.isRevealing = true
+        state.request += 1
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertTrue(system.focusedItem === guide, "Do not spend the entry request on a still-clipped pane.")
+
+        state.isRevealing = false
+        try await Task.sleep(for: .milliseconds(250))
+        let focused = try XCTUnwrap(system.focusedItem)
+        let focusedFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focused, relativeTo: scroll))
+        XCTAssertTrue(NativeFocusRegion.contains(focused, in: scroll))
+        XCTAssertEqual(focusedFrame.minY, selectedFrame.minY, accuracy: 1,
+                       "Presentation completion must focus the selected category without another input.")
+    }
+
     private func categoryScrollView(in view: UIView) -> UIScrollView? {
         if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
             return scroll
@@ -208,6 +259,7 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         var active = false
         var request = 1
         var allowsExternalFocus = false
+        var isRevealing = false
         let model = LiveTVPrototypeModel(channels: (0..<80).map {
             LiveTVPrototypeChannel(
                 id: "category-\($0)", number: $0, name: "Channel \($0)",
@@ -225,6 +277,7 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
                 PrototypeBrowseSidebar(
                     model: state.model, configuration: .empty, active: $state.active, focusRequest: 0,
                     categoryFocusRequest: state.request, restoresCategoryFocus: true,
+                    isRevealing: state.isRevealing,
                     search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
                 )
                 .frame(width: 384, height: 900)

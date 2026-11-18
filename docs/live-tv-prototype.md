@@ -357,6 +357,9 @@ over 0.28 seconds while the guide resizes; Reduce Motion suppresses the animatio
 The reveal interceptor is active only while the pane is collapsed; the same
 leading-edge press must transfer focus to the selected category, not merely open
 the pane while the guide continues intercepting focus exits.
+Category entry waits for the reveal animation's actual completion before
+requesting focus. An appearance-time request can be lost while the new pane is
+still clipped; cancelled or superseded reveals must not steal focus later.
 With pinned navigation, the moving pane fades through the extra content inset,
 reaching full transparency before the navigation icons. The stationary feather
 does not dim the resting controls or leave a translucent copy behind the rail.

@@ -11,6 +11,7 @@ struct PrototypeBrowseSidebar: View {
     var isSearching = false
     var categoryFocusRequest = 0
     var restoresCategoryFocus = false
+    var isRevealing = false
     let search: () -> Void
     let enterGuide: () -> Void
     let selectSource: (String?) -> Void
@@ -33,7 +34,11 @@ struct PrototypeBrowseSidebar: View {
     }
 
     private var isEnteringCategory: Bool {
-        restoresCategoryFocus && categoryFocusRequest > completedCategoryFocusRequest
+        restoresCategoryFocus && (isRevealing || categoryFocusRequest > completedCategoryFocusRequest)
+    }
+
+    private var readyCategoryFocusRequest: Int? {
+        restoresCategoryFocus && !isRevealing ? categoryFocusRequest : nil
     }
 
     var body: some View {
@@ -162,16 +167,11 @@ struct PrototypeBrowseSidebar: View {
                     categoryFade = fade
                 }
                 .accessibilityIdentifier("live-tv-category-list")
-                .onChange(of: categoryFocusRequest) { _, request in
-                    guard request > 0 else { return }
+                .onChange(of: readyCategoryFocusRequest, initial: true) { _, request in
+                    // A newly inserted pane is still clipped during its reveal transition.
+                    guard request != nil else { return }
                     proxy.scrollTo(Control.category(model.category), anchor: .center)
                     focused = .category(model.category)
-                }
-                .onAppear {
-                    if restoresCategoryFocus {
-                        proxy.scrollTo(Control.category(model.category), anchor: .center)
-                        focused = .category(model.category)
-                    }
                 }
             }
         }
