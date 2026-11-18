@@ -175,7 +175,8 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     /// Supplies the resolver's initial cached bitmap directly to native artwork,
     /// retaining one content identity while an uncached image arrives. The key
     /// identifies the displayed resolution, including its source/policy boundary.
-    func resolvedBitmap<ResolvedContent: View>(
+    public func resolvedBitmap<ResolvedContent: View>(
+        reportingHeroArtwork id: String? = nil,
         @ViewBuilder content: @escaping (UIImage?, String?) -> ResolvedContent
     ) -> some View {
         ArtworkPolicyReader(policy: artworkPolicy) { policy, sourceReady in
@@ -194,6 +195,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
                     pinIdentity: pinIdentity,
                     sharedResolutionIdentity: sharedResolutionIdentity,
                     lookupIdentity: lookupIdentity,
+                    reportedHeroID: id,
                     showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
                     content: .bitmap(content),
                     placeholder: { EmptyView() }

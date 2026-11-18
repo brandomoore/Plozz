@@ -201,6 +201,37 @@ final class HeroGlassButtonPresentationTests: XCTestCase {
         XCTAssertGreaterThan(wrapped.height, regular.height)
     }
 
+    func testResolvingPlayPlaceholderRetainsItsLayoutAtEveryTextSize() {
+        for size in [DynamicTypeSize.large, .xxxLarge, .accessibility3] {
+            for width in [CGFloat(145), 276, 720] {
+                for resumes in [false, true] {
+                    func button(placeholder: Bool) -> some View {
+                        Button {} label: {
+                            PlayResumeButtonLabel(
+                                title: resumes ? "Resume" : "Play",
+                                progress: resumes ? 0.4 : nil,
+                                remainingText: resumes ? "43m" : nil,
+                                seasonEpisodeText: resumes ? "S20, E100" : nil,
+                                onLight: true, spacing: 10, capsuleWidth: 60,
+                                isPlaceholder: placeholder, crossfadesPlaceholder: true,
+                                wrapsText: width == 145
+                            )
+                        }
+                        .buttonStyle(PlozziOSHeroActionButtonStyle(
+                            kind: .primary, minimumWidth: width == 145 ? nil : 180
+                        ))
+                        .environment(\.dynamicTypeSize, size)
+                    }
+                    let placeholder = measure(button(placeholder: true), width: width)
+                    let ready = measure(button(placeholder: false), width: width)
+                    XCTAssertEqual(ready.width, placeholder.width, accuracy: 0.5)
+                    XCTAssertEqual(ready.height, placeholder.height, accuracy: 0.5)
+                    if width == 145 { XCTAssertLessThanOrEqual(ready.width, width + 0.5) }
+                }
+            }
+        }
+    }
+
     func testGlassRowKeepsOverflowWithinPhoneAndTabletWidths() {
         for width in [CGFloat(276), 331, 386, 720] {
             for typeSize in [DynamicTypeSize.large, .xxxLarge, .accessibility3] {
