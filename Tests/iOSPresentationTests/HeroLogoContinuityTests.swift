@@ -408,6 +408,153 @@ final class HeroLogoContinuityTests: XCTestCase {
         try await waitUntil { try fixture.hasRedLogo() && fixture.hasTitleText() }
     }
 
+    func testHomeLogoRemainsVisibleWhileDiscoveryOwnershipIsPending() async throws {
+        for style: HeroArtworkStyle in [.landscape, .compactPortrait] {
+            let fixture = try Fixture()
+            defer { fixture.close() }
+            let item = MediaItem(
+                id: UUID().uuidString, title: "Discovery show", kind: .series,
+                providerIDs: ["Tmdb": "123"], locallyValidatedPlayableSource: false
+            )
+            let seed = try await openingLogo(for: item, style: style, fixture: fixture)
+            let lookup = LookupGate()
+            defer { lookup.release(nil) }
+            var enriched = item
+            enriched.productionYear = 2026
+            enriched.providerIDs["Imdb"] = "tt123"
+            for ready in [false, true] {
+                fixture.host.rootView = AnyView(
+                    DetailMetadataFixture(
+                        state: SubjectState(item: enriched), root: enriched, style: style,
+                        fallback: HeroLogoFallback(for: enriched) { await lookup.resolve() },
+                        artworkSettings: .default
+                    )
+                    .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.plozzArtworkArea, .details)
+                    .environment(\.plozzArtworkSourceReady, ready)
+                    .environment(\.openingHeroLogo, seed.logo(for: enriched, profileID: "profile"))
+                )
+                fixture.host.view.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(50))
+                let frame = XCTAttachment(image: try fixture.redSample().image)
+                frame.name = "discovery-opening-logo-\(style)-source-ready-\(ready)"
+                frame.lifetime = .keepAlways
+                add(frame)
+                XCTAssertTrue(try fixture.hasRedLogo(), "The displayed Home logo must survive the detail source gate.")
+                XCTAssertFalse(try fixture.hasTitleText())
+                XCTAssertEqual(lookup.calls, 0, "A handed-off logo must not repeat metadata lookup after hydration.")
+            }
+        }
+    }
+
+    func testOpeningLogoRejectsChangedSubjectProfilePolicyAndIdentity() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let item = MediaItem(
+            id: UUID().uuidString, title: "Discovery show", kind: .series,
+            providerIDs: ["Tmdb": "123"], sourceAccountID: "server"
+        )
+        let seed = try await openingLogo(for: item, style: .landscape, fixture: fixture)
+        let lookup = LookupGate()
+        defer { lookup.release(nil) }
+        for change in ["profile", "subject", "account", "identity", "language", "policy"] {
+            var changed = item
+            switch change {
+            case "subject": changed.id = "different"
+            case "account": changed.sourceAccountID = "another-server"
+            case "identity": changed.providerIDs["Tmdb"] = "456"
+            default: break
+            }
+            fixture.host.rootView = AnyView(
+                HeroLogoArtwork(
+                    references: [],
+                    asyncFallbackURL: HeroLogoFallback(for: changed) { await lookup.resolve() },
+                    displayedArtworkID: changed.id,
+                    presentationPolicy: .whenResolved
+                ) { Text("Text fallback").foregroundStyle(.white) }
+                .environment(\.locale, Locale(identifier: change == "language" ? "fr" : "en"))
+                .environment(\.plozzArtworkSettings, ArtworkSettings(
+                    preference: change == "policy" ? .library : .recommended
+                ))
+                .environment(\.plozzArtworkArea, .details)
+                .environment(\.plozzArtworkSourceReady, false)
+                .environment(\.openingHeroLogo, seed.logo(
+                    for: changed, profileID: change == "profile" ? "another-profile" : "profile"
+                ))
+                .frame(width: 400, height: 250)
+                .background(.black)
+            )
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertFalse(try fixture.hasRedLogo(), change)
+            XCTAssertFalse(try fixture.hasTitleText(), change)
+            XCTAssertEqual(lookup.calls, 0, "A rejected seed must not bypass source readiness.")
+        }
+    }
+
+    func testInactiveAndReleasedHeroesCannotReplaceTheOpeningLogo() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let item = MediaItem(id: UUID().uuidString, title: "Current show", kind: .series)
+        let seed = try await openingLogo(for: item, style: .landscape, fixture: fixture)
+        let logo = try XCTUnwrap(seed.logo(for: item, profileID: "profile"))
+        let state = HeroArtworkDisplayState()
+        let old = UUID(), current = UUID()
+        let oldReporter = HeroArtworkDisplayReporter(state: state, owner: old, itemID: "old", isActive: true)
+        let reporter = HeroArtworkDisplayReporter(state: state, owner: current, itemID: item.id, isActive: true)
+        let inactive = HeroArtworkDisplayReporter(state: state, owner: current, itemID: item.id, isActive: false)
+        let oldLogo = DisplayedHeroLogo(itemID: "old", key: logo.key, logo: logo.logo)
+        state.activate(owner: old, itemID: "old")
+        oldReporter.publishLogo(oldLogo, itemID: "old")
+        state.activate(owner: current, itemID: item.id)
+        reporter.publishLogo(logo, itemID: item.id)
+        oldReporter.publishLogo(oldLogo, itemID: "old")
+        inactive.publishLogo(nil, itemID: item.id)
+        try await waitUntil { state.displayedLogo?.itemID == item.id }
+        XCTAssertTrue(state.displayedLogo?.logo.image === logo.logo.image)
+        state.release(owner: old)
+        XCTAssertEqual(state.displayedLogo?.itemID, item.id)
+        reporter.publishLogo(logo, itemID: item.id)
+        state.release(owner: current)
+        state.activate(owner: current, itemID: item.id)
+        let republished = expectation(description: "A released logo report must not publish")
+        republished.isInverted = true
+        withObservationTracking {
+            _ = state.displayedLogo
+        } onChange: {
+            republished.fulfill()
+        }
+        await fulfillment(of: [republished], timeout: 0.1)
+        XCTAssertNil(state.displayedLogo)
+    }
+
+    private func openingLogo(
+        for item: MediaItem, style: HeroArtworkStyle, fixture: Fixture
+    ) async throws -> PlozziOSHeroArtworkSeed {
+        let url = try fixture.seedLogo()
+        let displayed = HeroArtworkDisplayState()
+        fixture.host.rootView = AnyView(
+            PlozziOSHeroMetadata(
+                presentation: HeroPresentation(item: item, artworkStyle: style, surface: .home),
+                style: style, mode: .home,
+                logoFallback: HeroLogoFallback(for: item) { url },
+                content: .identity
+            )
+            .heroArtworkSource(id: item.id)
+            .environment(\.heroArtworkDisplayState, displayed)
+            .environment(\.themePalette, .dark)
+            .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.plozzArtworkArea, .home)
+            .frame(width: 400, height: 250)
+            .background(.black)
+        )
+        try await waitUntil { try displayed.displayedLogo != nil && fixture.hasRedLogo() }
+        return try XCTUnwrap(PlozziOSHeroArtworkSeed(
+            item: item, displayed: nil, displayedLogo: displayed.displayedLogo,
+            profileID: "profile",
+            policy: ArtworkPresentationPolicy(area: .home, logoLanguage: "en")
+        ))
+    }
+
     func testDetailNeverShowsTextWhileItsFirstLogoIsLoading() async throws {
         for style: HeroArtworkStyle in [.landscape, .compactPortrait] {
             for findsLogo in [true, false] {
@@ -736,6 +883,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         let root: MediaItem
         var style: HeroArtworkStyle = .landscape
         var fallback: HeroLogoFallback? = nil
+        var artworkSettings = ArtworkSettings(preference: .library)
         var body: some View {
             PlozziOSHeroMetadata(
                 presentation: HeroPresentation(item: state.item, artworkStyle: style, surface: .detail),
@@ -745,7 +893,7 @@ final class HeroLogoContinuityTests: XCTestCase {
                 content: .identity
             )
             .environment(\.themePalette, .dark)
-            .environment(\.plozzArtworkSettings, ArtworkSettings(preference: .library))
+            .environment(\.plozzArtworkSettings, artworkSettings)
             .frame(width: 400, height: 250)
             .background(.black)
         }
@@ -774,7 +922,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
-    private final class LookupGate {
+    @MainActor private final class LookupGate {
         var calls = 0
         private var continuation: CheckedContinuation<URL?, Never>?
         func resolve() async -> URL? {

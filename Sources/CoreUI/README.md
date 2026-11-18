@@ -659,6 +659,12 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   gate opens. This page-local handoff requires the same subject, profile and
   effective artwork policy, and a landscape bitmap for a landscape destination;
   it does not select or authorize a different preferred source.
+  The handoff also carries the actual processed Home wordmark, independently of
+  backdrop readiness. Detail paints it synchronously and retains it when source
+  resolution completes, without another logo lookup. The existing logo request
+  identity rejects changed subjects, accounts, languages, policies, credential
+  revisions or conflicting metadata; compatible enrichment keeps the wordmark.
+  Only the active hero's displayed logo is eligible, not a speculative preload.
   Mobile detail uses `FallbackAsyncImage.resolvedBitmap(reportingHeroArtwork:)`
   to share one resolved bitmap across the original and reflected images. Only a
   late first image fades, after native entry completes with the artwork still

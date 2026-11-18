@@ -465,24 +465,34 @@ struct PlozziOSHeroArtworkSeed {
     let subjectID: String
     let profileID: String
     let policy: ArtworkPresentationPolicy
-    let artwork: FirstPaintArtwork
+    let artwork: FirstPaintArtwork?
+    private let displayedLogo: DisplayedHeroLogo?
 
     init?(
-        item: MediaItem, displayed: DisplayedHeroArtwork?, profileID: String,
+        item: MediaItem, displayed: DisplayedHeroArtwork?, displayedLogo: DisplayedHeroLogo? = nil,
+        profileID: String,
         policy: ArtworkPresentationPolicy
     ) {
-        guard let displayed, displayed.itemID == item.id else { return nil }
+        let artwork = displayed.flatMap { $0.itemID == item.id ? $0.artwork : nil }
+        let logo = displayedLogo.flatMap { $0.itemID == item.id ? $0 : nil }
+        guard artwork != nil || logo != nil else { return nil }
         subjectID = item.stablePresentationID
         self.profileID = profileID
         self.policy = policy
-        artwork = displayed.artwork
+        self.artwork = artwork
+        self.displayedLogo = logo
+    }
+
+    func logo(for item: MediaItem, profileID: String) -> DisplayedHeroLogo? {
+        guard subjectID == item.stablePresentationID, self.profileID == profileID else { return nil }
+        return displayedLogo
     }
 
     func image(
         for item: MediaItem, profileID: String, policy: ArtworkPresentationPolicy,
         style: HeroArtworkStyle
     ) -> UIImage? {
-        guard subjectID == item.stablePresentationID,
+        guard let artwork, subjectID == item.stablePresentationID,
               self.profileID == profileID,
               self.policy.metadataSettings.artworkPolicyIdentity == policy.metadataSettings.artworkPolicyIdentity,
               self.policy.settings.preference(in: self.policy.area) == policy.settings.preference(in: policy.area),
@@ -2157,6 +2167,7 @@ struct PlozziOSHomeHeroArtworkLink: View {
             let presentation = HeroPresentation(item: item, artworkStyle: style, surface: .home)
             seedArtwork = PlozziOSHeroArtworkSeed(
                 item: item, displayed: displayedArtwork?.displayed,
+                displayedLogo: displayedArtwork?.displayedLogo,
                 profileID: appModel.profiles.activeProfileID,
                 policy: artworkPolicy.heroPolicy.forPlacement(presentation.artworkPlacement)
             )

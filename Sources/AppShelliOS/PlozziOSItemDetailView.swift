@@ -645,7 +645,10 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     pullDistance: heroPullDistance,
                     metadataHasRevealed: $metadataHasRevealed
                 )
-                .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady))
+                .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
+                .environment(\.openingHeroLogo, openingArtwork?.logo(
+                    for: detail.item, profileID: appModel.profiles.activeProfileID
+                )))
 
                 if detail.item.kind == .series, !isDiscoveryItem {
                     AnyView(PlozziOSInlineSeriesBrowser(

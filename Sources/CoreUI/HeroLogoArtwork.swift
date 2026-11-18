@@ -183,6 +183,7 @@ public struct HeroLogoFallback: Sendable {
 }
 
 public struct HeroLogoArtwork<TextFallback: View>: View {
+    @Environment(\.openingHeroLogo) private var openingLogo
     private let references: [ArtworkReference]
     private let asyncFallbackURL: HeroLogoFallback?
     private let backgroundSample: (@Sendable () async -> HeroBackgroundSample?)?
@@ -264,12 +265,25 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
         #if canImport(UIKit)
         ArtworkPolicyReader(policy: nil) { policy, sourceReady in
             let logoPolicy = policy.forPlacement(.logo)
-            if sourceReady {
+            let fallback = asyncFallbackURL?.localized(to: logoPolicy.logoLanguage)
+            let seed = openingLogo.flatMap {
+                $0.value(
+                    for: HeroLogoMemo.key(
+                        for: references, fallback: fallback,
+                        prefersOnlineArtwork: logoPolicy.prefersOnlineArtwork,
+                        providerPolicyIdentity: logoPolicy.identity
+                    ),
+                    itemID: displayedArtworkID
+                )
+            }
+            if sourceReady || seed != nil {
                 LoadedLogo(
                     references: references,
-                    asyncFallbackURL: asyncFallbackURL?.localized(to: logoPolicy.logoLanguage),
+                    asyncFallbackURL: fallback,
                     prefersOnlineArtwork: logoPolicy.prefersOnlineArtwork,
                     providerPolicyIdentity: logoPolicy.identity,
+                    openingLogo: seed,
+                    sourceReady: sourceReady,
                     backgroundSample: backgroundSample,
                     displayedArtworkID: displayedArtworkID,
                     maxWidth: maxWidth,
@@ -290,6 +304,20 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
         #else
         textFallback()
         #endif
+    }
+}
+
+/// A presentation's processed wordmark, reusable only for the same subject and
+/// compatible lookup. It is not permission to resolve new artwork before entry.
+public struct DisplayedHeroLogo {
+    public let itemID: String
+    let key: HeroLogoMemo.Key
+    let logo: ProcessedLogo
+
+    @MainActor
+    func value(for key: HeroLogoMemo.Key, itemID: String?) -> ProcessedLogo? {
+        guard self.itemID == itemID, key.canRetainImage(from: self.key) else { return nil }
+        return logo
     }
 }
 
@@ -379,6 +407,8 @@ private struct LoadedLogo<TextFallback: View>: View {
     let asyncFallbackURL: HeroLogoFallback?
     let prefersOnlineArtwork: Bool
     let providerPolicyIdentity: String
+    let openingLogo: ProcessedLogo?
+    let sourceReady: Bool
     let backgroundSample: (@Sendable () async -> HeroBackgroundSample?)?
     let displayedArtworkID: String?
     let maxWidth: CGFloat
@@ -394,6 +424,7 @@ private struct LoadedLogo<TextFallback: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.heroArtworkDisplayState) private var displayedArtwork
+    @Environment(\.heroArtworkDisplayReporter) private var artworkReporter
     #if os(tvOS)
     @Environment(\.themePalette) private var palette
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
@@ -412,7 +443,7 @@ private struct LoadedLogo<TextFallback: View>: View {
         // rebuild drew the styled title for at least one frame, because the
         // pipeline is an actor and even a cache hit costs a suspension.
         let retained = resolvedKey.map { taskKey.canRetainImage(from: $0) } == true ? image : nil
-        let cached = retained ?? HeroLogoMemo.value(for: taskKey)
+        let cached = retained ?? openingLogo ?? HeroLogoMemo.value(for: taskKey)
         let shown = cached.map { processed in
             guard let displayedArtworkID else { return processed }
             return HeroLogoAnalysis.refine(processed, backgroundSample: displayedArtwork?.sample(for: displayedArtworkID))
@@ -436,7 +467,24 @@ private struct LoadedLogo<TextFallback: View>: View {
                 : .easeIn(duration: 0.25),
             value: shown != nil
         )
-        .task(id: taskKey) { await resolve() }
+        .onChange(of: shown?.image, initial: true) { _, _ in
+            report(shown, key: retained != nil ? resolvedKey ?? taskKey : taskKey)
+        }
+        .onChange(of: artworkReporter?.identity) { _, _ in
+            report(shown, key: retained != nil ? resolvedKey ?? taskKey : taskKey)
+        }
+        .task(id: sourceReady ? taskKey : nil) {
+            guard sourceReady else { return }
+            await resolve()
+        }
+    }
+
+    private func report(_ logo: ProcessedLogo?, key: HeroLogoMemo.Key) {
+        guard let displayedArtworkID else { return }
+        artworkReporter?.publishLogo(
+            logo.map { DisplayedHeroLogo(itemID: displayedArtworkID, key: key, logo: $0) },
+            itemID: displayedArtworkID
+        )
     }
 
     /// The exact size a logo renders at inside the `maxWidth` × `maxHeight` box.
@@ -547,7 +595,7 @@ private struct LoadedLogo<TextFallback: View>: View {
             return
         }
         if resolvedKey.map({ key.canRetainImage(from: $0) }) != true { image = nil }
-        if let cached = HeroLogoMemo.value(for: key) {
+        if let cached = openingLogo ?? HeroLogoMemo.value(for: key) {
             resolvedKey = key
             adopt(cached, for: key)
             if displayedArtworkID == nil, let backgroundSample {

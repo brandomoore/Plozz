@@ -87,6 +87,8 @@ between Home and detail:
 - **One wordmark reveal.** Do not let a text title appear first and then swap
   for a logo. Home crossfades its resolved wordmark without gating Play/Watchlist.
   Mobile detail uses a grouped foreground entrance; a late logo joins quietly.
+  Reuse Home's displayed wordmark on detail entry when subject, profile and
+  artwork policy still match; discovery ownership must not delay that handoff.
 - **Home slides stay opaque.** A carousel slide whose artwork is already loaded
   must not fade when the slide changes or while the page is pulled. An
   opacity animation tied to `backdropResolved` on every slide causes dimming and
