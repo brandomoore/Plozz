@@ -33,8 +33,8 @@ final class HeroLogoMemoTests: XCTestCase {
             policy.forPlacement(.logo).identity,
             environment.plozzArtworkPolicy.forPlacement(.logo).identity
         )
-        XCTAssertEqual(policy.identity, environment.plozzArtworkPolicy.identity,
-                       "Non-logo artwork must retain its shared first-paint cache keys.")
+        XCTAssertNotEqual(policy.identity, environment.plozzArtworkPolicy.identity,
+                          "Language changes must invalidate all language-sensitive artwork selections.")
         XCTAssertEqual(
             HeroLogoMemo.key(for: [], fallback: french),
             HeroLogoMemo.key(for: [], fallback: fallback.localized(to: "fr-FR"))

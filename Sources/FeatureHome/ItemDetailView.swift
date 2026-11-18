@@ -820,6 +820,7 @@ public struct ItemDetailView: View {
                             ? { seasonRequestRetryToken &+= 1 }
                             : nil
                     )
+                    .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
                     .id(Self.topAnchorID)
                     if !detail.children.isEmpty {
                         MediaRowView(

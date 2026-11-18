@@ -10,6 +10,93 @@ import CoreNetworking
 /// aggregate blank out good content already on screen.
 @MainActor
 final class HomeViewModelSnapshotHydrationTests: XCTestCase {
+    func testSilentContinueWatchingPublishesOnceBeforeUnrelatedRowsFinish() async throws {
+        for kind in [ProviderKind.plex, .jellyfin, .emby] {
+            for merged in [true, false] {
+                let provider = FakeMediaProvider(allItems: [], kind: kind)
+                provider.continueWatchingItems = [MediaItem(id: "old", title: "Old", kind: .movie)]
+                provider.latestItems = [MediaItem(id: "old-latest", title: "Old latest", kind: .movie)]
+                let visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+                let home = HomeViewModel(
+                    accounts: [resolved(provider, accountID: "a")],
+                    layoutStore: InMemoryHomeLayoutStore(),
+                    currentVisibility: { visibility }
+                )
+                defer { home.invalidate() }
+                await home.load()
+                let gate = HomeRefreshGate()
+                defer { gate.open() }
+                provider.latestGate = { await gate.wait() }
+                provider.latestItems = [MediaItem(id: "latest", title: "Latest", kind: .movie)]
+                provider.continueWatchingItems = [
+                    MediaItem(id: "new", title: "New", kind: .movie, resumePosition: 100)
+                ]
+                let refresh = Task { await home.load(showLoadingState: false) }
+                let deadline = ContinuousClock.now + .seconds(2)
+                while home.state.value?.continueWatching.first?.id != "new", ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(5))
+                }
+                XCTAssertEqual(home.state.value?.continueWatching.first?.id, "new")
+                XCTAssertTrue(home.isRefreshing)
+                XCTAssertFalse(home.isRefreshingContinueWatching)
+                XCTAssertEqual(home.state.value?.latest.first?.id, "old-latest")
+                home.applyWatchedState(.init(
+                    itemIDs: ["new"], scopedItemIDs: ["a:new"], resumePosition: 200
+                ))
+                gate.open()
+                await refresh.value
+                XCTAssertEqual(home.state.value?.continueWatching.first?.resumePosition, 200,
+                               "Completing unrelated rows must not republish the earlier resume answer.")
+                XCTAssertEqual(home.state.value?.latest.first?.id, "latest")
+                XCTAssertFalse(home.isRefreshingContinueWatching)
+            }
+        }
+    }
+
+    func testInitialFailureDoesNotRevealCachedContinueWatching() async {
+        let provider = FakeMediaProvider(allItems: [])
+        provider.continueWatchingError = .serverUnreachable
+        let home = makeViewModel(
+            provider: provider,
+            contentStore: InMemoryHomeContentStore(snapshot(cwIDs: ["cached"]))
+        )
+        defer { home.invalidate() }
+        await home.loadIfNeeded(for: .default)
+        XCTAssertTrue(home.state.value?.continueWatching.isEmpty ?? true)
+        XCTAssertEqual(home.rowFailures[.continueWatching], .serverUnreachable)
+        XCTAssertFalse(home.hasLiveContinueWatching)
+        XCTAssertFalse(home.isRefreshingContinueWatching)
+    }
+
+    func testForegroundAfterResumePublicationQueuesOneFreshPass() async throws {
+        let provider = FakeMediaProvider(allItems: [])
+        provider.continueWatchingItems = [MediaItem(id: "old", title: "Old", kind: .movie)]
+        let gate = HomeRefreshGate()
+        defer { gate.open() }
+        provider.latestGate = { await gate.wait() }
+        let home = makeViewModel(provider: provider, contentStore: InMemoryHomeContentStore())
+        defer { home.invalidate() }
+        let load = Task { await home.load() }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !home.hasLiveContinueWatching, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(home.hasLiveContinueWatching)
+        XCTAssertTrue(home.isRefreshing)
+        provider.continueWatchingItems = [MediaItem(id: "new", title: "New", kind: .movie)]
+        await home.loadIfNeeded(for: .default, forceRefresh: true)
+        await home.loadIfNeeded(for: .default, forceRefresh: true)
+        gate.open()
+        await load.value
+        let reloadDeadline = ContinuousClock.now + .seconds(2)
+        while home.isRefreshing, ContinuousClock.now < reloadDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertFalse(home.isRefreshing)
+        XCTAssertEqual(provider.librariesCallCount, 2)
+        XCTAssertEqual(home.state.value?.continueWatching.first?.id, "new")
+    }
+
     private func resolved(_ provider: FakeMediaProvider, accountID: String) -> ResolvedAccount {
         ResolvedAccount(
             account: Account(
@@ -751,30 +838,19 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         XCTAssertFalse(vm.isRefreshing, "The loading disclosure must clear when aggregation finishes")
     }
 
-    func testTransientEmptyRefreshKeepsCachedContent() async {
-        // Cached snapshot present, but the fresh aggregate comes back empty (server
-        // momentarily unreachable). The instant content must stay on screen.
+    func testConfirmedEmptyRefreshDoesNotRestoreCachedContinueWatching() async {
         let store = InMemoryHomeContentStore(snapshot(cwIDs: ["cachedA", "cachedB"]))
         let provider = FakeMediaProvider(allItems: []) // returns empty rows
         let vm = makeViewModel(provider: provider, contentStore: store)
 
         await vm.loadIfNeeded(for: .default)
-        XCTAssertTrue(vm.continueWatchingForDetail.isEmpty, "Revealing a fallback row is not a live resume answer")
+        XCTAssertTrue(vm.continueWatchingForDetail.isEmpty)
 
-        XCTAssertEqual(
-            loadedContent(vm)?.continueWatching.map(\.id), ["cachedA", "cachedB"],
-            "A silent refresh that came back empty must not blank out the cached content"
-        )
+        XCTAssertTrue(loadedContent(vm)?.continueWatching.isEmpty ?? true)
+        XCTAssertNil(vm.rowFailures[.continueWatching])
 
-        // Regression: a SECOND appearance with unchanged visibility (tvOS restarts
-        // the `.task` on every reappearance) must stay a no-op and keep the cached
-        // content — NOT run a loud load that flashes the skeleton and then drops to
-        // `.empty` while the server is still down.
         await vm.loadIfNeeded(for: .default)
-        XCTAssertEqual(
-            loadedContent(vm)?.continueWatching.map(\.id), ["cachedA", "cachedB"],
-            "Reappearance before the first successful refresh must keep the cached content, not reload loudly"
-        )
+        XCTAssertTrue(loadedContent(vm)?.continueWatching.isEmpty ?? true)
     }
 
     func testViewTaskCancellationKeepsCompletedModelOwnedRefresh() async {
@@ -1382,18 +1458,19 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         )
     }
 
-    /// Guards the fix from over-reaching: a profile that DOES have a server and
-    /// gets a transient empty (server briefly unreachable) must still keep what
-    /// is on screen, which is what the cached snapshot exists for.
-    func testATransientEmptyStillKeepsCachedContentWhenAServerExists() async {
-        let store = InMemoryHomeContentStore(snapshot(cwIDs: ["cachedA"]))
-        let vm = makeViewModel(provider: FakeMediaProvider(allItems: []), contentStore: store)
+    func testUnavailableServerRetainsDiscoveryCacheButNotUnverifiedResume() async {
+        var cached = snapshot(cwIDs: ["cachedA"])
+        cached.latest = [MediaItem(id: "discovery", title: "Discovery", kind: .movie)]
+        let provider = FakeMediaProvider(allItems: [])
+        provider.continueWatchingError = .serverUnreachable
+        provider.latestError = .serverUnreachable
+        let vm = makeViewModel(provider: provider, contentStore: InMemoryHomeContentStore(cached))
         await vm.load(showLoadingState: false)
 
-        XCTAssertEqual(
-            loadedContent(vm)?.continueWatching.map(\.id), ["cachedA"],
-            "An unreachable server must not blank a good snapshot"
-        )
+        XCTAssertEqual(loadedContent(vm)?.latest.map(\.id), ["discovery"])
+        XCTAssertEqual(loadedContent(vm)?.continueWatching, [])
+        XCTAssertFalse(vm.hasLiveContinueWatching)
+        XCTAssertEqual(vm.rowFailures[.continueWatching], .serverUnreachable)
     }
 }
 

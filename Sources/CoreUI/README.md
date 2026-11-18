@@ -35,6 +35,11 @@ the shared rail clearance offsets to preserve heading and inter-row spacing.
 Upcoming retains release identities rather than deduplicating by media identity,
 so different releases of the same series keep their own cards and captions.
 
+`mediaRowRefreshStatus` opts a rail heading into a reserved, subtle refresh/status
+indicator. Both native TV and mobile headings use the same control; card content
+does not inherit it. Failures open recovery details only on selection, never an
+automatic alert. Reduce Motion uses a static refresh symbol.
+
 `PlozziOSPageHeader` owns the mobile scrolling header's 20-point horizontal
 insets, 44-point minimum height and 12-point action spacing. Callers must not
 add another top or horizontal inset. `plozziOSPageAction` gives each button or
@@ -629,15 +634,39 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 
   Detail title artwork stays attached to the page's root title, not its Play
   episode, on both compact and regular-width mobile layouts. A visible logo
-  remains while additive metadata or artwork references for the same subject
-  resolve, including genre or added-ID enrichment that changes its metadata
-  routing (for example, TV to anime); the full request still keys resolution and
-  memoization. Changed subjects, accounts, languages, artwork policies or
+  remains unchanged during additive metadata or artwork-reference enrichment,
+  including genre or added-ID enrichment that changes metadata routing.
+  Richer requests are available to later presentations, not replacements for
+  an already painted logo. Changed subjects, accounts, languages, artwork policies or
   conflicting lookup facts clear the old logo immediately. A completed miss
   returns to the text fallback.
   Detail pages on iOS/iPadOS and tvOS keep that text invisible during the initial
   logo lookup and decoding, rather than flashing it before the logo arrives.
   Titles with no logo sources show text immediately; cached logos also paint immediately.
+
+  `ArtworkPresentationPolicy` and `MediaArtworkSource` own source ordering;
+  `MediaArtworkSource.heroFallback` supplies the same placement-aware online
+  chooser and last-resort library poster to both platform heroes. Episode stills explicitly use the Episodes
+  preference. Placements can intentionally choose different pictures.
+  `ItemDetailViewModel.artworkSourceIsReady` releases the hero's
+  `plozzArtworkSourceReady` gate after native hydration or discovery ownership
+  settles, before request status, children, ratings or trailers. List/snapshot seeds must not
+  establish a preferred source prematurely; recoverable offline failures may
+  release an already usable cached detail instead.
+  TV transition prefetches are reusable work, not permission to paint. The
+  transition cover receives its image only from the ready destination renderer.
+  `ArtworkDisplayIdentity` separates the visible subject/policy from changing
+  candidates in SwiftUI and native TV cells. Once a preferred-source result
+  paints, only that asset's resolution may improve. New subjects, account scopes,
+  policies, shapes, spoiler protection or network credential revisions start a fresh selection.
+  Prepared cache entries remain exact-request-qualified; cache warmth never
+  selects a different provisional image. Stable lookup identities qualify
+  metadata-dependent prepared results; per-appearance shared-work identities
+  group concurrent requests without preventing prepared-cache reuse.
+  Detail and playback data loading remain independent of artwork, as do native
+  navigation and Play. A cold preferred source can keep a placeholder visible
+  longer. The optional TV zoom cover waits for the destination's artwork-ready
+  or artwork-unavailable signal instead of choosing its own image.
 
 - **Setup presentation** — `ConnectionCodeView` shares the readable monospaced
   code panel across server sign-in and device pairing. `SetupCodeComparisonView`

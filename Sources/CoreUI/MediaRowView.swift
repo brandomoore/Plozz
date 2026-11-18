@@ -64,6 +64,7 @@ public struct MediaRowHeader: View {
             if let onSeeAll {
                 HStack {
                     heading
+                    MediaRowRefreshIndicator()
                     Spacer()
                     Button("See all", action: onSeeAll)
                         .font(.callout)
@@ -75,7 +76,10 @@ public struct MediaRowHeader: View {
                 }
                 .padding(.trailing, leadingInset + trailingInset)
             } else {
-                heading
+                HStack {
+                    heading
+                    MediaRowRefreshIndicator()
+                }
             }
         }
         .accessibilityIdentifier("media-row-title")

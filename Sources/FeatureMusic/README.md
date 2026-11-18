@@ -52,6 +52,9 @@ the additional entry is not required to enable it. See
   observe the **same** injected `AudioPlaybackController` instance from
   the environment on tvOS. `iOS/` ports the Mozz player presentation onto this
   same engine on iPhone/iPad; it does not introduce another playback engine.
+  Track artwork identity includes its source account on both platforms. The mobile
+  adaptive palette refreshes when selected artwork arrives or changes, not only
+  when the current track changes.
 - **Artwork** — `MusicArtworkImage` + `MusicCard` render through
   `CoreUI.FallbackAsyncImage`. Server art is always tried first; if it's
   missing, `MusicArtworkFallback` produces an async closure that asks
@@ -203,6 +206,14 @@ optimistic changes roll back. Unsupported feedback controls are omitted.
 Album/artist actions retain their originating account when opening the Music
 stack. Mozz downloads, radio, library synchronization and account storage are
 not imported.
+
+Player covers, queue rows and the bounded nearby-cover prefetch resolve through
+`MusicArtworkFallback` and the shared first-paint policy before exposing a URL.
+They do not briefly show the raw library cover while an online preference resolves.
+The adapter retains that selection for an account-qualified track and artwork
+policy; policy/profile changes invalidate it, and late results cannot restore a
+previous scope. Music playback and the existing player motion remain independent
+of artwork readiness.
 
 Mobile browsing reuses the tvOS view models and provider aggregation with
 touch-sized cards and vertically scrolling detail pages. The landing page uses

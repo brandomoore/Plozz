@@ -557,6 +557,14 @@ SCENARIOS = {
         "description": "The same 24 loading cards with implicit animations disabled; verify stable pixels before measuring idle CPU.",
         "counters": ["placeholders", "observationMilliseconds"], "timing": ["cpuMilliseconds"],
     },
+    "artwork-first-paint": {
+        "suite": "ui", "explicitOnly": True,
+        "test": "ArtworkStabilityHostedTests/testPerformanceFirstPaintAndLateMetadata",
+        "file": "Tests/PerformancePresentationSupport/ArtworkStabilityHostedTests.swift",
+        "description": "Mount production artwork with a 150-ms preferred-source lookup and twelve late candidate updates; local generated images, not live provider latency.",
+        "counters": ["mountedImages", "metadataUpdates", "sourceLookups", "distinctSelections", "firstPaintMicroseconds"],
+        "timing": ["wallMilliseconds", "cpuMilliseconds"],
+    },
     "cards-idle": {
         "suite": "ui", "test": "CardPerformanceTests/testPerformanceIdle",
         "file": "Tests/PerformancePresentationSupport/CardPerformanceTests.swift",
@@ -621,6 +629,13 @@ SCENARIOS = {
         "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
         "description": "Four complete identity passes over 408 metadata-bearing movie/episode artwork sources; no network or rendering.",
         "counters": ["items", "identities", "identityBytes"],
+    },
+    "home-continue-watching-refresh": {
+        "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceContinueWatchingRefresh",
+        "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
+        "description": "Revalidate eight Continue Watching titles while Recently Added takes 400 ms; measure model publication and complete all requests.",
+        "counters": ["providerRequests", "continueWatchingItems", "continueWatchingMicroseconds",
+                     "allContentMicroseconds"],
     },
     "home-metadata-publication": {
         "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceHomeMetadataPublication",

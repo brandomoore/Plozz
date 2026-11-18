@@ -63,7 +63,8 @@ platform thresholds, or provider refresh policy.
 
 ### Refresh behavior
 
-- **Home**: silent, staleness-gated reload after at least 15 seconds away.
+- **Home**: silent revalidation on every app foreground return; in-app navigation
+  retains a 15-second absence gate. See [refresh and watch state](feature-home/refresh-and-watch-state.md).
 - **Series detail**: re-fetch the item, seasons, and server resume episode. The
   series page may re-resolve its opening season when the viewer did not
   explicitly choose one.

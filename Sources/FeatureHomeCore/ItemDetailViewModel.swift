@@ -587,6 +587,13 @@ public final class ItemDetailViewModel {
     private let discoverySeed: MediaItem?
     private let usesDefaultExternalMetadataResolver: Bool
     @ObservationIgnored private var nativeDetailItem: MediaItem?
+    /// List seeds and restored snapshots do not establish the preferred artwork
+    /// source. Release only this visual gate when native/discovery identity settles.
+    private let artworkReadiness = DetailArtworkReadiness()
+    public private(set) var artworkSourceIsReady: Bool {
+        get { artworkReadiness.isReady }
+        set { artworkReadiness.isReady = newValue }
+    }
     @ObservationIgnored private var interruptedLanguageSeasonIDs: Set<String> = []
     /// Stable per-title key for ``snapshotCache``. Scoped by owning account so the
     /// same id on two servers or in two languages caches independently. Routes to a series share a
@@ -750,6 +757,7 @@ public final class ItemDetailViewModel {
         suspendEnrichment()
         invalidateSourceOperations()
         metadataLanguage = language
+        artworkSourceIsReady = false
         if let resolver {
             detailMetadataResolver = { item, _ in await resolver(item) }
         }
@@ -814,6 +822,7 @@ public final class ItemDetailViewModel {
                     if let detail = state.value,
                        detail.item.id == itemID, detail.item.sourceAccountID == account,
                        detail.childrenLoaded || [.movie, .episode, .video].contains(detail.item.kind) {
+                        artworkSourceIsReady = true
                         return
                     }
                 }
@@ -826,13 +835,10 @@ public final class ItemDetailViewModel {
             await resolveDiscoveryLibrarySource()
             guard !Task.isCancelled else { return }
             if isDiscoveryItem {
-                let priorIDs = state.value?.item.providerIDs
                 let generation = sourceGeneration
-                await loadDiscoveryDetail()
-                guard !Task.isCancelled, sourceGeneration == generation else { return }
-                if priorIDs != state.value?.item.providerIDs {
-                    await resolveDiscoveryLibrarySource()
-                }
+                let adoptedLibrarySource = await loadDiscoveryDetail()
+                guard !Task.isCancelled,
+                      sourceGeneration == generation || adoptedLibrarySource else { return }
                 if isDiscoveryItem { return }
             }
         }
@@ -917,6 +923,7 @@ public final class ItemDetailViewModel {
             )
             let taggedItem = tagged(item)
             nativeDetailItem = taggedItem
+            artworkSourceIsReady = true
 
             if item.kind == .collection {
                 state = .loaded(Detail(
@@ -1067,6 +1074,12 @@ public final class ItemDetailViewModel {
                 detail.collectionMembersState = .failed(failure)
                 state = .loaded(detail)
             }
+            switch failure {
+            case .serverUnreachable, .rateLimited:
+                artworkSourceIsReady = state.value != nil
+            default:
+                if error is URLError { artworkSourceIsReady = state.value != nil }
+            }
         }
         for seasonID in interruptedLanguageSeasonIDs.sorted() {
             guard !Task.isCancelled, isCurrent() else { return }
@@ -1078,16 +1091,17 @@ public final class ItemDetailViewModel {
 
     /// An index miss is not proof of absence: a cold or capped catalogue can miss
     /// a title that a targeted server search finds immediately (issue #33).
-    private func resolveDiscoveryLibrarySource() async {
+    @discardableResult
+    private func resolveDiscoveryLibrarySource() async -> Bool {
         guard let seed = state.value?.item,
               seed.kind == .movie || seed.kind == .series,
-              let resolver = crossServerSourceResolver else { return }
+              let resolver = crossServerSourceResolver else { return false }
         let generation = sourceGeneration
         let resolved = await resolver(seed)
         guard !Task.isCancelled,
               isDiscoveryItem,
               sourceGeneration == generation,
-              state.value?.item.id == seed.id else { return }
+              state.value?.item.id == seed.id else { return false }
 
         rejectedSourceIDs.formUnion(resolved.rejectedSourceIDs)
         let availableSources = resolved.sources.compactMap { source -> MediaSourceRef? in
@@ -1110,7 +1124,7 @@ public final class ItemDetailViewModel {
         guard let selected = selection.selected,
               let provider = alternateProviderResolver(selected.accountID) else {
             PlozzLog.app.info("Detail ownership probe: no active library source id=\(seed.id)")
-            return
+            return false
         }
 
         invalidateSourceOperations()
@@ -1129,52 +1143,42 @@ public final class ItemDetailViewModel {
         PlozzLog.app.info(
             "Detail ownership probe: resolved library source id=\(seed.id) libraryID=\(selected.itemID)"
         )
+        return true
     }
 
     /// Loads a synthetic external title without ever pretending its id belongs to
     /// a media server.
-    private func loadDiscoveryDetail() async {
+    private func loadDiscoveryDetail() async -> Bool {
         guard let seed = state.value?.item else {
             if state.value == nil { state = .empty }
-            return
+            return false
         }
 
         let generation = sourceGeneration
-        // Concurrently, and published ONCE.
-        //
-        // These used to run in series with a state publication between them, so a
-        // discovery page painted the seed, then swapped in the request status, then
-        // swapped again as the metadata landed — the viewer saw the availability
-        // badge and the backdrop visibly change about a second after arriving.
-        // Neither answer is more correct than the other and neither depends on the
-        // other, so there is nothing to be gained by showing the first one alone;
-        // running them together also makes the page settle in the time of the
-        // slower request rather than the sum of both.
-        async let statusTask = discoveryStatus(for: seed)
-        async let metadataTask = externalMetadataResolver(seed, availabilityRegionCode)
-        let status = await statusTask
-        let resolved = await metadataTask
+        let resolved = await externalMetadataResolver(seed, availabilityRegionCode)
         let enrichedSeed = Self.applying(resolved.enrichment, to: seed)
         guard !Task.isCancelled,
               sourceGeneration == generation,
               case var .loaded(detail) = state,
-              detail.item.id == seed.id else { return }
+              detail.item.id == seed.id else { return false }
 
         detail.item = Self.applying(
             resolved.enrichment,
             to: detail.item
         )
-        if let status {
-            detail.item.availability = status.status
-            detail.item.downloadProgress = status.downloadProgress
-            detail.item.hasRequestDownloadActivity = status.hasDownloadActivity
-        }
         detail.externalAvailability =
             resolved.availability.isEmpty ? nil : resolved.availability
         detail.childrenLoaded = true
         state = .loaded(detail)
         hasPaintedFreshDetail = true
+        if seed.providerIDs != detail.item.providerIDs, await resolveDiscoveryLibrarySource() {
+            return true
+        }
+        guard !Task.isCancelled, sourceGeneration == generation else { return false }
+        artworkSourceIsReady = true
 
+        // Request status cannot establish artwork ownership or hold its first paint.
+        async let status: Void = refreshDiscoveryStatus()
         let enriched = detail.item
         if enriched.kind == .series {
             loadUpcomingSchedule(for: enriched)
@@ -1197,6 +1201,8 @@ public final class ItemDetailViewModel {
             state = .loaded(latest)
         }
         await trailer
+        await status
+        return false
     }
 
     private static func applying(
@@ -1297,25 +1303,17 @@ public final class ItemDetailViewModel {
     /// the search result. The seeded item is kept untouched on any failure, and the
     /// state is only republished when something actually changed (no needless
     /// re-render / focus churn).
-    /// The live request/download status, FETCHED WITHOUT PUBLISHING.
-    ///
-    /// Separated so the first paint can combine it with the metadata resolve into a
-    /// single state change; the polling entry point below still publishes, because
-    /// by then the page is settled and a change really is news.
-    private func discoveryStatus(
-        for item: MediaItem
-    ) async -> MediaRequestAvailability? {
-        await discoveryStatusRefresh?(item)
-    }
-
     private func refreshDiscoveryStatus() async {
         guard let requestedItem = state.value?.item else {
             if state.value == nil { state = .empty }
             return
         }
+        let generation = sourceGeneration
         guard let discoveryStatusRefresh,
               let status = await discoveryStatusRefresh(requestedItem),
-              !Task.isCancelled
+              !Task.isCancelled,
+              isDiscoveryItem,
+              sourceGeneration == generation
         else { return }
         // Re-read after the await. Rich metadata, cast, ratings and release facts
         // can land while Seerr is responding; rebuilding from the pre-await item
@@ -2020,6 +2018,17 @@ public final class ItemDetailViewModel {
         )
         captureSeriesContext(from: item)
         nativeDetailItem = tagged(item)
+        if !artworkSourceIsReady {
+            let fresh = tagged(item)
+            if var detail = state.value, detail.item.id == fresh.id,
+               detail.item.sourceAccountID == fresh.sourceAccountID {
+                detail.item = fresh
+                state = .loaded(detail)
+            } else {
+                state = .loaded(Detail(item: fresh, children: []))
+            }
+            artworkSourceIsReady = true
+        }
         if item.kind == .collection {
             if case var .loaded(detail) = state {
                 detail.item = tagged(item)
@@ -2240,6 +2249,7 @@ public final class ItemDetailViewModel {
         activeItemID = source.itemID
         activeSourceAccountID = accountID
         nativeDetailItem = nil
+        artworkSourceIsReady = false
         interruptedLanguageSeasonIDs = []
         trailers = []
         extrasState = .loading

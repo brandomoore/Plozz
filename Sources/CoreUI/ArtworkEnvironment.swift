@@ -38,11 +38,10 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     }
 
     public var identity: String {
-        let language = placement == .logo ? "|logo-language:\(logoLanguage)"
-            : placement == .landscapeCard
-                ? "|landscape-language:\(logoLanguage)|landscape-preference:\(settings.preference(in: area).rawValue)"
-                : ""
-        return metadataSettings.artworkPolicyIdentity + language
+        metadataSettings.artworkPolicyIdentity
+            + "|placement:\(placement?.rawValue ?? "_")"
+            + "|preference:\(settings.preference(in: area).rawValue)"
+            + "|artwork-language:\(logoLanguage)"
     }
 
     public func forArea(_ area: ArtworkArea) -> Self {
@@ -62,6 +61,10 @@ private struct ArtworkSettingsKey: EnvironmentKey {
     static let defaultValue = ArtworkSettings.default
 }
 
+private struct ArtworkSourceReadyKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
 private struct ArtworkAreaKey: EnvironmentKey {
     static let defaultValue: ArtworkArea? = nil
 }
@@ -75,6 +78,13 @@ private struct LandscapeTitleLogoKey: EnvironmentKey {
 }
 
 public extension EnvironmentValues {
+    /// False while a detail's native/discovery source is still being established.
+    /// Only artwork waits; navigation, text and playback retain their own readiness.
+    var plozzArtworkSourceReady: Bool {
+        get { self[ArtworkSourceReadyKey.self] }
+        set { self[ArtworkSourceReadyKey.self] = newValue }
+    }
+
     var plozzLandscapeTitleLogo: LandscapeTitleLogo {
         get { self[LandscapeTitleLogoKey.self] }
         set { self[LandscapeTitleLogoKey.self] = newValue }
@@ -122,9 +132,10 @@ public extension EnvironmentValues {
 
 struct ArtworkPolicyReader<Content: View>: View {
     let policy: ArtworkPresentationPolicy?
-    @ViewBuilder var content: (ArtworkPresentationPolicy) -> Content
+    @ViewBuilder var content: (ArtworkPresentationPolicy, Bool) -> Content
     @Environment(\.plozzArtworkPolicy) private var inheritedPolicy
+    @Environment(\.plozzArtworkSourceReady) private var sourceReady
 
-    var body: some View { content(policy ?? inheritedPolicy) }
+    var body: some View { content(policy ?? inheritedPolicy, sourceReady) }
 }
 #endif
