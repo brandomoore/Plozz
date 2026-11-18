@@ -210,8 +210,7 @@ Both TV calendars mark selection with a subtle neutral background. The week
 strip labels the current date Today instead of placing a dot against its lower
 edge; the month picker retains its bold date and dot. Week arrows use the same
 native secondary Liquid Glass style at rest and in focus, without a borderless
-style overriding it. Their regular-weight SF chevrons keep their natural
-proportions rather than stretching into a tall, thin shape.
+style overriding it. Their regular-weight SF chevrons use a tall, narrow profile.
 The selection background sits beneath the native control;
 actual focus retains the much stronger native highlight and contrasting text.
 
