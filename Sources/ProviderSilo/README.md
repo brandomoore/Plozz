@@ -1,5 +1,9 @@
 # Native Silo provider
 
+Subtitle playback labels retain the server's track name alongside the language
+and forced flag, so same-format tracks such as `French (France)` and
+`French (Canadien)` remain distinguishable without guessing their region.
+
 Plozz connects to Silo's native `/api/v2` API, not its separate Jellyfin
 compatibility listener. Enter the web application's base URL, approve the
 device code in Silo, then select the household profile. PIN-protected profiles
