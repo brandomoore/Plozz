@@ -517,6 +517,11 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     @State private var displayedReference: ArtworkReference?
     @State private var selectedPrimaryPriority: Bool
     @State private var selectedDisplayIdentity: ArtworkDisplayIdentity
+    /// Whether the painted image came from the async fallback lookup rather than
+    /// the item's own candidates. A hydrated candidate set supersedes a fallback
+    /// poster, but never a painted candidate: library cells keep the artwork the
+    /// viewer is already looking at while new candidates settle.
+    @State private var paintedFromFallback = false
     @Environment(\.heroArtworkDisplayReporter) private var heroArtworkReporter
 
     private struct ReportIdentity: Equatable {
@@ -724,6 +729,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             loadedKey = nil
             pinnedIdentity = nil
             displayedReference = nil
+            paintedFromFallback = false
             selectedDisplayIdentity = displayIdentity
         }
         let key = taskKey
@@ -739,6 +745,15 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         // candidate set (detail hydration replacing a poster fallback) must run
         // the selection below, or the poster pins forever.
         let isSameSubject = pinIdentity != nil && pinnedIdentity == pinIdentity && hasSamePriority
+        // Keep a painted candidate while it is still one of the candidates (a
+        // late arrival must not replace it), but re-resolve when it is no longer
+        // offered or when it was only the async fallback standing in for the
+        // page's own artwork.
+        if isSameSubject, image != nil, !paintedFromFallback,
+           let displayedReference, references.contains(displayedReference) {
+            onResolveReference?(displayedReference)
+            return
+        }
         if loadedKey == key, isSameSubject, image != nil, isPreviewQuality, let displayedReference {
             onResolveReference?(displayedReference)
             let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
@@ -756,6 +771,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             isPreviewQuality = false
             loadedKey = key
             pinnedIdentity = pinIdentity
+            paintedFromFallback = false
             displayedReference = prepared.reference
             onResolveReference?(prepared.reference)
             return
@@ -776,6 +792,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             resolved = true
             isPreviewQuality = false
             pinnedIdentity = pinIdentity
+            paintedFromFallback = false
             displayedReference = references.indices.contains(seeded.index)
                 ? references[seeded.index]
                 : nil
@@ -866,6 +883,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             isPreviewQuality = true
             loadedKey = key
             pinnedIdentity = pinIdentity
+            paintedFromFallback = false
             displayedReference = first
             rememberPreview(loaded, reference: first)
         }
@@ -889,6 +907,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 loadedKey = key
                 ArtworkSeedMemo.store(loaded, reference: reference, for: key)
                 pinnedIdentity = pinIdentity
+                paintedFromFallback = false
                 displayedReference = reference
                 onResolveReference?(reference)
                 return
@@ -912,6 +931,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     isPreviewQuality = true
                     loadedKey = key
                     pinnedIdentity = pinIdentity
+                    paintedFromFallback = true
                     displayedReference = .remote(url)
                     rememberPreview(preview, reference: .remote(url))
                 }
@@ -926,6 +946,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     loadedKey = key
                     ArtworkSeedMemo.store(loaded, reference: .remote(url), for: key)
                     pinnedIdentity = pinIdentity
+                    paintedFromFallback = true
                     displayedReference = .remote(url)
                     onResolveReference?(.remote(url))
                     return
@@ -952,6 +973,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         isPreviewQuality = firstPaint.variant != variant
         loadedKey = key
         pinnedIdentity = pinIdentity
+        paintedFromFallback = !references.contains(firstPaint.reference)
         displayedReference = firstPaint.reference
         if isPreviewQuality {
             rememberPreview(firstPaint.image, reference: firstPaint.reference)
