@@ -735,19 +735,18 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             onResolveReference?(displayedReference)
             return
         }
+        // Retain the pinned asset only for the inputs it was resolved for. A new
+        // candidate set (detail hydration replacing a poster fallback) must run
+        // the selection below, or the poster pins forever.
         let isSameSubject = pinIdentity != nil && pinnedIdentity == pinIdentity && hasSamePriority
-        if isSameSubject, image != nil, let displayedReference {
+        if loadedKey == key, isSameSubject, image != nil, isPreviewQuality, let displayedReference {
             onResolveReference?(displayedReference)
-            if isPreviewQuality {
-                let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
-                guard !Task.isCancelled else { return }
-                if let loaded, Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
-                    image = loaded
-                    isPreviewQuality = false
-                    if let loadedKey {
-                        ArtworkSeedMemo.store(loaded, reference: displayedReference, for: loadedKey)
-                    }
-                }
+            let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
+            guard !Task.isCancelled else { return }
+            if let loaded, Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
+                image = loaded
+                isPreviewQuality = false
+                ArtworkSeedMemo.store(loaded, reference: displayedReference, for: key)
             }
             return
         }
