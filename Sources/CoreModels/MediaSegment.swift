@@ -155,6 +155,11 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
         position >= start - Self.margin && position < end - Self.margin
     }
 
+    /// Whether this window and `other` describe the same kind and overlap in time.
+    public func overlaps(_ other: MediaSegment) -> Bool {
+        kind == other.kind && start < other.end && end > other.start
+    }
+
     /// The visibility margin (seconds) applied at both ends of the window so the
     /// skip button appears just before the segment and clears just before it ends.
     static let margin: TimeInterval = 0.25
@@ -267,7 +272,19 @@ public extension Array where Element == MediaSegment {
     /// server's own: the server wins per kind, the fallback fills the gaps.
     func filling(from fallback: [MediaSegment]) -> [MediaSegment] {
         let present = Set(map(\.kind))
-        return self + fallback.filter { !present.contains($0.kind) }
+        var merged = self
+        for candidate in fallback {
+            if let index = merged.firstIndex(where: { $0.overlaps(candidate) }) {
+                // The same window reported at another length: cover both, so a
+                // server intro that stops early cannot hide the community's
+                // longer report of the same opening.
+                merged[index].start = Swift.min(merged[index].start, candidate.start)
+                merged[index].end = Swift.max(merged[index].end, candidate.end)
+            } else if !present.contains(candidate.kind) {
+                merged.append(candidate)
+            }
+        }
+        return merged
     }
 
     /// Whether this list already has an intro and a credits marker, the two kinds
