@@ -15,6 +15,10 @@ through viewing history, watchlisting, or a personal request; untouched library
 shows do not qualify. Movies come from Continue Watching, the watchlist, and
 personal requests. Overlapping interests merge into one release and remain
 independently filterable. The household request list is never used. Seerr is optional.
+Sources with no movie, series, or mixed video libraries do not contribute viewing
+history or history failures. Live-only IPTV and music-only catalogues can still
+contribute watchlisted or personally requested titles. Library discovery failures
+remain failures rather than being mistaken for a successfully empty catalogue.
 
 Upcoming hides automatically when the active profile has no eligible movie or
 series library, saved show/movie, or configured Seerr connection. This is a navigation
@@ -145,8 +149,10 @@ other tabs retain their usual scroll-to-top behavior.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.
-Calendar and Filters remain at the top while the agenda scrolls: mobile
-uses the native navigation toolbar without a duplicate page title. The shared
+On TV, the Upcoming title, Calendar and Filters scroll with the week strip and
+date rails; native focus brings the header back into view. On mobile, Calendar
+and Filters remain in the native navigation toolbar while the agenda scrolls,
+without a duplicate page title. The shared
 active-profile Settings control sits separately to their right, both in the
 Upcoming tab and when opened from Coming Soon.
 The partial-refresh footer applies to the entire feed, not the final date:
@@ -196,12 +202,15 @@ Initial entry focuses the selected day so the strip remains visible.
 Week arrows browse across month/year boundaries without changing the agenda.
 Choosing a date jumps to that date without filtering other releases, handing
 native focus to the first release on or after it. If no later release exists,
-focus returns to the fixed Calendar control while the chosen date stays visible.
+the page returns to its header and focuses Calendar, with the chosen week visible.
 The full month picker remains available and synchronizes the displayed week.
 Week starts follow the system calendar; unavailable dates and week directions
 are disabled. Calendar arithmetic preserves local dates across daylight-saving changes.
-Both TV calendars mark selection with a subtle neutral background and Today with
-bold text and a dot. The selection background sits beneath the native control;
+Both TV calendars mark selection with a subtle neutral background. The week
+strip labels the current date Today instead of placing a dot against its lower
+edge; the month picker retains its bold date and dot. Week arrows use the same
+native secondary Liquid Glass style at rest and in focus, without a borderless
+style overriding it. The selection background sits beneath the native control;
 actual focus retains the much stronger native highlight and contrasting text.
 
 The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and

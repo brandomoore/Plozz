@@ -18,8 +18,8 @@ final class UpcomingFeedTests: XCTestCase {
         )
     }
 
-    func testBothBackendsIncludeCaughtUpShowsBeyondFirstPageButNotUnwatchedLibrary() async throws {
-        for kind: ProviderKind in [.jellyfin, .plex] {
+    func testVideoSourcesIncludeCaughtUpShowsBeyondFirstPageButNotUnwatchedLibrary() async throws {
+        for kind: ProviderKind in [.jellyfin, .plex, .iptv] {
             var watched = MediaItem(id: "returning", title: "Returning", kind: .series, providerIDs: ["Tvmaze": "42"])
             watched.hasBeenPlayed = true
             let unwatched = (0..<200).map { MediaItem(id: "unwatched-\($0)", title: "Unwatched", kind: .series) }
@@ -67,6 +67,45 @@ final class UpcomingFeedTests: XCTestCase {
             filters.interests = [interest]
             XCTAssertEqual(result.releases.filter(filters.includes).count, 2)
         }
+    }
+
+    func testSourcesWithoutReleaseLibrariesDoNotLoadUnrelatedHistory() async throws {
+        let episode = Self.episode()
+        let savedShow = MediaItem(id: "saved-show", title: "Saved show", kind: .series)
+        for libraries: [MediaLibrary] in [[], [.init(id: "music", title: "Music", kind: .unknown, isMusic: true)]] {
+            for hasSavedShow in [false, true] {
+                let provider = UpcomingFixtureProvider(
+                    kind: libraries.isEmpty ? .iptv : .subsonic, items: [],
+                    failsContinuing: true, libraries: libraries
+                )
+                let result = try await UpcomingFeedLoader.load(
+                    accounts: [.init(account: Account(id: "account", from: provider.session), provider: provider)],
+                    watchlist: hasSavedShow ? [savedShow] : [], regionCode: "US", interval: Self.interval,
+                    requestedTitles: { hasSavedShow ? [savedShow] : [] }, isCurrent: { true },
+                    schedule: { _, _ in [episode] }
+                )
+                XCTAssertEqual(result.releases.map(\.item.id), hasSavedShow ? [savedShow.id] : [])
+                if hasSavedShow {
+                    XCTAssertEqual(result.releases.first?.interests, [.watchlist, .requested])
+                }
+                XCTAssertEqual(result.failedSourceCount, 0)
+                XCTAssertTrue(result.failedAccountIDs.isEmpty)
+                let historyReads = await provider.historyReads
+                XCTAssertEqual(historyReads, 0, "A live-only or music-only catalogue has no Upcoming history.")
+            }
+        }
+    }
+
+    func testFailedLibraryDiscoveryRemainsAFailureRatherThanAnEmptyCatalogue() async throws {
+        let provider = UpcomingFixtureProvider(kind: .iptv, items: [], failsLibraries: true)
+        let result = try await UpcomingFeedLoader.load(
+            accounts: [.init(account: Account(id: "account", from: provider.session), provider: provider)],
+            watchlist: [], regionCode: "US", interval: Self.interval,
+            requestedTitles: { [] }, isCurrent: { true }
+        )
+        XCTAssertTrue(result.releases.isEmpty)
+        XCTAssertEqual(result.failedSourceCount, 1)
+        XCTAssertEqual(result.failedAccountIDs, ["account"])
     }
 
     func testWatchedShowAndInProgressMovieMergeWithSavedAndRequestedInterests() async throws {
@@ -584,15 +623,24 @@ private actor UpcomingFixtureProvider: MediaProvider {
     private let catalog: [MediaItem]
     private let continuing: [MediaItem]
     private let failsContinuing: Bool
+    private let availableLibraries: [MediaLibrary]
+    private let failsLibraries: Bool
     private(set) var pages: [Int] = []
     private(set) var libraryReads = 0
     private(set) var playbackReads = 0
+    private(set) var historyReads = 0
 
-    init(kind: ProviderKind, items: [MediaItem], continuing: [MediaItem] = [], failsContinuing: Bool = false) {
+    init(
+        kind: ProviderKind, items: [MediaItem], continuing: [MediaItem] = [], failsContinuing: Bool = false,
+        libraries: [MediaLibrary] = [.init(id: "shows", title: "Shows", kind: .series)],
+        failsLibraries: Bool = false
+    ) {
         self.kind = kind
         catalog = items
         self.continuing = continuing
         self.failsContinuing = failsContinuing
+        availableLibraries = libraries
+        self.failsLibraries = failsLibraries
         session = UserSession(
             server: .init(
                 id: "server", name: "Fixture", baseURL: URL(string: "https://example.invalid")!, provider: kind),
@@ -601,7 +649,8 @@ private actor UpcomingFixtureProvider: MediaProvider {
     }
     func libraries() async throws -> [MediaLibrary] {
         libraryReads += 1
-        return [.init(id: "shows", title: "Shows", kind: .series)]
+        if failsLibraries { throw AppError.invalidResponse }
+        return availableLibraries
     }
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         pages.append(page.startIndex)
@@ -615,6 +664,7 @@ private actor UpcomingFixtureProvider: MediaProvider {
         return item
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] {
+        historyReads += 1
         if failsContinuing { throw AppError.invalidResponse }
         return continuing
     }

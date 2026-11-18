@@ -16,6 +16,7 @@
             @State private var didChooseCalendarDate = false
             @State private var dateFocusRequest: UUID?
             @State private var displayedWeek = Calendar.current.startOfDay(for: Date())
+            @State private var headerHeight: CGFloat = 0
             @FocusState private var calendarIsFocused: Bool
         #elseif os(iOS)
             @Environment(\.horizontalSizeClass) private var sizeClass
@@ -54,31 +55,34 @@
             let visibleReleases = upcomingAgendaReleases(model.visibleReleases)
             ScrollViewReader { proxy in
                 VStack(alignment: .leading, spacing: 20) {
-                    #if os(tvOS)
-                        HStack {
-                            Text("Upcoming").font(.title.bold())
-                            Spacer()
-                            toolbarControls
-                        }
-                        .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
-                        .plozzActionButton(role: .secondary)
-                        .focusSection()
-                        .navigationEntryFocus(.fallback)
-                    #endif
                     HStack(alignment: .top, spacing: 0) {
                         ScrollView {
                             #if os(tvOS)
-                            UpcomingTVAgenda(
-                                model: model,
-                                selectedDay: Binding(get: { selectedDay }, set: requestDateScroll),
-                                displayedWeek: $displayedWeek,
-                                interval: calendarInterval, hasReleases: !visibleReleases.isEmpty,
-                                minimumLastDayHeight: agendaHeight, contentWidth: agendaContentWidth,
-                                focusRequest: dateFocusRequest,
-                                onFocusRequestHandled: { request in
-                                    if dateFocusRequest == request { dateFocusRequest = nil }
+                            VStack(alignment: .leading, spacing: 20) {
+                                HStack {
+                                    Text("Upcoming").font(.title.bold())
+                                    Spacer()
+                                    toolbarControls
                                 }
-                            )
+                                .plozzActionButton(role: .secondary)
+                                .focusSection()
+                                .navigationEntryFocus(.fallback)
+                                .id("upcoming.header")
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+                                UpcomingTVAgenda(
+                                    model: model,
+                                    selectedDay: Binding(get: { selectedDay }, set: requestDateScroll),
+                                    displayedWeek: $displayedWeek,
+                                    interval: calendarInterval, hasReleases: !visibleReleases.isEmpty,
+                                    minimumLastDayHeight: visibleReleases.isEmpty
+                                        ? max(0, agendaHeight - headerHeight - 20) : agendaHeight,
+                                    contentWidth: agendaContentWidth,
+                                    focusRequest: dateFocusRequest,
+                                    onFocusRequestHandled: { request in
+                                        if dateFocusRequest == request { dateFocusRequest = nil }
+                                    }
+                                )
+                            }
                             .padding(.vertical)
                             .padding(.horizontal, PlozzTheme.Metrics.screenPadding + metrics.railShadowClearance)
                             #else
@@ -150,8 +154,13 @@
                             guard let request = dateScrollRequest else { return }
                             await Task.yield()
                             guard !Task.isCancelled, dateScrollRequest == request else { return }
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-                                proxy.scrollTo(selectedDay, anchor: .top)
+                            if model.visibleReleases.contains(where: { $0.date >= selectedDay }) {
+                                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
+                                    proxy.scrollTo(selectedDay, anchor: .top)
+                                }
+                            } else {
+                                proxy.scrollTo("upcoming.header", anchor: .top)
+                                calendarIsFocused = true
                             }
                         }
                         #endif
@@ -263,7 +272,6 @@
             displayedWeek = selectedDay
             let hasDestination = model.visibleReleases.contains { $0.date >= selectedDay }
             dateFocusRequest = hasDestination ? UUID() : nil
-            if !hasDestination { calendarIsFocused = true }
             #else
             hasScrolledAgenda = false
             #endif

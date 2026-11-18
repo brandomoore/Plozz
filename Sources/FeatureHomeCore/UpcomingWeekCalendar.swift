@@ -42,7 +42,7 @@ struct UpcomingWeekCalendar: View {
                             .frame(width: 20, height: 60)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                        .buttonStyle(.borderless)
+                        .buttonBorderShape(.roundedRectangle(radius: 16))
                         .accessibilityLabel("Previous week")
                         .help("Previous week")
                         .accessibilityIdentifier("upcoming.week.previous")
@@ -64,7 +64,7 @@ struct UpcomingWeekCalendar: View {
                             .frame(width: 20, height: 60)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                        .buttonStyle(.borderless)
+                        .buttonBorderShape(.roundedRectangle(radius: 16))
                         .accessibilityLabel("Next week")
                         .help("Next week")
                         .accessibilityIdentifier("upcoming.week.next")
@@ -86,7 +86,7 @@ struct UpcomingWeekCalendar: View {
             selectedDay = day
         } label: {
             VStack(spacing: 4) {
-                Text(day, format: .dateTime.weekday(.abbreviated))
+                (isToday ? Text("Today") : Text(day, format: .dateTime.weekday(.abbreviated)))
                     .font(.caption)
                 Text(day, format: .dateTime.day())
                     .font(.title3)
@@ -96,13 +96,6 @@ struct UpcomingWeekCalendar: View {
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .frame(maxWidth: .infinity)
-            .overlay(alignment: .bottom) {
-                if isToday {
-                    Circle().fill().frame(width: 5, height: 5).offset(y: 5)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
         }
         .buttonBorderShape(.roundedRectangle(radius: 16))
         .plozzActionButton(role: .secondary)
