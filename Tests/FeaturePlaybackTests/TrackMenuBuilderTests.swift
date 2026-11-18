@@ -127,6 +127,44 @@ final class AudioMenuAvailabilityTests: XCTestCase {
 /// exclusion, engine-dual vs sidecar sourcing) that used to be buried in
 /// `PlayerViewModel.loadTrackOptions`.
 final class TrackMenuBuilderTests: XCTestCase {
+    func testContainerNamesReachAudioAndBothSubtitleMenusWithoutChangingSelection() {
+        let locale = Locale(identifier: "en")
+        let provider = ["Full subs", "Signs & Songs"].enumerated().map { index, title in
+            MediaTrack(id: index + 10, kind: .subtitle, displayTitle: "English",
+                       sourceTitle: title, language: "en", codec: "srt")
+        }
+        let engine = provider.map {
+            MediaTrack(id: $0.id, kind: .subtitle, displayTitle: "English", language: "en", codec: "srt")
+        }
+        let primary = TrackMenuBuilder.subtitleOptions(
+            tracks: zip(engine, provider).map { $0.enriched(withProvider: $1) },
+            selectedID: 11, preferred: ["en"], detectedLanguages: [:], locale: locale
+        )
+        let secondary = TrackMenuBuilder.secondaryOptions(
+            eligible: engine, providerTracks: provider, selectedID: 11,
+            preferred: ["en"], detectedLanguages: [:], locale: locale
+        )
+        for options in [primary, secondary] {
+            XCTAssertEqual(options.map(\.id), [-1, 10, 11])
+            XCTAssertEqual(options.filter(\.isSelected).map(\.id), [11])
+            XCTAssertEqual(options.map(\.nativeTitle), ["Off", "English (Full subs)", "English (Signs & Songs)"])
+            XCTAssertEqual(options[2].title,
+                           Text(verbatim: "English") + Text(verbatim: " (")
+                               + Text(verbatim: "Signs & Songs") + Text(verbatim: ")"))
+        }
+        let audio = TrackMenuBuilder.audioOptions(
+            tracks: [.init(id: 4, kind: .audio, displayTitle: "English",
+                           sourceTitle: "Director Commentary", language: "en", codec: "aac", channels: 2)],
+            selectedID: 4, preferred: ["en"], locale: locale
+        )
+        XCTAssertEqual(audio[0].nativeTitle, "English (Director Commentary, AAC Stereo)")
+        XCTAssertTrue(audio[0].isSelected)
+        XCTAssertEqual(audio[0].title,
+                       Text(verbatim: "English") + Text(verbatim: " (")
+                           + (Text(verbatim: "Director Commentary") + Text(verbatim: ", ") + Text(verbatim: "AAC Stereo"))
+                           + Text(verbatim: ")"))
+    }
+
     func testSubtitleVersionsReachBothMenusWithNativeAndTVParity() {
         let versions = ["VFF", "VFQ"]
         let provider = versions.enumerated().map { index, version in

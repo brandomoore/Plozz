@@ -601,6 +601,12 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
+Plex and Jellyfin/Emby keep original container track names separately from
+generated display titles. Audio, primary-subtitle, and secondary-subtitle menus
+retain names such as `Director Commentary`, `Full subs`, and `Signs & Songs`
+alongside the existing language/format label. Names are content, not translated
+app copy; empty/generic names keep the previous fallback. Matching provider
+names fill engine metadata gaps without replacing an explicit engine name.
 Explicit French audio/subtitle version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
 `VOQ`) survive generated server titles, matching-track provider enrichment, and
 app-locale changes. These are source-authored community conventions, rendered

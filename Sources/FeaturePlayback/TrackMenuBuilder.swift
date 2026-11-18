@@ -54,6 +54,7 @@ enum TrackMenuBuilder {
         tracks.sortedByPreferredLanguage(preferred).map { track in
             let label = presentation(for: TrackLabeling.audioLabel(
                     displayTitle: track.displayTitle,
+                    sourceTitle: track.sourceTitle,
                     language: track.language,
                     codec: track.codec,
                     profile: track.profile,
@@ -194,6 +195,7 @@ enum TrackMenuBuilder {
                                              locale: Locale) -> LabelPresentation {
         presentation(for: TrackLabeling.subtitleLabel(
             displayTitle: track.displayTitle,
+            sourceTitle: track.sourceTitle,
             language: track.language,
             codec: track.codec,
             isForced: track.isForced,
@@ -243,7 +245,7 @@ enum TrackMenuBuilder {
             resource = .init("Commentary", comment: "Audio/subtitle track qualifier for a commentary track.")
         case .autoDetected:
             resource = .init("auto", comment: "Subtitle track qualifier appended when the shown language was guessed from the file's content rather than tagged by the provider.")
-        case .format(let value), .version(let value):
+        case .format(let value), .version(let value), .title(let value):
             return .init(content: value)
         case .channelCount(let channels):
             resource = .init(

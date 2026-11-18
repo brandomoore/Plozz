@@ -2759,6 +2759,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
             displayTitle: TrackLabeling.trackDisplayTitle(
                 title, sourceTitles: [dto.title, dto.displayTitle]
             ),
+            sourceTitle: dto.title,
             language: language,
             codec: dto.codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(

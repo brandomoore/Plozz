@@ -22,6 +22,8 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
     public var id: Int
     public var kind: Kind
     public var displayTitle: String
+    /// Original container track name, separate from a server-generated display label.
+    public var sourceTitle: String?
     /// BCP-47 / ISO language code if known (e.g. `en`, `fra`).
     public var language: String?
     /// Raw codec token from the source/demuxer, lowercased where known
@@ -69,6 +71,7 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         id: Int,
         kind: Kind,
         displayTitle: String,
+        sourceTitle: String? = nil,
         language: String? = nil,
         codec: String? = nil,
         profile: String? = nil,
@@ -86,6 +89,7 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         self.id = id
         self.kind = kind
         self.displayTitle = displayTitle
+        self.sourceTitle = sourceTitle
         self.language = language
         self.codec = codec
         self.profile = profile

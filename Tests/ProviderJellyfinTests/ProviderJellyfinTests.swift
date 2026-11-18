@@ -128,7 +128,7 @@ final class JellyfinProviderMappingTests: XCTestCase {
             XCTAssertEqual(track.language, "fr")
             XCTAssertEqual(track.displayTitle, "French DTS 5.1 VFQ")
             XCTAssertEqual(
-                TrackLabeling.audioLabel(displayTitle: track.displayTitle, language: track.language,
+                TrackLabeling.audioLabel(displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language,
                                         codec: track.codec, channels: track.channels, trackID: track.id,
                                         locale: Locale(identifier: "fr")),
                 TrackLabel(base: .content("Français"), qualifiers: [.version("VFQ"), .format("DTS 5.1")])
@@ -153,6 +153,27 @@ final class JellyfinProviderMappingTests: XCTestCase {
         XCTAssertFalse(provider.map(stream: plain).isHearingImpaired)
     }
 
+    func testContainerNamesSurviveJellyfinAndEmbyMappingPaths() throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            var session = makeSession()
+            session.server.provider = kind
+            let provider = JellyfinProvider(session: session, http: StubHTTPClient())
+            for (type, title) in [("Audio", "Director Commentary"), ("Subtitle", "Signs & Songs")] {
+                let json = """
+                {"Index":3,"Type":"\(type)","Codec":"\(type == "Audio" ? "aac" : "subrip")",
+                 "Language":"eng","DisplayTitle":"English","Title":"\(title)"}
+                """
+                let dto = try JSONDecoder.plozz.decode(MediaStreamDto.self, from: Data(json.utf8))
+                XCTAssertEqual(provider.map(stream: dto).sourceTitle, title)
+                if type == "Subtitle" {
+                    let track = try provider.map(subtitleStream: dto, itemID: "movie", sourceID: "file")
+                    XCTAssertEqual(track.sourceTitle, title)
+                    XCTAssertNotNil(track.deliverySource)
+                }
+            }
+        }
+    }
+
     func testSubtitleVersionsSurviveBothJellyfinAndEmbyMappingPaths() throws {
         for kind in [ProviderKind.jellyfin, .emby] {
             var session = makeSession()
@@ -173,7 +194,7 @@ final class JellyfinProviderMappingTests: XCTestCase {
                     XCTAssertTrue(track.isForced)
                     XCTAssertEqual(
                         TrackLabeling.subtitleLabel(
-                            displayTitle: track.displayTitle, language: track.language, codec: track.codec,
+                            displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language, codec: track.codec,
                             isForced: track.isForced, isImageBased: track.isImageBasedSubtitle,
                             trackID: track.id, locale: Locale(identifier: "en")
                         ),
