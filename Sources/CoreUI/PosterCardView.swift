@@ -1764,7 +1764,7 @@ public extension MediaItem {
     }
 
     /// Shared provider metadata for SwiftUI cards and native library cells.
-    func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true,
+    func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true, // l10n:content — joins provider metadata and locale-resolved remaining time for native captions
                                continueWatchingSpoilers: SpoilerSettings? = nil, locale: Locale = .current) -> String? {
         var parts: [String] = []
         if showsSubtitle, let spoilers = continueWatchingSpoilers, kind == .episode, let code = seasonEpisodeLabel {
