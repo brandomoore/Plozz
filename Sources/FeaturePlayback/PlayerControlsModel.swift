@@ -382,6 +382,12 @@ public final class SkipSegmentsModel {
     }
     public var dismissedWindow: DismissedWindow?
 
+    /// Where the last Skip (manual or automatic) landed. Nothing is offered for
+    /// the opening grace window after it: the button that was pressed must leave,
+    /// and a marker that begins at the landing (closing credits following an
+    /// intro) must not appear as a second press in the same gesture.
+    public var skippedLanding: TimeInterval?
+
     /// Mirrors `CustomPlayerContainer.presentingSkipButton`: true only while the
     /// container has actually *presented* the Skip button (focused or the passive
     /// grace-seek present). The SwiftUI `SkipSegmentButton` renders on this — not
@@ -662,6 +668,13 @@ public final class PlayerControlsModel {
     /// as a deliberate jump into the segment and therefore respect by offering no
     /// button at all. Drives whether the in-player Skip button is shown/focusable.
     public var activeSkipSegment: MediaSegment? {
+        // A skip's own landing offers nothing until playback has actually moved
+        // into whatever window begins there.
+        if let landing = skipSegments.skippedLanding,
+           currentSeconds >= landing - 0.25,
+           currentSeconds < landing + MediaSegment.seekGraceWindow {
+            return nil
+        }
         guard let segment = skipSegments.segments.activeSkippable(at: currentSeconds) else { return nil }
         if segment.id == skipSegments.dismissedSegmentID { return nil }
         if skipSegments.dismissedWindow?.overlaps(segment) == true { return nil }

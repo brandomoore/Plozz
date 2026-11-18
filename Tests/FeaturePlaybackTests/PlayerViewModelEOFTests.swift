@@ -903,16 +903,18 @@ final class PlayerViewModelEOFTests: XCTestCase {
     }
 
     func testAutoSkipNeverChainsIntoAMarkerTheSkipLandedIn() async throws {
-        let item = MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 2_400)
+        // A short item keeps the closing credits in the final act while the intro
+        // still ends exactly where they begin.
+        let item = MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 240)
         let provider = RecordingPlaybackProvider(
             request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
             segments: [
                 .init(id: "intro", kind: .intro, start: 54.346, end: 82.5),
-                .init(id: "credits", kind: .credits, start: 82.5, end: 2_400)
+                .init(id: "credits", kind: .credits, start: 82.5, end: 240)
             ]
         )
         let engine = SpyVideoEngine()
-        engine.duration = 2_400
+        engine.duration = 240
         let model = PlayerViewModel(
             provider: provider, itemID: item.id,
             playbackSettings: .init(
@@ -931,7 +933,14 @@ final class PlayerViewModelEOFTests: XCTestCase {
         model.autoSkipActiveSegment()
 
         XCTAssertEqual(model.controls.pendingSeekTarget, 82.5)
+        XCTAssertEqual(model.controls.skipSegments.skippedLanding, 82.5)
         XCTAssertEqual(model.controls.skipSegments.seekLanding?.segmentID, "credits")
+        XCTAssertNil(model.controls.activeSkipSegment,
+                     "A skip's landing offers nothing, so a second automatic jump cannot follow it.")
+        // Once playback has moved into the following marker it is reachable, but
+        // only through the manual button the grace-window landing offers.
+        model.controls.currentSeconds = 88
+        XCTAssertEqual(model.controls.activeSkipSegment?.id, "credits")
         XCTAssertTrue(model.controls.activeSkipWasSeekEntered)
         XCTAssertEqual(
             SkipPresentationDecision.action(
@@ -941,7 +950,7 @@ final class PlayerViewModelEOFTests: XCTestCase {
                 autoDelayDeadlineReached: false
             ),
             .presentManual(stealFocus: false),
-            "Auto-skip skips only that segment: a marker the seek landed in offers a manual button, never another automatic jump."
+            "Auto-skip skips only that segment: the next marker is never another automatic jump."
         )
         await model.stop()
     }

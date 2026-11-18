@@ -2382,6 +2382,7 @@ public final class PlayerViewModel {
         controls.skipSegments.segments = []
         controls.skipSegments.dismissedSegmentID = nil
         controls.skipSegments.dismissedWindow = nil
+        controls.skipSegments.skippedLanding = nil
         let wantsMarkers = modes.fetchesMarkers || playbackSettings.showUpNextCard
         guard wantsMarkers else { return }
         let provider = provider
@@ -2459,6 +2460,7 @@ public final class PlayerViewModel {
         guard let segment = controls.activeSkipSegment else { return }
         controls.skipSegments.dismissedSegmentID = segment.id
         controls.skipSegments.dismissedWindow = .init(segment)
+        controls.skipSegments.skippedLanding = segment.end
         requestSeek(to: segment.end, origin: "skip-segment")
     }
 
@@ -2479,6 +2481,7 @@ public final class PlayerViewModel {
         guard let segment = controls.activeSkipSegment else { return }
         controls.skipSegments.dismissedSegmentID = segment.id
         controls.skipSegments.dismissedWindow = .init(segment)
+        controls.skipSegments.skippedLanding = segment.end
         controls.autoSkipNotice = AutoSkipNotice(label: segment.kind.autoSkippedLabel)
         requestSeek(to: segment.end, origin: "auto-skip-segment")
         autoSkipNoticeTask?.cancel()

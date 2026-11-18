@@ -561,6 +561,26 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     #endif
 
     #if os(tvOS)
+    func testSkipLandingSuppressesTheFollowingMarkerForTheGraceWindow() {
+        let model = PlayerControlsModel()
+        model.duration = 2_400
+        model.skipModes = SkipMarkerModes(base: .on)
+        model.skipSegments.segments = [
+            .init(id: "intro", kind: .intro, start: 54.346, end: 82.5),
+            .init(id: "credits", kind: .credits, start: 82.5, end: 2_400)
+        ]
+        model.skipSegments.dismissedWindow = .init(model.skipSegments.segments[0])
+        model.skipSegments.skippedLanding = 82.5
+
+        model.currentSeconds = 82.5
+        XCTAssertNil(model.activeSkipSegment, "The pressed button must leave at its own landing.")
+        model.currentSeconds = 86
+        XCTAssertNil(model.activeSkipSegment, "A marker starting at the landing waits for playback.")
+        model.currentSeconds = 88
+        XCTAssertEqual(model.activeSkipSegment?.id, "credits",
+                       "The following marker returns once playback has moved into it.")
+    }
+
     func testDismissalSurvivesAMarkerListRefreshWithANewId() throws {
         let model = PlayerControlsModel()
         model.duration = 2_400
