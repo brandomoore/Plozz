@@ -1925,6 +1925,12 @@ struct PlozziOSInlineSeriesBrowser: View {
             .task(id: seasonEpisodeLoadKey) {
                 if let selectedSeasonID {
                     await viewModel.loadEpisodes(for: selectedSeasonID)
+                    // A transient failed/aborted first request leaves the season
+                    // unloaded with the same task key; retry once so the rail does
+                    // not require switching seasons to recover.
+                    if !Task.isCancelled, viewModel.episodes(for: selectedSeasonID) == nil {
+                        await viewModel.loadEpisodes(for: selectedSeasonID, forceRefresh: true)
+                    }
                 }
                 publishPlayTarget()
             }
