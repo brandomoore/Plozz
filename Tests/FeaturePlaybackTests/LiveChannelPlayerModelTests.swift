@@ -67,10 +67,14 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults))
+        settings.settings.videoZoom.phone.mode = .picture
         let engine = LiveEngineSpy()
         engine.supportsActivePictureAnalysis = true
         let input = LiveChannelInput.stream(url: URL(string: "https://example.invalid/live.m3u8")!, httpHeaders: [:])
-        let model = LiveChannelPlayerModel(engine: engine, channelID: "one", input: input)
+        let model = LiveChannelPlayerModel(
+            engine: engine, channelID: "one", input: input,
+            defaultVideoZoom: { settings.settings.videoZoom.phone }
+        )
         defer { model.stop() }
         model.videoZoom.bindAutoCropFraming(to: settings, platform: .phone)
         await model.start()
@@ -80,7 +84,7 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         XCTAssertTrue(model.videoZoom.settings.pictureFitsInsideSafeArea)
         let movie = PlayerVideoZoomModel()
         movie.bindAutoCropFraming(to: settings, platform: .phone)
-        movie.restoreForPlayback(nil, defaultPreference: .onDemandDefault, supportsActivePicture: true)
+        movie.restoreForPlayback(nil, defaultPreference: settings.settings.videoZoom.phone, supportsActivePicture: true)
         XCTAssertTrue(movie.settings.pictureFitsInsideSafeArea)
         movie.setPinchZoom(fillsScreen: true)
         await model.changeSource(channelID: "three", input: input)
