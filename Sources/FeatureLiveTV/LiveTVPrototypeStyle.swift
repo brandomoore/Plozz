@@ -56,7 +56,7 @@ enum PrototypeLayout {
     static let rowHeight = stationSize + rowInset * 2
     #endif
     #if os(tvOS)
-    static let stationColumnWidth: CGFloat = 160
+    static let stationColumnWidth: CGFloat = 140
     static let guideStationArtworkInset: CGFloat = 4
     static let guideStationHorizontalArtworkInset: CGFloat? = 20
     #else
@@ -327,33 +327,12 @@ private struct PrototypeNativeGuideButton: View {
     let configuration: PrimitiveButtonStyleConfiguration
     let surface: PrototypeButtonSurface
     let focusChanged: ((Bool) -> Void)?
-    @State private var focused = false
-
     var body: some View {
         Button(role: configuration.role, action: configuration.trigger) {
-            PrototypeNativeGuideLabel(content: configuration.label, surface: surface) { value in
-                focused = value
-                focusChanged?(value)
-            }
+            PrototypeNativeGuideLabel(content: configuration.label, surface: surface, focusChanged: focusChanged)
         }
-        .modifier(PrototypeGuideNativeMaterial(focused: focused))
-    }
-}
-
-struct PrototypeGuideNativeMaterial: ViewModifier {
-    let focused: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(tvOS 26.1, *) {
-            // Identity removes resting glass without replacing the native focus owner.
-            content
-                .buttonStyle(.glass(focused ? .regular : .identity))
-                .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
-        } else {
-            content.buttonStyle(.bordered)
-                .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
-        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
     }
 }
 
@@ -368,10 +347,17 @@ struct PrototypeNativeGuideLabel<Content: View>: View {
 
     var body: some View {
         content
+            .foregroundStyle(focused ? palette.onAccent : palette.primaryText)
             .background {
-                if surface == .program, !focused {
+                if focused {
+                    palette.accent
+                } else if surface == .program {
                     palette.fillSubtle.opacity(reduceTransparency || contrast == .increased ? 1 : 0.45)
                 }
+            }
+            .transaction {
+                $0.animation = nil
+                $0.disablesAnimations = true
             }
             // Observe the native label, without introducing another focus binding.
             .onChange(of: focused, initial: true) { _, value in focusChanged?(value) }
@@ -380,7 +366,6 @@ struct PrototypeNativeGuideLabel<Content: View>: View {
 #endif
 
 struct PrototypeGuideStationStyle: ViewModifier {
-    let focused: Bool
     let focusChanged: ((Bool) -> Void)?
     @Environment(\.plozzCardFocusStyle) private var focusStyle
 
@@ -388,7 +373,7 @@ struct PrototypeGuideStationStyle: ViewModifier {
     func body(content: Content) -> some View {
         #if os(tvOS)
         if focusStyle.usesSystemEffect {
-            content.modifier(PrototypeGuideNativeMaterial(focused: focused))
+            content.buttonStyle(.plain).focusEffectDisabled()
         } else {
             content.buttonStyle(PrototypeGuideButtonStyle(surface: .station, focusChanged: focusChanged))
         }

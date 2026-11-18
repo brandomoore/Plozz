@@ -48,22 +48,22 @@ listings retains a full-width focus highlight, with progress measured from the
 timeline edge rather than from the native button's inset label.
 TV rows use the shared 16-point content corners rather than the old 32-point
 radius. With System card focus selected, each channel-logo action, channel-name
-button and programme keeps a native button focus owner (bordered on older systems)
-instead of a lifting card or an unhighlighted borderless button.
+button and programme keeps a native control as its focus owner.
 Each control's rendering stays inside its own cell, including focused content;
 no focus effect may cover a neighboring logo, programme or row. Custom focus
 preferences retain the existing fallback. Row heights and font sizes are unchanged.
-On tvOS 26.1 and later, resting guide controls use the identity glass material
-(no glass effect), leaving the original lightweight tile fills and progress
-shading visible over live video. Only the focused control uses regular native
-glass. The button and its style retain their identity across that transition;
-menus receive the native style directly so they do not retain an implicit
-resting glass background. Sidebar controls keep their separate native appearance.
-Focused elapsed time keeps the native focus brightness; a translucent dark
+Guide labels read native focus directly to switch their neutral highlight and
+contrasting text together, without glass or a focus animation. Resting controls
+retain their lightweight tile fills. Sidebar controls keep native Liquid Glass.
+Focused elapsed time keeps the highlight brightness; a translucent dark
 shading behind the label dims only the remaining time. It follows the time
 direction in RTL, clamps to the cell, and does not invent progress for future
 programmes. Resting progress shading and custom-focus styles are unchanged.
-The TV logo column is 160 points wide, down from 200. Artwork has 20-point side
+Time labels start at
+their tick, flush with the corresponding cell edge. While a TV preview connects
+or buffers, its player supplies a small activity indicator beside the matching
+channel's header metadata, without resizing the title or guide.
+The TV logo column is 140 points wide. Artwork has 20-point side
 clearance and four-point vertical clearance, giving compact marks more height
 without letting wide marks crowd the edges. Logo labels retain their original
 full-tile backgrounds, using cached source-background colours or a restrained
@@ -1406,7 +1406,7 @@ is no prior in-memory history to migrate on the first updated launch.
 - The guide sits in one rounded tray with roomier channel rows and
   quieter programme tiles. Logo plates, channel tiles and the outer tray use
   shared content radii. Standard TV rows are about 72 points tall, with
-  160-point logo columns and 16-point row spacing.
+  140-point logo columns and 16-point row spacing.
   On first entry, focus moves to the first available channel's current programme
   to the right of its logo. With no guide data, the channel-name area remains
   separately focusable and playable. Missing-listing gaps have their own focus

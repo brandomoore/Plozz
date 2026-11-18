@@ -817,7 +817,9 @@ struct PrototypeTimeRuler: View {
                             : .dateTime.hour().minute())
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
+                            #if os(iOS)
                             .padding(.leading, PrototypeLayout.rowInset)
+                            #endif
                             .frame(width: tickWidth, alignment: .leading)
                     }
                 }
@@ -1293,7 +1295,6 @@ struct PrototypeGuideStation: View {
     var openLibraryItem: ((LibraryChannelItem) -> Void)?
     var selectForPreview: (() -> Void)?
     @Environment(\.plozzCardFocusStyle) private var focusStyle
-    @State private var nativeFocused = false
 
     var body: some View {
         Group {
@@ -1320,7 +1321,7 @@ struct PrototypeGuideStation: View {
                 }
             }
         }
-        .modifier(PrototypeGuideStationStyle(focused: nativeFocused, focusChanged: focusChanged))
+        .modifier(PrototypeGuideStationStyle(focusChanged: focusChanged))
         #if os(tvOS)
         .menuStyle(.button)
         .frame(width: width ?? PrototypeLayout.stationColumnWidth, height: height ?? PrototypeLayout.rowHeight)
@@ -1359,10 +1360,7 @@ struct PrototypeGuideStation: View {
     private var stationLabel: some View {
         #if os(tvOS)
         if focusStyle.usesSystemEffect {
-            PrototypeNativeGuideLabel(content: stationMark, surface: .station) { value in
-                nativeFocused = value
-                focusChanged?(value)
-            }
+            PrototypeNativeGuideLabel(content: stationMark, surface: .station, focusChanged: focusChanged)
         } else {
             stationMark
         }

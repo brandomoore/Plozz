@@ -75,6 +75,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var preview: LiveTVPreviewController
     @State private var imports: LiveTVPrototypeImportModel
     @State private var playback: LiveTVPlaybackCoordinator
+    @State private var previewActivity: LiveTVPreviewActivity?
     @State private var playbackResolvers: LiveTVPlaybackResolverContext
     @State private var sourceAuthority: LiveTVPlaybackSourceAuthority
     @State private var appliedSourceAuthorizationID: String?
@@ -448,6 +449,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                                              leadingReflectionWidth: leadingReflectionWidth,
                                              trailingReflectionWidth: trailingReflectionWidth,
                                              isPreviewVisible: !expanded && layout.heroHeight > 0))
+                    #if os(tvOS)
+                    .environment(\.liveTVShowsActivityInHeader, !expanded && !multiview.isEnabled && !isSearching)
+                    #endif
                     .environment(\.playbackReflectionColorScheme, palette.isLight ? .light : .dark)
                     .environment(\.themePalette, ThemePalette.dark)
                     .environment(\.colorScheme, .dark)
@@ -652,6 +656,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             ))
             #endif
         }
+        #if os(tvOS)
+        .onPreferenceChange(LiveTVPreviewActivityKey.self) { previewActivity = $0 }
+        #endif
         .environment(\.themePalette, palette)
         .tint(palette.accent)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
@@ -1832,7 +1839,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 channel: heroChannel, program: heroProgram, layout: layout,
                 watch: { if let id = heroChannel?.id { tune(id) } },
                 watchTitle: multiviewSelection?.title,
-                isLoading: isInitialCatalogLoading
+                isLoading: isInitialCatalogLoading,
+                activityLabel: previewActivity?.channelID == heroChannel?.id ? previewActivity?.label : nil
             )
             .opacity(isSearching ? 0 : 1)
             .allowsHitTesting(!isSearching)

@@ -510,6 +510,7 @@ struct PrototypePreviewHero: View {
     let watch: () -> Void
     var watchTitle: LocalizedStringResource?
     var isLoading = false
+    var activityLabel: LocalizedStringResource?
     @Environment(\.themePalette) private var palette
     @Environment(\.locale) private var locale
 
@@ -667,6 +668,16 @@ struct PrototypePreviewHero: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
+                #if os(tvOS)
+                .padding(.trailing, 44)
+                .overlay(alignment: .trailing) {
+                    if let activityLabel {
+                        ProgressView().controlSize(.small)
+                            .accessibilityLabel(Text(activityLabel))
+                            .allowsHitTesting(false)
+                    }
+                }
+                #endif
             Text(program?.title ?? channel.name)
                 .font((layout.compact ? Font.headline : Font.title3).weight(.semibold))
                 .lineLimit(1)

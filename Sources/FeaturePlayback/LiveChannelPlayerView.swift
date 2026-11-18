@@ -66,6 +66,7 @@ public extension View {
 public struct LiveChannelPlayerView: View {
     @Environment(PlaybackSettingsModel.self) private var playbackSettingsModel: PlaybackSettingsModel?
     private let channelID: String
+    @Environment(\.liveTVShowsActivityInHeader) private var showsActivityInHeader
     private let title: String // l10n:content — provider-supplied channel name
     private let input: LiveChannelInput
     private let logoURL: URL?
@@ -557,9 +558,7 @@ public struct LiveChannelPlayerView: View {
                             onClose: dismissPlayer
                         )
                     } else if !sourceMatches || model.showsActivityIndicator, !overlayShowsActivity {
-                        LiveChannelActivityView(
-                            phase: sourceMatches ? model.phase : .loading
-                        )
+                        LiveChannelActivityView(phase: sourceMatches ? model.phase : .loading)
                             .allowsHitTesting(false)
                     }
                 } else if sourceMatches, let interruption = model.interruption {
@@ -571,13 +570,7 @@ public struct LiveChannelPlayerView: View {
                     LiveChannelCompactStatusView(icon: "pause.fill", title: "Paused")
                 } else if (!sourceMatches || model.showsActivityIndicator),
                           !isMultiview || (sourceMatches && model.hasPresentedFrame) {
-                    LiveChannelCompactStatusView(
-                        icon: nil,
-                        title: sourceMatches
-                            ? model.phase.activityLabel
-                            : LiveChannelPlaybackPhase.loading.activityLabel,
-                        showsProgress: true
-                    )
+                    previewActivity((sourceMatches ? model.phase : .loading).activityLabel)
                 }
                 if let presentationControls {
                     presentationControls(.init(
@@ -643,11 +636,7 @@ public struct LiveChannelPlayerView: View {
                     )
                     .onAppear { focusAfterPresentation(.close) }
                 } else {
-                    LiveChannelCompactStatusView(
-                        icon: nil,
-                        title: "Connecting",
-                        showsProgress: true
-                    )
+                    previewActivity("Connecting")
                 }
             }
         }
@@ -711,6 +700,15 @@ public struct LiveChannelPlayerView: View {
     }
 
     // Split in two so the modifier chain type-checks in reasonable time.
+    @ViewBuilder private func previewActivity(_ label: LocalizedStringResource) -> some View {
+        if showsActivityInHeader {
+            Color.clear.frame(width: 0, height: 0)
+                .preference(key: LiveTVPreviewActivityKey.self, value: .init(channelID: channelID, label: label))
+        } else {
+            LiveChannelCompactStatusView(icon: nil, title: label, showsProgress: true)
+        }
+    }
+
     public var body: some View {
         presentationObservedRoot
             #if os(iOS)

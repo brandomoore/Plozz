@@ -284,7 +284,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             favorite: false, playing: false, tune: {}, toggleFavorite: {}, controls: {}, top: {}
         )
         let stationSize = UIHostingController(rootView: station).sizeThatFits(in: CGSize(width: 500, height: 500))
-        XCTAssertEqual(stationSize.width, 160, accuracy: 0.5)
+        XCTAssertEqual(stationSize.width, 140, accuracy: 0.5)
         XCTAssertEqual(stationSize.height, PrototypeLayout.rowHeight, accuracy: 0.5)
         #else
         XCTAssertEqual(PrototypeLayout.stationColumnWidth - size.width, PrototypeLayout.rowInset * 2, accuracy: 0.5)
