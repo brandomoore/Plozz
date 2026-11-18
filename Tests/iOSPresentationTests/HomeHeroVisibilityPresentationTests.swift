@@ -13,6 +13,77 @@ import XCTest
 
 @MainActor
 final class HomeHeroVisibilityPresentationTests: XCTestCase {
+    func testCompactDetailKeepsTitleAtArtworkBottomAndGrowsBelowIt() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Extended detail fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        let item = MediaItem(
+            id: "extended-detail", title: "SIGNAL", kind: .movie,
+            overview: "Across the stars.", officialRating: "PG", genres: ["Documentary"],
+            allowsTitleBasedMetadataMatching: false
+        )
+        let content = ScrollView {
+            VStack(spacing: 0) {
+                PlozziOSDetailHeroSection(
+                    item: item, backdropItem: item, playableItem: item,
+                    sources: [], selectedSourceAccountID: nil, versions: [], selectedVersionID: nil,
+                    onSelectSource: { _ in }, onSelectVersion: { _ in },
+                    actionHandler: SizingActions(), onPlay: { _, _ in }
+                )
+                .background(FrameProbe(identifier: "detail-header"))
+                Text("Cast & Crew")
+                    .frame(height: 180)
+                    .background(FrameProbe(identifier: "next-detail-row"))
+            }
+        }
+        .background(.black)
+        .environment(app)
+        .environment(HeroTrailerController())
+        .environment(PlozziOSSidebarGeometryModel())
+        try await withWindow(content, sizeClass: .compact) { window in
+            try await Task.sleep(for: .milliseconds(600))
+            let header = try XCTUnwrap(self.find("detail-header", in: window))
+            let row = try XCTUnwrap(self.find("next-detail-row", in: window))
+            let headerFrame = header.convert(header.bounds, to: window)
+            let rowFrame = row.convert(row.bounds, to: window)
+            let artworkHeight: CGFloat = 844 * 0.76
+            XCTAssertGreaterThan(headerFrame.height, artworkHeight + 120,
+                                 "Metadata and actions must grow below, not inside, the artwork.")
+            XCTAssertEqual(rowFrame.minY, headerFrame.maxY, accuracy: 1)
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "extended-detail-initial-viewport"
+            attachment.lifetime = .keepAlways
+            self.add(attachment)
+            let title = try XCTUnwrap(HeroTextInk.frames(in: image, terms: ["SIGNAL"])["SIGNAL"])
+            XCTAssertGreaterThan(title.minY - headerFrame.minY, artworkHeight - 100,
+                                 "The title must remain at the taller artwork's lower edge.")
+
+            let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+            scroll.setContentOffset(CGPoint(x: 0, y: 300), animated: false)
+            try await self.settle(window)
+            let lower = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let lowerAttachment = XCTAttachment(image: lower)
+            lowerAttachment.name = "extended-detail-actions-and-next-row"
+            lowerAttachment.lifetime = .keepAlways
+            self.add(lowerAttachment)
+            let play = try XCTUnwrap(HeroTextInk.frames(
+                in: lower, terms: ["Play"], darkTerms: ["Play"]
+            )["Play"])
+            let scrolledHeader = header.convert(header.bounds, to: window)
+            XCTAssertGreaterThan(play.minY - scrolledHeader.minY, artworkHeight)
+        }
+    }
+
     func testCompactDetailBadgesStayCloseToSynopsisAndActions() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID
@@ -250,22 +321,34 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                 }
                 .environment(app)
                 .environment(PlozziOSSidebarGeometryModel())
-                try await withWindow(foreground, sizeClass: sizeClass) { window in
+                try await withWindow(
+                    ScrollView { foreground },
+                    sizeClass: sizeClass
+                ) { window in
+                    try await Task.sleep(for: .milliseconds(600))
                     var baseline: [String: CGFloat] = [:]
                     for step in [0, -5, 5] {
                         app.settings.hero.settings.textSize = HeroTextSize(rawValue: step)
                         app.settings.detailPage.settings.textSize = HeroTextSize(rawValue: step)
                         try await self.settle(window)
-                        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                        let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                        var frames: [String: CGRect] = [:]
+                        let bottom = max(0, scroll.contentSize.height - scroll.bounds.height)
+                        for offset in [CGFloat.zero, bottom] {
+                            scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+                            try await self.settle(window)
+                            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                            }
+                            let attachment = XCTAttachment(image: image)
+                            attachment.name = "mobile-\(detail ? "detail" : "home")-text-\(sizeClass)-\(step)-\(offset)"
+                            attachment.lifetime = .keepAlways
+                            self.add(attachment)
+                            frames.merge(try HeroTextInk.frames(
+                                in: image, terms: ["SIGNAL", "Documentary", "Across the stars", "Play"],
+                                darkTerms: ["Play"]
+                            )) { current, _ in current }
                         }
-                        let attachment = XCTAttachment(image: image)
-                        attachment.name = "mobile-\(detail ? "detail" : "home")-text-\(sizeClass)-\(step)"
-                        attachment.lifetime = .keepAlways
-                        self.add(attachment)
-                        let frames = try HeroTextInk.frames(
-                            in: image, terms: ["SIGNAL", "Documentary", "Across the stars", "Play"], darkTerms: ["Play"]
-                        )
                         for text in ["SIGNAL", "Documentary", "Across the stars", "Play"] {
                             let height = try XCTUnwrap(frames[text], "Missing \(text), \(sizeClass), step \(step)").height
                             if step == 0 { baseline[text] = height }

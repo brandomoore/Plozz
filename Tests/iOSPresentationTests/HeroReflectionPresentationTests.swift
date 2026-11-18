@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class HeroReflectionPresentationTests: XCTestCase {
-    func testCompactDetailUsesTheExtendedHomeHeightAndLeavesNextRowPeek() {
+    func testCompactDetailArtworkUsesTheExtendedHomeArtworkHeight() {
         for windowHeight: CGFloat in [667, 844, 956] {
             for textSize: DynamicTypeSize in [.large, .accessibility3] {
                 let detail = PlozziOSHeroMetrics.height(

@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Reserves a view's final geometry while its content is still loading.
 ///
@@ -69,6 +72,9 @@ public struct PlozzReservedPlaceholder<Placeholder: View, Content: View>: View {
 public struct PlozzFadeInOnAppear: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visible = false
+    #if os(iOS)
+    @State private var pageHasAppeared = false
+    #endif
     private let duration: Double
     private let isReady: Bool
 
@@ -77,17 +83,29 @@ public struct PlozzFadeInOnAppear: ViewModifier {
         self.isReady = isReady
     }
 
+    private var canReveal: Bool {
+        #if os(iOS)
+        isReady && pageHasAppeared
+        #else
+        isReady
+        #endif
+    }
+
     public func body(content: Content) -> some View {
         content
             .opacity(visible ? 1 : 0)
             .allowsHitTesting(visible)
             .accessibilityHidden(!visible)
-            // `.task` runs after the first rendered frame, so the 0-opacity state
-            // is actually painted before the fade starts. `.onAppear` could run
-            // during the push and finish the fade while the section was offscreen,
-            // which is why the sections appeared to snap in.
-            .task(id: isReady) {
-                guard isReady, !visible, !Task.isCancelled else { return }
+            #if os(iOS)
+            .background {
+                PlozzPageAppearanceReader { pageHasAppeared = $0 }
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            #endif
+            .task(id: canReveal) {
+                guard canReveal, !visible, !Task.isCancelled else { return }
                 if reduceMotion {
                     visible = true
                 } else {
@@ -96,6 +114,43 @@ public struct PlozzFadeInOnAppear: ViewModifier {
             }
     }
 }
+
+#if os(iOS)
+/// SwiftUI appearance tasks can run before native navigation finishes.
+private struct PlozzPageAppearanceReader: UIViewControllerRepresentable {
+    let onChange: (Bool) -> Void
+
+    func makeUIViewController(context: Context) -> Controller {
+        let controller = Controller()
+        controller.onChange = onChange
+        return controller
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.onChange = onChange
+    }
+
+    final class Controller: UIViewController {
+        var onChange: ((Bool) -> Void)?
+
+        override func loadView() {
+            view = UIView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            onChange?(true)
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            onChange?(false)
+        }
+    }
+}
+#endif
 
 public extension View {
     func plozzFadeInOnAppear(duration: Double = 0.24, isReady: Bool = true) -> some View {

@@ -3423,6 +3423,7 @@ private struct PlozziOSFeaturedCollectionRail: View {
                     appModel.accountsProviders.provider(forAccountID: $0)
                 }
             )
+            .mediaArtworkZoomDestination(route.source)
         }
         .navigationDestination(item: $selection) { item in
             PlozziOSHomeCardDetail(
@@ -3771,10 +3772,7 @@ struct PlozziOSHomeMediaCard: View {
                 } label: { card }
                     .buttonStyle(.plain)
             } else if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
-                MediaArtworkZoomLink(
-                    id: item.stablePresentationID,
-                    usesZoom: false
-                ) {
+                MediaArtworkZoomLink(id: item.stablePresentationID) {
                     PlozziOSHomeCardDetail(
                         item: item, fallbackProvider: provider
                     )

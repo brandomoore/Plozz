@@ -45,7 +45,8 @@ enum PlozziOSHeroMetrics {
     /// picture until it does.
     ///
     /// Portrait Home and detail share the same picture/continuation geometry.
-    /// Both surfaces keep their foreground inside the extended stage.
+    /// Detail information grows below that stage instead of competing with the
+    /// title for the artwork's height.
     static func extendsArtwork(
         style: HeroArtworkStyle,
         surfaceRole: HeroTrailerSurfaceRole
@@ -521,6 +522,7 @@ struct PlozziOSDetailHeroSection: View {
             textSize: appModel.settings.detailPage.settings.textSize,
             scheduleLine: scheduleLine,
             pullDistance: pullDistance,
+            metadataIsReady: metadataIsReady,
             trailerController: trailerController,
             backgroundSettings: appModel.settings.heroBackground,
             trailerResolver: appModel.heroTrailerResolver()
@@ -551,7 +553,6 @@ struct PlozziOSDetailHeroSection: View {
                 offersParentNavigation: offersParentNavigation,
                 presentsEpisodeStill: presentsEpisodeStill
             )
-            .plozzFadeInOnAppear(isReady: metadataIsReady)
         }
         .environment(\.plozziOSHeroLogoSize, appModel.settings.detailPage.settings.logoSize)
         .environment(
@@ -590,7 +591,7 @@ struct PlozziOSSeriesLoadingHero: View {
                 PlozziOSHeroMetadata(
                     presentation: presentation, style: style, mode: .detail,
                     usesCompactDetailLayout: style == .compactPortrait,
-                    content: .all,
+                    content: style == .compactPortrait ? .information : .all,
                     detailPageSettings: settings, textSize: settings.textSize
                 )
                 .environment(\.metadataTextScale, settings.textSize.scale)
@@ -637,6 +638,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
     /// Overscroll pull (points) from the enclosing scroll view. Stretches the
     /// backdrop just like the Home hero; 0 leaves the hero at rest.
     var pullDistance: CGFloat = 0
+    var metadataIsReady = true
     let trailerController: HeroTrailerController
     let backgroundSettings: HeroBackgroundSettingsModel
     let trailerResolver: HeroTrailerResolving
@@ -674,7 +676,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
     }
 
     private var separatesContent: Bool {
-        surfaceRole == .detail && style == .compactPortrait && !showsBackdrop
+        surfaceRole == .detail && style == .compactPortrait
     }
 
     var body: some View {
@@ -740,21 +742,56 @@ struct PlozziOSHeroStage<Foreground: View>: View {
                 Color.clear
             }
         }
+        let presentedForeground = Group {
+            if surfaceRole == .detail {
+                foreground()
+                    .plozzFadeInOnAppear(
+                        duration: DetailEntranceTiming().reveal, isReady: metadataIsReady
+                    )
+            } else {
+                foreground()
+            }
+        }
 
         return Group {
             if separatesContent {
                 VStack(spacing: 0) {
+                    if showsBackdrop {
+                        PlozziOSHeroMetadata(
+                            presentation: presentation,
+                            style: style,
+                            mode: .detail,
+                            scheduleLine: scheduleLine,
+                            logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
+                            content: .identity
+                        )
+                        .environment(\.metadataTextScale, textSize.scale)
+                        .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: style))
+                        .padding(.bottom, 12)
+                        .frame(height: height, alignment: .bottom)
+                    }
                     foreground()
                         .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: style))
-                        .padding(.top, 80 + PlozziOSHeroMetrics.detailContentTopInset)
+                        .padding(
+                            .top,
+                            showsBackdrop ? 12 : 80 + PlozziOSHeroMetrics.detailContentTopInset
+                        )
                         .padding(.bottom, 8)
                         .frame(maxWidth: .infinity)
                         .background(gradientEnabled ? Color.clear : palette.backgroundBase)
                 }
+                .plozzFadeInOnAppear(
+                    duration: DetailEntranceTiming().reveal, isReady: metadataIsReady
+                )
+                .background(alignment: .top) {
+                    if showsBackdrop {
+                        background.frame(height: height)
+                    }
+                }
             } else {
                 ZStack {
                     background
-                    foreground()
+                    presentedForeground
                         .frame(
                             maxWidth: PlozziOSPageLayout.heroStageMaxWidth(
                                 for: style,
@@ -2362,7 +2399,7 @@ struct PlozziOSDetailHeroForeground: View {
                 scheduleLine: scheduleLine,
                 logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: rootItem),
                 usesCompactDetailLayout: style == .compactPortrait,
-                content: .all,
+                content: style == .compactPortrait && !presentsEpisodeStill ? .information : .all,
                 detailPageSettings: appModel.settings.detailPage.settings,
                 textSize: appModel.settings.detailPage.settings.textSize
             )

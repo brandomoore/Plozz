@@ -61,7 +61,7 @@ private struct PlozziOSItemNavigationModifier: ViewModifier {
             }
             .navigationDestination(item: $navigatedArtwork) { route in
                 PlozziOSItemPage(appModel: appModel, item: route.item)
-                    
+                    .mediaArtworkZoomDestination(route.source)
             }
             .navigationDestination(item: $navigatedPerson) { route in
                 PlozziOSPersonPage(appModel: appModel, route: route)
@@ -250,6 +250,7 @@ private struct PlozziOSPersonPage: View {
         .artworkNavigation { navigatedArtwork = .init(item: $0, source: $1) }
         .navigationDestination(item: $navigatedArtwork) { route in
             PlozziOSItemPage(appModel: appModel, item: route.item)
+                .mediaArtworkZoomDestination(route.source)
         }
         .navigationDestination(item: $navigatedItem) { item in
             PlozziOSItemPage(appModel: appModel, item: item)

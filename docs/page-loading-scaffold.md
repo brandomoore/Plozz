@@ -126,10 +126,11 @@ loading and reveal behavior stable:
 
 - Reserve the stage's final height before artwork resolves; never let a resource
   response change the hero band's geometry.
-- Mobile portrait detail shares Home's window-relative height and mirrored
-  artwork continuation. Identity, metadata and actions occupy one foreground;
-  series seasons remain immediately below the hero.
-- Mobile detail reveals that foreground once cached or native detail resolves, without
+- Mobile portrait detail shares Home's window-relative artwork height and mirrored
+  continuation. The title sits at the artwork's lower edge; metadata and actions
+  grow below it. Series seasons remain immediately below the complete header.
+- Mobile detail reveals that foreground together once native navigation finishes
+  and cached or native detail resolves, without
   waiting for artwork, ratings, cast or related titles. Subsequent enrichment
   updates quietly. Reduce Motion removes the entrance animation.
 - Home's wordmark keeps its independent reveal and never gates its action row.

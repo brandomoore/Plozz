@@ -40,23 +40,16 @@ public struct MediaArtworkZoomValueLink<Value: Hashable, Label: View>: View {
 /// Each rendered card owns its namespace, even when another row shows the same item.
 public struct MediaArtworkZoomLink<Destination: View, Label: View>: View {
     private let id: String
-    /// Whether the destination shares the source card's aspect closely enough for
-    /// the zoom morph. A portrait poster growing into a full-bleed landscape hero
-    /// stretches the picture and is the visible "hero freaks out on entry"; those
-    /// links use the normal push instead.
-    private let usesZoom: Bool
     private let destination: () -> Destination
     private let label: () -> Label
     @Namespace private var namespace
 
     public init(
         id: String,
-        usesZoom: Bool = false,
         @ViewBuilder destination: @escaping () -> Destination,
         @ViewBuilder label: @escaping () -> Label
     ) {
         self.id = id
-        self.usesZoom = usesZoom
         self.destination = destination
         self.label = label
     }
@@ -74,11 +67,7 @@ public struct MediaArtworkZoomLink<Destination: View, Label: View>: View {
             label().environment(\.mediaArtworkZoomSource, source)
         }
         .navigationDestination(isPresented: $isPresented) {
-            if usesZoom {
-                destination().mediaArtworkZoomDestination(source)
-            } else {
-                destination()
-            }
+            destination().mediaArtworkZoomDestination(source)
         }
     }
 }

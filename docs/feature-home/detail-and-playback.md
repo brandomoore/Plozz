@@ -177,13 +177,15 @@ for timing scope and scrolling limitations.
 
 ## Pending primary action
 
-On iPhone, the detail hero uses Home's responsive portrait height and mirrored
-artwork continuation. Its title, metadata and actions share the artwork surface;
-series seasons remain directly below it. Cast & Crew precedes Related. Related
+On iPhone, the detail artwork uses Home's responsive portrait height and mirrored
+continuation, with the title at its lower edge. Metadata and actions grow below
+the artwork; they must not be squeezed into its fixed height. Series seasons
+remain directly below the complete header. Cast & Crew precedes Related. Related
 renders only real results, including short rows, without a speculative skeleton.
 Its request still starts during page entry, not when the row scrolls into view.
 
-Mobile core foreground has one initial entrance after cached or native detail is
+Mobile core foreground has one initial entrance after the native navigation
+transition finishes and cached or native detail is
 available. Cached metadata does not wait for live artwork-source resolution.
 Artwork displays without an entrance fade; later enrichment and optional sections
 do not replay separate fades. Logo resolution keeps the existing no-temporary-title

@@ -93,7 +93,9 @@ between Home and detail:
   black flashes during pull.
 - **Detail artwork appears when ready.** Do not add a first-backdrop fade, even
   for cached images. Mobile detail reveals its foreground as one group once
-  native detail resolves; later enrichment does not replay that animation.
+  the page is onscreen and cached or native detail resolves; later enrichment
+  does not replay that animation. A SwiftUI appearance task alone does not mean
+  the native navigation transition has finished.
 - **Reserve async action slots.** A trailer button (or any action resolved after
   first paint) must reserve its final size from the start, or Play shifts when
   it arrives.

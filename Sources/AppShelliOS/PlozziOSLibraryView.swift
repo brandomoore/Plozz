@@ -280,6 +280,7 @@ struct PlozziOSLibraryGridView: View {
                 item: route.item,
                 originSourceAccountID: route.item.sourceAccountID
             )
+            .mediaArtworkZoomDestination(route.source)
         }
         .safeAreaInset(edge: .bottom) {
             if viewModel.collectionScanIncomplete, viewModel.state.value != nil, viewModel.pageError == nil,
