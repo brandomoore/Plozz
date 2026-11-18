@@ -204,6 +204,7 @@ struct PrototypeBrowseSidebar: View {
                     categoryFade = fade
                 }
                 .accessibilityIdentifier("live-tv-category-list")
+                .navigationEntryFocus(.content)
                 .onChange(of: readyCategoryFocusRequest, initial: true) { _, request in
                     // The pane is still clipped during its reveal transition.
                     guard request != nil else { return }
@@ -230,13 +231,6 @@ struct PrototypeBrowseSidebar: View {
             $focused, restoresCategoryFocus ? entryTarget : .search,
             priority: .automatic
         )
-        .background {
-            NativeFocusRegionObserver(
-                isEnabled: restoresCategoryFocus, ignoresPresentedFocus: true,
-                onFocusExited: { completedCategoryFocusRequest = 0 },
-                onFocusEntered: {}
-            )
-        }
         .onMoveCommand { direction in
             guard focused != nil else { return }
             if direction == (layoutDirection == .rightToLeft ? .left : .right) {

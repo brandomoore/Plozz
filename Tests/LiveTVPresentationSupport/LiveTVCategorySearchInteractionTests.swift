@@ -185,6 +185,9 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         let leading: XCUIRemote.Button = rightToLeft ? .right : .left
         let trailing: XCUIRemote.Button = rightToLeft ? .left : .right
         XCTAssertTrue(app.buttons["live-tv-sidebar-category-all"].wait(for: \.hasFocus, toEqual: true, timeout: 15))
+        assertPinnedNavigationRoundTrip(
+            in: app, from: app.buttons["live-tv-sidebar-category-all"], opening: leading, returning: trailing
+        )
         for index in 1...20 {
             XCUIRemote.shared.press(.down)
             let category = app.buttons["live-tv-sidebar-category-Category \(String(format: "%02d", index))"]
@@ -214,11 +217,36 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
                           "One leading-edge press must leave the native guide and focus the remembered deep category.")
             XCTAssertEqual(category.frame.minY, before.minY, accuracy: 1)
             XCTAssertFalse(app.buttons["Navigation"].isEnabled)
+            assertPinnedNavigationRoundTrip(in: app, from: category, opening: leading, returning: trailing)
         }
         XCUIRemote.shared.press(.down)
         XCTAssertTrue(app.buttons["live-tv-sidebar-category-Category 21"].wait(for: \.hasFocus, toEqual: true, timeout: 5),
                       "The completed handoff must not steal ordinary category navigation.")
         capture("deep-category-native-guide-return", in: app)
+    }
+
+    private func assertPinnedNavigationRoundTrip(
+        in app: XCUIApplication, from control: XCUIElement,
+        opening: XCUIRemote.Button, returning: XCUIRemote.Button
+    ) {
+        let before = control.frame
+        XCUIRemote.shared.press(opening)
+        func assertNavigationFocus(_ title: String) {
+            let focused = NSPredicate { _, _ in
+                app.buttons.allElementsBoundByIndex.contains { $0.label.hasPrefix(title) && $0.hasFocus }
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [
+                XCTNSPredicateExpectation(predicate: focused, object: nil)
+            ], timeout: 5), .completed, app.debugDescription)
+        }
+        assertNavigationFocus("Live TV")
+        XCUIRemote.shared.press(.up)
+        assertNavigationFocus("Library 1")
+        XCUIRemote.shared.press(.down)
+        assertNavigationFocus("Live TV")
+        XCUIRemote.shared.press(returning)
+        XCTAssertTrue(control.wait(for: \.hasFocus, toEqual: true, timeout: 5))
+        XCTAssertEqual(control.frame.minY, before.minY, accuracy: 1)
     }
 
     private func assertPinnedNavigationCategoryEntry(rightToLeft: Bool = false) {
@@ -262,10 +290,9 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
                           "One leading-edge press must reveal and focus categories, without another press. \(app.debugDescription)")
             XCTAssertFalse(navigation.isEnabled, "Opening categories must not expand pinned navigation.")
             capture("pinned-navigation-stays-collapsed-at-categories", in: app)
-            XCUIRemote.shared.press(leading)
-            XCTAssertTrue(navigation.wait(for: \.isEnabled, toEqual: true, timeout: 5))
-            XCUIRemote.shared.press(trailing)
-            XCTAssertTrue(categories.wait(for: \.hasFocus, toEqual: true, timeout: 5))
+            assertPinnedNavigationRoundTrip(
+                in: app, from: categories, opening: iteration == 1 ? .menu : leading, returning: trailing
+            )
             XCUIRemote.shared.press(trailing)
         }
         XCUIRemote.shared.press(.menu)

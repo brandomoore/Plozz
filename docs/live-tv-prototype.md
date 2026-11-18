@@ -366,6 +366,10 @@ host. A SwiftUI focus binding alone can leave focus inside that nested guide.
 The request is cancelled when its control is disabled or detached and is not
 replayed by later scrolling/layout. Restoring a retained category sends no scroll
 command; only initial entry or an unavailable-category fallback reveals a row.
+Leaving categories for pinned navigation does not rearm the completed request;
+navigation owns focus until the viewer returns. New-page entry prefers the
+category list's first row over the source switcher, while closing navigation
+restores the actual control from which it was opened.
 With pinned navigation, the moving pane fades through the extra content inset,
 reaching full transparency before the navigation icons. The stationary feather
 does not dim the resting controls or leave a translucent copy behind the rail.
