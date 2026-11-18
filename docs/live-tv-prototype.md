@@ -46,10 +46,10 @@ Dynamic Type. Channel names can use two lines; a focused guide failure reserves
 the second line for its error. Phone and tablet row sizes are unchanged.
 TV rows use the shared 16-point content corners rather than the old 32-point
 radius. With System card focus selected, each channel-logo action, channel-name
-button and programme uses the native tvOS card effect instead of the drawn
-outline. Custom focus preferences retain the existing fallback. Timeline
-labels remain clipped within their cells, while native focus can extend into
-the existing row gap without changing row heights or navigation targets.
+button and programme uses a native borderless button instead of a lifting card.
+Each control's rendering stays inside its own cell, including focused content;
+no focus effect may cover a neighboring logo, programme or row. Custom focus
+preferences retain the existing fallback. Row heights and font sizes are unchanged.
 
 Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
@@ -223,8 +223,13 @@ Other pages' profile shortcuts are unchanged. Category tiles use
 shorter minimum heights while retaining channel counts and Dynamic Type growth.
 On Apple TV, the categories sidebar places the same source menu above
 **Search**, with icon-only **Multiviews** and **Manage channels** buttons beside
-Search. These actions retain accessible names and help text. Directional focus
-moves across the action row before entering the guide, and mirrors in RTL.
+Search. These are native bordered buttons and a native menu, without a second
+custom background or focus outline, and retain accessible names and help text.
+Directional handling belongs to the originating control, not a parent reading
+the newly focused control. Focus moves across the action row before entering
+the guide, and mirrors in RTL. Ordinary sidebar-to-guide handoff does not hide
+app navigation or change its content insets; fullscreen playback return and
+Search retain their separate navigation suppression.
 The source menu shows the current source, supports **All**, and opens the existing
 **Add Source** choices. Source filtering shares the mobile authorization and
 category-retention behavior without changing connected sources or active playback.

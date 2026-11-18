@@ -716,6 +716,8 @@ targets:
       - path: Tests/PerformancePresentationSupport
       - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideFocusTests.swift
+      - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
+      - path: Tests/FeatureLiveTVCoreTests/LiveTVPreviewControllerTests.swift
       - path: Tests/AppearancePresentationSupport
       - path: Tests/CoreUITests/DialogSurfaceTests.swift
       - path: Tests/AuthPresentationSupport

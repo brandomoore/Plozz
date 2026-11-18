@@ -295,7 +295,7 @@ struct PrototypeGuideButtonStyle: PrimitiveButtonStyle {
                     content: configuration.label, surface: surface, focusChanged: focusChanged
                 )
             }
-            .buttonStyle(.card)
+            .buttonStyle(.borderless)
             .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
         } else {
             fallback(configuration)
@@ -326,16 +326,8 @@ private struct PrototypeNativeGuideLabel<Content: View>: View {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
 
-    private var contentPalette: ThemePalette {
-        guard focused else { return palette }
-        if #available(tvOS 26.0, *), !reduceTransparency { return palette }
-        return .light
-    }
-
     var body: some View {
         content
-            .foregroundStyle(contentPalette.primaryText)
-            .environment(\.themePalette, contentPalette)
             .background {
                 if surface == .program, !focused {
                     palette.fillSubtle.opacity(reduceTransparency || contrast == .increased ? 1 : 0.45)

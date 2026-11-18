@@ -220,7 +220,14 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         for action in [multiview, manage] {
             XCUIRemote.shared.press(trailing)
             XCTAssertTrue(action.wait(for: \.hasFocus, toEqual: true, timeout: 5))
-            XCTAssertTrue(category.exists, "Moving between sidebar actions must not collapse categories.")
+            let unexpectedExit = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                !category.exists || !action.hasFocus
+            }, object: nil)
+            unexpectedExit.isInverted = true
+            XCTAssertEqual(XCTWaiter.wait(for: [unexpectedExit], timeout: 0.6), .completed,
+                           "Focus must stay on the icon after the move; categories must remain open.")
+            XCTAssertFalse(search.frame.intersects(multiview.frame))
+            XCTAssertFalse(multiview.frame.intersects(manage.frame))
         }
         for action in [multiview, search] {
             XCUIRemote.shared.press(leading)

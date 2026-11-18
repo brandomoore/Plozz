@@ -87,23 +87,20 @@ struct PrototypeBrowseSidebar: View {
                 includesLibraryChannels: model.channels.contains { $0.source == .plozz },
                 selectSource: selectSource, addSource: addSource
             )
-            .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
-            .padding(PrototypeLayout.controlInset)
-            .background { PrototypeControlSurface() }
+            .modifier(PrototypeSidebarNativeControl())
             .focused($focused, equals: .source)
+            .onMoveCommand { move(from: .source, direction: $0) }
             .background { nativeFocusRequest(for: .source) }
             .disabled(isFocusDisabled(.source))
 
-            HStack(spacing: PrototypeLayout.smallGap) {
+            HStack(spacing: PrototypeLayout.gap) {
                 Button(action: search) {
                     Label(isSearching ? "Back to guide" : "Search", systemImage: isSearching ? "chevron.backward" : "magnifyingglass")
-                        .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
-                        .padding(.horizontal, PrototypeLayout.gap)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
-                .padding(PrototypeLayout.controlInset)
-                .background { PrototypeControlSurface() }
+                .modifier(PrototypeSidebarNativeControl())
                 .focused($focused, equals: .search)
+                .onMoveCommand { move(from: .search, direction: $0) }
                 .background { nativeFocusRequest(for: .search) }
                 .disabled(isFocusDisabled(.search))
                 .accessibilityValue(model.query)
@@ -150,6 +147,8 @@ struct PrototypeBrowseSidebar: View {
                             }
                             #if os(tvOS)
                             .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
+                            .focusEffectDisabled()
+                            .onMoveCommand { move(from: .category(category), direction: $0) }
                             #else
                             .buttonStyle(.bordered)
                             #endif
@@ -198,21 +197,12 @@ struct PrototypeBrowseSidebar: View {
         .font(.system(size: fontSize, weight: .regular))
         #endif
         .lineLimit(1)
-        .focusEffectDisabled()
         #if os(tvOS)
         .focusSection()
         .defaultFocus(
             $focused, restoresCategoryFocus ? entryTarget : .search,
             priority: .automatic
         )
-        .onMoveCommand { direction in
-            guard focused != nil else { return }
-            if direction == (layoutDirection == .rightToLeft ? .left : .right) {
-                if focused == .search, multiviews != nil || manageChannels != nil { return }
-                if focused == .multiviews, manageChannels != nil { return }
-                enterGuide()
-            }
-        }
         #endif
         .onChange(of: focused) { _, target in
             guard let target else { return }
@@ -236,15 +226,13 @@ struct PrototypeBrowseSidebar: View {
                 Label("Multiviews", systemImage: "rectangle.split.2x2")
                     #if os(tvOS)
                     .labelStyle(.iconOnly)
-                    .frame(width: PrototypeLayout.controlHeight, height: PrototypeLayout.controlHeight)
                     #else
                     .frame(maxWidth: .infinity, alignment: .leading)
                     #endif
             }
             #if os(tvOS)
-            .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
-            .padding(PrototypeLayout.controlInset)
-            .background { PrototypeControlSurface() }
+            .modifier(PrototypeSidebarNativeControl(iconOnly: true))
+            .onMoveCommand { move(from: .multiviews, direction: $0) }
             .help("Multiviews")
             #else
             .buttonStyle(.bordered)
@@ -259,15 +247,13 @@ struct PrototypeBrowseSidebar: View {
                 Label("Manage channels", systemImage: "slider.horizontal.3")
                     #if os(tvOS)
                     .labelStyle(.iconOnly)
-                    .frame(width: PrototypeLayout.controlHeight, height: PrototypeLayout.controlHeight)
                     #else
                     .frame(maxWidth: .infinity, alignment: .leading)
                     #endif
             }
             #if os(tvOS)
-            .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
-            .padding(PrototypeLayout.controlInset)
-            .background { PrototypeControlSurface() }
+            .modifier(PrototypeSidebarNativeControl(iconOnly: true))
+            .onMoveCommand { move(from: .manageChannels, direction: $0) }
             .help("Manage channels")
             #else
             .buttonStyle(.bordered)
@@ -278,4 +264,37 @@ struct PrototypeBrowseSidebar: View {
             .accessibilityIdentifier("live-tv-manage-channels")
         }
     }
+
+    #if os(tvOS)
+    private func move(from control: Control, direction: MoveCommandDirection) {
+        guard direction == (layoutDirection == .rightToLeft ? .left : .right) else { return }
+        if control == .search, multiviews != nil || manageChannels != nil { return }
+        if control == .multiviews, manageChannels != nil { return }
+        enterGuide()
+    }
+    #endif
 }
+
+#if os(tvOS)
+private struct PrototypeSidebarNativeControl: ViewModifier {
+    var iconOnly = false
+    @Environment(\.themePalette) private var palette
+
+    func body(content: Content) -> some View {
+        sized(content)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(iconOnly ? .circle : .roundedRectangle(radius: PrototypeLayout.controlRadius))
+            .controlSize(.small)
+            .tint(palette.accent)
+            .frame(width: iconOnly ? PrototypeLayout.controlHeight : nil, height: PrototypeLayout.controlHeight)
+    }
+
+    @ViewBuilder private func sized(_ content: Content) -> some View {
+        if #available(tvOS 26.0, *) {
+            content.buttonSizing(.flexible)
+        } else {
+            content
+        }
+    }
+}
+#endif
