@@ -659,6 +659,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   gate opens. This page-local handoff requires the same subject, profile and
   effective artwork policy, and a landscape bitmap for a landscape destination;
   it does not select or authorize a different preferred source.
+  Mobile detail uses `FallbackAsyncImage.resolvedBitmap(reportingHeroArtwork:)`
+  to share one resolved bitmap across the original and reflected images. Only a
+  late first image fades: the composed layer reveals over 0.15 seconds, or
+  immediately with Reduce Motion. Cached and handed-off images remain immediate,
+  and resolution upgrades do not restart the reveal.
   TV transition prefetches are reusable work, not permission to paint. The
   transition cover receives its image only from the ready destination renderer.
   `ArtworkDisplayIdentity` separates the visible subject/policy from changing

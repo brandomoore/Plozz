@@ -11,6 +11,128 @@ import XCTest
 
 @MainActor
 final class HeroLogoContinuityTests: XCTestCase {
+    func testPlayPlaceholderCrossfadeRendersAndRespectsReducedMotion() async throws {
+        XCTAssertFalse(UIAccessibility.isReduceMotionEnabled)
+        for reduced in [false, true] {
+            let fixture = try Fixture()
+            defer { fixture.close() }
+            let state = PlayState()
+            fixture.host.rootView = AnyView(
+                PlayFixture(state: state).environment(\._accessibilityReduceMotion, reduced)
+            )
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertLessThan(try fixture.playTextIntensity(), 10)
+            state.isPlaceholder = false
+            let start = ContinuousClock.now
+            var samples: [(Duration, Double)] = []
+            repeat {
+                samples.append((start.duration(to: .now), try fixture.playTextIntensity()))
+                try await Task.sleep(for: .milliseconds(8))
+            } while start.duration(to: .now) < .milliseconds(300)
+            let final = try fixture.playTextIntensity()
+            XCTAssertGreaterThan(final, 180)
+            let measurements = XCTAttachment(string: samples.map { "\($0.0): \($0.1)" }.joined(separator: "\n"))
+            measurements.name = "play-placeholder-opacity-reduced-\(reduced)"
+            measurements.lifetime = .keepAlways
+            add(measurements)
+            let partial = samples.first { $0.1 > final * 0.1 && $0.1 < final * 0.9 }
+            if reduced {
+                XCTAssertNil(partial)
+            } else {
+                XCTAssertNotNil(partial, "The ready label must crossfade, not pop into place.")
+                let complete = try XCTUnwrap(samples.first { $0.1 > final * 0.98 })
+                XCTAssertLessThan(complete.0, .milliseconds(200))
+            }
+        }
+    }
+
+    func testLateArtworkAndReflectionsShareTheSameShortReveal() async throws {
+        XCTAssertFalse(UIAccessibility.isReduceMotionEnabled)
+        for gated in [true, false] {
+            let fixture = try Fixture(size: CGSize(width: 390, height: 844))
+            defer { fixture.close() }
+            let url = try fixture.seedArtwork()
+            if gated {
+                let cached = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+                XCTAssertNotNil(cached)
+            }
+            let state = ArtworkState(url: gated ? url : nil, sourceReady: !gated)
+            fixture.host.rootView = AnyView(ArtworkFixture(state: state))
+            try await Task.sleep(for: .milliseconds(100))
+            let baseline = try fixture.artworkSample().values
+            state.item.posterURL = url
+            state.item.backdropURL = url
+            state.sourceReady = true
+            let start = ContinuousClock.now
+            var frames: [(Duration, [Double], UIImage)] = []
+            repeat {
+                let sample = try fixture.artworkSample()
+                frames.append((start.duration(to: .now), sample.values, sample.image))
+                try await Task.sleep(for: .milliseconds(8))
+            } while start.duration(to: .now) < .milliseconds(450)
+            let final = try fixture.artworkSample().values
+            XCTAssertGreaterThan(final[1], 230)
+            let normalized = frames.map { frame in
+                zip(zip(frame.1, baseline), final).map { pair, end in
+                    (pair.0 - pair.1) / max(end - pair.1, 1)
+                }
+            }
+            let intermediate = try XCTUnwrap(normalized.firstIndex { $0[1] > 0.1 && $0[1] < 0.9 },
+                                             "Late artwork needs a rendered intermediate frame.")
+            for (index, frame) in normalized.enumerated() where frame[1] > 0.1 && frame[1] < 0.9 {
+                for position in final.indices {
+                    let expected = baseline[position] + (final[position] - baseline[position]) * frame[1]
+                    XCTAssertEqual(frames[index].1[position], expected, accuracy: 2,
+                                   "Original, top, bottom and seams must share the same reveal.")
+                }
+            }
+            let completed = try XCTUnwrap(normalized.firstIndex { $0[1] > 0.98 })
+            XCTAssertLessThan(frames[completed].0 - frames[intermediate].0, .milliseconds(250))
+            let attachment = XCTAttachment(image: frames[intermediate].2)
+            attachment.name = "synchronized-artwork-reveal-gated-\(gated)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let measurements = XCTAttachment(string:
+                "baseline: \(baseline)\nfinal: \(final)\n" +
+                frames.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
+            )
+            measurements.name = "artwork-opacity-samples-gated-\(gated)"
+            measurements.lifetime = .keepAlways
+            add(measurements)
+
+            fixture.host.beginAppearanceTransition(false, animated: true)
+            fixture.host.endAppearanceTransition()
+            fixture.host.beginAppearanceTransition(true, animated: true)
+            try await Task.sleep(for: .milliseconds(20))
+            XCTAssertEqual(try fixture.artworkSample().values[1], final[1], accuracy: 2)
+            fixture.host.endAppearanceTransition()
+        }
+    }
+
+    func testCachedPreviewAndReducedMotionArtworkAreImmediatelyOpaque() async throws {
+        for reduced in [false, true] {
+            let fixture = try Fixture(size: CGSize(width: 390, height: 844))
+            defer { fixture.close() }
+            let url = try fixture.seedArtwork()
+            let cached = await ArtworkImageCache.shared.image(for: url, variant: .heroPreview)
+            XCTAssertNotNil(cached)
+            let state = ArtworkState(url: url, sourceReady: !reduced)
+            fixture.host.rootView = AnyView(
+                ArtworkFixture(state: state).environment(\._accessibilityReduceMotion, reduced)
+            )
+            if reduced {
+                try await Task.sleep(for: .milliseconds(100))
+                state.sourceReady = true
+            }
+            try await waitUntil { try fixture.artworkSample().values[1] > 0 }
+            for _ in 0..<8 {
+                XCTAssertGreaterThan(try fixture.artworkSample().values[1], 230,
+                                     "Initial cached artwork and its quality upgrade must remain opaque.")
+                try await Task.sleep(for: .milliseconds(16))
+            }
+        }
+    }
+
     func testCachedReadyEntranceBeginsBeforeNavigationCompletes() async throws {
         XCTAssertFalse(UIAccessibility.isReduceMotionEnabled,
                        "This rendered-animation case requires the simulator's full-motion setting.")
@@ -452,6 +574,71 @@ final class HeroLogoContinuityTests: XCTestCase {
         init(item: MediaItem) { self.item = item }
     }
 
+    @Observable fileprivate final class ArtworkState {
+        var item: MediaItem
+        var sourceReady: Bool
+        init(url: URL?, sourceReady: Bool) {
+            item = MediaItem(
+                id: UUID().uuidString, title: "", kind: .movie,
+                posterURL: url, backdropURL: url, allowsTitleBasedMetadataMatching: false
+            )
+            self.sourceReady = sourceReady
+        }
+    }
+
+    @Observable fileprivate final class PlayState {
+        var isPlaceholder = true
+    }
+
+    private struct PlayFixture: View {
+        let state: PlayState
+        var body: some View {
+            Button {} label: {
+                PlayResumeButtonLabel(
+                    title: state.isPlaceholder ? "Play" : "Resume", progress: nil, remainingText: nil,
+                    onLight: true, spacing: 10, capsuleWidth: 60,
+                    isPlaceholder: state.isPlaceholder, crossfadesPlaceholder: true
+                )
+                .foregroundStyle(.red)
+                .font(.system(size: 32, weight: .semibold))
+                .frame(width: 250, alignment: .leading)
+            }
+            .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
+            .environment(\.plozzReduceTransparency, true)
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(.black)
+        }
+    }
+
+    private struct ArtworkFixture: View {
+        let state: ArtworkState
+        @State private var app = PlozziOSAppModel(accountStore: AccountStore(secureStore: InMemorySecureStore()))
+        @State private var trailers = HeroTrailerController()
+        @State private var sidebar = PlozziOSSidebarGeometryModel()
+
+        var body: some View {
+            PlozziOSHeroStage(
+                item: state.item,
+                presentation: HeroPresentation(item: state.item, artworkStyle: .compactPortrait, surface: .detail),
+                style: .compactPortrait, surfaceRole: .detail, isActive: false, showsScrim: false,
+                trailerController: trailers, backgroundSettings: app.settings.heroBackground,
+                trailerResolver: { _ in nil }
+            ) { EmptyView() }
+            .environment(sidebar)
+            .environment(\.plozzArtworkSourceReady, state.sourceReady)
+            .environment(\.plozzArtworkArea, .details)
+            .environment(\.plozzArtworkSettings, ArtworkSettings(preference: .library))
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.plozziOSHeroContainerHeight, 844)
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)
+            .frame(width: 390, height: 844, alignment: .top)
+            .background(.black)
+        }
+    }
+
     private final class EntranceActions: MediaItemActionHandling {
         func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] { [] }
         func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
@@ -574,6 +761,47 @@ final class HeroLogoContinuityTests: XCTestCase {
             )
             urls.append(url)
             return url
+        }
+
+        func seedArtwork() throws -> URL {
+            let url = try XCTUnwrap(URL(string: "https://artwork-continuity.invalid/\(UUID()).png"))
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 480)).image {
+                UIColor.green.setFill()
+                $0.fill(CGRect(x: 0, y: 0, width: 320, height: 480))
+            }
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: url, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+            ))
+            let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+            cache.storeCachedResponse(
+                CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())),
+                for: URLRequest(url: url)
+            )
+            urls.append(url)
+            return url
+        }
+
+        func artworkSample() throws -> (image: UIImage, values: [Double]) {
+            let sample = try pixels()
+            let width = Int(window.bounds.width)
+            let values = [18, 100, 22, 24, 26, 568, 570, 574, 620].map { y in
+                Double(sample.bytes[(y * width + width / 2) * 4 + 1])
+            }
+            return (sample.image, values)
+        }
+
+        func playTextIntensity() throws -> Double {
+            let sample = try pixels()
+            let width = Int(window.bounds.width)
+            return (12..<60).flatMap { y in
+                (70..<120).map { x in
+                    let index = (y * width + x) * 4
+                    return Double(sample.bytes[index]) - Double(min(
+                        sample.bytes[index + 1], sample.bytes[index + 2]
+                    ))
+                }
+            }.max() ?? 0
         }
 
         func hasRedLogo() throws -> Bool {

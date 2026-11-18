@@ -729,44 +729,22 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         }
         let background = Group {
             if showsBackdrop {
-                PlozziOSReflectedHeroStage(
-                    height: height,
-                    ancestorScale: pullScale,
-                    // A detail page slides in and out under a navigation
-                    // transition. Its global x is the transition offset, not a
-                    // sidebar cover; treating it as one re-crops the artwork on
-                    // every frame (the hero visibly resizing on entry and back).
-                    ignoresGlobalCover: surfaceRole == .detail
-                ) { _ in
-                    PlozziOSHeroBackdrop(
-                        presentation: presentation,
-                        seedArtwork: seedArtwork,
-                        asyncFallbackURL: onlineArtworkFallback,
-                        sharedResolutionIdentity: artworkAppearanceID,
-                        style: style,
-                        itemID: item.id,
-                        height: height,
-                        showsScrim: showsScrim,
-                        extendsArtwork: extendsArtwork,
-                        ignoresHorizontalSafeArea: false,
-                        surfaceRole: surfaceRole,
-                        trailerController: trailerController
-                    )
-                } reflection: { reflectionWidth, contentWidth in
-                    PlozziOSHeroReflection(
-                        presentation: presentation,
-                        style: style,
-                        seedArtwork: seedArtwork,
-                        asyncFallbackURL: onlineArtworkFallback,
-                        sharedResolutionIdentity: artworkAppearanceID,
-                        itemID: item.id,
-                        artworkPinIdentity: "\(surfaceRole == .home ? "home" : "detail"):\(item.stablePresentationID)",
-                        width: reflectionWidth,
-                        contentWidth: contentWidth,
-                        height: height,
-                        trailerController: trailerController,
-                        surfaceRole: surfaceRole
-                    )
+                Group {
+                    if surfaceRole == .detail {
+                        PlozziOSDetailHeroArtwork(
+                            presentation: presentation, style: style, seedArtwork: seedArtwork,
+                            asyncFallbackURL: onlineArtworkFallback,
+                            sharedResolutionIdentity: artworkAppearanceID
+                        ) { artwork in
+                            reflectedArtwork(
+                                onlineArtworkFallback: onlineArtworkFallback,
+                                preparedArtwork: artwork, pullScale: pullScale
+                            )
+                        }
+                        .id(presentation.artworkIdentity)
+                    } else {
+                        reflectedArtwork(onlineArtworkFallback: onlineArtworkFallback, pullScale: pullScale)
+                    }
                 }
                 .scaleEffect(pullScale, anchor: .center)
                 .offset(y: -pullOffset)
@@ -854,6 +832,51 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         }
         .onDisappear(perform: releaseTrailerSurface)
         .heroArtworkSource(id: presentation.itemID, isActive: isActive)
+    }
+
+    private func reflectedArtwork(
+        onlineArtworkFallback: @escaping @Sendable () async -> URL?,
+        preparedArtwork: PlozziOSPreparedHeroArtwork? = nil,
+        pullScale: CGFloat
+    ) -> some View {
+        PlozziOSReflectedHeroStage(
+            height: height,
+            ancestorScale: pullScale,
+            // Navigation's global x is a transition offset, not sidebar cover.
+            ignoresGlobalCover: surfaceRole == .detail
+        ) { _ in
+            PlozziOSHeroBackdrop(
+                presentation: presentation,
+                seedArtwork: seedArtwork,
+                preparedArtwork: preparedArtwork,
+                asyncFallbackURL: onlineArtworkFallback,
+                sharedResolutionIdentity: artworkAppearanceID,
+                style: style,
+                itemID: item.id,
+                height: height,
+                showsScrim: showsScrim,
+                extendsArtwork: extendsArtwork,
+                ignoresHorizontalSafeArea: false,
+                surfaceRole: surfaceRole,
+                trailerController: trailerController
+            )
+        } reflection: { reflectionWidth, contentWidth in
+            PlozziOSHeroReflection(
+                presentation: presentation,
+                style: style,
+                seedArtwork: seedArtwork,
+                preparedArtwork: preparedArtwork,
+                asyncFallbackURL: onlineArtworkFallback,
+                sharedResolutionIdentity: artworkAppearanceID,
+                itemID: item.id,
+                artworkPinIdentity: "\(surfaceRole == .home ? "home" : "detail"):\(item.stablePresentationID)",
+                width: reflectionWidth,
+                contentWidth: contentWidth,
+                height: height,
+                trailerController: trailerController,
+                surfaceRole: surfaceRole
+            )
+        }
     }
 
     private func updateTrailerPlayback() async {
@@ -1175,6 +1198,66 @@ struct PlozziOSHeroArtworkImage: View {
     }
 }
 
+private struct PlozziOSPreparedHeroArtwork {
+    let image: Image?
+    let opacity: Double
+}
+
+private struct PlozziOSDetailHeroArtwork<Content: View>: View {
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var frozenReferences: [ArtworkReference]?
+    @State private var showedPlaceholder = false
+    @State private var hasRevealed = false
+
+    let presentation: HeroPresentation
+    let style: HeroArtworkStyle
+    let seedArtwork: UIImage?
+    let asyncFallbackURL: @Sendable () async -> URL?
+    let sharedResolutionIdentity: String
+    @ViewBuilder let content: (PlozziOSPreparedHeroArtwork) -> Content
+
+    var body: some View {
+        let references = presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area)
+        FallbackAsyncImage(
+            references: frozenReferences ?? references,
+            prefersLandscape: style != .compactPortrait,
+            maxAspectRatio: 3,
+            variant: .heroBackdrop,
+            previewVariant: .heroPreview,
+            artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
+            asyncFallbackURL: asyncFallbackURL,
+            onResolveReference: { reference in
+                if reference != nil, frozenReferences == nil, !references.isEmpty {
+                    frozenReferences = references
+                }
+            },
+            pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
+                "detail:\(presentation.artworkIdentity)", style: style
+            ),
+            sharedResolutionIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
+                sharedResolutionIdentity, style: style
+            )
+        ) { _ in EmptyView() } placeholder: { EmptyView() }
+        .resolvedBitmap(reportingHeroArtwork: presentation.itemID) { resolved, _ in
+            let image = resolved ?? seedArtwork
+            content(PlozziOSPreparedHeroArtwork(
+                image: image.map(Image.init(uiImage:)),
+                opacity: showedPlaceholder && !hasRevealed ? 0 : 1
+            ))
+                .onChange(of: image != nil, initial: true) { _, isReady in
+                    if isReady, !hasRevealed {
+                        withAnimation(showedPlaceholder && !reduceMotion ? .easeOut(duration: 0.15) : nil) {
+                            hasRevealed = true
+                        }
+                    } else if !isReady, !hasRevealed {
+                        showedPlaceholder = true
+                    }
+                }
+        }
+    }
+}
+
 private struct PlozziOSHeroBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.themePalette) private var palette
@@ -1182,6 +1265,7 @@ private struct PlozziOSHeroBackdrop: View {
 
     let presentation: HeroPresentation
     var seedArtwork: UIImage? = nil
+    var preparedArtwork: PlozziOSPreparedHeroArtwork? = nil
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let sharedResolutionIdentity: String?
     let style: HeroArtworkStyle
@@ -1210,6 +1294,7 @@ private struct PlozziOSHeroBackdrop: View {
                         .frame(width: layout.width, height: layout.height)
                         .clipped()
                 }
+                .opacity(preparedArtwork?.opacity ?? 1)
                 // A trailer fills the stage rather than being mirrored into it.
                 //
                 // One AVPlayer renders in exactly one AVPlayerLayer at a time,
@@ -1268,12 +1353,22 @@ private struct PlozziOSHeroBackdrop: View {
     private func artwork() -> some View {
         ZStack {
             stillArtwork()
+                .opacity(preparedArtwork?.opacity ?? 1)
             trailerLayer
         }
     }
 
+    @ViewBuilder
     private func stillArtwork() -> some View {
-        backdropImage
+        if let preparedArtwork {
+            if let image = preparedArtwork.image {
+                PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+            } else {
+                palette.backgroundBase
+            }
+        } else {
+            backdropImage
+        }
     }
 
     private var currentReferences: [ArtworkReference] {
@@ -1847,6 +1942,7 @@ private struct PlozziOSHeroReflection: View {
     let presentation: HeroPresentation
     let style: HeroArtworkStyle
     var seedArtwork: UIImage? = nil
+    var preparedArtwork: PlozziOSPreparedHeroArtwork? = nil
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let sharedResolutionIdentity: String?
     let itemID: String
@@ -1860,6 +1956,42 @@ private struct PlozziOSHeroReflection: View {
 
     var body: some View {
         ZStack {
+            stillArtwork
+                .compositingGroup()
+                .opacity(preparedArtwork?.opacity ?? 1)
+
+            if showsTrailer, trailerController.isShowing(itemID),
+               trailerController.isPlaying {
+                PlozziOSMirrorVideoLayer(
+                    player: trailerController.player
+                )
+                .frame(width: contentWidth, height: height)
+            }
+
+            (colorScheme == .dark ? Color.black : Color.white)
+                .opacity(0.22)
+        }
+        .frame(width: contentWidth, height: height)
+        .frame(width: width, alignment: .leading)
+        .clipped()
+        .scaleEffect(x: -1)
+        .blur(radius: 28, opaque: true)
+        .mask { PlozziOSHeroFadeMask() }
+        .clipped()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var stillArtwork: some View {
+        if let preparedArtwork {
+            if let image = preparedArtwork.image {
+                PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+                    .frame(width: contentWidth, height: height)
+            } else {
+                Color.clear.frame(width: contentWidth, height: height)
+            }
+        } else {
             FallbackAsyncImage(
                 references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
                 prefersLandscape: style != .compactPortrait,
@@ -1885,27 +2017,7 @@ private struct PlozziOSHeroReflection: View {
             }
             .showingPlaceholderWhileLoading(seedArtwork != nil)
             .frame(width: contentWidth, height: height)
-
-            if showsTrailer, trailerController.isShowing(itemID),
-               trailerController.isPlaying {
-                PlozziOSMirrorVideoLayer(
-                    player: trailerController.player
-                )
-                .frame(width: contentWidth, height: height)
             }
-
-            (colorScheme == .dark ? Color.black : Color.white)
-                .opacity(0.22)
-        }
-        .frame(width: contentWidth, height: height)
-        .frame(width: width, alignment: .leading)
-        .clipped()
-        .scaleEffect(x: -1)
-        .blur(radius: 28, opaque: true)
-        .mask { PlozziOSHeroFadeMask() }
-        .clipped()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 
@@ -2715,6 +2827,7 @@ struct PlozziOSDetailHeroForeground: View {
                     capsuleWidth: 60,
                     resumeTrailingStyle: resume,
                     isPlaceholder: playableItem == nil,
+                    crossfadesPlaceholder: true,
                     separatesEpisodeText: playableItem?.startsWatching ?? false,
                     wrapsText: wrapsText,
                     systemImage: opensMenu ? "opticaldisc" : playableItem?.opensExternalSource == true ? "arrow.up.forward.app" : "play.fill"

@@ -91,11 +91,12 @@ between Home and detail:
   must not fade when the slide changes or while the page is pulled. An
   opacity animation tied to `backdropResolved` on every slide causes dimming and
   black flashes during pull.
-- **Detail artwork appears when ready.** Do not add a first-backdrop fade, even
-  for cached images. Mobile detail reveals its foreground as one group once
-  the page is onscreen and cached or native detail resolves; later enrichment
-  does not replay that animation. A SwiftUI appearance task alone does not mean
-  the native navigation transition has finished.
+- **Ready detail artwork stays immediate.** Only artwork arriving after a blank
+  first paint gets a 0.15-second fade, shared by the image and all reflections.
+  Cached and handed-off artwork, quality upgrades and return navigation do not
+  fade. Reduce Motion removes the fallback fade. Mobile detail starts its
+  grouped foreground entrance during native navigation, using available metadata;
+  later enrichment and return navigation do not replay it.
 - **Reserve async action slots.** A trailer button (or any action resolved after
   first paint) must reserve its final size from the start, or Play shifts when
   it arrives.

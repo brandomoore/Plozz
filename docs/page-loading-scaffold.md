@@ -136,8 +136,11 @@ loading and reveal behavior stable:
   Reduce Motion removes the entrance animation.
 - Home's wordmark keeps its independent reveal and never gates its action row.
   Detail's late wordmark joins quietly instead of adding a second fade.
-- Ready artwork stays opaque on Home and detail; there is no decorative
-  first-backdrop fade. The selected artwork source still owns readiness.
+- Ready artwork stays opaque on Home and detail. Mobile detail resolves one
+  bitmap for its primary image and every reflection. If the page first paints
+  blank, that composed artwork fades in together over 0.15 seconds, with no delay.
+  Reduce Motion bypasses the fade; quality upgrades and returning to the page
+  do not replay it. The selected artwork source still owns readiness.
 - Home hero taps can hand off the actual displayed bitmap as the detail's
   immediate placeholder, qualified by subject, profile and effective artwork
   policy. It does not release the destination's source-ownership gate.
@@ -145,6 +148,10 @@ loading and reveal behavior stable:
   Home's portrait artwork and its shared reflection/crop.
 - Reserve every asynchronously resolved action slot (trailer, versions, menu)
   from the first frame so the primary Play action never moves.
+- Mobile detail crossfades the Play placeholder to its resolved label over
+  0.15 seconds, retaining the placeholder's layout footprint rather than
+  shrinking the button on resolution. Longer Resume or episode information may
+  still require the action row's normal responsive layout.
 - Hide native top scroll-edge chrome when the page paints its own hero scrim;
   otherwise the system dim arrives late and pops over the hero.
 
