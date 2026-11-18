@@ -41,7 +41,7 @@ windows silent, including their accessibility values. Nearby channel/time
 windows still load in the background; genuine guide failures remain visible.
 On Apple TV, a standard guide row is one unchanged 26-point text line plus
 20 points above and below (about 72 points total), rather than 128 points.
-Row gaps and channel-column width are unchanged, and rows still grow with
+Row gaps remain 16 points, and rows still grow with
 Dynamic Type. Channel names can use two lines; a focused guide failure reserves
 the second line for its error. Phone and tablet row sizes are unchanged.
 TV rows use the shared 16-point content corners rather than the old 32-point
@@ -51,8 +51,13 @@ instead of a lifting card or an unhighlighted borderless button.
 Each control's rendering stays inside its own cell, including focused content;
 no focus effect may cover a neighboring logo, programme or row. Custom focus
 preferences retain the existing fallback. Row heights and font sizes are unchanged.
-Opaque station artwork is inset-clipped by four points without resizing its contents
-so it cannot cover the native button's focus surface.
+The TV logo column is 160 points wide, down from 200, with eight-point artwork
+insets instead of 20. System-focus logo labels let the native glass fill the
+whole cell, rather than covering it with an opaque plate and exposing only a rim.
+Transparent monochrome logos and missing-artwork text use the native foreground;
+pale mixed-colour logos also use that foreground while focused. Source backings
+stay local to their fitted artwork. Large preview artwork, mobile logo sizing,
+and custom-focus backing treatments keep their existing presentation.
 
 Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
@@ -1384,27 +1389,27 @@ is no prior in-memory history to migrate on the first updated launch.
   uses the app's standard Settings controls.
 - The guide sits in one rounded tray with roomier channel rows and
   quieter programme tiles. Logo plates, channel tiles and the outer tray use
-  concentric radii derived from their insets. TV rows are 128 points tall,
-  with full-height 200 x 128-point logo plates and 16-point row spacing.
+  shared content radii. Standard TV rows are about 72 points tall, with
+  160-point logo columns and 16-point row spacing.
   On first entry, focus moves to the first available channel's current programme
   to the right of its logo. With no guide data, the channel-name area remains
   separately focusable and playable. Missing-listing gaps have their own focus
   identities rather than pretending to be programmes. Subsequent playback/Search
   returns keep their remembered row; an explicit visit to a logo is still
   preserved when returning from browsing controls.
-  The backing fills the complete station focus bounds, with the same corner
-  radius and no outside gutter. Artwork fits inside without stretching, with
-  eight additional points of inner padding; the full-height plate stays unchanged.
+  Native glass owns the station control's background and filled focus effect.
+  Artwork fits inside without stretching, with eight-point inner padding.
   Guide, Search, preview metadata and the player use the same `ChannelLogoArtwork`
-  component. Solid logo plates replace the gradients that faded into the page.
+  component. Standalone artwork and custom-focus controls retain solid plates.
   Detected source backings are extended unchanged, including white boxes inside
   transparent margins. Otherwise a restrained, desaturated brand tint sits over
   a light or charcoal plate; even a small bright wordmark can require charcoal.
   A quiet perimeter stroke keeps
-  the plate boundary visible. Brand pixels are not recoloured or haloed.
+  the standalone plate boundary visible. Native-control artwork instead uses
+  semantic ink for contrast when needed. Boxed source colours remain intact.
   The existing shared hero preparation cache and synchronous memo resolve the
   logo and its backing together, so a warmed guide logo appears immediately in
-  the player with the same appearance. Hero/search/player sizes remain
+  the player without another fetch. Hero/search/player sizes and plates remain
   independent of the full-row guide treatment.
   Plozz library channels without supplied artwork use the locally rendered Byline:
   a prominent, original-case channel name above a small pixel-mascot and Plozz

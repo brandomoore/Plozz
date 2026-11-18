@@ -22,6 +22,7 @@ struct PlozzChannelWordmark: View {
     let mood: LibraryChannelArtworkMood
     let size: CGSize
     let cornerRadius: CGFloat
+    var usesControlBackground = false
     @Environment(\.themePalette) private var palette
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -44,25 +45,30 @@ struct PlozzChannelWordmark: View {
                     .font(.system(size: 10 * scale, weight: .semibold))
                     .tracking(0.3 * scale)
             }
-            .foregroundStyle(palette.primaryText.opacity(contrast == .increased ? 1 : 0.65))
+            .foregroundStyle(usesControlBackground ? AnyShapeStyle(.secondary)
+                : AnyShapeStyle(palette.primaryText.opacity(contrast == .increased ? 1 : 0.65)))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .foregroundStyle(palette.primaryText)
+        .foregroundStyle(usesControlBackground ? AnyShapeStyle(.primary) : AnyShapeStyle(palette.primaryText))
         .padding(.horizontal, size.width * 0.12)
         .padding(.vertical, 22 * scale)
         .frame(width: size.width, height: size.height)
         .background {
-            palette.cardOpaqueSurface
-                .overlay(mood.tint.opacity(palette.isLight ? 0.14 : 0.24))
+            if !usesControlBackground {
+                palette.cardOpaqueSurface
+                    .overlay(mood.tint.opacity(palette.isLight ? 0.14 : 0.24))
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    palette.primaryText.opacity(contrast == .increased ? 0.4 : 0.12),
-                    lineWidth: contrast == .increased ? 2 : 1
-                )
-                .allowsHitTesting(false)
+            if !usesControlBackground {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        palette.primaryText.opacity(contrast == .increased ? 0.4 : 0.12),
+                        lineWidth: contrast == .increased ? 2 : 1
+                    )
+                    .allowsHitTesting(false)
+            }
         }
         .accessibilityHidden(true)
     }

@@ -7,6 +7,81 @@ import XCTest
 
 @MainActor
 final class ChannelLogoArtworkTests: XCTestCase {
+    func testNativeControlArtworkLeavesItsBackgroundTransparent() throws {
+        for id: String? in [nil, "plozz-channel"] {
+            for usesControlBackground in [false, true] {
+                let renderer = ImageRenderer(content: ChannelLogoArtwork(
+                    name: "News", logoURL: nil, size: CGSize(width: 160, height: 72),
+                    cornerRadius: 16, artworkInset: 8, plozzChannelID: id,
+                    usesControlBackground: usesControlBackground
+                ))
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.cgImage)
+                let pixels = try rgbaPixels(image)
+                for point in [(80, 2), (4, 36), (156, 36)] {
+                    let alpha = pixels[(point.1 * image.width + point.0) * 4 + 3]
+                    XCTAssertEqual(alpha, usesControlBackground ? 0 : 255)
+                }
+            }
+        }
+    }
+
+    func testNativeControlMonochromeInkFollowsForegroundWithoutRecolouringBrandArt() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        let logo = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 20), format: format).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+        }
+        for (monochrome, tile) in [(false, false), (true, false), (true, true)] {
+            for scheme in [ColorScheme.light, .dark] {
+                let renderer = ImageRenderer(content: ChannelLogoPlateContent(
+                    name: "", image: logo, plate: ChannelLogoPlate(tone: nil),
+                    size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 8,
+                    isTile: tile, usesControlBackground: true, usesSemanticInk: monochrome
+                ).environment(\.colorScheme, scheme))
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.cgImage)
+                let pixels = try rgbaPixels(image)
+                let center = (36 * image.width + 80) * 4
+                let rgb = Array(pixels[center..<(center + 3)])
+                if monochrome && !tile {
+                    XCTAssertEqual(rgb, scheme == .light ? [0, 0, 0] : [255, 255, 255])
+                } else {
+                    XCTAssertEqual(rgb, [255, 0, 0])
+                }
+                XCTAssertEqual(pixels[(2 * image.width + 80) * 4 + 3], 0)
+            }
+        }
+    }
+
+    func testNativeControlKeepsSourceBackingWithTheLogoNotAcrossTheWholeCell() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let logo = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 20), format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 10, y: 0, width: 20, height: 20))
+        }
+        let renderer = ImageRenderer(content: ChannelLogoPlateContent(
+            name: "", image: logo, plate: ChannelLogoPlate(tone: nil),
+            size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 8,
+            usesControlBackground: true, usesSemanticInk: true,
+            sourceBackground: HeroBackgroundSample(red: 1, green: 0, blue: 0, luminance: 0.21)
+        ).environment(\.colorScheme, .light))
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        let pixels = try rgbaPixels(image)
+        let center = (36 * image.width + 80) * 4
+        XCTAssertEqual(Array(pixels[center..<(center + 4)]), [255, 255, 255, 255])
+        XCTAssertEqual(pixels[(36 * image.width + 4) * 4 + 3], 0)
+        let redPixels = stride(from: 0, to: pixels.count, by: 4).filter {
+            pixels[$0] > 250 && pixels[$0 + 1] < 5 && pixels[$0 + 2] < 5 && pixels[$0 + 3] == 255
+        }
+        XCTAssertGreaterThan(redPixels.count, 500)
+        XCTAssertLessThan(redPixels.count, image.width * image.height / 2)
+    }
+
     func testPlozzWordmarksKeepTheirMoodAcrossSizesAndRespectTheAppTheme() throws {
         for mood in LibraryChannelArtworkMood.allCases {
             var themeLuminances: [Double] = []

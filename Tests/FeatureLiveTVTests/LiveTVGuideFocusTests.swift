@@ -10,7 +10,7 @@ import XCTest
 
 @MainActor
 final class LiveTVGuideFocusTests: XCTestCase {
-    func testNativeStationFocusRemainsVisibleAroundOpaqueArtwork() async throws {
+    func testNativeStationFocusFillsTheTileInsteadOfOutliningAnOpaquePlate() async throws {
         try await requireNativeFocus()
         let channel = try XCTUnwrap(LiveTVPrototypeModel().channels.first)
         let window = makeWindow(
@@ -43,11 +43,11 @@ final class LiveTVGuideFocusTests: XCTestCase {
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         let attachment = XCTAttachment(image: image)
-        attachment.name = "Native station focus over opaque artwork"
+        attachment.name = "Native filled station focus"
         attachment.lifetime = .keepAlways
         add(attachment)
         let strip = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
-            x: frame.midX - 20, y: frame.minY + 1, width: 40, height: 2
+            x: frame.midX - 20, y: frame.minY + 12, width: 40, height: 4
         )))
         var pixel = [UInt8](repeating: 0, count: 4)
         let brightness = try pixel.withUnsafeMutableBytes { bytes in
@@ -59,7 +59,7 @@ final class LiveTVGuideFocusTests: XCTestCase {
             return Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])
         }
         XCTAssertGreaterThan(brightness, 500,
-                             "The opaque logo plate must not cover the native bright focus surface.")
+                             "Native focus must fill the tile interior, not just its outer edge.")
     }
 
     func testChannelRowKeepsTwentyPointInsetsWithoutReducingTheTextSize() {

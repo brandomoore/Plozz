@@ -58,7 +58,13 @@ enum PrototypeLayout {
     static let sectionFontSize: CGFloat = 14
     static let rowHeight = stationSize + rowInset * 2
     #endif
+    #if os(tvOS)
+    static let stationColumnWidth: CGFloat = 160
+    static let guideStationArtworkInset: CGFloat = 8
+    #else
     static let stationColumnWidth = stationSize * 1.75 + rowInset * 2
+    static let guideStationArtworkInset = stationArtworkInset
+    #endif
     static var guideShape: UnevenRoundedRectangle {
         #if os(tvOS)
         let bottom: CGFloat = 0
@@ -232,13 +238,15 @@ struct PrototypeStationMark: View {
     var size: CGFloat = PrototypeLayout.stationSize
     var plateSize: CGSize? = nil
     var cornerRadius: CGFloat = PrototypeLayout.logoRadius
+    var contentInset: CGFloat? = nil
+    var usesControlBackground = false
 
     private var dimensions: CGSize {
         plateSize ?? CGSize(width: size * 1.75, height: size)
     }
 
     private var artworkInset: CGFloat {
-        plateSize == nil ? 6 : PrototypeLayout.stationArtworkInset
+        contentInset ?? (plateSize == nil ? 6 : PrototypeLayout.stationArtworkInset)
     }
 
     var body: some View {
@@ -246,7 +254,8 @@ struct PrototypeStationMark: View {
             name: channel.name, logoURL: channel.logoURL, size: dimensions,
             cornerRadius: cornerRadius, artworkInset: artworkInset,
             plozzChannelID: channel.source == .plozz ? channel.id : nil,
-            plozzChannelMood: channel.plozzChannelMood
+            plozzChannelMood: channel.plozzChannelMood,
+            usesControlBackground: usesControlBackground
         )
     }
 }

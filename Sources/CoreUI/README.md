@@ -420,6 +420,11 @@ layout: a name-first title and inset pixel-mascot signature. Its optional
 Category tint blends over `themePalette.cardOpaqueSurface`, so Light, Dark,
 and Black keep their own brightness and foreground contrast. Supplied logos
 always retain precedence; external channels keep the ordinary name fallback.
+Native guide controls opt into `usesControlBackground` so the control owns its
+glass surface and focus fill. Monochrome ink and fallback text inherit native
+foreground contrast; pale mixed-colour ink does so while focused. Detected source
+backings stay behind the fitted logo, not across the whole control. Standalone
+artwork keeps its existing plate and colours by default.
 
 `PlozzStartupLogo` starts from a smile and rotates through wink, delight, and
 surprise on successive cold launches. The device-local choice is saved once per

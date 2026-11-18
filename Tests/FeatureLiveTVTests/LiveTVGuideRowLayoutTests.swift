@@ -276,11 +276,18 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             .sizeThatFits(in: CGSize(width: 500, height: 500))
         XCTAssertEqual(size.height, PrototypeLayout.stationSize, accuracy: 0.5)
         XCTAssertEqual(size.width, PrototypeLayout.stationSize * 1.75, accuracy: 0.5)
-        XCTAssertEqual(PrototypeLayout.stationColumnWidth - size.width, PrototypeLayout.rowInset * 2, accuracy: 0.5)
         #if os(tvOS)
         XCTAssertGreaterThan(size.width, 126)
         XCTAssertGreaterThan(size.height, 72)
-        XCTAssertLessThan(PrototypeLayout.stationColumnWidth, 280)
+        let station = PrototypeGuideStation(
+            channel: LiveTVPrototypeModel().channels[0], section: .channels,
+            favorite: false, playing: false, tune: {}, toggleFavorite: {}, controls: {}, top: {}
+        )
+        let stationSize = UIHostingController(rootView: station).sizeThatFits(in: CGSize(width: 500, height: 500))
+        XCTAssertEqual(stationSize.width, 160, accuracy: 0.5)
+        XCTAssertEqual(stationSize.height, PrototypeLayout.rowHeight, accuracy: 0.5)
+        #else
+        XCTAssertEqual(PrototypeLayout.stationColumnWidth - size.width, PrototypeLayout.rowInset * 2, accuracy: 0.5)
         #endif
     }
 

@@ -709,6 +709,7 @@ targets:
       - path: Tests/CoreModelsTests/ContinueWatchingInPlayerSettingsTests.swift
       - path: Tests/FeaturePlaybackTests/ContinueWatchingSelectionTests.swift
       - path: Tests/CoreUITests/DetailInformationPreviewTests.swift
+      - path: Tests/CoreUITests/ChannelLogoArtworkTests.swift
       - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/HomePresentationSupport
         excludes: ["ContentRefreshReturnFixture.swift", "ContentRefreshReturnInteractionTests.swift", "DetailSelectionFixture.swift", "DetailSelectionInteractionTests.swift"]

@@ -10,12 +10,15 @@ public struct ChannelLogoArtwork: View {
     private let size: CGSize
     private let cornerRadius: CGFloat
     private let artworkInset: CGFloat
+    private let usesControlBackground: Bool
     private let plozzChannelID: String?
     private let plozzChannelMood: LibraryChannelArtworkMood?
     @State private var loaded: LoadedLogo?
     /// Steers the plate: light themes default to light backing, dark to dark.
     @Environment(\.themePalette) private var palette
+    @Environment(\.isFocused) private var isFocused
 
+    /// Native controls supply their own surface and foreground contrast; standalone artwork keeps its plate.
     public init(
         name: String,
         logoURL: URL?,
@@ -23,13 +26,15 @@ public struct ChannelLogoArtwork: View {
         cornerRadius: CGFloat,
         artworkInset: CGFloat? = nil,
         plozzChannelID: String? = nil,
-        plozzChannelMood: LibraryChannelArtworkMood? = nil
+        plozzChannelMood: LibraryChannelArtworkMood? = nil,
+        usesControlBackground: Bool = false
     ) {
         self.name = name
         self.logoURL = logoURL
         self.size = size
         self.cornerRadius = cornerRadius
         self.artworkInset = artworkInset ?? size.height * 20 / 128
+        self.usesControlBackground = usesControlBackground
         self.plozzChannelID = plozzChannelID
         self.plozzChannelMood = plozzChannelMood
     }
@@ -48,15 +53,19 @@ public struct ChannelLogoArtwork: View {
             if plozzChannelID != nil, logoURL == nil {
                 PlozzChannelWordmark(
                     name: name, mood: plozzChannelMood ?? .neutral,
-                    size: size, cornerRadius: cornerRadius
+                    size: size, cornerRadius: cornerRadius, usesControlBackground: usesControlBackground
                 )
             } else {
                 ChannelLogoPlateContent(
                     name: name, image: current?.image,
                     plate: ChannelLogoPlate(tone: current?.tone, prefersLight: palette.isLight),
                     size: size, cornerRadius: cornerRadius, artworkInset: artworkInset,
-                    rendersInkLight: ChannelLogoPlate.rendersInkLight(current?.tone, prefersLight: palette.isLight),
-                    isTile: ChannelLogoPlate.showsAsTile(current?.tone)
+                    rendersInkLight: !usesControlBackground
+                        && ChannelLogoPlate.rendersInkLight(current?.tone, prefersLight: palette.isLight),
+                    isTile: ChannelLogoPlate.showsAsTile(current?.tone),
+                    usesControlBackground: usesControlBackground,
+                    usesSemanticInk: usesSemanticInk,
+                    sourceBackground: current?.tone?.backgroundPlate
                 )
             }
         }
@@ -76,15 +85,23 @@ public struct ChannelLogoArtwork: View {
         .accessibilityHidden(true)
     }
 
+    private var usesSemanticInk: Bool {
+        if current?.isMonochrome == true { return true }
+        // Pale mixed-colour ink needs the native foreground on a bright focused surface.
+        return usesControlBackground && isFocused && (current?.tone?.brightInk ?? 0) > 0.04
+    }
+
     private struct LoadedLogo {
         let url: URL
         let image: UIImage
         let tone: ResolvedLogoTone?
+        let isMonochrome: Bool
 
         init(url: URL, processed: ProcessedLogo) {
             self.url = url
             image = processed.image
             tone = processed.tone
+            isMonochrome = processed.isMonochrome
         }
     }
 }
@@ -175,6 +192,9 @@ struct ChannelLogoPlateContent: View {
     var rendersInkLight = false
     /// Boxed logos fill more of the plate; playback preserves their source corners.
     var isTile = false
+    var usesControlBackground = false
+    var usesSemanticInk = false
+    var sourceBackground: HeroBackgroundSample?
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.channelLogoPreservesSourceCorners) private var preservesSourceCorners
 
@@ -193,7 +213,13 @@ struct ChannelLogoPlateContent: View {
     var body: some View {
         ZStack {
             if let image {
-                if rendersInkLight {
+                if usesControlBackground && usesSemanticInk && !isTile && sourceBackground == nil {
+                    Image(uiImage: image)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(.primary)
+                } else if rendersInkLight {
                     Image(uiImage: image)
                         .renderingMode(.template)
                         .resizable()
@@ -210,6 +236,17 @@ struct ChannelLogoPlateContent: View {
                         .renderingMode(.original)
                         .resizable()
                         .scaledToFit()
+                        .padding(usesControlBackground && sourceBackground != nil ? 4 : 0)
+                        .background {
+                            if usesControlBackground, let sourceBackground {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(Color(
+                                        red: sourceBackground.red,
+                                        green: sourceBackground.green,
+                                        blue: sourceBackground.blue
+                                    ))
+                            }
+                        }
                 }
             } else {
                 Text(name)
@@ -217,7 +254,8 @@ struct ChannelLogoPlateContent: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
-                    .foregroundStyle(plate.isLight ? Color.black : Color.white)
+                    .foregroundStyle(usesControlBackground
+                        ? AnyShapeStyle(.primary) : AnyShapeStyle(plate.isLight ? Color.black : Color.white))
             }
         }
         .frame(
@@ -225,16 +263,18 @@ struct ChannelLogoPlateContent: View {
             height: max(1, size.height - inset * 2)
         )
         .frame(width: size.width, height: size.height)
-        .background(plate.color)
+        .background(usesControlBackground ? .clear : plate.color)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    (plate.isLight ? Color.black : Color.white)
-                        .opacity(contrast == .increased ? 0.4 : 0.14),
-                    lineWidth: contrast == .increased ? 2 : 1
-                )
-                .allowsHitTesting(false)
+            if !usesControlBackground {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        (plate.isLight ? Color.black : Color.white)
+                            .opacity(contrast == .increased ? 0.4 : 0.14),
+                        lineWidth: contrast == .increased ? 2 : 1
+                    )
+                    .allowsHitTesting(false)
+            }
         }
     }
 }

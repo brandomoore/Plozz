@@ -1336,14 +1336,11 @@ struct PrototypeGuideStation: View {
             plateSize: CGSize(
                 width: width ?? PrototypeLayout.stationColumnWidth, height: height ?? PrototypeLayout.rowHeight
             ),
-            cornerRadius: PrototypeLayout.rowRadius
+            cornerRadius: PrototypeLayout.rowRadius,
+            contentInset: PrototypeLayout.guideStationArtworkInset,
+            usesControlBackground: usesNativeStationBackground
         )
         .clipped()
-        #if os(tvOS)
-        // Keep opaque artwork clear of the native glass focus surface.
-        .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous)
-            .inset(by: focusStyle.usesSystemEffect ? 4 : 0))
-        #endif
         .overlay(alignment: .topTrailing) {
             if selectionMarked {
                 Image(systemName: "checkmark.circle.fill")
@@ -1354,6 +1351,14 @@ struct PrototypeGuideStation: View {
                     .accessibilityHidden(true)
             }
         }
+    }
+
+    private var usesNativeStationBackground: Bool {
+        #if os(tvOS)
+        focusStyle.usesSystemEffect
+        #else
+        false
+        #endif
     }
 }
 
