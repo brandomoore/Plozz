@@ -16,6 +16,7 @@ struct PrototypePreviewLayout {
     /// the gaps tighten, or the guide below it shows barely a row.
     let short: Bool
     let hidesSidebar: Bool
+    let sidebarLeadingFadeWidth: CGFloat
     /// How far the phone's guide reaches past the content margins on each
     /// side, halving the dead space beside the logos and the trailing fade.
     /// Nothing where the edge is a notch or rounded-corner inset.
@@ -133,8 +134,10 @@ struct PrototypePreviewLayout {
     ) {
         #if os(tvOS)
         self.hidesSidebar = hidesSidebar
+        sidebarLeadingFadeWidth = navigationInset > 0 ? PrototypeLayout.inset : 0
         #else
         self.hidesSidebar = isSearching
+        sidebarLeadingFadeWidth = 0
         #endif
         bounds = CGRect(
             x: -safeAreaInsets.leading, y: -safeAreaInsets.top,
@@ -330,7 +333,14 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
                 }
             }
             .frame(width: layout.sidebarWidth, alignment: .leading)
+            #if os(tvOS)
+            .modifier(PrototypeSidebarViewport(
+                sidebarWidth: layout.availableSidebarWidth,
+                fadeWidth: layout.sidebarLeadingFadeWidth
+            ))
+            #else
             .clipped()
+            #endif
         }
     }
 
@@ -345,6 +355,25 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
     private var leadingExtension: CGFloat { extendsGuideToEdges ? layout.guideLeadingExtension : 0 }
     private var trailingExtension: CGFloat { extendsGuideToEdges ? layout.guideTrailingExtension : 0 }
 }
+
+#if os(tvOS)
+struct PrototypeSidebarViewport: ViewModifier {
+    let sidebarWidth: CGFloat
+    let fadeWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.leading, fadeWidth)
+            .clipped()
+            .mask(alignment: .leading) {
+                // Keep the feather stationary in the extra content inset, clear of the nav icons.
+                LeadingEdgeFadeMask(fadeWidth: fadeWidth)
+                    .frame(width: sidebarWidth + fadeWidth)
+            }
+            .padding(.leading, -fadeWidth)
+    }
+}
+#endif
 
 #if os(iOS)
 private struct PrototypeScrollTopBoundaryKey: EnvironmentKey {

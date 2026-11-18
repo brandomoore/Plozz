@@ -354,6 +354,9 @@ clearance below native navigation. Pinned navigation keeps its existing inset.
 The full-height source/Search/categories pane collapses when focus enters the TV
 guide and returns on a leading-edge move. The pane slides and fades as one unit
 over 0.28 seconds while the guide resizes; Reduce Motion suppresses the animation.
+With pinned navigation, the moving pane fades through the extra content inset,
+reaching full transparency before the navigation icons. The stationary feather
+does not dim the resting controls or leave a translucent copy behind the rail.
 The category list remains lazy; no per-row animation timers or rasterized
 snapshots are used. Mobile layouts choose the sidebar or category directory
 from the available window dimensions, not the device name.

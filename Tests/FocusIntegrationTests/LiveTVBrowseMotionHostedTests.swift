@@ -482,6 +482,73 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         XCTAssertFalse(samples.contains { $0 > closed + 1 && $0 < opened - 1 })
     }
 
+    func testCollapsingCategoriesFadeToClearBeforePinnedNavigationIcons() throws {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            let layout = PrototypePreviewLayout(
+                size: CGSize(width: 1920, height: 1080),
+                navigationInset: NavigationRailMetrics.contentInset
+            )
+            let contentStart = layout.contentFrame.minX
+            let clearEdge = contentStart - layout.sidebarLeadingFadeWidth
+            let iconEdge = NavigationRailMetrics.leadingInset + NavigationRailMetrics.iconColumnWidth
+            XCTAssertGreaterThan(clearEdge, iconEdge)
+            for remainingWidth: CGFloat in [layout.sidebarWidth, 160, 16] {
+                let pixels = try sidebarAlpha(
+                    layout: layout, remainingWidth: remainingWidth, displacement: 96, direction: direction
+                )
+                for x in 0..<Int(clearEdge) {
+                    XCTAssertEqual(pixels[x], 0, "No category pixels may remain beneath the pinned icons.")
+                }
+                let start = Int(clearEdge)
+                let end = Int(contentStart)
+                XCTAssertLessThan(pixels[start], 3)
+                XCTAssertTrue((100...155).contains(pixels[(start + end) / 2]))
+                XCTAssertGreaterThan(pixels[end], 250)
+                for x in start..<end {
+                    XCTAssertLessThanOrEqual(pixels[x], pixels[x + 1])
+                }
+            }
+            let resting = try sidebarAlpha(
+                layout: layout, remainingWidth: layout.sidebarWidth, displacement: 0, direction: direction
+            )
+            XCTAssertGreaterThan(resting[Int(contentStart)], 250,
+                                 "Resting category controls must not be washed out by the feather.")
+        }
+    }
+
+    private func sidebarAlpha(
+        layout: PrototypePreviewLayout, remainingWidth: CGFloat,
+        displacement: CGFloat, direction: LayoutDirection
+    ) throws -> [Int] {
+        let screenWidth = Int(layout.bounds.width)
+        let content = Color.white
+            .frame(width: layout.availableSidebarWidth, height: 20)
+            .offset(x: -displacement)
+            .frame(width: remainingWidth, alignment: .leading)
+            .modifier(PrototypeSidebarViewport(
+                sidebarWidth: layout.availableSidebarWidth, fadeWidth: layout.sidebarLeadingFadeWidth
+            ))
+            .padding(.leading, layout.contentFrame.minX)
+            .frame(width: layout.bounds.width, height: 20, alignment: .leading)
+            .environment(\.layoutDirection, direction)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        var pixels = [UInt8](repeating: 0, count: screenWidth * 20 * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: screenWidth, height: 20, bitsPerComponent: 8,
+                bytesPerRow: screenWidth * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: screenWidth, height: 20))
+        }
+        return (0..<screenWidth).map {
+            let x = direction == .rightToLeft ? screenWidth - 1 - $0 : $0
+            return Int(pixels[(10 * screenWidth + x) * 4 + 3])
+        }
+    }
+
     private func makeFixture(disablesAnimations: Bool = false, realSidebar: Bool = false) async throws -> Fixture {
         let scene = try await foregroundScene()
         let fixture = Fixture(scene: scene, disablesAnimations: disablesAnimations, realSidebar: realSidebar)
