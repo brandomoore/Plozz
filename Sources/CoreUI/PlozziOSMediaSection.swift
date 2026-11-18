@@ -149,6 +149,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
     var horizontalInset: CGFloat?
     var artworkInset: CGFloat = 0
     var reservesBrowseSpace = false
+    var reservesRefreshStatusSpace = false
     var onSeeAll: (() -> Void)? = nil
     var onBrowse: (() -> Void)? = nil
     var onHeadingTap: (() -> Void)? = nil
@@ -156,7 +157,8 @@ public struct PlozziOSMediaSection<Content: View>: View {
 
     public init(
         title: Text, horizontalInset: CGFloat? = nil, artworkInset: CGFloat = 0,
-        reservesBrowseSpace: Bool = false, onSeeAll: (() -> Void)? = nil,
+        reservesBrowseSpace: Bool = false, reservesRefreshStatusSpace: Bool = false,
+        onSeeAll: (() -> Void)? = nil,
         onBrowse: (() -> Void)? = nil, onHeadingTap: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
@@ -164,6 +166,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
         self.horizontalInset = horizontalInset
         self.artworkInset = artworkInset
         self.reservesBrowseSpace = reservesBrowseSpace
+        self.reservesRefreshStatusSpace = reservesRefreshStatusSpace
         self.onSeeAll = onSeeAll
         self.onBrowse = onBrowse
         self.onHeadingTap = onHeadingTap
@@ -197,6 +200,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
                         .font(.subheadline)
                 }
             }
+                .frame(minHeight: reservesRefreshStatusSpace ? MediaRowRefreshIndicator.size : nil)
                 .padding(.horizontal, horizontalInset ?? PlozziOSMediaRailLayout.pageInset(
                     for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing
                 ))

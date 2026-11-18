@@ -109,7 +109,8 @@ private struct PlozziOSHomeRowFootprint: View {
         } else {
             PlozziOSMediaSection(
                 title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0,
-                reservesBrowseSpace: !isLibraryRow
+                reservesBrowseSpace: !isLibraryRow,
+                reservesRefreshStatusSpace: isContinueWatching
             ) {
                 Group {
                     if isLibraryRow {
