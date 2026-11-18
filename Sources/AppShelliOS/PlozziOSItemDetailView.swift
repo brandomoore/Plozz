@@ -564,8 +564,14 @@ private struct PlozziOSCanonicalItemDetailView: View {
             // information grid, cast, extras and related rows are offscreen work;
             // building them synchronously during the transition is what made the
             // page feel locked while it "loaded everything".
+            // Each section is type-erased deliberately. Built concretely, the
+            // LazyVStack's content closure carries the whole section tuple in one
+            // stack frame; on device that frame and the surrounding SwiftUI update
+            // overflow the main thread's stack while the page is being built
+            // (SIGSEGV in __chkstk_darwin / the type-metadata demangler). Keeping
+            // the builder's value type small is what makes the page open.
             LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
-                PlozziOSDetailHeroSection(
+                AnyView(PlozziOSDetailHeroSection(
                     item: heroTarget,
                     backdropItem: detail.item,
                     seedArtwork: nil,
@@ -625,10 +631,10 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     pullDistance: heroPullDistance,
                     metadataIsReady: viewModel.metadataIsReady
                 )
-                .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
+                .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady))
 
                 if detail.item.kind == .series, !isDiscoveryItem {
-                    PlozziOSInlineSeriesBrowser(
+                    AnyView(PlozziOSInlineSeriesBrowser(
                         viewModel: viewModel,
                         seasons: detail.children.filter { $0.kind == .season },
                         looseEpisodes: detail.children.filter { $0.kind == .episode },
@@ -639,11 +645,11 @@ private struct PlozziOSCanonicalItemDetailView: View {
                             hasResolvedSeriesPlayTarget = true
                         },
                         onPlay: play
-                    )
+                    ))
                 }
 
                 if isDiscoveryItem, detail.item.kind != .movie, detail.item.kind != .series {
-                    PlozziOSRequestAction(
+                    AnyView(PlozziOSRequestAction(
                         item: detail.item,
                         availability: requestStatusOverride ?? detail.item.availability ?? .unknown,
                         isRequesting: isRequesting,
@@ -651,34 +657,34 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         actingName: appModel.activeSeerrRequestActingName,
                         onRequest: { beginRequest($0) }
                     )
-                    .padding(.horizontal, pageInset)
+                    .padding(.horizontal, pageInset))
                 }
 
-                PlozziOSExtrasSection(
+                AnyView(PlozziOSExtrasSection(
                     state: viewModel.extrasState,
                     inset: pageInset,
                     onSelect: { play($0.playbackItem) },
                     onRetry: {
                         Task { await viewModel.retryExtras() }
                     }
-                )
+                ))
 
                 if !detail.item.detailCredits.isEmpty {
-                    PlozziOSCastSection(
+                    AnyView(PlozziOSCastSection(
                         people: detail.item.people,
                         sourceAccountID: detail.item.sourceAccountID
-                    )
+                    ))
                 }
 
                 if let loader = viewModel.relatedTitlesLoader, !loader.entries.isEmpty {
-                    PlozziOSRelatedSection(
+                    AnyView(PlozziOSRelatedSection(
                         entries: loader.entries,
                         inset: pageInset,
                         onSelect: { item, source in artworkItemNavigator?(item, source) }
-                    )
+                    ))
                 }
 
-                DetailInformationSections(
+                AnyView(DetailInformationSections(
                     item: detail.item,
                     horizontalInset: pageInset,
                     selectedSource: options.sources.first {
@@ -694,7 +700,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     overviewAlreadyShown: heroStyle == .compactPortrait
                         ? HeroContentPolicy.detailDescription(focused: headerPresentation, root: rootPresentation)
                         : nil
-                )
+                ))
             }
             // No trailing padding here. The information band is the last thing in
             // this stack and paints its own tint, so a gap added out here is page
