@@ -3135,7 +3135,7 @@ public final class PlayerViewModel {
         }
         var prefix = ""
         if let season = item.seasonNumber, let episode = item.episodeNumber {
-            prefix = "S\(season), E\(episode)"
+            prefix = "S\(season) · E\(episode)"
         } else if let episode = item.episodeNumber {
             prefix = "E\(episode)"
         }
