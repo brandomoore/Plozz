@@ -21,14 +21,13 @@ enum PrototypeLayout {
     #endif
     static let rowInset = PlozzTheme.Spacing.medium
     static let logoRadius = PlozzTheme.Metrics.Radius.content
-    /// Concentric with the logo plate on a TV and a tablet. A phone's short
-    /// rows (`compactRowHeight`) turned that radius into a full capsule, so
-    /// its cells get the TV's proportion instead: squarer, like the tvOS grid.
+    /// Compact TV and phone rows use smaller corners; tablet rows retain
+    /// their concentric logo-plate inset.
     static var rowRadius: CGFloat {
         #if os(iOS)
         UIDevice.current.userInterfaceIdiom == .phone ? 14 : logoRadius + rowInset
         #else
-        logoRadius + rowInset
+        PlozzTheme.Metrics.Radius.content
         #endif
     }
     static let programInset: CGFloat = 0
@@ -280,6 +279,74 @@ struct PrototypeButtonStyle: ButtonStyle {
         )
     }
 }
+
+struct PrototypeGuideButtonStyle: PrimitiveButtonStyle {
+    var selected = false
+    var surface: PrototypeButtonSurface = .guide
+    var focusChanged: ((Bool) -> Void)?
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
+
+    @ViewBuilder
+    func makeBody(configuration: Configuration) -> some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            Button(role: configuration.role, action: configuration.trigger) {
+                PrototypeNativeGuideLabel(
+                    content: configuration.label, surface: surface, focusChanged: focusChanged
+                )
+            }
+            .buttonStyle(.card)
+            .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
+        } else {
+            fallback(configuration)
+        }
+        #else
+        fallback(configuration)
+        #endif
+    }
+
+    private func fallback(_ configuration: Configuration) -> some View {
+        Button(role: configuration.role, action: configuration.trigger) {
+            configuration.label
+        }
+        .buttonStyle(PrototypeButtonStyle(
+            selected: selected, padded: false, surface: surface, focusChanged: focusChanged
+        ))
+        .focusEffectDisabled()
+    }
+}
+
+#if os(tvOS)
+private struct PrototypeNativeGuideLabel<Content: View>: View {
+    let content: Content
+    let surface: PrototypeButtonSurface
+    let focusChanged: ((Bool) -> Void)?
+    @Environment(\.isFocused) private var focused
+    @Environment(\.themePalette) private var palette
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var contentPalette: ThemePalette {
+        guard focused else { return palette }
+        if #available(tvOS 26.0, *), !reduceTransparency { return palette }
+        return .light
+    }
+
+    var body: some View {
+        content
+            .foregroundStyle(contentPalette.primaryText)
+            .environment(\.themePalette, contentPalette)
+            .background {
+                if surface == .program, !focused {
+                    palette.fillSubtle.opacity(reduceTransparency || contrast == .increased ? 1 : 0.45)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous))
+            // Observe the native label, without introducing another focus binding.
+            .onChange(of: focused, initial: true) { _, value in focusChanged?(value) }
+    }
+}
+#endif
 
 enum PrototypeButtonSurface: Equatable {
     case standard, guide, station, program, control

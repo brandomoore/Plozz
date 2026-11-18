@@ -799,7 +799,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         }
     }
 
-    func testGuideAndLogoCornersStayConcentric() {
+    func testGuideCornersMatchTheRowAndPlatformDensity() {
         XCTAssertEqual(PrototypeLayout.guideRadius, PrototypeLayout.rowRadius + PrototypeLayout.guideInset)
         #if os(iOS)
         // A phone's short rows take a squarer, TV-proportioned radius instead.
@@ -807,7 +807,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             XCTAssertEqual(PrototypeLayout.rowRadius, PrototypeLayout.logoRadius + PrototypeLayout.rowInset)
         }
         #else
-        XCTAssertEqual(PrototypeLayout.rowRadius, PrototypeLayout.logoRadius + PrototypeLayout.rowInset)
+        XCTAssertEqual(PrototypeLayout.rowRadius, PlozzTheme.Metrics.Radius.content)
         #endif
         #if os(iOS)
         XCTAssertEqual(PrototypeLayout.rowHeight, PrototypeLayout.stationSize + PrototypeLayout.rowInset * 2)

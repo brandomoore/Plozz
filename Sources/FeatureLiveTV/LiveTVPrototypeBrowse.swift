@@ -1050,17 +1050,19 @@ struct PrototypeGuideRow: View {
                                             )
                                         }
                                     }
-                                    .buttonStyle(PrototypeButtonStyle(
+                                    .buttonStyle(PrototypeGuideButtonStyle(
                                         selected: selectedTarget == programFocus(program.id),
-                                        padded: false, surface: .program,
+                                        surface: .program,
                                         focusChanged: { focusChanged(programFocus(program.id), $0) }
                                     ))
-                                    .focusEffectDisabled()
                                     .padding(.vertical, PrototypeLayout.programInset)
                                     .padding(.trailing, min(PrototypeLayout.cellGap, slotWidth(slot) / 4))
                                     .frame(width: slotWidth(slot), height: rowHeight)
+                                    #if os(iOS)
                                     .clipped()
+                                    #endif
                                     .focused(focus, equals: programFocus(program.id))
+                                    .zIndex(focus.wrappedValue == programFocus(program.id) ? 1 : 0)
                                     .disabled(isFocusDisabled(programFocus(program.id)))
                                     .contextMenu {
                                         Button("Program details", systemImage: "info.circle") { details(program) }
@@ -1089,7 +1091,9 @@ struct PrototypeGuideRow: View {
                                         .frame(width: cellWidth(slot))
                                         .padding(.trailing, min(PrototypeLayout.cellGap, slotWidth(slot) / 4))
                                         .frame(width: slotWidth(slot), height: rowHeight)
+                                        #if os(iOS)
                                         .clipped()
+                                        #endif
                                 }
                             } else {
                                 Color.clear.frame(width: item.width, height: rowHeight)
@@ -1177,12 +1181,12 @@ struct PrototypeGuideRow: View {
                 }
                 .contentShape(Rectangle())
         }
-        .buttonStyle(PrototypeButtonStyle(
+        .buttonStyle(PrototypeGuideButtonStyle(
             selected: selectedTarget == target,
-            padded: false, surface: .guide, focusChanged: { focusChanged(target, $0) }
+            surface: .guide, focusChanged: { focusChanged(target, $0) }
         ))
-        .focusEffectDisabled()
         .focused(focus, equals: target)
+        .zIndex(focus.wrappedValue == target ? 1 : 0)
         .disabled(isFocusDisabled(target))
         .accessibilityLabel(Text(channel.name))
         .accessibilityValue(guideGapState.flatMap {
@@ -1286,8 +1290,7 @@ struct PrototypeGuideStation: View {
                 }
             }
         }
-        .buttonStyle(PrototypeButtonStyle(padded: false, surface: .station, focusChanged: focusChanged))
-        .focusEffectDisabled()
+        .buttonStyle(PrototypeGuideButtonStyle(surface: .station, focusChanged: focusChanged))
         .accessibilityLabel(Text(channel.name))
         .accessibilityValue(Text("Channel \(channel.number)"))
         .accessibilityHint(Text(selectionAction ?? (selectForPreview == nil ? "Channel actions" : "Play channel")))
@@ -1521,6 +1524,9 @@ private struct PrototypeSynchronizedTimeline<Content: View>: View {
             content()
         }
         .scrollIndicators(.hidden)
+        #if os(tvOS)
+        .scrollClipDisabled()
+        #endif
         .modifier(PrototypeTimelineEdgeFade(timeline: timeline, maximumOffset: maximumOffset))
         .scrollPosition($position)
         .onScrollPhaseChange { _, phase in
@@ -1577,8 +1583,14 @@ private struct PrototypeTimelineEdgeFade: ViewModifier {
             before: timeline.offset, after: maximumOffset - timeline.offset,
             distance: PrototypeLayout.horizontalFade
         )
+        #if os(tvOS)
+        let overhang = PrototypeLayout.rowGap / 2
+        #else
+        let overhang: CGFloat = 0
+        #endif
         content.horizontalEdgeFadeMask(
             fadeWidth: PrototypeLayout.horizontalFade,
+            verticalOverhang: overhang,
             leadingStrength: fade.leading,
             trailingStrength: fade.trailing
         )

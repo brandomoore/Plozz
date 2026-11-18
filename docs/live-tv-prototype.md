@@ -44,6 +44,12 @@ On Apple TV, a standard guide row is one unchanged 26-point text line plus
 Row gaps and channel-column width are unchanged, and rows still grow with
 Dynamic Type. Channel names can use two lines; a focused guide failure reserves
 the second line for its error. Phone and tablet row sizes are unchanged.
+TV rows use the shared 16-point content corners rather than the old 32-point
+radius. With System card focus selected, each channel-logo action, channel-name
+button and programme uses the native tvOS card effect instead of the drawn
+outline. Custom focus preferences retain the existing fallback. Timeline
+labels remain clipped within their cells, while native focus can extend into
+the existing row gap without changing row heights or navigation targets.
 
 Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a

@@ -1,5 +1,6 @@
 #if DEBUG && os(tvOS)
 import CoreUI
+import CoreModels
 import FeatureLiveTVCore
 import Observation
 import SwiftUI
@@ -15,13 +16,18 @@ final class LiveTVGuideFocusTests: XCTestCase {
             .font(.system(size: 26))
             .dynamicTypeSize(.large))
             .sizeThatFits(in: proposal)
-        let row = UIHostingController(rootView: PrototypeGuideGap(
-            channelName: "Weather", height: PrototypeLayout.rowHeight
-        ).dynamicTypeSize(.large))
-            .sizeThatFits(in: proposal)
+        for style in [CardFocusStyle.system, .outlined] {
+            let row = UIHostingController(rootView: Button {} label: {
+                PrototypeGuideGap(channelName: "Weather", height: PrototypeLayout.rowHeight)
+            }
+            .buttonStyle(PrototypeGuideButtonStyle())
+            .environment(\.plozzCardFocusStyle, style)
+            .dynamicTypeSize(.large))
+                .sizeThatFits(in: proposal)
 
-        XCTAssertEqual((row.height - text.height) / 2, 20, accuracy: 0.5)
-        XCTAssertLessThan(row.height, 128 * 0.7)
+            XCTAssertEqual((row.height - text.height) / 2, 20, accuracy: 0.5, "\(style)")
+            XCTAssertLessThan(row.height, 128 * 0.7, "\(style)")
+        }
     }
 
     func testFocusedChannelKeepsBackgroundGuideLoadingQuietButShowsFailure() throws {
