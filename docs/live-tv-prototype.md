@@ -353,7 +353,7 @@ Search and the active-channel artwork stay aligned, with an additional 16-point
 clearance below native navigation. Pinned navigation keeps its existing inset.
 The full-height source/Search/categories pane collapses when focus enters the TV
 guide and returns on a leading-edge move. The pane slides and fades as one unit
-over 0.28 seconds while the guide resizes; Reduce Motion suppresses the animation.
+over 0.16 seconds while the guide resizes; Reduce Motion suppresses the animation.
 The reveal interceptor is active only while the pane is collapsed; the same
 leading-edge press must restore the pane's last focused control, not merely open
 the pane while the guide continues intercepting focus exits.
