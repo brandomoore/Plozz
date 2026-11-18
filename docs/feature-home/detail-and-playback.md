@@ -48,6 +48,13 @@ index refs and applies fresh native stream facts without inventing playable
 versions for series containers. Cold discovery-to-library recovery uses the same
 deterministic policy as native navigation.
 
+Discovery openings restore their language-qualified snapshot immediately and
+overlap external metadata with the library-ownership probe. Native adoption
+cancels speculative metadata without waiting for it, and source-generation
+fences prevent late external results from replacing library details. Cancelling
+the opening also cancels that speculative request. Newly enriched catalog IDs
+still trigger an ownership recheck before external artwork is released.
+
 Explicit episode information, season navigation, edition opens and server/version
 choices remain deliberate exceptions. Provider-local child IDs stay on their
 owning account. A fresh alternate response must agree on item, account, kind and

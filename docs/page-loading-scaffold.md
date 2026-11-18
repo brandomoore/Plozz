@@ -129,16 +129,20 @@ loading and reveal behavior stable:
 - Mobile portrait detail shares Home's window-relative artwork height and mirrored
   continuation. The title sits at the artwork's lower edge; metadata and actions
   grow below it. Series seasons remain immediately below the complete header.
-- Mobile detail reveals that foreground together once native navigation finishes
-  and cached or native detail resolves, without
-  waiting for artwork, ratings, cast or related titles. Subsequent enrichment
-  updates quietly. Reduce Motion removes the entrance animation.
+- Mobile detail starts its grouped foreground entrance with native navigation,
+  using available seed metadata without waiting for artwork, ratings, cast or
+  related titles. Page-owned reveal state survives lazy hero reconstruction,
+  Back navigation and player dismissal; later enrichment updates quietly.
+  Reduce Motion removes the entrance animation.
 - Home's wordmark keeps its independent reveal and never gates its action row.
   Detail's late wordmark joins quietly instead of adding a second fade.
 - Ready artwork stays opaque on Home and detail; there is no decorative
   first-backdrop fade. The selected artwork source still owns readiness.
-- Detail seeds must be landscape. A portrait poster scaled into the landscape
-  stage is not a valid seed.
+- Home hero taps can hand off the actual displayed bitmap as the detail's
+  immediate placeholder, qualified by subject, profile and effective artwork
+  policy. It does not release the destination's source-ownership gate.
+  Landscape detail seeds must be landscape; compact portrait detail can reuse
+  Home's portrait artwork and its shared reflection/crop.
 - Reserve every asynchronously resolved action slot (trailer, versions, menu)
   from the first frame so the primary Play action never moves.
 - Hide native top scroll-edge chrome when the page paints its own hero scrim;

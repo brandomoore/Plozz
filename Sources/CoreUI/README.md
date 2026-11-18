@@ -452,6 +452,8 @@ default delay; individual callers can still supply an explicit grace period.
 
 Continue Watching's profile-scoped Playback details choice applies to Artwork + logo,
 Thumbnail, and Poster, on Home and library rows.
+Mobile Home's reserved row includes the refresh indicator's header height even
+when idle, so the fixed row cannot compress the artwork and remove its reflection.
 Detailed keeps the existing play/progress/text overlay; Progress only uses the
 shared white progress bar without that overlay. Other cards are unaffected.
 The previously stored portrait-only preference is retained.
@@ -653,6 +655,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   settles, before request status, children, ratings or trailers. List/snapshot seeds must not
   establish a preferred source prematurely; recoverable offline failures may
   release an already usable cached detail instead.
+  Mobile Home hero navigation can reuse its actual displayed bitmap before that
+  gate opens. This page-local handoff requires the same subject, profile and
+  effective artwork policy, and a landscape bitmap for a landscape destination;
+  it does not select or authorize a different preferred source.
   TV transition prefetches are reusable work, not permission to paint. The
   transition cover receives its image only from the ready destination renderer.
   `ArtworkDisplayIdentity` separates the visible subject/policy from changing

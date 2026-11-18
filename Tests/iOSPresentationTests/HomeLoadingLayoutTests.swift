@@ -1386,6 +1386,91 @@ final class HomeLoadingLayoutTests: XCTestCase {
         XCTAssertNotNil(row.issue)
     }
 
+    func testContinueWatchingReflectionInTheReservedHomeRow() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let url = try XCTUnwrap(URL(string: "https://continue-watching.invalid/\(UUID()).png"))
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
+        }
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
+        ))
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(artwork.pngData())),
+            for: URLRequest(url: url)
+        )
+        defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
+        let items = (0..<5).map {
+            MediaItem(id: "reflection-\($0)", title: "Movie", kind: .movie,
+                      backdropURL: url, allowsTitleBasedMetadataMatching: false)
+        }
+        let row = HomeRow(kind: .continueWatching, items: items)
+        let model = HomeViewModel(accounts: [], profileNamespace: fixture.profileID)
+        defer { model.invalidate() }
+        let choice = try XCTUnwrap(HomeRowChoice.shared.first { $0.id == .global(.continueWatching) })
+        fixture.app.settings.homeVisibility.setContinueWatchingShowsSeriesArtwork(true)
+        fixture.app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: false)
+        for cardStyle in [CardStyle.borderless, .framed] {
+            var unreservedHeight: CGFloat?
+            for reserved in [false, true] {
+                let rail = PlozziOSHomeRowView(
+                    row: row, appModel: fixture.app, viewModel: model,
+                    watchlistIntentRevision: 0, watchlistLoadingPlaceholderCount: 0, onBrowse: nil
+                )
+                fixture.mount(
+                    ScrollView {
+                        if reserved {
+                            PlozziOSHomeRowSlot(
+                                presentation: HomePresentationRow(choice: choice, source: .home(row)),
+                                captions: fixture.app.settings.cardStyle.captions,
+                                continueWatchingLayout: .landscape, continueWatchingUsesSeriesArtwork: true
+                            ) { rail }
+                        } else {
+                            rail
+                        }
+                    }
+                    .environment(\.plozzCardStyle, cardStyle)
+                    .environment(\.plozzArtworkSettings, ArtworkSettings(preference: .library))
+                    .environment(\.plozziOSHomeViewportWidth, 390)
+                )
+                try await fixture.settle()
+                var image = renderedImage(fixture.window)
+                let deadline = ContinuousClock.now + .seconds(3)
+                while try blueArtworkRuns(in: image, y: 70).isEmpty, ContinuousClock.now < deadline {
+                    try await fixture.settle()
+                    image = renderedImage(fixture.window)
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "continue-watching-reflection-\(cardStyle)-reserved-\(reserved)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let first = try XCTUnwrap(blueArtworkRuns(in: image, y: 70).first)
+                let x = first.lowerBound + 12
+                var visibleRows: [CGFloat] = []
+                for y in 20..<350 {
+                    if try blueArtworkRuns(in: image, y: CGFloat(y)).contains(where: { $0.contains(x) }) {
+                        visibleRows.append(CGFloat(y))
+                    }
+                }
+                let top = try XCTUnwrap(visibleRows.first)
+                let bottom = try XCTUnwrap(visibleRows.last)
+                let height = bottom - top
+                XCTAssertGreaterThan(height / (first.upperBound - first.lowerBound), 0.63,
+                                     "Continue Watching needs reflection space; style \(cardStyle), reserved \(reserved).")
+                if let unreservedHeight {
+                    XCTAssertEqual(height, unreservedHeight, accuracy: 1,
+                                   "The reserved Home row must preserve the card's natural height.")
+                } else {
+                    unreservedHeight = height
+                }
+            }
+        }
+    }
+
     func testReservedContinueWatchingHeightMatchesBothLayoutsAndCaptionPreferences() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }

@@ -461,6 +461,37 @@ struct PlozziOSSeasonRequestSummaryLabel: View {
     }
 }
 
+struct PlozziOSHeroArtworkSeed {
+    let subjectID: String
+    let profileID: String
+    let policy: ArtworkPresentationPolicy
+    let artwork: FirstPaintArtwork
+
+    init?(
+        item: MediaItem, displayed: DisplayedHeroArtwork?, profileID: String,
+        policy: ArtworkPresentationPolicy
+    ) {
+        guard let displayed, displayed.itemID == item.id else { return nil }
+        subjectID = item.stablePresentationID
+        self.profileID = profileID
+        self.policy = policy
+        artwork = displayed.artwork
+    }
+
+    func image(
+        for item: MediaItem, profileID: String, policy: ArtworkPresentationPolicy,
+        style: HeroArtworkStyle
+    ) -> UIImage? {
+        guard subjectID == item.stablePresentationID,
+              self.profileID == profileID,
+              self.policy.metadataSettings.artworkPolicyIdentity == policy.metadataSettings.artworkPolicyIdentity,
+              self.policy.settings.preference(in: self.policy.area) == policy.settings.preference(in: policy.area),
+              self.policy.logoLanguage == policy.logoLanguage,
+              style == .compactPortrait || artwork.isLandscape else { return nil }
+        return artwork.image
+    }
+}
+
 struct PlozziOSDetailHeroSection: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(HeroTrailerController.self) private var trailerController
@@ -494,7 +525,7 @@ struct PlozziOSDetailHeroSection: View {
     /// Forwarded to the action row — see `presentsEpisodeStill` there.
     var presentsEpisodeStill: Bool = false
     var pullDistance: CGFloat = 0
-    var metadataIsReady = true
+    var metadataHasRevealed: Binding<Bool>? = nil
 
     var body: some View {
         let style: HeroArtworkStyle = horizontalSizeClass == .compact
@@ -522,7 +553,7 @@ struct PlozziOSDetailHeroSection: View {
             textSize: appModel.settings.detailPage.settings.textSize,
             scheduleLine: scheduleLine,
             pullDistance: pullDistance,
-            metadataIsReady: metadataIsReady,
+            metadataHasRevealed: metadataHasRevealed,
             trailerController: trailerController,
             backgroundSettings: appModel.settings.heroBackground,
             trailerResolver: appModel.heroTrailerResolver()
@@ -638,7 +669,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
     /// Overscroll pull (points) from the enclosing scroll view. Stretches the
     /// backdrop just like the Home hero; 0 leaves the hero at rest.
     var pullDistance: CGFloat = 0
-    var metadataIsReady = true
+    var metadataHasRevealed: Binding<Bool>? = nil
     let trailerController: HeroTrailerController
     let backgroundSettings: HeroBackgroundSettingsModel
     let trailerResolver: HeroTrailerResolving
@@ -725,6 +756,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
                     PlozziOSHeroReflection(
                         presentation: presentation,
                         style: style,
+                        seedArtwork: seedArtwork,
                         asyncFallbackURL: onlineArtworkFallback,
                         sharedResolutionIdentity: artworkAppearanceID,
                         itemID: item.id,
@@ -746,7 +778,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
             if surfaceRole == .detail {
                 foreground()
                     .plozzFadeInOnAppear(
-                        duration: DetailEntranceTiming().reveal, isReady: metadataIsReady
+                        duration: DetailEntranceTiming().reveal, hasRevealed: metadataHasRevealed
                     )
             } else {
                 foreground()
@@ -781,7 +813,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
                         .background(gradientEnabled ? Color.clear : palette.backgroundBase)
                 }
                 .plozzFadeInOnAppear(
-                    duration: DetailEntranceTiming().reveal, isReady: metadataIsReady
+                    duration: DetailEntranceTiming().reveal, hasRevealed: metadataHasRevealed
                 )
                 .background(alignment: .top) {
                     if showsBackdrop {
@@ -1153,9 +1185,6 @@ private struct PlozziOSHeroBackdrop: View {
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let sharedResolutionIdentity: String?
     let style: HeroArtworkStyle
-    /// Once the real backdrop has any picture, drop the card seed so the two can
-    /// never be visible together (the "two images" on the way into a detail page).
-    @State private var backdropResolved = false
     /// The artwork this surface committed to. Metadata enrichment can add a better
     /// reference a second after entry; swapping it re-lays out and re-tints the
     /// hero, which reads as the hero moving/flickering. Freeze the first resolved
@@ -1244,19 +1273,7 @@ private struct PlozziOSHeroBackdrop: View {
     }
 
     private func stillArtwork() -> some View {
-        ZStack {
-            if let seedArtwork {
-                Image(uiImage: seedArtwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .opacity(backdropResolved ? 0 : 1)
-                    .animation(.easeOut(duration: 0.28), value: backdropResolved)
-                    .accessibilityHidden(true)
-            }
-            backdropImage
-        }
+        backdropImage
     }
 
     private var currentReferences: [ArtworkReference] {
@@ -1284,12 +1301,10 @@ private struct PlozziOSHeroBackdrop: View {
             previewVariant: .heroPreview,
             artworkPolicy: artworkPolicy.forPlacement(presentation.artworkPlacement),
             asyncFallbackURL: asyncFallbackURL,
-            onResolveReference: { _ in
-                if frozenReferences == nil, !currentReferences.isEmpty {
+            onResolveReference: { reference in
+                if reference != nil, frozenReferences == nil, !currentReferences.isEmpty {
                     frozenReferences = currentReferences
                 }
-                guard !backdropResolved else { return }
-                withAnimation(.easeOut(duration: 0.2)) { backdropResolved = true }
             },
             pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
                 "\(surfaceRole == .home ? "home" : "detail"):\(presentation.artworkIdentity)", style: style
@@ -1300,14 +1315,19 @@ private struct PlozziOSHeroBackdrop: View {
         ) { image in
             PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
         } placeholder: {
-            // Keep the seeded card picture visible until the full backdrop lands.
-            seedArtwork == nil ? palette.backgroundBase : Color.clear
+            if let seedArtwork {
+                PlozziOSHeroArtworkImage(
+                    image: Image(uiImage: seedArtwork), style: style, surfaceRole: surfaceRole
+                )
+            } else {
+                palette.backgroundBase
+            }
         }
+        .showingPlaceholderWhileLoading(seedArtwork != nil)
         .reportingHeroArtwork(id: presentation.itemID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .onChange(of: presentation.itemID) { _, _ in
-            backdropResolved = false
             frozenReferences = nil
         }
     }
@@ -1826,6 +1846,7 @@ private struct PlozziOSHeroReflection: View {
 
     let presentation: HeroPresentation
     let style: HeroArtworkStyle
+    var seedArtwork: UIImage? = nil
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let sharedResolutionIdentity: String?
     let itemID: String
@@ -1854,8 +1875,15 @@ private struct PlozziOSHeroReflection: View {
             ) { image in
                 PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
             } placeholder: {
-                Color.clear
+                if let seedArtwork {
+                    PlozziOSHeroArtworkImage(
+                        image: Image(uiImage: seedArtwork), style: style, surfaceRole: surfaceRole
+                    )
+                } else {
+                    Color.clear
+                }
             }
+            .showingPlaceholderWhileLoading(seedArtwork != nil)
             .frame(width: contentWidth, height: height)
 
             if showsTrailer, trailerController.isShowing(itemID),
@@ -1969,13 +1997,24 @@ private struct PlozziOSStableHomeHeroMetadata: View {
 struct PlozziOSHomeHeroArtworkLink: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     @Environment(HeroTrailerController.self) private var trailerController
+    @Environment(\.heroArtworkDisplayState) private var displayedArtwork
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showsDetail = false
+    @State private var seedArtwork: PlozziOSHeroArtworkSeed?
 
     let item: MediaItem
     let provider: any MediaProvider
 
     var body: some View {
         Button {
+            let style: HeroArtworkStyle = horizontalSizeClass == .compact ? .compactPortrait : .landscape
+            let presentation = HeroPresentation(item: item, artworkStyle: style, surface: .home)
+            seedArtwork = PlozziOSHeroArtworkSeed(
+                item: item, displayed: displayedArtwork?.displayed,
+                profileID: appModel.profiles.activeProfileID,
+                policy: artworkPolicy.heroPolicy.forPlacement(presentation.artworkPlacement)
+            )
             if appModel.settings.heroBackground.settings.detailTrailerEnabled {
                 let selection = DetailOpenEnvironment.initialSourceSelection(
                     for: item,
@@ -2001,7 +2040,8 @@ struct PlozziOSHomeHeroArtworkLink: View {
                 appModel: appModel,
                 provider: provider,
                 item: item,
-                seerService: appModel.seerService
+                seerService: appModel.seerService,
+                openingArtwork: seedArtwork
             )
         }
         .buttonStyle(.plain)

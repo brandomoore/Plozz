@@ -33,6 +33,7 @@ struct PlozziOSItemDetailView: View {
     let seerService: SeerService?
     let originSourceAccountID: String?
     let playlistOrigin: VideoPlaylistPlaybackOrigin?
+    let openingArtwork: PlozziOSHeroArtworkSeed?
     /// Show this episode as the page's own subject instead of redirecting to its
     /// series.
     ///
@@ -47,7 +48,8 @@ struct PlozziOSItemDetailView: View {
         seerService: SeerService? = nil,
         originSourceAccountID: String? = nil,
         presentsEpisodeAsSubject: Bool = false,
-        playlistOrigin: VideoPlaylistPlaybackOrigin? = nil
+        playlistOrigin: VideoPlaylistPlaybackOrigin? = nil,
+        openingArtwork: PlozziOSHeroArtworkSeed? = nil
     ) {
         self.appModel = appModel
         self.provider = provider
@@ -56,6 +58,7 @@ struct PlozziOSItemDetailView: View {
         self.presentsEpisodeAsSubject = presentsEpisodeAsSubject
         self.originSourceAccountID = originSourceAccountID
         self.playlistOrigin = playlistOrigin
+        self.openingArtwork = openingArtwork
     }
 
     var body: some View {
@@ -154,7 +157,8 @@ struct PlozziOSItemDetailView: View {
                     initialEpisode: presentsEpisodeAsSubject && contextItem.kind == .episode
                         ? contextItem
                         : nil,
-                    presentsEpisodeAsSubject: presentsEpisodeAsSubject
+                    presentsEpisodeAsSubject: presentsEpisodeAsSubject,
+                    openingArtwork: openingArtwork
                 )
             } else {
             MediaSourceUnavailableView()
@@ -216,6 +220,7 @@ struct PlozziOSItemDetailView: View {
 
 private struct PlozziOSCanonicalItemDetailView: View {
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.locale) private var locale
     @State private var trailerOpening = YouTubeTrailerOpening()
     @State private var externalOpening = ExternalMediaOpening()
@@ -233,6 +238,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     @Environment(\.mediaItemArtworkNavigator) private var artworkItemNavigator
     @State private var viewModel: ItemDetailViewModel
     @State private var isPageVisible = false
+    @State private var metadataHasRevealed = false
     @State private var playbackPreparation = DetailPlaybackPreparationCoordinator()
     @State private var preparationSourceSwitch = UUID()
     @State private var isPreparationSourceSwitching = false
@@ -275,6 +281,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     /// Whether the episode is this page's own subject rather than a season/series
     /// page's fronted child — see `showsEpisodeSubjectHero`.
     private let presentsEpisodeAsSubject: Bool
+    private let openingArtwork: PlozziOSHeroArtworkSeed?
     private let capabilities = MediaCapabilities.detected()
 
     init(
@@ -285,7 +292,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
         playlistOrigin: VideoPlaylistPlaybackOrigin? = nil,
         initialSeasonID: String? = nil,
         initialEpisode: MediaItem? = nil,
-        presentsEpisodeAsSubject: Bool = false
+        presentsEpisodeAsSubject: Bool = false,
+        openingArtwork: PlozziOSHeroArtworkSeed? = nil
     ) {
         self.seerService = seerService
         self.initialSeasonID = initialSeasonID
@@ -293,6 +301,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         self.playlistOrigin = playlistOrigin
         self.originProvider = provider
         self.presentsEpisodeAsSubject = presentsEpisodeAsSubject
+        self.openingArtwork = openingArtwork
         _viewModel = State(initialValue: viewModel)
         if let selectedItem = viewModel.state.value?.item {
             _seriesPlayTarget = State(initialValue:
@@ -366,6 +375,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         }
         .onDisappear {
             isPageVisible = false
+            metadataHasRevealed = true
             viewModel.suspendEnrichment()
         }
         .themeMusicPlayback(
@@ -568,7 +578,11 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 PlozziOSDetailHeroSection(
                     item: heroTarget,
                     backdropItem: detail.item,
-                    seedArtwork: nil,
+                    seedArtwork: openingArtwork?.image(
+                        for: detail.item, profileID: appModel.profiles.activeProfileID,
+                        policy: artworkPolicy.forPlacement(rootPresentation.artworkPlacement),
+                        style: heroStyle
+                    ),
                     playableItem: playableHeroTarget,
                     showsPlayPlaceholder: showsPlayPlaceholder,
                     onRetryPlaybackInventory: viewModel.hasNoPlaybackStreams(for: versionTarget) ? {
@@ -623,7 +637,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     offersParentNavigation: showsEpisodeSubjectHero(detail.item),
                     presentsEpisodeStill: showsEpisodeSubjectHero(detail.item),
                     pullDistance: heroPullDistance,
-                    metadataIsReady: viewModel.metadataIsReady
+                    metadataHasRevealed: $metadataHasRevealed
                 )
                 .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
 
@@ -4137,7 +4151,7 @@ struct PlozziOSInlineEpisodeEntry: View {
 struct PlozziOSCastSection: View {
     @Environment(\.locale) private var locale
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.themePalette) private var palette
     // Scales the trailing whitespace with the OS text size so the space under the
     // (variably wrapped) cast names stays proportional at every Dynamic Type level,
@@ -4155,14 +4169,28 @@ struct PlozziOSCastSection: View {
     private var credits: [MediaPersonCredit] { MediaPersonCredit.ordered(people) }
 
     var body: some View {
-        PlozziOSMediaSection(
+        PlozziOSHomeRailLayout { metrics in
+            section(metrics: metrics)
+        }
+    }
+
+    private func section(metrics: PlozzMetrics) -> some View {
+        let pageInset = PlozziOSPageLayout.horizontalInset(
+            for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
+        )
+        let tileDiameter = metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
+        let spacing = metrics.usesDesktopSizing
+            ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
+            : metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle) - metrics.posterWidth
+                + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+        return PlozziOSMediaSection(
             title: credits.contains { !$0.crewRoles.isEmpty } ? Text("Cast & Crew") : Text("Cast"),
             horizontalInset: pageInset
         ) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
-                    spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
+                    spacing: spacing
                 ) {
                     ForEach(credits) { credit in
                         let person = credit.person
@@ -4187,7 +4215,7 @@ struct PlozziOSCastSection: View {
                             .frame(width: tileDiameter, alignment: .top)
 
                             Text(person.name)
-                                .font(.subheadline.weight(.semibold))
+                                .font(.system(size: metrics.posterTitleFontSize, weight: .semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(
                                     maxWidth: .infinity,
@@ -4195,7 +4223,7 @@ struct PlozziOSCastSection: View {
                                 )
                             if let role = credit.caption(locale: locale) {
                                 Text(role)
-                                    .font(.caption)
+                                    .font(.system(size: metrics.posterSubtitleFontSize))
                                     .plozzForeground(.secondary)
                                     .fixedSize(
                                         horizontal: false,
@@ -4237,14 +4265,6 @@ struct PlozziOSCastSection: View {
         horizontalSizeClass == .compact ? compactBottomPadding : regularBottomPadding
     }
 
-    private var pageInset: CGFloat {
-        PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
-    }
-
-    /// Desktop cast circles stay smaller than posters; mobile retains its poster scale.
-    private var tileDiameter: CGFloat {
-        metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
-    }
 }
 
 

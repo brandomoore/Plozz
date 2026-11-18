@@ -652,7 +652,11 @@ public final class ItemDetailViewModel {
     private let navigationItemID: String
 
     private var snapshotKey: String {
-        let key = "\(activeSourceAccountID ?? "_")|\(activeItemID)"
+        snapshotKey(for: activeItemID)
+    }
+
+    private func snapshotKey(for itemID: String) -> String {
+        let key = "\(activeSourceAccountID ?? "_")|\(itemID)"
         return metadataLanguage == "en" ? key : "\(key)|text-language-v2:\(metadataLanguage)"
     }
 
@@ -896,15 +900,11 @@ public final class ItemDetailViewModel {
             }
         }
         if isDiscoveryItem {
-            await resolveDiscoveryLibrarySource()
-            guard !Task.isCancelled else { return }
-            if isDiscoveryItem {
-                let generation = sourceGeneration
-                let adoptedLibrarySource = await loadDiscoveryDetail()
-                guard !Task.isCancelled,
-                      sourceGeneration == generation || adoptedLibrarySource else { return }
-                if isDiscoveryItem { return }
-            }
+            let generation = sourceGeneration
+            let adoptedLibrarySource = await loadDiscoveryDetail()
+            guard !Task.isCancelled,
+                  sourceGeneration == generation || adoptedLibrarySource else { return }
+            if isDiscoveryItem { return }
         }
         alternateSourceEnrichmentTask?.cancel()
         alternateSourceEnrichmentTask = nil
@@ -1246,7 +1246,26 @@ public final class ItemDetailViewModel {
         }
 
         let generation = sourceGeneration
-        let resolved = await externalMetadataResolver(seed, availabilityRegionCode)
+        hasPaintedFreshDetail = false
+        startSnapshotRestore()
+        let resolver = externalMetadataResolver
+        let region = availabilityRegionCode
+        let metadata = Task { await resolver(seed, region) }
+        defer { metadata.cancel() }
+        return await withTaskCancellationHandler {
+            if await resolveDiscoveryLibrarySource() { return true }
+            guard !Task.isCancelled, sourceGeneration == generation else { return false }
+            return await applyDiscoveryMetadata(
+                await metadata.value, seed: seed, generation: generation
+            )
+        } onCancel: {
+            metadata.cancel()
+        }
+    }
+
+    private func applyDiscoveryMetadata(
+        _ resolved: ExternalTitleMetadata, seed: MediaItem, generation: UInt64
+    ) async -> Bool {
         let enrichedSeed = Self.applying(resolved.enrichment, to: seed)
         guard !Task.isCancelled,
               sourceGeneration == generation,
@@ -2999,7 +3018,7 @@ public final class ItemDetailViewModel {
         // after the first frame — measured on device as the episode rail going
         // skeleton → cards on every open.
         isRestoringSnapshot = true
-        let alternateKey = "\(activeSourceAccountID ?? "_")|\(navigationItemID)"
+        let alternateKey = snapshotKey(for: navigationItemID)
         snapshotRestoreTask = Task { [weak self] in
             defer { self?.isRestoringSnapshot = false }
             var restored = await cache.snapshot(for: key)

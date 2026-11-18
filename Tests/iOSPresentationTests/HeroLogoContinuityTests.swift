@@ -11,7 +11,7 @@ import XCTest
 
 @MainActor
 final class HeroLogoContinuityTests: XCTestCase {
-    func testCachedReadyEntranceWaitsForPageAppearanceThenPaintsIntermediateFrames() async throws {
+    func testCachedReadyEntranceBeginsBeforeNavigationCompletes() async throws {
         XCTAssertFalse(UIAccessibility.isReduceMotionEnabled,
                        "This rendered-animation case requires the simulator's full-motion setting.")
         let fixture = try Fixture(
@@ -49,10 +49,6 @@ final class HeroLogoContinuityTests: XCTestCase {
             .background(.black)
         )
         fixture.host.beginAppearanceTransition(true, animated: true)
-        try await Task.sleep(for: .milliseconds(600))
-        XCTAssertFalse(try fixture.hasRedLogo(), "Cached data must not finish its reveal during navigation.")
-        XCTAssertFalse(try fixture.hasTitleText())
-        fixture.host.endAppearanceTransition()
 
         var sawIntermediateFrame = false
         var samples: [String] = []
@@ -76,7 +72,39 @@ final class HeroLogoContinuityTests: XCTestCase {
         samplesAttachment.lifetime = .keepAlways
         add(samplesAttachment)
         XCTAssertTrue(sawIntermediateFrame, "A readiness toggle alone is not proof of a rendered entrance.")
+        try await waitUntil { try fixture.hasRedLogo() }
+        XCTAssertTrue(try fixture.hasRedLogo(),
+                      "Ready metadata must appear during navigation, not start after it finishes.")
+        fixture.host.endAppearanceTransition()
         try await waitUntil { try fixture.hasRedLogo() && fixture.hasTitleText() }
+    }
+
+    func testOpeningArtworkPaintsWhileDiscoveryOwnershipIsPending() async throws {
+        let fixture = try Fixture(size: CGSize(width: 390, height: 1100))
+        defer { fixture.close() }
+        let app = PlozziOSAppModel(accountStore: AccountStore(secureStore: InMemorySecureStore()))
+        let item = MediaItem(id: "pending-discovery", title: "Movie", kind: .movie,
+                             locallyValidatedPlayableSource: false)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 480)).image {
+            UIColor.green.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 320, height: 480))
+        }
+        fixture.host.rootView = AnyView(
+            PlozziOSHeroStage(
+                item: item, presentation: HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: .detail),
+                style: .compactPortrait, surfaceRole: .detail, seedArtwork: image, isActive: false,
+                trailerController: HeroTrailerController(), backgroundSettings: app.settings.heroBackground,
+                trailerResolver: app.heroTrailerResolver()
+            ) { EmptyView() }
+            .environment(\.plozzArtworkSourceReady, false)
+            .environment(\.themePalette, .dark)
+            .environment(PlozziOSSidebarGeometryModel())
+            .frame(width: 390, height: 844)
+            .background(.black)
+        )
+        fixture.host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(try fixture.hasGreenArtwork(), "Home's ready bitmap must not wait for ownership or a fetch.")
     }
 
     func testGroupedEntranceWaitsForReadinessAndDoesNotReplayOnRefresh() async throws {
@@ -95,6 +123,78 @@ final class HeroLogoContinuityTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(try fixture.hasRedLogo(), "A refresh must not hide the revealed group.")
         XCTAssertTrue(try fixture.hasTitleText())
+    }
+
+    func testRecreatedHeroAndReturnsFromNavigationOrPlayerKeepMetadataVisible() async throws {
+        let fixture = try Fixture(defersAppearance: true)
+        defer { fixture.close() }
+        let state = SubjectState(item: MediaItem(id: "return-entrance", title: "Metadata", kind: .movie))
+        state.metadataIsReady = true
+        fixture.host.rootView = AnyView(EntranceFixture(state: state))
+        fixture.host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        fixture.host.beginAppearanceTransition(true, animated: true)
+        fixture.host.endAppearanceTransition()
+        try await waitUntil { try fixture.hasRedLogo() && fixture.hasTitleText() }
+        XCTAssertTrue(state.hasRevealed)
+        for recreatesHero in [false, true] {
+            fixture.host.beginAppearanceTransition(false, animated: true)
+            fixture.host.endAppearanceTransition()
+            if recreatesHero {
+                fixture.host.rootView = AnyView(Color.black)
+                try await Task.sleep(for: .milliseconds(50))
+                fixture.host.rootView = AnyView(EntranceFixture(state: state))
+            }
+            fixture.host.beginAppearanceTransition(true, animated: true)
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertTrue(try fixture.hasRedLogo(), "Returning metadata must already be fully visible.")
+            XCTAssertTrue(try fixture.hasTitleText())
+            fixture.host.endAppearanceTransition()
+        }
+    }
+
+    func testOpeningArtworkRequiresTheSameSubjectProfilePolicyAndUsableShape() throws {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, sourceAccountID: "account")
+        let home = HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: .home)
+        let detail = HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: .detail)
+        let policy = ArtworkPresentationPolicy(area: .home, placement: home.artworkPlacement, logoLanguage: "en")
+        let detailPolicy = policy.forArea(.details).forPlacement(detail.artworkPlacement)
+        let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://art.invalid/hero.jpg")))
+        for size in [CGSize(width: 320, height: 180), CGSize(width: 180, height: 320)] {
+            let image = UIGraphicsImageRenderer(size: size).image { _ in }
+            let artwork = FirstPaintArtwork(image: image, reference: reference, variant: .heroBackdrop)
+            let displayed = DisplayedHeroArtwork(itemID: item.id, artwork: artwork)
+            let seed = try XCTUnwrap(PlozziOSHeroArtworkSeed(
+                item: item, displayed: displayed, profileID: "profile", policy: policy
+            ))
+            XCTAssertTrue(seed.image(
+                for: item, profileID: "profile", policy: detailPolicy, style: .compactPortrait
+            ) === image)
+            XCTAssertEqual(seed.image(
+                for: item, profileID: "profile", policy: detailPolicy, style: .landscape
+            ) != nil, size.width > size.height)
+            XCTAssertNil(seed.image(for: item, profileID: "other", policy: policy, style: .compactPortrait))
+            var other = item
+            other.sourceAccountID = "another-account"
+            XCTAssertNil(seed.image(for: other, profileID: "profile", policy: policy, style: .compactPortrait))
+            XCTAssertNil(seed.image(
+                for: item, profileID: "profile",
+                policy: ArtworkPresentationPolicy(placement: .detailBackdrop, logoLanguage: "fr"),
+                style: .compactPortrait
+            ))
+            XCTAssertNil(seed.image(
+                for: item, profileID: "profile",
+                policy: ArtworkPresentationPolicy(
+                    area: .details, settings: ArtworkSettings(preference: .library),
+                    placement: detail.artworkPlacement, logoLanguage: "en"
+                ),
+                style: .compactPortrait
+            ))
+            XCTAssertNil(PlozziOSHeroArtworkSeed(
+                item: item, displayed: DisplayedHeroArtwork(itemID: "other", artwork: artwork),
+                profileID: "profile", policy: policy
+            ))
+        }
     }
 
     func testDelayedMetadataDoesNotRevealWhilePageIsCovered() async throws {
@@ -348,6 +448,7 @@ final class HeroLogoContinuityTests: XCTestCase {
     @Observable fileprivate final class SubjectState {
         var item: MediaItem
         var metadataIsReady = false
+        var hasRevealed = false
         init(item: MediaItem) { self.item = item }
     }
 
@@ -363,7 +464,10 @@ final class HeroLogoContinuityTests: XCTestCase {
                 Color.red.frame(width: 100, height: 50)
                 Text(state.item.title).font(.title).foregroundStyle(.white)
             }
-            .plozzFadeInOnAppear(duration: DetailEntranceTiming().reveal, isReady: state.metadataIsReady)
+            .plozzFadeInOnAppear(
+                duration: DetailEntranceTiming().reveal, isReady: state.metadataIsReady,
+                hasRevealed: Binding(get: { state.hasRevealed }, set: { state.hasRevealed = $0 })
+            )
             .frame(width: 400, height: 250)
             .background(.black)
         }
@@ -474,6 +578,10 @@ final class HeroLogoContinuityTests: XCTestCase {
 
         func hasRedLogo() throws -> Bool {
             try hasVisiblePixels { $0 > 180 && $1 < 70 && $2 < 70 }
+        }
+
+        func hasGreenArtwork() throws -> Bool {
+            try hasVisiblePixels { $0 < 70 && $1 > 180 && $2 < 70 }
         }
 
         func hasTitleText() throws -> Bool {

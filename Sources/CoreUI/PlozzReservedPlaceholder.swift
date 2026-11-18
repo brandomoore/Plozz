@@ -77,10 +77,13 @@ public struct PlozzFadeInOnAppear: ViewModifier {
     #endif
     private let duration: Double
     private let isReady: Bool
+    private let hasRevealed: Binding<Bool>?
 
-    public init(duration: Double = 0.24, isReady: Bool = true) {
+    public init(duration: Double = 0.24, isReady: Bool = true, hasRevealed: Binding<Bool>? = nil) {
         self.duration = duration
         self.isReady = isReady
+        self.hasRevealed = hasRevealed
+        _visible = State(initialValue: hasRevealed?.wrappedValue ?? false)
     }
 
     private var canReveal: Bool {
@@ -107,16 +110,24 @@ public struct PlozzFadeInOnAppear: ViewModifier {
             .task(id: canReveal) {
                 guard canReveal, !visible, !Task.isCancelled else { return }
                 if reduceMotion {
-                    visible = true
+                    reveal()
                 } else {
-                    withAnimation(.easeOut(duration: duration)) { visible = true }
+                    withAnimation(.easeOut(duration: duration)) { reveal() }
                 }
             }
+            .onChange(of: hasRevealed?.wrappedValue) { _, revealed in
+                if revealed == true, !visible { visible = true }
+            }
+    }
+
+    private func reveal() {
+        visible = true
+        hasRevealed?.wrappedValue = true
     }
 }
 
 #if os(iOS)
-/// SwiftUI appearance tasks can run before native navigation finishes.
+/// Start with native navigation, rather than waiting for its completion.
 private struct PlozzPageAppearanceReader: UIViewControllerRepresentable {
     let onChange: (Bool) -> Void
 
@@ -144,6 +155,11 @@ private struct PlozzPageAppearanceReader: UIViewControllerRepresentable {
             onChange?(true)
         }
 
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            onChange?(true)
+        }
+
         override func viewWillDisappear(_ animated: Bool) {
             super.viewWillDisappear(animated)
             onChange?(false)
@@ -153,7 +169,9 @@ private struct PlozzPageAppearanceReader: UIViewControllerRepresentable {
 #endif
 
 public extension View {
-    func plozzFadeInOnAppear(duration: Double = 0.24, isReady: Bool = true) -> some View {
-        modifier(PlozzFadeInOnAppear(duration: duration, isReady: isReady))
+    func plozzFadeInOnAppear(
+        duration: Double = 0.24, isReady: Bool = true, hasRevealed: Binding<Bool>? = nil
+    ) -> some View {
+        modifier(PlozzFadeInOnAppear(duration: duration, isReady: isReady, hasRevealed: hasRevealed))
     }
 }

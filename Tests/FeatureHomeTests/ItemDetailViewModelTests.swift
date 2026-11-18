@@ -1111,6 +1111,36 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(model.state.value?.item.overview, french.overview)
     }
 
+    func testMissingFrenchSnapshotCannotFallBackToEnglishNavigationSnapshot() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = DetailSnapshotCache(directory: directory)
+        let seed = MediaItem(id: "movie", title: "Movie", kind: .movie, locallyValidatedPlayableSource: false)
+        var english = seed
+        english.overview = "English cached description"
+        await cache.store(.init(item: english, children: []), for: "_|movie")
+        let gate = AsyncGate()
+        let started = AsyncGate()
+        let model = ItemDetailViewModel(
+            provider: nil, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
+            externalMetadataResolver: { _, region in
+                started.open()
+                await gate.wait()
+                return .init(enrichment: MetadataEnrichment(), availability: .init(regionCode: region))
+            },
+            metadataLanguage: "fr", onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(), snapshotCache: cache
+        )
+        defer { model.suspendEnrichment() }
+        let load = Task { await model.load() }
+        await started.wait()
+        await waitUntil { !model.isRestoringSnapshot }
+        XCTAssertNil(model.state.value?.item.overview)
+        gate.open()
+        await load.value
+        XCTAssertNil(model.state.value?.item.overview)
+    }
+
     func testCancelledDetailEnrichmentCannotPublishLateCrew() async {
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie, overview: "Plot")
         let provider = FakeMediaProvider(allItems: [item], kind: .jellyfin)
@@ -1582,7 +1612,6 @@ final class ItemDetailViewModelTests: XCTestCase {
                     initialItem: seed,
                     isDiscoveryItem: true,
                     externalMetadataResolver: { _, region in
-                        XCTFail("An owned title must load its real library metadata")
                         return ExternalTitleMetadata(
                             enrichment: MetadataEnrichment(),
                             availability: ExternalTitleAvailability(regionCode: region)
@@ -1804,7 +1833,6 @@ final class ItemDetailViewModelTests: XCTestCase {
         let vm = ItemDetailViewModel(
             provider: provider, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
             externalMetadataResolver: { _, region in
-                XCTFail("Compatible indexed ownership must reach the library detail")
                 return ExternalTitleMetadata(
                     enrichment: MetadataEnrichment(),
                     availability: ExternalTitleAvailability(regionCode: region)
@@ -1876,6 +1904,109 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertGreaterThan(provider.itemCallCount(for: owned.id), 0)
         XCTAssertEqual(vm.currentSourceForDisplay?.accountID, "silo")
         vm.suspendEnrichment()
+    }
+
+    func testDiscoveryMetadataStartsWhileOwnershipSearchIsPending() async {
+        let ownershipGate = AsyncGate()
+        let metadataStarted = expectation(description: "Metadata overlaps ownership")
+        let seed = MediaItem(
+            id: "discovery-overlap", title: "Discovery", kind: .movie,
+            locallyValidatedPlayableSource: false
+        )
+        let vm = ItemDetailViewModel(
+            provider: nil, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
+            externalMetadataResolver: { _, region in
+                metadataStarted.fulfill()
+                return .init(
+                    enrichment: MetadataEnrichment(overview: .init(value: "Resolved", source: .tmdb)),
+                    availability: ExternalTitleAvailability(regionCode: region)
+                )
+            },
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            crossServerSourceResolver: { _ in
+                await ownershipGate.wait()
+                return .init()
+            }
+        )
+        defer { vm.suspendEnrichment() }
+        let load = Task { await vm.load() }
+        await fulfillment(of: [metadataStarted], timeout: 1)
+        XCTAssertFalse(vm.artworkSourceIsReady, "Overlapping requests must not bypass ownership.")
+        ownershipGate.open()
+        await load.value
+        XCTAssertEqual(vm.state.value?.item.overview, "Resolved")
+        XCTAssertTrue(vm.artworkSourceIsReady)
+    }
+
+    func testOwnedDiscoveryDoesNotWaitForOrPublishSpeculativeExternalMetadata() async {
+        let gate = AsyncGate()
+        let completed = expectation(description: "Native detail completes without external metadata")
+        let seed = MediaItem(
+            id: "discovery-native", title: "Movie", kind: .movie,
+            providerIDs: ["Tmdb": "123"], locallyValidatedPlayableSource: false
+        )
+        let owned = MediaItem(
+            id: "owned", title: "Movie", kind: .movie, overview: "Library overview",
+            providerIDs: ["Tmdb": "123"]
+        )
+        let provider = FakeMediaProvider(allItems: [owned], kind: .plex, accountID: "account")
+        let vm = ItemDetailViewModel(
+            provider: nil, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
+            externalMetadataResolver: { _, region in
+                await gate.wait()
+                return .init(
+                    enrichment: MetadataEnrichment(overview: .init(value: "External overview", source: .tmdb)),
+                    availability: .init(regionCode: region)
+                )
+            },
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            alternateProviderResolver: { $0 == "account" ? provider : nil },
+            crossServerSourceResolver: { _ in .init(sources: [
+                MediaSourceRef(accountID: "account", itemID: owned.id, kind: .movie, providerKind: .plex)
+            ]) }
+        )
+        defer { vm.suspendEnrichment() }
+        let load = Task { await vm.load(); completed.fulfill() }
+        await fulfillment(of: [completed], timeout: 2)
+        gate.open()
+        await load.value
+        XCTAssertFalse(vm.isDiscoveryItem)
+        XCTAssertEqual(vm.state.value?.item.id, owned.id)
+        XCTAssertEqual(vm.state.value?.item.overview, owned.overview)
+    }
+
+    func testDiscoveryRestoresSnapshotWhileOwnershipAndMetadataArePending() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = DetailSnapshotCache(directory: directory)
+        let seed = MediaItem(
+            id: "cached-discovery", title: "Discovery", kind: .movie,
+            locallyValidatedPlayableSource: false
+        )
+        var cached = seed
+        cached.overview = "Previously resolved overview"
+        await cache.store(.init(item: cached, children: []), for: "_|\(seed.id)")
+        let gate = AsyncGate()
+        let vm = ItemDetailViewModel(
+            provider: nil, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
+            externalMetadataResolver: { _, region in
+                await gate.wait()
+                return .init(enrichment: MetadataEnrichment(), availability: .init(regionCode: region))
+            },
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            crossServerSourceResolver: { _ in await gate.wait(); return .init() },
+            snapshotCache: cache
+        )
+        defer { vm.suspendEnrichment() }
+        let load = Task { await vm.load() }
+        await waitUntil { vm.state.value?.item.overview == cached.overview }
+        XCTAssertEqual(vm.state.value?.item.overview, cached.overview)
+        XCTAssertFalse(vm.artworkSourceIsReady)
+        gate.open()
+        await load.value
     }
 
     func testDiscoveryPagePersistsItsSnapshotForTheNextOpen() async throws {
@@ -2092,11 +2223,23 @@ final class ItemDetailViewModelTests: XCTestCase {
         let provider = FakeMediaProvider(allItems: [])
         let entered = AsyncGate()
         let release = AsyncGate()
+        let metadataEntered = AsyncGate()
+        let metadataCancelled = expectation(description: "Speculative metadata is cancelled with the page")
         let vm = ItemDetailViewModel(
             provider: provider,
             itemID: seed.id,
             initialItem: seed,
             isDiscoveryItem: true,
+            externalMetadataResolver: { _, region in
+                await withTaskCancellationHandler {
+                    metadataEntered.open()
+                    await release.wait()
+                    return .init(
+                        enrichment: MetadataEnrichment(overview: .init(value: "Late metadata", source: .tmdb)),
+                        availability: .init(regionCode: region)
+                    )
+                } onCancel: { metadataCancelled.fulfill() }
+            },
             alternateProviderResolver: { _ in provider },
             crossServerSourceResolver: { _ in
                 entered.open()
@@ -2106,12 +2249,15 @@ final class ItemDetailViewModelTests: XCTestCase {
         )
         let load = Task { await vm.load() }
         await entered.wait()
+        await metadataEntered.wait()
         load.cancel()
+        await fulfillment(of: [metadataCancelled], timeout: 1)
         release.open()
         await load.value
 
         XCTAssertTrue(vm.isDiscoveryItem)
         XCTAssertEqual(vm.state.value?.item.id, seed.id)
+        XCTAssertNil(vm.state.value?.item.overview)
         XCTAssertTrue(provider.itemCallCounts.isEmpty)
     }
 
