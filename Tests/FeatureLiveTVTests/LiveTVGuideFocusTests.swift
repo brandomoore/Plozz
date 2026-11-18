@@ -1,4 +1,5 @@
 #if DEBUG && os(tvOS)
+import CoreUI
 import FeatureLiveTVCore
 import Observation
 import SwiftUI
@@ -8,6 +9,25 @@ import XCTest
 
 @MainActor
 final class LiveTVGuideFocusTests: XCTestCase {
+    func testFocusedChannelKeepsBackgroundGuideLoadingQuietButShowsFailure() throws {
+        func image(_ state: LiveTVGuideGapState?, focused: Bool = true) throws -> Data {
+            let renderer = ImageRenderer(content: PrototypeGuideGap(
+                channelName: "Weather", height: PrototypeLayout.rowHeight,
+                state: state, showsStatus: focused
+            )
+            .environment(\.themePalette, ThemePalette.dark)
+            .frame(width: 500))
+            renderer.scale = 1
+            return try XCTUnwrap(renderer.uiImage?.pngData())
+        }
+
+        let quiet = try image(nil)
+        XCTAssertEqual(try image(.loading), quiet)
+        XCTAssertEqual(try image(.unrequested), quiet)
+        XCTAssertEqual(try image(.failed, focused: false), quiet)
+        XCTAssertNotEqual(try image(.failed), quiet)
+    }
+
     func testSearchPresentationConfiguration() {
         let controller = PrototypeSearchController(searchResultsController: UIViewController())
         controller.modalPresentationStyle = .custom

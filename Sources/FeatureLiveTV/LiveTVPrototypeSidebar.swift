@@ -94,59 +94,29 @@ struct PrototypeBrowseSidebar: View {
             .background { nativeFocusRequest(for: .source) }
             .disabled(isFocusDisabled(.source))
 
-            Button(action: search) {
-                Label(isSearching ? "Back to guide" : "Search", systemImage: isSearching ? "chevron.backward" : "magnifyingglass")
-                    .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
-                    .padding(.horizontal, PrototypeLayout.gap)
-            }
-            .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
-            .padding(PrototypeLayout.controlInset)
-            .background { PrototypeControlSurface() }
-            .focused($focused, equals: .search)
-            .background { nativeFocusRequest(for: .search) }
-            .disabled(isFocusDisabled(.search))
-            .accessibilityValue(model.query)
-            .accessibilityIdentifier("live-tv-search")
-            #if DEBUG
-            .modifier(PrototypeBrowseLayoutObservation(element: "sidebar-search"))
-            #endif
-            #endif
-            if let multiviews {
-                Button(action: multiviews) {
-                    Label("Multiviews", systemImage: "rectangle.split.2x2")
-                        #if os(iOS)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        #endif
+            HStack(spacing: PrototypeLayout.smallGap) {
+                Button(action: search) {
+                    Label(isSearching ? "Back to guide" : "Search", systemImage: isSearching ? "chevron.backward" : "magnifyingglass")
+                        .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
+                        .padding(.horizontal, PrototypeLayout.gap)
                 }
-                    #if os(tvOS)
-                    .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
-                    .buttonStyle(PrototypeButtonStyle(surface: .control))
-                    #else
-                    .buttonStyle(.bordered)
-                    #endif
-                    .focused($focused, equals: .multiviews)
-                    .background { nativeFocusRequest(for: .multiviews) }
-                    .disabled(isFocusDisabled(.multiviews))
-                    .accessibilityIdentifier("live-tv-multiview-favorites")
+                .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
+                .padding(PrototypeLayout.controlInset)
+                .background { PrototypeControlSurface() }
+                .focused($focused, equals: .search)
+                .background { nativeFocusRequest(for: .search) }
+                .disabled(isFocusDisabled(.search))
+                .accessibilityValue(model.query)
+                .accessibilityIdentifier("live-tv-search")
+                #if DEBUG
+                .modifier(PrototypeBrowseLayoutObservation(element: "sidebar-search"))
+                #endif
+
+                sidebarActions
             }
-            if let manageChannels {
-                Button(action: manageChannels) {
-                    Label("Manage channels", systemImage: "slider.horizontal.3")
-                        #if os(iOS)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        #endif
-                }
-                    #if os(tvOS)
-                    .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
-                    .buttonStyle(PrototypeButtonStyle(surface: .control))
-                    #else
-                    .buttonStyle(.bordered)
-                    #endif
-                    .focused($focused, equals: .manageChannels)
-                    .background { nativeFocusRequest(for: .manageChannels) }
-                    .disabled(isFocusDisabled(.manageChannels))
-                    .accessibilityIdentifier("live-tv-manage-channels")
-            }
+            #else
+            sidebarActions
+            #endif
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -238,6 +208,8 @@ struct PrototypeBrowseSidebar: View {
         .onMoveCommand { direction in
             guard focused != nil else { return }
             if direction == (layoutDirection == .rightToLeft ? .left : .right) {
+                if focused == .search, multiviews != nil || manageChannels != nil { return }
+                if focused == .multiviews, manageChannels != nil { return }
                 enterGuide()
             }
         }
@@ -255,6 +227,55 @@ struct PrototypeBrowseSidebar: View {
             guard request > 0, active, !restoresCategoryFocus else { return }
             completedCategoryFocusRequest = categoryFocusRequest
             focused = .search
+        }
+    }
+
+    @ViewBuilder private var sidebarActions: some View {
+        if let multiviews {
+            Button(action: multiviews) {
+                Label("Multiviews", systemImage: "rectangle.split.2x2")
+                    #if os(tvOS)
+                    .labelStyle(.iconOnly)
+                    .frame(width: PrototypeLayout.controlHeight, height: PrototypeLayout.controlHeight)
+                    #else
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    #endif
+            }
+            #if os(tvOS)
+            .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
+            .padding(PrototypeLayout.controlInset)
+            .background { PrototypeControlSurface() }
+            .help("Multiviews")
+            #else
+            .buttonStyle(.bordered)
+            #endif
+            .focused($focused, equals: .multiviews)
+            .background { nativeFocusRequest(for: .multiviews) }
+            .disabled(isFocusDisabled(.multiviews))
+            .accessibilityIdentifier("live-tv-multiview-favorites")
+        }
+        if let manageChannels {
+            Button(action: manageChannels) {
+                Label("Manage channels", systemImage: "slider.horizontal.3")
+                    #if os(tvOS)
+                    .labelStyle(.iconOnly)
+                    .frame(width: PrototypeLayout.controlHeight, height: PrototypeLayout.controlHeight)
+                    #else
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    #endif
+            }
+            #if os(tvOS)
+            .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
+            .padding(PrototypeLayout.controlInset)
+            .background { PrototypeControlSurface() }
+            .help("Manage channels")
+            #else
+            .buttonStyle(.bordered)
+            #endif
+            .focused($focused, equals: .manageChannels)
+            .background { nativeFocusRequest(for: .manageChannels) }
+            .disabled(isFocusDisabled(.manageChannels))
+            .accessibilityIdentifier("live-tv-manage-channels")
         }
     }
 }

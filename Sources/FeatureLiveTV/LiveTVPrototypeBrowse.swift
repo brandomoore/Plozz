@@ -1185,7 +1185,9 @@ struct PrototypeGuideRow: View {
         .focused(focus, equals: target)
         .disabled(isFocusDisabled(target))
         .accessibilityLabel(Text(channel.name))
-        .accessibilityValue(guideGapState.map { Text($0.title) } ?? Text(verbatim: ""))
+        .accessibilityValue(guideGapState.flatMap {
+            $0 == .loading || $0 == .unrequested ? nil : Text($0.title)
+        } ?? Text(verbatim: ""))
         .accessibilityHint(Text(selectionAction ?? "Play channel"))
         .accessibilityAddTraits(selectionMarked ? .isSelected : [])
         .accessibilityIdentifier("live-tv-channel-content-\(section.rawValue)-\(channel.number)-\(slotID ?? "whole")")
@@ -1414,7 +1416,7 @@ struct PrototypeGuideGap: View {
                 .font(.system(size: fontSize))
                 .foregroundStyle(palette.primaryText.opacity(0.8))
                 .lineLimit(2)
-            if showsStatus, let state, state == .loading || state == .failed || state == .unrequested {
+            if showsStatus, let state, state == .failed {
                 Text(state.title)
                     .font(.caption)
                     .foregroundStyle(palette.secondaryText)

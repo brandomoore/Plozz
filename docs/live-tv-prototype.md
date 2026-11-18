@@ -36,6 +36,9 @@ add an inline progress block or resize the guide. It briefly shows
 the outcome. Dismissal hides only that request's notification; loading continues
 and its final result remains in Sources. Unrelated transient messages
 take priority. Ordinary background refreshes stay quiet.
+Focused channel rows also keep routine loading and not-yet-requested guide
+windows silent, including their accessibility values. Nearby channel/time
+windows still load in the background; genuine guide failures remain visible.
 
 Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
@@ -208,7 +211,10 @@ are contextual actions in **More**; Live TV has no separate profile button.
 Other pages' profile shortcuts are unchanged. Category tiles use
 shorter minimum heights while retaining channel counts and Dynamic Type growth.
 On Apple TV, the categories sidebar places the same source menu above
-**Search**. It shows the current source, supports **All**, and opens the existing
+**Search**, with icon-only **Multiviews** and **Manage channels** buttons beside
+Search. These actions retain accessible names and help text. Directional focus
+moves across the action row before entering the guide, and mirrors in RTL.
+The source menu shows the current source, supports **All**, and opens the existing
 **Add Source** choices. Source filtering shares the mobile authorization and
 category-retention behavior without changing connected sources or active playback.
 Closing the menu returns focus to its button; entering the sidebar from the guide
