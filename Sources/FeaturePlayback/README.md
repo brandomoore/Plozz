@@ -1888,6 +1888,23 @@ cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains
 video-rect mapping, HDR brightness and control avoidance.
 
+`ASSSubtitleRendererTests` checks authored sign starts and ends at millisecond
+boundaries. Its opt-in `testLocalASSDriverBoundaryTiming` probe
+(`PLOZZ_ASS_TIMING_PROBE=1`) warms the rasterizer, then measures callback delivery
+for short original vector cues at simulated 23.976, 24 and 60 Hz tick cadences.
+It reports every boundary and rejects missing transitions; it is not a
+wall-clock latency gate. These measurements exclude video decoding, SwiftUI
+overlay composition, physical display latency and cold font initialization.
+Passing parser/rasterizer tests alone does not establish frame-accurate A/V sync;
+small reported offsets require the affected media and a rendered comparison.
+The app-hosted `NativeSubtitlePresentationTests.testLocalASSVideoBoundaryTiming`
+probe (`PLOZZ_ASS_VIDEO_TIMING_PROBE=1`) uses `Fixtures/ass-sync.mkv`: an original
+640x360, 24 fps black video with a green reference square and a separate white
+ASS vector square, both active for the first half of seconds 2 through 9.
+It logs overlay delivery against the engine clock. A screen recording must
+compare the two squares' actual painted transitions separately; the callback
+log is not proof of compositor timing or physical Apple TV/iPhone behavior.
+
 Authored ASS frames keep clearly separated upper and lower artwork in separate
 bitmap regions. The upper region stays fixed; only a lower region that intersects
 visible controls can lift. Its clearance envelope absorbs small animated
