@@ -1775,7 +1775,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 } else {
                     guideBrowser(
                         closeSearch: closeSearch,
-                        leadingExit: layout.availableSidebarWidth > 0 ? revealCategories : nil
+                        leadingExit: layout.availableSidebarWidth > 0 && categorySidebarCollapsed
+                            ? revealCategories : nil
                     )
                     .disabled(usesNativeFullscreen && controlsActive && !categorySidebarCollapsed)
                 }

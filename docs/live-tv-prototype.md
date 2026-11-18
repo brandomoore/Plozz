@@ -354,6 +354,9 @@ clearance below native navigation. Pinned navigation keeps its existing inset.
 The full-height source/Search/categories pane collapses when focus enters the TV
 guide and returns on a leading-edge move. The pane slides and fades as one unit
 over 0.28 seconds while the guide resizes; Reduce Motion suppresses the animation.
+The reveal interceptor is active only while the pane is collapsed; the same
+leading-edge press must transfer focus to the selected category, not merely open
+the pane while the guide continues intercepting focus exits.
 With pinned navigation, the moving pane fades through the extra content inset,
 reaching full transparency before the navigation icons. The stationary feather
 does not dim the resting controls or leave a translucent copy behind the rail.
