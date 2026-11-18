@@ -193,7 +193,10 @@ public enum UpcomingFeedLoader {
         isCurrent: @escaping @MainActor @Sendable () -> Bool
     ) async throws -> (items: [MediaItem], failed: Bool) {
         try await checkScope(isCurrent)
-        let libraries = try await account.provider.libraries()
+        let libraries = try await account.provider.libraries().filter {
+            !$0.isMusic && [.movie, .series, .folder, .unknown].contains($0.kind)
+        }
+        guard !libraries.isEmpty else { return ([], false) }
         var series: [MediaItem] = []
         var failed = false
         for library in libraries where library.kind == .series || library.kind == .folder || library.kind == .unknown {

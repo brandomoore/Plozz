@@ -11,15 +11,17 @@ final class ContentRefreshCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.coordinator.request)
     }
 
-    func testShortForegroundAbsenceDoesNotRefresh() {
-        let harness = ContentRefreshHarness()
-        harness.show(ContentRefreshTestConstants.home)
-
-        harness.coordinator.applicationWillResignActive()
-        harness.advance(by: ContentRefreshTestConstants.shortAway)
-        harness.coordinator.applicationDidBecomeActive()
-
-        XCTAssertNil(harness.coordinator.request)
+    func testShortForegroundAbsenceRefreshesHomeButNotDetail() {
+        for profile in [ContentRefreshProfile.tvOS, .iOS] {
+            for surface in [ContentRefreshTestConstants.home, ContentRefreshTestConstants.movie] {
+                let harness = ContentRefreshHarness(profile: profile)
+                harness.show(surface)
+                harness.coordinator.applicationWillResignActive()
+                harness.advance(by: ContentRefreshTestConstants.shortAway)
+                harness.coordinator.applicationDidBecomeActive()
+                XCTAssertEqual(harness.coordinator.request != nil, surface.kind == .home)
+            }
+        }
     }
 
     func testLongForegroundAbsenceRefreshesHome() {
@@ -114,10 +116,11 @@ final class ContentRefreshCoordinatorTests: XCTestCase {
                 ContentRefreshTestConstants.home, ContentRefreshTestConstants.series,
                 ContentRefreshTestConstants.episode, ContentRefreshTestConstants.movie
             ] {
-                let threshold = surface.kind == .home
-                    ? ContentRefreshTestConstants.homeThreshold : ContentRefreshTestConstants.detailThreshold
                 for foreground in [true, false] {
-                    for duration in [threshold - 1, threshold, threshold + 1] {
+                    let threshold = surface.kind == .home
+                        ? (foreground ? 0 : ContentRefreshTestConstants.homeThreshold)
+                        : ContentRefreshTestConstants.detailThreshold
+                    for duration in [max(0, threshold - 1), threshold, threshold + 1] {
                         let harness = ContentRefreshHarness(profile: profile)
                         harness.show(surface)
                         if foreground { harness.coordinator.applicationWillResignActive() }

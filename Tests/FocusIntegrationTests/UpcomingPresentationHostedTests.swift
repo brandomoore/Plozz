@@ -172,6 +172,10 @@ final class UpcomingPresentationHostedTests: XCTestCase {
             }.sorted { $0.minX < $1.minX }
             let dates = Array(frames.dropFirst().dropLast())
             XCTAssertEqual(dates.count, 7)
+            for arrow in [try XCTUnwrap(frames.first), try XCTUnwrap(frames.last)] {
+                XCTAssertGreaterThanOrEqual(arrow.width, 64, "Glass must surround the control, not hug the thin chevron.")
+                XCTAssertGreaterThanOrEqual(arrow.height, 80)
+            }
             let first = try XCTUnwrap(dates.first)
             for frame in dates {
                 XCTAssertEqual(frame.width, first.width, accuracy: 1)
@@ -344,6 +348,20 @@ final class UpcomingPresentationHostedTests: XCTestCase {
         let agenda = try XCTUnwrap(scrolls.first { $0.contentSize.height > $0.bounds.height + 1 })
         XCTAssertFalse(rail === agenda)
         XCTAssertLessThan(rail.bounds.height, agenda.bounds.height)
+        let root = try XCTUnwrap(controller.view)
+        func firstHeaderControl() -> (any UIFocusItem)? {
+            focusItems(in: window).filter {
+                guard let frame = NativeFocusRegion.frame(of: $0, in: root) else { return false }
+                return frame.midX > root.bounds.midX
+            }.min {
+                (NativeFocusRegion.frame(of: $0, in: root)?.midY ?? .infinity)
+                    < (NativeFocusRegion.frame(of: $1, in: root)?.midY ?? .infinity)
+            }
+        }
+        try await waitUntil { firstHeaderControl() != nil }
+        let headerControl = try XCTUnwrap(firstHeaderControl())
+        let headerFrame = try XCTUnwrap(NativeFocusRegion.frame(of: headerControl, in: root))
+        XCTAssertLessThan(headerFrame.maxY, first.convert(first.bounds, to: root).minY)
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
         for day in 1..<dayCount {
             func visibleCard() -> UIView? {
@@ -367,6 +385,20 @@ final class UpcomingPresentationHostedTests: XCTestCase {
             try await waitUntil { NativeFocusRegion.contains(system.focusedItem, in: target) }
         }
         XCTAssertGreaterThan(agenda.contentOffset.y, agenda.bounds.height * 2)
+        let scrolledHeader = try XCTUnwrap(NativeFocusRegion.frame(of: headerControl, in: root))
+        XCTAssertLessThan(scrolledHeader.maxY, agenda.convert(agenda.bounds, to: root).minY,
+                          "Calendar and Filters must scroll away with the title, not remain pinned.")
+        _ = try capture(window, name: "upcoming-header-scrolled-away")
+        controller.target = headerControl
+        system.requestFocusUpdate(to: controller)
+        system.updateFocusIfNeeded()
+        try await waitUntil {
+            guard let focused = NativeFocusRegion.frame(of: system.focusedItem, in: root),
+                  let returned = NativeFocusRegion.frame(of: headerControl, in: root) else { return false }
+            return returned.contains(CGPoint(x: focused.midX, y: focused.midY))
+                && agenda.convert(agenda.bounds, to: root).contains(returned)
+        }
+        _ = try capture(window, name: "upcoming-header-focus-return")
     }
 
     func testPinnedUpcomingStartsAtWeekAndKeepsFocusedReleaseBelowItsHeading() async throws {
