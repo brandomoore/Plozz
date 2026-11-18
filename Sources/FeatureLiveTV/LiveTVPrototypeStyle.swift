@@ -60,10 +60,12 @@ enum PrototypeLayout {
     #endif
     #if os(tvOS)
     static let stationColumnWidth: CGFloat = 160
-    static let guideStationArtworkInset: CGFloat = 8
+    static let guideStationArtworkInset: CGFloat = 4
+    static let guideStationHorizontalArtworkInset: CGFloat? = 20
     #else
     static let stationColumnWidth = stationSize * 1.75 + rowInset * 2
     static let guideStationArtworkInset = stationArtworkInset
+    static let guideStationHorizontalArtworkInset: CGFloat? = nil
     #endif
     static var guideShape: UnevenRoundedRectangle {
         #if os(tvOS)
@@ -239,6 +241,7 @@ struct PrototypeStationMark: View {
     var plateSize: CGSize? = nil
     var cornerRadius: CGFloat = PrototypeLayout.logoRadius
     var contentInset: CGFloat? = nil
+    var horizontalContentInset: CGFloat? = nil
     var usesControlBackground = false
 
     private var dimensions: CGSize {
@@ -253,6 +256,7 @@ struct PrototypeStationMark: View {
         ChannelLogoArtwork(
             name: channel.name, logoURL: channel.logoURL, size: dimensions,
             cornerRadius: cornerRadius, artworkInset: artworkInset,
+            horizontalArtworkInset: horizontalContentInset,
             plozzChannelID: channel.source == .plozz ? channel.id : nil,
             plozzChannelMood: channel.plozzChannelMood,
             usesControlBackground: usesControlBackground
@@ -299,7 +303,9 @@ struct PrototypeGuideButtonStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         #if os(tvOS)
         if focusStyle.usesSystemEffect {
-            nativeButton(configuration)
+            PrototypeNativeGuideButton(
+                configuration: configuration, surface: surface, focusChanged: focusChanged
+            )
         } else {
             fallback(configuration)
         }
@@ -307,18 +313,6 @@ struct PrototypeGuideButtonStyle: PrimitiveButtonStyle {
         fallback(configuration)
         #endif
     }
-
-    #if os(tvOS)
-    private func nativeButton(_ configuration: Configuration) -> some View {
-        Button(role: configuration.role, action: configuration.trigger) {
-            PrototypeNativeGuideLabel(
-                content: configuration.label, surface: surface, focusChanged: focusChanged
-            )
-        }
-        .plozzActionButton(role: .secondary)
-        .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
-    }
-    #endif
 
     private func fallback(_ configuration: Configuration) -> some View {
         Button(role: configuration.role, action: configuration.trigger) {
@@ -332,7 +326,41 @@ struct PrototypeGuideButtonStyle: PrimitiveButtonStyle {
 }
 
 #if os(tvOS)
-private struct PrototypeNativeGuideLabel<Content: View>: View {
+private struct PrototypeNativeGuideButton: View {
+    let configuration: PrimitiveButtonStyleConfiguration
+    let surface: PrototypeButtonSurface
+    let focusChanged: ((Bool) -> Void)?
+    @State private var focused = false
+
+    var body: some View {
+        Button(role: configuration.role, action: configuration.trigger) {
+            PrototypeNativeGuideLabel(content: configuration.label, surface: surface) { value in
+                focused = value
+                focusChanged?(value)
+            }
+        }
+        .modifier(PrototypeGuideNativeMaterial(focused: focused))
+    }
+}
+
+struct PrototypeGuideNativeMaterial: ViewModifier {
+    let focused: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(tvOS 26.1, *) {
+            // Identity removes resting glass without replacing the native focus owner.
+            content
+                .buttonStyle(.glass(focused ? .regular : .identity))
+                .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
+        } else {
+            content.buttonStyle(.bordered)
+                .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
+        }
+    }
+}
+
+struct PrototypeNativeGuideLabel<Content: View>: View {
     let content: Content
     let surface: PrototypeButtonSurface
     let focusChanged: ((Bool) -> Void)?
@@ -354,6 +382,25 @@ private struct PrototypeNativeGuideLabel<Content: View>: View {
     }
 }
 #endif
+
+struct PrototypeGuideStationStyle: ViewModifier {
+    let focused: Bool
+    let focusChanged: ((Bool) -> Void)?
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            content.modifier(PrototypeGuideNativeMaterial(focused: focused))
+        } else {
+            content.buttonStyle(PrototypeGuideButtonStyle(surface: .station, focusChanged: focusChanged))
+        }
+        #else
+        content.buttonStyle(PrototypeGuideButtonStyle(surface: .station, focusChanged: focusChanged))
+        #endif
+    }
+}
 
 enum PrototypeButtonSurface: Equatable {
     case standard, guide, station, program, control

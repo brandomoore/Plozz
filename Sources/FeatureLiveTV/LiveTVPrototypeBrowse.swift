@@ -1269,11 +1269,12 @@ struct PrototypeGuideStation: View {
     var openLibraryItem: ((LibraryChannelItem) -> Void)?
     var selectForPreview: (() -> Void)?
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @State private var nativeFocused = false
 
     var body: some View {
         Group {
             if selectionAction != nil {
-                Button(action: tune) { stationMark }
+                Button(action: tune) { stationLabel }
                     .contextMenu {
                         PrototypeChannelActions(
                             favorite: favorite, play: tune, toggleFavorite: toggleFavorite, hide: hide,
@@ -1284,18 +1285,18 @@ struct PrototypeGuideStation: View {
                     focusChanged?(true)
                     selectForPreview()
                 } label: {
-                    stationMark
+                    stationLabel
                 }
                 .contextMenu { channelActions }
             } else {
                 Menu {
                     channelActions
                 } label: {
-                    stationMark
+                    stationLabel
                 }
             }
         }
-        .buttonStyle(PrototypeGuideButtonStyle(surface: .station, focusChanged: focusChanged))
+        .modifier(PrototypeGuideStationStyle(focused: nativeFocused, focusChanged: focusChanged))
         #if os(tvOS)
         .menuStyle(.button)
         .frame(width: width ?? PrototypeLayout.stationColumnWidth, height: height ?? PrototypeLayout.rowHeight)
@@ -1330,6 +1331,22 @@ struct PrototypeGuideStation: View {
         }
     }
 
+    @ViewBuilder
+    private var stationLabel: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            PrototypeNativeGuideLabel(content: stationMark, surface: .station) { value in
+                nativeFocused = value
+                focusChanged?(value)
+            }
+        } else {
+            stationMark
+        }
+        #else
+        stationMark
+        #endif
+    }
+
     private var stationMark: some View {
         PrototypeStationMark(
             channel: channel,
@@ -1338,6 +1355,7 @@ struct PrototypeGuideStation: View {
             ),
             cornerRadius: PrototypeLayout.rowRadius,
             contentInset: PrototypeLayout.guideStationArtworkInset,
+            horizontalContentInset: PrototypeLayout.guideStationHorizontalArtworkInset,
             usesControlBackground: usesNativeStationBackground
         )
         .clipped()

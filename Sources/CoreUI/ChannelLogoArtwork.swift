@@ -10,6 +10,7 @@ public struct ChannelLogoArtwork: View {
     private let size: CGSize
     private let cornerRadius: CGFloat
     private let artworkInset: CGFloat
+    private let horizontalArtworkInset: CGFloat?
     private let usesControlBackground: Bool
     private let plozzChannelID: String?
     private let plozzChannelMood: LibraryChannelArtworkMood?
@@ -25,6 +26,7 @@ public struct ChannelLogoArtwork: View {
         size: CGSize,
         cornerRadius: CGFloat,
         artworkInset: CGFloat? = nil,
+        horizontalArtworkInset: CGFloat? = nil,
         plozzChannelID: String? = nil,
         plozzChannelMood: LibraryChannelArtworkMood? = nil,
         usesControlBackground: Bool = false
@@ -34,6 +36,7 @@ public struct ChannelLogoArtwork: View {
         self.size = size
         self.cornerRadius = cornerRadius
         self.artworkInset = artworkInset ?? size.height * 20 / 128
+        self.horizontalArtworkInset = horizontalArtworkInset
         self.usesControlBackground = usesControlBackground
         self.plozzChannelID = plozzChannelID
         self.plozzChannelMood = plozzChannelMood
@@ -65,7 +68,8 @@ public struct ChannelLogoArtwork: View {
                     isTile: ChannelLogoPlate.showsAsTile(current?.tone),
                     usesControlBackground: usesControlBackground,
                     usesSemanticInk: usesSemanticInk,
-                    sourceBackground: current?.tone?.backgroundPlate
+                    sourceBackground: current?.tone?.backgroundPlate,
+                    horizontalArtworkInset: horizontalArtworkInset
                 )
             }
         }
@@ -195,6 +199,7 @@ struct ChannelLogoPlateContent: View {
     var usesControlBackground = false
     var usesSemanticInk = false
     var sourceBackground: HeroBackgroundSample?
+    var horizontalArtworkInset: CGFloat?
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.channelLogoPreservesSourceCorners) private var preservesSourceCorners
 
@@ -236,7 +241,7 @@ struct ChannelLogoPlateContent: View {
                         .renderingMode(.original)
                         .resizable()
                         .scaledToFit()
-                        .padding(usesControlBackground && sourceBackground != nil ? 4 : 0)
+                        .padding(usesControlBackground && sourceBackground != nil ? 2 : 0)
                         .background {
                             if usesControlBackground, let sourceBackground {
                                 RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -259,7 +264,7 @@ struct ChannelLogoPlateContent: View {
             }
         }
         .frame(
-            width: max(1, size.width - inset * 2),
+            width: max(1, size.width - (horizontalArtworkInset ?? inset) * 2),
             height: max(1, size.height - inset * 2)
         )
         .frame(width: size.width, height: size.height)

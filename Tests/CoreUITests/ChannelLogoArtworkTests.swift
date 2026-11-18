@@ -7,6 +7,37 @@ import XCTest
 
 @MainActor
 final class ChannelLogoArtworkTests: XCTestCase {
+    func testIndependentInsetsGiveCompactLogosHeightAndWideLogosSideClearance() throws {
+        for sourceSize in [CGSize(width: 20, height: 20), CGSize(width: 80, height: 20)] {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let logo = UIGraphicsImageRenderer(size: sourceSize, format: format).image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(origin: .zero, size: sourceSize))
+            }
+            let renderer = ImageRenderer(content: ChannelLogoPlateContent(
+                name: "", image: logo, plate: ChannelLogoPlate(tone: nil),
+                size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 4,
+                isTile: true, usesControlBackground: true, horizontalArtworkInset: 20
+            ))
+            renderer.scale = 1
+            let image = try XCTUnwrap(renderer.cgImage)
+            let pixels = try rgbaPixels(image)
+            let ink = stride(from: 0, to: pixels.count, by: 4).filter {
+                pixels[$0] > 200 && pixels[$0 + 1] < 50 && pixels[$0 + 3] > 128
+            }.map { CGPoint(x: ($0 / 4) % image.width, y: ($0 / 4) / image.width) }
+            let width = try XCTUnwrap(ink.map(\.x).max()) - XCTUnwrap(ink.map(\.x).min()) + 1
+            let height = try XCTUnwrap(ink.map(\.y).max()) - XCTUnwrap(ink.map(\.y).min()) + 1
+            XCTAssertEqual(width / height, sourceSize.width / sourceSize.height, accuracy: 0.05)
+            if sourceSize.width == sourceSize.height {
+                XCTAssertEqual(height, 64, accuracy: 1)
+            } else {
+                XCTAssertEqual(width, 120, accuracy: 1)
+                XCTAssertGreaterThanOrEqual(try XCTUnwrap(ink.map(\.x).min()), 20)
+            }
+        }
+    }
+
     func testNativeControlArtworkLeavesItsBackgroundTransparent() throws {
         for id: String? in [nil, "plozz-channel"] {
             for usesControlBackground in [false, true] {

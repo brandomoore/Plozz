@@ -10,14 +10,19 @@ import XCTest
 
 @MainActor
 final class LiveTVGuideFocusTests: XCTestCase {
-    func testNativeStationFocusFillsTheTileInsteadOfOutliningAnOpaquePlate() async throws {
+    func testNativeStationFocusFillsOnlyTheFocusedTileWithoutReplacingItsOwner() async throws {
         try await requireNativeFocus()
-        let channel = try XCTUnwrap(LiveTVPrototypeModel().channels.first)
+        let channels = Array(LiveTVPrototypeModel().channels.prefix(2))
+        XCTAssertEqual(channels.count, 2)
         let window = makeWindow(
-            PrototypeGuideStation(
-                channel: channel, section: .channels, favorite: false, playing: false,
-                tune: {}, toggleFavorite: {}, controls: {}, top: {}
-            )
+            VStack(spacing: 16) {
+                ForEach(channels) { channel in
+                    PrototypeGuideStation(
+                        channel: channel, section: .channels, favorite: false, playing: false,
+                        tune: {}, toggleFavorite: {}, controls: {}, top: {}
+                    )
+                }
+            }
             .environment(\.plozzCardFocusStyle, .system)
             .environment(\.themePalette, .dark)
             .preferredColorScheme(.dark)
@@ -31,6 +36,7 @@ final class LiveTVGuideFocusTests: XCTestCase {
         await waitUntil { system.focusedItem != nil }
         let item = try XCTUnwrap(system.focusedItem)
         try await Task.sleep(for: .milliseconds(350))
+        XCTAssertTrue(system.focusedItem === item, "Changing the material must retain the native focus item.")
         var parent = item.parentFocusEnvironment
         while let current = parent, current.focusItemContainer == nil {
             parent = current.parentFocusEnvironment
@@ -46,20 +52,27 @@ final class LiveTVGuideFocusTests: XCTestCase {
         attachment.name = "Native filled station focus"
         attachment.lifetime = .keepAlways
         add(attachment)
-        let strip = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
-            x: frame.midX - 20, y: frame.minY + 12, width: 40, height: 4
-        )))
-        var pixel = [UInt8](repeating: 0, count: 4)
-        let brightness = try pixel.withUnsafeMutableBytes { bytes in
-            let context = try XCTUnwrap(CGContext(
-                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
-                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ))
-            context.draw(strip, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-            return Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])
+        func brightness(at y: CGFloat) throws -> Int {
+            let strip = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
+                x: frame.midX - 20, y: y + 12, width: 40, height: 4
+            )))
+            var pixel = [UInt8](repeating: 0, count: 4)
+            return try pixel.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(
+                    data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(strip, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                return Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])
+            }
         }
-        XCTAssertGreaterThan(brightness, 500,
+        XCTAssertGreaterThan(try brightness(at: frame.minY), 500,
                              "Native focus must fill the tile interior, not just its outer edge.")
+        if #available(tvOS 26.1, *) {
+            let direction: CGFloat = frame.midY < window.bounds.midY ? 1 : -1
+            XCTAssertLessThan(try brightness(at: frame.minY + direction * (frame.height + 16)), 200,
+                              "Unfocused tiles must not keep the prominent glass background.")
+        }
     }
 
     func testChannelRowKeepsTwentyPointInsetsWithoutReducingTheTextSize() {

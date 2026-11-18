@@ -425,6 +425,8 @@ glass surface and focus fill. Monochrome ink and fallback text inherit native
 foreground contrast; pale mixed-colour ink does so while focused. Detected source
 backings stay behind the fitted logo, not across the whole control. Standalone
 artwork keeps its existing plate and colours by default.
+Independent `horizontalArtworkInset` lets dense guide cells reserve side clearance
+for wide marks without reducing the height available to square or tall marks.
 
 `PlozzStartupLogo` starts from a smile and rotates through wink, delight, and
 surprise on successive cold launches. The device-local choice is saved once per

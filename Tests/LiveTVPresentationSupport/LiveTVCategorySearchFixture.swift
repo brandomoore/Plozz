@@ -4,13 +4,13 @@ import FeatureLiveTV
 import FeatureLiveTVCore
 import FeatureProfiles
 import SwiftUI
-#if os(iOS)
 import AVFoundation
+#if os(iOS)
 @testable import AppShelliOS
+#endif
 import FeaturePlayback
 import Observation
 import UIKit
-#endif
 
 struct LiveTVCategorySearchFixture: View {
     @State private var profiles: ProfilesModel
@@ -43,10 +43,14 @@ struct LiveTVCategorySearchFixture: View {
                 #if os(iOS)
                 CategoryPreviewPlayer(playback: playback)
                 #else
-                Color.black
-                    .accessibilityIdentifier("category-search-playback")
-                    .accessibilityLabel(Text(playback.channel.name))
-                    .accessibilityValue(Text(verbatim: playback.isExpanded ? "Fullscreen" : "Preview"))
+                if ProcessInfo.processInfo.arguments.contains("--category-live-preview") {
+                    CategoryPreviewPlayer(playback: playback)
+                } else {
+                    Color.black
+                        .accessibilityIdentifier("category-search-playback")
+                        .accessibilityLabel(Text(playback.channel.name))
+                        .accessibilityValue(Text(verbatim: playback.isExpanded ? "Fullscreen" : "Preview"))
+                }
                 #endif
             }
         }
@@ -80,7 +84,6 @@ struct LiveTVCategorySearchFixture: View {
     }
 }
 
-#if os(iOS)
 private struct CategoryPreviewPlayer: View {
     let playback: LiveTVPrototypePlayback
     @State private var engine: CategoryPreviewEngine
@@ -217,7 +220,6 @@ private final class CategoryPreviewEngine: LiveChannelEngine {
         native.makeVideoOutputView()
     }
 }
-#endif
 
 private final class CategorySearchPreferences: LiveTVPreferencesStoring, @unchecked Sendable {
     private let lock = NSLock()
@@ -229,7 +231,8 @@ private final class CategorySearchPreferences: LiveTVPreferencesStoring, @unchec
 
 private struct CategorySearchSettings: LiveTVViewSettingsStoring {
     func load() -> LiveTVViewSettings {
-        .init(autoPreview: false, hasChosenAutoPreview: true,
+        .init(autoPreview: ProcessInfo.processInfo.arguments.contains("--category-live-preview"),
+              hasChosenAutoPreview: true,
               startsWithCategories: !ProcessInfo.processInfo.arguments.contains("--category-search-guide-first"))
     }
     func save(_ settings: LiveTVViewSettings) {}

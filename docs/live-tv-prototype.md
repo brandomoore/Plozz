@@ -46,13 +46,20 @@ Dynamic Type. Channel names can use two lines; a focused guide failure reserves
 the second line for its error. Phone and tablet row sizes are unchanged.
 TV rows use the shared 16-point content corners rather than the old 32-point
 radius. With System card focus selected, each channel-logo action, channel-name
-button and programme uses a native Liquid Glass button (bordered on older systems)
+button and programme keeps a native button focus owner (bordered on older systems)
 instead of a lifting card or an unhighlighted borderless button.
 Each control's rendering stays inside its own cell, including focused content;
 no focus effect may cover a neighboring logo, programme or row. Custom focus
 preferences retain the existing fallback. Row heights and font sizes are unchanged.
-The TV logo column is 160 points wide, down from 200, with eight-point artwork
-insets instead of 20. System-focus logo labels let the native glass fill the
+On tvOS 26.1 and later, resting guide controls use the identity glass material
+(no glass effect), leaving the original lightweight tile fills and progress
+shading visible over live video. Only the focused control uses regular native
+glass. The button and its style retain their identity across that transition;
+menus receive the native style directly so they do not retain an implicit
+resting glass background. Sidebar controls keep their separate native appearance.
+The TV logo column is 160 points wide, down from 200. Artwork has 20-point side
+clearance and four-point vertical clearance, giving compact marks more height
+without letting wide marks crowd the edges. System-focus logo labels let native glass fill the
 whole cell, rather than covering it with an opaque plate and exposing only a rim.
 Transparent monochrome logos and missing-artwork text use the native foreground;
 pale mixed-colour logos also use that foreground while focused. Source backings
@@ -1397,8 +1404,8 @@ is no prior in-memory history to migrate on the first updated launch.
   identities rather than pretending to be programmes. Subsequent playback/Search
   returns keep their remembered row; an explicit visit to a logo is still
   preserved when returning from browsing controls.
-  Native glass owns the station control's background and filled focus effect.
-  Artwork fits inside without stretching, with eight-point inner padding.
+  Native glass owns the focused station control's filled effect, not its resting background.
+  Artwork fits without stretching, with 20-point side and four-point vertical padding.
   Guide, Search, preview metadata and the player use the same `ChannelLogoArtwork`
   component. Standalone artwork and custom-focus controls retain solid plates.
   Detected source backings are extended unchanged, including white boxes inside
