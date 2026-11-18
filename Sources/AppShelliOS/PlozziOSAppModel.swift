@@ -1642,11 +1642,26 @@ final class PlozziOSAppModel {
         profiles.update(profile)
     }
 
-    /// Closes whichever question is on screen (the sheet was swiped away, or
-    /// Done was tapped).
-    func resolveIdentityPromptForPending() {
-        guard let account = pendingIdentityAccount else { return }
-        concludeIdentityPrompt(for: account.id)
+    struct ServerIdentityQuestion: Identifiable {
+        struct ID: Hashable {
+            let profileID: String
+            let accountID: String
+        }
+        let id: ID
+        let account: Account
+    }
+
+    /// The import stays gated by the persisted question even when a profile
+    /// picker or unlock screen must come first.
+    var presentableIdentityQuestion: ServerIdentityQuestion? {
+        guard canEnterApp, !mustChooseProfile,
+              !requiresLaunchProfileSelection || didCompleteLaunchProfileSelection,
+              lockedSwitch == nil, parentalSwitch == nil, !activeProfileNeedsUnlock,
+              !profiles.activeProfile.needsSetup, pendingFirstRunStep == nil, profileOnboardingStep == nil,
+              pendingLibrarySelection == nil, plexHomeUsers.pendingPlexUserSelection == nil,
+              !isManagedServerPresentationActive, plexPINRequestForAppPresentation == nil,
+              let account = pendingIdentityAccount else { return nil }
+        return .init(id: .init(profileID: profiles.activeProfileID, accountID: account.id), account: account)
     }
 
     /// Closes the question when the sheet goes away.
@@ -1658,8 +1673,10 @@ final class PlozziOSAppModel {
     /// watchlist completely. Declining has to be something a person chooses,
     /// which is what `declineIdentityPrompt` and the button that calls it are
     /// for.
-    func concludeIdentityPrompt(for accountID: String) {
-        resolveIdentityPrompt(for: accountID)
+    func concludeIdentityPrompt(_ question: ServerIdentityQuestion, decline: Bool = false) {
+        guard presentableIdentityQuestion?.id == question.id, inlinePlexPINRequest == nil else { return }
+        if decline { declineIdentityPrompt(for: question.account.id) }
+        else { resolveIdentityPrompt(for: question.account.id) }
     }
 
     /// Re-reads everything scoped to the Plex identity after "watching as"

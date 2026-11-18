@@ -785,13 +785,13 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         reenrichTask?.cancel()
         reenrichGeneration &+= 1
         needsReenrichmentAfterPause = !isInvalidated
-        if isLoading { lastLoadedVisibility = nil }
+        if !isInvalidated, isLoading { lastLoadedVisibility = nil }
     }
 
     /// A replaced account/profile scope must retire its model-owned work now,
     /// not wait for deinit while an outstanding load still retains the model.
     public func invalidate() {
-        upcoming.invalidate()
+        upcoming.retire()
         isInvalidated = true
         recommendationContext.invalidate()
         cancelPendingLoad()

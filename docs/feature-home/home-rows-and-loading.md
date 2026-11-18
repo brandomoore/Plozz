@@ -949,7 +949,9 @@ freshness or carry across changed choices.
 Replacing an account/profile-scoped Home model on either
 platform permanently invalidates it before creating the next one. Late results
 and queued reloads from that retired model cannot publish or restart work; do
-not rely on `deinit` while an outstanding load retains its model.
+not rely on `deinit` while an outstanding load retains its model. Retirement
+cancels Upcoming without clearing observed rows: SwiftUI may be constructing
+the replacement tabs. A scope change within a still-live feed resets it normally.
 
 Identity verification does not imply a membership change. `IdentityIndex` compares
 completed account rebuilds on its own actor and keeps its cached snapshot when

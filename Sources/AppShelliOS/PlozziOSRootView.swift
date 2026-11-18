@@ -336,17 +336,10 @@ public struct PlozziOSRootView: View {
         }
         // A successful Plex selection changes shellIdentity, not the sheet collecting it.
         // Libraries owns the same question while Settings is presented.
-        .plozzSheet(item: Binding(
-            get: { appModel.isSettingsPresented ? nil : appModel.pendingIdentityAccount },
-            set: { if $0 == nil { appModel.resolveIdentityPromptForPending() } }
-        )) { account in
-            PlozziOSServerIdentityPromptView(
-                appModel: appModel,
-                account: account,
-                onFinish: { appModel.concludeIdentityPrompt(for: account.id) },
-                onDecline: { appModel.declineIdentityPrompt(for: account.id) }
-            )
-        }
+        .modifier(PlozziOSServerIdentityPresenter(
+            appModel: appModel, isEnabled: !appModel.isSettingsPresented
+                && !showingProfileSwitcher && !showsLaunchProfilePicker && !showingAddServer
+        ))
         // Outside the profile-scoped identity, inside its shared environment:
         // changing accounts must not tear down the surface collecting their PIN.
         .plozzFullScreenCover(isPresented: $showingProfileSwitcher, onDismiss: {
@@ -614,7 +607,7 @@ public struct PlozziOSRootView: View {
     private var showsLaunchProfilePicker: Bool {
         // Settings owns a newly enabled Plex source's verification/PIN sheet.
         // Replacing its tab shell with the launch picker tears that presenter down.
-        let needsPlexLaunchGate = appModel.plexHomeUsers.pendingPlexPINRequest != nil
+        let needsPlexLaunchGate = appModel.plexPINRequestForAppPresentation != nil
             && !settingsOwnsActiveProfilePresentation
         return isSelectingLaunchProfile || appModel.mustChooseProfile
             || (!appModel.didCompleteLaunchProfileSelection
