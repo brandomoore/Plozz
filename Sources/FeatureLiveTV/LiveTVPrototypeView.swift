@@ -107,6 +107,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var nowRequest = 0
     @State private var channelSequence = LiveTVChannelSequence(channels: [])
     @State private var controlsActive = false
+    @State private var categorySidebarCollapsed = false
     @State private var toolbarControlsBottom: CGFloat?
     @State private var categoryFocusRequest = 0
     @State private var sidebarRestoresCategoryFocus = false
@@ -388,7 +389,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 nativeNavigation: usesNativeFullscreen && !isMultiviewWorkspace,
                 topNavigationInsets: isMultiviewWorkspace ? EdgeInsets() : topNavigationInsets,
                 largeText: typeSize.isAccessibilitySize,
-                isSearching: isSearching, showsCategories: showsCategoryDirectory,
+                isSearching: isSearching, hidesSidebar: categorySidebarCollapsed,
+                showsCategories: showsCategoryDirectory,
                 showsVideoPreview: playback.preparation.current != nil || playback.pendingWatchChannelID != nil,
                 toolbarControlsBottom: toolbarControlsBottom.map { $0 - geometry.frame(in: .global).minY }
             )
@@ -1190,9 +1192,13 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         .onChange(of: model.favoritesOnly) { _, _ in persistViewFilters() }
         .onChange(of: model.guideOnly) { _, _ in persistViewFilters() }
         .onChange(of: controlsActive) { _, active in
+            if active { categorySidebarCollapsed = false }
             updatePreviewAvailability()
         }
         .onChange(of: guideHasFocus) { _, focused in
+            #if os(tvOS)
+            if focused && !isSearching { categorySidebarCollapsed = true }
+            #endif
             updatePreviewAvailability()
         }
         .onChange(of: sheet?.id) { _, _ in
@@ -1771,7 +1777,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         closeSearch: closeSearch,
                         leadingExit: layout.availableSidebarWidth > 0 ? revealCategories : nil
                     )
-                    .disabled(usesNativeFullscreen && controlsActive)
+                    .disabled(usesNativeFullscreen && controlsActive && !categorySidebarCollapsed)
                 }
             }
         }
@@ -1898,6 +1904,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 }
                 controlsActive = true
                 sidebarRestoresCategoryFocus = false
+                categorySidebarCollapsed = false
                 toolbarFocusRequest &+= 1
             },
             isLoading: isInitialCatalogLoading,
@@ -1929,6 +1936,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private func revealCategories() {
         guard activity.acceptsInteraction, !isSearching, !preview.isRestoringGuideFocus,
               sheet == nil, !needsPreviewChoice else { return }
+        categorySidebarCollapsed = false
         sidebarRestoresCategoryFocus = true
         controlsActive = true
         categoryFocusRequest &+= 1

@@ -315,16 +315,16 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         let content = focusFirstGuideContent(in: app, rtl: rtl)
         let station = app.buttons["live-tv-channel-channels-1"]
         let appMenu = topBar ? app.descendants(matching: .any)["top-navigation"] : app.collectionViews["Sidebar"]
-        assertCategoriesVisible(in: app)
+        assertCategoriesHidden(in: app)
         assertNativeNavigationCollapsed(in: app)
         var selectedCategory = "All categories"
         for iteration in 0..<3 {
             if iteration > 0 {
                 XCUIRemote.shared.press(rtl ? .left : .right)
-                assertCategoriesVisible(in: app)
+                assertCategoriesHidden(in: app)
                 XCUIRemote.shared.press(rtl ? .left : .right)
                 assertFocused(content)
-                assertCategoriesVisible(in: app)
+                assertCategoriesHidden(in: app)
             }
             let nativeFocusVisits = app.staticTexts["preview-native-focus-visits"].label
             XCUIRemote.shared.press(leading)
@@ -457,14 +457,14 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         let second = app.buttons["live-tv-channel-content-channels-2-whole"]
         XCUIRemote.shared.press(.down)
         assertFocused(second)
-        assertCategoriesVisible(in: app)
+        assertCategoriesHidden(in: app)
         XCUIRemote.shared.press(.right)
         XCUIRemote.shared.press(.right)
         assertFocused(app.buttons["All categories"])
         assertFullHeightCategories(in: app, beside: second)
         capture("rtl-categories-revealed", in: app)
         XCUIRemote.shared.press(.left)
-        assertCategoriesVisible(in: app)
+        assertCategoriesHidden(in: app)
         XCUIRemote.shared.press(.left)
         assertFocused(second)
         capture("rtl-guide-same-channel", in: app)
@@ -502,20 +502,20 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH %@", "live-tv-channel-content-channels-")
         ).firstMatch
         assertFocused(content)
-        assertCategoriesVisible(in: app)
-        let guideX = content.frame.minX
-        capture("preview-persistent-categories", in: app)
+        assertCategoriesHidden(in: app)
+        let expandedGuideX = content.frame.minX
+        capture("preview-categories-collapsed", in: app)
         XCUIRemote.shared.press(.left)
         XCUIRemote.shared.press(.left)
         assertFocused(app.buttons["All categories"])
-        XCTAssertEqual(content.frame.minX, guideX, accuracy: 1)
+        XCTAssertGreaterThan(content.frame.minX - expandedGuideX, 300)
         assertFullHeightCategories(in: app, beside: content)
         capture("preview-wider-categories", in: app)
         XCUIRemote.shared.press(.down)
         assertFocused(app.buttons["Entertainment & Lifestyle"])
         XCUIRemote.shared.press(.select)
         XCUIRemote.shared.press(.right)
-        assertCategoriesVisible(in: app)
+        assertCategoriesHidden(in: app)
         XCUIRemote.shared.press(.right)
         assertFocused(content)
         XCUIRemote.shared.press(.left)
@@ -595,19 +595,21 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         in app: XCUIApplication, beside channel: XCUIElement,
         file: StaticString = #filePath, line: UInt = #line
     ) {
+        let source = app.buttons["live-tv-source"]
         let search = app.buttons["live-tv-search"]
         let categories = app.scrollViews["live-tv-category-list"]
         XCTAssertTrue(categories.exists, file: file, line: line)
-        XCTAssertLessThan(search.frame.minY, 120, file: file, line: line)
-        XCTAssertLessThan(search.frame.maxY, channel.frame.minY - 200, file: file, line: line)
+        XCTAssertLessThan(source.frame.minY, 120, file: file, line: line)
+        XCTAssertLessThan(source.frame.maxY, search.frame.minY, file: file, line: line)
+        XCTAssertLessThan(search.frame.maxY, channel.frame.minY, file: file, line: line)
         XCTAssertGreaterThanOrEqual(categories.frame.maxY, app.frame.maxY - 40, file: file, line: line)
         XCTAssertEqual(app.buttons["All categories"].frame.width, 384, accuracy: 1, file: file, line: line)
     }
 
-    private func assertCategoriesVisible(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let visible = NSPredicate { _, _ in app.buttons["All categories"].exists }
+    private func assertCategoriesHidden(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let hidden = NSPredicate { _, _ in !app.buttons["All categories"].exists }
         let result = XCTWaiter.wait(
-            for: [XCTNSPredicateExpectation(predicate: visible, object: nil)], timeout: 5
+            for: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 5
         )
         capture("guide-category-visibility", in: app)
         XCTAssertEqual(result, .completed, app.debugDescription, file: file, line: line)

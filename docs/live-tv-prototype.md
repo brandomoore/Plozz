@@ -351,8 +351,9 @@ replacement, including when the saved playlist has no channels.
 
 Search and the active-channel artwork stay aligned, with an additional 16-point
 clearance below native navigation. Pinned navigation keeps its existing inset.
-The full-height Search/categories pane remains beside the guide during TV
-browsing. Moving focus between panes does not move or resize the guide.
+The full-height source/Search/categories pane collapses when focus enters the TV
+guide and returns on a leading-edge move. The pane slides and fades as one unit
+over 0.28 seconds while the guide resizes; Reduce Motion suppresses the animation.
 The category list remains lazy; no per-row animation timers or rasterized
 snapshots are used. Mobile layouts choose the sidebar or category directory
 from the available window dimensions, not the device name.
@@ -1269,10 +1270,11 @@ is no prior in-memory history to migrate on the first updated launch.
   200, 224, or 272 points according to available width.
   Its sidebar runs the full content height, beside both the channel details and
   guide. Loading and loaded layouts use the same two-column container.
-  The category panel remains visible when native focus enters the TV guide;
-  channel details and the mounted guide keep their geometry, channel,
-  vertical position, and time. A leading-edge move out of the guide focuses the
-  selected category. Back belongs to native app navigation. Internal
+  The category panel collapses when native focus enters the TV guide;
+  channel details and the same mounted guide expand into its space without
+  resetting the channel, vertical position, or time. A leading-edge move out of
+  the guide reveals the panel and focuses the selected category, not the source
+  menu. Search keeps the panel visible. Back belongs to native app navigation. Internal
   programme-to-programme moves keep their normal timeline behavior.
   Once a category-entry focus request completes, transient focus loss during
   native fast scrolling must not re-arm its eligibility gate. Only a new

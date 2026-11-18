@@ -104,6 +104,7 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertEqual(source.value as? String, "All")
         XCUIRemote.shared.press(.down)
         XCTAssertTrue(search.wait(for: \.hasFocus, toEqual: true, timeout: 5))
+        let sidebarGuideX = channel("Arena One", in: app).frame.minX
         XCUIRemote.shared.press(.right)
         let guideFocus = NSPredicate { _, _ in
             self.containsFocus(self.channel("Arena One", in: app))
@@ -112,11 +113,21 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(
             for: [XCTNSPredicateExpectation(predicate: guideFocus, object: nil)], timeout: 5
         ), .completed, app.debugDescription)
+        XCTAssertTrue(source.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(sports.exists, "Guide focus must collapse the entire category pane.")
+        XCTAssertGreaterThan(sidebarGuideX - channel("Arena One", in: app).frame.minX, 300)
         capture("live-tv-tv-source-guide-focus", in: app)
         if containsFocus(app.buttons["Matchday Live"].firstMatch) { XCUIRemote.shared.press(.left) }
         XCUIRemote.shared.press(.left)
         XCTAssertTrue(sports.wait(for: \.hasFocus, toEqual: true, timeout: 5),
                       "Returning from the guide must still enter the selected category, not the source menu.")
+        XCTAssertTrue(source.isHittable)
+        XCTAssertTrue(sports.isSelected)
+        XCTAssertEqual(source.value as? String, "All")
+        activate(source, in: app)
+        XCTAssertTrue(sourceMenuItem("Local TV", in: app).waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.menu)
+        waitForSourceFocus(in: app)
     }
 
     func testSidebarSourceMenuOpensExistingAddSourceChoices() {
