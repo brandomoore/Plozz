@@ -234,7 +234,8 @@ struct NowPlayingMorphContainer: View {
 
     /// Identity for the palette task: re-derive when the artwork changes.
     private var artworkToken: String {
-        (playback.currentTrack?.artwork?.key) ?? (playback.currentTrack?.id ?? "none")
+        guard let track = playback.currentTrack else { return "none" }
+        return "\(track.id)|artwork:\(track.artwork?.url.absoluteString ?? "pending")"
     }
     /// Identity for artwork prefetching: changes when the current track or the
     /// next few up-next tracks change, so we warm their covers ahead of a skip.

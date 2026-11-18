@@ -1875,6 +1875,45 @@ final class ItemDetailViewModelTests: XCTestCase {
         vm.suspendEnrichment()
     }
 
+    func testDiscoveryArtworkDoesNotWaitForRequestStatus() async {
+        let gate = AsyncGate()
+        let calls = LockedCounter()
+        let seed = MediaItem(
+            id: "external", title: "External movie", kind: .movie,
+            locallyValidatedPlayableSource: false
+        )
+        let backdrop = URL(string: "https://art.example.test/discovery.jpg")!
+        let vm = ItemDetailViewModel(
+            provider: nil, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
+            discoveryStatusRefresh: { _ in
+                _ = calls.increment()
+                await gate.wait()
+                return .init(status: .pending)
+            },
+            externalMetadataResolver: { _, region in
+                .init(
+                    enrichment: MetadataEnrichment(
+                        backdropCandidates: [SourcedValue(value: backdrop, source: .tmdb)]
+                    ),
+                    availability: ExternalTitleAvailability(regionCode: region)
+                )
+            },
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache()
+        )
+        defer { vm.suspendEnrichment() }
+        let load = Task { await vm.load() }
+        await waitUntil { calls.value == 1 }
+        XCTAssertTrue(vm.artworkSourceIsReady)
+        XCTAssertEqual(vm.state.value?.item.heroBackdropURL, backdrop)
+        XCTAssertNil(vm.state.value?.item.availability)
+        gate.open()
+        await load.value
+        XCTAssertTrue(vm.artworkSourceIsReady)
+        XCTAssertEqual(vm.state.value?.item.availability, .pending)
+        XCTAssertEqual(vm.state.value?.item.heroBackdropURL, backdrop)
+    }
+
     func testProviderFreeDiscoveryLoadsMetadataAndRequestStatus() async {
         let seed = MediaItem(
             id: "external", title: "External movie", kind: .movie,

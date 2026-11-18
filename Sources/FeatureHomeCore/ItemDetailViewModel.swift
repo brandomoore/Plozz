@@ -1155,20 +1155,7 @@ public final class ItemDetailViewModel {
         }
 
         let generation = sourceGeneration
-        // Concurrently, and published ONCE.
-        //
-        // These used to run in series with a state publication between them, so a
-        // discovery page painted the seed, then swapped in the request status, then
-        // swapped again as the metadata landed — the viewer saw the availability
-        // badge and the backdrop visibly change about a second after arriving.
-        // Neither answer is more correct than the other and neither depends on the
-        // other, so there is nothing to be gained by showing the first one alone;
-        // running them together also makes the page settle in the time of the
-        // slower request rather than the sum of both.
-        async let statusTask = discoveryStatus(for: seed)
-        async let metadataTask = externalMetadataResolver(seed, availabilityRegionCode)
-        let status = await statusTask
-        let resolved = await metadataTask
+        let resolved = await externalMetadataResolver(seed, availabilityRegionCode)
         let enrichedSeed = Self.applying(resolved.enrichment, to: seed)
         guard !Task.isCancelled,
               sourceGeneration == generation,
@@ -1179,11 +1166,6 @@ public final class ItemDetailViewModel {
             resolved.enrichment,
             to: detail.item
         )
-        if let status {
-            detail.item.availability = status.status
-            detail.item.downloadProgress = status.downloadProgress
-            detail.item.hasRequestDownloadActivity = status.hasDownloadActivity
-        }
         detail.externalAvailability =
             resolved.availability.isEmpty ? nil : resolved.availability
         detail.childrenLoaded = true
@@ -1195,6 +1177,8 @@ public final class ItemDetailViewModel {
         guard !Task.isCancelled, sourceGeneration == generation else { return false }
         artworkSourceIsReady = true
 
+        // Request status cannot establish artwork ownership or hold its first paint.
+        async let status: Void = refreshDiscoveryStatus()
         let enriched = detail.item
         if enriched.kind == .series {
             loadUpcomingSchedule(for: enriched)
@@ -1217,6 +1201,7 @@ public final class ItemDetailViewModel {
             state = .loaded(latest)
         }
         await trailer
+        await status
         return false
     }
 
@@ -1318,25 +1303,17 @@ public final class ItemDetailViewModel {
     /// the search result. The seeded item is kept untouched on any failure, and the
     /// state is only republished when something actually changed (no needless
     /// re-render / focus churn).
-    /// The live request/download status, FETCHED WITHOUT PUBLISHING.
-    ///
-    /// Separated so the first paint can combine it with the metadata resolve into a
-    /// single state change; the polling entry point below still publishes, because
-    /// by then the page is settled and a change really is news.
-    private func discoveryStatus(
-        for item: MediaItem
-    ) async -> MediaRequestAvailability? {
-        await discoveryStatusRefresh?(item)
-    }
-
     private func refreshDiscoveryStatus() async {
         guard let requestedItem = state.value?.item else {
             if state.value == nil { state = .empty }
             return
         }
+        let generation = sourceGeneration
         guard let discoveryStatusRefresh,
               let status = await discoveryStatusRefresh(requestedItem),
-              !Task.isCancelled
+              !Task.isCancelled,
+              isDiscoveryItem,
+              sourceGeneration == generation
         else { return }
         // Re-read after the await. Rich metadata, cast, ratings and release facts
         // can land while Seerr is responding; rebuilding from the pre-await item

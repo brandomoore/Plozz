@@ -52,6 +52,9 @@ the additional entry is not required to enable it. See
   observe the **same** injected `AudioPlaybackController` instance from
   the environment on tvOS. `iOS/` ports the Mozz player presentation onto this
   same engine on iPhone/iPad; it does not introduce another playback engine.
+  Track artwork identity includes its source account on both platforms. The mobile
+  adaptive palette refreshes when selected artwork arrives or changes, not only
+  when the current track changes.
 - **Artwork** — `MusicArtworkImage` + `MusicCard` render through
   `CoreUI.FallbackAsyncImage`. Server art is always tried first; if it's
   missing, `MusicArtworkFallback` produces an async closure that asks

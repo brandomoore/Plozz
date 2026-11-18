@@ -369,6 +369,7 @@ public struct PosterCardView: View {
                 // An artless library has empty references both before and after
                 // settling; readiness must still restart its metadata fallback.
                 pinIdentity: (usesLogoArtwork ? seriesSource.pinIdentity : artworkPolicy.pinIdentity(for: item))
+                    + (nativeUsesProtectedArtwork ? "|protected" : "")
                     + (nativeArtworkReady ? "" : "|pending-textless"),
                 content: { _ in Color.clear },
                 placeholder: { Color.clear }

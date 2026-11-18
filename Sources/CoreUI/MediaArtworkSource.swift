@@ -12,13 +12,18 @@ public struct MediaArtworkSource: Sendable {
         for item: MediaItem, placement: ArtworkPlacement, prefersPortrait: Bool = false,
         router: ArtworkRouter = .shared
     ) -> (@Sendable () async -> URL?)? {
-        guard item.supportsExternalArtworkLookup,
-              ![.folder, .collection, .unknown].contains(item.kind) else { return nil }
+        guard ![.folder, .collection, .unknown].contains(item.kind) else { return nil }
         return {
-            if prefersPortrait {
-                return await router.portraitHeroArtworkURL(for: item, placement: placement)
+            if item.supportsExternalArtworkLookup {
+                let online = if prefersPortrait {
+                    await router.portraitHeroArtworkURL(for: item, placement: placement)
+                } else {
+                    await router.heroArtworkURL(for: item, placement: placement)
+                }
+                if let online { return online }
             }
-            return await router.heroArtworkURL(for: item, placement: placement)
+            guard !Task.isCancelled else { return nil }
+            return item.libraryArtworkURL(item.posterURL)
         }
     }
 

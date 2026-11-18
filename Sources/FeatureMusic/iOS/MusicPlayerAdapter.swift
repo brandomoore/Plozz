@@ -21,10 +21,7 @@ struct Track: Equatable {
     var artworkOverride: URL?
     var artworkNeedsResolution = false
 
-    var id: String {
-        let account = source.sourceAccountID ?? ""
-        return "\(account.utf8.count):\(account)\(source.id)"
-    }
+    var id: String { MusicArtworkFallback.trackIdentity(source) }
     var title: String { source.title } // l10n:content — provider track title
     var artistName: String { source.artistName ?? "" }
     var albumTitle: String? { source.albumTitle }

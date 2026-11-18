@@ -13,6 +13,11 @@ import MetadataKit
 /// caching path shared with the rest of the app. Returns `nil` (meaning "no
 /// fallback to attempt") when there is nothing meaningful to search by.
 enum MusicArtworkFallback {
+    static func trackIdentity(_ track: MusicTrack) -> String {
+        let account = track.sourceAccountID ?? ""
+        return "\(account.utf8.count):\(account)\(track.id)"
+    }
+
     #if canImport(UIKit)
     static func resolveTrack(_ track: MusicTrack, policy: ArtworkPresentationPolicy) async -> FirstPaintArtwork? {
         await ArtworkFirstPaintResolver.resolve(

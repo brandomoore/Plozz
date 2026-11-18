@@ -544,7 +544,7 @@ public struct NowPlayingView: View {
                 cornerRadius: 16,
                 showsMediaEdge: false,
                 asyncFallbackURL: trackFallback(controller.currentTrack),
-                pinIdentity: controller.currentTrack?.id
+                pinIdentity: controller.currentTrack.map(MusicArtworkFallback.trackIdentity)
             )
                 .frame(width: 420, height: 420)
                 .shadow(radius: 30)

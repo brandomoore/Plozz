@@ -641,11 +641,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
 
   `ArtworkPresentationPolicy` and `MediaArtworkSource` own source ordering;
   `MediaArtworkSource.heroFallback` supplies the same placement-aware online
-  chooser to both platform heroes. Episode stills explicitly use the Episodes
+  chooser and last-resort library poster to both platform heroes. Episode stills explicitly use the Episodes
   preference. Placements can intentionally choose different pictures.
   `ItemDetailViewModel.artworkSourceIsReady` releases the hero's
   `plozzArtworkSourceReady` gate after native hydration or discovery ownership
-  settles, before children, ratings or trailers. List/snapshot seeds must not
+  settles, before request status, children, ratings or trailers. List/snapshot seeds must not
   establish a preferred source prematurely; recoverable offline failures may
   release an already usable cached detail instead.
   TV transition prefetches are reusable work, not permission to paint. The
@@ -653,7 +653,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   `ArtworkDisplayIdentity` separates the visible subject/policy from changing
   candidates in SwiftUI and native TV cells. Once a preferred-source result
   paints, only that asset's resolution may improve. New subjects, account scopes,
-  policies, shapes or network credential revisions start a fresh selection.
+  policies, shapes, spoiler protection or network credential revisions start a fresh selection.
   Prepared cache entries remain exact-request-qualified; cache warmth never
   selects a different provisional image. Stable lookup identities qualify
   metadata-dependent prepared results; per-appearance shared-work identities

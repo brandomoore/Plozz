@@ -198,7 +198,6 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
                     content: .bitmap(content),
                     placeholder: { EmptyView() }
                 )
-                .id(displayIdentity(policy))
             } else {
                 content(nil, nil)
             }
@@ -517,6 +516,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     @State private var loadedKey: String?
     @State private var displayedReference: ArtworkReference?
     @State private var selectedPrimaryPriority: Bool
+    @State private var selectedDisplayIdentity: ArtworkDisplayIdentity
     @Environment(\.heroArtworkDisplayReporter) private var heroArtworkReporter
 
     private struct ReportIdentity: Equatable {
@@ -564,6 +564,11 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         self.content = content
         self.placeholder = placeholder
         _selectedPrimaryPriority = State(initialValue: prefersPrimaryReference)
+        _selectedDisplayIdentity = State(initialValue: ArtworkDisplayIdentity(
+            subject: pinIdentity, policy: providerPolicyIdentity, references: references,
+            variant: variant, maxAspectRatio: maxAspectRatio,
+            prefersPrimaryReference: prefersPrimaryReference, prefersLandscape: prefersLandscape
+        ))
         // Seed synchronously from the decoded-image cache so an already-warmed card
         // renders its art on the very first frame — no async hop, no gray flash.
         //
@@ -651,11 +656,22 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         )
     }
 
+    private var displayIdentity: ArtworkDisplayIdentity {
+        ArtworkDisplayIdentity(
+            subject: pinIdentity, policy: providerPolicyIdentity, references: references,
+            variant: variant, maxAspectRatio: maxAspectRatio,
+            prefersPrimaryReference: prefersPrimaryReference, prefersLandscape: prefersLandscape
+        )
+    }
+
     var body: some View {
         Group {
             switch content {
             case .bitmap(let render):
-                render(image, loadedKey)
+                render(
+                    selectedDisplayIdentity == displayIdentity ? image : nil,
+                    selectedDisplayIdentity == displayIdentity ? loadedKey : nil
+                )
             case .image(let render):
                 if let image {
                     render(Image(uiImage: image))
@@ -701,6 +717,15 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
 
     private func resolve() async {
         guard !Task.isCancelled else { return }
+        if selectedDisplayIdentity != displayIdentity {
+            image = nil
+            resolved = false
+            isPreviewQuality = false
+            loadedKey = nil
+            pinnedIdentity = nil
+            displayedReference = nil
+            selectedDisplayIdentity = displayIdentity
+        }
         let key = taskKey
         let hasSamePriority = selectedPrimaryPriority == prefersPrimaryReference
         selectedPrimaryPriority = prefersPrimaryReference

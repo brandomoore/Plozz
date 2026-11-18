@@ -2,6 +2,7 @@
 import CoreModels
 @testable import CoreUI
 @testable import FeatureHome
+@testable import FeatureMusic
 import MetadataKit
 import Network
 import Observation
@@ -1704,6 +1705,116 @@ final class NativeLibraryCardHostedTests: XCTestCase {
 
     func testNativeBrowseRetainsPaintedArtworkUntilPolicyReuseOrSpoilersChange() async throws {
         try await checkNativeBrowseArtwork(onlineDelay: 0, enrichesCandidates: true)
+    }
+
+    func testSwiftUINativePosterDiscardsStillWhenEpisodeBecomesProtected() async throws {
+        let server = try LibraryArtworkServer(images: [
+            "still": artworkData(.red, size: CGSize(width: 160, height: 90)),
+            "series": artworkData(.green, size: CGSize(width: 160, height: 90))
+        ])
+        defer { server.stop() }
+        let port = try await server.start()
+        let token = UUID().uuidString
+        let still = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/still/\(token)"))
+        let series = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/series/\(token)"))
+        let model = AttachedStatusModel(item: MediaItem(
+            id: token, title: "Episode", kind: .episode, parentTitle: "Series",
+            isPlayed: true, posterURL: still, seriesPosterURL: series,
+            allowsTitleBasedMetadataMatching: false
+        ))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: SpoilerArtworkFixture(model: model))
+        window.frame = scene.screen.bounds
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        window.layoutIfNeeded()
+        let poster = try XCTUnwrap(descendant(NativePosterButton.self, in: window))
+        func waitForArtwork(red: Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(5)
+            while ContinuousClock.now < deadline {
+                poster.layoutIfNeeded()
+                if let image = poster.image {
+                    let color = try pixel(image, at: CGPoint(
+                        x: image.size.width * image.scale / 2, y: image.size.height * image.scale / 2
+                    ))
+                    if color[red ? 0 : 1] > 180, color[red ? 1 : 0] < 80 { return }
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTFail("The mounted native poster did not paint the expected \(red ? "episode" : "protected") artwork.")
+        }
+        try await waitForArtwork(red: true)
+        model.item.isPlayed = false
+        try await waitForArtwork(red: false)
+        XCTAssertTrue(descendant(NativePosterButton.self, in: window) === poster,
+                      "Protection must update the mounted card, not depend on remounting it.")
+    }
+
+    private struct SpoilerArtworkFixture: View {
+        let model: AttachedStatusModel
+        var body: some View {
+            PosterCardView(
+                item: model.item, style: .landscape,
+                spoilerSettings: .init(isEnabled: true, mode: .placeholder),
+                enablesAsyncArtworkFallback: false, action: {}
+            )
+            .environment(\.plozzCardStyle, .borderless)
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.plozzArtworkArea, .browse)
+            .environment(\.plozzArtworkSettings, .init(preference: .library))
+        }
+    }
+
+    func testTVMusicReplacesCoverWhenAccountChangesWithTheSameTrackID() async throws {
+        let server = try LibraryArtworkServer(images: [
+            "first": artworkData(.red), "second": artworkData(.green)
+        ])
+        defer { server.stop() }
+        let port = try await server.start()
+        let token = UUID().uuidString
+        let first = MusicTrack(
+            id: token, title: "Song", artworkURL: URL(string: "http://127.0.0.1:\(port)/first/\(token)")!,
+            sourceAccountID: "first"
+        )
+        let second = MusicTrack(
+            id: token, title: "Song", artworkURL: URL(string: "http://127.0.0.1:\(port)/second/\(token)")!,
+            sourceAccountID: "second"
+        )
+        let defaultsName = "music-artwork-\(token)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        let settings = MusicPlayerSettingsModel(store: MusicPlayerSettingsStore(defaults: defaults))
+        settings.appearance = .pureBlack
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        for expanded in [false, true] {
+            let controller = AudioPlaybackController()
+            let window = UIWindow(windowScene: scene)
+            let content = expanded
+                ? AnyView(NowPlayingView(controller: controller, musicPlayer: settings))
+                : AnyView(NowPlayingCard(controller: controller).scaleEffect(3))
+            window.rootViewController = UIHostingController(rootView: content
+                .environment(\.plozzArtworkArea, .music)
+                .environment(\.plozzArtworkSettings, .init(preference: .library)))
+            window.makeKeyAndVisible()
+            defer {
+                controller.stop()
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            controller.play(tracks: [first], startIndex: 0, resolveStreamURL: { _ in nil })
+            try await assertBrowseArtwork(in: window, isOnline: false, name: "music-first-account-\(expanded)")
+            controller.play(tracks: [second], startIndex: 0, resolveStreamURL: { _ in nil })
+            try await assertBrowseArtwork(in: window, isOnline: true, name: "music-second-account-\(expanded)")
+        }
     }
 
     func testSwiftUIBrowseKeepsProviderPreferenceDuringQueuedLookup() async throws {

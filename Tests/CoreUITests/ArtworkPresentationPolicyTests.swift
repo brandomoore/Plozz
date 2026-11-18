@@ -468,6 +468,23 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         XCTAssertNil(disabled, "The retained URL cannot bypass a live provider disable.")
     }
 
+    func testHeroFallbackKeepsLibraryPosterWhenExternalProvidersHaveNoArtwork() async throws {
+        let poster = try XCTUnwrap(URL(string: "https://art.example.test/library-poster.jpg"))
+        var item = MediaItem(id: "poster-only", title: "Poster only", kind: .movie, posterURL: poster)
+        let settings = PolicyArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tvdb", "tmdb"]))
+        let router = await policyRouter(for: item, settings: settings)
+        for supportsLookup in [true, false] {
+            item.allowsTitleBasedMetadataMatching = supportsLookup
+            for prefersPortrait in [true, false] {
+                let fallback = try XCTUnwrap(MediaArtworkSource.heroFallback(
+                    for: item, placement: .detailBackdrop, prefersPortrait: prefersPortrait, router: router
+                ))
+                let selected = await fallback()
+                XCTAssertEqual(selected, poster)
+            }
+        }
+    }
+
     func testEpisodeSourceUsesSeriesPosterAfterMissingHeroWithoutExposingTheStill() async throws {
         let still = try XCTUnwrap(URL(string: "https://art.example.test/still.jpg"))
         let poster = try XCTUnwrap(URL(string: "https://art.example.test/show.jpg"))

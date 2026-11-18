@@ -1250,7 +1250,7 @@ struct TrackListView: View {
             asyncFallbackURL: MusicArtworkFallback.trackCover(
                 title: track.title, album: track.albumTitle, artist: track.artistName
             ),
-            pinIdentity: track.id
+            pinIdentity: MusicArtworkFallback.trackIdentity(track)
         )
     }
 
