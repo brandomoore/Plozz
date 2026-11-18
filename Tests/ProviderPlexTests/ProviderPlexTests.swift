@@ -578,6 +578,26 @@ final class PlexProviderMappingTests: XCTestCase {
         }
     }
 
+    func testExplicitPlexAudioDescriptionFlagSurvivesMappingAndEnrichment() throws {
+        let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
+        for value in ["true", "1", #""1""#] {
+            let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
+                (#"{"index":3,"streamType":2,"codec":"aac","languageTag":"en","visualImpaired":"# + value + "}").utf8
+            ))
+            let mapped = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
+            XCTAssertTrue(mapped.isVisualImpaired)
+            XCTAssertTrue(MediaTrack(id: 3, kind: .audio, displayTitle: "English", language: "en")
+                .enriched(withProvider: mapped).isVisualImpaired)
+            XCTAssertFalse(mapped.isCommentary)
+        }
+        for fields in [#""title":"Audio Description""#, #""visualImpaired":false"#] {
+            let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
+                (#"{"index":3,"streamType":2,"# + fields + "}").utf8
+            ))
+            XCTAssertFalse(try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file").isVisualImpaired)
+        }
+    }
+
     func testAudioMappingPreservesRawVersionTitle() throws {
         let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
         let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(

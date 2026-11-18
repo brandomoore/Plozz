@@ -2580,7 +2580,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 isAtmos: track.isAtmos,
                 isDTSX: track.isDTSX,
                 isHearingImpaired: track.isHearingImpaired,
-                isCommentary: track.isCommentary
+                isCommentary: track.isCommentary,
+                isVisualImpaired: track.isVisualImpaired
             )
         }
     }

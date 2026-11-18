@@ -612,6 +612,26 @@ omits them. Its generated language/codec and numbered fallback labels are not
 treated as authored names. Real-world metadata regression cases cover release
 groups, translation credits, regional/script variants, colored SDH and commentary;
 names never change automatic selection or forced-subtitle disposition.
+Only colliding menu labels gain a localized track-number suffix; unique names,
+selection IDs, preferred-language ordering and external-subtitle markers are unchanged.
+Explicit audio-description flags from Plex, Plozzigen and native local audio
+selection appear as `Audio Description`, independently of commentary. Jellyfin/Emby
+titles remain intact; their current stream DTOs do not expose a separate equivalent
+flag, but direct Plozzigen demuxing retains the container disposition.
+MP4 stream `title`, `name` and custom `handler_name` values are resolved in the
+engine, not guessed in the app. Muxer defaults such as `SoundHandler` and
+`SubtitleHandler` retain generated fallback labels.
+
+`TrackMenuBuilderTests.testSampledServerMetadataHasDistinctLabelsAndStableSelections`
+accepts a private normalized corpus through `PLOZZ_TRACK_METADATA_CORPUS`; it
+checks audio and both subtitle menus in four locales without changing selection.
+The corpus must contain track metadata only, never tokens, server URLs, media paths
+or item identifiers. Do not commit personal-library samples or rendered output.
+The small `track-names.mp4`, `track-metadata-name.mp4`, `track-defaults.mp4`
+and `track-names.mkv` fixtures
+contain 0.2 seconds of generated silent AAC and the original cue
+`Track metadata fixture.` They verify actual demuxed names, default handlers and
+accessibility flags without downloading copyrighted media.
 Explicit French audio/subtitle version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
 `VOQ`) survive generated server titles, matching-track provider enrichment, and
 app-locale changes. These are source-authored community conventions, rendered

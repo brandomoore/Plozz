@@ -300,6 +300,7 @@ public enum TrackLabeling {
         isAtmos: Bool = false,
         isDTSX: Bool = false,
         isCommentary: Bool = false,
+        isVisualImpaired: Bool = false,
         trackID: Int,
         locale: Locale = .current
     ) -> TrackLabel {
@@ -359,6 +360,9 @@ public enum TrackLabeling {
         if isCommentary, !baseTitle.localizedCaseInsensitiveContains("commentary") {
             qualifiers.append(.commentary)
         }
+        if isVisualImpaired, !baseTitle.localizedCaseInsensitiveContains("audio description") {
+            qualifiers.append(.audioDescription)
+        }
 
         return retainingSourceTitle(
             sourceTitle, in: TrackLabel(base: base, qualifiers: qualifiers),
@@ -408,6 +412,7 @@ public enum TrackLabeling {
             case .forced: represented.append("Forced")
             case .hearingImpaired: represented += ["SDH", "CC", "HOH", "Hearing Impaired"]
             case .commentary: represented.append("Commentary")
+            case .audioDescription: represented += ["Audio Description", "AD"]
             case .autoDetected, .channelCount: break
             }
         }
@@ -510,6 +515,8 @@ public struct TrackLabel: Equatable, Sendable {
         case hearingImpaired
         /// "Commentary" — copy.
         case commentary
+        /// "Audio Description" — copy for an explicitly flagged audio track.
+        case audioDescription
         /// "auto" — copy, appended when the language came only from on-device
         /// content detection rather than a provider/container tag.
         case autoDetected
@@ -569,6 +576,11 @@ public extension MediaTrack {
         if !merged.isDTSX { merged.isDTSX = provider.isDTSX }
         if !merged.isHearingImpaired { merged.isHearingImpaired = provider.isHearingImpaired }
         if !merged.isCommentary { merged.isCommentary = provider.isCommentary }
+        if !merged.isVisualImpaired,
+           id == provider.id, kind == .audio, provider.kind == .audio,
+           language == nil || provider.language == nil || LanguageMatch.matches(language, provider.language) {
+            merged.isVisualImpaired = provider.isVisualImpaired
+        }
         if TrackLabeling.meaningfulSourceTitle(merged.sourceTitle) == nil,
            kind == provider.kind,
            id == provider.id,

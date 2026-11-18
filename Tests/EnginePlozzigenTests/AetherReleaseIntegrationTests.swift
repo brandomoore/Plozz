@@ -5,6 +5,58 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class AetherReleaseIntegrationTests: XCTestCase {
+    func testMP4AuthoredHandlerNamesReachTheEngine() throws {
+        for name in ["track-names", "track-metadata-name"] {
+            let demuxer = Demuxer()
+            defer { demuxer.close() }
+            try demuxer.open(url: XCTUnwrap(Bundle.module.url(
+                forResource: name, withExtension: "mp4", subdirectory: "Fixtures"
+            )))
+            XCTAssertEqual(demuxer.audioTrackInfos().map(\.name), ["Audio Description"])
+            XCTAssertEqual(demuxer.subtitleTrackInfos().map(\.name), ["Signs & Songs"])
+            let tracks = PlozzigenVideoEngine.selectableAudioTracks(from: demuxer.audioTrackInfos(), route: .loopback)
+            XCTAssertEqual(tracks.first?.sourceTitle, "Audio Description")
+            XCTAssertFalse(try XCTUnwrap(tracks.first).isVisualImpaired, "A title must not invent a disposition.")
+        }
+    }
+
+    func testMP4MuxerDefaultsStayGeneratedAndMatroskaRetainsAuthoredNamesAndFlags() throws {
+        let demuxer = Demuxer()
+        defer { demuxer.close() }
+        try demuxer.open(url: XCTUnwrap(Bundle.module.url(
+            forResource: "track-defaults", withExtension: "mp4", subdirectory: "Fixtures"
+        )))
+        XCTAssertEqual(demuxer.audioTrackInfos().map(\.name), ["ENG (aac)"])
+        XCTAssertEqual(demuxer.subtitleTrackInfos().map(\.name), ["ENG (mov_text)"])
+        let matroska = Demuxer()
+        defer { matroska.close() }
+        try matroska.open(url: XCTUnwrap(Bundle.module.url(
+            forResource: "track-names", withExtension: "mkv", subdirectory: "Fixtures"
+        )))
+        let audio = try XCTUnwrap(PlozzigenVideoEngine.selectableAudioTracks(
+            from: matroska.audioTrackInfos(), route: .loopback
+        ).first)
+        let subtitle = try XCTUnwrap(PlozzigenVideoEngine.selectableSubtitleTracks(
+            from: matroska.subtitleTrackInfos(), route: .loopback
+        ).first)
+        XCTAssertEqual(audio.sourceTitle, "Narration [Fixture]")
+        XCTAssertTrue(audio.isVisualImpaired)
+        XCTAssertFalse(audio.isCommentary)
+        XCTAssertEqual(subtitle.sourceTitle, "Signs & Songs [Fixture]")
+        XCTAssertTrue(subtitle.isForced)
+        XCTAssertTrue(subtitle.isHearingImpaired)
+    }
+
+    func testEngineTrackTitleMetadataPrecedence() {
+        XCTAssertEqual(Demuxer.resolvedTrackTitle(title: "Full", name: "Signs", handlerName: "Other"), "Full")
+        XCTAssertEqual(Demuxer.resolvedTrackTitle(title: " \n", name: "Signs & Songs", handlerName: "Other"), "Signs & Songs")
+        XCTAssertEqual(Demuxer.resolvedTrackTitle(title: "SoundHandler", name: nil, handlerName: nil), "SoundHandler")
+        for value in [nil, "", " \n", "SoundHandler", "SubtitleHandler", "VideoHandler",
+                      "TextHandler", "Core Media Audio", "GPAC ISO Subtitle Handler"] {
+            XCTAssertNil(Demuxer.resolvedTrackTitle(title: nil, name: nil, handlerName: value))
+        }
+    }
+
     func testContainerTrackNamesReachLabelsWithoutProviderMetadata() throws {
         let subtitleName = "Signs & Songs [MangaUK (Lyrics by Kiyoshi)]"
         let subtitle = try XCTUnwrap(PlozzigenVideoEngine.selectableSubtitleTracks(from: [

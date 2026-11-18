@@ -449,6 +449,7 @@ struct PlexStream: Decodable {
     let extendedDisplayTitle: String?
     let title: String? // l10n:content — container track title
     let hearingImpaired: Bool?
+    let visualImpaired: Bool?
     let selected: Bool?
     let `default`: Bool?
     let forced: Bool?
@@ -496,6 +497,7 @@ struct PlexStream: Decodable {
         extendedDisplayTitle = c.flexibleString(.extendedDisplayTitle)
         title = c.flexibleString(.title)
         hearingImpaired = c.flexibleBool(.hearingImpaired)
+        visualImpaired = c.flexibleBool(.visualImpaired)
         selected = c.flexibleBool(.selected)
         `default` = c.flexibleBool(.default)
         forced = c.flexibleBool(.forced)
@@ -520,7 +522,7 @@ struct PlexStream: Decodable {
     private enum CodingKeys: String, CodingKey {
         case id, streamType, index, codec, profile, language, languageTag, languageCode
         case displayTitle, extendedDisplayTitle, selected, `default`, forced, key
-        case title, hearingImpaired
+        case title, hearingImpaired, visualImpaired
         case width, height, frameRate, bitDepth, scanType, colorTrc
         case DOVIPresent, DOVIProfile, DOVILevel, DOVIBLPresent, DOVIBLCompatID
         case channels, samplingRate, audioChannelLayout, bitrate

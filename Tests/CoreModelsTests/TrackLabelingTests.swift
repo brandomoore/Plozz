@@ -37,6 +37,46 @@ final class TrackLabelingTests: XCTestCase {
         XCTAssertFalse(TrackLabeling.isGenericTitle("English - Dolby Digital - 5.1"))
     }
 
+    func testAudioDescriptionRemainsDistinctFromCommentaryAndCustomNames() {
+        for (title, expected) in [
+            ("", [.format("AAC Stereo"), .audioDescription]),
+            ("AD", [.format("AAC Stereo"), .audioDescription]),
+            ("Audio Description", [.format("AAC Stereo"), .audioDescription]),
+            ("Narration [Fixture]", [.title("Narration [Fixture]"), .format("AAC Stereo"), .audioDescription])
+        ] as [(String, [TrackLabel.Qualifier])] {
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(
+                    displayTitle: "English", sourceTitle: title, language: "en", codec: "aac", channels: 2,
+                    isVisualImpaired: true, trackID: 1, locale: Locale(identifier: "en")
+                ),
+                TrackLabel(base: .content("English"), qualifiers: expected)
+            )
+        }
+        let unflagged = TrackLabeling.audioLabel(
+            displayTitle: "English", sourceTitle: "AD", language: "en", codec: "aac",
+            channels: 2, trackID: 1, locale: Locale(identifier: "en")
+        )
+        XCTAssertTrue(unflagged.qualifiers.contains(.title("AD")))
+        XCTAssertFalse(unflagged.qualifiers.contains(.audioDescription))
+    }
+
+    func testAudioDescriptionEnrichmentRequiresMatchingAudioIdentity() {
+        let engine = MediaTrack(id: 1, kind: .audio, displayTitle: "English", language: "en")
+        var provider = MediaTrack(
+            id: 1, kind: .audio, displayTitle: "English", language: "eng", isVisualImpaired: true
+        )
+        XCTAssertTrue(engine.enriched(withProvider: provider).isVisualImpaired)
+        XCTAssertFalse(engine.enriched(withProvider: provider).isCommentary)
+        provider.id = 2
+        XCTAssertFalse(engine.enriched(withProvider: provider).isVisualImpaired)
+        provider.id = 1
+        provider.language = "fr"
+        XCTAssertFalse(engine.enriched(withProvider: provider).isVisualImpaired)
+        provider.language = "en"
+        provider.kind = .subtitle
+        XCTAssertFalse(engine.enriched(withProvider: provider).isVisualImpaired)
+    }
+
     // MARK: subtitle labels
 
     func testRealWorldSubtitleNamesPreserveTranslationEditionAndAccessibilityDetails() {

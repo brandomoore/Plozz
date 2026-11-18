@@ -2772,6 +2772,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
                 || TrackLabeling.isHearingImpaired(dto.title)
                 || TrackLabeling.isHearingImpaired(dto.extendedDisplayTitle)
                 || TrackLabeling.isHearingImpaired(dto.displayTitle),
+            isVisualImpaired: !isSubtitle && dto.visualImpaired == true,
             deliverySource: deliverySource,
             isImageBasedSubtitle: isSubtitle && !isTextSubtitleCodec(dto.codec),
             isExternal: isSubtitle && dto.key != nil

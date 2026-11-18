@@ -49,6 +49,8 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
     /// `true` for commentary tracks (director/cast). Surfaces a "Commentary"
     /// qualifier on audio and subtitle labels.
     public var isCommentary: Bool
+    /// Explicit audio-description disposition; not inferred from a track name.
+    public var isVisualImpaired: Bool
     /// For subtitle tracks: credential-free instructions for loading subtitle
     /// text. Managed-provider credentials are resolved only when the engine or
     /// overlay begins I/O; local share sidecars reference their temporary file.
@@ -82,6 +84,7 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         isDTSX: Bool = false,
         isHearingImpaired: Bool = false,
         isCommentary: Bool = false,
+        isVisualImpaired: Bool = false,
         deliverySource: SubtitleDeliverySource? = nil,
         isImageBasedSubtitle: Bool = false,
         isExternal: Bool = false
@@ -100,6 +103,7 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
         self.isDTSX = isDTSX
         self.isHearingImpaired = isHearingImpaired
         self.isCommentary = isCommentary
+        self.isVisualImpaired = isVisualImpaired
         self.deliverySource = deliverySource
         self.isImageBasedSubtitle = isImageBasedSubtitle
         self.isExternal = isExternal
