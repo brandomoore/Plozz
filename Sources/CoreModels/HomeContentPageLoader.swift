@@ -209,11 +209,7 @@ public enum HomeContentPageLoader {
         case let .recommendation(id, kind):
             guard let library = source.libraryID else { throw AppError.invalidResponse }
             if id == LibraryHomeRowKind.recentlyAdded.rawValue {
-                let result = try await provider.items(
-                    in: library, kind: kind,
-                    page: .init(startIndex: start, limit: limit, sort: .init(field: .dateAdded, direction: .descending))
-                )
-                page = try checked(result)
+                page = try await provider.libraryRecentlyAddedPage(in: library, kind: kind, startIndex: start, limit: limit)
             } else if id == LibraryHomeRowKind.nextUp.rawValue {
                 page = try await provider.homeRowPage(.nextUp(libraryID: library), startIndex: start, limit: limit)
             } else {

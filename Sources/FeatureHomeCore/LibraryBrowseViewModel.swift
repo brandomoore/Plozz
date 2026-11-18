@@ -1178,13 +1178,7 @@ public final class LibraryBrowseViewModel {
         let accountID = sourceAccountID
         let limit = 20
         async let recent = HTTPResponseDiagnostics.capture {
-            try await provider.items(
-                in: libraryID, kind: kind,
-                page: PageRequest(
-                    startIndex: 0, limit: limit,
-                    sort: SortDescriptor(field: .dateAdded, direction: .descending)
-                )
-            )
+            try await provider.libraryRecentlyAddedPage(in: libraryID, kind: kind, startIndex: 0, limit: limit)
         }
         async let continueWatching = HTTPResponseDiagnostics.capture {
             try await provider.continueWatching(limit: limit, inLibraries: [libraryID])

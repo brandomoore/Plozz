@@ -234,8 +234,7 @@ public struct HomeAggregator: Sendable {
 
     /// Builds unmerged Home with the same global rows. Opted-in library requests
     /// enter the bounded queue as soon as their library inventory arrives:
-    ///  - **Recently Added** — the library's newest items (`items(in:)` sorted by
-    ///    date added), uniform across providers — when the user enabled it.
+    ///  - **Recently Added** — the provider's library-scoped shelf when enabled.
     ///  - **Recommended rows** — the provider's native discovery hubs
     ///    (`libraryHubs(...)`, Plex only: "More in Drama", "Because you watched…") —
     ///    when the user enabled them.
@@ -881,13 +880,10 @@ public struct HomeAggregator: Sendable {
                                        style: .landscape, items: items, isHomeDefault: true)
                     ]
                 case .recentlyAdded:
-                    let page = try await resolved.provider.items(
-                        in: library.library.id, kind: library.library.kind,
-                        page: PageRequest(
-                            startIndex: 0, limit: HomeRecentlyAddedPolicy.requestLimit(
-                                previewRequestLimit, hideWatched: visibility.hideWatchedRecentlyAdded
-                            ),
-                            sort: SortDescriptor(field: .dateAdded, direction: .descending)
+                    let page = try await resolved.provider.libraryRecentlyAddedPage(
+                        in: library.library.id, kind: library.library.kind, startIndex: 0,
+                        limit: HomeRecentlyAddedPolicy.requestLimit(
+                            previewRequestLimit, hideWatched: visibility.hideWatchedRecentlyAdded
                         )
                     )
                     let items = visibility.hideWatchedRecentlyAdded

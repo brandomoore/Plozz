@@ -450,6 +450,11 @@ browse-navigation journey.
 
 ## Recently Added watched filtering
 
+Jellyfin and Emby library Recently Added rows and See All use the user's
+library-scoped Latest feed in server order. A new episode can move an existing
+show to the front without changing its series creation date. The library grid's
+explicit Date Added sort still uses the item's own date.
+
 Screens & Navigation > Home > Filtering offers **Recently Added** under
 **Hide watched content**, off by default and saved per profile. The shared presentation policy covers combined,
 per-library, and typed server-authored Recently Added rows on TV and mobile. It leaves
