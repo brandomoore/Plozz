@@ -193,6 +193,14 @@ public extension Array where Element == MediaSegment {
                segment.end >= duration - 0.5 {
                 continue
             }
+            // Closing credits belong to the final act. A server analysis that
+            // starts its credits marker in the first quarter of the item turns
+            // "Skip Credits" into a jump most of the way through the episode (and
+            // hands Up Next a bogus closing window); drop it instead.
+            if segment.kind == .credits, let duration, duration > 0,
+               segment.start < duration * 0.25 {
+                continue
+            }
             if segment.kind == .credits, let protected,
                protected.start < segment.end, protected.end > segment.start {
                 if segment.start < protected.start {

@@ -197,6 +197,15 @@ final class CommunitySkipMarkersTests: XCTestCase {
         XCTAssertEqual(segments.map(\.id), ["intro"])
     }
 
+    func testACreditsMarkerInTheFirstQuarterIsRejectedAsMalformed() throws {
+        let segments = [
+            MediaSegment(id: "early-credits", kind: .credits, start: 82.5, end: 2_640),
+            MediaSegment(id: "credits", kind: .credits, start: 2_300, end: 2_640)
+        ].normalizedSkipMarkers(duration: 2_640)
+        XCTAssertEqual(segments.map(\.id), ["credits"],
+                       "Closing credits cannot begin in the first quarter of the item.")
+    }
+
     func testTheIntroDBDropsAnOpenEndedIntroInsteadOfRunningToEpisodeEnd() throws {
         let response = try JSONDecoder().decode(TheIntroDBClient.Response.self, from: Data(#"""
         {"intro":[{"start_ms":10000,"end_ms":null}],
