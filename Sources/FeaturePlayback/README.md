@@ -607,6 +607,11 @@ retain names such as `Director Commentary`, `Full subs`, and `Signs & Songs`
 alongside the existing language/format label. Names are content, not translated
 app copy; empty/generic names keep the previous fallback. Matching provider
 names fill engine metadata gaps without replacing an explicit engine name.
+Plozzigen also retains names read directly from the container when the server
+omits them. Its generated language/codec and numbered fallback labels are not
+treated as authored names. Real-world metadata regression cases cover release
+groups, translation credits, regional/script variants, colored SDH and commentary;
+names never change automatic selection or forced-subtitle disposition.
 Explicit French audio/subtitle version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
 `VOQ`) survive generated server titles, matching-track provider enrichment, and
 app-locale changes. These are source-authored community conventions, rendered

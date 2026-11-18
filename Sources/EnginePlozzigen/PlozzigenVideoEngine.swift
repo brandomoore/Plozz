@@ -2570,6 +2570,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 id: track.id,
                 kind: .audio,
                 displayTitle: track.name,
+                sourceTitle: containerTrackTitle(track),
                 language: track.language,
                 codec: track.codec,
                 profile: track.profile,
@@ -2582,6 +2583,34 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 isCommentary: track.isCommentary
             )
         }
+    }
+
+    nonisolated static func selectableSubtitleTracks(from tracks: [TrackInfo], route: VideoRoute) -> [MediaTrack] {
+        tracks.map { track in
+            MediaTrack(
+                id: track.id,
+                kind: .subtitle,
+                displayTitle: track.name,
+                sourceTitle: route == .remoteBypass ? nil : containerTrackTitle(track),
+                language: track.language,
+                codec: track.codec,
+                isDefault: track.isDefault,
+                isForced: track.isForced,
+                isHearingImpaired: track.isHearingImpaired,
+                isCommentary: track.isCommentary
+                // Keep isImageBasedSubtitle false: the engine can render bitmap
+                // tracks. isBitmapSubtitle still derives their format from codec.
+            )
+        }
+    }
+
+    nonisolated private static func containerTrackTitle(_ track: TrackInfo) -> String? {
+        let title = track.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Aether's demuxer uses these exact fallbacks when the container has no title.
+        guard !title.isEmpty,
+              title != "Track \(track.id) (\(track.codec))",
+              title != track.language.map({ "\($0.uppercased()) (\(track.codec))" }) else { return nil }
+        return title
     }
 
     static func discAudioTrackID(pid: Int, tracks: [TrackInfo], activeTrackID: Int?) -> Int? {
@@ -2624,24 +2653,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             bypassAudioTask?.cancel()
             bypassAudio = BypassAudio()
         }
-        subtitleTracks = engine.subtitleTracks.map { track in
-            MediaTrack(
-                id: track.id,
-                kind: .subtitle,
-                displayTitle: track.name,
-                language: track.language,
-                codec: track.codec,
-                isDefault: track.isDefault,
-                isForced: track.isForced,
-                isHearingImpaired: track.isHearingImpaired,
-                isCommentary: track.isCommentary
-                // NOTE: `isImageBasedSubtitle` is intentionally left at its
-                // default (false) here. The menu's "(PGS)" format hint is derived
-                // from `codec` instead, so labeling is accurate without changing
-                // default-subtitle routing (which keys off this flag). Flipping it
-                // to true belongs with the bitmap-through-overlay work, not here.
-            )
-        }
+        subtitleTracks = Self.selectableSubtitleTracks(from: engine.subtitleTracks, route: engine.videoRoute)
         // Tracks arrive asynchronously (Combine) after `loadTrackOptions()` has
         // already run once at playResolved, so tell the VM to rebuild the menu now
         // that the lists are populated — otherwise the subtitle/audio menu is

@@ -39,6 +39,45 @@ final class TrackLabelingTests: XCTestCase {
 
     // MARK: subtitle labels
 
+    func testRealWorldSubtitleNamesPreserveTranslationEditionAndAccessibilityDetails() {
+        // Track-name metadata only; no subtitle dialogue or media is copied.
+        // https://github.com/ShokoAnime/ShokoServer/blob/89901b743fa1e65787f5fc24e003cb61d89ad7e9/Shoko.Server/MediaInfo/examples/mediainfo.json
+        // https://github.com/ledxdeliveryflopp/MKVRebuilder/blob/428b203059a9e120c6b18bf753a322bf42be1e39/track_info.json
+        // https://github.com/jellyfin/jellyfin/issues/15222
+        let samples = [
+            ("Signs & Songs [MangaUK (Lyrics by Kiyoshi)]", "en"),
+            ("Closed Captions [MangaUK (Lyrics by Kiyoshi)]", "en"),
+            ("Full Subs [MangaUK (Lyrics by ZetaRebel)]", "en"),
+            ("Full Subs [Funimation (Lyrics by ZetaRebel)]", "en"),
+            ("Chinese (Cantonese)", "zh"),
+            ("Chinese (Mandarin Simplified)", "zh"),
+            ("Chinese (Mandarin Traditional)", "zh"),
+            ("Portuguese (Iberian)", "pt"),
+            ("Spanish (Castilian)", "es"),
+            ("Spanish (Latin American)", "es"),
+            ("full, Blu-Ray", "ru"),
+            ("SDH-Colored", "en"),
+            ("Commentary by Director Ridley Scott", "en"),
+            ("Full [Tarulia edit]", "en"),
+            ("Full Subtitles [Harunatsu Modified]", "en"),
+            ("Signs/Songs [Harunatsu Modified]", "zxx"),
+            ("forced", "ru")
+        ]
+        for (title, language) in samples {
+            for localeID in ["en", "es"] {
+                let locale = Locale(identifier: localeID)
+                let label = TrackLabeling.subtitleLabel(
+                    displayTitle: "Track 3", sourceTitle: title, language: language, codec: "ass",
+                    isForced: false, isImageBased: false, trackID: 3, locale: locale
+                )
+                if label.base != .content(title) {
+                    XCTAssertTrue(label.qualifiers.contains(.title(title)), "\(localeID): \(title)")
+                }
+                XCTAssertFalse(label.qualifiers.contains(.forced), "A name must not invent a forced disposition.")
+            }
+        }
+    }
+
     func testContainerSubtitleNamesSurviveAlongsideLocalizedLanguageAndFlags() {
         for title in ["Full subs", "Signs & Songs", "English - Signs & Songs", "Track 3 (Signs & Songs)"] {
             let label = TrackLabeling.subtitleLabel(
