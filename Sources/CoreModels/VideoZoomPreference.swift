@@ -19,7 +19,7 @@ public struct VideoZoomPreference: Codable, Equatable, Sendable {
     }
 
     public static let customPercentRange = 50...200
-    public static let onDemandDefault = VideoZoomPreference(mode: .picture)
+    public static let onDemandDefault = VideoZoomPreference(mode: .fit)
     public var mode: Mode
     public let customPercent: Int
     public var pictureFitsInsideSafeArea: Bool
@@ -31,11 +31,26 @@ public struct VideoZoomPreference: Codable, Equatable, Sendable {
         self.pictureFitsInsideSafeArea = pictureFitsInsideSafeArea
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case mode, customPercent, pictureFitsInsideSafeArea, schemaVersion
+    }
+
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(mode: try values.decode(Mode.self, forKey: .mode),
+        let version = try values.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 0
+        let savedMode = try values.decode(Mode.self, forKey: .mode)
+        // Reset pre-opt-in Auto-crop choices, including transferred title preferences.
+        self.init(mode: version < 1 && savedMode == .picture ? .fit : savedMode,
                   customPercent: try values.decodeIfPresent(Int.self, forKey: .customPercent) ?? 100,
                   pictureFitsInsideSafeArea: try values.decodeIfPresent(Bool.self, forKey: .pictureFitsInsideSafeArea) ?? false)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(1, forKey: .schemaVersion)
+        try values.encode(mode, forKey: .mode)
+        try values.encode(customPercent, forKey: .customPercent)
+        try values.encode(pictureFitsInsideSafeArea, forKey: .pictureFitsInsideSafeArea)
     }
 }
 
