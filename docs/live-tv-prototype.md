@@ -67,6 +67,8 @@ The TV logo column is 140 points wide. Artwork has 20-point side
 clearance and four-point vertical clearance, giving compact marks more height
 without letting wide marks crowd the edges. Stacked wordmarks fit within the
 same area as a square logo, leaving space above and below their lettering.
+Compact marks on a detected source background have extra vertical clearance;
+the background itself still fills the tile.
 Logo labels retain their original
 full-tile backgrounds, using cached source-background colours or a restrained
 brand tint. Only the plate becomes partly translucent on focus, allowing the

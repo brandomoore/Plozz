@@ -8,7 +8,8 @@ import XCTest
 @MainActor
 final class ChannelLogoArtworkTests: XCTestCase {
     func testIndependentInsetsGiveCompactLogosHeightAndWideLogosSideClearance() throws {
-        for sourceSize in [CGSize(width: 20, height: 20), CGSize(width: 32, height: 20), CGSize(width: 80, height: 20)] {
+        for (sourceSize, hasPlate) in [(CGSize(width: 20, height: 20), false), (CGSize(width: 20, height: 20), true),
+                                       (CGSize(width: 32, height: 20), true), (CGSize(width: 80, height: 20), true)] {
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1
             let logo = UIGraphicsImageRenderer(size: sourceSize, format: format).image { context in
@@ -18,7 +19,7 @@ final class ChannelLogoArtworkTests: XCTestCase {
             let renderer = ImageRenderer(content: ChannelLogoPlateContent(
                 name: "", image: logo, plate: ChannelLogoPlate(tone: nil),
                 size: CGSize(width: 140, height: 72), cornerRadius: 16, artworkInset: 4,
-                isTile: true, usesControlBackground: true, horizontalArtworkInset: 20
+                isTile: true, hasSourcePlate: hasPlate, usesControlBackground: true, horizontalArtworkInset: 20
             ))
             renderer.scale = 1
             let image = try XCTUnwrap(renderer.cgImage)
@@ -30,7 +31,7 @@ final class ChannelLogoArtworkTests: XCTestCase {
             let height = try XCTUnwrap(ink.map(\.y).max()) - XCTUnwrap(ink.map(\.y).min()) + 1
             XCTAssertEqual(width / height, sourceSize.width / sourceSize.height, accuracy: 0.05)
             if sourceSize.width == sourceSize.height {
-                XCTAssertEqual(height, 64, accuracy: 1)
+                XCTAssertEqual(height, hasPlate ? 48 : 64, accuracy: 1)
             } else if sourceSize.width == 32 {
                 XCTAssertEqual(width, 81, accuracy: 1)
                 XCTAssertEqual(height, 51, accuracy: 1)

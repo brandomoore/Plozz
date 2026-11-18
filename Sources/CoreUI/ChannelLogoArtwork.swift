@@ -64,6 +64,7 @@ public struct ChannelLogoArtwork: View {
                     size: size, cornerRadius: cornerRadius, artworkInset: artworkInset,
                     rendersInkLight: ChannelLogoPlate.rendersInkLight(current?.tone, prefersLight: palette.isLight),
                     isTile: ChannelLogoPlate.showsAsTile(current?.tone),
+                    hasSourcePlate: current?.tone?.backgroundPlate != nil,
                     usesControlBackground: usesControlBackground,
                     horizontalArtworkInset: horizontalArtworkInset
                 )
@@ -184,6 +185,7 @@ struct ChannelLogoPlateContent: View {
     var rendersInkLight = false
     /// Boxed logos fill more of the plate; playback preserves their source corners.
     var isTile = false
+    var hasSourcePlate = false
     var usesControlBackground = false
     var horizontalArtworkInset: CGFloat?
     @Environment(\.colorSchemeContrast) private var contrast
@@ -191,7 +193,11 @@ struct ChannelLogoPlateContent: View {
 
     /// A tile hugs the plate more closely than ink does.
     private var inset: CGFloat {
-        isTile ? min(artworkInset, max(4, size.height * 8 / 128)) : artworkInset
+        if horizontalArtworkInset != nil, hasSourcePlate, let image,
+           image.size.width <= image.size.height * 1.1 {
+            return max(artworkInset, size.height / 6)
+        }
+        return isTile ? min(artworkInset, max(4, size.height * 8 / 128)) : artworkInset
     }
 
     private var fittedWidth: CGFloat {
