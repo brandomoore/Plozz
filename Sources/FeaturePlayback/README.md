@@ -1590,7 +1590,10 @@ artwork boundary through that same zoom/stretch geometry before moving a region.
 
 The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
 It applies to movies, episodes, extras, trailers and Live TV; each platform starts
-with Auto-crop black bars. Unsupported engines fall back to Normal without changing
+with Normal. Older saved Auto-crop defaults and title choices reset to Normal once;
+other modes, Custom percentages and cutout-safe preferences remain intact.
+New explicit Auto-crop choices survive reloads and profile transfer.
+Unsupported engines fall back to Normal without changing
 the saved choice. Unidentified disc-menu timelines retain Normal framing.
 An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
 per profile and movie/series using the existing title preference store. Auto-crop's
