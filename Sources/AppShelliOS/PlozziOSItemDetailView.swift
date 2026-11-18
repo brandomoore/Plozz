@@ -213,27 +213,6 @@ struct PlozziOSItemDetailView: View {
 
 }
 
-/// A decoded image for one of the references the detail hero will actually resolve.
-/// Using the same picture on the first frame avoids swapping a card poster for the
-/// authoritative backdrop after the push.
-private func plozziOSHeroSeedArtwork(for presentation: HeroPresentation) -> UIImage? {
-    // Seed only from the references this detail presentation will resolve. A
-    // card's poster is a different picture from the detail backdrop; using it as
-    // a cover guarantees a visible swap a moment later. When none of the
-    // authoritative references is decoded yet, return nil and let the single
-    // detail fade bring the correct image in once.
-    let variants: [ArtworkImageVariant] = [
-        .heroBackdrop, .heroPreview, .landscapeCard, .posterCard, .original
-    ]
-    for variant in variants {
-        for reference in presentation.artworkReferences {
-            if let image = ArtworkImageCache.shared.cachedImage(for: reference, variant: variant) {
-                return image
-            }
-        }
-    }
-    return nil
-}
 
 private struct PlozziOSCanonicalItemDetailView: View {
     @Environment(\.plozzMetrics) private var metrics
@@ -589,7 +568,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 PlozziOSDetailHeroSection(
                     item: heroTarget,
                     backdropItem: detail.item,
-                    seedArtwork: plozziOSHeroSeedArtwork(for: backdropPresentation),
+                    seedArtwork: nil,
                     playableItem: playableHeroTarget,
                     showsPlayPlaceholder: showsPlayPlaceholder,
                     onRetryPlaybackInventory: viewModel.hasNoPlaybackStreams(for: versionTarget) ? {
