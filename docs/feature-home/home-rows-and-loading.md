@@ -211,6 +211,8 @@ strip labels the current date Today instead of placing a dot against its lower
 edge; the month picker retains its bold date and dot. Week arrows use the same
 native secondary Liquid Glass style at rest and in focus, without a borderless
 style overriding it. Their regular-weight SF chevrons use a tall, narrow profile.
+The buttons trim spacing on the pointed side for optical balance, mirrored in
+right-to-left layouts.
 The selection background sits beneath the native control;
 actual focus retains the much stronger native highlight and contrasting text.
 

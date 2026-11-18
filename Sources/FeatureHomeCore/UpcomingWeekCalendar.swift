@@ -40,14 +40,15 @@ struct UpcomingWeekCalendar: View {
                             .resizable()
                             .fontWeight(.regular)
                             .frame(width: 22, height: 54)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.trailing, 4)
+                            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
                     }
                         .buttonBorderShape(.roundedRectangle(radius: 16))
                         .accessibilityLabel("Previous week")
                         .help("Previous week")
                         .accessibilityIdentifier("upcoming.week.previous")
                         .disabled(!week.canMoveBackward(in: interval)),
-                    width: 80
+                    width: 78
                 )
                 ForEach(week.days, id: \.self) { day in
                     control(dayButton(day))
@@ -62,14 +63,15 @@ struct UpcomingWeekCalendar: View {
                             .resizable()
                             .fontWeight(.regular)
                             .frame(width: 22, height: 54)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.leading, 4)
+                            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
                     }
                         .buttonBorderShape(.roundedRectangle(radius: 16))
                         .accessibilityLabel("Next week")
                         .help("Next week")
                         .accessibilityIdentifier("upcoming.week.next")
                         .disabled(!week.canMoveForward(in: interval)),
-                    width: 80
+                    width: 78
                 )
             }
         }
