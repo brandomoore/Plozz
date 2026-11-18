@@ -196,9 +196,12 @@ class UnsignedIPATests(unittest.TestCase):
             app, "ios", self.fake_run(link=link, archs="arm64 arm64e")
         )["binaries"]), 3)
 
-    def test_workflow_is_manual_and_uploads_only_exact_outputs(self):
+    def test_workflow_supports_manual_builds_and_release_attachment(self):
         workflow = (ROOT / ".github/workflows/unsigned-ipa.yml").read_text()
         self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("release:\n    types: [published]", workflow)
+        self.assertIn("Attach unsigned IPAs to release", workflow)
+        self.assertIn("gh release upload", workflow)
         self.assertNotIn("pull_request:", workflow)
         self.assertNotIn("push:", workflow)
         self.assertNotIn("secrets.", workflow)
