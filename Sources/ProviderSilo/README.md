@@ -1,5 +1,9 @@
 # Native Silo provider
 
+Per-library Recently Added reads the scoped library section, not the series
+catalog sorted by `added_at`. Episode and series cards keep their server order
+and identity, including when a series has a separate playable episode ID.
+
 Subtitle playback labels retain the server's track name alongside the language
 and forced flag, so same-format tracks such as `French (France)` and
 `French (Canadien)` remain distinguishable without guessing their region.
