@@ -105,6 +105,17 @@ struct ScrubBar: View {
                     )
                     .equatable()
                 }
+                .overlay {
+                    // Every segment is marked, however narrow it is proportionally.
+                    // The mask prunes cuts that are too close to read, which left a
+                    // short merged intro with no mark at all.
+                    PlayerSkipMarkerGapOverlay(
+                        segments: model.skipSegments.segments, duration: model.duration
+                    )
+                    .equatable()
+                    .blendMode(.destinationOut)
+                }
+                .compositingGroup()
                 RoundedRectangle(cornerRadius: focused ? knobWidth / 2 : 0, style: .continuous)
                     .fill(Color.white)
                     .frame(width: knobWidth, height: knobHeight)

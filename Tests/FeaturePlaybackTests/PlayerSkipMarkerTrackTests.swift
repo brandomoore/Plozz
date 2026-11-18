@@ -39,6 +39,39 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         XCTAssertTrue(SkipMarkerTrackLayout.ranges(segments: segments, duration: 100).isEmpty)
     }
 
+    func testEverySegmentIsMarkedOnTheBar() {
+        let size = CGSize(width: 300, height: 12)
+        let short = SkipMarkerTrackLayout.segmentGaps(ranges: [0.02..<0.03], size: size)
+        XCTAssertEqual(short.count, 1)
+        XCTAssertEqual(short[0].width, 4, "A short window is floored to a legible gap.")
+        let wide = SkipMarkerTrackLayout.segmentGaps(ranges: [0.2..<0.6], size: size)
+        XCTAssertEqual(wide.first?.width ?? 0, 120, accuracy: 0.001,
+                       "A legible window keeps its real proportional width.")
+        let edge = SkipMarkerTrackLayout.segmentGaps(ranges: [0.995..<1.0], size: size)
+        XCTAssertEqual(edge.first?.maxX ?? 0, 300, accuracy: 0.001, "The gap stays inside the track.")
+    }
+
+    func testAShortSegmentDrawsAVisibleGapOnTheBar() throws {
+        // The Paper S2E2's intro is ~28 s of a ~44-minute episode: ~1% of the
+        // bar. The cut mask prunes that, so the overlay must still leave a gap.
+        let intro = MediaSegment(id: "intro", kind: .intro, start: 54.392, end: 82.546)
+        let view = ZStack {
+            Color.white
+            PlayerSkipMarkerGapOverlay(segments: [intro], duration: 2_640, minimumWidth: 4)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: 300, height: 12)
+        .background(Color.black)
+        let rendered = try pixels(view)
+        func channel(x: Int, y: Int) -> UInt8 {
+            rendered.bytes[(y * rendered.width + x) * 4]
+        }
+        let centerX = Int(((intro.start + intro.end) / 2 / 2_640) * 300)
+        XCTAssertLessThan(channel(x: centerX, y: 6), 32, "The segment gap is drawn.")
+        XCTAssertGreaterThan(channel(x: 150, y: 6), 200, "The rest of the bar stays filled.")
+    }
+
     func testFlatPerformanceTrackUsesAStaticFillAcrossAppAppearances() throws {
         XCTAssertEqual(PlayerScrubTrackSurface.flatFillOpacity, 0.22)
         for height in [CGFloat(12), 20] {

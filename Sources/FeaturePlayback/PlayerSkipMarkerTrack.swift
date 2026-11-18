@@ -100,6 +100,25 @@ enum SkipMarkerTrackLayout {
         return spaced
     }
 
+    /// One bar gap per segment, always. A segment narrower than `minimumWidth`
+    /// would otherwise be pruned as an illegible cut; flooring it keeps every
+    /// intro/credits/recap window marked on the bar. Wider segments keep their
+    /// real proportional width.
+    static func segmentGaps(
+        ranges: [Range<Double>], size: CGSize, minimumWidth: CGFloat = 4
+    ) -> [CGRect] {
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
+              minimumWidth > 0 else { return [] }
+        return ranges.compactMap { range in
+            let start = size.width * CGFloat(range.lowerBound)
+            let end = size.width * CGFloat(range.upperBound)
+            guard start.isFinite, end.isFinite, end >= start else { return nil }
+            let width = min(size.width, max(minimumWidth, end - start))
+            let x = min(max(0, (start + end) / 2 - width / 2), size.width - width)
+            return CGRect(x: x, y: 0, width: width, height: size.height)
+        }
+    }
+
     static func cornerSize(
         sectionWidth: CGFloat, neighborWidth: CGFloat, height: CGFloat, referenceHeight: CGFloat? = nil
     ) -> CGSize {
@@ -189,6 +208,28 @@ enum SkipMarkerTrackLayout {
         )
         path.closeSubpath()
         return path
+    }
+}
+
+/// Draws the bar gap for every segment. The mask prunes cuts that are too close
+/// to read, which left a short intro with no mark at all; this guarantees one
+/// gap per segment (floored to a legible minimum width).
+struct PlayerSkipMarkerGapOverlay: View, Equatable {
+    let segments: [MediaSegment]
+    let duration: TimeInterval
+    var minimumWidth: CGFloat = 4
+
+    var body: some View {
+        let ranges = SkipMarkerTrackLayout.ranges(segments: segments, duration: duration)
+        Canvas { context, size in
+            for rect in SkipMarkerTrackLayout.segmentGaps(
+                ranges: ranges, size: size, minimumWidth: minimumWidth
+            ) {
+                context.fill(Path(rect), with: .color(.black))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
