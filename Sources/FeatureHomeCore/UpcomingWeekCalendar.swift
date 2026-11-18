@@ -38,8 +38,9 @@ struct UpcomingWeekCalendar: View {
                     Button { displayedWeek = week.previous } label: {
                         Image(systemName: "chevron.backward")
                             .resizable()
-                            .fontWeight(.light)
-                            .frame(width: 20, height: 60)
+                            .scaledToFit()
+                            .fontWeight(.regular)
+                            .frame(width: 24, height: 48)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                         .buttonBorderShape(.roundedRectangle(radius: 16))
@@ -60,8 +61,9 @@ struct UpcomingWeekCalendar: View {
                     Button { displayedWeek = week.next } label: {
                         Image(systemName: "chevron.forward")
                             .resizable()
-                            .fontWeight(.light)
-                            .frame(width: 20, height: 60)
+                            .scaledToFit()
+                            .fontWeight(.regular)
+                            .frame(width: 24, height: 48)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                         .buttonBorderShape(.roundedRectangle(radius: 16))
