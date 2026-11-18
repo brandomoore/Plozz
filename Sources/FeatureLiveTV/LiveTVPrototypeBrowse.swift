@@ -1268,6 +1268,7 @@ struct PrototypeGuideStation: View {
     var libraryItem: LibraryChannelItem?
     var openLibraryItem: ((LibraryChannelItem) -> Void)?
     var selectForPreview: (() -> Void)?
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     var body: some View {
         Group {
@@ -1296,6 +1297,7 @@ struct PrototypeGuideStation: View {
         }
         .buttonStyle(PrototypeGuideButtonStyle(surface: .station, focusChanged: focusChanged))
         #if os(tvOS)
+        .menuStyle(.button)
         .frame(width: width ?? PrototypeLayout.stationColumnWidth, height: height ?? PrototypeLayout.rowHeight)
         .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous))
         #endif
@@ -1337,6 +1339,11 @@ struct PrototypeGuideStation: View {
             cornerRadius: PrototypeLayout.rowRadius
         )
         .clipped()
+        #if os(tvOS)
+        // Keep opaque artwork clear of the native glass focus surface.
+        .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous)
+            .inset(by: focusStyle.usesSystemEffect ? 4 : 0))
+        #endif
         .overlay(alignment: .topTrailing) {
             if selectionMarked {
                 Image(systemName: "checkmark.circle.fill")

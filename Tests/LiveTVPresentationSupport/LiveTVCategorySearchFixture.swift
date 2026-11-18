@@ -242,7 +242,8 @@ private struct CategorySearchSources: LiveTVSourcesStoring {
                   name: ProcessInfo.processInfo.arguments.contains("--category-long-source-name")
                     ? "Sample Television International Network" : "Sample TV",
                   playlistURL: URL(string: "https://fixture.invalid/channels.m3u")!,
-                  guideURLs: [URL(string: "https://fixture.invalid/guide.xml")!])
+                  guideURLs: ProcessInfo.processInfo.arguments.contains("--category-no-guide")
+                    ? [] : [URL(string: "https://fixture.invalid/guide.xml")!])
         ])
         if ProcessInfo.processInfo.arguments.contains("--category-multiple-sources") {
             sources.playlists += [

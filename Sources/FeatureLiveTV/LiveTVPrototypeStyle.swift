@@ -290,13 +290,7 @@ struct PrototypeGuideButtonStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         #if os(tvOS)
         if focusStyle.usesSystemEffect {
-            Button(role: configuration.role, action: configuration.trigger) {
-                PrototypeNativeGuideLabel(
-                    content: configuration.label, surface: surface, focusChanged: focusChanged
-                )
-            }
-            .buttonStyle(.borderless)
-            .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
+            nativeButton(configuration)
         } else {
             fallback(configuration)
         }
@@ -304,6 +298,18 @@ struct PrototypeGuideButtonStyle: PrimitiveButtonStyle {
         fallback(configuration)
         #endif
     }
+
+    #if os(tvOS)
+    private func nativeButton(_ configuration: Configuration) -> some View {
+        Button(role: configuration.role, action: configuration.trigger) {
+            PrototypeNativeGuideLabel(
+                content: configuration.label, surface: surface, focusChanged: focusChanged
+            )
+        }
+        .plozzActionButton(role: .secondary)
+        .buttonBorderShape(.roundedRectangle(radius: PrototypeLayout.rowRadius))
+    }
+    #endif
 
     private func fallback(_ configuration: Configuration) -> some View {
         Button(role: configuration.role, action: configuration.trigger) {

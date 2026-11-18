@@ -92,6 +92,8 @@ struct PrototypeBrowseSidebar: View {
             .onMoveCommand { move(from: .source, direction: $0) }
             .background { nativeFocusRequest(for: .source) }
             .disabled(isFocusDisabled(.source))
+            .padding(.horizontal, PrototypeLayout.gap)
+            .padding(.top, PrototypeLayout.gap)
 
             HStack(spacing: PrototypeLayout.gap) {
                 Button(action: search) {
@@ -111,6 +113,7 @@ struct PrototypeBrowseSidebar: View {
 
                 sidebarActions
             }
+            .padding(.horizontal, PrototypeLayout.gap)
             #else
             sidebarActions
             #endif
@@ -226,6 +229,8 @@ struct PrototypeBrowseSidebar: View {
                 Label("Multiviews", systemImage: "rectangle.split.2x2")
                     #if os(tvOS)
                     .labelStyle(.iconOnly)
+                    .font(.system(size: 30))
+                    .frame(width: 38, height: 38)
                     #else
                     .frame(maxWidth: .infinity, alignment: .leading)
                     #endif
@@ -247,6 +252,8 @@ struct PrototypeBrowseSidebar: View {
                 Label("Manage channels", systemImage: "slider.horizontal.3")
                     #if os(tvOS)
                     .labelStyle(.iconOnly)
+                    .font(.system(size: 30))
+                    .frame(width: 38, height: 38)
                     #else
                     .frame(maxWidth: .infinity, alignment: .leading)
                     #endif
@@ -282,15 +289,14 @@ private struct PrototypeSidebarNativeControl: ViewModifier {
 
     func body(content: Content) -> some View {
         sized(content)
-            .buttonStyle(.bordered)
-            .buttonBorderShape(iconOnly ? .circle : .roundedRectangle(radius: PrototypeLayout.controlRadius))
-            .controlSize(.small)
+            .plozzActionButton(role: .secondary)
+            .buttonBorderShape(iconOnly ? .circle : .capsule)
+            .controlSize(.regular)
             .tint(palette.accent)
-            .frame(width: iconOnly ? PrototypeLayout.controlHeight : nil, height: PrototypeLayout.controlHeight)
     }
 
     @ViewBuilder private func sized(_ content: Content) -> some View {
-        if #available(tvOS 26.0, *) {
+        if #available(tvOS 26.0, *), !iconOnly {
             content.buttonSizing(.flexible)
         } else {
             content

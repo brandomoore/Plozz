@@ -10,6 +10,58 @@ import XCTest
 
 @MainActor
 final class LiveTVGuideFocusTests: XCTestCase {
+    func testNativeStationFocusRemainsVisibleAroundOpaqueArtwork() async throws {
+        try await requireNativeFocus()
+        let channel = try XCTUnwrap(LiveTVPrototypeModel().channels.first)
+        let window = makeWindow(
+            PrototypeGuideStation(
+                channel: channel, section: .channels, favorite: false, playing: false,
+                tune: {}, toggleFavorite: {}, controls: {}, top: {}
+            )
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.themePalette, .dark)
+            .preferredColorScheme(.dark)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
+        )
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        window.rootViewController?.setNeedsFocusUpdate()
+        window.rootViewController?.updateFocusIfNeeded()
+        await waitUntil { system.focusedItem != nil }
+        let item = try XCTUnwrap(system.focusedItem)
+        try await Task.sleep(for: .milliseconds(350))
+        var parent = item.parentFocusEnvironment
+        while let current = parent, current.focusItemContainer == nil {
+            parent = current.parentFocusEnvironment
+        }
+        let container = try XCTUnwrap(parent?.focusItemContainer)
+        let frame = window.convert(item.frame, from: container.coordinateSpace)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Native station focus over opaque artwork"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let strip = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
+            x: frame.midX - 20, y: frame.minY + 1, width: 40, height: 2
+        )))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let brightness = try pixel.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(strip, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])
+        }
+        XCTAssertGreaterThan(brightness, 500,
+                             "The opaque logo plate must not cover the native bright focus surface.")
+    }
+
     func testChannelRowKeepsTwentyPointInsetsWithoutReducingTheTextSize() {
         let proposal = CGSize(width: 500, height: 1_000)
         let text = UIHostingController(rootView: Text("Weather")
