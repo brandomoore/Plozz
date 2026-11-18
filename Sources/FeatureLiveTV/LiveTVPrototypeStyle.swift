@@ -4,7 +4,7 @@ import FeatureLiveTVCore
 import SwiftUI
 
 enum PrototypeLayout {
-    static let sidebarAnimation = Animation.easeInOut(duration: 0.16)
+    static let sidebarAnimation = Animation.easeInOut(duration: 0.28)
     static let gap = PlozzTheme.Spacing.medium
     static let smallGap = PlozzTheme.Spacing.xSmall
     static let radius = PlozzTheme.Metrics.cornerRadius

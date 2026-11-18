@@ -217,7 +217,15 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
                        "A removed category must fall back to the current filter.")
     }
 
-    func testCategoryFocusRequestWaitsForRevealCompletion() async throws {
+    func testCategoryFocusRequestWaitsForRevealCompletionWithoutNativeOwner() async throws {
+        try await assertCategoryRevealHandoff(usesNativeOwner: false)
+    }
+
+    func testNativeCategoryFocusArrivesDuringRevealAndDoesNotReplayOnCompletion() async throws {
+        try await assertCategoryRevealHandoff(usesNativeOwner: true)
+    }
+
+    private func assertCategoryRevealHandoff(usesNativeOwner: Bool) async throws {
         let scene = try await foregroundScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
         let state = CategoryFocusFixtureState()
@@ -225,6 +233,20 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let host = CategoryFocusHost(rootView: CategoryFocusPage(state: state))
+        var nativeRequests = 0
+        if usesNativeOwner {
+            state.nativeFocusRequest = { [weak host] marker in
+                guard let host, let window = marker.window,
+                      let system = UIFocusSystem.focusSystem(for: window),
+                      let target = NavigationRowFocusRequester.target(for: marker, in: window) else { return false }
+                nativeRequests += 1
+                host.target = target
+                defer { host.target = nil }
+                system.requestFocusUpdate(to: host)
+                system.updateFocusIfNeeded()
+                return system.focusedItem === target
+            }
+        }
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -256,8 +278,31 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
 
         state.isRevealing = true
         state.request += 1
+        if usesNativeOwner {
+            let deadline = ContinuousClock.now + .seconds(2)
+            while !NativeFocusRegion.contains(system.focusedItem, in: scroll), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertTrue(state.isRevealing)
+            XCTAssertTrue(NativeFocusRegion.contains(system.focusedItem, in: scroll),
+                          "The native handoff must not wait for animation completion.")
+            let early = try XCTUnwrap(system.focusedItem)
+            XCTAssertEqual(try XCTUnwrap(NavigationRowFocusRequester.frame(of: early, relativeTo: scroll)).minY,
+                           selectedFrame.minY, accuracy: 1)
+            let count = nativeRequests
+            host.target = guide
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            host.target = nil
+            state.isRevealing = false
+            try await Task.sleep(for: .milliseconds(250))
+            XCTAssertTrue(system.focusedItem === guide,
+                          "Leaving during reveal must not let completion pull focus back.")
+            XCTAssertEqual(nativeRequests, count)
+            return
+        }
         try await Task.sleep(for: .milliseconds(80))
-        XCTAssertTrue(system.focusedItem === guide, "Do not spend the entry request on a still-clipped pane.")
+        XCTAssertTrue(system.focusedItem === guide, "SwiftUI-only hosts still wait for the pane to finish opening.")
 
         state.isRevealing = false
         try await Task.sleep(for: .milliseconds(250))
@@ -408,6 +453,7 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         var collapsed = false
         var direction = LayoutDirection.leftToRight
         var disablesAnimations = false
+        var nativeFocusRequest: (@MainActor (UIView) -> Bool)?
         var lastFocusedControl: PrototypeBrowseSidebar.Control?
         let model = LiveTVPrototypeModel(channels: (0..<80).map {
             LiveTVPrototypeChannel(
@@ -449,6 +495,7 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
             .environment(\.themePalette, .dark)
             .environment(\.colorScheme, .dark)
             .environment(\.layoutDirection, state.direction)
+            .environment(\.plozzNativeControlFocusRequest, state.nativeFocusRequest)
             .transaction { $0.disablesAnimations = state.disablesAnimations }
         }
 

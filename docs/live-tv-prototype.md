@@ -353,23 +353,26 @@ Search and the active-channel artwork stay aligned, with an additional 16-point
 clearance below native navigation. Pinned navigation keeps its existing inset.
 The full-height source/Search/categories pane collapses when focus enters the TV
 guide and returns on a leading-edge move. The pane slides and fades as one unit
-over 0.16 seconds while the guide resizes; Reduce Motion suppresses the animation.
+over 0.28 seconds while the guide resizes; Reduce Motion suppresses the animation.
 The reveal interceptor is active only while the pane is collapsed; the same
 leading-edge press must restore the pane's last focused control, not merely open
 the pane while the guide continues intercepting focus exits.
-Category entry waits for the reveal animation's actual completion before
-requesting focus. An appearance-time request can be lost while the pane is
-still clipped; cancelled or superseded reveals must not steal focus later.
-With pinned navigation, the rendered category/control requests focus through the
-shared native owner containing both the sidebar and the guide's collection-view
-host. A SwiftUI focus binding alone can leave focus inside that nested guide.
+With pinned navigation, category entry requests focus after the opening layout
+commits, while the pane is still sliding and fading in. The shared native owner
+contains both the sidebar and the guide's collection-view host; a SwiftUI focus
+binding alone can leave focus inside that nested guide. Hosts without that
+native owner retain the reveal-completion fallback. Once the target has focus,
+ordinary navigation is available immediately and animation completion must not
+replay the request.
 The request is cancelled when its control is disabled or detached and is not
 replayed by later scrolling/layout. Restoring a retained category sends no scroll
 command; only initial entry or an unavailable-category fallback reveals a row.
 Leaving categories for pinned navigation does not rearm the completed request;
 navigation owns focus until the viewer returns. New-page entry prefers the
-category list's first row over the source switcher, while closing navigation
-restores the actual control from which it was opened.
+first category over the source switcher, while closing navigation restores the
+actual control from which it was opened. The remembered control is also the
+entry preference if navigation interrupts the opening before its moving native
+focus item can be captured.
 With pinned navigation, the moving pane fades through the extra content inset,
 reaching full transparency before the navigation icons. The stationary feather
 does not dim the resting controls or leave a translucent copy behind the rail.

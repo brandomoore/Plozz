@@ -39,7 +39,7 @@ struct PrototypeBrowseSidebar: View {
     }
 
     private var isRestoringFocus: Bool {
-        restoresCategoryFocus && (isRevealing || categoryFocusRequest > completedCategoryFocusRequest)
+        restoresCategoryFocus && categoryFocusRequest > completedCategoryFocusRequest
     }
 
     private var entryTarget: Control {
@@ -64,12 +64,18 @@ struct PrototypeBrowseSidebar: View {
     }
 
     private var readyCategoryFocusRequest: Int? {
-        restoresCategoryFocus && !isRevealing ? categoryFocusRequest : nil
+        #if os(tvOS)
+        // The shared owner can focus the laid-out control while its pane is moving.
+        if requestNativeFocus != nil { return restoresCategoryFocus ? categoryFocusRequest : nil }
+        #endif
+        return restoresCategoryFocus && !isRevealing ? categoryFocusRequest : nil
     }
 
     @ViewBuilder private func nativeFocusRequest(for control: Control) -> some View {
         #if os(tvOS)
         NativeControlFocusRequest(request: isRestoringFocus && control == entryTarget ? readyCategoryFocusRequest : nil)
+            // A moving virtual item may not yet be capturable as the rail's return target.
+            .navigationEntryFocus(control == entryTarget ? .content : nil)
         #endif
     }
 
@@ -204,9 +210,7 @@ struct PrototypeBrowseSidebar: View {
                     categoryFade = fade
                 }
                 .accessibilityIdentifier("live-tv-category-list")
-                .navigationEntryFocus(.content)
                 .onChange(of: readyCategoryFocusRequest, initial: true) { _, request in
-                    // The pane is still clipped during its reveal transition.
                     guard request != nil else { return }
                     let target = entryTarget
                     if case .category = target, !hasFocusedControl || target != lastFocusedControl {
