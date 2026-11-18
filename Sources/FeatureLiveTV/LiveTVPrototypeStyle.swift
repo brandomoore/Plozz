@@ -49,14 +49,16 @@ enum PrototypeLayout {
     static let controlHeight: CGFloat = 56
     static let guideFontSize: CGFloat = 26
     static let sectionFontSize: CGFloat = 22
+    static let rowTextVerticalInset: CGFloat = 20
+    static let rowHeight = ceil(UIFont.systemFont(ofSize: guideFontSize).lineHeight) + rowTextVerticalInset * 2
     #else
     static let inset = PlozzTheme.Spacing.medium
     static let stationSize: CGFloat = 80
     static let controlHeight: CGFloat = 44
     static let guideFontSize: CGFloat = 16
     static let sectionFontSize: CGFloat = 14
-    #endif
     static let rowHeight = stationSize + rowInset * 2
+    #endif
     static let stationColumnWidth = stationSize * 1.75 + rowInset * 2
     static var guideShape: UnevenRoundedRectangle {
         #if os(tvOS)

@@ -1415,7 +1415,11 @@ struct PrototypeGuideGap: View {
             Text(channelName)
                 .font(.system(size: fontSize))
                 .foregroundStyle(palette.primaryText.opacity(0.8))
+                #if os(tvOS)
+                .lineLimit(showsStatus && state == .failed ? 1 : 2)
+                #else
                 .lineLimit(2)
+                #endif
             if showsStatus, let state, state == .failed {
                 Text(state.title)
                     .font(.caption)

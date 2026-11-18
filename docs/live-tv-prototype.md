@@ -39,6 +39,11 @@ take priority. Ordinary background refreshes stay quiet.
 Focused channel rows also keep routine loading and not-yet-requested guide
 windows silent, including their accessibility values. Nearby channel/time
 windows still load in the background; genuine guide failures remain visible.
+On Apple TV, a standard guide row is one unchanged 26-point text line plus
+20 points above and below (about 72 points total), rather than 128 points.
+Row gaps and channel-column width are unchanged, and rows still grow with
+Dynamic Type. Channel names can use two lines; a focused guide failure reserves
+the second line for its error. Phone and tablet row sizes are unchanged.
 
 Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a

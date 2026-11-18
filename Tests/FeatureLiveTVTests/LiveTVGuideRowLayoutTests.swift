@@ -715,7 +715,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         }
     }
 
-    func testTVLayoutLeavesRoomForFourRoomyRows() {
+    func testTVLayoutLeavesRoomForSevenCompactRows() {
         #if os(tvOS)
         let layout = PrototypePreviewLayout(
             size: CGSize(width: 1_740, height: 960),
@@ -726,9 +726,9 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             + PrototypeLayout.gap + PrototypeLayout.smallGap * 2
         let listHeight = layout.contentFrame.height - layout.heroHeight - toolbarAndRuler - spacing
         let visibleRows = listHeight / (PrototypeLayout.rowHeight + PrototypeLayout.rowGap)
-        XCTAssertGreaterThanOrEqual(visibleRows, 4)
-        XCTAssertLessThan(visibleRows, 5)
-        XCTAssertGreaterThanOrEqual(PrototypeLayout.rowHeight, 100)
+        XCTAssertGreaterThanOrEqual(visibleRows, 7)
+        XCTAssertLessThan(visibleRows, 8)
+        XCTAssertLessThanOrEqual(PrototypeLayout.rowHeight, 128 * 0.7)
         #endif
     }
 
@@ -809,7 +809,9 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         #else
         XCTAssertEqual(PrototypeLayout.rowRadius, PrototypeLayout.logoRadius + PrototypeLayout.rowInset)
         #endif
+        #if os(iOS)
         XCTAssertEqual(PrototypeLayout.rowHeight, PrototypeLayout.stationSize + PrototypeLayout.rowInset * 2)
+        #endif
         XCTAssertEqual(PrototypeLayout.stationArtworkInset, PrototypeLayout.guideInset + 8)
         XCTAssertEqual(
             PrototypeLayout.controlGroupRadius,

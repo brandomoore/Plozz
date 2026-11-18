@@ -9,6 +9,21 @@ import XCTest
 
 @MainActor
 final class LiveTVGuideFocusTests: XCTestCase {
+    func testChannelRowKeepsTwentyPointInsetsWithoutReducingTheTextSize() {
+        let proposal = CGSize(width: 500, height: 1_000)
+        let text = UIHostingController(rootView: Text("Weather")
+            .font(.system(size: 26))
+            .dynamicTypeSize(.large))
+            .sizeThatFits(in: proposal)
+        let row = UIHostingController(rootView: PrototypeGuideGap(
+            channelName: "Weather", height: PrototypeLayout.rowHeight
+        ).dynamicTypeSize(.large))
+            .sizeThatFits(in: proposal)
+
+        XCTAssertEqual((row.height - text.height) / 2, 20, accuracy: 0.5)
+        XCTAssertLessThan(row.height, 128 * 0.7)
+    }
+
     func testFocusedChannelKeepsBackgroundGuideLoadingQuietButShowsFailure() throws {
         func image(_ state: LiveTVGuideGapState?, focused: Bool = true) throws -> Data {
             let renderer = ImageRenderer(content: PrototypeGuideGap(
