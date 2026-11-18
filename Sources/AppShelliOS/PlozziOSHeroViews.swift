@@ -45,7 +45,7 @@ enum PlozziOSHeroMetrics {
     /// picture until it does.
     ///
     /// Portrait Home and detail share the same picture/continuation geometry.
-    /// Detail has a shorter artwork-only stage; its information grows below it.
+    /// Both surfaces keep their foreground inside the extended stage.
     static func extendsArtwork(
         style: HeroArtworkStyle,
         surfaceRole: HeroTrailerSurfaceRole
@@ -71,25 +71,14 @@ enum PlozziOSHeroMetrics {
                 max(containerHeight - HeroStageMetrics.minimumPeek, 1)
             )
         }
-        // The portrait Home hero is sized to the phone, not to a constant: it
-        // has to reach far enough down that the metadata sits in the lower part
-        // of the screen, while still leaving the next row peeking. See
-        // `HeroStageMetrics`.
-        // The portrait Home hero is sized to the phone, not to a constant: it
-        // has to reach far enough down that the metadata sits in the lower part
-        // of the screen, while still leaving the next row peeking. Detail keeps
-        // its shorter stage: stretching it to the Home height moved the artwork
-        // and foreground out of their intended alignment.
-        if style == .compactPortrait && surfaceRole == .home {
+        if style == .compactPortrait {
             return HeroStageMetrics.portraitHomeHeight(
                 windowHeight: containerHeight,
                 fallback: 610,
                 accessibilityExtra: accessibilityExtra
             )
         }
-        let base: CGFloat = style == .compactPortrait
-            ? (surfaceRole == .detail ? 420 : 610)
-            : (surfaceRole == .detail ? 760 : 680)
+        let base: CGFloat = surfaceRole == .detail ? 760 : 680
         let detailExtra = surfaceRole == .detail ? detailContentTopInset : 0
         return base + accessibilityExtra + detailExtra
     }
@@ -504,6 +493,7 @@ struct PlozziOSDetailHeroSection: View {
     /// Forwarded to the action row — see `presentsEpisodeStill` there.
     var presentsEpisodeStill: Bool = false
     var pullDistance: CGFloat = 0
+    var metadataIsReady = true
 
     var body: some View {
         let style: HeroArtworkStyle = horizontalSizeClass == .compact
@@ -561,6 +551,7 @@ struct PlozziOSDetailHeroSection: View {
                 offersParentNavigation: offersParentNavigation,
                 presentsEpisodeStill: presentsEpisodeStill
             )
+            .plozzFadeInOnAppear(isReady: metadataIsReady)
         }
         .environment(\.plozziOSHeroLogoSize, appModel.settings.detailPage.settings.logoSize)
         .environment(
@@ -599,7 +590,7 @@ struct PlozziOSSeriesLoadingHero: View {
                 PlozziOSHeroMetadata(
                     presentation: presentation, style: style, mode: .detail,
                     usesCompactDetailLayout: style == .compactPortrait,
-                    content: style == .compactPortrait ? .information : .all,
+                    content: .all,
                     detailPageSettings: settings, textSize: settings.textSize
                 )
                 .environment(\.metadataTextScale, settings.textSize.scale)
@@ -683,7 +674,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
     }
 
     private var separatesContent: Bool {
-        surfaceRole == .detail && style == .compactPortrait
+        surfaceRole == .detail && style == .compactPortrait && !showsBackdrop
     }
 
     var body: some View {
@@ -753,29 +744,9 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         return Group {
             if separatesContent {
                 VStack(spacing: 0) {
-                    if showsBackdrop {
-                        ZStack(alignment: .bottom) {
-                            background
-                            PlozziOSHeroMetadata(
-                                presentation: presentation,
-                                style: style,
-                                mode: .detail,
-                                scheduleLine: scheduleLine,
-                                logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
-                                content: .identity
-                            )
-                            .environment(\.metadataTextScale, textSize.scale)
-                            .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: style))
-                            .padding(.bottom, 12)
-                        }
-                        .frame(height: height)
-                    }
                     foreground()
                         .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: style))
-                        .padding(
-                            .top,
-                            showsBackdrop ? 12 : 80 + PlozziOSHeroMetrics.detailContentTopInset
-                        )
+                        .padding(.top, 80 + PlozziOSHeroMetrics.detailContentTopInset)
                         .padding(.bottom, 8)
                         .frame(maxWidth: .infinity)
                         .background(gradientEnabled ? Color.clear : palette.backgroundBase)
@@ -1148,10 +1119,6 @@ private struct PlozziOSHeroBackdrop: View {
     /// Once the real backdrop has any picture, drop the card seed so the two can
     /// never be visible together (the "two images" on the way into a detail page).
     @State private var backdropResolved = false
-    /// Detail's first-paint fade is independent of whether the bitmap was already
-    /// warm: every detail entry transitions from the page background to the hero,
-    /// so a cached image does not snap in either.
-    @State private var imageRevealed = false
     /// The artwork this surface committed to. Metadata enrichment can add a better
     /// reference a second after entry; swapping it re-lays out and re-tints the
     /// hero, which reads as the hero moving/flickering. Freeze the first resolved
@@ -1300,28 +1267,10 @@ private struct PlozziOSHeroBackdrop: View {
             seedArtwork == nil ? palette.backgroundBase : Color.clear
         }
         .reportingHeroArtwork(id: presentation.itemID)
-        // Fade the first detail backdrop over the grey/seed base instead of
-        // letting it pop in when the async resolve lands. Home hero slides must
-        // not fade: their image is normally already warm, and coupling the fade to
-        // the slide change made every swipe dim the artwork and could flash black
-        // during a pull. This is a plain opacity animation, not a redraw.
-        .opacity(surfaceRole != .detail || imageRevealed ? 1 : 0)
-        .animation(surfaceRole == .detail ? .easeInOut(duration: 0.42) : nil, value: imageRevealed)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .onAppear {
-            // A warm bitmap is already present on the first frame, so no resolve
-            // callback will fire to start the fade; start it from appearance.
-            guard surfaceRole == .detail, backdropResolved, !imageRevealed else { return }
-            imageRevealed = true
-        }
-        .onChange(of: backdropResolved) { _, resolved in
-            guard surfaceRole == .detail, resolved else { return }
-            imageRevealed = true
-        }
         .onChange(of: presentation.itemID) { _, _ in
             backdropResolved = false
-            imageRevealed = false
             frozenReferences = nil
         }
     }
@@ -2413,7 +2362,7 @@ struct PlozziOSDetailHeroForeground: View {
                 scheduleLine: scheduleLine,
                 logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: rootItem),
                 usesCompactDetailLayout: style == .compactPortrait,
-                content: style == .compactPortrait && !presentsEpisodeStill ? .information : .all,
+                content: .all,
                 detailPageSettings: appModel.settings.detailPage.settings,
                 textSize: appModel.settings.detailPage.settings.textSize
             )
@@ -3075,11 +3024,8 @@ struct PlozziOSHeroMetadata: View {
                         displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
                         maxHeight: logoBox.height,
-                        // One reveal across Home and detail: show the wordmark
-                        // when it resolves and crossfade it in, rather than
-                        // letting a text title appear first and swapping it under
-                        // the viewer. Home's Play/Watchlist actions are outside
-                        // this logo gate and remain usable immediately.
+                        // Never replace a provisional text title with a late logo.
+                        // Logo resolution does not gate the page's actions.
                         presentationPolicy: .whenResolved,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
@@ -3090,6 +3036,12 @@ struct PlozziOSHeroMetadata: View {
                             .fontWeight(.bold)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(2)
+                    }
+                    .transaction {
+                        if mode == .detail {
+                            $0.animation = nil
+                            $0.disablesAnimations = true
+                        }
                     }
                     .accessibilityLabel(Text(titlePresentation.title))
                     .accessibilityAddTraits(.isHeader)
@@ -3185,11 +3137,11 @@ struct PlozziOSHeroMetadata: View {
                 }
             }
         }
-        // Title, logo, facts, ratings and overview all hydrate after the seed
-        // item. Crossfade their content and animate the small reflow instead of
-        // dropping new fields in with a pop.
-        .contentTransition(.opacity)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: contentFadeKey)
+        .contentTransition(mode == .detail ? .identity : .opacity)
+        .animation(
+            mode == .home && !reduceMotion ? .easeInOut(duration: 0.24) : nil,
+            value: contentFadeKey
+        )
         .frame(maxWidth: .infinity, alignment: style == .compactPortrait ? .center : .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
             if width > 0 { availableWidth = width }

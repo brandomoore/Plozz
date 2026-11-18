@@ -622,7 +622,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     // a way over to its show.
                     offersParentNavigation: showsEpisodeSubjectHero(detail.item),
                     presentsEpisodeStill: showsEpisodeSubjectHero(detail.item),
-                    pullDistance: heroPullDistance
+                    pullDistance: heroPullDistance,
+                    metadataIsReady: viewModel.metadataIsReady
                 )
                 .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
 
@@ -653,8 +654,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     .padding(.horizontal, pageInset)
                 }
 
-                // Above the cast, matching tvOS: what else to watch is the decision
-                // being made now; who was in it is looked up afterwards.
                 PlozziOSExtrasSection(
                     state: viewModel.extrasState,
                     inset: pageInset,
@@ -663,43 +662,20 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         Task { await viewModel.retryExtras() }
                     }
                 )
-                .plozzFadeInOnAppear()
-
-                // Related titles arrive after the page is readable, so reserve the
-                // rail's geometry while the loader works — same rule as Home's hero
-                // and the episode rail. Without it the page grew under the viewer the
-                // moment the section appeared. `isLoading`/`hasResolved` are the
-                // loader's own state, so there is no timing guess involved.
-                if let loader = viewModel.relatedTitlesLoader {
-                    PlozzReservedPlaceholder(
-                        isPending: loader.isLoading || !loader.hasResolved,
-                        revealsPlaceholder: true
-                    ) {
-                        PlozziOSHomeSkeletonRail(
-                            title: Text(verbatim: " "),
-                            style: .poster,
-                            showsCaption: true
-                        )
-                        .accessibilityLabel(
-                            Text("Loading related titles")
-                        )
-                    } content: {
-                        if !loader.entries.isEmpty {
-                            PlozziOSRelatedSection(
-                                entries: loader.entries,
-                                inset: pageInset,
-                                onSelect: { item, source in artworkItemNavigator?(item, source) }
-                            )
-                        }
-                    }
-                }
 
                 if !detail.item.detailCredits.isEmpty {
                     PlozziOSCastSection(
                         people: detail.item.people,
                         sourceAccountID: detail.item.sourceAccountID
                     )
-                    .plozzFadeInOnAppear()
+                }
+
+                if let loader = viewModel.relatedTitlesLoader, !loader.entries.isEmpty {
+                    PlozziOSRelatedSection(
+                        entries: loader.entries,
+                        inset: pageInset,
+                        onSelect: { item, source in artworkItemNavigator?(item, source) }
+                    )
                 }
 
                 DetailInformationSections(
@@ -719,7 +695,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         ? HeroContentPolicy.detailDescription(focused: headerPresentation, root: rootPresentation)
                         : nil
                 )
-                .plozzFadeInOnAppear()
             }
             // No trailing padding here. The information band is the last thing in
             // this stack and paints its own tint, so a gap added out here is page

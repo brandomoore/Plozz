@@ -707,13 +707,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
                 self.state = .loaded(cached)
                 self.isShowingCachedSnapshot = true
                 if !accounts.isEmpty {
-                    // Only rows with nothing cached may start as placeholders. Marking
-                    // them unconditionally made a fully populated Continue Watching row
-                    // (measured: 48 cached cards) render as placeholders on the very
-                    // first frame — the reported "starts out blank, scrolling shows the
-                    // covers". Placeholder-ness follows the data, not the account list.
-                    var pending: Set<HomeRowKind> = []
-                    if cached.continueWatching.isEmpty { pending.insert(.continueWatching) }
+                    // Resume positions need a live first publication; discovery
+                    // rows can keep their cached cards while refreshing.
+                    var pending: Set<HomeRowKind> = [.continueWatching]
                     if cached.latest.isEmpty { pending.insert(.recentlyAdded) }
                     if cached.watchlist.isEmpty { pending.insert(.watchlist) }
                     self.loadingRows = pending
@@ -1013,36 +1009,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             rowFailures = [:]
             continueWatchingDiagnostic = nil
             loadingRows = Set(HomeRowKind.allCases).subtracting(receivedLiveRows)
-            // Continue Watching already has cards on screen from the cached snapshot:
-            // keep them painted while the multi-server aggregate arrives instead of
-            // swapping the whole row for placeholders. This was the one row that
-            // always took seconds longer than every other row on launch — not because
-            // its artwork was slow, but because its CONTENT was withheld here. The
-            // fresh aggregate still replaces the cards in place when it resolves.
-            if isShowingCachedSnapshot, !onScreenContinueWatching.isEmpty {
-                loadingRows.remove(.continueWatching)
-            }
-            var initial = previousContent ?? Content()
-            initial.sectionIssues = []
-            initial.mergeLibraries = !visibility.usesIndividualHomeRows
-            initial.librarySections = !visibility.usesIndividualHomeRows ? [] : retainingLibraryRowContent(
-                Self.plannedLibrarySections(libraries: initial.libraries, visibility: visibility),
-                previous: initial.librarySections
-            )
-            initial.serverRows = retainingServerRowContent(
-                HomeServerRow.plannedDefinitions(accounts: accounts, visibility: visibility)
-                    .map { HomeServerRow(definition: $0, isLoading: true) },
-                previous: initial.serverRows
-            )
-            initial.collectionRows = HomeCollectionRow.plannedDefinitions(accounts: accounts, visibility: visibility)
-                .map { definition in
-                    var row = initial.collectionRows.first { $0.definition == definition }
-                        ?? HomeCollectionRow(definition: definition)
-                    row.isLoading = true
-                    row.failure = nil
-                    return row
-                }
-            state = .loaded(initial)
+            state = .loaded(loadingPresentationContent)
         } else if showLoadingState {
             state = .loading
         }
@@ -1443,17 +1410,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         content.collectionRows = retainingCollectionRowContent(
             progress.content.collectionRows, previous: content.collectionRows
         )
-        if let resume {
-            // Never let a mid-load empty result wipe the row: progress arrives per
-            // account, so one account reporting no in-progress titles before the
-            // others land is not evidence that the viewer has none. Blanking here is
-            // the reported "Continue Watching loads, then goes blank, and scrolling
-            // brings the covers back". An empty reconcile only replaces a non-empty
-            // row when the row is fully ready AND nothing was carried forward.
-            if !resume.isEmpty || content.continueWatching.isEmpty {
-                content.continueWatching = resume
-            }
-        }
+        if let resume { content.continueWatching = resume }
         if newlyReady.contains(.recentlyAdded) {
             content.latest = progress.content.latest
             content.recentlyAddedCandidates = progress.content.recentlyAddedCandidates

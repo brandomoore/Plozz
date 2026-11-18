@@ -10,6 +10,24 @@ import XCTest
 
 @MainActor
 final class HeroLogoContinuityTests: XCTestCase {
+    func testGroupedEntranceWaitsForReadinessAndDoesNotReplayOnRefresh() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let state = SubjectState(item: MediaItem(id: "entrance", title: "Initial metadata", kind: .movie))
+        fixture.host.rootView = AnyView(EntranceFixture(state: state))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(try fixture.hasRedLogo())
+        XCTAssertFalse(try fixture.hasTitleText())
+
+        state.metadataIsReady = true
+        try await waitUntil { try fixture.hasRedLogo() && fixture.hasTitleText() }
+        state.metadataIsReady = false
+        state.item.title = "Refreshed metadata"
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(try fixture.hasRedLogo(), "A refresh must not hide the revealed group.")
+        XCTAssertTrue(try fixture.hasTitleText())
+    }
+
     func testDetailNeverShowsTextWhileItsFirstLogoIsLoading() async throws {
         for style: HeroArtworkStyle in [.landscape, .compactPortrait] {
             for findsLogo in [true, false] {
@@ -242,7 +260,21 @@ final class HeroLogoContinuityTests: XCTestCase {
 
     @Observable fileprivate final class SubjectState {
         var item: MediaItem
+        var metadataIsReady = false
         init(item: MediaItem) { self.item = item }
+    }
+
+    private struct EntranceFixture: View {
+        let state: SubjectState
+        var body: some View {
+            VStack {
+                Color.red.frame(width: 100, height: 50)
+                Text(state.item.title).font(.title).foregroundStyle(.white)
+            }
+            .plozzFadeInOnAppear(isReady: state.metadataIsReady)
+            .frame(width: 400, height: 250)
+            .background(.black)
+        }
     }
 
     private struct DetailMetadataFixture: View {

@@ -849,9 +849,12 @@ final class ItemDetailViewModelTests: XCTestCase {
             openingResolver: { await release.wait(); throw AppError.serverUnreachable }
         )
         defer { model.suspendEnrichment() }
+        XCTAssertFalse(model.metadataIsReady, "A navigation seed is not hydrated detail.")
         let loading = Task { await model.load() }
         await waitUntil { model.state.value?.item.overview == native.overview }
         XCTAssertEqual(model.state.value?.children.map(\.id), [season.id])
+        XCTAssertTrue(model.metadataIsReady, "Cached metadata must not wait for live resolution.")
+        XCTAssertFalse(model.artworkSourceIsReady, "Metadata readiness must not choose an artwork source.")
         release.open()
         await loading.value
         XCTAssertEqual(model.state.value?.item.overview, native.overview)

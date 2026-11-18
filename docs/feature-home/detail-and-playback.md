@@ -177,6 +177,19 @@ for timing scope and scrolling limitations.
 
 ## Pending primary action
 
+On iPhone, the detail hero uses Home's responsive portrait height and mirrored
+artwork continuation. Its title, metadata and actions share the artwork surface;
+series seasons remain directly below it. Cast & Crew precedes Related. Related
+renders only real results, including short rows, without a speculative skeleton.
+Its request still starts during page entry, not when the row scrolls into view.
+
+Mobile core foreground has one initial entrance after cached or native detail is
+available. Cached metadata does not wait for live artwork-source resolution.
+Artwork displays without an entrance fade; later enrichment and optional sections
+do not replay separate fades. Logo resolution keeps the existing no-temporary-title
+policy and may finish later, without blocking playback. Reduce Motion removes
+the foreground entrance.
+
 tvOS detail entry keeps the real primary action focusable while its play target
 loads. An early press queues one activation, replacing the icon with a spinner
 without resizing the button. Readiness consumes that intent once through the

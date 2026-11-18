@@ -628,11 +628,13 @@ public final class ItemDetailViewModel {
     @ObservationIgnored private var nativeDetailItem: MediaItem?
     /// List seeds and restored snapshots do not establish the preferred artwork
     /// source. Release only this visual gate when native/discovery identity settles.
-    private let artworkReadiness = DetailArtworkReadiness()
+    private let presentationReadiness = DetailPresentationReadiness()
     public private(set) var artworkSourceIsReady: Bool {
-        get { artworkReadiness.isReady }
-        set { artworkReadiness.isReady = newValue }
+        get { presentationReadiness.artworkSourceIsReady }
+        set { presentationReadiness.artworkSourceIsReady = newValue }
     }
+    /// A valid cached page is usable before the live artwork source is resolved.
+    public var metadataIsReady: Bool { presentationReadiness.metadataIsReady }
     @ObservationIgnored private var interruptedLanguageSeasonIDs: Set<String> = []
     /// Stable per-title key for ``snapshotCache``. Scoped by owning account so the
     /// same id on two servers or in two languages caches independently. Routes to a series share a
@@ -2900,6 +2902,7 @@ public final class ItemDetailViewModel {
     }
 
     private func invalidateSourceOperations() {
+        presentationReadiness.hasRestoredMetadata = false
         sourceGeneration += 1
         returnRefreshGeneration &+= 1
         resumeResolution.isResolving = false
@@ -3019,6 +3022,7 @@ public final class ItemDetailViewModel {
         } else {
             adoptSnapshotEnrichments(snapshot)
         }
+        presentationReadiness.hasRestoredMetadata = state.value != nil
     }
 
     /// Merges cached children/schedule/sources into the current state WITHOUT

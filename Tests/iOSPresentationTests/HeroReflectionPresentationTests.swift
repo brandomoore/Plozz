@@ -8,6 +8,24 @@ import XCTest
 
 @MainActor
 final class HeroReflectionPresentationTests: XCTestCase {
+    func testCompactDetailUsesTheExtendedHomeHeightAndLeavesNextRowPeek() {
+        for windowHeight: CGFloat in [667, 844, 956] {
+            for textSize: DynamicTypeSize in [.large, .accessibility3] {
+                let detail = PlozziOSHeroMetrics.height(
+                    style: .compactPortrait, surfaceRole: .detail, dynamicTypeSize: textSize,
+                    containerHeight: windowHeight
+                )
+                let home = PlozziOSHeroMetrics.height(
+                    style: .compactPortrait, surfaceRole: .home, dynamicTypeSize: textSize,
+                    containerHeight: windowHeight
+                )
+                XCTAssertEqual(detail, home)
+                XCTAssertGreaterThanOrEqual(detail, 520)
+                XCTAssertLessThanOrEqual(detail, windowHeight - 96)
+            }
+        }
+    }
+
     func testReducedTransparencyKeepsTheSharpTopReflectionAndOriginalGeometry() throws {
         for height in [CGFloat(200), 340] {
             for scheme in [ColorScheme.light, .dark] {

@@ -64,27 +64,30 @@ public struct PlozzReservedPlaceholder<Placeholder: View, Content: View>: View {
     }
 }
 
-/// Fades a section in when it first appears. Used for content that arrives from
-/// its own network round trip (cast, extras, related) so it joins the page
-/// smoothly instead of snapping into place, while the page stays interactive.
+/// Reveals one presentation group once its initial content is ready.
+/// Later refreshes update in place without replaying the entrance.
 public struct PlozzFadeInOnAppear: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visible = false
     private let duration: Double
+    private let isReady: Bool
 
-    public init(duration: Double = 0.24) {
+    public init(duration: Double = 0.24, isReady: Bool = true) {
         self.duration = duration
+        self.isReady = isReady
     }
 
     public func body(content: Content) -> some View {
         content
             .opacity(visible ? 1 : 0)
+            .allowsHitTesting(visible)
+            .accessibilityHidden(!visible)
             // `.task` runs after the first rendered frame, so the 0-opacity state
             // is actually painted before the fade starts. `.onAppear` could run
             // during the push and finish the fade while the section was offscreen,
             // which is why the sections appeared to snap in.
-            .task {
-                guard !visible else { return }
+            .task(id: isReady) {
+                guard isReady, !visible, !Task.isCancelled else { return }
                 if reduceMotion {
                     visible = true
                 } else {
@@ -95,7 +98,7 @@ public struct PlozzFadeInOnAppear: ViewModifier {
 }
 
 public extension View {
-    func plozzFadeInOnAppear(duration: Double = 0.24) -> some View {
-        modifier(PlozzFadeInOnAppear(duration: duration))
+    func plozzFadeInOnAppear(duration: Double = 0.24, isReady: Bool = true) -> some View {
+        modifier(PlozzFadeInOnAppear(duration: duration, isReady: isReady))
     }
 }

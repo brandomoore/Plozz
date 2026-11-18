@@ -84,16 +84,16 @@ docs/ tools/
 Hero animation is about continuity, not decoration. Keep these rules shared
 between Home and detail:
 
-- **One wordmark reveal.** Both surfaces show the transparent logo when it
-  resolves and crossfade it in. Do not let a text title appear first and then
-  swap for a logo. Home's Play/Watchlist row stays outside that gate and is
-  usable immediately.
+- **One wordmark reveal.** Do not let a text title appear first and then swap
+  for a logo. Home crossfades its resolved wordmark without gating Play/Watchlist.
+  Mobile detail uses a grouped foreground entrance; a late logo joins quietly.
 - **Home slides stay opaque.** A carousel slide whose artwork is already loaded
   must not fade when the slide changes or while the page is pulled. An
   opacity animation tied to `backdropResolved` on every slide causes dimming and
   black flashes during pull.
-- **Detail has the first-load fade.** The grey/seed-to-backdrop fade belongs to
-  the detail stage only; it is an opacity animation, never a blur or redraw.
+- **Detail artwork appears when ready.** Do not add a first-backdrop fade, even
+  for cached images. Mobile detail reveals its foreground as one group once
+  native detail resolves; later enrichment does not replay that animation.
 - **Reserve async action slots.** A trailer button (or any action resolved after
   first paint) must reserve its final size from the start, or Play shifts when
   it arrives.
@@ -160,7 +160,8 @@ for. Both are state, never time.
 This came from the detail page: the episode rail painted its skeleton on every
 open (a flash), and when that was suppressed the rail reserved no height at all
 and the cards pushed the page down (a reflow). Reserving without revealing fixes
-both. Apply the same primitive to any rail or section that loads after its header.
+both. Use it for known content geometry, not optional recommendations whose existence
+and count are unknown. Related titles render only actual entries, below cast.
 
 ## Tests
 

@@ -97,6 +97,9 @@ PlozzPlaceholderRail(isPending: loading, cardWidth: metrics.posterWidth, spacing
   hardcoded 6 or 8.
 - **Never gate these on elapsed time.** State only. `tools/ui-state-guard.py`
   rejects time-armed skeletons and bare-loading branches in CI.
+- Optional related titles do not reserve a full rail: neither their existence
+  nor their count is known. Mobile renders actual entries below Cast & Crew,
+  while the model starts their request during opening rather than on scroll.
 
 ### Revisit caches must be bounded and device-tiered
 
@@ -123,11 +126,16 @@ loading and reveal behavior stable:
 
 - Reserve the stage's final height before artwork resolves; never let a resource
   response change the hero band's geometry.
-- Use the shared transparent-wordmark reveal on Home and detail. The wordmark
-  fades in when it resolves; Home's action row does not wait for it.
-- Home carousel slides that already have artwork stay fully opaque across
-  swipes and pull. Only the detail stage uses a first-backdrop fade from the
-  grey/seed base.
+- Mobile portrait detail shares Home's window-relative height and mirrored
+  artwork continuation. Identity, metadata and actions occupy one foreground;
+  series seasons remain immediately below the hero.
+- Mobile detail reveals that foreground once cached or native detail resolves, without
+  waiting for artwork, ratings, cast or related titles. Subsequent enrichment
+  updates quietly. Reduce Motion removes the entrance animation.
+- Home's wordmark keeps its independent reveal and never gates its action row.
+  Detail's late wordmark joins quietly instead of adding a second fade.
+- Ready artwork stays opaque on Home and detail; there is no decorative
+  first-backdrop fade. The selected artwork source still owns readiness.
 - Detail seeds must be landscape. A portrait poster scaled into the landscape
   stage is not a valid seed.
 - Reserve every asynchronously resolved action slot (trailer, versions, menu)
