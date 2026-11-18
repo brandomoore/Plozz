@@ -1897,7 +1897,12 @@ native presentation and teardown fence late output. The existing overlay retains
 video-rect mapping, HDR brightness and control avoidance.
 
 `ASSSubtitleRendererTests` checks authored sign starts and ends at millisecond
-boundaries. Its opt-in `testLocalASSDriverBoundaryTiming` probe
+boundaries. A deterministic test feeds the real pacer, render-lead estimator
+and libass a virtual clock with 50 or 100 ms per render at 23.976 and 60 Hz.
+Each completed bitmap must match the cue at its delivery time; a previous
+bitmap may remain visible between completions. This models steady render
+cost, not a particular device, async driver scheduling or screen composition.
+Its opt-in `testLocalASSDriverBoundaryTiming` probe
 (`PLOZZ_ASS_TIMING_PROBE=1`) warms the rasterizer, then measures callback delivery
 for short original vector cues at simulated 23.976, 24 and 60 Hz tick cadences.
 It reports every boundary and rejects missing transitions; it is not a

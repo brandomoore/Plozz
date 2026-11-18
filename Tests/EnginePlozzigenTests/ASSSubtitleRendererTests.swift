@@ -141,6 +141,49 @@ final class ASSSubtitleRendererTests: XCTestCase {
         }
     }
 
+    func testSlowSteadyStateASSFramesMatchTheMediaTimeAtCompletion() async throws {
+        let signs = (0..<4).map { index in
+            ASSSubtitleEvent(
+                packet: "\(index),0,Default,,0,0,0,,{\\an7\\pos(100,50)\\p1}m 0 0 l 30 0 30 30 0 30",
+                start: 1.031 + Double(index) * 0.713, end: 1.344 + Double(index) * 0.713
+            )
+        }
+        for hz in [24_000.0 / 1_001, 60.0] {
+            for cost in [0.050, 0.100] {
+                let rasterizer = ASSSubtitleRasterizer(), doc = document()
+                var lead = ASSSubtitleRenderLead(), pacer = ASSSubtitleFramePacer()
+                var available = 0.0, boundary: Double?, visible = false
+                var transitions: [Double] = []
+                for tick in 0..<Int(4.5 * hz) {
+                    let now = Double(tick) / hz
+                    lead.tick(now, uptime: now)
+                    // A scheduled render occupies one worker; no concurrent raster samples.
+                    guard now >= available, pacer.admit(now, frameRate: 24, cueBoundary: boundary) else { continue }
+                    let frame = try await rasterizer.render(document: doc, events: signs,
+                                                           time: lead.time(for: now), snapshotRevision: 1)
+                    available = now + cost
+                    lead.complete(elapsed: cost)
+                    pacer.complete(renderSeconds: cost)
+                    boundary = frame.nextCueBoundary
+                    if frame.changed, visible != !frame.images.isEmpty {
+                        visible.toggle()
+                        transitions.append(available)
+                    }
+                    let completion = (available * 1_000).rounded() / 1_000
+                    XCTAssertEqual(visible, signs.contains { $0.start <= completion && completion < $0.end },
+                                   "\(hz) Hz, \(cost)s render delivered stale or premature artwork at \(completion)")
+                }
+                let authored = signs.flatMap { [$0.start, $0.end] }
+                XCTAssertEqual(transitions.count, authored.count)
+                for (delivery, expected) in zip(transitions, authored) {
+                    XCTAssertGreaterThanOrEqual(delivery - expected, -0.0005)
+                    XCTAssertLessThanOrEqual(delivery - expected, cost / 0.7 + 1 / hz + 0.0005,
+                                             "Do not retain a stale sign past the next available render slot.")
+                }
+            }
+        }
+    }
+
     @MainActor
     func testLocalASSDriverBoundaryTiming() async throws {
         guard ProcessInfo.processInfo.environment["PLOZZ_ASS_TIMING_PROBE"] == "1" else {
