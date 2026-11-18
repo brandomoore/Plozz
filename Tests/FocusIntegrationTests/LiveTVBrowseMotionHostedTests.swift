@@ -268,6 +268,105 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
                        "Presentation completion must focus the selected category without another input.")
     }
 
+    func testCategoryReturnPreservesItsScrollPosition() async throws {
+        try await assertCategoryScrollRestoration()
+    }
+
+    func testCategoryReturnPreservesItsScrollPositionInRightToLeftLayout() async throws {
+        try await assertCategoryScrollRestoration(direction: .rightToLeft)
+    }
+
+    func testCategoryReturnPreservesItsScrollPositionWithoutAnimation() async throws {
+        try await assertCategoryScrollRestoration(disablesAnimations: true)
+    }
+
+    private func assertCategoryScrollRestoration(
+        direction: LayoutDirection = .leftToRight, disablesAnimations: Bool = false
+    ) async throws {
+        let scene = try await foregroundScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let state = CategoryFocusFixtureState()
+        state.allowsExternalFocus = true
+        state.usesBrowseLayout = true
+        state.direction = direction
+        state.disablesAnimations = disablesAnimations
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = CategoryFocusHost(rootView: CategoryFocusPage(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        for _ in 0..<30 where system.focusedItem == nil {
+            window.layoutIfNeeded()
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(250))
+        let scroll = try XCTUnwrap(categoryScrollView(in: window))
+        XCTAssertTrue(NativeFocusRegion.contains(system.focusedItem, in: scroll))
+
+        for fraction in [0.45, 0.8, 0.6] {
+            scroll.setContentOffset(
+                CGPoint(x: 0, y: (scroll.contentSize.height - scroll.bounds.height) * fraction),
+                animated: false
+            )
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            let target = try XCTUnwrap(visibleCategoryFocusItems(in: window, scroll: scroll).first {
+                guard let frame = NavigationRowFocusRequester.frame(of: $0, relativeTo: scroll) else { return false }
+                let viewportY = frame.minY - scroll.bounds.minY
+                return viewportY > 60 && viewportY < scroll.bounds.height / 3
+            })
+            host.target = target
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(200))
+            XCTAssertTrue(system.focusedItem === target)
+            let remembered = try XCTUnwrap(state.lastFocusedControl)
+            let before = try XCTUnwrap(NavigationRowFocusRequester.frame(of: target, relativeTo: window))
+            let offset = scroll.contentOffset.y
+            let guide = try XCTUnwrap(categoryFocusItems(in: window).first {
+                guard let frame = NavigationRowFocusRequester.frame(of: $0, relativeTo: window) else { return false }
+                return abs(frame.width - 300) < 1 && abs(frame.height - 100) < 1
+            })
+            host.target = guide
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(80))
+            XCTAssertTrue(system.focusedItem === guide)
+            host.target = nil
+            state.collapsed = true
+            try await Task.sleep(for: .milliseconds(400))
+            XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1)
+
+            state.isRevealing = true
+            state.request += 1
+            withAnimation(
+                disablesAnimations ? nil : PrototypeLayout.sidebarAnimation, completionCriteria: .removed
+            ) {
+                state.collapsed = false
+            } completion: {
+                state.isRevealing = false
+            }
+            try await Task.sleep(for: .milliseconds(600))
+            let reopenedScroll = try XCTUnwrap(categoryScrollView(in: window))
+            let restored = try XCTUnwrap(system.focusedItem)
+            let after = try XCTUnwrap(NavigationRowFocusRequester.frame(of: restored, relativeTo: window))
+            XCTAssertTrue(reopenedScroll === scroll, "Collapsing must retain the native category viewport.")
+            XCTAssertTrue(NativeFocusRegion.contains(restored, in: scroll))
+            XCTAssertEqual(state.lastFocusedControl, remembered)
+            XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1, "Returning must not recenter the category.")
+            XCTAssertEqual(after.minY, before.minY, accuracy: 1, "The focused category must stay at the same screen height.")
+            XCTAssertNil(state.model.category, "Focus restoration must not select the category.")
+        }
+    }
+
     private func categoryScrollView(in view: UIView) -> UIScrollView? {
         if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
             return scroll
@@ -305,6 +404,10 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         var allowsExternalFocus = false
         var isRevealing = false
         var showsSidebar = true
+        var usesBrowseLayout = false
+        var collapsed = false
+        var direction = LayoutDirection.leftToRight
+        var disablesAnimations = false
         var lastFocusedControl: PrototypeBrowseSidebar.Control?
         let model = LiveTVPrototypeModel(channels: (0..<80).map {
             LiveTVPrototypeChannel(
@@ -319,25 +422,52 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         @Bindable var state: CategoryFocusFixtureState
 
         var body: some View {
-            HStack(alignment: .top, spacing: 80) {
-                if state.showsSidebar {
-                    PrototypeBrowseSidebar(
-                        model: state.model, configuration: .empty, active: $state.active,
-                        lastFocusedControl: $state.lastFocusedControl, focusRequest: 0,
-                        categoryFocusRequest: state.request, restoresCategoryFocus: true,
-                        isRevealing: state.isRevealing,
-                        search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
+            Group {
+                if state.usesBrowseLayout {
+                    let layout = PrototypePreviewLayout(
+                        size: CGSize(width: 1800, height: 960), hidesSidebar: state.collapsed
                     )
-                    .frame(width: 384, height: 900)
+                    PrototypeBrowseLayout(layout: layout) {
+                        Color.clear.frame(height: layout.heroHeight)
+                    } sidebar: {
+                        sidebar
+                    } guide: {
+                        guide
+                    }
+                    .frame(width: layout.contentFrame.width, height: layout.contentFrame.height)
+                } else {
+                    HStack(alignment: .top, spacing: 80) {
+                        if state.showsSidebar {
+                            sidebar.frame(width: 384, height: 900)
+                        }
+                        guide
+                    }
                 }
-                Button("Guide") {}
-                    .frame(width: 300, height: 100)
-                    .disabled(!state.allowsExternalFocus)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(60)
             .environment(\.themePalette, .dark)
             .environment(\.colorScheme, .dark)
+            .environment(\.layoutDirection, state.direction)
+            .transaction { $0.disablesAnimations = state.disablesAnimations }
+        }
+
+        private var sidebar: some View {
+            PrototypeBrowseSidebar(
+                model: state.model, configuration: .empty, active: $state.active,
+                lastFocusedControl: $state.lastFocusedControl, focusRequest: 0,
+                categoryFocusRequest: state.request, restoresCategoryFocus: true,
+                isRevealing: state.isRevealing,
+                search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
+            )
+        }
+
+        private var guide: some View {
+            Button {} label: {
+                Text("Guide").frame(width: 300, height: 100)
+            }
+            .buttonStyle(.plain)
+            .disabled(!state.allowsExternalFocus)
         }
     }
 

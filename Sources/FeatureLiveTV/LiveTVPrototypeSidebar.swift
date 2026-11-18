@@ -190,10 +190,10 @@ struct PrototypeBrowseSidebar: View {
                 }
                 .accessibilityIdentifier("live-tv-category-list")
                 .onChange(of: readyCategoryFocusRequest, initial: true) { _, request in
-                    // A newly inserted pane is still clipped during its reveal transition.
+                    // The pane is still clipped during its reveal transition.
                     guard request != nil else { return }
                     let target = entryTarget
-                    if case .category = target { proxy.scrollTo(target, anchor: .center) }
+                    if case .category = target { proxy.scrollTo(target) }
                     focused = target
                 }
             }

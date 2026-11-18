@@ -293,6 +293,7 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
     @ViewBuilder let sidebar: () -> Sidebar
     @ViewBuilder let guide: () -> Guide
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
         #if os(tvOS)
@@ -322,15 +323,23 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
     @ViewBuilder private var sidebarSlot: some View {
         if layout.availableSidebarWidth > 0 {
             ZStack(alignment: .topLeading) {
+                #if os(tvOS)
+                // Keep the native scroll view and its viewport intact while the pane is hidden.
+                sidebar()
+                    .frame(width: layout.availableSidebarWidth)
+                    .geometryGroup()
+                    .offset(x: layout.hidesSidebar
+                        ? layout.availableSidebarWidth * (layoutDirection == .rightToLeft ? 1 : -1) : 0)
+                    .opacity(layout.hidesSidebar ? 0 : 1)
+                    .disabled(layout.hidesSidebar)
+                    .allowsHitTesting(!layout.hidesSidebar)
+                    .accessibilityHidden(layout.hidesSidebar)
+                #else
                 if layout.sidebarWidth > 0 {
                     sidebar()
                         .frame(width: layout.availableSidebarWidth)
-                        #if os(tvOS)
-                        // Button focus styling cancels leaf animations; move and fade the pane as one unit.
-                        .geometryGroup()
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                        #endif
                 }
+                #endif
             }
             .frame(width: layout.sidebarWidth, alignment: .leading)
             #if os(tvOS)

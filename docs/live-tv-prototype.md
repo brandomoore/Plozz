@@ -358,7 +358,7 @@ The reveal interceptor is active only while the pane is collapsed; the same
 leading-edge press must restore the pane's last focused control, not merely open
 the pane while the guide continues intercepting focus exits.
 Category entry waits for the reveal animation's actual completion before
-requesting focus. An appearance-time request can be lost while the new pane is
+requesting focus. An appearance-time request can be lost while the pane is
 still clipped; cancelled or superseded reveals must not steal focus later.
 With pinned navigation, the moving pane fades through the extra content inset,
 reaching full transparency before the navigation icons. The stationary feather
@@ -1283,8 +1283,11 @@ is no prior in-memory history to migrate on the first updated launch.
   channel details and the same mounted guide expand into its space without
   resetting the channel, vertical position, or time. A leading-edge move out of
   the guide reveals the panel and restores its last focused control or category,
-  even when that category is not the selected filter. This memory survives the
-  collapsed pane's removal; unavailable controls fall back to the selected category.
+  even when that category is not the selected filter. The collapsed TV pane keeps
+  its native scroll view mounted, disabled, and hidden from accessibility, preserving
+  the exact category viewport. Returning focus does not center an already-visible
+  category; it stays at the same vertical position. Unavailable controls fall back
+  to the selected category, scrolling only as far as needed to reveal it.
   Back closes Search and restores its sidebar Search control; the next Back
   belongs to native app navigation. Internal
   programme-to-programme moves keep their normal timeline behavior.
