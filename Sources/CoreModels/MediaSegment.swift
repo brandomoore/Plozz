@@ -255,10 +255,20 @@ public extension Array where Element == MediaSegment {
             if $0.kind != $1.kind { return $0.kind.rawValue < $1.kind.rawValue }
             return $0.id < $1.id
         }
-        return sorted.reduce(into: []) { unique, segment in
-            if let previous = unique.last, previous.kind == segment.kind,
-               previous.start == segment.start, previous.end == segment.end { return }
-            unique.append(segment)
+        // Contiguous pieces of one window are one segment. A server can split an
+        // intro at a chapter boundary (for example at a title card), and skipping
+        // only the first piece landed inside the opening and offered the same
+        // button again. Only directly adjacent/overlapping same-kind reports
+        // coalesce, so credits with a scene between them stay separate.
+        return sorted.reduce(into: []) { merged, segment in
+            if let index = merged.indices.last, merged[index].kind == segment.kind {
+                if merged[index].start == segment.start, merged[index].end == segment.end { return }
+                if abs(segment.start - merged[index].end) <= 0.25 {
+                    merged[index].end = Swift.max(merged[index].end, segment.end)
+                    return
+                }
+            }
+            merged.append(segment)
         }
     }
 
