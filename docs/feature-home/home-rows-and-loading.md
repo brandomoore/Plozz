@@ -538,6 +538,9 @@ server addresses, credentials, media IDs/titles or response bodies.
   selecting the already active preset does nothing.
   **Include Next Up** is a profile-scoped setting inside the **Continue Watching**
   section's configuration on every platform, alongside its artwork choice.
+  Visible Continue Watching labels show the episode number and name beneath
+  the series title (`S1 E2 · Episode name`). Spoiler protection omits the name
+  for unfinished episodes, including those already in progress.
   **Continue Watching action** chooses **Open details** (the default) or **Play**
   for movie/episode cards on Home, including merged Next Up entries and every TV
   Home layout. Existing saved choices are preserved; profiles without a saved

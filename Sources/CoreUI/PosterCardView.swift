@@ -200,7 +200,7 @@ public struct PosterCardView: View {
     }
 
     private var cardAccessibilityValue: String? {
-        let subtitle = usesProgressOnly ? item.posterCaptionSubtitle(showsRuntime: true)
+        let subtitle = usesProgressOnly ? cardSubtitle(showsRuntime: true)
             : (showsSeriesArtwork ? nil : subtitleText)
         guard var count = MediaPlaybackIndicatorState(item).episodeCountAccessibilityLabel(
             enabled: showsUnwatchedEpisodeCount, hidesStatus: hidesPlaybackStatus
@@ -845,7 +845,12 @@ public struct PosterCardView: View {
             captionSubtitle.locale = locale
             return String(localized: captionSubtitle) // l10n:content — native caption/accessibility boundary, resolved with the current environment locale
         }
-        return item.posterCaptionSubtitle(showsRuntime: !showsResumeChip)
+        return cardSubtitle(showsRuntime: !showsResumeChip)
+    }
+
+    private func cardSubtitle(showsRuntime: Bool) -> String? {
+        item.posterCaptionSubtitle(showsRuntime: showsRuntime, continueWatchingSpoilers:
+            presentationArtworkPolicy.area == .continueWatching && showsCaption ? spoilerSettings : nil)
     }
 
     // MARK: Resume chip
@@ -1759,9 +1764,17 @@ public extension MediaItem {
     }
 
     /// Shared provider metadata for SwiftUI cards and native library cells.
-    func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true) -> String? { // l10n:content
+    func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true,
+                               continueWatchingSpoilers: SpoilerSettings? = nil) -> String? { // l10n:content
         var parts: [String] = []
-        if showsSubtitle, let subtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !subtitle.isEmpty {
+        if showsSubtitle, let spoilers = continueWatchingSpoilers, kind == .episode, let code = seasonEpisodeLabel {
+            parts.append(code)
+            let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !spoilers.shouldHideText(for: self), let parentTitle, !parentTitle.isEmpty,
+               !name.isEmpty, name != parentTitle, name != code {
+                parts.append(name)
+            }
+        } else if showsSubtitle, let subtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !subtitle.isEmpty {
             parts.append(subtitle)
         }
         if showsRuntime, let runtime = cardRuntimeText?.trimmingCharacters(in: .whitespacesAndNewlines), !runtime.isEmpty {

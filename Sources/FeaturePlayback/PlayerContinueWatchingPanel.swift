@@ -65,6 +65,9 @@ struct PlayerContinueWatchingCard: View {
     private var slot: PlayerControls.FocusSlot { .continueWatching(item.stablePresentationID) }
     private var isFocused: Bool { focus == slot }
     private var title: Text { item.posterCaptionText(spoilerSettings: spoilerSettings) }
+    private func subtitle(showsRuntime: Bool) -> String? {
+        item.posterCaptionSubtitle(showsRuntime: showsRuntime, continueWatchingSpoilers: showsCaptions ? spoilerSettings : nil)
+    }
     private var aspectRatio: CGFloat {
         switch presentation.artworkStyle {
         case .portraitPosters: 2 / 3
@@ -107,7 +110,7 @@ struct PlayerContinueWatchingCard: View {
         .focused($focus, equals: slot)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(Text(verbatim: item.posterCaptionSubtitle(showsRuntime: true) ?? ""))
+        .accessibilityValue(Text(verbatim: subtitle(showsRuntime: true) ?? ""))
         .accessibilityIdentifier("player-continue-watching-\(item.stablePresentationID)")
     }
 
@@ -116,7 +119,7 @@ struct PlayerContinueWatchingCard: View {
             title
                 .font(metrics.castNameFont)
                 .lineLimit(1)
-            Text(verbatim: item.posterCaptionSubtitle(showsRuntime: playbackDetails == .progressOnly) ?? " ")
+            Text(verbatim: subtitle(showsRuntime: playbackDetails == .progressOnly) ?? " ")
                 .font(metrics.castRoleFont)
                 .lineLimit(1)
         }
@@ -137,11 +140,12 @@ struct PlayerContinueWatchingCard: View {
                 if playbackDetails == .detailed {
                     EpisodeWatchStatePill(
                         item: item, showsWatched: false, showsBackground: false,
-                        detailText: item.seasonEpisodeLabel, showsPlayGlyphWhenIdle: true
+                        detailText: showsCaptions && item.kind == .episode ? subtitle(showsRuntime: false) : item.seasonEpisodeLabel,
+                        showsPlayGlyphWhenIdle: true
                     )
                     .font(metrics.castRoleFont)
                 } else {
-                    if showsCaptions, let subtitle = item.posterCaptionSubtitle(showsRuntime: true) {
+                    if showsCaptions, let subtitle = subtitle(showsRuntime: true) {
                         Text(verbatim: subtitle).font(metrics.castRoleFont).lineLimit(1)
                     }
                     MediaCardPlaybackIndicators(
