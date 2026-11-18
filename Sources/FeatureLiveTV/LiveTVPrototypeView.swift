@@ -112,6 +112,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var toolbarControlsBottom: CGFloat?
     @State private var categoryFocusRequest = 0
     @State private var sidebarRestoresCategoryFocus = false
+    @State private var sidebarLastFocusedControl: PrototypeBrowseSidebar.Control?
     @State private var guideHasFocus = false
     @State private var toolbarFocusRequest = 0
     @State private var focusedProgram: LiveTVPrototypeProgram?
@@ -1793,6 +1794,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             } else {
                 PrototypeBrowseSidebar(
                     model: model, configuration: imports.configuration, active: $controlsActive,
+                    lastFocusedControl: $sidebarLastFocusedControl,
                     focusRequest: toolbarFocusRequest, isSearching: isSearching,
                     categoryFocusRequest: categoryFocusRequest,
                     restoresCategoryFocus: sidebarRestoresCategoryFocus,
@@ -2327,8 +2329,13 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             }
         }
         searchOrigin = nil
-        enterGuide()
         isSearching = false
+        #if os(tvOS)
+        sidebarLastFocusedControl = .search
+        revealCategories()
+        #else
+        enterGuide()
+        #endif
     }
 
     private func showCategory(_ category: String?, enteringGuide: Bool = true) {

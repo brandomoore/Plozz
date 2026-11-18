@@ -1006,7 +1006,8 @@ private struct SidebarFixture: View {
 
     var body: some View {
         PrototypeBrowseSidebar(
-            model: model, configuration: .empty, active: $active, focusRequest: 0,
+            model: model, configuration: .empty, active: $active,
+            lastFocusedControl: .constant(nil), focusRequest: 0,
             search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
         )
     }

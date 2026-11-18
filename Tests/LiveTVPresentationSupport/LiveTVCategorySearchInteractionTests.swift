@@ -119,8 +119,8 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         capture("live-tv-tv-source-guide-focus", in: app)
         if containsFocus(app.buttons["Matchday Live"].firstMatch) { XCUIRemote.shared.press(.left) }
         XCUIRemote.shared.press(.left)
-        XCTAssertTrue(sports.wait(for: \.hasFocus, toEqual: true, timeout: 5),
-                      "Returning from the guide must still enter the selected category, not the source menu.")
+        XCTAssertTrue(search.wait(for: \.hasFocus, toEqual: true, timeout: 5),
+                      "Returning from the guide must restore Search, the last focused sidebar control.")
         XCTAssertTrue(source.isHittable)
         XCTAssertTrue(sports.isSelected)
         XCTAssertEqual(source.value as? String, "All")
@@ -1199,6 +1199,10 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(channel("Daily News", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["live-tv-search-category-Sports"].exists)
+        #if os(tvOS)
+        XCTAssertTrue(app.buttons["live-tv-search"].wait(for: \.hasFocus, toEqual: true, timeout: 5),
+                      "Back must close Search and restore its sidebar control, not enter the guide.")
+        #endif
         #if os(iOS)
         if UIDevice.current.userInterfaceIdiom == .phone {
             XCTAssertFalse(app.navigationBars.buttons["live-tv-profile"].exists)

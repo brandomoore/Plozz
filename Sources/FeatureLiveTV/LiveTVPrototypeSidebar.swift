@@ -7,6 +7,7 @@ struct PrototypeBrowseSidebar: View {
     @Bindable var model: LiveTVPrototypeModel
     let configuration: LiveTVSourcesConfiguration
     @Binding var active: Bool
+    @Binding var lastFocusedControl: Control?
     let focusRequest: Int
     var isSearching = false
     var categoryFocusRequest = 0
@@ -25,7 +26,7 @@ struct PrototypeBrowseSidebar: View {
     @ScaledMetric(relativeTo: .subheadline) private var fontSize = PrototypeLayout.guideFontSize
     @Environment(\.layoutDirection) private var layoutDirection
 
-    private enum Control: Hashable {
+    enum Control: Hashable {
         case source
         case search
         case multiviews
@@ -33,8 +34,29 @@ struct PrototypeBrowseSidebar: View {
         case category(String?)
     }
 
-    private var isEnteringCategory: Bool {
+    private var isRestoringFocus: Bool {
         restoresCategoryFocus && (isRevealing || categoryFocusRequest > completedCategoryFocusRequest)
+    }
+
+    private var entryTarget: Control {
+        switch lastFocusedControl {
+        case .source:
+            return .source
+        case .search:
+            return .search
+        case .multiviews where multiviews != nil:
+            return .multiviews
+        case .manageChannels where manageChannels != nil:
+            return .manageChannels
+        case .category(let category) where category == nil || model.browsingCategories.contains(where: { $0.name == category }):
+            return .category(category)
+        default:
+            return .category(model.category)
+        }
+    }
+
+    private func isFocusDisabled(_ control: Control) -> Bool {
+        isRestoringFocus && control != entryTarget
     }
 
     private var readyCategoryFocusRequest: Int? {
@@ -53,7 +75,7 @@ struct PrototypeBrowseSidebar: View {
             .padding(PrototypeLayout.controlInset)
             .background { PrototypeControlSurface() }
             .focused($focused, equals: .source)
-            .disabled(isEnteringCategory)
+            .disabled(isFocusDisabled(.source))
 
             Button(action: search) {
                 Label(isSearching ? "Back to guide" : "Search", systemImage: isSearching ? "chevron.backward" : "magnifyingglass")
@@ -64,7 +86,7 @@ struct PrototypeBrowseSidebar: View {
             .padding(PrototypeLayout.controlInset)
             .background { PrototypeControlSurface() }
             .focused($focused, equals: .search)
-            .disabled(isEnteringCategory)
+            .disabled(isFocusDisabled(.search))
             .accessibilityValue(model.query)
             .accessibilityIdentifier("live-tv-search")
             #if DEBUG
@@ -85,7 +107,7 @@ struct PrototypeBrowseSidebar: View {
                     .buttonStyle(.bordered)
                     #endif
                     .focused($focused, equals: .multiviews)
-                    .disabled(isEnteringCategory)
+                    .disabled(isFocusDisabled(.multiviews))
                     .accessibilityIdentifier("live-tv-multiview-favorites")
             }
             if let manageChannels {
@@ -102,7 +124,7 @@ struct PrototypeBrowseSidebar: View {
                     .buttonStyle(.bordered)
                     #endif
                     .focused($focused, equals: .manageChannels)
-                    .disabled(isEnteringCategory)
+                    .disabled(isFocusDisabled(.manageChannels))
                     .accessibilityIdentifier("live-tv-manage-channels")
             }
 
@@ -142,7 +164,7 @@ struct PrototypeBrowseSidebar: View {
                             .buttonStyle(.bordered)
                             #endif
                             .focused($focused, equals: .category(category))
-                            .disabled(isEnteringCategory && category != model.category)
+                            .disabled(isFocusDisabled(.category(category)))
                             .id(Control.category(category))
                             .accessibilityAddTraits(model.category == category ? .isSelected : [])
                             .accessibilityLabel(category.map { Text(verbatim: $0) } ?? Text("All categories"))
@@ -170,8 +192,9 @@ struct PrototypeBrowseSidebar: View {
                 .onChange(of: readyCategoryFocusRequest, initial: true) { _, request in
                     // A newly inserted pane is still clipped during its reveal transition.
                     guard request != nil else { return }
-                    proxy.scrollTo(Control.category(model.category), anchor: .center)
-                    focused = .category(model.category)
+                    let target = entryTarget
+                    if case .category = target { proxy.scrollTo(target, anchor: .center) }
+                    focused = target
                 }
             }
         }
@@ -183,7 +206,7 @@ struct PrototypeBrowseSidebar: View {
         #if os(tvOS)
         .focusSection()
         .defaultFocus(
-            $focused, restoresCategoryFocus ? .category(model.category) : .search,
+            $focused, restoresCategoryFocus ? entryTarget : .search,
             priority: .automatic
         )
         .background {
@@ -201,10 +224,12 @@ struct PrototypeBrowseSidebar: View {
         }
         #endif
         .onChange(of: focused) { _, target in
-            if target != nil { active = true }
-            if target == .category(model.category) {
+            guard let target else { return }
+            if target == entryTarget {
                 completedCategoryFocusRequest = categoryFocusRequest
             }
+            lastFocusedControl = target
+            active = true
         }
         .onChange(of: focusRequest, initial: true) { _, request in
             guard request > 0, active, !restoresCategoryFocus else { return }

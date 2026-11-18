@@ -106,7 +106,7 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         XCTAssertTrue(system.focusedItem === target, "A visible category must still accept real native focus.")
     }
 
-    func testCategoryEntryRestoresSelectionAfterFocusLeavesThePane() async throws {
+    func testCategoryEntryRestoresLastFocusAfterThePaneIsRecreated() async throws {
         let scene = try await foregroundScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
         let state = CategoryFocusFixtureState()
@@ -164,13 +164,57 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         system.requestFocusUpdate(to: host)
         system.updateFocusIfNeeded()
         try await Task.sleep(for: .milliseconds(80))
+        let lastControl = try XCTUnwrap(state.lastFocusedControl)
+        XCTAssertNotEqual(lastControl, .category(state.model.category),
+                          "Focus a category without selecting it.")
+        let nextFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: next, relativeTo: scroll))
         host.target = nil
         state.request += 1
         try await Task.sleep(for: .milliseconds(250))
         let restored = try XCTUnwrap(system.focusedItem)
         let restoredFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: restored, relativeTo: scroll))
-        XCTAssertEqual(restoredFrame.minY, initialFrame.minY, accuracy: 1,
-                       "A new explicit entry request must still restore the selected category.")
+        XCTAssertEqual(restoredFrame.minY, nextFrame.minY, accuracy: 1,
+                       "Entry must restore the last focused category, not the selected filter.")
+
+        host.target = otherPane
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(80))
+        host.target = nil
+        state.showsSidebar = false
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(state.lastFocusedControl, lastControl)
+        state.isRevealing = true
+        state.showsSidebar = true
+        state.request += 1
+        try await Task.sleep(for: .milliseconds(80))
+        state.isRevealing = false
+        try await Task.sleep(for: .milliseconds(250))
+        let reopenedScroll = try XCTUnwrap(categoryScrollView(in: window))
+        XCTAssertTrue(NativeFocusRegion.contains(system.focusedItem, in: reopenedScroll))
+        XCTAssertEqual(state.lastFocusedControl, lastControl)
+        XCTAssertNil(state.model.category, "Restoring focus must not select a different filter.")
+
+        guard case .category(let removedCategory) = lastControl else {
+            return XCTFail("Expected a remembered category")
+        }
+        host.target = otherPane
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(80))
+        host.target = nil
+        state.showsSidebar = false
+        try await Task.sleep(for: .milliseconds(80))
+        try state.model.replaceChannels(state.model.channels.filter { $0.category != removedCategory })
+        state.isRevealing = true
+        state.showsSidebar = true
+        state.request += 1
+        try await Task.sleep(for: .milliseconds(80))
+        state.isRevealing = false
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertTrue(NativeFocusRegion.contains(system.focusedItem, in: try XCTUnwrap(categoryScrollView(in: window))))
+        XCTAssertEqual(state.lastFocusedControl, .category(nil),
+                       "A removed category must fall back to the current filter.")
     }
 
     func testCategoryFocusRequestWaitsForRevealCompletion() async throws {
@@ -260,6 +304,8 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         var request = 1
         var allowsExternalFocus = false
         var isRevealing = false
+        var showsSidebar = true
+        var lastFocusedControl: PrototypeBrowseSidebar.Control?
         let model = LiveTVPrototypeModel(channels: (0..<80).map {
             LiveTVPrototypeChannel(
                 id: "category-\($0)", number: $0, name: "Channel \($0)",
@@ -274,13 +320,16 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
 
         var body: some View {
             HStack(alignment: .top, spacing: 80) {
-                PrototypeBrowseSidebar(
-                    model: state.model, configuration: .empty, active: $state.active, focusRequest: 0,
-                    categoryFocusRequest: state.request, restoresCategoryFocus: true,
-                    isRevealing: state.isRevealing,
-                    search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
-                )
-                .frame(width: 384, height: 900)
+                if state.showsSidebar {
+                    PrototypeBrowseSidebar(
+                        model: state.model, configuration: .empty, active: $state.active,
+                        lastFocusedControl: $state.lastFocusedControl, focusRequest: 0,
+                        categoryFocusRequest: state.request, restoresCategoryFocus: true,
+                        isRevealing: state.isRevealing,
+                        search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
+                    )
+                    .frame(width: 384, height: 900)
+                }
                 Button("Guide") {}
                     .frame(width: 300, height: 100)
                     .disabled(!state.allowsExternalFocus)
@@ -722,6 +771,7 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
                     PrototypeBrowseSidebar(
                         model: model.sidebar, configuration: .empty,
                         active: Binding(get: { model.sidebarActive }, set: { model.sidebarActive = $0 }),
+                        lastFocusedControl: .constant(nil),
                         focusRequest: 0, search: {}, enterGuide: {},
                         selectSource: { _ in }, addSource: {}, multiviews: {}
                     )

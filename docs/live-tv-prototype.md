@@ -212,7 +212,7 @@ On Apple TV, the categories sidebar places the same source menu above
 **Add Source** choices. Source filtering shares the mobile authorization and
 category-retention behavior without changing connected sources or active playback.
 Closing the menu returns focus to its button; entering the sidebar from the guide
-still lands on the selected category.
+returns to its last focused control, with the selected category as a fallback.
 
 On every platform, a single enabled source shows its name on the button and in
 the menu alongside **Add Source**, without a redundant **All** option. Disabled
@@ -355,7 +355,7 @@ The full-height source/Search/categories pane collapses when focus enters the TV
 guide and returns on a leading-edge move. The pane slides and fades as one unit
 over 0.28 seconds while the guide resizes; Reduce Motion suppresses the animation.
 The reveal interceptor is active only while the pane is collapsed; the same
-leading-edge press must transfer focus to the selected category, not merely open
+leading-edge press must restore the pane's last focused control, not merely open
 the pane while the guide continues intercepting focus exits.
 Category entry waits for the reveal animation's actual completion before
 requesting focus. An appearance-time request can be lost while the new pane is
@@ -369,7 +369,7 @@ from the available window dimensions, not the device name.
 Native guide row hosts accept both growing and shrinking widths with leading
 alignment, so explicit-width programme timelines do not recenter independently
 of channels without listings during the sidebar transition.
-Native-menu round trips, selected-category restoration, and preview-session
+Native-menu round trips, sidebar focus restoration, and preview-session
 identity have remote regressions; hosted rendered-pixel tests cover synchronized
 Search/Multiviews/category movement, mixed-source guide rows, guide travel, and
 rapid reversal.
@@ -1282,15 +1282,18 @@ is no prior in-memory history to migrate on the first updated launch.
   The category panel collapses when native focus enters the TV guide;
   channel details and the same mounted guide expand into its space without
   resetting the channel, vertical position, or time. A leading-edge move out of
-  the guide reveals the panel and focuses the selected category, not the source
-  menu. Search keeps the panel visible. Back belongs to native app navigation. Internal
+  the guide reveals the panel and restores its last focused control or category,
+  even when that category is not the selected filter. This memory survives the
+  collapsed pane's removal; unavailable controls fall back to the selected category.
+  Back closes Search and restores its sidebar Search control; the next Back
+  belongs to native app navigation. Internal
   programme-to-programme moves keep their normal timeline behavior.
   Once a category-entry focus request completes, transient focus loss during
   native fast scrolling must not re-arm its eligibility gate. Only a new
   entry request or a real native focus departure to another region may gate
   the other controls; otherwise an offscreen selected category can leave every
-  visible category disabled. Real menu round trips still restore the selected
-  category before releasing that gate.
+  visible category disabled. Real menu round trips restore the remembered
+  control before releasing that gate.
   Left/Right continues across the guide normally. Exactly one leading press
   from the far-left channel column (far-right in RTL) must enter categories,
   without entering them early or also opening app navigation.

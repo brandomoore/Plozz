@@ -261,7 +261,7 @@ final class LiveTVPreviewIntroductionRemoteTests: XCTestCase {
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 5))
-        _ = focusFirstGuideContent(in: app)
+        assertFocused(app.buttons["live-tv-search"])
         assertNativeNavigationCollapsed(in: app)
 
         XCUIRemote.shared.press(.menu)
