@@ -169,11 +169,60 @@ another build/capture cycle.
   fetched by SHA. Fetch the branch and check the package workspace out at the
   commit, or SwiftPM fails with `Couldn't check out revision …`.
 
+## Real device without a tap channel
+
+`idb ui tap` and `idb ui describe-all` are simulator-only. On a physical device
+the companion can list, install and launch, but refuses accessibility/HID
+commands; `devicectl` has no tap injection either. Do not re-prove that. Drive
+the app with the screenshot router, which reaches the same screens a tap does by
+file request.
+
+**Arm it.** Launch the self-build with the shots variable set:
+
+```bash
+xcrun devicectl device process launch --device <id> --console \
+  --terminate-existing \
+  -e '{"PLOZZ_SHOTS_NFS_HOST":"localhost","PLZXFAN_STDOUT":"1"}' \
+  com.thatcube.Plozz.selfbuild
+```
+
+The rig polls `Documents/.plozz-shots-request` and writes
+`Documents/.plozz-shots-ack` once the screen has been reached. Move files with
+`devicectl device copy to|from --domain-type appDataContainer
+--domain-identifier com.thatcube.Plozz.selfbuild`.
+
+Requests are `verb?query`: `detail?title=…`, `play?title=…&at=…&pause=1`,
+`tab?name=…`, `rotate?to=landscape`. A `play` title is matched against the
+library, so an episode's own name selects that episode.
+
+**Player probes.** A presented player is a full-screen cover, and navigation
+requests can be suspended while it is up. For skip/seek checks, add temporary
+DEBUG seams in the player view and handle the verbs in the poller rather than the
+tab-shell router:
+
+- `skipCurrentSegment` → `viewModel.skipActiveSegment()`
+- `seekCurrentPlayback` → `viewModel.requestSeek(to:origin:)`
+- `togglePlayback` → `viewModel.togglePlayPause()`
+- `describeCurrentSkip` → one line of `pos/button/active/segments`
+- `setSkipMode` / `setUpNextEnabled` → mutate and save
+  `settings.playback.settings` where the app model is in scope
+
+Verbs: `skip`, `seek?to=`, `resume`, `closeplayer`, `skipstate`,
+`skipmode?mode=on|autoInstant|off`, `upnext?on=0|1`. A seek pauses on profiles
+with seek-without-pausing off; follow it with `resume` before asserting that
+playback advances.
+
+**First-run gate.** A capture launch must decline the iCloud Sync choice or the
+root never becomes drivable: call `completeICloudOnboarding(false)` in
+`PlozziOSScreenshotSeed.applyIfRequested` when the shots variable is present.
+
+Record the ack text as evidence (`pos=… button=… active=… segments=…`), not a
+screenshot alone. Screenshots show layout; the ack shows state.
+
 ## Human-in-the-loop checklist
 
-Some paths cannot be driven headlessly: there is no deep link to a title and no
-tap channel, so **opening a detail page and pressing Back needs the user**. Prompt
-for it explicitly and keep the capture open before they start:
+Some paths still need a person: system permission dialogs, signing prompts, and
+first-run UI that the capture rig does not seed.
 
 1. Ask the user to unlock the device and set Auto-Lock to Never.
 2. Start the console capture **first** (`--console`, 3–4 minutes).

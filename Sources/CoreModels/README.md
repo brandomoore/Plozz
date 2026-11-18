@@ -546,3 +546,21 @@ server-user scope: their historical viewer cannot be reconstructed.
 - `MediaProvider.swift` — the protocol that defines every backend.
 - `ProviderRegistry.swift` — how features resolve a provider from a session.
 - `AppError.swift` — the single error currency used everywhere.
+
+## Skip-marker coverage
+
+`SegmentPlausibility` is the single coverage policy every skip marker must pass,
+whatever its source or kind:
+
+- a marker may cover at most half the known runtime (a skip leaves most of the
+  item playable);
+- only an opening (`intro`, `recap`) may begin inside the opening region; every
+  other kind must start after the opening has finished;
+- an opening may not reach the final frame.
+
+`normalizedSkipMarkers` applies that policy, then coalesces directly abutting
+same-kind pieces (servers split intros at chapter boundaries), collapses exact
+duplicates, clamps to the known duration, and keeps windows with a real gap
+separate. A marker that fails the policy is absent entirely, so no button,
+automatic skip or Up Next window is ever built from it. Runtime-coverage rules
+live here so provider, community and player paths cannot drift apart.

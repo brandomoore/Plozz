@@ -860,13 +860,28 @@ delay, including the credits-based Up Next countdown when autoplay is enabled.
 Countdown deadlines and rings share that duration and remain tied to playback
 time, preserving pause, seek-entry, dismissal and focus behavior.
 
-One press, or one automatic skip, moves to the active segment's end and then
-dismisses that window for the rest of the load. Dismissal is keyed to the window
-rather than a report id, so markers re-published under another id — the server's
-list replaced by community markers, or a reload — cannot bring the button back
-or chain a second skip. A seek that lands inside a following marker offers only
-a manual button, and an opening marker that reaches the playback end is not a
-usable intro.
+Server markers are authoritative per kind; community markers only fill kinds the
+server does not report (IntroDB first, then TheIntroDB for gaps). A server window
+is never extended or replaced by a community report, and overlapping reports are
+not unioned into a new one.
+
+Every marker passes one coverage policy before it can drive the player
+(`SegmentPlausibility`, shared by server and community lists): a segment may
+cover at most half the known runtime, only an opening (`intro`, `recap`) may sit
+inside the opening, and an opening may not reach the final frame. A marker that
+fails is absent entirely — no button, no automatic skip and no Up Next window —
+so a server outro running from an intro's end to EOF cannot turn Skip into a jump
+through the episode. Contiguous same-kind pieces are coalesced (a server can split
+an intro at a chapter boundary), while exact duplicates collapse and windows with
+a real gap — a scene between credits — stay separate.
+
+One press, or one automatic skip, moves to that window's end and retires it for
+the rest of the load. Consumption is per window, not per report id, so markers
+re-published under another id cannot bring the button back, and re-entering the
+window by seeking never offers it again. A skip's own landing offers nothing until
+playback has moved the opening grace window into whatever begins there, so a
+marker starting where the skipped one ended cannot appear as a second press of the
+same gesture.
 
 Separate credits windows remain separate: a mid-credits scene is not a duplicate
 marker. Up Next owns only a credits window that reaches the known playback
@@ -874,8 +889,9 @@ duration. A finite earlier window retains its normal Skip Credits behavior and
 lands at its own end; neither a short unmarked tail nor a missing scene marker
 justifies skipping to the next item. Natural EOF still follows episode/playlist
 autoplay preferences. Unknown duration defers the credits-based handoff.
-Exact duplicate ranges and invalid markers are removed without coalescing
-different windows or overriding a kind's Off/manual/automatic setting.
+Exact duplicate ranges collapse, and only directly abutting same-kind pieces
+coalesce; windows with a real gap stay separate, and none of this overrides a
+kind's Off/manual/automatic setting.
 
 The on-demand and Live touch timelines keep the native glass surface continuous wherever
 segment cuts would strand tiny pieces. Each uses its measured track width, not
@@ -884,6 +900,13 @@ orientation or device type: a cut needs enough room on both sides for the
 marker or short unmarked interval are omitted, including near the track ends.
 The same threshold applies at rest and while dragging, so touching does not
 change which cuts appear. Wider layouts retain cuts wherever they fit.
+
+Segment marks are guaranteed independently of that cut threshold: a dedicated
+overlay draws one gap per segment, floored to a legible minimum width, so a short
+intro (~1% of a long episode) is still visible even though the cut mask omits it.
+The overlay only floors subpixel widths; wider segments keep their proportional
+width. The player's secondary line uses the app's separator (`S2 · E2 · Title`),
+never a comma.
 
 The timeline does not enlarge or retime normalized marker ranges; linear seeking
 and existing touch targets remain unchanged. On iPhone and iPad, progress is shown
