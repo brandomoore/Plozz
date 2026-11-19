@@ -9,6 +9,7 @@ import SwiftUI
 @testable import FeaturePlayback
 
 struct PlayerLayoutFixture: View {
+    fileprivate static let capturesFilm = ProcessInfo.processInfo.arguments.contains("--capture-open-movie")
     @State private var model: PlayerViewModel
     @State private var timelineSampleIndex = 0
     @State private var scrubStarts = 0
@@ -42,9 +43,9 @@ struct PlayerLayoutFixture: View {
         model.controls.duration = ProcessInfo.processInfo.arguments.contains("--long-video") ? 5_400 : 1_200
         model.controls.currentSeconds = ProcessInfo.processInfo.arguments.contains("--timeline-rollovers") ? 0 : 600
         model.controls.bufferedSeconds = 900
-        model.controls.title = "Wayward"
-        model.controls.subtitle = "S1 E4 - Mud"
-        model.controls.intendsPause = !ProcessInfo.processInfo.arguments.contains("--playing")
+        model.controls.title = Self.capturesFilm ? "Big Buck Bunny" : "Wayward"
+        model.controls.subtitle = Self.capturesFilm ? "" : "S1 E4 - Mud"
+        model.controls.intendsPause = !Self.capturesFilm && !ProcessInfo.processInfo.arguments.contains("--playing")
         model.controls.isScrubbing = ProcessInfo.processInfo.arguments.contains("--scrubbing")
         model.controls.scrubSeconds = model.controls.currentSeconds
         model.controls.engineCapabilities = ProcessInfo.processInfo.arguments.contains("--no-playback-speed")
@@ -206,10 +207,12 @@ struct PlayerLayoutFixture: View {
 
         var body: some View {
             LiveChannelOverlay(
-                title: "Sample Channel", logoURL: nil, plozzChannelID: scheduled ? "fixture" : nil,
+                title: PlayerLayoutFixture.capturesFilm ? "Open Cinema" : "Sample Channel",
+                logoURL: nil, plozzChannelID: scheduled ? "fixture" : nil,
                 channelID: Self.channelID, input: input,
                 program: hasProgram ? .init(
-                    title: "Evening News", start: now.addingTimeInterval(-900), end: now.addingTimeInterval(900)
+                    title: PlayerLayoutFixture.capturesFilm ? "Big Buck Bunny" : "Evening News",
+                    start: now.addingTimeInterval(-900), end: now.addingTimeInterval(900)
                 ) : nil,
                 earlierPrograms: [], libraryItem: nil, openLibraryItem: nil,
                 phase: cyclesPhase ? phases[phaseIndex] : (paused ? .paused : .playing),
@@ -266,12 +269,19 @@ private struct NativePlayerGlassFixture: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
-        guard let url = Bundle.main.url(forResource: "four-three", withExtension: "mp4") else {
+        let url = PlayerLayoutFixture.capturesFilm
+            ? URL.documentsDirectory.appendingPathComponent("player-capture.mp4")
+            : Bundle.main.url(forResource: "four-three", withExtension: "mp4")
+        guard let url, FileManager.default.fileExists(atPath: url.path) else {
             preconditionFailure("Missing local player reference video.")
         }
         controller.player = AVPlayer(url: url)
         controller.showsPlaybackControls = showsControls
         controller.allowsVideoFrameAnalysis = false
+        if PlayerLayoutFixture.capturesFilm {
+            controller.player?.isMuted = true
+            controller.player?.play()
+        }
         return controller
     }
 

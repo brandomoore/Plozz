@@ -116,17 +116,52 @@ private struct PlayerTouchPanelActionStyle: PrimitiveButtonStyle {
 /// Keep native edge margins without adding them to the window's safe area.
 public struct PlayerTouchChromePadding: ViewModifier {
     private let isEnabled: Bool
+    private let clearsCameraByRow: Bool
 
-    public init(isEnabled: Bool = true) {
+    public init(isEnabled: Bool = true, clearsCameraByRow: Bool = false) {
         self.isEnabled = isEnabled
+        self.clearsCameraByRow = clearsCameraByRow
     }
 
     public func body(content: Content) -> some View {
         content.modifier(WindowSafeAreaPadding(
             isEnabled: isEnabled, minimumInset: PlayerTouchLayout.edgeInset,
             minimumHorizontalInset: PlayerTouchLayout.horizontalInset,
-            balancesLandscapeMargins: true
+            balancesLandscapeMargins: true, clearsCameraByRow: clearsCameraByRow
         ))
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var playerCameraCorners: [CGRect] = []
+}
+
+public extension View {
+    /// Apply to a horizontal control row, not the video or its full-screen overlay.
+    func playerCameraSafeRow(minimumHitHeight: CGFloat = 0) -> some View {
+        modifier(PlayerCameraSafeRow(minimumHitHeight: minimumHitHeight))
+    }
+}
+
+private struct PlayerCameraSafeRow: ViewModifier {
+    let minimumHitHeight: CGFloat
+    @Environment(\.playerCameraCorners) private var corners
+    @Environment(\.layoutDirection) private var direction
+    @State private var row = CGRect.zero
+
+    func body(content: Content) -> some View {
+        let hitBand = row.insetBy(dx: 0, dy: -max(0, minimumHitHeight - row.height) / 2)
+        let collisions = corners.filter { !$0.intersection(hitBand).isEmpty }
+        let left = collisions.filter { $0.midX < row.midX }.map { $0.maxX - row.minX }.max() ?? 0
+        let right = collisions.filter { $0.midX >= row.midX }.map { row.maxX - $0.minX }.max() ?? 0
+        content
+            .padding(.leading, direction == .rightToLeft ? right : left)
+            .padding(.trailing, direction == .rightToLeft ? left : right)
+            // Measure the row's OUTER allocation, never the child moved by the padding.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGRect.self) { proxy in
+                corners.isEmpty ? .zero : proxy.frame(in: .global)
+            } action: { row = $0 }
     }
 }
 #endif

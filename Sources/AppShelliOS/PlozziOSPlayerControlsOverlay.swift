@@ -123,6 +123,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                             },
                             onClose: onClose
                         )
+                        .playerCameraSafeRow()
                     }
                     Spacer(minLength: 0)
                     PlozziOSPlayerTransport(
@@ -180,7 +181,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                         availableSize: availableSize
                     )
                 }
-                .modifier(PlayerTouchChromePadding())
+                .modifier(PlayerTouchChromePadding(clearsCameraByRow: true))
             }
 
             if controlsVisible && !isScrubbing && !isCardOpen && !showsUpNext {
@@ -824,6 +825,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                     )
             }
             .foregroundStyle(.white)
+            .playerCameraSafeRow()
             .playerTouchChromeHidden(isCardOpen || timelineOnly || !showsTransport)
 
             PlozziOSPlayerTimeline(
@@ -847,6 +849,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                         .padding(.bottom, PlayerTouchLayout.timelineRowHeight + 12)
                 }
             }
+            .playerCameraSafeRow(minimumHitHeight: 44)
 
             // Info / Cast tabs sit BELOW the scrubber, matching tvOS, and the
             // card grows upward out of them.

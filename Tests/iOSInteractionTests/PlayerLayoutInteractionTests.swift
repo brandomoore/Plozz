@@ -275,27 +275,32 @@ final class PlayerLayoutInteractionTests: XCTestCase {
                 let viewport = app.frame
                 let leading = timeline.frame.minX - viewport.minX
                 let trailing = viewport.maxX - timeline.frame.maxX
-                XCTAssertEqual(leading, trailing, accuracy: 1)
                 XCTAssertGreaterThanOrEqual(leading, 20.5)
                 if viewport.size == CGSize(width: 678, height: 466) {
-                    // The folded Duo's UIWindow reports this active occlusion
-                    // in addition to the smaller camera lens inside it.
+                    // The 44pt timeline target clips the upper 7pt of the
+                    // lower-right reserved corner. Its leading end stays put.
                     let corner = CGRect(x: left ? 594 : 0, y: left ? 384 : 0, width: 84, height: 82)
+                    XCTAssertEqual(leading, 21, accuracy: 1)
+                    XCTAssertEqual(trailing, left ? 84 : 21, accuracy: 1)
+                    XCTAssertEqual(close.frame.minX, left ? 21 : 84, accuracy: 1)
+                    XCTAssertEqual(info.frame.minX, 21, accuracy: 1)
+                    XCTAssertEqual(viewport.maxX - options.frame.maxX, 21, accuracy: 1)
+                    let title = live ? app.staticTexts["live-channel-program-title"] : app.staticTexts["Wayward"]
+                    XCTAssertEqual(title.frame.minX, 21, accuracy: 1)
                     for button in app.buttons.allElementsBoundByIndex {
                         XCTAssertTrue(button.frame.intersection(corner).isEmpty, button.debugDescription)
                     }
-                } else if viewport.size == CGSize(width: 956, height: 440) {
-                    XCTAssertEqual(leading, 62, accuracy: 1)
+                } else {
+                    if viewport.size == CGSize(width: 956, height: 440) {
+                        XCTAssertEqual(leading, 62, accuracy: 1)
+                    }
+                    XCTAssertEqual(leading, trailing, accuracy: 1)
+                    XCTAssertEqual(close.frame.minX, timeline.frame.minX, accuracy: 1)
+                    XCTAssertEqual(info.frame.minX, timeline.frame.minX, accuracy: 1)
+                    XCTAssertEqual(options.frame.maxX, timeline.frame.maxX, accuracy: 1)
                 }
-                XCTAssertEqual(close.frame.minX, timeline.frame.minX, accuracy: 1)
-                XCTAssertEqual(info.frame.minX, timeline.frame.minX, accuracy: 1)
-                XCTAssertEqual(options.frame.maxX, timeline.frame.maxX, accuracy: 1)
                 for button in [close, info, options] { XCTAssertTrue(button.isHittable) }
                 let state = "\(live ? "Live" : "Main") \(left ? "landscape-left" : "landscape-right")"
-                let image = XCTAttachment(screenshot: app.screenshot())
-                image.name = state
-                image.lifetime = .keepAlways
-                add(image)
                 attachMeasurements([state, "Margins: \(leading), \(trailing)", app.debugDescription])
                 app.terminate()
             }

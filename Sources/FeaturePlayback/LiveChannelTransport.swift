@@ -1365,13 +1365,14 @@ extension LiveChannelOverlay {
                     .allowsHitTesting(false)
                 VStack(spacing: 0) {
                     topBar
+                        .playerCameraSafeRow()
                         .playerTouchChromeHidden(touchChromeHidden)
                     Spacer(minLength: 0)
                     touchBottomCluster
                 }
                 menuLayer
             }
-            .modifier(PlayerTouchChromePadding())
+            .modifier(PlayerTouchChromePadding(clearsCameraByRow: true))
             if !cardOpen, openMenu == nil {
                 centerTransport
                     .reportSubtitleControlsFrame(
@@ -1552,6 +1553,7 @@ extension LiveChannelOverlay {
                         }
                     }
                 }
+                .playerCameraSafeRow()
                 .playerTouchChromeHidden(touchChromeHidden)
                 .transition(.opacity)
                 timeline
@@ -1559,6 +1561,7 @@ extension LiveChannelOverlay {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("live-channel-timeline")
                     .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .timeline)
+                    .playerCameraSafeRow(minimumHitHeight: 44)
                     .transition(.opacity)
             }
             HStack(spacing: 12) {
@@ -1572,10 +1575,12 @@ extension LiveChannelOverlay {
                     .accessibilityIdentifier("live-channel-exit-fullscreen")
                 }
             }
-                .playerTouchChromeHidden(touchChromeHidden)
+            .playerCameraSafeRow()
+            .playerTouchChromeHidden(touchChromeHidden)
             if cardOpen {
                 card
                     .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .card)
+                    .playerCameraSafeRow()
                     .padding(.top, PlayerTouchLayout.cardSpacing)
                     // Grows upward out of the tabs, as VOD's touch card does.
                     .transition(.scale(scale: 0.94, anchor: .bottom).combined(with: .opacity))
@@ -1801,6 +1806,7 @@ struct WindowSafeAreaPadding: ViewModifier {
     var minimumInset: CGFloat = 0
     var minimumHorizontalInset: CGFloat = 0
     var balancesLandscapeMargins = false
+    var clearsCameraByRow = false
 
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var window = WindowSafeArea()
@@ -1811,12 +1817,14 @@ struct WindowSafeAreaPadding: ViewModifier {
         let horizontal = isEnabled ? minimumHorizontalInset : 0
         let rtl = layoutDirection == .rightToLeft
         let balance = balancesLandscapeMargins && window.size.width > window.size.height
-        // Mirror the protected edge, not the unprotected one: the Duo's
-        // camera shares the Close button's corner in one landscape rotation.
-        let common = max(insets.left, insets.right)
+        let corners = balance && clearsCameraByRow ? window.cameraCorners : []
+        // Only relax a one-sided inset when UIKit identifies what occupies it.
+        // Older SDKs, ordinary sensor housings and unadapted overlays stay safe.
+        let common = corners.isEmpty ? max(insets.left, insets.right) : min(insets.left, insets.right)
         let leading = balance ? common : (rtl ? insets.right : insets.left)
         let trailing = balance ? common : (rtl ? insets.left : insets.right)
         content
+            .environment(\.playerCameraCorners, corners)
             .padding(EdgeInsets(
                 top: max(minimum, insets.top), leading: max(horizontal, leading),
                 bottom: max(minimum, insets.bottom), trailing: max(horizontal, trailing)
@@ -1831,6 +1839,7 @@ struct WindowSafeAreaPadding: ViewModifier {
 struct WindowSafeArea: Equatable {
     var insets: UIEdgeInsets = .zero
     var size: CGSize = .zero
+    var cameraCorners: [CGRect] = []
 }
 
 private struct WindowSafeAreaReader: UIViewRepresentable {
@@ -1867,7 +1876,17 @@ private struct WindowSafeAreaReader: UIViewRepresentable {
 
         private func report() {
             guard let window else { return }
-            let value = WindowSafeArea(insets: window.safeAreaInsets, size: window.bounds.size)
+            let insets = window.safeAreaInsets
+            let bounds = window.bounds
+            var value = WindowSafeArea(insets: insets, size: bounds.size)
+            #if canImport(SwiftUI, _version: 8.0.85)
+            if #available(iOS 27.1, *), bounds.width > bounds.height, insets.left != insets.right {
+                value.cameraCorners = window.reservedRegions(kind: .occlusion).map(\.frame).filter { rect in
+                    (rect.minY <= bounds.minY || rect.maxY >= bounds.maxY) && rect.height < bounds.height
+                        && (insets.left > insets.right ? rect.minX <= bounds.minX : rect.maxX >= bounds.maxX)
+                }
+            }
+            #endif
             guard value != reported else { return }
             reported = value
             // Never during SwiftUI's own update pass.

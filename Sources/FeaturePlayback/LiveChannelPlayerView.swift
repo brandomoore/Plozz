@@ -595,14 +595,14 @@ public struct LiveChannelPlayerView: View {
                         in: model.subtitles.controlsLayout, region: .topControls,
                         isVisible: controlsVisible && isExpanded && !touchScrubbing
                     )
-                    #endif
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    #if os(iOS)
                     // Beside the overlay's close button, as VOD's top bar.
                     .padding(.top, LiveChannelOverlay.touchTopBarInset)
                     .padding(.leading, LiveChannelOverlay.touchPresentationLeadingInset)
-                    .modifier(PlayerTouchChromePadding(isEnabled: isExpanded))
+                    .playerCameraSafeRow(minimumHitHeight: 44)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .modifier(PlayerTouchChromePadding(isEnabled: isExpanded, clearsCameraByRow: true))
                     #else
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.top, 112)
                     .padding(.horizontal, 16)
                     #endif

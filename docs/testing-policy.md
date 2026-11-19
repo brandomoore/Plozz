@@ -694,7 +694,15 @@ instead of `--capture-player-landscape` for the opposite camera corner.
 `PlayerLayoutInteractionTests.testLandscapePlayerCaptureFillsPhoneDisplay`
 compares the app frame with the raw display before any screenshot resizing.
 `testLandscapePlayerMarginsInBothRotations` checks the main and behind-live
-controls against both edges and the folded Duo's reserved camera corner.
+controls against both edges and the folded Duo's reserved camera corner,
+including the timeline's 44-point hit area. Use its AX frames for measurements.
+For visual evidence capture the whole folded display with
+`xcrun simctl io "$PLOZZ_SIM_ID" screenshot --display=1 player.png`, not an
+XCTest app crop. For the Big Buck Bunny footage capture, place a rights-cleared
+excerpt of the [Blender Foundation trailer](https://download.blender.org/peach/trailer/)
+in the test host's `Documents/player-capture.mp4` and add `--capture-open-movie`
+to `--video`. Omit `--live-player` for the main player. Credit the film and
+its [CC BY 3.0 license](https://creativecommons.org/licenses/by/3.0/) with the captures.
 
 The `PlozziOSPresentationTests` scheme supplies a separate iOS app scene for
 native Form/picker and sheet rendering. Run it on an explicitly owned iOS
