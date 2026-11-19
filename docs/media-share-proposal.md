@@ -3,28 +3,9 @@
 Current automatic scan/enrichment eligibility is documented in
 [Profile-scoped media-share work](media-share-work-scope.md).
 
-### Windows PC discovery (activation pending)
-
-Add Network Share keeps Bonjour and manual IP entry. The optional Windows
-channel sends a foreground IPv4 WS-Discovery probe (UDP 3702), confirms SMB
-on the replying local host without credentials, and merges it into the same
-device list. A Windows computer name is used when available; the IP is the
-fallback. PCs with Windows network discovery disabled, blocked multicast, or
-IPv6-only connectivity may still need manual entry.
-
-The app does not enable this channel by default. After Apple approves
-`com.apple.developer.networking.multicast` for the relevant app/platform:
-
-1. Enable the capability on the approved canonical identifier and refresh its
-   signing profiles. Add the entitlement to the canonical target only.
-2. Set `PlozzWindowsDiscoveryEnabled` (Info.plist **Boolean** `true`) in that
-   target's `project.yml` info properties; do not enable it for unprovisioned
-   or branded builds. Regenerate the project and verify both the signed
-   entitlement and the flag on the resulting app.
-3. Before release, use a real Windows PC on a private LAN with network discovery
-   and file sharing enabled but no Bonjour advertisement. Verify appearance,
-   sign-in and folder selection; repeat with discovery blocked to verify manual
-   IP entry. A simulator cannot establish that the device entitlement works.
+Windows PC discovery uses IPv4 WS-Discovery alongside Bonjour. Set the Info.plist
+Boolean `PlozzWindowsDiscoveryEnabled` only on targets signed with the
+`com.apple.developer.networking.multicast` entitlement.
 
 **Status:** Still just a design for the provider/library side, BUT — the scary part
 (Phase 1, getting SMB to actually play on the Apple TV) now works. A file off my
