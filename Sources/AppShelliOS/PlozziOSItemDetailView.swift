@@ -1188,7 +1188,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
         } else {
             selectedSeasons = nil
         }
-        if appModel.activeSeerrRequestIdentity == .admin,
+        if appModel.seerService.needsAdminConfirmation,
            appModel.profiles.profiles.count > 1 {
             requestConfirmationItem = item
             requestConfirmationSeasons = selectedSeasons
@@ -1215,16 +1215,22 @@ private struct PlozziOSCanonicalItemDetailView: View {
         requestError = nil
         defer { isRequesting = false }
         let requestScope = seasonRequestScope
+        let requestProfileID = appModel.profiles.activeProfileID
+        let requestGeneration = seerService.requestAuthorizationGeneration
         let outcome = await seerService.request(
             item,
             seasons: seasons,
             identity: appModel.activeSeerrRequestIdentity
         )
+        guard requestProfileID == appModel.profiles.activeProfileID,
+              requestGeneration == seerService.requestAuthorizationGeneration else { return }
+        if case let .successElsewhere(message) = outcome {
+            appModel.transientStatusPresenter.present(icon: "checkmark", text: message)
+            return
+        }
         guard context == appModel.plozziOSSeasonRequestContextID else { return }
         switch outcome {
-        case .successElsewhere:
-            // Another profile already owns this Seerr request; nothing to change.
-            break
+        case .successElsewhere: break
         case let .success(status):
             if let seasons {
                 guard requestScope == seasonRequestScope else { return }
@@ -1257,6 +1263,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 }
                 await viewModel.load()
             }
+        case .failure(.cancelled):
+            break
         case let .failure(reason):
             requestError = reason.userMessage
         }

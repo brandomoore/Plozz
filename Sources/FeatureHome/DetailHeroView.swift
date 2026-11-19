@@ -1091,13 +1091,6 @@ struct DetailHeroView: View, Equatable {
                     }
                 }
                 .detailEntranceStage(.controls)
-                // Push the action row down from the metadata above it. This row is
-                // the widest thing in the column (Play + resume + version + trailer +
-                // watchlist in the largest configuration) and sat as close to the
-                // facts line as the facts sit to the description, which read as
-                // crowded at TV distance. Only this gap grows; description -> facts is
-                // unchanged.
-                .padding(.top, 16)
             }
         }
         .padding(.top, PlozzTheme.Metrics.screenVerticalPadding)
@@ -1357,26 +1350,25 @@ struct DetailHeroView: View, Equatable {
     }
 
     /// The episode's own 16:9 still, inset opposite the text on an episode page.
-    /// Uses the same artwork chain and spoiler policy as the episode cards, so an
-    /// unwatched episode's frame is blurred here exactly as it is in a rail.
+    /// Shares the rail's prepared thumbnail, including its spoiler-safe alternative.
     @ViewBuilder
     private func episodeStill() -> some View {
         let width = Self.screenWidth * 0.40
-        let source = MediaArtworkSource(
-            item: item, placement: .episodeThumbnail, policy: artworkPolicy.forArea(.episodes)
+        let source = EpisodeArtworkSource(
+            item: item, spoilerSettings: spoilerSettings, policy: artworkPolicy.forArea(.episodes)
         )
         FallbackAsyncImage(
             references: source.references,
             variant: .landscapeCard,
             artworkPolicy: source.policy,
             asyncFallbackURL: source.fallbackURL,
-            pinIdentity: source.itemIdentity
+            pinIdentity: source.pinIdentity
         ) {
             MediaArtworkPlaceholder(
                 symbol: .init(for: item), cornerRadius: PlozzMetrics.standard.landscapeCardCornerRadius
             )
         }
-        .blur(radius: spoilerSettings.shouldHideThumbnail(for: item) ? 28 : 0)
+        .blur(radius: spoilerSettings.mode == .blur && spoilerSettings.shouldHideThumbnail(for: item) ? 28 : 0)
         .frame(width: width, height: width * 9 / 16)
         .clipShape(
             RoundedRectangle(

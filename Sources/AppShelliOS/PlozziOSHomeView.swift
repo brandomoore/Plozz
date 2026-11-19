@@ -1242,7 +1242,7 @@ struct PlozziOSHomeView: View {
     /// user mappings go to the service's relink failure instead.
     private func beginHeroRequest(_ item: MediaItem) {
         let context = appModel.plozziOSSeasonRequestContextID
-        if appModel.activeSeerrRequestIdentity == .admin,
+        if appModel.seerService.needsAdminConfirmation,
            appModel.profiles.profiles.count > 1 {
             heroRequestConfirmSeasons = nil
             heroRequestConfirmItem = item
@@ -1269,7 +1269,7 @@ struct PlozziOSHomeView: View {
             Task { await refreshHeroSeasonAvailability(for: item) }
             return
         }
-        if appModel.activeSeerrRequestIdentity == .admin,
+        if appModel.seerService.needsAdminConfirmation,
            appModel.profiles.profiles.count > 1 {
             heroRequestConfirmSeasons = selected
             heroRequestConfirmItem = item
@@ -1297,16 +1297,22 @@ struct PlozziOSHomeView: View {
         defer { isRequestingHero = false }
         ensureHeroSeasonRequestContext()
         let requestContext = heroSeasonRequestContext
+        let requestProfileID = appModel.profiles.activeProfileID
+        let requestGeneration = appModel.seerService.requestAuthorizationGeneration
         let outcome = await appModel.seerService.request(
             item,
             seasons: seasons,
             identity: appModel.activeSeerrRequestIdentity
         )
+        guard requestProfileID == appModel.profiles.activeProfileID,
+              requestGeneration == appModel.seerService.requestAuthorizationGeneration else { return }
+        if case let .successElsewhere(message) = outcome {
+            appModel.transientStatusPresenter.present(icon: "checkmark", text: message)
+            return
+        }
         guard context == appModel.plozziOSSeasonRequestContextID else { return }
         switch outcome {
-        case .successElsewhere:
-            // Another profile already owns this Seerr request; nothing to change.
-            break
+        case .successElsewhere: break
         case let .success(status):
             if let seasons {
                 guard heroSeasonRequestContext == requestContext else { return }
@@ -1343,6 +1349,8 @@ struct PlozziOSHomeView: View {
                 heroRequestStatusSetAt[item.id] = Date()
                 await refreshFeaturedStatusOnce()
             }
+        case .failure(.cancelled):
+            break
         case let .failure(reason):
             heroRequestError = reason.userMessage
         }

@@ -254,7 +254,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
-    func testReadyMetadataEntranceBeginsWhenNavigationCompletes() async throws {
+    func testReadyMetadataAnimatesWhileNavigationIsOpening() async throws {
         XCTAssertFalse(UIAccessibility.isReduceMotionEnabled,
                        "This rendered-animation case requires the simulator's full-motion setting.")
         let fixture = try Fixture(
@@ -293,10 +293,6 @@ final class HeroLogoContinuityTests: XCTestCase {
             .background(.black)
         )
         fixture.host.beginAppearanceTransition(true, animated: true)
-        try await Task.sleep(for: .milliseconds(500))
-        XCTAssertLessThan(try fixture.redSample().intensity, 25)
-        fixture.host.endAppearanceTransition()
-
         var sawIntermediateFrame = false
         var samples: [String] = []
         let started = ContinuousClock.now
@@ -321,6 +317,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         XCTAssertTrue(sawIntermediateFrame, "A readiness toggle alone is not proof of a rendered entrance.")
         try await waitUntil { try fixture.hasRedLogo() }
         try await waitUntil { try fixture.hasRedLogo() && fixture.hasTitleText() }
+        fixture.host.endAppearanceTransition()
     }
 
     func testOpeningArtworkPaintsWhileDiscoveryOwnershipIsPending() async throws {
@@ -555,9 +552,6 @@ final class HeroLogoContinuityTests: XCTestCase {
         )
         detail.host.beginAppearanceTransition(true, animated: true)
         detail.host.view.layoutIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
-        XCTAssertLessThan(try detail.redSample().intensity, 10)
-        detail.host.endAppearanceTransition()
         var partial = false
         try await waitUntil {
             let intensity = try detail.redSample().intensity
@@ -565,6 +559,7 @@ final class HeroLogoContinuityTests: XCTestCase {
             return intensity > 245
         }
         XCTAssertTrue(partial, "The Home logo itself must fade, even with no detail lookup.")
+        detail.host.endAppearanceTransition()
     }
 
     func testOpeningLogoRejectsChangedSubjectProfilePolicyAndIdentity() async throws {

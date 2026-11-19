@@ -871,7 +871,6 @@ private struct PlozziOSScenePhaseEffects: View {
                 if newPhase == .active {
                     appModel.accountsProviders.retryUnconfirmedCredentials()
                     appModel.syncCloudOnForeground()
-                    appModel.requestLocalNetworkAccessIfNeeded()
                 }
             }
             .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in

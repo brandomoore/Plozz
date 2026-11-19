@@ -107,11 +107,9 @@ playing a stream from a server on the LAN needs the grant. If the grant is
 missing, the request fails with `NSURLError -1001` after the timeout and looks
 like a broken player.
 
-The app now raises the alert itself, from its own process, on the first
-foreground with a configured account (`LocalNetworkAuthorization` in
-`CoreNetworking`), and again (without gating bring-up) when playback starts. The
-recorded state is shown under Developer Mode ▸ Device & Build ▸ Local Network,
-and a playback timeout while the state is `denied` logs an explicit line.
+iOS asks for permission when Plozz first discovers or connects to a device on
+the local network. Opening the app with a configured account does not run a
+separate permission probe.
 
 If the alert was dismissed, or the grant belongs to the old signature:
 

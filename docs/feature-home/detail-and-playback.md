@@ -199,7 +199,7 @@ remain directly below the complete header. Cast & Crew precedes Related. Related
 renders only real results, including short rows, without a speculative skeleton.
 Its request still starts during page entry, not when the row scrolls into view.
 
-After native navigation finishes, the mobile detail title or logo, metadata
+As native navigation begins, the ready mobile detail title or logo, metadata
 (including the synopsis and badges), and actions fade in and rise 10 points,
 starting 90 ms apart. Visible sections below the hero enter together on the
 next beat, rising 28 points. Scrolling does not replay the entrance. The
@@ -361,7 +361,9 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   deep-link entry retain their episode/season selection without changing that
   subject, including the first paint while parent metadata is loading.
   Episode descriptions stay in the browser; explicit Episode Info pages retain
-  their own synopsis, ratings and spoiler rules. Play/Resume, versions and watched
+  their own synopsis and ratings. On Apple TV, Episode Info uses the same
+  prepared thumbnail as the rail, including series art in spoiler-placeholder
+  mode. Play/Resume, versions and watched
   actions still target the selected episode, while Watchlist and Trailer target
   the series. No series-versus-episode setting is needed.
   Season lists publish independently of the server resume lookup on both

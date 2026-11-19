@@ -134,7 +134,7 @@ private struct MobileDetailForegroundEntrance: ViewModifier {
         let returning = phase == .waiting && hasRevealed?.wrappedValue == true
         content
             .environment(\.mobileDetailRevealPhase, returning ? .settled : phase)
-            .plozzOnPageAppearanceChange { visible in
+            .plozzOnPageAppearanceChange(startsDuringTransition: true) { visible in
                 pageIsVisible = visible
                 if !visible, phase == .opening { phase = .settled }
             }
