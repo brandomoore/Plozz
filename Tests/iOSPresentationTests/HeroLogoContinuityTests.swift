@@ -510,6 +510,40 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
+    func testHandedOffHomeLogoFadesWithDetailBeforeOwnershipIsReady() async throws {
+        let home = try Fixture()
+        defer { home.close() }
+        let item = MediaItem(id: UUID().uuidString, title: "Discovery show", kind: .series,
+                             providerIDs: ["Tmdb": "123"], locallyValidatedPlayableSource: false)
+        let seed = try await openingLogo(for: item, style: .compactPortrait, fixture: home)
+        let detail = try Fixture(defersAppearance: true)
+        defer { detail.close() }
+        detail.host.rootView = AnyView(
+            DetailMetadataFixture(
+                state: SubjectState(item: item), root: item, style: .compactPortrait,
+                fallback: HeroLogoFallback(for: item) { XCTFail("Handoff should not fetch"); return nil },
+                artworkSettings: .default
+            )
+            .mobileDetailForegroundEntrance()
+            .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.plozzArtworkArea, .details)
+            .environment(\.plozzArtworkSourceReady, false)
+            .environment(\.openingHeroLogo, seed.logo(for: item, profileID: "profile"))
+        )
+        detail.host.beginAppearanceTransition(true, animated: true)
+        detail.host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertLessThan(try detail.redSample().intensity, 10)
+        detail.host.endAppearanceTransition()
+        var partial = false
+        try await waitUntil {
+            let intensity = try detail.redSample().intensity
+            partial = partial || (10...235).contains(intensity)
+            return intensity > 245
+        }
+        XCTAssertTrue(partial, "The Home logo itself must fade, even with no detail lookup.")
+    }
+
     func testOpeningLogoRejectsChangedSubjectProfilePolicyAndIdentity() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -643,6 +677,37 @@ final class HeroLogoContinuityTests: XCTestCase {
                     XCTAssertFalse(try fixture.hasRedLogo())
                 }
             }
+        }
+    }
+
+    func testLateDetailWordmarkFadesAfterTheEntranceUnlessMotionIsReduced() async throws {
+        for reduced in [false, true] {
+            let fixture = try Fixture()
+            defer { fixture.close() }
+            let url = try fixture.seedLogo()
+            let item = MediaItem(id: UUID().uuidString, title: "Movie title", kind: .movie)
+            let lookup = LookupGate()
+            defer { lookup.release(nil) }
+            fixture.host.rootView = AnyView(
+                DetailMetadataFixture(
+                    state: SubjectState(item: item), root: item, style: .compactPortrait,
+                    fallback: HeroLogoFallback(for: item) { await lookup.resolve() }
+                )
+                .mobileDetailForegroundEntrance(hasRevealed: .constant(true))
+                .environment(\._accessibilityReduceMotion, reduced)
+            )
+            try await waitUntil { lookup.calls == 1 }
+            XCTAssertFalse(try fixture.hasTitleText())
+            XCTAssertEqual(try fixture.redSample().intensity, 0)
+            lookup.release(url)
+            var intensities: [UInt8] = []
+            try await waitUntil {
+                let intensity = try fixture.redSample().intensity
+                intensities.append(intensity)
+                return intensity > 245
+            }
+            XCTAssertEqual(intensities.contains { (10...235).contains($0) }, !reduced,
+                           "A late wordmark should fade only with motion enabled: \(intensities)")
         }
     }
 

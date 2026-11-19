@@ -135,7 +135,8 @@ loading and reveal behavior stable:
   Back navigation and player dismissal; later enrichment updates quietly.
   Reduce Motion removes the entrance animation.
 - Home's wordmark keeps its independent reveal and never gates its action row.
-  Detail's late wordmark joins quietly instead of adding a second fade.
+  On detail, a ready wordmark fades with the first stage; a late wordmark
+  fades in when it arrives, without restarting the other stages.
 - Ready artwork stays opaque on Home and detail. Mobile detail resolves one
   bitmap for its primary image and every reflection. Artwork arriving during
   native entry paints immediately, without an extra fade. Only when entry

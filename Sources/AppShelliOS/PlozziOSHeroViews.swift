@@ -3230,7 +3230,7 @@ struct PlozziOSHeroMetadata: View {
                         maxHeight: logoBox.height,
                         // Never replace a provisional text title with a late logo.
                         // Logo resolution does not gate the page's actions.
-                        presentationPolicy: .whenResolved,
+                        presentationPolicy: mode == .detail ? .detailEntrance : .whenResolved,
                         alignment: style == .compactPortrait ? .center : .leading
                     ) {
                         Text(titlePresentation.title)
@@ -3240,12 +3240,6 @@ struct PlozziOSHeroMetadata: View {
                             .fontWeight(.bold)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(2)
-                    }
-                    .transaction {
-                        if mode == .detail {
-                            $0.animation = nil
-                            $0.disablesAnimations = true
-                        }
                     }
                     .accessibilityLabel(Text(titlePresentation.title))
                     .accessibilityAddTraits(.isHeader)

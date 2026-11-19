@@ -202,9 +202,9 @@ Artwork handed off from Home or ready on the first frame displays immediately.
 If the page opens without a usable bitmap, the first artwork and its reflections
 fade together over 350 ms, starting no earlier than the end of navigation.
 Reduce Motion shows it immediately. Later enrichment and optional sections
-do not replay separate fades. Logo resolution keeps the existing no-temporary-title
-policy and may finish later, without blocking playback. Reduce Motion removes
-the foreground entrance.
+do not replay the entrance. If the logo is still loading, its space stays
+empty; the logo itself fades in when it arrives, without delaying Play.
+Reduce Motion skips both the foreground entrance and the late logo fade.
 
 tvOS detail entry keeps the real primary action focusable while its play target
 loads. An early press queues one activation, replacing the icon with a spinner

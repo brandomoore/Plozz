@@ -86,7 +86,8 @@ between Home and detail:
 
 - **One wordmark reveal.** Do not let a text title appear first and then swap
   for a logo. Home crossfades its resolved wordmark without gating Play/Watchlist.
-  The wordmark leads the mobile detail entrance; a late logo joins quietly.
+  A ready wordmark leads the mobile detail entrance. If it arrives later,
+  fade in the logo itself without replaying the entrance.
   Reuse Home's displayed wordmark on detail entry when subject, profile and
   artwork policy still match; discovery ownership must not delay that handoff.
 - **Home slides stay opaque.** A carousel slide whose artwork is already loaded
