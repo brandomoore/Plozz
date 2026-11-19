@@ -86,6 +86,19 @@ final class PublicMetaDBPlaybackTests: XCTestCase {
         XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
     }
 
+    func testForbiddenResumeDoesNotClaimNewerRemoteProgressOrAcknowledgeDelivery() async throws {
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/resume", json: emptyPage)
+        http.stub(pathSuffix: "/watched", json: emptyPage)
+        http.stub(pathSuffix: "/resume", json: "{}", status: 403)
+        do {
+            try await reporter(http).report(delivery(position: 300, seconds: 300))
+            XCTFail("Denied playback was reported as delivered")
+        } catch { XCTAssertEqual(error as? TrackerPlaybackDeliveryError, .accessDenied) }
+        XCTAssertEqual(http.sentPaths, ["/api/external/resume", "/api/external/watched", "/api/external/resume"])
+        XCTAssertEqual(http.sent.filter { $0.body != nil }.count, 1)
+    }
+
     func testFractionalPlayerClockUsesWholeMillisecondsForWriteAndReadback() async throws {
         let http = RecordingHTTPClient()
         let stored = resumeRow.replacingOccurrences(of: #""media_type":"movie""#, with: #""media_type":"movie","season":0,"episode":0"#)

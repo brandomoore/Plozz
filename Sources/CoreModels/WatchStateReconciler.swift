@@ -327,7 +327,7 @@ public actor WatchStateReconciler {
                 var next = state.trackerPlayback[index]
                 next.attempts += 1
                 switch failure {
-                case .connectionChanged, .unsupportedIdentity, .remoteConflict, .unconfirmed:
+                case .connectionChanged, .unsupportedIdentity, .accessDenied, .remoteConflict, .unconfirmed:
                     next.blocked = true
                 case .retryAfter(let delay):
                     next.nextAttemptAt = now().addingTimeInterval(max(1, delay ?? 60))

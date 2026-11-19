@@ -57,8 +57,13 @@ final class TrackerPlaybackDeliveryTests: XCTestCase {
         XCTAssertTrue(state.pending.isEmpty)
     }
 
-    func testUnconfirmedDeliveryRemainsParkedAcrossCheckpointsAndRelaunch() async throws {
-        let applier = PlaybackApplier(failure: .unconfirmed)
+    func testUnconfirmedOrDeniedDeliveryRemainsParkedAcrossCheckpointsAndRelaunch() async throws {
+        try await assertDeliveryRemainsParked(.unconfirmed)
+        try await assertDeliveryRemainsParked(.accessDenied)
+    }
+
+    private func assertDeliveryRemainsParked(_ error: TrackerPlaybackDeliveryError) async throws {
+        let applier = PlaybackApplier(failure: error)
         let store = InMemoryWatchMutationStore()
         let sut = WatchStateReconciler(store: store, applier: applier)
         let original = try delivery()
@@ -72,7 +77,10 @@ final class TrackerPlaybackDeliveryTests: XCTestCase {
         XCTAssertEqual(sent.count, 1)
         let rows = await restored.snapshot().trackerPlayback
         XCTAssertEqual(rows.count, 1)
-        XCTAssertTrue(rows[0].blocked)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertTrue(row.blocked)
+        XCTAssertFalse(row.delivered)
+        XCTAssertEqual(row.attempts, 1)
     }
 
     func testPersistenceFailureNeverDispatches() async throws {

@@ -63,6 +63,8 @@ private struct PublicMetaDBPlaybackFailure: View {
             Text("Playback wasn't sent because the account changed.")
         case .unsupportedIdentity:
             Text("Plozz couldn't match the title or episode.")
+        case .accessDenied:
+            Text("PublicMetaDB denied access. This playback report won't be retried.")
         case .remoteConflict:
             Text("Not sent: PublicMetaDB has newer progress or a possible matching play.")
         case .unconfirmed:

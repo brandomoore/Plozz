@@ -8,6 +8,24 @@ list and showed the expected empty contents. Independent reads before and after
 found no change to watch or resume history. This verifies account access, not
 playback reporting or return sync.
 
+On the candidate with the access-denial reporting fix, the normal iPhone app
+played *Charge* (2022) muted from NFS using the dedicated tracker account.
+Independent reads of PublicMetaDB and the profile-scoped share stores verified
+both automatic delivery and revocation:
+
+| Normal foreground check | PublicMetaDB resume | SMB resume | WebDAV resume |
+| --- | ---: | ---: | ---: |
+| Before playback, both shares selected | None | 0 s | 0 s |
+| After the first playback and 927 s in background | 89.677 s | 89.677 s | 89.677 s |
+| After removing SMB, playing again and 926 s in background | 155.394 s | 89.677 s | 155.394 s |
+
+Both destination records were still at their previous positions after playback
+and before foreground sync. The revoked SMB record stayed byte-for-byte unchanged.
+Neither check used **Sync now** or a reviewed import. The managed Jellyfin
+control, unselected share control and unrelated tracker records stayed unchanged.
+The tracker and local test state were restored. This verifies movie resume
+sync on these shares, not episode delivery or switching between tracker accounts.
+
 On `f6af81551`, the same app played *Sintel* muted from real SMB and WebDAV
 shares. Both players measured 888.042 seconds. Independent reads confirmed
 that each share retained its own file revision and started with no resume
@@ -16,6 +34,14 @@ HTTP 403 on the independent client's first request to save progress; fresh
 reads confirmed no resume point was created. Removing SMB left WebDAV selected,
 but without a new tracker event neither delivery to both nor delivery to WebDAV
 alone was tested. The controls stayed unchanged and the test setup was restored.
+
+The [published API contract](https://publicmetadb.com/api-docs) lists season
+and episode as optional for movies. The denied request used whole milliseconds
+and targeted a movie with no existing resume; the earlier duplicate-on-update
+case below does not establish why this request was denied. For native playback
+reports, Plozz distinguishes HTTP 403 (access denied) from newer tracker
+progress. Neither outcome acknowledges delivery or automatically retries that
+viewing after another checkpoint or relaunch.
 
 On the same source, Apple TV passed seven hosted account/catalog checks and
 four native remote-control pairing checks. These used fixtures. Both failures

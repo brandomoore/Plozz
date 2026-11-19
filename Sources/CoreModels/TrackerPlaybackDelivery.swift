@@ -50,7 +50,7 @@ public struct TrackerPlaybackSample: Codable, Equatable, Sendable {
 }
 
 public enum TrackerPlaybackDeliveryError: Error, Codable, Equatable, Sendable {
-    case connectionChanged, unsupportedIdentity, remoteConflict, unconfirmed
+    case connectionChanged, unsupportedIdentity, accessDenied, remoteConflict, unconfirmed
     case retryAfter(TimeInterval?)
 }
 

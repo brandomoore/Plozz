@@ -56,7 +56,7 @@ actor PublicMetaDBPlaybackReporter {
                 case .invalidKey, .disconnected, .connectionChanged:
                     throw TrackerPlaybackDeliveryError.connectionChanged
                 case .uncertainWrite: throw TrackerPlaybackDeliveryError.unconfirmed
-                case .blocked: throw TrackerPlaybackDeliveryError.remoteConflict
+                case .blocked: throw TrackerPlaybackDeliveryError.accessDenied
                 case .invalidInput: throw TrackerPlaybackDeliveryError.unsupportedIdentity
                 default: throw error
                 }
