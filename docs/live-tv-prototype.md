@@ -258,7 +258,9 @@ still ends before pinned navigation icons. There is no second custom background 
 and accessible names and help text are retained.
 Directional handling belongs to the originating control, not a parent reading
 the newly focused control. Focus moves across the action row before entering
-the guide, and mirrors in RTL. Ordinary sidebar-to-guide handoff does not hide
+the guide, and mirrors in RTL. Down from Manage channels enters the category
+list without selecting a filter. Focus handoffs do not dim controls.
+Ordinary sidebar-to-guide handoff does not hide
 app navigation or change its content insets; fullscreen playback return and
 Search retain their separate navigation suppression.
 The source menu shows the current source, supports **All**, and opens the existing

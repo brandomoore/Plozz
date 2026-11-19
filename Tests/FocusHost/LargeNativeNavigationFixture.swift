@@ -1,4 +1,5 @@
 import CoreModels
+import AVFoundation
 import CoreUI
 import FeatureHome
 import FeatureHomeCore
@@ -33,7 +34,9 @@ struct LargeNativeNavigationFixture: View {
     }
 
     init() {
-        if ProcessInfo.processInfo.arguments.contains("--initial-last-library") {
+        if ProcessInfo.processInfo.arguments.contains("--guide-travel") {
+            _selection = State(initialValue: .liveTV)
+        } else if ProcessInfo.processInfo.arguments.contains("--initial-last-library") {
             _selection = State(initialValue: .library("plex:20"))
         }
         let longNames = ProcessInfo.processInfo.arguments.contains("--long-library-names")
@@ -130,7 +133,12 @@ struct LargeNativeNavigationFixture: View {
 
     private func page(_ destination: NavigationRailDestination) -> some View {
         NavigationStack {
-            if destination == .settings {
+            if destination == .liveTV, ProcessInfo.processInfo.arguments.contains("--guide-travel") {
+                LiveTVCategorySearchFixture()
+                    .task {
+                        await GuideTravelProbe().run(tabCount: NavigationDestinationDefaults.topBar(destinations: destinations).count)
+                    }
+            } else if destination == .settings {
                 VStack {
                     Text("Settings").accessibilityIdentifier("large-navigation-settings")
                     Button("Back") { selectionBinding.wrappedValue = .home }
@@ -299,6 +307,141 @@ struct LargeNativeNavigationFixture: View {
         case .allLibraries: "All Libraries"
         case .settings: "Settings"
         case .library: "Library"
+        }
+    }
+
+    /// Simulator fallback when testmanager cannot deliver remote events. The
+    /// system still has to land on the programme in the requested collection cell.
+    @MainActor
+    private final class GuideTravelProbe: NSObject {
+        private var stamps = [Double]()
+
+        @objc private func tick(_ link: CADisplayLink) { stamps.append(link.timestamp) }
+
+        private func report(_ message: String) {
+            FileHandle.standardOutput.write(Data("GUIDE_TRAVEL \(message)\n".utf8))
+        }
+
+        private func cpuSeconds() -> Double {
+            var resources = rusage()
+            precondition(getrusage(RUSAGE_SELF, &resources) == 0)
+            return Double(resources.ru_utime.tv_sec + resources.ru_stime.tv_sec)
+                + Double(resources.ru_utime.tv_usec + resources.ru_stime.tv_usec) / 1e6
+        }
+
+        private func views(_ root: UIView) -> [UIView] { [root] + root.subviews.flatMap(views) }
+
+        private func program(in cell: UICollectionViewCell) -> (any UIFocusItem)? {
+            var containers: [any UIFocusItemContainer] = [cell.contentView]
+            var seen = Set<ObjectIdentifier>()
+            var first: (item: any UIFocusItem, x: CGFloat)?
+            while let container = containers.popLast() {
+                guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+                if let view = container as? UIView { containers.append(contentsOf: view.subviews) }
+                for item in container.focusItems(in: container.coordinateSpace.convert(cell.bounds, from: cell)) {
+                    if let child = item.focusItemContainer { containers.append(child) }
+                    guard !(item is UIScrollView), !(item is UICollectionViewCell),
+                          let frame = NativeFocusRegion.frame(of: item, in: cell),
+                          cell.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)),
+                          frame.minX > 80, frame.height > 35, frame.height < 120,
+                          first == nil || frame.minX < first!.x else { continue }
+                    first = (item, frame.minX)
+                }
+            }
+            return first?.item
+        }
+
+        private func target(_ row: Int, in collection: UICollectionView) -> (any UIFocusItem)? {
+            let path = IndexPath(item: row, section: 0)
+            if let frame = collection.layoutAttributesForItem(at: path)?.frame,
+               !collection.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)) {
+                collection.scrollToItem(at: path, at: [], animated: false)
+                collection.layoutIfNeeded()
+            }
+            return collection.cellForItem(at: path).flatMap(program)
+        }
+
+        private func video(_ layer: CALayer) -> AVPlayerLayer? {
+            if let layer = layer as? AVPlayerLayer, layer.isReadyForDisplay, layer.player?.rate == 1 { return layer }
+            for child in layer.sublayers ?? [] {
+                if let result = video(child) { return result }
+            }
+            return nil
+        }
+
+        func run(tabCount: Int) async {
+            do {
+                try await Task.sleep(for: .seconds(3))
+                guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                    .flatMap(\.windows).first(where: \.isKeyWindow),
+                      let system = UIFocusSystem.focusSystem(for: window) else {
+                    report("FAIL window"); return
+                }
+                let all = views(window)
+                guard let collection = all.compactMap({ $0 as? UICollectionView }).first(where: {
+                    $0.numberOfSections == 1 && $0.numberOfItems(inSection: 0) >= 240
+                }), let owner = NavigationRailFocusHostController.containing(collection) else {
+                    report("FAIL guide collections=\(all.compactMap { ($0 as? UICollectionView)?.numberOfSections })"); return
+                }
+                let tabs = all.compactMap { $0 as? NavigationRowFocusRequester.RequestView }.count
+                report("setup destinations=\(tabCount) mountedTabMarkers=\(tabs) rows=\(collection.numberOfItems(inSection: 0))")
+                guard tabCount >= 21, tabs >= tabCount else {
+                    report("FAIL large native tab bar"); return
+                }
+                if owner.isNavigationFocused { owner.directionalContentEntry?.scheduleDirectionalEntry() }
+                try await Task.sleep(for: .seconds(1))
+                guard let initial = target(0, in: collection), owner.requestFocus(to: initial, using: system) else {
+                    report("FAIL entry visible=\(collection.indexPathsForVisibleItems) focus=\(String(describing: system.focusedItem))"); return
+                }
+                var layer: AVPlayerLayer?
+                for _ in 0..<100 {
+                    try await Task.sleep(for: .milliseconds(100))
+                    layer = video(window.layer)
+                    if layer != nil { break }
+                }
+                guard let layer, let player = layer.player, let item = player.currentItem,
+                      let url = (item.asset as? AVURLAsset)?.url, url.isFileURL,
+                      url.lastPathComponent == "live-continuity.mp4" else {
+                    report("FAIL local video"); return
+                }
+                let route = Array(1...12) + Array((0..<12).reversed())
+                let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+                link.add(to: .main, forMode: .common)
+                defer { link.invalidate() }
+                for rep in 0...5 {
+                    try await Task.sleep(for: .milliseconds(400))
+                    let mediaStart = player.currentTime().seconds
+                    let cpuStart = cpuSeconds()
+                    let start = CACurrentMediaTime()
+                    stamps.removeAll(keepingCapacity: true)
+                    var landed = [Int]()
+                    var lookupSeconds = 0.0
+                    for row in route {
+                        let lookupStart = CACurrentMediaTime()
+                        let candidate = target(row, in: collection)
+                        lookupSeconds += CACurrentMediaTime() - lookupStart
+                        guard let next = candidate, owner.requestFocus(to: next, using: system) else {
+                            report("FAIL request rep=\(rep) row=\(row) landed=\(landed)"); return
+                        }
+                        try await Task.sleep(for: .milliseconds(120))
+                        guard system.focusedItem === next, let cell = collection.cellForItem(at: .init(item: row, section: 0)),
+                              NativeFocusRegion.contains(next, in: cell) else {
+                            report("FAIL identity rep=\(rep) row=\(row)"); return
+                        }
+                        landed.append(row)
+                    }
+                    let elapsed = CACurrentMediaTime() - start
+                    let cpu = cpuSeconds() - cpuStart
+                    let advance = player.currentTime().seconds - mediaStart
+                    guard layer.isReadyForDisplay, layer.player === player, player.currentItem === item,
+                          advance > elapsed * 0.8, stamps.count > 2 else {
+                        report("FAIL playback or samples rep=\(rep) media=\(advance) elapsed=\(elapsed) samples=\(stamps.count)"); return
+                    }
+                    let gaps = zip(stamps, stamps.dropFirst()).map { Int((($1 - $0) * 1_000_000).rounded()) }
+                    report("rep=\(rep) elapsed=\(elapsed) cpu=\(cpu) lookup=\(lookupSeconds) media=\(advance) route=\(landed) gapsUs=\(gaps)")
+                }
+                report("PASS")
+            } catch { report("FAIL \(error)") }
         }
     }
 }

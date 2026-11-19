@@ -91,7 +91,7 @@ struct PrototypeBrowseSidebar: View {
             .focused($focused, equals: .source)
             .onMoveCommand { move(from: .source, direction: $0) }
             .background { nativeFocusRequest(for: .source) }
-            .disabled(isFocusDisabled(.source))
+            .prototypeFocusGate(isFocusDisabled(.source))
             .padding(.top, PrototypeLayout.gap)
 
             HStack(spacing: PrototypeLayout.gap) {
@@ -103,7 +103,7 @@ struct PrototypeBrowseSidebar: View {
                 .focused($focused, equals: .search)
                 .onMoveCommand { move(from: .search, direction: $0) }
                 .background { nativeFocusRequest(for: .search) }
-                .disabled(isFocusDisabled(.search))
+                .prototypeFocusGate(isFocusDisabled(.search))
                 .accessibilityValue(model.query)
                 .accessibilityIdentifier("live-tv-search")
                 #if DEBUG
@@ -155,7 +155,7 @@ struct PrototypeBrowseSidebar: View {
                             #endif
                             .focused($focused, equals: .category(category))
                             .background { nativeFocusRequest(for: .category(category)) }
-                            .disabled(isFocusDisabled(.category(category)))
+                            .prototypeFocusGate(isFocusDisabled(.category(category)))
                             .id(Control.category(category))
                             .accessibilityAddTraits(model.category == category ? .isSelected : [])
                             .accessibilityLabel(category.map { Text(verbatim: $0) } ?? Text("All categories"))
@@ -166,6 +166,9 @@ struct PrototypeBrowseSidebar: View {
                     .padding(.vertical, PrototypeLayout.smallGap)
                 }
                 .scrollIndicators(.hidden)
+                #if os(tvOS)
+                .focusSection()
+                #endif
                 .verticalEdgeFadeMask(
                     fadeHeight: PrototypeLayout.verticalFade,
                     topStrength: categoryFade.leading,
@@ -242,7 +245,7 @@ struct PrototypeBrowseSidebar: View {
             #endif
             .focused($focused, equals: .multiviews)
             .background { nativeFocusRequest(for: .multiviews) }
-            .disabled(isFocusDisabled(.multiviews))
+            .prototypeFocusGate(isFocusDisabled(.multiviews))
             .accessibilityIdentifier("live-tv-multiview-favorites")
         }
         if let manageChannels {
@@ -265,19 +268,34 @@ struct PrototypeBrowseSidebar: View {
             #endif
             .focused($focused, equals: .manageChannels)
             .background { nativeFocusRequest(for: .manageChannels) }
-            .disabled(isFocusDisabled(.manageChannels))
+            .prototypeFocusGate(isFocusDisabled(.manageChannels))
             .accessibilityIdentifier("live-tv-manage-channels")
         }
     }
 
     #if os(tvOS)
     private func move(from control: Control, direction: MoveCommandDirection) {
+        if control == .manageChannels, direction == .down {
+            focused = .category(nil)
+            return
+        }
         guard direction == (layoutDirection == .rightToLeft ? .left : .right) else { return }
         if control == .search, multiviews != nil || manageChannels != nil { return }
         if control == .multiviews, manageChannels != nil { return }
         enterGuide()
     }
     #endif
+}
+
+extension View {
+    /// Navigation can exclude a control without telling its native style that its action is unavailable.
+    @ViewBuilder func prototypeFocusGate(_ blocked: Bool) -> some View {
+        #if os(tvOS)
+        allowsHitTesting(!blocked).accessibilityHidden(blocked)
+        #else
+        disabled(blocked)
+        #endif
+    }
 }
 
 #if os(tvOS)

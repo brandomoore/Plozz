@@ -91,7 +91,7 @@ struct PrototypeBrowser: View {
                                 showsNowMarker: !isLoading, isLoading: isLoading, span: guideSpan
                             )
                         }
-                        .disabled(railActive || isRestoringFocus)
+                        .prototypeFocusGate(railActive || isRestoringFocus)
                     } else {
                         PrototypeGuideSectionLabel(section: currentSection)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1034,7 +1034,7 @@ struct PrototypeGuideRow: View {
             )
                 .frame(width: PrototypeLayout.stationWidth(for: width))
                 .focused(focus, equals: channelFocus)
-                .disabled(isFocusDisabled(channelFocus))
+                .prototypeFocusGate(isFocusDisabled(channelFocus))
             if programs.isEmpty {
                 channelContent(
                     width: timelineWidth,
@@ -1089,7 +1089,7 @@ struct PrototypeGuideRow: View {
                                     .clipped()
                                     .focused(focus, equals: programFocus(program.id))
                                     .zIndex(focus.wrappedValue == programFocus(program.id) ? 1 : 0)
-                                    .disabled(isFocusDisabled(programFocus(program.id)))
+                                    .prototypeFocusGate(isFocusDisabled(programFocus(program.id)))
                                     .contextMenu {
                                         Button("Program details", systemImage: "info.circle") { details(program) }
                                         PrototypeChannelActions(
@@ -1152,7 +1152,16 @@ struct PrototypeGuideRow: View {
             return slots.map { TimelineItem(id: $0.id, slot: $0, width: slotWidth($0)) }
         }
         let windowStart = start.addingTimeInterval(Double(timeline.page - 1) * viewportSeconds)
-        let windowEnd = start.addingTimeInterval(Double(timeline.page + 3) * viewportSeconds)
+        var windowEnd = start.addingTimeInterval(Double(timeline.page + 3) * viewportSeconds)
+        #if os(tvOS)
+        if timeline.atLeadingEdge, !railActive, focusPolicy?.usesNativeNavigation == false {
+            // Vertical browsing stays at Now. Keep one offscreen candidate
+            // for the first horizontal move, not two extra screens of menus.
+            // Spatial navigation, VoiceOver and focus handoffs keep their window.
+            let visibleEnd = start.addingTimeInterval(viewportSeconds)
+            windowEnd = slots.first(where: { $0.start >= visibleEnd })?.end ?? visibleEnd
+        }
+        #endif
         var items: [TimelineItem] = []
         var skipped: CGFloat = 0
         for slot in slots {
@@ -1217,7 +1226,7 @@ struct PrototypeGuideRow: View {
         #endif
         .focused(focus, equals: target)
         .zIndex(focus.wrappedValue == target ? 1 : 0)
-        .disabled(isFocusDisabled(target))
+        .prototypeFocusGate(isFocusDisabled(target))
         .accessibilityLabel(Text(channel.name))
         .accessibilityValue(guideGapState.flatMap {
             $0 == .loading || $0 == .unrequested || $0 == .failed ? nil : Text($0.title)
@@ -1497,6 +1506,7 @@ final class PrototypeTimelineScroll {
     /// Which screen-width of the timeline the leading edge is on. Rows build
     /// their cells around it, so they rebuild per screen rather than per frame.
     private(set) var page = 0
+    private(set) var atLeadingEdge = true
     /// The visible timeline's width; zero builds every cell.
     @ObservationIgnored var pageWidth: CGFloat = 0 { didSet { updatePage() } }
     /// Programme time one page spans.
@@ -1510,9 +1520,12 @@ final class PrototypeTimelineScroll {
 
     init(offset: CGFloat = 0) {
         self.offset = offset
+        self.atLeadingEdge = offset <= 0
     }
 
     private func updatePage() {
+        let leading = offset <= 0
+        if atLeadingEdge != leading { atLeadingEdge = leading }
         let next = pageWidth > 0 ? Int(max(0, offset) / pageWidth) : 0
         if next != page { page = next }
         let seconds = pageWidth > 0 ? Double(max(0, offset) / pageWidth) * pageSeconds : 0

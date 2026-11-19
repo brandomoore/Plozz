@@ -282,6 +282,15 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
             https://fixture.invalid/local-music.m3u8
             """)
         }
+        if ProcessInfo.processInfo.arguments.contains("--guide-travel") {
+            let entries = (1...240).map { index in
+                """
+                #EXTINF:-1 tvg-id="travel-\(index)" group-title="Channels",Channel \(String(format: "%03d", index))
+                https://fixture.invalid/travel-\(index).m3u8
+                """
+            }
+            return try LiveTVPlaylistParser(baseURL: url).parse("#EXTM3U\n" + entries.joined(separator: "\n"))
+        }
         if ProcessInfo.processInfo.arguments.contains("--category-scroll-content") {
             let entries = (1...80).map { index in
                 """
@@ -311,8 +320,9 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
     ) async throws -> LiveTVGuideImport {
         let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970 / 1_800) * 1_800)
         let titles = ["Matchday Live", "Championship Highlights", "World Sports", "The Sports Review", "News Today"]
+        let slots = ProcessInfo.processInfo.arguments.contains("--guide-travel") ? 48 : 4
         let programs = channels.enumerated().flatMap { index, channel in
-            (0..<4).map { slot in
+            (0..<slots).map { slot in
                 LiveTVPrototypeProgram(
                     id: "\(channel.id)-\(slot)", channelID: channel.id,
                     title: slot.isMultiple(of: 2) ? titles[index % titles.count] : "Weekend Highlights",
@@ -324,7 +334,7 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
         return .init(
             programs: programs, matchedChannelCount: channels.count,
             guideChannelCount: channels.count, programCount: programs.count,
-            coverageStart: start, coverageEnd: start.addingTimeInterval(7_200)
+            coverageStart: start, coverageEnd: start.addingTimeInterval(Double(slots) * 1_800)
         )
     }
 }

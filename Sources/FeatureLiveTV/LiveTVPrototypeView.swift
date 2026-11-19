@@ -1742,7 +1742,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         )
         .modifier(LiveTVMultiviewGuideExit(
             cancel: multiviewSelection == nil ? nil : finishMultiviewSelection))
-        .disabled(blocksBrowseControls)
+        .prototypeFocusGate(blocksBrowseControls)
     }
 
     private func usesCategoryDirectory(_ layout: PrototypePreviewLayout) -> Bool {
@@ -1787,7 +1787,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         leadingExit: layout.availableSidebarWidth > 0 && categorySidebarCollapsed
                             ? revealCategories : nil
                     )
-                    .disabled(usesNativeFullscreen && controlsActive && !categorySidebarCollapsed)
+                    .prototypeFocusGate(usesNativeFullscreen && controlsActive && !categorySidebarCollapsed)
                 }
             }
         }
@@ -1818,9 +1818,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     cancel: multiviewSelection == nil ? nil : finishMultiviewSelection))
             }
         }
-        .disabled(blocksBrowseControls)
+        .prototypeFocusGate(blocksBrowseControls)
         #if os(tvOS)
-        .disabled(!controlsActive && !model.guideChannels.isEmpty)
+        .prototypeFocusGate(!controlsActive && !model.guideChannels.isEmpty)
         #endif
     }
 

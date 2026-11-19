@@ -234,6 +234,13 @@ final class LiveTVCategorySearchInteractionTests: XCTestCase {
             XCTAssertTrue(action.wait(for: \.hasFocus, toEqual: true, timeout: 5))
         }
         assertPinnedNavigationRoundTrip(in: app, from: search, opening: leading, returning: trailing)
+        for action in [multiview, manage] {
+            XCUIRemote.shared.press(trailing)
+            XCTAssertTrue(action.wait(for: \.hasFocus, toEqual: true, timeout: 5))
+        }
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(category.wait(for: \.hasFocus, toEqual: true, timeout: 5),
+                      "One Down from Manage channels must enter the category list.")
         capture("live-tv-sidebar-icon-actions", in: app)
     }
 

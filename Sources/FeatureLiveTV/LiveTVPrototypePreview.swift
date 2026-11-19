@@ -331,7 +331,6 @@ struct PrototypeBrowseLayout<Header: View, Sidebar: View, Guide: View>: View {
                     .offset(x: layout.hidesSidebar
                         ? layout.availableSidebarWidth * (layoutDirection == .rightToLeft ? 1 : -1) : 0)
                     .opacity(layout.hidesSidebar ? 0 : 1)
-                    .disabled(layout.hidesSidebar)
                     .allowsHitTesting(!layout.hidesSidebar)
                     .accessibilityHidden(layout.hidesSidebar)
                 #else
