@@ -849,7 +849,8 @@ struct PrototypeTimeRuler: View {
                 if showsNowMarker {
                     PrototypeNowMarker(
                         start: start, now: now, timelineOffset: timelineOffset,
-                        viewportSeconds: PrototypeLayout.viewportSeconds(for: width)
+                        viewportSeconds: PrototypeLayout.viewportSeconds(for: width),
+                        timelineWidth: PrototypeLayout.timelineWidth(for: width)
                     )
                         .offset(y: PrototypeNowMarker.rulerOffset)
                 }
@@ -899,19 +900,22 @@ struct PrototypeNowMarker: View {
     let now: Date
     let timelineOffset: CGFloat
     var viewportSeconds: TimeInterval = 7_200
+    let timelineWidth: CGFloat
     @Environment(\.themePalette) private var palette
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         GeometryReader { geometry in
-            let x = geometry.size.width * now.timeIntervalSince(start) / viewportSeconds - timelineOffset
+            // Use the row's time scale, not the ruler's in-flight presentation width.
+            let x = timelineWidth * now.timeIntervalSince(start) / viewportSeconds - timelineOffset
             if x >= 0, x <= geometry.size.width {
                 Image(systemName: "arrowtriangle.down.fill")
                     .resizable()
                     .foregroundStyle(palette.primaryText)
                     .frame(width: Self.size.width, height: Self.size.height)
                     .shadow(color: .black.opacity(contrast == .increased ? 0.95 : 0.65), radius: 1, y: 1)
-                    .position(x: x, y: Self.size.height / 2)
+                    // The guide animates its origin. Don't interpolate this local offset a second time.
+                    .transformEffect(CGAffineTransform(translationX: x - Self.size.width / 2, y: 0))
             }
         }
         .frame(height: Self.size.height)

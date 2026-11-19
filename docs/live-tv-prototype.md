@@ -1477,8 +1477,10 @@ is no prior in-memory history to migrate on the first updated launch.
   with a small shadow for contrast rather than a line through the channel rows.
   A subtle fill marks elapsed time inside programme cells, no-guide rows and
   gaps between listings, staying aligned with the pointer when the timeline
-  scrolls. The pointer disappears when the current time is outside the visible
-  window. Wide guides retain the time ruler and pointer even when
+  scrolls or categories open or close. The pointer uses the rows’ time scale
+  and scroll offset without a second position animation during the 280 ms reveal.
+  It disappears when the current time is outside the visible window. Wide
+  guides retain the time ruler and pointer even when
   no channel has listings. On no-guide rows this indicates elapsed clock time,
   not a known programme duration; channel names remain stationary. Compact
   channel-only layouts without a time ruler do not imply programme progress.

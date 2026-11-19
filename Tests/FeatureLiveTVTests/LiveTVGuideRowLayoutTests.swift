@@ -396,7 +396,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
 
     func testNowMarkerIsACompactPointerWithoutALineThroughTheRows() throws {
         let samples = try alphaSamples(
-            PrototypeNowMarker(start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50)
+            PrototypeNowMarker(start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50, timelineWidth: 600)
                 .frame(maxHeight: .infinity, alignment: .top),
             size: CGSize(width: 600, height: 400),
             points: [(99, 4), (99, 43), (99, 60), (99, 199), (99, 398)]
@@ -452,7 +452,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         ] {
             let samples = try alphaSamples(
                 PrototypeNowMarker(
-                    start: start, now: start.addingTimeInterval(nowOffset), timelineOffset: scrollOffset
+                    start: start, now: start.addingTimeInterval(nowOffset), timelineOffset: scrollOffset, timelineWidth: 600
                 ),
                 size: CGSize(width: 600, height: PrototypeNowMarker.size.height),
                 points: [(0, 4), (150, 4), (300, 4), (599, 4)]
@@ -461,6 +461,22 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
                 samples.map { $0 > 190 }, [0.0, 150.0, 300.0, 599.0].map { $0 == visibleX },
                 "time: \(nowOffset), scroll: \(scrollOffset), alpha: \(samples)"
             )
+        }
+    }
+
+    func testNowMarkerUsesTheRowsTimeScaleDuringRulerResize() throws {
+        // Mid-reveal the ruler may present 600 pt while the native rows already use 1,000 pt.
+        // A quarter viewport, scrolled by 50 pt, ends at 200, not 100.
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            let samples = try alphaSamples(
+                PrototypeNowMarker(
+                    start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50, timelineWidth: 1_000
+                )
+                .environment(\.layoutDirection, direction),
+                size: CGSize(width: 600, height: PrototypeNowMarker.size.height),
+                points: [100, 200].map { (direction == .leftToRight ? $0 : 599 - $0, 4) }
+            )
+            XCTAssertEqual(samples.map { $0 > 190 }, [false, true], "\(direction): \(samples)")
         }
     }
 
@@ -552,7 +568,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         )
         XCTAssertEqual(fill.map { $0 > 0 }, [false, false, true])
         let marker = try alphaSamples(
-            PrototypeNowMarker(start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50)
+            PrototypeNowMarker(start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50, timelineWidth: 600)
                 .environment(\.layoutDirection, .rightToLeft)
                 .frame(maxHeight: .infinity, alignment: .top),
             size: CGSize(width: 600, height: 400),

@@ -164,6 +164,12 @@ channel **name relative to its station**, not only the row's final bounds.
 Add `--guide-tab-first` to start with the actual Live TV tab focused and test
 one Down into the page.
 
+For the Now pointer, also pass `--guide-progress-edges`: row 2 has no
+listings, row 3 has an active programme starting between ticks, and row 5
+is between listings. In each recorded frame compare the triangle's center
+with the shading boundary in those rows, away from text and rounded corners.
+Check both sidebar directions, then scroll past Now and back at a fixed width.
+
 On the 6475 follow-up, the 1080p recording showed up to 200 px of extra name
 travel on reveal: a fixed-width label was centered in a resizing native
 button. Letting it fill the proposal held the measured spacing constant in

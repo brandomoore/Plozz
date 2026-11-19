@@ -327,8 +327,9 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
         let scheduled = channels.enumerated().filter {
             !ProcessInfo.processInfo.arguments.contains("--guide-remote-arrival") || $0.offset.isMultiple(of: 2)
         }
+        let probesProgress = ProcessInfo.processInfo.arguments.contains("--guide-progress-edges")
         let programs = scheduled.flatMap { index, channel in
-            (0..<slots).map { slot in
+            var listings = (0..<slots).map { slot in
                 LiveTVPrototypeProgram(
                     id: "\(channel.id)-\(slot)", channelID: channel.id,
                     title: slot.isMultiple(of: 2) ? titles[index % titles.count] : "Weekend Highlights",
@@ -336,6 +337,24 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
                     end: start.addingTimeInterval(Double(slot + 1) * 1_800)
                 )
             }
+            if probesProgress, index == 2 || index == 4 {
+                // Give the active programme on row 3 and the gap on row 5 different
+                // origins from the ruler. Keep a previous listing in both cases.
+                let split = start.addingTimeInterval(now.timeIntervalSince(start) / 2)
+                listings.removeFirst()
+                let previous = LiveTVPrototypeProgram(
+                    id: "\(channel.id)-previous", channelID: channel.id, title: "Previous", subtitle: "",
+                    start: start, end: split
+                )
+                listings.insert(previous, at: 0)
+                if index == 2 {
+                    listings.insert(LiveTVPrototypeProgram(
+                        id: "\(channel.id)-current", channelID: channel.id, title: "Current", subtitle: "",
+                        start: split, end: start.addingTimeInterval(1_800)
+                    ), at: 1)
+                }
+            }
+            return listings
         }
         return .init(
             programs: programs, matchedChannelCount: scheduled.count,
