@@ -239,7 +239,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
     @Environment(\.mediaItemArtworkNavigator) private var artworkItemNavigator
     @State private var viewModel: ItemDetailViewModel
     @State private var isPageVisible = false
-    @State private var metadataHasRevealed = false
     @State private var playbackPreparation = DetailPlaybackPreparationCoordinator()
     @State private var preparationSourceSwitch = UUID()
     @State private var isPreparationSourceSwitching = false
@@ -376,7 +375,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
         }
         .onDisappear {
             isPageVisible = false
-            metadataHasRevealed = true
             viewModel.suspendEnrichment()
         }
         .themeMusicPlayback(
@@ -664,7 +662,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                             hasResolvedSeriesPlayTarget = true
                         },
                         onPlay: play
-                    ).detailEntranceStage(.episodes))
+                    ))
                 }
 
                 if isDiscoveryItem, detail.item.kind != .movie, detail.item.kind != .series {
@@ -676,8 +674,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         actingName: appModel.activeSeerrRequestActingName,
                         onRequest: { beginRequest($0) }
                     )
-                    .padding(.horizontal, pageInset)
-                    .detailEntranceStage(.episodes))
+                    .padding(.horizontal, pageInset))
                 }
 
                 AnyView(PlozziOSExtrasSection(
@@ -687,13 +684,13 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     onRetry: {
                         Task { await viewModel.retryExtras() }
                     }
-                ).detailEntranceStage(.episodes))
+                ))
 
                 if !detail.item.detailCredits.isEmpty {
                     AnyView(PlozziOSCastSection(
                         people: detail.item.people,
                         sourceAccountID: detail.item.sourceAccountID
-                    ).detailEntranceStage(.episodes))
+                    ))
                 }
 
                 if let loader = viewModel.relatedTitlesLoader, !loader.entries.isEmpty {
@@ -701,7 +698,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         entries: loader.entries,
                         inset: pageInset,
                         onSelect: { item, source in artworkItemNavigator?(item, source) }
-                    ).detailEntranceStage(.episodes))
+                    ))
                 }
 
                 AnyView(DetailInformationSections(
@@ -720,7 +717,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     overviewAlreadyShown: heroStyle == .compactPortrait
                         ? HeroContentPolicy.detailDescription(focused: headerPresentation, root: rootPresentation)
                         : nil
-                ).detailEntranceStage(.episodes))
+                ))
             }
             // No trailing padding here. The information band is the last thing in
             // this stack and paints its own tint, so a gap added out here is page
@@ -730,7 +727,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
             .plozzDesktopMediaRailLayout()
         }
 
-        .mobileDetailForegroundEntrance(hasRevealed: $metadataHasRevealed)
         .scrollClipDisabled()
         .scrollDisabled(isInteractivePopActive)
         .background {

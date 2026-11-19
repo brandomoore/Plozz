@@ -34,8 +34,8 @@ public enum HeroLogoPresentationPolicy: Sendable, Equatable {
     /// Keep the title area empty during resolution; show text only when no usable
     /// logo is available.
     case whenResolved
-    /// A ready logo participates in the page entrance. Fade only the title slot
-    /// if its first result arrives after the slot is already on screen.
+    /// Paint a ready logo or confirmed text fallback immediately. Fade only a
+    /// logo that arrives after the slot is already on screen.
     case detailEntrance
     /// Adopt the logo only if it is ready within the arrival window. A later result
     /// still warms the shared cache, but the current title remains visually stable.
@@ -467,7 +467,7 @@ private struct LoadedLogo<TextFallback: View>: View {
         Group {
             if presentationPolicy == .detailEntrance {
                 let noSources = references.isEmpty && asyncFallbackURL == nil
-                let ready = shown != nil || (sourceReady && (resolvedKey == taskKey || noSources))
+                let ready = shown != nil || noSources || (sourceReady && resolvedKey == taskKey)
                 // Animate the opacity of a persistent slot, not the insertion
                 // of a newly decoded Image into the conditional Group.
                 ZStack(alignment: alignment) {
@@ -475,7 +475,7 @@ private struct LoadedLogo<TextFallback: View>: View {
                 }
                 .opacity(ready ? 1 : 0)
                 .animation(
-                    ready && !reduceMotion ? DetailEntranceMotion.reveal(duration: DetailEntranceTiming().reveal) : nil,
+                    shown != nil && !reduceMotion ? DetailEntranceMotion.reveal(duration: DetailEntranceTiming().reveal) : nil,
                     value: ready
                 )
             } else {
