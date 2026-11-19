@@ -3,7 +3,7 @@ import CoreModels
 import SwiftUI
 import UIKit
 
-/// Keeps Home still beneath a native push without replacing navigation or its gestures.
+/// Keeps Home still beneath native navigation without replacing its animator or gestures.
 struct PlozziOSStationaryNavigationSource: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> Controller { Controller() }
 
@@ -14,6 +14,32 @@ struct PlozziOSStationaryNavigationSource: UIViewControllerRepresentable {
             view = UIView()
             view.isUserInteractionEnabled = false
             view.accessibilityElementsHidden = true
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            guard animated, traitCollection.horizontalSizeClass == .compact,
+                  let coordinator = transitionCoordinator, coordinator.isInteractive,
+                  let home = coordinator.viewController(forKey: .to), owns(home) else { return }
+
+            var underlay: UIView?
+            coordinator.animate(alongsideTransition: { context in
+                guard let returning = context.view(forKey: .to),
+                      let outgoing = context.view(forKey: .from),
+                      let top = Self.transitionRoot(of: outgoing, in: context.containerView),
+                      let snapshot = returning.snapshotView(afterScreenUpdates: true) else { return }
+                // Use Home as it looks *now*, not the frame saved for the push:
+                // progress, the selected slide or the window size may have changed.
+                var frame = returning.convert(returning.bounds, to: context.containerView)
+                frame.origin.x = context.containerView.bounds.minX
+                snapshot.frame = frame
+                snapshot.isUserInteractionEnabled = false
+                snapshot.accessibilityElementsHidden = true
+                context.containerView.insertSubview(snapshot, belowSubview: top)
+                underlay = snapshot
+            }, completion: { _ in
+                underlay?.removeFromSuperview()
+            })
         }
 
         override func viewWillDisappear(_ animated: Bool) {

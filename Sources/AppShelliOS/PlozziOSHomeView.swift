@@ -190,7 +190,7 @@ struct PlozziOSHomeView: View {
     /// inline five-term boolean made the view body expensive enough to blow the
     /// type-checker's budget once the diagnostics grew.
     private var heroFreshnessRunKey: Bool {
-        let active = homeIsFrontmost && homeHasAppeared && scenePhase == .active
+        let active = homeIsFrontmost && homePageIsVisible && scenePhase == .active
         let idle = playbackRequest == nil
         let heroOn = appModel.settings.hero.effectiveSettings.isActive
         return active && idle && heroOn
@@ -488,7 +488,7 @@ struct PlozziOSHomeView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar(
-            usesScrollingPageActions ? .hidden : (usesVerticalToolbar ? .visible : .automatic),
+            usesScrollingPageActions || usesVerticalToolbar ? .visible : .automatic,
             for: .navigationBar
         )
         .toolbar {
@@ -568,7 +568,7 @@ struct PlozziOSHomeView: View {
         }
         .contentRefreshSurface(
             id: ContentRefreshSurfaceID(kind: .home),
-            isVisible: homeIsFrontmost && homeHasAppeared && appModel.allowsHomeContentLoading
+            isVisible: homeIsFrontmost && homePageIsVisible && appModel.allowsHomeContentLoading
                 && playbackRequest == nil && pendingResumeRequest == nil
         ) { request in
             switch request.action {
@@ -872,7 +872,9 @@ struct PlozziOSHomeView: View {
                     onItemExposed: { viewModel.recordHeroExposure($0) },
                     exposureScopeID: ObjectIdentifier(viewModel),
                     identityIndexRevision: discoveryIdentityRevision,
-                    isFrontmost: homeIsFrontmost && homeHasAppeared
+                    // SwiftUI's onAppear runs while an interactive pop can still
+                    // be cancelled. Don't let Home take the detail trailer then.
+                    isFrontmost: homeIsFrontmost && homePageIsVisible
                         && playbackRequest == nil && heroRequestConfirmItem == nil
                         && heroRequestError == nil && heroSeasonRequestItem == nil,
                     pullModel: heroPullModel
@@ -941,7 +943,7 @@ struct PlozziOSHomeView: View {
                             appModel: appModel, viewModel: viewModel,
                             coordinator: featuredTrailers, controller: trailerController,
                             isActive: row.collectionCardStyle == .featured
-                                && homeIsFrontmost && homeHasAppeared && !homeIsScrolling,
+                                && homeIsFrontmost && homePageIsVisible && !homeIsScrolling,
                             rowBrowser: $rowBrowser, showingHomeCustomization: $showingHomeCustomization
                         )
                         .equatable()
@@ -962,7 +964,7 @@ struct PlozziOSHomeView: View {
             }
         } pageActions: {
             PlozziOSHomePageActions(
-                showsAudio: trailerController.isPlaying,
+                showsAudio: trailerController.isPlaying && trailerController.activeSurfaceRole == .home,
                 isMuted: trailerController.isMuted,
                 onToggleMute: toggleTrailerMute, onShowSettings: onShowSettings
             )
@@ -2740,11 +2742,22 @@ private struct PlozziOSPullResponsiveHomeBackdrop<Backdrop: View>: View {
     var body: some View {
         // The image and its dissolve must share the window-wide bounds; masking
         // only the safe-area column cuts off artwork underneath side chrome.
-        PlozziOSFullWidthHeroStage(height: heroHeight) {
+        if style == .compactPortrait {
+            // Sidebars use window coordinates. On phone those coordinates
+            // include the navigation slide; the image must move with its title.
             composite
+                .frame(maxWidth: .infinity)
+                .frame(height: heroHeight)
+                .ignoresSafeArea(.container, edges: .horizontal)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        } else {
+            PlozziOSFullWidthHeroStage(height: heroHeight) {
+                composite
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
     private var composite: some View {

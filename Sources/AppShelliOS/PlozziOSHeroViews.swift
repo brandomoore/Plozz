@@ -837,7 +837,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
             height: height,
             ancestorScale: pullScale,
             // Navigation's global x is a transition offset, not sidebar cover.
-            ignoresGlobalCover: surfaceRole == .detail
+            ignoresGlobalCover: surfaceRole == .detail || style == .compactPortrait
         ) { _ in
             PlozziOSHeroBackdrop(
                 presentation: presentation,
@@ -953,6 +953,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         guard !trailerController.isPlaybackSuppressed else { return }
         if surfaceRole == .detail {
             trailerController.clearEndHandler(ownerID: detailEndHandlerOwnerID)
+            guard trailerController.isClaimed(by: .detail, itemID: item.id) else { return }
             trailerController.releaseSurface(.detail)
             trailerController.stop(ifShowing: item.id)
             return
@@ -1438,9 +1439,7 @@ private struct PlozziOSHeroBackdrop: View {
 
     @ViewBuilder
     private var trailerLayer: some View {
-        if showsTrailer,
-           trailerController.isShowing(itemID),
-           trailerController.isPlaying {
+        if showsTrailer, trailerController.showsVideo(on: surfaceRole, itemID: itemID) {
             HeroTrailerVideoLayer(
                 controller: trailerController,
                 role: surfaceRole
@@ -1691,7 +1690,7 @@ struct PlozziOSHomeWipeBackdrop: View {
                 for: artworkItem, style: style, surfaceRole: .home
             )
         }
-        PlozziOSReflectedHeroStage(height: height) { usableWidth in
+        PlozziOSReflectedHeroStage(height: height, ignoresGlobalCover: style == .compactPortrait) { usableWidth in
             backdrop(
                 presentation: presentation,
                 onlineArtworkFallback: onlineArtworkFallback,
@@ -1730,8 +1729,7 @@ struct PlozziOSHomeWipeBackdrop: View {
             height: height,
             scrimTone: colorScheme == .dark ? .black : .white,
             trailerController: trailerController,
-            showsTrailer: trailerController.isShowing(item.id)
-                && trailerController.isPlaying,
+            showsTrailer: trailerController.showsVideo(on: .home, itemID: item.id),
             ignoresHorizontalSafeArea: false,
             scrimOpacity: 0,
             sharedResolutionIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
@@ -1784,7 +1782,7 @@ struct PlozziOSHomeStaticBackdrop: View {
         PlozziOSReflectedHeroStage(
             height: height,
             ancestorScale: ancestorScale,
-            ignoresGlobalCover: false
+            ignoresGlobalCover: style == .compactPortrait
         ) { usableWidth in
             if usesSlidingArtwork {
                 slidingArtwork(
@@ -1969,8 +1967,7 @@ private struct PlozziOSHeroReflection: View {
                 .compositingGroup()
                 .opacity(preparedArtwork?.opacity ?? 1)
 
-            if showsTrailer, trailerController.isShowing(itemID),
-               trailerController.isPlaying {
+            if showsTrailer, trailerController.showsVideo(on: surfaceRole, itemID: itemID) {
                 PlozziOSMirrorVideoLayer(
                     player: trailerController.player
                 )

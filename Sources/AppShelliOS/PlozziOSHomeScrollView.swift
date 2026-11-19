@@ -2,6 +2,7 @@
 import CoreUI
 import FeatureHomeCore
 import SwiftUI
+import UIKit
 
 extension HomePresentationRow {
     var showsHomeMedia: Bool {
@@ -44,6 +45,7 @@ struct PlozziOSObserveHomeContent: ViewModifier {
 struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     @Environment(\.plozzMetrics) private var metrics
     @State private var viewportWidth: CGFloat = 0
+    @State private var windowTop: CGFloat?
     let heroActive: Bool
     let showsPageActions: Bool
     let mediaOpacity: Double
@@ -69,10 +71,21 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
 
     var body: some View {
         if showsPageActions {
-            // Read the inset in the same layout pass as the hero. An async window
-            // probe starts at zero on profile entry and shifts the entire page later.
+            // Underlap the complete container inset in the hero's first layout.
+            // Only the scrolling controls need the unobstructed window inset.
             GeometryReader { proxy in
                 styledScroll(safeAreaTop: proxy.safeAreaInsets.top)
+            }
+            .background {
+                PlozziOSWindowSafeAreaTopReader { windowTop = $0 }
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .background {
+                HomeNavigationBarReturnFade().frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
         } else {
             styledScroll(safeAreaTop: 0)
@@ -96,13 +109,13 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
                 if heroActive {
                     hero.opacity(mediaOpacity).overlay(alignment: .top) {
                         if showsPageActions {
-                            pageActions.padding(.top, safeAreaTop)
+                            pageActions.padding(.top, windowTop ?? safeAreaTop)
                         }
                     }
                     // Underlap only the artwork, not the scroll view's safe-area boundary.
                     .padding(.top, showsPageActions ? -safeAreaTop : 0)
                 } else if showsPageActions {
-                    pageActions
+                    pageActions.padding(.top, (windowTop ?? safeAreaTop) - safeAreaTop)
                 }
                 rows.opacity(mediaOpacity)
             }
@@ -111,15 +124,40 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
             .plozzDesktopMediaRailLayout()
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
-        // When the page actions are drawn inside the hero overlay, the scroll view
-        // keeps its safe area so the actions sit below the status bar. The page
-        // actions read the same top inset to match the native toolbar where the
-        // detail page shows its download button.
+        // Keep a native scroll boundary even when the artwork extends behind the bar.
         .ignoresSafeArea(.container, edges: heroActive && !showsPageActions ? .top : [])
         .modifier(PlozziOSReducedTransparencyScrollFade(enabled: heroActive))
         .background {
             PlozziOSStationaryNavigationSource()
                 .frame(width: 0, height: 0)
+        }
+    }
+}
+
+/// Compact Home has no bar items of its own. Let the native pop scrub the
+/// outgoing chrome's opacity; UIKit still owns Back, its actions and its gesture.
+private struct HomeNavigationBarReturnFade: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+
+    final class Controller: UIViewController {
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            guard animated, let navigation = navigationController,
+                  let transition = transitionCoordinator, transition.isInteractive,
+                  let home = transition.viewController(forKey: .to),
+                  home === navigation.viewControllers.first, let parent,
+                  sequence(first: parent, next: \.parent).contains(where: { $0 === home })
+            else { return }
+            let bar = navigation.navigationBar
+            let previousAlpha = bar.alpha
+            // Restore the same instance and its original value on either outcome;
+            // do not set appearances, delegates, or per-tab navigation state.
+            transition.animate(alongsideTransition: { _ in
+                bar.alpha = 0
+            }, completion: { _ in
+                bar.alpha = previousAlpha
+            })
         }
     }
 }

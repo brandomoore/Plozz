@@ -1360,6 +1360,10 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
 
     func testDetailArtworkKeepsItsCropWhileItsNavigationFrameMoves() async throws {
         let item = try await artworkItem(marksSides: true)
+        // Measure page translation, not a cold artwork reveal in the reference frame.
+        let url = try XCTUnwrap(item.backdropURL)
+        let resolved = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+        let handoff = try XCTUnwrap(resolved)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let suite = "DetailNavigationCrop-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -1380,7 +1384,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     PlozziOSHeroStage(
                         item: item,
                         presentation: HeroPresentation(item: item, artworkStyle: .landscape, surface: .detail),
-                        style: .landscape, surfaceRole: .detail, isActive: false,
+                        style: .landscape, surfaceRole: .detail, seedArtwork: handoff, isActive: false,
                         showsScrim: false,
                         trailerController: trailer,
                         backgroundSettings: app.settings.heroBackground,

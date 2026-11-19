@@ -121,6 +121,7 @@ final class HomeHeroInteractionTests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+
         play.tap()
         XCTAssertTrue(app.staticTexts["hero-play-count"].wait(for: \.label, toEqual: "1", timeout: 5))
         app.buttons["Add to Watchlist"].tap()
@@ -133,17 +134,44 @@ final class HomeHeroInteractionTests: XCTestCase {
         XCTAssertTrue(artwork.wait(for: \.isHittable, toEqual: true, timeout: 5))
     }
 
+    func testReturningFromPlayingTrailerKeepsMovieAndResumeAction() {
+        app.terminate()
+        app.launchArguments += ["--hero-native-chrome", "--hero-logo", "--hero-detail-trailer"]
+        app.launch()
+        let artwork = app.buttons["home-hero-artwork-detail"]
+        let play = app.buttons["home-hero-play"]
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 15))
+        let originalLabel = play.label
+        artwork.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        let mute = app.buttons["Unmute trailer"]
+        XCTAssertTrue(mute.wait(for: \.isHittable, toEqual: true, timeout: 20), app.debugDescription)
+        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.004, dy: 0.48))
+        let partial = app.coordinate(withNormalizedOffset: CGVector(dx: 0.14, dy: 0.48))
+        edge.press(forDuration: 0.1, thenDragTo: partial, withVelocity: .slow, thenHoldForDuration: 0.8)
+        XCTAssertTrue(mute.isHittable, "Cancelling must leave the detail trailer playing.")
+        let finish = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.48))
+        edge.press(forDuration: 0.1, thenDragTo: finish, withVelocity: .slow, thenHoldForDuration: 0.8)
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        XCTAssertEqual(artwork.value as? String, "Hero Movie")
+        XCTAssertEqual(play.label, originalLabel)
+        XCTAssertFalse(mute.exists, "The detail-only trailer must not appear on Home.")
+    }
+
     func testCompactHomeActionsScrollAwayAndRemainUsableWithOrWithoutHero() {
         for heroEnabled in [true, false] {
             app.terminate()
             app.launchArguments = [
-                "--home-hero-fixture", "--hero-native-chrome", "--hero-header-audio"
+                "--home-hero-fixture", "--hero-native-chrome", "--hero-header-audio", "--back-interaction"
             ] + (heroEnabled ? [] : ["--hero-disabled"])
             app.launch()
             let profile = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings for ")).firstMatch
             XCTAssertTrue(profile.wait(for: \.isHittable, toEqual: true, timeout: 15), app.debugDescription)
-            XCTAssertEqual(app.navigationBars.count, 0,
-                           "Compact horizontal Home must not reserve a navigation row for its actions.")
+            XCTAssertFalse(app.navigationBars.buttons.firstMatch.exists,
+                           "Profile and mute must be in the scroll view, not pinned in the navigation bar.")
+            if heroEnabled {
+                XCTAssertEqual(app.buttons["home-hero-artwork-detail"].frame.minY, app.frame.minY, accuracy: 1,
+                               "Sharing the native bar must not reserve a row above the hero.")
+            }
             let initialFrame = profile.frame
             XCTAssertEqual(initialFrame.width, 44, accuracy: 1)
             XCTAssertEqual(initialFrame.height, 44, accuracy: 1)

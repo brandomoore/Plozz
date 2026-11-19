@@ -13,6 +13,21 @@ import FeatureSettings
     var supportedPresentationOrientations: UIInterfaceOrientationMask { get }
 }
 
+private extension View {
+    /// Exercise a conventional iPhone's horizontal bars on the Duo-only 27.1 simulator.
+    @ViewBuilder func fixtureNavigationBarAxis() -> some View {
+        #if canImport(SwiftUI, _version: 8.0.85)
+        if #available(iOS 27.1, *), ProcessInfo.processInfo.arguments.contains("--back-interaction") {
+            toolbarVerticalBehavior(.disabled)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+}
+
 @main
 struct PresentationHostApp: App {
     @UIApplicationDelegateAdaptor(PresentationOrientationDelegate.self) private var orientationDelegate
@@ -285,6 +300,7 @@ struct PresentationHostApp: App {
                 DetailInformationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--continue-watching-details-fixture") {
                 ContinueWatchingDetailsFixture()
+                    .fixtureNavigationBarAxis()
             } else if ProcessInfo.processInfo.arguments.contains("--search-keyboard-fixture") {
                 SearchKeyboardInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--diagnostics-sharing-fixture") {
@@ -305,6 +321,7 @@ struct PresentationHostApp: App {
                 ThemeMusicMuteFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-hero-fixture") {
                 HomeHeroInteractionFixture()
+                    .fixtureNavigationBarAxis()
             } else if ProcessInfo.processInfo.arguments.contains("--player-layout-fixture") {
                 PlayerLayoutFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--device-setup-fixture") {

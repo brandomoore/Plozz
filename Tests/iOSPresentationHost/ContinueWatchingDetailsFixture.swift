@@ -26,7 +26,14 @@ struct ContinueWatchingDetailsFixture: View {
         // home stores (RootView.swift:751-752); the fixture used in-memory ones plus a random
         // UserDefaults suite per launch, so warm restarts never reproduced the phone's
         // persisted-store first paint. Fixed suite + persistent stores mirror the real wiring.
-        let defaults = UserDefaults(suiteName: "ContinueWatchingDetails")!
+        let testsHorizontalBack = ProcessInfo.processInfo.arguments.contains("--back-interaction")
+        let suite = testsHorizontalBack ? "HorizontalHomeBack" : "ContinueWatchingDetails"
+        let defaults = UserDefaults(suiteName: suite)!
+        if testsHorizontalBack {
+            // A previous launch's additional persona would require the launch
+            // picker. This route starts at an already selected Home tab.
+            defaults.removePersistentDomain(forName: suite)
+        }
         let homeLayoutStore = HomeLayoutStore(defaults: defaults, namespace: "fixture")
         let homeContentStore = HomeContentStore(namespace: "fixture")
         let model = PlozziOSAppModel(accountStore: accounts, profileStore: ProfileStore(defaults: defaults))
@@ -49,7 +56,9 @@ struct ContinueWatchingDetailsFixture: View {
         let serverFilms = ProcessInfo.processInfo.arguments.contains("--browse-server-films")
         model.settings.hero.settings.isEnabled = serverFilms
         if serverFilms {
-            model.settings.hero.settings.sources = [.continueWatching, .recentlyAdded]
+            model.settings.hero.settings.sources = testsHorizontalBack
+                ? [.continueWatching] : [.continueWatching, .recentlyAdded]
+            if testsHorizontalBack { model.settings.hero.settings.autoAdvance = false }
             ContinueWatchingDetailsProvider.prepareArtwork()
         }
         model.settings.heroBackground.settings.detailMode = .off
@@ -258,6 +267,9 @@ private struct ContinueWatchingDetailsProvider: MediaProvider, SeriesResumeProvi
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] {
         await slowPage()
+        if ProcessInfo.processInfo.arguments.contains("--back-interaction") {
+            return [try await item(id: "movie")]
+        }
         if ProcessInfo.processInfo.arguments.contains("--detail-route-parity") {
             return [try await item(id: "recent-episode")]
         }
