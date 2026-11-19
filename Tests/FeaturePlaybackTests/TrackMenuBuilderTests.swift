@@ -78,10 +78,10 @@ final class SubtitleMenuAvailabilityTests: XCTestCase {
             PlayerTrackOption(id: 2, title: Text("French"), isSelected: false)
         ]
         model.subtitleDownload.canSearch = true
-        XCTAssertEqual(model.trackControlCategories, [.playback, .audio, .subtitles])
+        XCTAssertEqual(model.trackControlCategories, [.audio, .subtitles, .speed])
 
         model.subtitleDownload.canSearch = false
-        XCTAssertEqual(model.trackControlCategories, [.playback, .audio])
+        XCTAssertEqual(model.trackControlCategories, [.audio, .speed])
     }
 }
 
@@ -94,7 +94,7 @@ final class AudioMenuAvailabilityTests: XCTestCase {
         model.audioOptions = [.init(id: 1, title: Text("Dolby Digital 5.1"), isSelected: true)]
         XCTAssertFalse(model.hasSelectableAudio)
         XCTAssertFalse(model.hasAudioControls)
-        XCTAssertEqual(model.trackControlCategories, [.playback])
+        XCTAssertEqual(model.trackControlCategories, [.speed])
         XCTAssertEqual(model.audioOptions.count, 1, "Hiding the control must not discard track metadata")
     }
 
@@ -127,6 +127,65 @@ final class AudioMenuAvailabilityTests: XCTestCase {
 /// exclusion, engine-dual vs sidecar sourcing) that used to be buried in
 /// `PlayerViewModel.loadTrackOptions`.
 final class TrackMenuBuilderTests: XCTestCase {
+    func testRepeatedFrenchSubtitlesUseFormatsBeforeNumbersWithoutLosingNamesOrFlags() {
+        let tracks: [MediaTrack] = [
+            .init(id: 1, kind: .subtitle, displayTitle: "French", language: "fr", codec: "srt", isForced: true),
+            .init(id: 2, kind: .subtitle, displayTitle: "French", language: "fr", codec: "ass", isForced: true),
+            .init(id: 3, kind: .subtitle, displayTitle: "French", language: "fr", codec: "subrip", isForced: true),
+            .init(id: 4, kind: .subtitle, displayTitle: "French", language: "fr", codec: "srt"),
+            .init(id: 5, kind: .subtitle, displayTitle: "French", language: "fr", codec: "webvtt", isExternal: true),
+            .init(id: 6, kind: .subtitle, displayTitle: "French", sourceTitle: "Signs & Songs [Studio]",
+                  language: "fr", codec: "ass"),
+            .init(id: 7, kind: .subtitle, displayTitle: "French", language: "fr", codec: "srt", isHearingImpaired: true)
+        ]
+        let primary = TrackMenuBuilder.subtitleOptions(
+            tracks: tracks, selectedID: 2, preferred: [], detectedLanguages: [:], locale: Locale(identifier: "en")
+        )
+        let secondary = TrackMenuBuilder.secondaryOptions(
+            eligible: tracks, selectedID: 2, preferred: [], detectedLanguages: [:], locale: Locale(identifier: "en")
+        )
+        let expected = [
+            "Off", "French (Forced, SRT) (Track 1)", "French (Forced, ASS)",
+            "French (Forced, SRT) (Track 3)", "French (SRT)", "French (WebVTT)",
+            "French (Signs & Songs [Studio])", "French (SDH)"
+        ]
+        for options in [primary, secondary] {
+            XCTAssertEqual(options.map(\.nativeTitle), expected)
+            XCTAssertEqual(options.map(\.id), [-1, 1, 2, 3, 4, 5, 6, 7])
+            XCTAssertEqual(options.filter(\.isSelected).map(\.id), [2])
+            XCTAssertEqual(Set(options.map(\.nativeTitle)).count, options.count)
+        }
+        XCTAssertTrue(primary.first { $0.id == 5 }!.isExternal)
+        XCTAssertFalse(secondary.first { $0.id == 5 }!.isExternal)
+        let qualifiers = Text(LocalizedStringResource("Forced", locale: Locale(identifier: "en")))
+            + Text(verbatim: ", ") + Text(verbatim: "ASS")
+        XCTAssertEqual(primary[2].title, Text(verbatim: "French") + Text(verbatim: " (")
+            + qualifiers + Text(verbatim: ")"))
+    }
+
+    func testSubtitleFormatAliasesAndMissingFormatsRemainDistinctInLocalizedMenus() {
+        let tracks: [MediaTrack] = [
+            .init(id: 1, kind: .subtitle, displayTitle: "French", language: "fr", codec: "srt"),
+            .init(id: 2, kind: .subtitle, displayTitle: "French", language: "fr", codec: "subrip"),
+            .init(id: 3, kind: .subtitle, displayTitle: "French", language: "fr"),
+            .init(id: 4, kind: .subtitle, displayTitle: "French", language: "fr", codec: "unrecognized"),
+            .init(id: 5, kind: .subtitle, displayTitle: "French (SRT)")
+        ]
+        for localeID in ["en", "es", "fr", "zh-Hans"] {
+            let locale = Locale(identifier: localeID)
+            let options = TrackMenuBuilder.subtitleOptions(
+                tracks: tracks, selectedID: 4, preferred: [], detectedLanguages: [:], locale: locale
+            )
+            XCTAssertEqual(Set(options.map(\.nativeTitle)).count, options.count)
+            XCTAssertEqual(options.filter(\.isSelected).map(\.id), [4])
+            for index in [1, 2] { XCTAssertTrue(options[index].nativeTitle.contains("SRT")) }
+            for index in [3, 4] {
+                XCTAssertFalse(options[index].nativeTitle.contains("SRT"))
+                XCTAssertFalse(options[index].nativeTitle.contains("UNRECOGNIZED"))
+            }
+        }
+    }
+
     func testOnlyCollidingLabelsGetStableTrackNumbersInAllMenus() {
         let tracks = [
             MediaTrack(id: 7, kind: .subtitle, displayTitle: "English", language: "en", codec: "srt"),

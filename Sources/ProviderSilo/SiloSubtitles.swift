@@ -173,6 +173,7 @@ extension SiloProvider {
         let track = MediaTrack(
             id: trackID, kind: .subtitle,
             displayTitle: subtitle.release_name.isEmpty ? subtitle.language : subtitle.release_name,
+            sourceTitle: subtitle.release_name.isEmpty ? nil : subtitle.release_name,
             language: subtitle.language, codec: "webvtt", isHearingImpaired: subtitle.hearing_impaired,
             deliverySource: .authenticatedHTTP(locator), isExternal: true)
         return try await playback.registerSubtitle(track, storedID: subtitle.id, url: deliveryURL, context: context)

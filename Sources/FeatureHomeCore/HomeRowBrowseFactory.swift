@@ -144,12 +144,9 @@ enum HomeRowBrowseFactory {
                     isRecentlyAdded = true
                     append(accountID: library.accountID, libraryID: library.library.id, recentlyAdded: true) {
                         provider, start, limit in
-                        let page = try await provider.items(
-                            in: library.library.id, kind: library.library.kind,
-                            page: .init(startIndex: start, limit: limit, sort: .init(field: .dateAdded, direction: .descending))
+                        try await provider.libraryRecentlyAddedPage(
+                            in: library.library.id, kind: library.library.kind, startIndex: start, limit: limit
                         )
-                        guard page.startIndex == start, page.items.count <= limit else { throw AppError.invalidResponse }
-                        return try HomeRowPage(page)
                     }
                 } else if section.id == LibraryHomeRowKind.nextUp.rawValue {
                     append(accountID: library.accountID, libraryID: library.library.id) { provider, start, limit in

@@ -1499,6 +1499,7 @@ private extension UIImage {
         // Reject non-uniform borders (real artwork) by checking spread against the
         // mean: if any sampled border pixel is far from the average, bail out.
         var maxDev = 0.0
+        var outliers = 0
         func dev(_ x: Int, _ y: Int) {
             let i = y * bytesPerRow + x * bpp
             let a = Double(data[i + 3]) / 255.0
@@ -1507,6 +1508,7 @@ private extension UIImage {
             let g = Double(data[i + 1]) / 255.0 / a * 255.0
             let b = Double(data[i + 2]) / 255.0 / a * 255.0
             let d = max(abs(r - bgR), max(abs(g - bgG), abs(b - bgB)))
+            if d > 26 { outliers += 1 }
             if d > maxDev { maxDev = d }
         }
         for x in stride(from: minX, through: maxX, by: max(1, sampleWidth / 64)) {
@@ -1517,7 +1519,10 @@ private extension UIImage {
         }
         // Tolerance for "the border is one flat colour". Loose enough to absorb
         // JPEG noise, tight enough to spare gradient/photographic backgrounds.
-        guard maxDev <= 26 else { return nil }
+        // A few compression artifacts on an otherwise flat brand-colour edge
+        // should not leave a smaller coloured box inside the channel plate.
+        let chromatic = max(bgR, bgG, bgB) - min(bgR, bgG, bgB) > 48
+        guard maxDev <= 26 || (maxDev.isFinite && maxDev < 100 && chromatic && outliers * 50 <= count) else { return nil }
 
         return PlateColor(red: bgR, green: bgG, blue: bgB)
     }

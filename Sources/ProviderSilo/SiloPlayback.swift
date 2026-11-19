@@ -372,7 +372,7 @@ extension SiloProvider: ProviderHTTPResourceResolving {
                 subtitles.append(MediaTrack(
                     id: entry.combined_index, kind: .subtitle,
                     displayTitle: entry.label ?? entry.language ?? entry.codec ?? String(entry.combined_index),
-                    language: entry.language, codec: entry.codec,
+                    sourceTitle: entry.label, language: entry.language, codec: entry.codec,
                     isDefault: plan.subtitle.track_id == entry.track_id && plan.subtitle.mode == "render",
                     isForced: entry.forced, isHearingImpaired: entry.hearing_impaired,
                     deliverySource: .authenticatedHTTP(source), isExternal: true))

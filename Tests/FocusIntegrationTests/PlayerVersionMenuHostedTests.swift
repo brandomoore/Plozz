@@ -253,7 +253,7 @@ final class PlayerVersionMenuHostedTests: XCTestCase {
             guard let frame = self.focusFrame(in: window) else { return false }
             return frame.midX > window.bounds.midX && frame.width < 200
         }
-        XCTAssertEqual(model.trackControlCategories, [.version])
+        XCTAssertEqual(model.trackControlCategories, [.playback])
         model.controlBar.settled = true
 
         PlayerScreenshotHook.pendingPanel = .versions

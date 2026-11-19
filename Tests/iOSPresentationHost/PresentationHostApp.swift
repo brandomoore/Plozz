@@ -218,6 +218,11 @@ struct PresentationHostApp: App {
             _ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?
         ) -> UIInterfaceOrientationMask {
             let arguments = ProcessInfo.processInfo.arguments
+            // This fixture renders the controls directly, without the production player's orientation owner.
+            if arguments.contains("--player-layout-fixture") {
+                if arguments.contains("--capture-player-landscape-left") { return .landscapeLeft }
+                return arguments.contains("--capture-player-landscape") ? .landscapeRight : .all
+            }
             if arguments.contains("--continue-watching-player-fixture") { return .all }
             if arguments.contains("--disc-touch-fixture") { return .allButUpsideDown }
             if let index = arguments.firstIndex(of: "--disc-review-fixture"),

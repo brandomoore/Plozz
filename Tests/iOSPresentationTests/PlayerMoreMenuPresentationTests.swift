@@ -12,7 +12,7 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
     func testFELOverrideAppearsOnlyWhenAvailableAndHonorsStaleMenuGuard() throws {
         let model = controls()
         let availability = PlayerMoreMenuAvailability(video: false)
-        XCTAssertFalse(PlayerMoreMenu.sections(model, availability: availability).contains(.video))
+        XCTAssertFalse(PlayerMoreMenu.sections(model, availability: availability).contains(.fel))
         model.felConversion.isAvailable = true
         var choices: [Bool] = []
         var current = true
@@ -21,7 +21,7 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         actions.setDolbyVisionFELConversion = { choices.append($0) }
         let menu = PlayerMoreMenu.make(
             model: model, availability: availability, locale: .init(identifier: "en"),
-            section: .video, actions: actions
+            section: .fel, actions: actions
         )
         let toggle = try XCTUnwrap(menu.children.first as? UIAction)
         XCTAssertEqual(toggle.title, "P7 FEL → P8.1 conversion")
@@ -34,7 +34,7 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         model.felConversion.isEnabled = false
         let disabled = PlayerMoreMenu.make(
             model: model, availability: availability, locale: .init(identifier: "en"),
-            section: .video, actions: actions
+            section: .fel, actions: actions
         )
         XCTAssertEqual((disabled.children.first as? UIAction)?.state, .off)
     }
@@ -51,10 +51,10 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         let model = controls()
         model.playbackSpeed = 1.3
         let menu = PlayerMoreMenu.make(
-            model: model, availability: .init(maximumSpeed: 2, quality: true, versions: true, multiview: true),
+            model: model, availability: .init(maximumSpeed: 2, quality: .original, versions: true, multiview: true),
             locale: .init(identifier: "en"), actions: .init()
         )
-        let commands = Set(["Search & Download…", "Advanced…", "Custom…", "Quality", "Version", "Multiview"])
+        let commands = Set(["Search & Download…", "Advanced…", "Custom…", "Version", "Multiview"])
         func verify(_ menu: UIMenu) {
             XCTAssertNil(menu.image, "Navigation menus should not add decorative popup icons.")
             for child in menu.children {
@@ -120,19 +120,23 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
                 && more.presentedMenu == nil
         }
         XCTAssertEqual(
-            Set(buttons(in: host.view).compactMap(\.accessibilityIdentifier)),
-            ["player-subtitles", "player-audio", "player-playback-speed", "player-video"]
+            buttons(in: host.view).sorted {
+                $0.convert($0.bounds, to: window).midX < $1.convert($1.bounds, to: window).midX
+            }.compactMap(\.accessibilityIdentifier),
+            ["player-audio", "player-subtitles", "player-playback-speed", "player-settings"]
         )
-        let video = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-video" })
-        XCTAssertEqual(video.accessibilityLabel, "Video")
-        XCTAssertEqual(PlayerOptionsMenuButton.Kind.video.symbol, "slider.horizontal.3")
-        XCTAssertEqual(PlayerOptionsMenuButton.Kind.video.symbol, LiveChannelTrackMenuKind.playback.icon)
+        let rate = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-playback-speed" })
+        XCTAssertEqual(rate.currentTitle, "1×")
+        state.controls.playbackSpeed = 1.25
+        try await waitUntil { rate.currentTitle == "1.25×" && rate.accessibilityValue == "1.25×" }
+        let settings = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-settings" })
+        XCTAssertEqual(settings.accessibilityLabel, "Playback settings")
         XCTAssertEqual(PlayerOptionsMenuButton.Kind.subtitles.symbol, LiveChannelTrackMenuKind.subtitles.icon)
-        let videoImage = try XCTUnwrap(video.image(for: .normal))
+        let settingsImage = try XCTUnwrap(settings.image(for: .normal))
         let adjustmentsImage = try XCTUnwrap(UIImage(
-            systemName: "slider.horizontal.3", withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)
+            systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)
         ))
-        XCTAssertTrue(videoImage.isEqual(adjustmentsImage), "Video options must not look like a fullscreen action.")
+        XCTAssertTrue(settingsImage.isEqual(adjustmentsImage))
         let audio = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-audio" })
         audio.performPrimaryAction()
         try await waitUntil { audio.presentedMenu != nil && state.presentation.isPresented }
@@ -198,10 +202,10 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         actions.selectSubtitle = { selectedSubtitle = $0 }
         actions.request = { requested = $0 }
         let menu = PlayerMoreMenu.make(
-            model: model, availability: .init(maximumSpeed: 2, quality: true, versions: true),
+            model: model, availability: .init(maximumSpeed: 2, quality: .hd1080, versions: true),
             locale: .init(identifier: "en"), actions: actions
         )
-        XCTAssertEqual(visible(menu).map(\.title), ["Subtitles", "Audio", "Playback Speed", "Video", "Version"])
+        XCTAssertEqual(visible(menu).map(\.title), ["Subtitles", "Audio", "Playback Speed", "Quality", "Zoom", "Version"])
         let subtitles = try submenu("Subtitles", in: menu)
         let subtitleRows = visible(subtitles).compactMap { $0 as? UIAction }
         XCTAssertEqual(subtitleRows.map(\.title), ["Off", "English (SDH)", "Search & Download…", "Advanced…"])
@@ -292,55 +296,67 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         )).contains { $0.title == "Playback Speed" })
     }
 
-    func testVideoCombinesZoomAndQualityWithoutTreatingQualityAsASelectedMode() throws {
+    func testOverflowStartsWithCurrentQualityAndDoesNotRepeatDirectControls() throws {
         let model = controls()
-        let availability = PlayerMoreMenuAvailability(maximumSpeed: 2, quality: true, versions: true)
-        XCTAssertEqual(PlayerMoreMenu.sections(model, availability: availability), [.subtitles, .audio, .speed, .video, .versions])
+        let availability = PlayerMoreMenuAvailability(maximumSpeed: 2, quality: .hd1080, versions: true)
         var requested: PlayerMenuDestination?
+        var selected: [StreamingQuality] = []
         var actions = PlayerMoreMenuActions()
         actions.request = { requested = $0 }
-        let video = PlayerMoreMenu.make(
-            model: model, availability: availability, locale: .init(identifier: "en"), section: .video, actions: actions
+        actions.setQuality = { selected.append($0) }
+        let overflow = PlayerMoreMenu.make(
+            model: model, availability: availability, locale: .init(identifier: "en"), settingsOnly: true, actions: actions
         )
-        let zoom = PlayerZoomMenu.make(model: model.videoZoom, locale: .init(identifier: "en"), onCustomZoom: {})
-        XCTAssertTrue(video.title.isEmpty, "The standalone Video popup needs no category heading.")
-        XCTAssertEqual(try XCTUnwrap(video.children.first as? UIMenu).title, "Zoom Mode")
-        let choices = visible(video).compactMap { $0 as? UIAction }
-        XCTAssertEqual(choices.map(\.title), zoom.children.map(\.title) + ["Quality"])
-        XCTAssertFalse(video.options.contains(.singleSelection))
-        XCTAssertTrue(try XCTUnwrap(video.children.first as? UIMenu).options.contains(.singleSelection))
-        let quality = try XCTUnwrap(choices.last)
-        XCTAssertEqual(quality.state, .off)
-        XCTAssertNil(quality.image)
-        XCTAssertFalse(try XCTUnwrap(video.children.last as? UIMenu).options.contains(.singleSelection))
-        perform(choices[1])
+        XCTAssertEqual(visible(overflow).map(\.title), ["Quality", "Zoom", "Version"])
+        let zoom = try submenu("Zoom", in: overflow)
+        XCTAssertTrue(zoom.options.contains(.singleSelection))
+        let quality = try submenu("Quality", in: overflow)
+        XCTAssertEqual(quality.subtitle, "1080p · 8 Mbps")
+        let choices = visible(quality).compactMap { $0 as? UIAction }
+        XCTAssertEqual(choices.map(\.title), [
+            "Maximum", "1080p · 20 Mbps", "1080p · 8 Mbps", "720p · 4 Mbps",
+            "720p · 2 Mbps", "480p · 1 Mbps", "240p · 500 Kbps", "Advanced…"
+        ])
+        XCTAssertEqual(choices.filter { $0.state == .on }.map(\.title), ["1080p · 8 Mbps"])
+        perform(try XCTUnwrap(choices.first { $0.title == "720p · 2 Mbps" }))
+        XCTAssertEqual(selected, [.hd720])
+        XCTAssertNil(requested)
+        perform(try XCTUnwrap(zoom.children[1] as? UIAction))
         XCTAssertEqual(model.videoZoom.settings.mode, .fill)
-        perform(quality)
+        perform(try XCTUnwrap(choices.last))
         XCTAssertEqual(requested, .quality)
+        XCTAssertEqual(selected, [.hd720])
         XCTAssertEqual(model.videoZoom.settings.mode, .fill)
     }
 
-    func testQualityRemainsAvailableInVideoWhenZoomIsUnsupported() throws {
+    func testQualityFiltersPresetsAndRetainsCurrentLimitWithoutZoom() throws {
         let model = controls()
         model.engineCapabilities = []
-        let availability = PlayerMoreMenuAvailability(video: false, quality: true)
-        XCTAssertEqual(PlayerMoreMenu.sections(model, availability: availability), [.subtitles, .audio, .video])
-        var requested: PlayerMenuDestination?
-        var actions = PlayerMoreMenuActions()
-        actions.request = { requested = $0 }
-        let root = PlayerMoreMenu.make(
-            model: model, availability: availability, locale: .init(identifier: "en"), actions: actions
-        )
-        let video = try submenu("Video", in: root)
-        XCTAssertEqual(visible(video).map(\.title), ["Quality"])
-        let standalone = PlayerMoreMenu.make(
-            model: model, availability: availability, locale: .init(identifier: "en"), section: .video, actions: actions
-        )
-        XCTAssertTrue(standalone.title.isEmpty)
-        XCTAssertEqual(visible(standalone).map(\.title), ["Quality"])
-        perform(try XCTUnwrap(visible(video).first as? UIAction))
-        XCTAssertEqual(requested, .quality)
-        XCTAssertFalse(PlayerMoreMenu.sections(model, availability: .init(video: false)).contains(.video))
+        let custom = try StreamingQuality.custom(maximumHeight: 720, bitrateKbps: 3_000)
+        for current in [custom, .low] {
+            let root = PlayerMoreMenu.make(
+                model: model, availability: .init(video: false, quality: current, qualitySupport: .silo),
+                locale: .init(identifier: "en"), settingsOnly: true, actions: .init()
+            )
+            XCTAssertEqual(visible(root).map(\.title), ["Quality"])
+            let quality = try submenu("Quality", in: root)
+            let rows = visible(quality).compactMap { $0 as? UIAction }
+            let checked = rows.filter { $0.state == .on }
+            XCTAssertEqual(checked.count, 1)
+            let row = try XCTUnwrap(checked.first)
+            XCTAssertEqual(quality.subtitle, row.title)
+            if current == .low {
+                XCTAssertEqual(row.title, "240p · 500 Kbps")
+                XCTAssertTrue(row.attributes.contains(.disabled))
+            } else {
+                XCTAssertTrue(row.title.hasPrefix("Custom"))
+                XCTAssertFalse(row.attributes.contains(.disabled))
+                XCTAssertFalse(rows.contains { $0.title == "240p · 500 Kbps" })
+            }
+            XCTAssertTrue(rows.contains { $0.title == "480p · 1 Mbps" && !$0.attributes.contains(.disabled) })
+        }
+        XCTAssertTrue(PlayerMoreMenu.make(model: model, availability: .init(video: false),
+                                          settingsOnly: true, actions: .init()).children.isEmpty)
     }
 
     func testCombinedVideoMenusDeferQualityUntilDismissalInBothLayouts() async throws {
@@ -362,20 +378,20 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
                 window.rootViewController = nil
                 previous?.makeKeyAndVisible()
             }
-            let identifier = layout == .consolidated ? "player-playback-options" : "player-video"
+            let identifier = layout == .consolidated ? "player-playback-options" : "player-settings"
             try await waitUntil { self.buttons(in: host.view).contains { $0.accessibilityIdentifier == identifier } }
             let button = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == identifier })
             button.performPrimaryAction()
             try await waitUntil { button.presentedMenu != nil }
             let menu = try XCTUnwrap(button.presentedMenu)
-            let video = try (layout == .consolidated ? submenu("Video", in: menu) : menu)
-            XCTAssertEqual(video.title, layout == .consolidated ? "Video" : "")
-            XCTAssertEqual(try XCTUnwrap(video.children.first as? UIMenu).title, "Zoom Mode")
-            if layout == .separate { XCTAssertEqual(button.accessibilityLabel, "Video") }
-            perform(try XCTUnwrap(visible(video).first { $0.title == "Quality" } as? UIAction))
+            if layout == .separate {
+                XCTAssertEqual(visible(menu).map(\.title), ["Quality", "Zoom"])
+            }
+            let quality = try submenu("Quality", in: menu)
+            perform(try XCTUnwrap(visible(quality).first { $0.title == "Advanced…" } as? UIAction))
             XCTAssertTrue(state.presentation.isPresented)
             XCTAssertNil(state.sheet)
-            try XCTUnwrap(button.contextMenuInteraction).dismissMenu()
+            try XCTUnwrap(button.presentationInteraction).dismissMenu()
             try await waitUntil {
                 state.sheet == .quality && !state.presentation.isPresented && button.presentedMenu == nil
                     && host.presentedViewController != nil
@@ -403,29 +419,37 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         try await waitUntil { self.buttons(in: host.view).count == 4 }
-        let button = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-video" })
-        button.performPrimaryAction()
-        try await waitUntil { button.presentedMenu != nil }
-        let oldQuality = try XCTUnwrap(visible(try XCTUnwrap(button.presentedMenu)).last as? UIAction)
-        let generation = state.presentation.generation
-        state.qualityAvailable = false
-        try await waitUntil { state.presentation.generation > generation && !state.presentation.isBusy && button.presentedMenu == nil }
-        perform(oldQuality)
-        XCTAssertNil(state.presentation.destination)
-        XCTAssertNil(state.sheet)
-        state.qualityAvailable = true
-        try await waitUntil { state.presentation.generation > generation + 1 }
-        let next = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-video" })
+        func invalidateQuality(_ preset: String, by invalidate: () -> Void) async throws {
+            let button = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-settings" })
+            button.performPrimaryAction()
+            try await waitUntil { button.presentedMenu != nil }
+            let quality = try submenu("Quality", in: XCTUnwrap(button.presentedMenu))
+            let oldQuality = try XCTUnwrap(visible(quality).first { $0.title == preset } as? UIAction)
+            let oldAdvanced = try XCTUnwrap(visible(quality).first { $0.title == "Advanced…" } as? UIAction)
+            let generation = state.presentation.generation
+            invalidate()
+            try await waitUntil {
+                state.presentation.generation > generation && !state.presentation.isBusy && button.presentedMenu == nil
+            }
+            perform(oldQuality)
+            perform(oldAdvanced)
+            XCTAssertEqual(state.qualitySelections, [])
+            XCTAssertNil(state.presentation.destination)
+            XCTAssertNil(state.sheet)
+        }
+        try await invalidateQuality("240p · 500 Kbps") { state.support = .silo }
+        try await invalidateQuality("720p · 2 Mbps") { state.qualityAvailable = false }
+        let next = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-settings" })
         next.performPrimaryAction()
         try await waitUntil { next.presentedMenu != nil }
-        let oldZoom = try XCTUnwrap(visible(try XCTUnwrap(next.presentedMenu)).first as? UIAction)
+        let oldZoom = try XCTUnwrap(visible(try submenu("Zoom", in: XCTUnwrap(next.presentedMenu))).first as? UIAction)
         state.controls.videoZoom.settings.mode = .fill
         let zoomGeneration = state.presentation.generation
         state.controls.engineCapabilities.remove(.videoZoom)
         try await waitUntil { state.presentation.generation > zoomGeneration && !state.presentation.isBusy && next.presentedMenu == nil }
         perform(oldZoom)
         XCTAssertEqual(state.controls.videoZoom.settings.mode, .fill)
-        XCTAssertTrue(PlayerMoreMenu.sections(state.controls, availability: .init(quality: true)).contains(.video))
+        XCTAssertTrue(PlayerMoreMenu.sections(state.controls, availability: .init(quality: .original)).contains(.quality))
     }
 
     func testLiveVideoUsesTheRealZoomOwnerAndMultiviewIsDeferred() throws {
@@ -436,10 +460,10 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         actions.request = { requested = $0 }
         let menu = PlayerMoreMenu.make(
             model: model, availability: .init(videoModel: zoom, multiview: true),
-            locale: .init(identifier: "en"), actions: actions
+            locale: .init(identifier: "en"), settingsOnly: true, actions: actions
         )
-        XCTAssertFalse(visible(menu).contains { $0.title == "Playback Speed" })
-        let video = try submenu("Video", in: menu)
+        XCTAssertEqual(visible(menu).map(\.title), ["Multiview", "Zoom"])
+        let video = try submenu("Zoom", in: menu)
         let choices = visible(video).compactMap { $0 as? UIAction }
         perform(choices[1])
         XCTAssertEqual(zoom.settings.mode, .fill)
@@ -495,7 +519,7 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         let menu = try XCTUnwrap(button.presentedMenu)
         let audio = try submenu("Audio", in: menu)
         let oldAudio = try XCTUnwrap(visible(audio).first as? UIAction)
-        let video = try submenu("Video", in: menu)
+        let video = try submenu("Zoom", in: menu)
         let oldZoom = try XCTUnwrap(visible(video).compactMap { $0 as? UIAction }.first)
         let subtitles = try submenu("Subtitles", in: menu)
         perform(try XCTUnwrap(visible(subtitles).first { $0.title == "Advanced…" } as? UIAction))
@@ -573,6 +597,8 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         let presentation = PlayerMenuPresentation()
         var sheet: PlayerMenuDestination?
         var audioSelections: [Int] = []
+        var qualitySelections: [StreamingQuality] = []
+        var support: StreamingQualitySupport = .standard
         var layout = PlayerMenuLayout.consolidated
         var qualityAvailable = false
         init(controls: PlayerControlsModel) { self.controls = controls }
@@ -584,9 +610,11 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         var body: some View {
             var actions = PlayerMoreMenuActions()
             actions.selectAudio = { state.audioSelections.append($0) }
+            actions.setQuality = { state.qualitySelections.append($0) }
             return PlayerMoreMenuButton(
                 model: state.controls, availability: .init(
-                    maximumSpeed: 2, quality: state.qualityAvailable
+                    maximumSpeed: 2, quality: state.qualityAvailable ? .original : nil,
+                    qualitySupport: state.support
                 ),
                 presentation: state.presentation, layout: state.layout, actions: actions
             )

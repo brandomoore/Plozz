@@ -45,7 +45,7 @@ public final class LiveTVPreviewController {
     }
 
     public func suppressesNavigation(isActive: Bool, isSearching: Bool = false) -> Bool {
-        isActive && (isSearching || isExpanded || isRestoringGuideFocus)
+        isActive && (isSearching || isExpanded || (isRestoringGuideFocus && restoresPlaybackFocus))
     }
 
     public func requestInitialGuideFocus(isActive: Bool, hasOverlay: Bool) -> LiveTVGuideRowID? {

@@ -3,6 +3,27 @@ import CoreModels
 @testable import ProviderJellyfin
 
 final class JellyfinHomeLayoutTests: XCTestCase {
+    func testLibraryRecentlyAddedKeepsEpisodeDrivenServerOrderAcrossPages() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            let path = "/Users/selected-user/Items/Latest"
+            stub.stub(pathSuffix: path, json: """
+                [{"Id":"old-show","Type":"Series","Name":"Returning show","DateCreated":"2020-01-01T00:00:00Z"},
+                 {"Id":"new-show","Type":"Series","Name":"New show","DateCreated":"2026-01-01T00:00:00Z"}]
+                """)
+            let provider: any MediaProvider = JellyfinProvider(session: session(kind), http: stub)
+            let first = try await provider.libraryRecentlyAddedPage(in: "anime", kind: .series, startIndex: 0, limit: 1)
+            XCTAssertEqual(first.items.map(\.id), ["old-show"])
+            XCTAssertEqual(first.items.first?.libraryID, "anime")
+            let offset = try XCTUnwrap(first.nextOffset)
+            let last = try await provider.libraryRecentlyAddedPage(in: "anime", kind: .series, startIndex: offset, limit: 1)
+            XCTAssertEqual(last.items.map(\.id), ["new-show"])
+            XCTAssertNil(last.nextOffset)
+            let query = try XCTUnwrap(stub.queryItems(forPathSuffix: path))
+            XCTAssertEqual(query.first { $0.name == "ParentId" }?.value, "anime")
+        }
+    }
+
     func testSmallCustomRecommendationPagesReusePinnedItemsAndExtendWithCompleteAnchors() async throws {
         for kind: ProviderKind in [.jellyfin, .emby] {
             let stub = StubHTTPClient()

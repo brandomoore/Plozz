@@ -73,7 +73,13 @@ final class HeroLogoBackgroundPlateTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(prepared.backgroundPlate).luminance, 1, accuracy: 0.01)
     }
 
-    private func prepare(background: UIColor) throws -> PreparedLogo {
+    func testIsolatedCompressionNoiseKeepsTheBrandBackground() throws {
+        let prepared = try prepare(background: .red, noisyEdge: true)
+        XCTAssertGreaterThan(try XCTUnwrap(prepared.backgroundPlate).red, 0.98)
+        XCTAssertGreaterThan(prepared.brightInk, 0.9)
+    }
+
+    private func prepare(background: UIColor, noisyEdge: Bool = false) throws -> PreparedLogo {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
@@ -81,6 +87,10 @@ final class HeroLogoBackgroundPlateTests: XCTestCase {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 96, height: 48), format: format).image { context in
             background.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 96, height: 48))
+            if noisyEdge {
+                UIColor(red: 0.8, green: 0, blue: 0, alpha: 1).setFill()
+                context.fill(CGRect(x: 8, y: 0, width: 1, height: 1))
+            }
             UIColor.white.setFill()
             context.fill(CGRect(x: 24, y: 12, width: 48, height: 24))
         }

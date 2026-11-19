@@ -115,6 +115,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
     struct RowEnvironment: Equatable {
         let palette: ThemePalette
         let reduceTransparency: Bool
+        let cardFocusStyle: CardFocusStyle
         let colorScheme: ColorScheme
         let contrast: ColorSchemeContrast
         let direction: LayoutDirection
@@ -127,6 +128,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         init(_ environment: EnvironmentValues) {
             palette = environment.themePalette
             reduceTransparency = environment.plozzReduceTransparency
+            cardFocusStyle = environment.plozzCardFocusStyle
             colorScheme = environment.colorScheme
             contrast = environment.colorSchemeContrast
             direction = environment.layoutDirection
@@ -165,6 +167,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .environment(\.themePalette, state.environment.palette)
                 .environment(\.plozzReduceTransparency, state.environment.reduceTransparency)
+                .environment(\.plozzCardFocusStyle, state.environment.cardFocusStyle)
                 .environment(\.colorScheme, state.environment.colorScheme)
                 .environment(\.layoutDirection, state.environment.direction)
                 .environment(\.dynamicTypeSize, state.environment.dynamicType)

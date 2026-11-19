@@ -4,30 +4,27 @@ import FeatureLiveTVCore
 import SwiftUI
 
 enum PrototypeLayout {
+    static let sidebarAnimation = Animation.easeInOut(duration: 0.28)
     static let gap = PlozzTheme.Spacing.medium
     static let smallGap = PlozzTheme.Spacing.xSmall
     static let radius = PlozzTheme.Metrics.cornerRadius
     static let sectionGap = PlozzTheme.Spacing.large
     static let cellGap = PlozzTheme.Spacing.xSmall
-    // On touch the grid is one even mesh: rows, the logo column and programmes
-    // all sit a programme-gap apart. The TV keeps wider row and column gaps.
+    static let columnGap = cellGap
     #if os(iOS)
     static let rowGap = cellGap
-    static let columnGap = cellGap
     #else
     static let rowGap = PlozzTheme.Spacing.medium
-    static let columnGap = PlozzTheme.Spacing.small
     #endif
     static let rowInset = PlozzTheme.Spacing.medium
     static let logoRadius = PlozzTheme.Metrics.Radius.content
-    /// Concentric with the logo plate on a TV and a tablet. A phone's short
-    /// rows (`compactRowHeight`) turned that radius into a full capsule, so
-    /// its cells get the TV's proportion instead: squarer, like the tvOS grid.
+    /// Compact TV and phone rows use smaller corners; tablet rows retain
+    /// their concentric logo-plate inset.
     static var rowRadius: CGFloat {
         #if os(iOS)
         UIDevice.current.userInterfaceIdiom == .phone ? 14 : logoRadius + rowInset
         #else
-        logoRadius + rowInset
+        PlozzTheme.Metrics.Radius.content
         #endif
     }
     static let programInset: CGFloat = 0
@@ -48,15 +45,25 @@ enum PrototypeLayout {
     static let controlHeight: CGFloat = 56
     static let guideFontSize: CGFloat = 26
     static let sectionFontSize: CGFloat = 22
+    static let rowTextVerticalInset: CGFloat = 20
+    static let rowHeight = ceil(UIFont.systemFont(ofSize: guideFontSize).lineHeight) + rowTextVerticalInset * 2
     #else
     static let inset = PlozzTheme.Spacing.medium
     static let stationSize: CGFloat = 80
     static let controlHeight: CGFloat = 44
     static let guideFontSize: CGFloat = 16
     static let sectionFontSize: CGFloat = 14
-    #endif
     static let rowHeight = stationSize + rowInset * 2
+    #endif
+    #if os(tvOS)
+    static let stationColumnWidth: CGFloat = 140
+    static let guideStationArtworkInset: CGFloat = 4
+    static let guideStationHorizontalArtworkInset: CGFloat? = 20
+    #else
     static let stationColumnWidth = stationSize * 1.75 + rowInset * 2
+    static let guideStationArtworkInset = stationArtworkInset
+    static let guideStationHorizontalArtworkInset: CGFloat? = nil
+    #endif
     static var guideShape: UnevenRoundedRectangle {
         #if os(tvOS)
         let bottom: CGFloat = 0
@@ -230,21 +237,26 @@ struct PrototypeStationMark: View {
     var size: CGFloat = PrototypeLayout.stationSize
     var plateSize: CGSize? = nil
     var cornerRadius: CGFloat = PrototypeLayout.logoRadius
+    var contentInset: CGFloat? = nil
+    var horizontalContentInset: CGFloat? = nil
+    var usesControlBackground = false
 
     private var dimensions: CGSize {
         plateSize ?? CGSize(width: size * 1.75, height: size)
     }
 
     private var artworkInset: CGFloat {
-        plateSize == nil ? 6 : PrototypeLayout.stationArtworkInset
+        contentInset ?? (plateSize == nil ? 6 : PrototypeLayout.stationArtworkInset)
     }
 
     var body: some View {
         ChannelLogoArtwork(
             name: channel.name, logoURL: channel.logoURL, size: dimensions,
             cornerRadius: cornerRadius, artworkInset: artworkInset,
+            horizontalArtworkInset: horizontalContentInset,
             plozzChannelID: channel.source == .plozz ? channel.id : nil,
-            plozzChannelMood: channel.plozzChannelMood
+            plozzChannelMood: channel.plozzChannelMood,
+            usesControlBackground: usesControlBackground
         )
     }
 }
@@ -275,6 +287,99 @@ struct PrototypeButtonStyle: ButtonStyle {
             configuration: configuration, selected: selected, padded: padded,
             surface: surface, focusChanged: focusChanged
         )
+    }
+}
+
+struct PrototypeGuideButtonStyle: PrimitiveButtonStyle {
+    var selected = false
+    var surface: PrototypeButtonSurface = .guide
+    var focusChanged: ((Bool) -> Void)?
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
+
+    @ViewBuilder
+    func makeBody(configuration: Configuration) -> some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            PrototypeNativeGuideButton(
+                configuration: configuration, surface: surface, focusChanged: focusChanged
+            )
+        } else {
+            fallback(configuration)
+        }
+        #else
+        fallback(configuration)
+        #endif
+    }
+
+    private func fallback(_ configuration: Configuration) -> some View {
+        Button(role: configuration.role, action: configuration.trigger) {
+            configuration.label
+        }
+        .buttonStyle(PrototypeButtonStyle(
+            selected: selected, padded: false, surface: surface, focusChanged: focusChanged
+        ))
+        .focusEffectDisabled()
+    }
+}
+
+#if os(tvOS)
+private struct PrototypeNativeGuideButton: View {
+    let configuration: PrimitiveButtonStyleConfiguration
+    let surface: PrototypeButtonSurface
+    let focusChanged: ((Bool) -> Void)?
+    var body: some View {
+        Button(role: configuration.role, action: configuration.trigger) {
+            PrototypeNativeGuideLabel(content: configuration.label, surface: surface, focusChanged: focusChanged)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+}
+
+struct PrototypeNativeGuideLabel<Content: View>: View {
+    let content: Content
+    let surface: PrototypeButtonSurface
+    let focusChanged: ((Bool) -> Void)?
+    @Environment(\.isFocused) private var focused
+    @Environment(\.themePalette) private var palette
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        content
+            .foregroundStyle(focused ? palette.onAccent : palette.primaryText)
+            .background {
+                if focused {
+                    palette.accent
+                } else if surface == .program {
+                    palette.fillSubtle.opacity(reduceTransparency || contrast == .increased ? 1 : 0.45)
+                }
+            }
+            .transaction {
+                $0.animation = nil
+                $0.disablesAnimations = true
+            }
+            // Observe the native label, without introducing another focus binding.
+            .onChange(of: focused, initial: true) { _, value in focusChanged?(value) }
+    }
+}
+#endif
+
+struct PrototypeGuideStationStyle: ViewModifier {
+    let focusChanged: ((Bool) -> Void)?
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            content.buttonStyle(.plain).focusEffectDisabled()
+        } else {
+            content.buttonStyle(PrototypeGuideButtonStyle(surface: .station, focusChanged: focusChanged))
+        }
+        #else
+        content.buttonStyle(PrototypeGuideButtonStyle(surface: .station, focusChanged: focusChanged))
+        #endif
     }
 }
 

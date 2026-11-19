@@ -168,6 +168,9 @@ when the suggested movie or person changes; ordinary genre/collection IDs remain
 server-authored. The shared library key scopes both forms to their account.
 Explicit row choices can include person or sparse shelves that legacy Home
 excluded. The library Recommended view retains `libraryHubs` behavior.
+An explicitly added library Recently Added row follows the library's native
+Recently Added hub, including its paging key. In TV libraries this preserves
+Plex's choice of episode, season or show rather than sorting shows by `addedAt`.
 Home continues to use the canonical Continue Watching feed rather than
 duplicating a resume/on-deck hub inside each library.
 

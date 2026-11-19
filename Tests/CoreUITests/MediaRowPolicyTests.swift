@@ -5,6 +5,20 @@ import CoreModels
 @testable import CoreUI
 
 final class MediaRowPolicyTests: XCTestCase {
+    func testContinueWatchingEpisodeNameRespectsSpoilersAndOtherRowCaptions() {
+        var episode = MediaItem(id: "e", title: "The Letter", kind: .episode)
+        episode.parentTitle = "Example Show"
+        episode.seasonNumber = 1
+        episode.episodeNumber = 2
+        episode.resumePosition = 40
+        var spoilers = SpoilerSettings.default
+        spoilers.isEnabled = false
+        XCTAssertEqual(episode.posterCaptionSubtitle(showsRuntime: false, continueWatchingSpoilers: spoilers), "S1 E2 · The Letter")
+        spoilers.isEnabled = true
+        XCTAssertEqual(episode.posterCaptionSubtitle(showsRuntime: false, continueWatchingSpoilers: spoilers), "S1 E2")
+        XCTAssertEqual(episode.posterCaptionSubtitle(showsRuntime: false), "S1 · E2")
+    }
+
     func testQueuedPreviewDoesNotRepeatURLComparison() {
         var prefetchedIDs = Set<String>()
         var comparisons = 0

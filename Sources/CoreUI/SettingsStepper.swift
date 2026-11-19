@@ -30,6 +30,7 @@ public struct SettingsStepper<Value: Hashable>: View {
     private var directionalAdjustment: ((_ forward: Bool, _ repeating: Bool) -> Void)?
     private var editingEnded: ((_ cancelled: Bool) -> Void)?
     private var swipeEditingBegan: (() -> Void)?
+    private var focusRequest = 0
 
     @Environment(\.themePalette) private var palette
     @FocusState private var focusedButton: StepperButton?
@@ -142,6 +143,14 @@ public struct SettingsStepper<Value: Hashable>: View {
         result.swipeEditingBegan = onEditingBegan
         return result
     }
+
+    /// Change the request to hand TV focus to the button inside the adjustment host.
+    public func focusOnRequest(_ request: Int) -> Self {
+        var result = self
+        result.focusRequest = request
+        return result
+    }
+
     private var rangePositions: [Int] {
         guard options.count > 21 else { return Array(options.indices) }
         return (0...20).map { Int((Double($0) * Double(options.count - 1) / 20).rounded()) }
@@ -293,6 +302,7 @@ public struct SettingsStepper<Value: Hashable>: View {
             }
         }
         .focused($isFocused)
+        .onChange(of: focusRequest) { _, _ in isFocused = true }
         .disabled(options.isEmpty)
         .accessibilityLabel(label.map(Text.init) ?? title(selection))
         .accessibilityValue(title(selection))

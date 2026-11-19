@@ -1667,6 +1667,37 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         }
     }
 
+    func testControlFocusRequestDoesNotReplaySupersededOrDetachedRequests() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let marker = NativeControlFocusRequest.RequestView(frame: CGRect(x: 60, y: 60, width: 200, height: 60))
+        var requests: [Int] = []
+        marker.requestFocus = { view in
+            XCTAssertTrue(view === marker)
+            if let request = marker.request { requests.append(request) }
+            return true
+        }
+        fixture.window.addSubview(marker)
+        defer { marker.requestFocus = nil }
+        marker.request = 1
+        marker.request = 2
+        try await waitUntil { requests == [2] }
+        marker.setNeedsLayout()
+        marker.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(requests, [2], "Ordinary layout must not replay a completed handoff.")
+
+        marker.request = 3
+        marker.request = nil
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(requests, [2], "A cancelled request must not steal focus after the render boundary.")
+
+        marker.request = 4
+        marker.removeFromSuperview()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(requests, [2], "A detached control must not request focus.")
+    }
+
     func testNativeRequestWaitsForTheCardToBeMounted() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

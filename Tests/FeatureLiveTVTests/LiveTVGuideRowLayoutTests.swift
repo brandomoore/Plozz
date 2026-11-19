@@ -276,11 +276,18 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             .sizeThatFits(in: CGSize(width: 500, height: 500))
         XCTAssertEqual(size.height, PrototypeLayout.stationSize, accuracy: 0.5)
         XCTAssertEqual(size.width, PrototypeLayout.stationSize * 1.75, accuracy: 0.5)
-        XCTAssertEqual(PrototypeLayout.stationColumnWidth - size.width, PrototypeLayout.rowInset * 2, accuracy: 0.5)
         #if os(tvOS)
         XCTAssertGreaterThan(size.width, 126)
         XCTAssertGreaterThan(size.height, 72)
-        XCTAssertLessThan(PrototypeLayout.stationColumnWidth, 280)
+        let station = PrototypeGuideStation(
+            channel: LiveTVPrototypeModel().channels[0], section: .channels,
+            favorite: false, playing: false, tune: {}, toggleFavorite: {}, controls: {}, top: {}
+        )
+        let stationSize = UIHostingController(rootView: station).sizeThatFits(in: CGSize(width: 500, height: 500))
+        XCTAssertEqual(stationSize.width, 140, accuracy: 0.5)
+        XCTAssertEqual(stationSize.height, PrototypeLayout.rowHeight, accuracy: 0.5)
+        #else
+        XCTAssertEqual(PrototypeLayout.stationColumnWidth - size.width, PrototypeLayout.rowInset * 2, accuracy: 0.5)
         #endif
     }
 
@@ -389,7 +396,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
 
     func testNowMarkerIsACompactPointerWithoutALineThroughTheRows() throws {
         let samples = try alphaSamples(
-            PrototypeNowMarker(start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50)
+            PrototypeNowMarker(start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50, timelineWidth: 600)
                 .frame(maxHeight: .infinity, alignment: .top),
             size: CGSize(width: 600, height: 400),
             points: [(99, 4), (99, 43), (99, 60), (99, 199), (99, 398)]
@@ -445,7 +452,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         ] {
             let samples = try alphaSamples(
                 PrototypeNowMarker(
-                    start: start, now: start.addingTimeInterval(nowOffset), timelineOffset: scrollOffset
+                    start: start, now: start.addingTimeInterval(nowOffset), timelineOffset: scrollOffset, timelineWidth: 600
                 ),
                 size: CGSize(width: 600, height: PrototypeNowMarker.size.height),
                 points: [(0, 4), (150, 4), (300, 4), (599, 4)]
@@ -454,6 +461,22 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
                 samples.map { $0 > 190 }, [0.0, 150.0, 300.0, 599.0].map { $0 == visibleX },
                 "time: \(nowOffset), scroll: \(scrollOffset), alpha: \(samples)"
             )
+        }
+    }
+
+    func testNowMarkerUsesTheRowsTimeScaleDuringRulerResize() throws {
+        // Mid-reveal the ruler may present 600 pt while the native rows already use 1,000 pt.
+        // A quarter viewport, scrolled by 50 pt, ends at 200, not 100.
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            let samples = try alphaSamples(
+                PrototypeNowMarker(
+                    start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50, timelineWidth: 1_000
+                )
+                .environment(\.layoutDirection, direction),
+                size: CGSize(width: 600, height: PrototypeNowMarker.size.height),
+                points: [100, 200].map { (direction == .leftToRight ? $0 : 599 - $0, 4) }
+            )
+            XCTAssertEqual(samples.map { $0 > 190 }, [false, true], "\(direction): \(samples)")
         }
     }
 
@@ -499,6 +522,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         for programs in [[], [program("Later", from: 3_600, to: 21_600)]] {
             let samples = try await hostedAlphaSamples(
                 GuideRowFixture(programs: programs, start: start, nowOffset: 1_800, width: width)
+                    .environment(\.plozzCardFocusStyle, .system)
                     .environment(\.themePalette, ThemePalette.dark),
                 size: CGSize(width: width, height: PrototypeLayout.rowHeight),
                 points: [(Int(lineX - 4), Int(PrototypeLayout.rowHeight - 20)),
@@ -544,13 +568,33 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         )
         XCTAssertEqual(fill.map { $0 > 0 }, [false, false, true])
         let marker = try alphaSamples(
-            PrototypeNowMarker(start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50)
+            PrototypeNowMarker(start: start, now: start.addingTimeInterval(1_800), timelineOffset: 50, timelineWidth: 600)
                 .environment(\.layoutDirection, .rightToLeft)
                 .frame(maxHeight: .infinity, alignment: .top),
             size: CGSize(width: 600, height: 400),
             points: [(99, 4), (499, 4), (499, 60)]
         )
         XCTAssertEqual(marker.map { $0 > 0 }, [false, true, false])
+    }
+
+    func testFocusedProgressDimsOnlyTheRemainingTimeInBothDirections() throws {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            for (elapsed, expected) in [
+                (-40.0, [false, false, false]),
+                (80.0, [false, true, true]),
+                (400.0, [false, false, false])
+            ] {
+                let samples = try alphaSamples(
+                    PrototypeProgramProgressShading(elapsedWidth: elapsed, dimsRemaining: true)
+                        .environment(\.layoutDirection, direction),
+                    size: CGSize(width: 200, height: 100),
+                    points: [(40, 50), (100, 50), (180, 50)]
+                )
+                XCTAssertEqual(samples.map { $0 > 0 },
+                               direction == .leftToRight ? expected : Array(expected.reversed()))
+                XCTAssertTrue(samples.filter { $0 > 0 }.allSatisfy { $0 >= 50 && $0 <= 60 })
+            }
+        }
     }
 
     func testAlphaSamplerReadsTopToBottomScreenCoordinates() throws {
@@ -715,7 +759,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         }
     }
 
-    func testTVLayoutLeavesRoomForFourRoomyRows() {
+    func testTVLayoutLeavesRoomForSevenCompactRows() {
         #if os(tvOS)
         let layout = PrototypePreviewLayout(
             size: CGSize(width: 1_740, height: 960),
@@ -726,9 +770,9 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             + PrototypeLayout.gap + PrototypeLayout.smallGap * 2
         let listHeight = layout.contentFrame.height - layout.heroHeight - toolbarAndRuler - spacing
         let visibleRows = listHeight / (PrototypeLayout.rowHeight + PrototypeLayout.rowGap)
-        XCTAssertGreaterThanOrEqual(visibleRows, 4)
-        XCTAssertLessThan(visibleRows, 5)
-        XCTAssertGreaterThanOrEqual(PrototypeLayout.rowHeight, 100)
+        XCTAssertGreaterThanOrEqual(visibleRows, 7)
+        XCTAssertLessThan(visibleRows, 8)
+        XCTAssertLessThanOrEqual(PrototypeLayout.rowHeight, 128 * 0.7)
         #endif
     }
 
@@ -799,7 +843,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         }
     }
 
-    func testGuideAndLogoCornersStayConcentric() {
+    func testGuideCornersMatchTheRowAndPlatformDensity() {
         XCTAssertEqual(PrototypeLayout.guideRadius, PrototypeLayout.rowRadius + PrototypeLayout.guideInset)
         #if os(iOS)
         // A phone's short rows take a squarer, TV-proportioned radius instead.
@@ -807,9 +851,11 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             XCTAssertEqual(PrototypeLayout.rowRadius, PrototypeLayout.logoRadius + PrototypeLayout.rowInset)
         }
         #else
-        XCTAssertEqual(PrototypeLayout.rowRadius, PrototypeLayout.logoRadius + PrototypeLayout.rowInset)
+        XCTAssertEqual(PrototypeLayout.rowRadius, PlozzTheme.Metrics.Radius.content)
         #endif
+        #if os(iOS)
         XCTAssertEqual(PrototypeLayout.rowHeight, PrototypeLayout.stationSize + PrototypeLayout.rowInset * 2)
+        #endif
         XCTAssertEqual(PrototypeLayout.stationArtworkInset, PrototypeLayout.guideInset + 8)
         XCTAssertEqual(
             PrototypeLayout.controlGroupRadius,
@@ -1006,7 +1052,8 @@ private struct SidebarFixture: View {
 
     var body: some View {
         PrototypeBrowseSidebar(
-            model: model, configuration: .empty, active: $active, focusRequest: 0,
+            model: model, configuration: .empty, active: $active,
+            lastFocusedControl: .constant(nil), focusRequest: 0,
             search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
         )
     }

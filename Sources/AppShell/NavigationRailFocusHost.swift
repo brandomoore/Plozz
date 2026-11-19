@@ -39,6 +39,13 @@ struct NavigationRailFocusHost<Content: View>: UIViewControllerRepresentable {
         #endif
         controller.rootView = AnyView(content(controller).transformEnvironment(\.self) { target in
             target.copyHostedPresentation(from: source)
+            target.plozzNativeControlFocusRequest = { [weak controller] marker in
+                guard let controller, let window = marker.window,
+                      NavigationRailFocusHostController.containing(marker) === controller,
+                      let system = UIFocusSystem.focusSystem(for: window),
+                      let item = NavigationRowFocusRequester.target(for: marker, in: window) else { return false }
+                return controller.requestFocus(to: item, using: system)
+            }
             target.isEnabled = isEnabled
             target.plozzReducePanelGlass = source.plozzReducePanelGlass
             target.plozzHDRDisplayActive = source.plozzHDRDisplayActive

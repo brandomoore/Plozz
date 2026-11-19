@@ -51,7 +51,7 @@ final class LiveChannelControlsAppearanceTests: XCTestCase {
         )
         XCTAssertEqual(String(localized: LiveChannelPlaybackPhase.playing.statusLabel(isAtLiveEdge: true)), "LIVE")
         XCTAssertEqual(
-            String(localized: LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: false)), "Go Live"
+            String(localized: LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: false)), "Jump to live"
         )
     }
 

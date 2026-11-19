@@ -10,26 +10,33 @@ public struct ChannelLogoArtwork: View {
     private let size: CGSize
     private let cornerRadius: CGFloat
     private let artworkInset: CGFloat
+    private let horizontalArtworkInset: CGFloat?
+    private let usesControlBackground: Bool
     private let plozzChannelID: String?
     private let plozzChannelMood: LibraryChannelArtworkMood?
     @State private var loaded: LoadedLogo?
     /// Steers the plate: light themes default to light backing, dark to dark.
     @Environment(\.themePalette) private var palette
 
+    /// Native controls illuminate the existing artwork plate on focus; standalone artwork stays opaque.
     public init(
         name: String,
         logoURL: URL?,
         size: CGSize,
         cornerRadius: CGFloat,
         artworkInset: CGFloat? = nil,
+        horizontalArtworkInset: CGFloat? = nil,
         plozzChannelID: String? = nil,
-        plozzChannelMood: LibraryChannelArtworkMood? = nil
+        plozzChannelMood: LibraryChannelArtworkMood? = nil,
+        usesControlBackground: Bool = false
     ) {
         self.name = name
         self.logoURL = logoURL
         self.size = size
         self.cornerRadius = cornerRadius
         self.artworkInset = artworkInset ?? size.height * 20 / 128
+        self.horizontalArtworkInset = horizontalArtworkInset
+        self.usesControlBackground = usesControlBackground
         self.plozzChannelID = plozzChannelID
         self.plozzChannelMood = plozzChannelMood
     }
@@ -48,7 +55,7 @@ public struct ChannelLogoArtwork: View {
             if plozzChannelID != nil, logoURL == nil {
                 PlozzChannelWordmark(
                     name: name, mood: plozzChannelMood ?? .neutral,
-                    size: size, cornerRadius: cornerRadius
+                    size: size, cornerRadius: cornerRadius, usesControlBackground: usesControlBackground
                 )
             } else {
                 ChannelLogoPlateContent(
@@ -56,7 +63,10 @@ public struct ChannelLogoArtwork: View {
                     plate: ChannelLogoPlate(tone: current?.tone, prefersLight: palette.isLight),
                     size: size, cornerRadius: cornerRadius, artworkInset: artworkInset,
                     rendersInkLight: ChannelLogoPlate.rendersInkLight(current?.tone, prefersLight: palette.isLight),
-                    isTile: ChannelLogoPlate.showsAsTile(current?.tone)
+                    isTile: ChannelLogoPlate.showsAsTile(current?.tone),
+                    hasSourcePlate: current?.tone?.backgroundPlate != nil,
+                    usesControlBackground: usesControlBackground,
+                    horizontalArtworkInset: horizontalArtworkInset
                 )
             }
         }
@@ -175,12 +185,27 @@ struct ChannelLogoPlateContent: View {
     var rendersInkLight = false
     /// Boxed logos fill more of the plate; playback preserves their source corners.
     var isTile = false
+    var hasSourcePlate = false
+    var usesControlBackground = false
+    var horizontalArtworkInset: CGFloat?
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.channelLogoPreservesSourceCorners) private var preservesSourceCorners
 
     /// A tile hugs the plate more closely than ink does.
     private var inset: CGFloat {
-        isTile ? min(artworkInset, max(4, size.height * 8 / 128)) : artworkInset
+        if horizontalArtworkInset != nil, hasSourcePlate, let image,
+           image.size.width <= image.size.height * 1.1 {
+            return max(artworkInset, size.height / 6)
+        }
+        return isTile ? min(artworkInset, max(4, size.height * 8 / 128)) : artworkInset
+    }
+
+    private var fittedWidth: CGFloat {
+        let width = max(1, size.width - (horizontalArtworkInset ?? inset) * 2)
+        guard horizontalArtworkInset != nil, let image, image.size.height > 0 else { return width }
+        // Keep a stacked wordmark's fitted area within that of a square mark.
+        let aspect = image.size.width / image.size.height
+        return min(width, max(1, size.height - inset * 2) * max(1, aspect).squareRoot())
     }
 
     /// Proportional to the tile itself, not concentric with the plate: a square
@@ -221,20 +246,24 @@ struct ChannelLogoPlateContent: View {
             }
         }
         .frame(
-            width: max(1, size.width - inset * 2),
+            width: fittedWidth,
             height: max(1, size.height - inset * 2)
         )
         .frame(width: size.width, height: size.height)
-        .background(plate.color)
+        .background {
+            plate.color.modifier(ChannelLogoNativeBackdrop(enabled: usesControlBackground))
+        }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    (plate.isLight ? Color.black : Color.white)
-                        .opacity(contrast == .increased ? 0.4 : 0.14),
-                    lineWidth: contrast == .increased ? 2 : 1
-                )
-                .allowsHitTesting(false)
+            if !usesControlBackground {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        (plate.isLight ? Color.black : Color.white)
+                            .opacity(contrast == .increased ? 0.4 : 0.14),
+                        lineWidth: contrast == .increased ? 2 : 1
+                    )
+                    .allowsHitTesting(false)
+            }
         }
     }
 }

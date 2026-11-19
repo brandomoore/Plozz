@@ -4,6 +4,23 @@ import XCTest
 @testable import ProviderSilo
 
 extension SiloProviderTests {
+    func testLibraryRecentlyAddedUsesScopedSectionAndPreservesCardIdentityAcrossPages() async throws {
+        let raw = try credential().encoded()
+        let path = "/api/v2/library/42/sections"
+        let http = SiloHTTPStub([path: """
+          {"sections":[{"id":"7","section_type":"recently_added","items":[
+          {"content_id":"episode:1","type":"episode","title":"First","series_id":"series:2"},
+          {"content_id":"series:2","type":"series","title":"Second","play_content_id":"episode:3"}]}]}
+          """])
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+        let first = try await provider.libraryRecentlyAddedPage(in: "42", kind: .series, startIndex: 0, limit: 1)
+        let next = try await provider.libraryRecentlyAddedPage(in: "42", kind: .series, startIndex: XCTUnwrap(first.nextOffset), limit: 1)
+        XCTAssertEqual(first.items.map(\.id), ["episode:1"])
+        XCTAssertEqual(next.items.map(\.id), ["series:2"])
+        XCTAssertEqual(next.items.first?.libraryID, "42")
+        XCTAssertNil(next.nextOffset)
+    }
+
     private var nativeHome: String {
         """
         {"sections":[

@@ -109,6 +109,82 @@ publish only sanitized aggregates.
 
 ## Baseline → attribution → candidate → regression
 
+### tvOS: rapid vertical IPTV guide travel
+
+The `PlozzFocusHost` fallback exercises the production top bar, guide and
+local video preview together. Build `PlozzHomeFixtureTests` for the owned
+tvOS simulator with Debug `SWIFT_OPTIMIZATION_LEVEL=-O`. If XCTest cannot
+connect, install that host on the same simulator and launch it under the same
+build lease with these arguments:
+
+```sh
+xcrun simctl launch --stdout="$RUN/travel.out" --stderr="$RUN/travel.err" \
+  "$PLOZZ_SIM_ID" com.thatcube.Plozz.FocusHost \
+  --large-native-navigation-fixture --guide-travel --category-live-preview --category-search-guide-first
+```
+
+Bound the run to 90 seconds and terminate the host afterward. Accept only
+`GUIDE_TRAVEL PASS` with six complete records. Discard warmup `rep=0`.
+Each pass requests rows 1–12, then 11–0, with a 120 ms dwell after each
+request. The probe checks the actual `UIFocusSystem.focusedItem` identity
+and cell bounds after every dwell. It also checks the same ready player
+layer, local MP4 item and advancing media clock. `gapsUs` contains successive
+`CADisplayLink.timestamp` differences in microseconds; compute nearest-rank
+p95 **per pass**, then take the median. `cpu` is process CPU seconds.
+
+Optimized Debug, Xcode 27.0 beta (27A5194q), tvOS 27.0, Apple TV 4K
+1080p simulator; same sidebar work in both builds. The fixture mounted 29
+destinations plus profile, imported 240 channels × 48 half-hour programmes,
+and played the bundled `live-continuity.mp4` through `CategoryPreviewPlayer`.
+
+| Five measured passes; 120 verified moves per build | Before | After |
+|---|---:|---:|
+| Median p95 display-link gap | 54.97 ms | 38.87 ms |
+| Median worst gap per pass | 69.61 ms | 54.41 ms |
+| Gaps >50 ms / total sampled intervals | 58 / 675 | 7 / 758 |
+| Median process CPU / 24 moves | 2.512 s | 1.888 s |
+| Median elapsed / 24 moves, including dwells | 3.198 s | 3.130 s |
+
+A separate main-thread sample implicated SwiftUI layout and graph updates as
+row hosts moved. Changing progress shading alone barely moved p95 (53.82 ms)
+and was discarded. Instead, while browsing vertically at the timeline's
+leading edge, mount the visible programmes and one offscreen candidate, not
+two additional screens of controls. Horizontal browsing, VoiceOver and focus
+handoffs retain the wider window. This compares **programmatic native focus
+travel**, including target lookup and cell reveal, not remote-event latency,
+presented-frame hitches, network playback, or physical Apple TV performance.
+Local source patches, binary UUIDs, raw runs and screenshots: `.build/guide-travel-lab/`.
+
+For a **remote-driven visual control**, replace `--category-search-guide-first`
+with `--guide-remote-arrival`. This leaves the travel loop off, starts in
+categories and omits listings on alternating rows. Press Right to enter the
+guide, Left to the station, Left again to reveal categories, then Right to
+collapse (reverse the horizontal directions in RTL). Track the unscheduled
+channel **name relative to its station**, not only the row's final bounds.
+Add `--guide-tab-first` to start with the actual Live TV tab focused and test
+one Down into the page.
+
+For the Now pointer, also pass `--guide-progress-edges`: row 2 has no
+listings, row 3 has an active programme starting between ticks, and row 5
+is between listings. In each recorded frame compare the triangle's center
+with the shading boundary in those rows, away from text and rounded corners.
+Check both sidebar directions, then scroll past Now and back at a fixed width.
+
+On the 6475 follow-up, the 1080p recording showed up to 200 px of extra name
+travel on reveal: a fixed-width label was centered in a resizing native
+button. Letting it fill the proposal held the measured spacing constant in
+both directions through 408 px of travel, also on the mirrored RTL capture,
+without changing the 280 ms transition. With Reduce Motion on in simulator
+Settings, only the two endpoints appeared in the recording. The fixture used
+its text station plate, not downloaded provider artwork.
+
+This was **not a vertical performance fix**. Repeating the all-scheduled travel control above
+gave 39.61 → 38.30 ms median p95 and 8/737 → 10/735 intervals over 50 ms.
+A separate main-thread sample showed AttributeGraph updates and hosting-view
+layout, including glass layout; it does not isolate a particular control as
+the cause. A row sizing/focus experiment did not materially improve p95 and
+was discarded.
+
 ### Custom Home rows with multiple sources
 
 Select `home-single-collection-row`, `home-multi-source-row`,
