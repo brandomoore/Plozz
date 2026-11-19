@@ -1044,9 +1044,6 @@ struct PlozziOSTabShell: View {
     @State private var retainsExplicitWatchlistEntry = false
     @State private var retainsExplicitDownloadEntry = false
     @State private var downloadNavigationID: UUID?
-    @State private var searchFocusRequest = 0
-    @State private var searchReplaceQueryRequest = 0
-    @State private var navigationRootRequest = 0
     @State private var hasChosenNavigationDestination = false
     @State private var scrollToTopRequest = 0
     let homeViewModelBox: LazyViewState<HomeViewModel>
@@ -1282,19 +1279,7 @@ struct PlozziOSTabShell: View {
 
     private func selectDestination(_ destination: PlozziOSDestination) {
         isShowingMorePage = false
-        let wasShowingSearch = effectiveSelectedDestination == .search
-        let resolved = resolvedDestination(destination)
-        selectedDestination = resolved
-        guard resolved == .search else { return }
-        // Pressing Search always lands in the field with the keyboard, whether the
-        // viewer is coming from another tab or pressing Search again while already
-        // there. A re-tap also starts a new search, so the previous query is cleared
-        // instead of being left behind the keyboard.
-        searchFocusRequest &+= 1
-        // Pressing Search means "search", even when a detail page was pushed on top
-        // of the search results: return that stack to its root first, then focus.
-        navigationRootRequest &+= 1
-        if wasShowingSearch { searchReplaceQueryRequest &+= 1 }
+        selectedDestination = resolvedDestination(destination)
     }
 
     private func consumeStandaloneEntryIfNeeded() {
@@ -1332,30 +1317,6 @@ struct PlozziOSTabShell: View {
                 destinationContent(for: destination, keepsNavigationBar: isOverflow)
                     // Keep the stack itself directly hosted by Tab so iPad can merge its toolbar.
                     .plozzOpaqueNavigationChrome()
-                    // Search results push a detail page through a view-based link, so
-                    // the Search tab needs UIKit to pop back to its root when the tab
-                    // is pressed. Inert for every other destination.
-                    .background {
-                        PlozziOSNavigationPopProxy(
-                            request: navigationRootRequest,
-                            isSearch: destination == .search,
-                            onReselect: destination == .search
-                                ? {
-                                    // A re-tap never reaches the TabView binding, so
-                                    // the shell is told explicitly: focus the field,
-                                    // clear the previous query, return to the results.
-                                    if FanoutDiagnostics.isEnabled {
-                                        FanoutDiagnostics.emit(
-                                            "TABRESELECT t=\(Int(ProcessInfo.processInfo.systemUptime * 1000))"
-                                        )
-                                    }
-                                    selectDestination(.search)
-                                }
-                                : nil
-                        )
-                        .frame(width: 0, height: 0)
-                        .allowsHitTesting(false)
-                    }
                     .toolbar {
                         if isOverflow, destination != .downloads {
                             PlozziOSOverflowBackToolbarItem(action: overflowNavigation.returnToMore)
@@ -1489,7 +1450,7 @@ struct PlozziOSTabShell: View {
                 onShowSettings: showSettings,
                 keepsNavigationBar: keepsNavigationBar
             )
-            .plozziOSItemNavigation(appModel: appModel, resetsOnSearchRootRequest: true)
+            .plozziOSItemNavigation(appModel: appModel)
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
         case .allLibraries:
@@ -1613,9 +1574,6 @@ struct PlozziOSTabShell: View {
 
         .tabViewStyle(.sidebarAdaptable)
         .tint(palette.primaryText)
-        .environment(\.plozziOSSearchFocusRequest, searchFocusRequest)
-        .environment(\.plozziOSSearchReplaceQueryRequest, searchReplaceQueryRequest)
-        .environment(\.plozziOSNavigationRootRequest, navigationRootRequest)
         .modifier(PlozziOSNavigationBackground(
             hidesRegularTabBackdrop: effectiveSelectedDestination == .home && !isShowingMorePage
         ))

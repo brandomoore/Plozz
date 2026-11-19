@@ -47,9 +47,8 @@ configuration and credentials out of committed guidance.
 - Seed the detail stage only with landscape artwork. A portrait poster
   stretched into the landscape hero and then replaced by the backdrop reads as
   resizing.
-- Scope shell navigation request counters to the stack that owns them. A
-  Search-root request must not pop or reset other tabs' navigation or scroll
-  positions.
+- Scope shell navigation requests to the stack that owns them. Other tabs
+  must keep their pushed pages and scroll positions.
 - Keep these invariants covered by hosted/rendered tests; see
   [SwiftUI guidelines](docs/swiftui-guidelines.md#hero-continuity) and
   [page loading scaffold](docs/page-loading-scaffold.md#hero-stages).

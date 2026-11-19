@@ -107,11 +107,6 @@ class UILoadingStateGuardTests(unittest.TestCase):
         self.assertIn("prefetchesOpeningSeason: false", environment)
         view_model = (ROOT / "Sources/FeatureHomeCore/ItemDetailViewModel.swift").read_text()
         self.assertIn("prefetchesOpeningSeason: Bool = false", view_model)
-        # A window-wide cover installed for the push blocked every touch on the
-        # destination until the transition completed. It was a fork-only gate;
-        # upstream lets the pushed page accept input as soon as it is interactive.
-        proxy = (ROOT / "Sources/AppShelliOS/PlozziOSNavigationPopProxy.swift").read_text()
-        self.assertNotIn("pushShield", proxy)
 
     def test_allows_reserved_placeholder(self) -> None:
         path = self.write("Rail.swift", """

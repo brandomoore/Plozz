@@ -107,8 +107,7 @@ between Home and detail:
 - **Landscape seeds only.** Never seed the landscape detail hero with a portrait
   poster; scaling it to fill and later swapping in the backdrop reads as the
   hero resizing.
-- **Scope navigation requests.** A request owned by one tab (for example the
-  Search-root pop/focus request) must be observed only by that tab's navigation
+- **Scope navigation requests.** A request owned by one tab must be observed only by that tab's navigation
   stack. Other tabs must keep their pushed pages and scroll positions.
 
 See [page loading scaffold](page-loading-scaffold.md#hero-stages) for the

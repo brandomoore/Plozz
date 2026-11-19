@@ -34,27 +34,13 @@ struct PlozziOSArtworkItemRoute: Hashable {
 private struct PlozziOSItemNavigationModifier: ViewModifier {
     let appModel: PlozziOSAppModel
     var registersScreenshotRouting = false
-    /// Only the Search stack answers the shell's Search-root request. Applying
-    /// the same counter to every tab cleared pushed pages in Home, Library and
-    /// Downloads when the viewer only meant to leave Search.
-    var resetsOnSearchRootRequest = false
     @State private var navigatedItem: MediaItem?
     @State private var navigatedArtwork: PlozziOSArtworkItemRoute?
     @State private var navigatedPerson: PlozziOSPersonRoute?
-    @Environment(\.plozziOSNavigationRootRequest) private var navigationRootRequest
     @State private var navigatedLibrary: PlozziOSLibraryRoute?
 
     func body(content: Content) -> some View {
         content
-            // Pressing the Search tab with a page pushed returns this stack to its root,
-            // so the viewer lands in the search field instead of staying on the detail
-            // page they had opened from a result.
-            .onChange(of: navigationRootRequest) { _, _ in
-                guard resetsOnSearchRootRequest else { return }
-                navigatedItem = nil
-                navigatedPerson = nil
-                navigatedArtwork = nil
-            }
             .navigationDestination(item: $navigatedItem) { item in
                 PlozziOSItemPage(appModel: appModel, item: item)
                     .modifier(ScreenshotArrivalBeacon(appModel: appModel, enabled: registersScreenshotRouting))
@@ -266,13 +252,11 @@ extension View {
     /// stack does not overwrite the seams the capture run drives.
     func plozziOSItemNavigation(
         appModel: PlozziOSAppModel,
-        registersScreenshotRouting: Bool = false,
-        resetsOnSearchRootRequest: Bool = false
+        registersScreenshotRouting: Bool = false
     ) -> some View {
         modifier(PlozziOSItemNavigationModifier(
             appModel: appModel,
-            registersScreenshotRouting: registersScreenshotRouting,
-            resetsOnSearchRootRequest: resetsOnSearchRootRequest
+            registersScreenshotRouting: registersScreenshotRouting
         ))
     }
 }
