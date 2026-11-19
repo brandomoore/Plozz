@@ -1328,27 +1328,10 @@ private struct PlozziOSHeroBackdrop: View {
 
     var body: some View {
         ZStack {
-            if extendsArtwork {
-                PlozziOSExtendedHeroArtwork(height: height, surfaceRole: surfaceRole) { layout in
-                    stillArtwork()
-                        .frame(width: layout.width, height: layout.height)
-                        .clipped()
-                }
+            stillArtwork()
                 .opacity(preparedArtwork?.opacity ?? 1)
-                // A trailer fills the stage rather than being mirrored into it.
-                //
-                // One AVPlayer renders in exactly one AVPlayerLayer at a time,
-                // so a mirrored copy is not something that can be drawn: the
-                // second layer stays empty and shows the still image behind it,
-                // which is a different picture from the frame playing above it.
-                // That read as a hard line across the hero — the artwork simply
-                // stopped and something else started. The mirror is there to buy
-                // height without cropping the picture harder, and video is the
-                // one case where it cannot, so video takes the crop instead.
-                trailerLayer
-            } else {
-                artwork()
-            }
+            // A trailer fills the stage; a single AVPlayer can't render in its mirrors.
+            trailerLayer
 
             // Gentle black legibility darkening behind the title (kept true to the
             // image, not a grey wash).
@@ -1386,15 +1369,17 @@ private struct PlozziOSHeroBackdrop: View {
         )
     }
 
-    /// The picture itself: artwork, plus the trailer once it is rolling, filling
-    /// one band. The extended stage composes those two halves itself, because
-    /// there the trailer spans the whole stage while the still is mirrored into
-    /// it.
-    private func artwork() -> some View {
-        ZStack {
-            stillArtwork()
-                .opacity(preparedArtwork?.opacity ?? 1)
-            trailerLayer
+    // Reflect the resolved picture, never the translucent loading fill. Stacking
+    // that fill in the reflection overlap draws a horizontal line through it.
+    @ViewBuilder
+    private func picture(_ image: Image) -> some View {
+        let artwork = PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+        if extendsArtwork {
+            PlozziOSExtendedHeroArtwork(height: height, surfaceRole: surfaceRole) { layout in
+                artwork.frame(width: layout.width, height: layout.height).clipped()
+            }
+        } else {
+            artwork
         }
     }
 
@@ -1402,7 +1387,7 @@ private struct PlozziOSHeroBackdrop: View {
     private func stillArtwork() -> some View {
         if let preparedArtwork {
             if let image = preparedArtwork.image {
-                PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+                picture(image)
             } else {
                 palette.backgroundBase
             }
@@ -1448,12 +1433,12 @@ private struct PlozziOSHeroBackdrop: View {
                 PlozziOSHeroArtworkFallback.cacheIdentity($0, style: style)
             }
         ) { image in
-            PlozziOSHeroArtworkImage(image: image, style: style, surfaceRole: surfaceRole)
+            picture(image)
         } placeholder: {
             if let seedArtwork {
-                PlozziOSHeroArtworkImage(
-                    image: Image(uiImage: seedArtwork), style: style, surfaceRole: surfaceRole
-                )
+                picture(Image(uiImage: seedArtwork))
+            } else if surfaceRole == .home {
+                palette.fill
             } else {
                 palette.backgroundBase
             }

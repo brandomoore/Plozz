@@ -775,6 +775,10 @@ On iPhone and iPad, the loading and loaded Home layouts share the hero visibilit
 gate. Disabling the hero or deselecting all its sources removes both the carousel
 and its placeholder, including the reserved height. Only an active hero extends
 under the top safe area; a rows-only Home keeps its first row below navigation.
+On compact Home, the first layout after profile selection places the hero behind
+the status bar and the profile button below it. While a selected title's artwork
+loads, a single fill occupies the final artwork frame; only a real picture gets
+reflected. The metadata, actions and following row do not wait for the picture.
 The Home artwork, legibility scrim, and dissolve mask share window-wide bounds,
 including behind native side chrome. The title, actions, paging, and touch targets
 retain their safe-area layout; extending the artwork does not extend hit testing.

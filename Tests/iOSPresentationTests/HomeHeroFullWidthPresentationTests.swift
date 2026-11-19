@@ -663,6 +663,65 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
+    func testCompactHomeArtworkPlaceholderOccupiesTheLoadedFrame() async throws {
+        let item = try await artworkItem()
+        let pull = PlozziOSHomeHeroPullModel()
+        try await withWindow(
+            item: item, size: CGSize(width: 390, height: 844), sizeClass: nil,
+            insets: .zero, pull: pull
+        ) { window, host in
+            let app = PlozziOSAppModel(accountStore: AccountStore(secureStore: InMemorySecureStore()))
+            let trailers = HeroTrailerController()
+            let sidebar = PlozziOSSidebarGeometryModel()
+            var origins: [CGFloat] = []
+            @MainActor func home(ready: Bool) -> AnyView {
+                AnyView(NavigationStack {
+                    PlozziOSHomeScrollView(heroActive: true, showsPageActions: true) {
+                        PlozziOSHomeHeroCarousel(items: [item], autoAdvance: false, autoAdvanceSeconds: 30,
+                                                 onPlay: { _ in }, pullModel: pull)
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                                origins.append($0)
+                            }
+                    } rows: {
+                        Text("Continue Watching")
+                    } pageActions: {
+                        PlozziOSHomePageActions(showsAudio: false, isMuted: true,
+                                                onToggleMute: {}, onShowSettings: {})
+                    }
+                    .scrollClipDisabled()
+                    .background(Color.black.ignoresSafeArea())
+                    .toolbar(.hidden, for: .navigationBar)
+                }
+                .environment(app).environment(trailers).environment(sidebar)
+                .environment(\.horizontalSizeClass, .compact)
+                .environment(\.plozziOSHeroContainerHeight, 844)
+                .environment(\.plozzArtworkSourceReady, ready)
+                .environment(\.themePalette, .dark).environment(\.colorScheme, .dark))
+            }
+            host.rootView = home(ready: false)
+            try await waitForHostedLayout(window)
+            let before = snapshot(window, name: "compact-home-awaiting-artwork")
+            let x: CGFloat = 12
+            let fill = try pixel(before, at: CGPoint(x: x, y: 120))
+            XCTAssertGreaterThan(fill[0], 10, "The placeholder should be visible above the black page.")
+            for y in 1...100 {
+                let sample = try pixel(before, at: CGPoint(x: x, y: CGFloat(y)))
+                XCTAssertEqual(Int(sample[0]), Int(fill[0]), accuracy: 3, "Unexpected band at y=\(y)")
+            }
+            host.rootView = home(ready: true)
+            try await waitForHostedLayout(window)
+            let after = snapshot(window, name: "compact-home-with-artwork")
+            XCTAssertGreaterThan(try pixel(after, at: CGPoint(x: x, y: 10))[1], 100)
+            XCTAssertFalse(origins.isEmpty)
+            for y in origins { XCTAssertEqual(y, 0, accuracy: 1, "The hero must start at the top even on first layout.") }
+            for (term, darkTerms) in [("Play", Set(["Play"])), ("Continue Watching", Set<String>())] {
+                let a = try XCTUnwrap(HeroTextInk.frames(in: before, terms: [term], darkTerms: darkTerms)[term])
+                let b = try XCTUnwrap(HeroTextInk.frames(in: after, terms: [term], darkTerms: darkTerms)[term])
+                XCTAssertEqual(a.midY, b.midY, accuracy: 1)
+            }
+        }
+    }
+
     func testScrollingHomeActionsMatchToolbarFreeNativeRendering() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Scroll-edge effects require iOS 26.") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)

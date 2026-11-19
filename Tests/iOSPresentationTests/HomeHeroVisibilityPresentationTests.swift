@@ -768,13 +768,21 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
 
                 app.settings.hero.settings.isEnabled = true
                 try await self.settle(window)
-                // The fixture window and the hero's own container are measured by
-                // different geometry passes (the host window is shorter than the
-                // test window), so assert the reserved band is hero-sized rather
-                // than pinning it to an unrelated window height.
                 let addedHeight = scroll.contentSize.height - rowsHeight
-                XCTAssertGreaterThan(addedHeight, 520, "The hero must reserve its band.")
-                XCTAssertLessThanOrEqual(addedHeight, 712, "The hero must not take the whole page.")
+                if sizeClass == .compact {
+                    // The hero now underlaps the fixture's entire top inset. Its
+                    // overlaid avatar replaces the rows-only 44pt action row.
+                    let inset = try XCTUnwrap(window.rootViewController?.view.safeAreaInsets.top)
+                    let reserved = addedHeight + inset + 44
+                    let expected = PlozziOSHeroMetrics.height(
+                        style: .compactPortrait, surfaceRole: .home, dynamicTypeSize: .large,
+                        containerHeight: window.bounds.height
+                    )
+                    XCTAssertEqual(reserved, expected, accuracy: 1)
+                } else {
+                    XCTAssertGreaterThan(addedHeight, 520, "The hero must reserve its band.")
+                    XCTAssertLessThanOrEqual(addedHeight, 712, "The hero must not take the whole page.")
+                }
 
                 app.settings.hero.settings.sources = []
                 try await self.settle(window)

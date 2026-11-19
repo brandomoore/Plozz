@@ -44,7 +44,6 @@ struct PlozziOSObserveHomeContent: ViewModifier {
 struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     @Environment(\.plozzMetrics) private var metrics
     @State private var viewportWidth: CGFloat = 0
-    @State private var safeAreaTop: CGFloat = 0
     let heroActive: Bool
     let showsPageActions: Bool
     let mediaOpacity: Double
@@ -69,15 +68,28 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
     }
 
     var body: some View {
-        if #available(iOS 26.0, *) {
-            scrollContent
-                .scrollEdgeEffectStyle(heroActive && !showsPageActions ? .soft : .automatic, for: .top)
+        if showsPageActions {
+            // Read the inset in the same layout pass as the hero. An async window
+            // probe starts at zero on profile entry and shifts the entire page later.
+            GeometryReader { proxy in
+                styledScroll(safeAreaTop: proxy.safeAreaInsets.top)
+            }
         } else {
-            scrollContent
+            styledScroll(safeAreaTop: 0)
         }
     }
 
-    private var scrollContent: some View {
+    @ViewBuilder
+    private func styledScroll(safeAreaTop: CGFloat) -> some View {
+        if #available(iOS 26.0, *) {
+            scrollContent(safeAreaTop: safeAreaTop)
+                .scrollEdgeEffectStyle(heroActive && !showsPageActions ? .soft : .automatic, for: .top)
+        } else {
+            scrollContent(safeAreaTop: safeAreaTop)
+        }
+    }
+
+    private func scrollContent(safeAreaTop: CGFloat) -> some View {
         ScrollView {
             // Eager vertical sizing avoids estimated heights changing during scrolling.
             VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionGap(metrics: metrics)) {
@@ -106,12 +118,6 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
         .ignoresSafeArea(.container, edges: heroActive && !showsPageActions ? .top : [])
         .modifier(PlozziOSReducedTransparencyScrollFade(enabled: heroActive))
         .background {
-            if showsPageActions && heroActive {
-                PlozziOSWindowSafeAreaTopReader { safeAreaTop = $0 }
-                    .frame(width: 0, height: 0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
             PlozziOSStationaryNavigationSource()
                 .frame(width: 0, height: 0)
         }
