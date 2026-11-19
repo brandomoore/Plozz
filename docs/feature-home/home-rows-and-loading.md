@@ -456,6 +456,11 @@ browse-navigation journey.
 
 ## Recently Added watched filtering
 
+Jellyfin and Emby library Recently Added rows and See All use the user's
+library-scoped Latest feed in server order. A new episode can move an existing
+show to the front without changing its series creation date. The library grid's
+explicit Date Added sort still uses the item's own date.
+
 Screens & Navigation > Home > Filtering offers **Recently Added** under
 **Hide watched content**, off by default and saved per profile. The shared presentation policy covers combined,
 per-library, and typed server-authored Recently Added rows on TV and mobile. It leaves
@@ -539,6 +544,9 @@ server addresses, credentials, media IDs/titles or response bodies.
   selecting the already active preset does nothing.
   **Include Next Up** is a profile-scoped setting inside the **Continue Watching**
   section's configuration on every platform, alongside its artwork choice.
+  Visible Continue Watching labels show the episode number and name beneath
+  the series title (`S1 E2 · Episode name`). Spoiler protection omits the name
+  for unfinished episodes, including those already in progress.
   **Continue Watching action** chooses **Open details** (the default) or **Play**
   for movie/episode cards on Home, including merged Next Up entries and every TV
   Home layout. Existing saved choices are preserved; profiles without a saved

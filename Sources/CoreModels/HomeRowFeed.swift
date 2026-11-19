@@ -42,6 +42,18 @@ public struct HomeRowPage: Sendable {
 }
 
 public extension MediaProvider {
+    func libraryRecentlyAddedPage(in libraryID: String, kind: MediaItemKind, startIndex: Int, limit: Int) async throws -> HomeRowPage {
+        try await catalogRecentlyAddedPage(in: libraryID, kind: kind, startIndex: startIndex, limit: limit)
+    }
+
+    func catalogRecentlyAddedPage(in libraryID: String, kind: MediaItemKind, startIndex: Int, limit: Int) async throws -> HomeRowPage {
+        let page = try await items(in: libraryID, kind: kind, page: .init(
+            startIndex: startIndex, limit: limit, sort: .init(field: .dateAdded, direction: .descending)
+        ))
+        guard page.startIndex == startIndex, page.items.count <= limit else { throw AppError.invalidResponse }
+        return try HomeRowPage(page)
+    }
+
     func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage {
         try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
     }

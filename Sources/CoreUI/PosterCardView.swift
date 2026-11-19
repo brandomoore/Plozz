@@ -200,7 +200,7 @@ public struct PosterCardView: View {
     }
 
     private var cardAccessibilityValue: String? {
-        let subtitle = usesProgressOnly ? item.posterCaptionSubtitle(showsRuntime: true)
+        let subtitle = usesProgressOnly ? cardSubtitle(showsRuntime: true)
             : (showsSeriesArtwork ? nil : subtitleText)
         guard var count = MediaPlaybackIndicatorState(item).episodeCountAccessibilityLabel(
             enabled: showsUnwatchedEpisodeCount, hidesStatus: hidesPlaybackStatus
@@ -845,7 +845,12 @@ public struct PosterCardView: View {
             captionSubtitle.locale = locale
             return String(localized: captionSubtitle) // l10n:content — native caption/accessibility boundary, resolved with the current environment locale
         }
-        return item.posterCaptionSubtitle(showsRuntime: !showsResumeChip)
+        return cardSubtitle(showsRuntime: !showsResumeChip)
+    }
+
+    private func cardSubtitle(showsRuntime: Bool) -> String? {
+        item.posterCaptionSubtitle(showsRuntime: showsRuntime, continueWatchingSpoilers:
+            presentationArtworkPolicy.area == .continueWatching && showsCaption ? spoilerSettings : nil, locale: locale)
     }
 
     // MARK: Resume chip
@@ -1759,13 +1764,22 @@ public extension MediaItem {
     }
 
     /// Shared provider metadata for SwiftUI cards and native library cells.
-    func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true) -> String? { // l10n:content
+    func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true, // l10n:content — joins provider metadata and locale-resolved remaining time for native captions
+                               continueWatchingSpoilers: SpoilerSettings? = nil, locale: Locale = .current) -> String? {
         var parts: [String] = []
-        if showsSubtitle, let subtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !subtitle.isEmpty {
+        if showsSubtitle, let spoilers = continueWatchingSpoilers, kind == .episode, let code = seasonEpisodeLabel {
+            parts.append(code)
+            let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !spoilers.shouldHideText(for: self), let parentTitle, !parentTitle.isEmpty,
+               !name.isEmpty, name != parentTitle, name != code {
+                parts.append(name)
+            }
+        } else if showsSubtitle, let subtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !subtitle.isEmpty {
             parts.append(subtitle)
         }
         if showsRuntime, let runtime = cardRuntimeText?.trimmingCharacters(in: .whitespacesAndNewlines), !runtime.isEmpty {
-            parts.append(cardRuntimeIsRemaining ? "\(runtime) left" : runtime)
+            let remaining = LocalizedStringResource("\(runtime) left", locale: locale)
+            parts.append(cardRuntimeIsRemaining ? String(localized: remaining) : runtime) // l10n:content — final card caption/accessibility string in the view's locale
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }

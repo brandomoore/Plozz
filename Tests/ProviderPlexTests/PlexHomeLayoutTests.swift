@@ -21,6 +21,27 @@ final class PlexHomeLayoutTests: XCTestCase {
     ]}}
     """
 
+    func testLibraryRecentlyAddedUsesNativeTVShelfAndItsContinuation() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/hubs/sections/2", json: """
+        {"MediaContainer":{"Hub":[{"hubIdentifier":"tv.recentlyadded.2","type":"mixed",
+        "title":"Nouveautés","key":"/hubs/home/recentlyAdded?contentDirectoryID=2"}]}}
+        """)
+        stub.stubSequence(pathSuffix: "/hubs/home/recentlyAdded", jsons: [
+            #"{"MediaContainer":{"offset":0,"totalSize":3,"Metadata":[{"ratingKey":"ep","type":"episode"},{"ratingKey":"season","type":"season"}]}}"#,
+            #"{"MediaContainer":{"offset":2,"totalSize":3,"Metadata":[{"ratingKey":"show","type":"show"}]}}"#
+        ])
+        let provider: any MediaProvider = PlexProvider(session: session(), http: stub)
+        let first = try await provider.libraryRecentlyAddedPage(in: "2", kind: .series, startIndex: 0, limit: 2)
+        XCTAssertEqual(first.items.map(\.id), ["ep", "season"])
+        XCTAssertEqual(first.items.map(\.kind), [.episode, .season])
+        let offset = try XCTUnwrap(first.nextOffset)
+        let next = try await provider.libraryRecentlyAddedPage(in: "2", kind: .series, startIndex: offset, limit: 2)
+        XCTAssertEqual(next.items.map(\.id), ["show"])
+        XCTAssertEqual(next.items.first?.libraryID, "2")
+        XCTAssertNil(next.nextOffset)
+    }
+
     private let promoted = """
     {"MediaContainer":{"Hub":[
       {"hubIdentifier":"movie.recentlyadded.1","context":"hub.movie.recentlyadded",

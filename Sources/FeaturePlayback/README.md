@@ -612,8 +612,16 @@ omits them. Its generated language/codec and numbered fallback labels are not
 treated as authored names. Real-world metadata regression cases cover release
 groups, translation credits, regional/script variants, colored SDH and commentary;
 names never change automatic selection or forced-subtitle disposition.
-Only colliding menu labels gain a localized track-number suffix; unique names,
+Colliding subtitle labels first expose known format differences, such as SRT,
+ASS or WebVTT. Codec aliases normalize to the same format, and missing/unknown
+formats are not invented. Labels still identical after that gain a localized
+track-number suffix. This applies to primary and secondary subtitles, including
+the native mobile menu; unique names,
 selection IDs, preferred-language ordering and external-subtitle markers are unchanged.
+This keeps the useful title/language/format distinction found in
+[Kodi](https://github.com/xbmc/xbmc/blob/master/xbmc/video/dialogs/GUIDialogSubtitleSettings.cpp)
+and [mpv](https://github.com/mpv-player/mpv/blob/master/player/lua/select.lua)
+without adding format noise to every subtitle row.
 Native subtitle renditions also reserve original names before numbering duplicates,
 so a title such as `English 2` cannot collide with a generated suffix.
 Source version tags are deduplicated only when actually shown in the label; conflicting
@@ -1921,6 +1929,28 @@ Rendering uses source time minus the subtitle offset. Paused frames redraw only 
 cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains
 video-rect mapping, HDR brightness and control avoidance.
+
+`ASSSubtitleRendererTests` checks authored sign starts and ends at millisecond
+boundaries. A deterministic test feeds the real pacer, render-lead estimator
+and libass a virtual clock with 50 or 100 ms per render at 23.976 and 60 Hz.
+Each completed bitmap must match the cue at its delivery time; a previous
+bitmap may remain visible between completions. This models steady render
+cost, not a particular device, async driver scheduling or screen composition.
+Its opt-in `testLocalASSDriverBoundaryTiming` probe
+(`PLOZZ_ASS_TIMING_PROBE=1`) warms the rasterizer, then measures callback delivery
+for short original vector cues at simulated 23.976, 24 and 60 Hz tick cadences.
+It reports every boundary and rejects missing transitions; it is not a
+wall-clock latency gate. These measurements exclude video decoding, SwiftUI
+overlay composition, physical display latency and cold font initialization.
+Passing parser/rasterizer tests alone does not establish frame-accurate A/V sync;
+small reported offsets require the affected media and a rendered comparison.
+The app-hosted `NativeSubtitlePresentationTests.testLocalASSVideoBoundaryTiming`
+probe (`PLOZZ_ASS_VIDEO_TIMING_PROBE=1`) uses `Fixtures/ass-sync.mkv`: an original
+640x360, 24 fps black video with a green reference square and a separate white
+ASS vector square, both active for the first half of seconds 2 through 9.
+It logs overlay delivery against the engine clock. A screen recording must
+compare the two squares' actual painted transitions separately; the callback
+log is not proof of compositor timing or physical Apple TV/iPhone behavior.
 
 Authored ASS frames keep clearly separated upper and lower artwork in separate
 bitmap regions. The upper region stays fixed; only a lower region that intersects

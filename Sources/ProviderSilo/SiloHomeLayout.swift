@@ -2,6 +2,23 @@ import Foundation
 import CoreModels
 
 extension SiloProvider {
+    public func libraryRecentlyAddedPage(
+        in libraryID: String, kind: MediaItemKind, startIndex: Int, limit: Int
+    ) async throws -> HomeRowPage {
+        guard kind == .movie || kind == .series else {
+            return try await catalogRecentlyAddedPage(in: libraryID, kind: kind, startIndex: startIndex, limit: limit)
+        }
+        guard startIndex >= 0, limit > 0, startIndex < Int.max - limit else { throw AppError.invalidResponse }
+        let response: SiloHomeResponse = try await client.request("/library/\(try SiloAPI.pathComponent(libraryID))/sections")
+        try Self.validateHomeSections(response.sections)
+        guard let row = response.sections.first(where: { $0.definition.kind == .recentlyAdded }) else {
+            return .init(items: [], nextOffset: nil)
+        }
+        var scope = HomeItemScope(allowedLibraryIDs: nil)
+        let items = try await homeItems(row, limit: startIndex + limit + 1, scope: &scope)
+        return .prefix(items.map { $0.taggingLibrary(libraryID) }, startIndex: startIndex, limit: limit)
+    }
+
     public func serverHomeLayout() async throws -> ServerHomeLayout? {
         let sections: [SiloHomeSection]
         do {
