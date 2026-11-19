@@ -2143,6 +2143,9 @@ private struct PlozziOSStableHomeHeroMetadata: View {
             detailPageSettings: ratingPreferences,
             textSize: textSize
         )
+        // The carousel fades the entire foreground. Don't pass its animation
+        // into the centered rows when a title's metadata changes width.
+        .transaction { $0.animation = nil }
     }
 }
 

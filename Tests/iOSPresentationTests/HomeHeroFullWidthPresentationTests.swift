@@ -162,45 +162,73 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    func testHomeHeroMetadataStaysOpaqueAcrossPageChange() async throws {
-        let first = MediaItem(id: "first", title: "First", kind: .movie,
-                              officialRating: "PG-13", genres: ["Adventure"], allowsTitleBasedMetadataMatching: false)
+    func testCompactHeroRatingsFadeInPlaceAcrossPageChange() async throws {
+        let first = MediaItem(
+            id: "first", title: "First", kind: .movie, officialRating: "PG-13", genres: ["Adventure"],
+            ratings: [.init(source: .imdb, value: 8.7, scale: .outOfTen)], allowsTitleBasedMetadataMatching: false
+        )
         var second = first
         second.id = "second"
         second.title = "Next"
+        second.officialRating = "TV-MA"
+        second.genres = ["Science Fiction", "Thriller", "Mystery", "Fantasy"]
+        second.ratings.append(.init(source: .rottenTomatoes, value: 92, scale: .percent))
         var pinned: Set<String> = []
         try await withWindow(
-            item: first, size: CGSize(width: 834, height: 720), sizeClass: .regular,
-            insets: .zero, pull: PlozziOSHomeHeroPullModel(), isRunningOnMac: true,
-            heroItems: [first, second], onHeroPinnedItemsChanged: { pinned = $0 }
-        ) { window, host in
-            // Same facts on both slides: any dip in their ink is a paging effect,
-            // not a different badge or a change in text width.
-            let before = snapshot(window, name: "hero-facts-before-paging")
-            let region = try XCTUnwrap(HeroTextInk.frames(in: before, terms: ["Adventure"])["Adventure"])
-            let full = try pagingControlInk(in: before, region: region).peak
-            XCTAssertGreaterThan(full, 160)
-            let controller = try XCTUnwrap(findController(
-                PlozziOSHeroKeyboardControls.KeyboardViewController.self, in: host
-            ))
-            let next = try XCTUnwrap(controller.keyCommands?.first { $0.input == UIKeyCommand.inputRightArrow })
-            XCTAssertTrue(UIApplication.shared.sendAction(try XCTUnwrap(next.action), to: controller, from: next, for: nil))
-            let renderer = UIGraphicsImageRenderer(size: region.size)
-            var minimum = full
-            var sawTransition = false
-            let start = ContinuousClock.now
-            repeat {
+            item: first, size: CGSize(width: 390, height: 844), sizeClass: .compact,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel(), heroItems: [first, second],
+            autoAdvanceSeconds: 3, showsRatings: true, onHeroPinnedItemsChanged: { pinned = $0 }
+        ) { window, _ in
+            let readyDeadline = ContinuousClock.now + .seconds(2)
+            while pinned.isEmpty, ContinuousClock.now < readyDeadline {
                 try await Task.sleep(for: .milliseconds(16))
-                sawTransition = sawTransition || pinned == [first.id, second.id]
+            }
+            XCTAssertEqual(pinned, [first.id])
+            let before = snapshot(window, name: "hero-facts-before-paging")
+            let rows = try HeroTextInk.frames(in: before, terms: ["Adventure", "8.7"])
+            let bands = try ["Adventure", "8.7"].map { term in
+                let row = try XCTUnwrap(rows[term])
+                return CGRect(x: 0, y: row.midY.rounded() - 3, width: window.bounds.width, height: 6)
+            }
+            let region = bands[0].union(bands[1])
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2
+            let renderer = UIGraphicsImageRenderer(size: region.size, format: format)
+            @MainActor func frame() throws -> [(x: CGFloat?, peak: UInt8)] {
                 let image = renderer.image { context in
-                    context.cgContext.translateBy(x: -region.minX, y: -region.minY)
+                    context.cgContext.translateBy(x: 0, y: -region.minY)
                     window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
                 }
-                minimum = min(minimum, try pagingControlInk(in: image, region: CGRect(origin: .zero, size: region.size)).peak)
-            } while start.duration(to: .now) < .seconds(1)
-            XCTAssertTrue(sawTransition)
+                return try bands.map { band in
+                    let ink = try pagingControlInk(in: image, region: band.offsetBy(dx: 0, dy: -region.minY))
+                    return (ink.bounds?.minX, ink.peak)
+                }
+            }
+            var frames = [try frame()]
+            let deadline = ContinuousClock.now + .seconds(5)
+            while pinned != [first.id, second.id], ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(pinned, [first.id, second.id])
+            let start = ContinuousClock.now
+            repeat {
+                frames.append(try frame())
+                try await Task.sleep(for: .milliseconds(10))
+            } while start.duration(to: .now) < .milliseconds(850)
             XCTAssertEqual(pinned, [second.id])
-            XCTAssertGreaterThanOrEqual(Int(minimum), Int(full) - 12, "Home facts must not fade during paging or at landing.")
+            for row in bands.indices {
+                let samples = frames.map { $0[row] }
+                let hidden = try XCTUnwrap(samples.firstIndex { $0.peak == 0 }, "The title must swap while hidden.")
+                let outgoingX = try XCTUnwrap(samples.first?.x)
+                let incomingX = try XCTUnwrap(samples.last?.x)
+                XCTAssertGreaterThan(abs(incomingX - outgoingX), 8, "Row \(row) must exercise different centered layouts.")
+                for (phase, settledX) in [(samples[..<hidden], outgoingX), (samples[hidden...], incomingX)] {
+                    XCTAssertTrue(phase.contains { (95...205).contains($0.peak) }, "Exit and entry must both fade.")
+                    for sample in phase where sample.peak > 165 {
+                        XCTAssertEqual(try XCTUnwrap(sample.x), settledX, accuracy: 2, "Visible ratings should not slide.")
+                    }
+                }
+            }
         }
     }
 
@@ -1642,6 +1670,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         isRunningOnMac: Bool = false,
         tracksWindowHeight: Bool = false,
         heroItems: [MediaItem]? = nil,
+        autoAdvanceSeconds: Int? = nil,
+        showsRatings: Bool = false,
         onHeroPinnedItemsChanged: @escaping (Set<String>) -> Void = { _ in },
         exercise: (UIWindow, UIHostingController<AnyView>) async throws -> Void
     ) async throws {
@@ -1653,10 +1683,12 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             profileStore: ProfileStore(defaults: defaults)
         )
         app.settings.heroBackground.settings.homeTrailerEnabled = false
+        app.settings.hero.settings.showsRatings = showsRatings
         let sidebar = PlozziOSSidebarGeometryModel()
         let root = HomeHeroWidthFixture(
             items: heroItems ?? [item], pull: pull, nativeTabs: nativeTabs, sidebar: sidebar,
-            tracksWindowHeight: tracksWindowHeight, onPinnedItemsChanged: onHeroPinnedItemsChanged
+            tracksWindowHeight: tracksWindowHeight, autoAdvanceSeconds: autoAdvanceSeconds,
+            onPinnedItemsChanged: onHeroPinnedItemsChanged
         )
             .environment(app)
             .environment(sidebar)
@@ -1687,7 +1719,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitForHostedLayout(window)
+        // An auto-advancing hero's dwell gauge is never at rest.
+        if autoAdvanceSeconds == nil { try await waitForHostedLayout(window) }
         try await exercise(window, host)
     }
 
@@ -1902,6 +1935,7 @@ private struct HomeHeroWidthFixture: View {
     let nativeTabs: Bool
     let sidebar: PlozziOSSidebarGeometryModel
     var tracksWindowHeight = false
+    var autoAdvanceSeconds: Int?
     var onPinnedItemsChanged: (Set<String>) -> Void = { _ in }
 
     var body: some View {
@@ -1929,7 +1963,7 @@ private struct HomeHeroWidthFixture: View {
         NavigationStack {
             PlozziOSHomeScrollView(heroActive: true) {
                 PlozziOSHomeHeroCarousel(
-                    items: items, autoAdvance: false, autoAdvanceSeconds: 30,
+                    items: items, autoAdvance: autoAdvanceSeconds != nil, autoAdvanceSeconds: autoAdvanceSeconds ?? 30,
                     onPlay: { _ in }, onPinnedItemsChanged: onPinnedItemsChanged, pullModel: pull
                 )
             } rows: {
