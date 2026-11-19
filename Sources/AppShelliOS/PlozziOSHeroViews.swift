@@ -535,7 +535,6 @@ struct PlozziOSDetailHeroSection: View {
     /// Forwarded to the action row — see `presentsEpisodeStill` there.
     var presentsEpisodeStill: Bool = false
     var pullDistance: CGFloat = 0
-    var metadataHasRevealed: Binding<Bool>? = nil
 
     var body: some View {
         let style: HeroArtworkStyle = horizontalSizeClass == .compact
@@ -594,7 +593,6 @@ struct PlozziOSDetailHeroSection: View {
                 presentsEpisodeStill: presentsEpisodeStill
             )
         }
-        .mobileDetailForegroundEntrance(hasRevealed: metadataHasRevealed)
         .environment(\.plozziOSHeroLogoSize, appModel.settings.detailPage.settings.logoSize)
         .environment(
             \.heroScrimHeightScale,

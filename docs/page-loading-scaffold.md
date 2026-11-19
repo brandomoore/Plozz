@@ -129,7 +129,7 @@ loading and reveal behavior stable:
 - Mobile portrait detail shares Home's window-relative artwork height and mirrored
   continuation. The title sits at the artwork's lower edge; metadata and actions
   grow below it. Series seasons remain immediately below the complete header.
-- Mobile detail fades in title, metadata and actions in order after native entry,
+- Mobile detail lifts and fades in title, metadata, actions and visible rows in order after native entry,
   using available seed metadata without waiting for artwork, ratings, cast or
   related titles. Page-owned reveal state survives lazy hero reconstruction,
   Back navigation and player dismissal; later enrichment updates quietly.

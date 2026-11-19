@@ -97,9 +97,10 @@ between Home and detail:
   native entry completes gets a 0.15-second arrival fade, shared by the image
   and all reflections. Arrivals during navigation or while covered, cached and
   handed-off artwork, quality upgrades and return navigation do not fade.
-  Mobile detail fades the title, metadata, then controls in place after native
-  entry. Later enrichment and return navigation do not replay it. Reduce Motion
-  skips the stagger and fades.
+  Mobile detail lifts and fades the title, metadata, controls, then visible
+  sections below the hero after native entry. This never translates Home paging
+  metadata or the detail navigation bar. Later enrichment, scrolling and return
+  navigation do not replay it. Reduce Motion skips the entrance.
 - **Reserve async action slots.** A trailer button (or any action resolved after
   first paint) must reserve its final size from the start, or Play shifts when
   it arrives.

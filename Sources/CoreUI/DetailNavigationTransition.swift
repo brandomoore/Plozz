@@ -154,19 +154,31 @@ private struct MobileDetailStageReveal: ViewModifier {
     func body(content: Content) -> some View {
         if let phase {
             let timing = DetailEntranceTiming()
-            let steps = stage == .controls ? 2 : stage == .metadata ? 1 : 0
+            let steps = switch stage {
+            case .metadata: 1
+            case .controls: 2
+            case .episodes: 3
+            default: 0
+            }
+            let row = stage == .episodes
+            let travel: CGFloat = row ? 28 : DetailEntranceMotion.foregroundTravel
+            let waiting = phase == .waiting
             let animation = phase == .opening && !reduceMotion
-                ? DetailEntranceMotion.reveal(duration: timing.reveal).delay(Double(steps) * timing.stagger) : nil
-            // Only opacity gets the delayed transaction, never layout or a native control.
+                ? Animation.timingCurve(0.22, 0.65, 0.25, 1, duration: row ? 0.60 : timing.reveal)
+                    .delay(Double(steps) * timing.stagger) : nil
+            // Only page entry triggers the animation, never a later metadata update.
             content
-                .animation(animation) { $0.opacity(phase == .waiting ? 0 : 1) }
-                .allowsHitTesting(phase != .waiting)
-                .accessibilityHidden(phase == .waiting)
+                .offset(y: waiting && !reduceMotion ? travel : 0)
+                .opacity(waiting ? 0 : 1)
+                .animation(animation, value: waiting)
+                .allowsHitTesting(!waiting)
+                .accessibilityHidden(waiting)
         } else {
             content
         }
     }
 }
+
 #endif
 
 private struct DetailNavigationPopKey: EnvironmentKey {

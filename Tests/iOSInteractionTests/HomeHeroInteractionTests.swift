@@ -184,7 +184,13 @@ final class HomeHeroInteractionTests: XCTestCase {
             XCTAssertLessThan(play.frame.width, 130, "Plain movie Play should fit its icon and label.")
             XCTAssertGreaterThanOrEqual(play.frame.height, 44)
             capture("detail-hero-glass")
-            app.navigationBars.buttons.firstMatch.tap()
+            let back = app.navigationBars.buttons.firstMatch
+            let backFrame = back.frame
+            app.scrollViews.firstMatch.swipeUp()
+            XCTAssertTrue(back.isHittable)
+            XCTAssertEqual(back.frame.minY, backFrame.minY, accuracy: 1)
+            XCTAssertEqual(back.frame.minX, backFrame.minX, accuracy: 1)
+            back.tap()
             XCTAssertTrue(artwork.wait(for: \.isHittable, toEqual: true, timeout: 5))
         }
     }

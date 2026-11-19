@@ -192,9 +192,10 @@ renders only real results, including short rows, without a speculative skeleton.
 Its request still starts during page entry, not when the row scrolls into view.
 
 After native navigation finishes, the mobile detail title or logo, metadata
-(including the synopsis and badges), then action row fade in place. Like tvOS,
-each group starts 90 ms after the previous one and fades over 450 ms. Their
-layout and hit targets do not move. The plain Play button fits its icon and
+(including the synopsis and badges), and actions fade in and rise 10 points,
+starting 90 ms apart. Visible sections below the hero enter together on the
+next beat, rising 28 points. Scrolling does not replay the entrance. The
+artwork and native Back button do not participate. The plain Play button fits its icon and
 label; a progress bar or episode number takes space only when displayed.
 Cached metadata does not wait for live artwork-source resolution.
 Artwork handed off from Home or ready on the first frame displays immediately.

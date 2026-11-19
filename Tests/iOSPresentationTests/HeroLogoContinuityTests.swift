@@ -258,6 +258,7 @@ final class HeroLogoContinuityTests: XCTestCase {
                 onSelectSource: { _ in }, onSelectVersion: { _ in },
                 actionHandler: EntranceActions(), onPlay: { _, _ in }
             )
+            .mobileDetailForegroundEntrance()
             .environment(app)
             .environment(HeroTrailerController())
             .environment(PlozziOSSidebarGeometryModel())
@@ -354,18 +355,28 @@ final class HeroLogoContinuityTests: XCTestCase {
                 StagedSwatches(state: state).environment(\._accessibilityReduceMotion, reduced)
             )
             try await Task.sleep(for: .milliseconds(50))
-            XCTAssertEqual(try fixture.stageIntensities(), [0, 0, 0])
+            XCTAssertEqual(try fixture.stageFrame().intensities, [0, 0, 0, 0])
             state.metadataIsReady = true
             var frames = [[Int]]()
+            var tops = [[Int?]]()
             try await waitUntil {
-                let values = try fixture.stageIntensities()
-                frames.append(values)
-                return values.allSatisfy { $0 > 250 }
+                let frame = try fixture.stageFrame()
+                frames.append(frame.intensities)
+                tops.append(frame.tops)
+                return frame.intensities.allSatisfy { $0 == 255 }
             }
+            let final = try XCTUnwrap(tops.last)
             if reduced {
                 XCTAssertFalse(frames.contains { $0.contains { (5...249).contains($0) } || Set($0).count > 1 })
+                XCTAssertFalse(tops.contains { $0.contains(where: { $0 != nil }) && $0 != final })
             } else {
                 XCTAssertTrue(frames.contains { $0[0] > $0[1] + 15 && $0[1] > $0[2] + 15 }, "\(frames)")
+                XCTAssertTrue(frames.contains { $0[2] > $0[3] + 15 }, "Rows follow controls.")
+                for (column, minimumTravel) in [(1, 3), (3, 10)] {
+                    let landing = try XCTUnwrap(final[column])
+                    XCTAssertTrue(tops.compactMap { $0[column] }.contains { $0 >= landing + minimumTravel },
+                                  "Stage \(column) must rise to \(landing); edges: \(tops.compactMap { $0[column] })")
+                }
             }
         }
     }
@@ -952,6 +963,7 @@ final class HeroLogoContinuityTests: XCTestCase {
                 Color.white.detailEntranceStage(.logo)
                 Color.white.detailEntranceStage(.metadata)
                 Color.white.detailEntranceStage(.controls)
+                Color.white.detailEntranceStage(.episodes)
             }
             .frame(width: 300, height: 100)
             .mobileDetailForegroundEntrance(isReady: state.metadataIsReady)
@@ -1125,10 +1137,13 @@ final class HeroLogoContinuityTests: XCTestCase {
                     Double(sample.bytes[(290 * width + width / 2) * 4 + 1]))
         }
 
-        func stageIntensities() throws -> [Int] {
+        func stageFrame() throws -> (intensities: [Int], tops: [Int?]) {
             let bytes = try pixels().bytes
             let width = Int(window.bounds.width), y = Int(window.bounds.midY)
-            return [-100, 0, 100].map { Int(bytes[(y * width + width / 2 + $0) * 4]) }
+            let columns = [-112, -37, 37, 112].map { width / 2 + $0 }
+            return (columns.map { Int(bytes[(y * width + $0) * 4]) }, columns.map { x in
+                ((y - 75)...y).first { bytes[($0 * width + x) * 4] > 8 }
+            })
         }
 
         func playTextIntensity() throws -> Double {
