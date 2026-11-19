@@ -576,6 +576,33 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
+    func testReopenedRowShowsLogoAndScheduleOnTheFirstFrame() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let url = try fixture.seedLogo()
+        let item = MediaItem(id: UUID().uuidString, title: "Series title", kind: .series)
+        func mount(verified: Bool, scope: String) {
+            fixture.host.rootView = AnyView(DetailMetadataFixture(
+                state: SubjectState(item: item), root: item, style: .compactPortrait,
+                fallback: HeroLogoFallback(for: item) { url }, schedule: "New episode every Friday"
+            )
+            .environment(\.plozzArtworkSourceReady, verified)
+            .detailHeroLogoVisit(scope: scope, subject: item.stablePresentationID))
+        }
+        mount(verified: true, scope: "original")
+        try await waitUntil { try fixture.redSample().intensity > 245 && fixture.hasTitleText() }
+        fixture.host.rootView = AnyView(Color.black)
+        try await waitUntil { try !fixture.hasRedLogo() }
+        mount(verified: false, scope: "original")
+        let frame = try fixture.titleSample(afterScreenUpdates: true)
+        XCTAssertGreaterThan(frame.red, 245)
+        XCTAssertTrue(frame.hasWhite, "The ready schedule and reused logo belong on the same first frame.")
+        mount(verified: false, scope: "another profile")
+        let isolated = try fixture.titleSample(afterScreenUpdates: true)
+        XCTAssertLessThan(isolated.red, 10)
+        XCTAssertFalse(isolated.hasWhite)
+    }
+
     func testLateDetailWordmarkFadesUnlessMotionIsReduced() async throws {
         for reduced in [false, true] {
             let fixture = try Fixture()
@@ -587,7 +614,8 @@ final class HeroLogoContinuityTests: XCTestCase {
             fixture.host.rootView = AnyView(
                 DetailMetadataFixture(
                     state: SubjectState(item: item), root: item, style: .compactPortrait,
-                    fallback: HeroLogoFallback(for: item) { await lookup.resolve() }
+                    fallback: HeroLogoFallback(for: item) { await lookup.resolve() },
+                    schedule: "New episode every Friday"
                 )
                 .environment(\._accessibilityReduceMotion, reduced)
             )
@@ -597,9 +625,10 @@ final class HeroLogoContinuityTests: XCTestCase {
             lookup.release(url)
             var intensities: [UInt8] = []
             try await waitUntil {
-                let intensity = try fixture.redSample().intensity
-                intensities.append(intensity)
-                return intensity > 245
+                let frame = try fixture.titleSample()
+                intensities.append(frame.red)
+                if frame.red < 245 { XCTAssertFalse(frame.hasWhite, "The badge must not precede the logo.") }
+                return frame.red > 245 && frame.hasWhite
             }
             XCTAssertEqual(intensities.contains { (10...235).contains($0) }, !reduced,
                            "A late wordmark should fade only with motion enabled: \(intensities)")
@@ -899,12 +928,13 @@ final class HeroLogoContinuityTests: XCTestCase {
         var style: HeroArtworkStyle = .landscape
         var fallback: HeroLogoFallback? = nil
         var artworkSettings = ArtworkSettings(preference: .library)
+        var schedule: LocalizedStringResource? = nil
         var body: some View {
             PlozziOSHeroMetadata(
                 presentation: HeroPresentation(item: state.item, artworkStyle: style, surface: .detail),
                 style: style, mode: .detail,
                 fallbackPresentation: HeroPresentation(item: root, artworkStyle: style, surface: .detail),
-                logoFallback: fallback,
+                scheduleLine: schedule, logoFallback: fallback,
                 content: .identity
             )
             .environment(\.themePalette, .dark)
@@ -1090,6 +1120,17 @@ final class HeroLogoContinuityTests: XCTestCase {
                 .map { sample.bytes[$0] }
                 .max() ?? 0
             return (sample.image, intensity)
+        }
+
+        func titleSample(afterScreenUpdates: Bool = false) throws -> (red: UInt8, hasWhite: Bool) {
+            let bytes = try pixels(afterScreenUpdates: afterScreenUpdates).bytes
+            var red: UInt8 = 0
+            var white = 0
+            for i in stride(from: 0, to: bytes.count, by: 4) {
+                if bytes[i + 1] < 15 && bytes[i + 2] < 15 { red = max(red, bytes[i]) }
+                if min(bytes[i], bytes[i + 1], bytes[i + 2]) > 180 { white += 1 }
+            }
+            return (red, white > 100)
         }
 
         private func hasVisiblePixels(_ matches: (UInt8, UInt8, UInt8) -> Bool) throws -> Bool {

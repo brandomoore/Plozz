@@ -90,18 +90,17 @@ between Home and detail:
   fade in the logo itself without replaying the entrance.
   Reuse Home's displayed wordmark on detail entry when subject, profile and
   artwork policy still match; discovery ownership must not delay that handoff.
+  On mobile, also reuse the same detail page's cached wordmark on a row reopen.
+  Show a ready schedule badge with the title, or after a genuinely late logo
+  finishes fading so the visible badge never moves to accommodate the logo.
 - **Home slides stay opaque.** A carousel slide whose artwork is already loaded
   must not fade when the slide changes or while the page is pulled. An
   opacity animation tied to `backdropResolved` on every slide causes dimming and
   black flashes during pull.
-- **Ready detail artwork stays immediate.** Only artwork still missing when
-  native entry completes gets a 0.15-second arrival fade, shared by the image
-  and all reflections. Arrivals during navigation or while covered, cached and
-  handed-off artwork, quality upgrades and return navigation do not fade.
-  Mobile detail lifts and fades the title, metadata, controls, then visible
-  sections below the hero after native entry. This never translates Home paging
-  metadata or the detail navigation bar. Later enrichment, scrolling and return
-  navigation do not replay it. Reduce Motion skips the entrance.
+- **Ready detail artwork stays immediate.** The native push is the mobile
+  entrance; text, controls and rows do not run a second entrance. Only missing
+  artwork gets an arrival fade. See [detail and playback](feature-home/detail-and-playback.md)
+  for backdrop, reflection and Reduce Motion behavior.
 - **Reserve async action slots.** A trailer button (or any action resolved after
   first paint) must reserve its final size from the start, or Play shifts when
   it arrives.

@@ -646,6 +646,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     pullDistance: heroPullDistance
                 )
                 .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
+                .detailHeroLogoVisit(scope: appModel.detailArtworkScopeID, subject: detail.item.stablePresentationID)
                 .environment(\.openingHeroLogo, openingArtwork?.logo(
                     for: detail.item, profileID: appModel.profiles.activeProfileID
                 )))

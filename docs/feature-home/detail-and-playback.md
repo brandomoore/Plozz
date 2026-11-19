@@ -215,7 +215,10 @@ fade together over 350 ms, starting no earlier than the end of navigation.
 Reduce Motion shows it immediately. Later enrichment and optional sections
 do not replay the entrance. If the logo is still loading, its space stays
 empty; the logo itself fades in when it arrives, without delaying Play.
-Reduce Motion also skips the late logo fade.
+Row reopens can also reuse the title logo previously displayed for the same
+profile, source and compatible artwork lookup. A known schedule badge appears
+with a ready logo or text title. If the logo is late, the badge reserves its
+space but stays hidden until the fade finishes. Reduce Motion skips that wait.
 
 tvOS detail entry keeps the real primary action focusable while its play target
 loads. An early press queues one activation, replacing the icon with a spinner

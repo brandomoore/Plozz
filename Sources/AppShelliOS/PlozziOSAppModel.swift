@@ -57,6 +57,8 @@ final class PlozziOSAppModel {
         return replay
     }
 
+    var detailArtworkScopeID: String { detailCacheScope.digest }
+
     private var detailCacheScope: DetailSnapshotCacheScope {
         let accounts = accountsProviders.homeAccounts.map(\.account)
         let profile = profiles.activeProfile

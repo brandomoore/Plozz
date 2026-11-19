@@ -324,6 +324,29 @@ public struct DisplayedHeroLogo {
     }
 }
 
+struct DetailLogoVisit: Hashable {
+    let scope: String
+    let subject: String
+}
+
+private extension EnvironmentValues {
+    @Entry var detailLogoVisit: DetailLogoVisit? = nil
+}
+
+public extension View {
+    func detailHeroLogoVisit(scope: String, subject: String) -> some View {
+        environment(\.detailLogoVisit, DetailLogoVisit(scope: scope, subject: subject))
+    }
+}
+
+/// Published by the detail title once a logo or its text fallback is fully visible.
+public struct SettledDetailTitleID: PreferenceKey {
+    public static let defaultValue: String? = nil
+    public static func reduce(value: inout String?, nextValue: () -> String?) {
+        value = nextValue() ?? value
+    }
+}
+
 /// Processed logos held for synchronous reuse, so a rebuilt view paints a warmed
 /// logo on its FIRST frame.
 ///
@@ -367,7 +390,11 @@ enum HeroLogoMemo {
         }
     }
 
-    private static var entries: [Key: ProcessedLogo] = [:]
+    private struct Entry {
+        let logo: ProcessedLogo
+        let visit: DetailLogoVisit?
+    }
+    private static var entries: [Key: Entry] = [:]
     private static var order: [Key] = []
     /// Enough for a hero carousel plus the pages reached from it. Evicting
     /// oldest-first costs one await on the next look, not a re-decode.
@@ -390,9 +417,18 @@ enum HeroLogoMemo {
         )
     }
 
-    static func value(for key: Key) -> ProcessedLogo? { entries[key] }
+    static func value(for key: Key) -> ProcessedLogo? { entries[key]?.logo }
 
-    static func store(_ value: ProcessedLogo, for key: Key) {
+    fileprivate static func replay(for key: Key, visit: DetailLogoVisit?) -> ProcessedLogo? {
+        guard let visit else { return nil }
+        if let entry = entries[key], entry.visit == visit { return entry.logo }
+        for previous in order.reversed() where entries[previous]?.visit == visit && key.canRetainImage(from: previous) {
+            return entries[previous]?.logo
+        }
+        return nil
+    }
+
+    static func store(_ value: ProcessedLogo, for key: Key, visit: DetailLogoVisit? = nil) {
         if entries[key] == nil {
             order.append(key)
             if order.count > capacity, let oldest = order.first {
@@ -400,7 +436,9 @@ enum HeroLogoMemo {
                 entries[oldest] = nil
             }
         }
-        entries[key] = value
+        let previous = entries[key]
+        let sameBitmap = previous?.logo.image === value.image
+        entries[key] = Entry(logo: value, visit: visit ?? (sameBitmap ? previous?.visit : nil))
     }
 }
 
@@ -428,6 +466,7 @@ private struct LoadedLogo<TextFallback: View>: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.heroArtworkDisplayState) private var displayedArtwork
     @Environment(\.heroArtworkDisplayReporter) private var artworkReporter
+    @Environment(\.detailLogoVisit) private var detailVisit
     #if os(tvOS)
     @Environment(\.themePalette) private var palette
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
@@ -439,14 +478,17 @@ private struct LoadedLogo<TextFallback: View>: View {
     /// The completed request, including a confirmed miss. A different subject
     /// must neither show its image nor inherit its text-fallback readiness.
     @State private var resolvedKey: HeroLogoMemo.Key?
+    @State private var pendingFade: UUID?
 
     var body: some View {
         // Falls back to the synchronous memo, so a logo this view has already
         // resolved once paints on the FIRST frame of a rebuild. Without it every
         // rebuild drew the styled title for at least one frame, because the
         // pipeline is an actor and even a cache hit costs a suspension.
-        let retained = resolvedKey.map { taskKey.canRetainImage(from: $0) } == true ? image : nil
-        let cached = sourceReady ? (retained ?? openingLogo ?? HeroLogoMemo.value(for: taskKey)) : openingLogo
+        let key = taskKey
+        let retained = resolvedKey.map { key.canRetainImage(from: $0) } == true ? image : nil
+        let verified = sourceReady ? (retained ?? openingLogo ?? HeroLogoMemo.value(for: key)) : openingLogo
+        let cached = verified ?? HeroLogoMemo.replay(for: key, visit: detailVisit)
         let shown = cached.map { processed in
             guard let displayedArtworkID else { return processed }
             return HeroLogoAnalysis.refine(processed, backgroundSample: displayedArtwork?.sample(for: displayedArtworkID))
@@ -474,10 +516,7 @@ private struct LoadedLogo<TextFallback: View>: View {
                     content.transaction { $0.animation = nil }
                 }
                 .opacity(ready ? 1 : 0)
-                .animation(
-                    shown != nil && !reduceMotion ? DetailEntranceMotion.reveal(duration: DetailEntranceTiming().reveal) : nil,
-                    value: ready
-                )
+                .preference(key: SettledDetailTitleID.self, value: ready && (pendingFade == nil || reduceMotion) ? displayedArtworkID : nil)
             } else {
                 content.animation(
                     reduceMotion || resolvedKey != taskKey || !presentationPolicy.animatesResolvedLogo
@@ -614,7 +653,7 @@ private struct LoadedLogo<TextFallback: View>: View {
             return
         }
         if resolvedKey.map({ key.canRetainImage(from: $0) }) != true { image = nil }
-        if let cached = openingLogo ?? HeroLogoMemo.value(for: key) {
+        if let cached = openingLogo ?? HeroLogoMemo.value(for: key) ?? HeroLogoMemo.replay(for: key, visit: detailVisit) {
             resolvedKey = key
             adopt(cached, for: key)
             if displayedArtworkID == nil, let backgroundSample {
@@ -640,8 +679,6 @@ private struct LoadedLogo<TextFallback: View>: View {
             resolvedKey = key
             return
         }
-        resolvedKey = key
-
         // Draw the logo the moment it is decoded, BEFORE the backdrop is sampled.
         //
         // The sample is a second image fetched and analysed, and waiting on it
@@ -656,11 +693,24 @@ private struct LoadedLogo<TextFallback: View>: View {
         // always-on halo, because for that caller "unmeasured" is permanent rather
         // than momentary.
         let awaitsSample = displayedArtworkID == nil && backgroundSample != nil
-        adopt(HeroLogoAnalysis.analyze(
+        let processed = HeroLogoAnalysis.analyze(
             prepared,
             backgroundSample: nil,
             halosWhenUnmeasured: !awaitsSample
-        ), for: key)
+        )
+        if presentationPolicy == .detailEntrance && !reduceMotion {
+            let ticket = UUID()
+            pendingFade = ticket
+            withAnimation(DetailEntranceMotion.reveal(duration: DetailEntranceTiming().reveal), completionCriteria: .removed) {
+                resolvedKey = key
+                adopt(processed, for: key)
+            } completion: {
+                if pendingFade == ticket { pendingFade = nil }
+            }
+        } else {
+            resolvedKey = key
+            adopt(processed, for: key)
+        }
         guard awaitsSample else { return }
 
         // Then refine in place. A halo appearing a beat late is a soft shadow
@@ -675,7 +725,7 @@ private struct LoadedLogo<TextFallback: View>: View {
 
     private func adopt(_ processed: ProcessedLogo, for key: HeroLogoMemo.Key) {
         image = processed
-        HeroLogoMemo.store(processed, for: key)
+        HeroLogoMemo.store(processed, for: key, visit: detailVisit)
         onResolve?(processed.tone)
     }
 }

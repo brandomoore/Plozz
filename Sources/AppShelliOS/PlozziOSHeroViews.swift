@@ -3111,6 +3111,7 @@ struct PlozziOSHeroMetadata: View {
     @ScaledMetric(relativeTo: .body) private var overviewFontSize: CGFloat = 17
     @Environment(\.plozzShowsContentRatings) private var showsContentRatings
     @State private var availableWidth: CGFloat = 0
+    @State private var settledTitleID: String?
     let presentation: HeroPresentation
     let style: HeroArtworkStyle
     let mode: Mode
@@ -3179,7 +3180,11 @@ struct PlozziOSHeroMetadata: View {
         ) {
             if content != .information {
                 if let scheduleLine {
+                    let visible = mode != .detail || seriesBreadcrumb != nil
+                        || settledTitleID == (displayedArtworkID ?? presentation.itemID)
                     scheduleBadge(scheduleLine)
+                        .opacity(visible ? 1 : 0)
+                        .accessibilityHidden(!visible)
                         .transition(.opacity)
                 }
                 if let seriesBreadcrumb {
@@ -3239,6 +3244,7 @@ struct PlozziOSHeroMetadata: View {
                     }
                     .accessibilityLabel(Text(titlePresentation.title))
                     .accessibilityAddTraits(.isHeader)
+                    .onPreferenceChange(SettledDetailTitleID.self) { settledTitleID = $0 }
                 }
             }
 
