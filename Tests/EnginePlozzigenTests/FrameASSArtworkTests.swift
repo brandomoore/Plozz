@@ -91,6 +91,27 @@ final class FrameASSArtworkTests: XCTestCase {
         XCTAssertFalse(plan.supportsFrameASS)
     }
 
+    func testFarLandingRequiresEveryIndexedOverlapAndTrackIdentity() throws {
+        typealias Cue = MatroskaASSIndex.Cue
+        let cues = [Cue(interval:.init(start:10, duration:1_060_750), location:100),
+                    Cue(interval:.init(start:1_060_740,duration:3010), location:200),
+                    Cue(interval:.init(start:1_060_740,duration:3010), location:300)]
+        XCTAssertNil(MatroskaASSIndex(cues, expected:4))
+        XCTAssertNil(MatroskaASSIndex([cues[0], cues[1], cues[1]], expected:3))
+        let index = try XCTUnwrap(MatroskaASSIndex(cues,expected:3))
+        let store = SubtitlePacketStore()
+        store.noteHarvestAnchor(.prefetch,at:1_017)
+        store.noteHarvestProgress(.prefetch,through:1_100)
+        store.installFrameASSIndex(index,stream:3)
+        store.append(streamIndex:3,ptsSeconds:1_060.740,durationSeconds:3.010,payload:Data([1]))
+        XCTAssertNil(store.activeASSPackets(stream:3,at:1_060.768)) // second layer absent
+        store.append(streamIndex:3,ptsSeconds:1_060.740,durationSeconds:3.010,payload:Data([2]))
+        XCTAssertNil(store.activeASSPackets(stream:3,at:1_060.750)) // overlap from before the landing
+        XCTAssertEqual(store.activeASSPackets(stream:3,at:1_060.768)?.count,2)
+        XCTAssertTrue(try XCTUnwrap(store.activeASSPackets(stream:3,at:1_063.750)).isEmpty)
+        XCTAssertNil(store.activeASSPackets(stream:4,at:1_063.750))
+    }
+
     func testUncertifiedPacketsAreNotAnAuthoredClearAndSelectionRebuildsArtwork() throws {
         let art = FrameASSArtwork()
         let header = """

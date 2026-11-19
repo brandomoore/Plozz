@@ -1,11 +1,27 @@
 diff --git a/Sources/AetherEngine/AetherEngine+Loading.swift b/Sources/AetherEngine/AetherEngine+Loading.swift
-index fc6a1f94..2122c2d0 100644
+index fc6a1f94..36e986c6 100644
 --- a/Sources/AetherEngine/AetherEngine+Loading.swift
 +++ b/Sources/AetherEngine/AetherEngine+Loading.swift
-@@ -2238,6 +2238,10 @@ extension AetherEngine {
+@@ -2238,6 +2238,26 @@ extension AetherEngine {
          // playhead-paced drainer reads it exactly like the HLS session's store.
          let packetStore = SubtitlePacketStore()
          self.softwareSubtitlePacketStore = packetStore
++        frameASSIndexTask?.cancel()
++        if frameASSRouteAdmitted, !isCustomSource, !OriginRequestBudget.shared.isPaced(url),
++           let id = activeSubtitleTrackIndex, let stream = Int32(exactly:id),
++           let track = subtitleTracks.first(where: { $0.id == id }),
++           let (count,writer) = preopenedDemuxer?.assInventoryStats(stream) {
++            frameASSIndexTask = Task.detached(priority:.utility) { [weak packetStore] in
++                do {
++                    let index = try await MatroskaASSIndex.fetch(url:url,headers:sourceHTTPHeaders,track:track,
++                                                               expected:count,writer:writer)
++                    try Task.checkCancellation()
++                    packetStore?.installFrameASSIndex(index,stream:stream)
++                } catch {
++                    EngineLog.emit("[SoftwareASS] cue inventory unavailable stream=\(id)",category:.engine)
++                }
++            }
++        }
 +        if frameASSRouteAdmitted, let startPosition, startPosition > 0, startPosition <= 90,
 +           activeEmbeddedSubtitleStreamIndex != nil {
 +            startSubtitleForwardPrefetcher(startAt: startPosition)
@@ -36,7 +52,7 @@ index 1d893248..39a2f230 100644
              while !Task.isCancelled {
                  let originPaced = OriginRequestBudget.shared.isPaced(url)
 diff --git a/Sources/AetherEngine/AetherEngine.swift b/Sources/AetherEngine/AetherEngine.swift
-index 770e76e0..f4c7b33c 100644
+index 770e76e0..a9e3044f 100644
 --- a/Sources/AetherEngine/AetherEngine.swift
 +++ b/Sources/AetherEngine/AetherEngine.swift
 @@ -1025,9 +1025,14 @@ public final class AetherEngine: ObservableObject {
@@ -62,7 +78,15 @@ index 770e76e0..f4c7b33c 100644
              // SW-PiP Phase C: flip the frame compositor with the PiP state so subtitles appear in the
              // window and never double-draw under the fullscreen host overlay.
              softwareHost?.updateSubtitleCompositor(cues: subtitleCues + secondarySubtitleCues, enabled: pictureInPictureActive, delaySeconds: softwareSubtitleDelaySeconds)
-@@ -1768,7 +1774,9 @@ public final class AetherEngine: ObservableObject {
+@@ -1647,6 +1653,7 @@ public final class AetherEngine: ObservableObject {
+     #endif
+     /// SW-host sessions have no HLSVideoEngine; their tap fills this store instead.
+     var softwareSubtitlePacketStore: SubtitlePacketStore?
++    var frameASSIndexTask: Task<Void, Never>?
+     var subtitleDrainDecoders: [SubtitleChannel: EmbeddedSubtitleDecoder] = [:]
+     var subtitleDrainCursors: [SubtitleChannel: SubtitleDrainCursor] = [:]
+     /// #271: monotonic timestamp of the previous drain tick, so a tick that ran long is not read as
+@@ -1768,7 +1775,9 @@ public final class AetherEngine: ObservableObject {
      /// Active primary embedded subtitle stream index (matches TrackInfo.id), or nil when subtitles are off or
      /// a sidecar (not an embedded track) is active. Mirrors `activeAudioTrackIndex` so a host picker reflects
      /// the track auto-selected by `LoadOptions.preferredSubtitleLanguages` (#73) as well as host `selectSubtitleTrack` calls.
@@ -73,7 +97,7 @@ index 770e76e0..f4c7b33c 100644
  
      /// ASS script header ([Script Info] + [V4+ Styles] + [Events] Format line) for the primary sidecar, or nil.
      /// Populated when `LoadOptions.preserveASSMarkup` is set and the file is ASS/SSA; `subtitleCues` then carry
-@@ -6442,6 +6450,30 @@ public final class AetherEngine: ObservableObject {
+@@ -6442,6 +6451,30 @@ public final class AetherEngine: ObservableObject {
          sourceUpscalePlan = upscaleDecision.plan
          sourceSoftwareOnlyForUpscale = sourceUpscalePlan != nil && !useSoftwarePath
          if sourceUpscalePlan != nil { useSoftwarePath = true }
@@ -104,7 +128,7 @@ index 770e76e0..f4c7b33c 100644
          // TEST-ONLY: forces SW path for aetherctl live --sw; unset in shipping builds.
          if Self.forceSoftwarePathForTesting {
              useSoftwarePath = true
-@@ -7293,6 +7325,10 @@ public final class AetherEngine: ObservableObject {
+@@ -7293,6 +7326,10 @@ public final class AetherEngine: ObservableObject {
              // silently extends one run over the whole offset, which is exactly the claim
              // `SubtitleHarvestCoverage` exists to refuse.
              let landingSource = host.sourceSeconds(forSession: clockTarget)
@@ -115,7 +139,7 @@ index 770e76e0..f4c7b33c 100644
              softwareSubtitlePacketStore?.noteHarvestAnchor(.pump, at: landingSource)
              // AE#1022: the landing read goes out with the seek, not with the first drain tick after
              // it, which comes only once the landed frame has prerolled (measured 0.67 s). The ground
-@@ -9179,6 +9215,7 @@ public final class AetherEngine: ObservableObject {
+@@ -9179,6 +9216,7 @@ public final class AetherEngine: ObservableObject {
          softwareHost?.stop()
          softwarePiPSource = nil
          softwareHost = nil
@@ -123,6 +147,39 @@ index 770e76e0..f4c7b33c 100644
  
          // Clear audioHost so music<->video handoffs start from a clean slate; the engine is a process-wide
          // singleton and a lingering host would keep the old synchronizer alive under the next session.
+@@ -9278,6 +9316,8 @@ public final class AetherEngine: ObservableObject {
+         stopSubtitleDrainer(reason: .sessionStopped)   // #112 rework: both channels
+         resetSubtitleOCRState()                // Phase D
+         subtitleDrainTargets.removeAll()
++        frameASSIndexTask?.cancel()
++        frameASSIndexTask = nil
+         softwareSubtitlePacketStore = nil
+         activeEmbeddedSubtitleStreamIndex = -1
+         activeSubtitleTrackIndex = nil
+diff --git a/Sources/AetherEngine/Demuxer/Demuxer.swift b/Sources/AetherEngine/Demuxer/Demuxer.swift
+index c5450d66..bbb84d1e 100644
+--- a/Sources/AetherEngine/Demuxer/Demuxer.swift
++++ b/Sources/AetherEngine/Demuxer/Demuxer.swift
+@@ -2440,6 +2440,19 @@ public final class Demuxer: @unchecked Sendable {
+         return Self.resolveBitrate(codecparBitrate: codecparRate, bpsTag: bpsTag)
+     }
+ 
++    func assInventoryStats(_ index: Int32) -> (Int, String)? {
++        withStream(at: index) { stream -> (Int,String)? in
++            let meta = stream.pointee.metadata
++            guard stream.pointee.codecpar.pointee.codec_id == AV_CODEC_ID_ASS,
++                  let writer = metadataValue(meta,key:"_STATISTICS_WRITING_APP"),
++                  let tags = metadataValue(meta,key:"_STATISTICS_TAGS"),
++                  tags.split(separator:" ").contains("NUMBER_OF_FRAMES"),
++                  let count = metadataValue(meta,key:"NUMBER_OF_FRAMES").flatMap(Int.init),
++                  (1...40_000).contains(count) else { return nil }
++            return (count,writer)
++        } ?? nil
++    }
++
+     /// Pure bitrate resolution: a positive declared `codecpar.bit_rate` wins; otherwise a positive parsed
+     /// `BPS` tag; otherwise 0. Factored out so the codecpar-vs-tag precedence is unit-testable without a fixture.
+     static func resolveBitrate(codecparBitrate: Int64, bpsTag: String?) -> Int64 {
 diff --git a/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift b/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift
 index f870dac8..2f1bb78b 100644
 --- a/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift
@@ -532,6 +589,216 @@ index 8dcf16e6..bdd1a90c 100644
      /// The source's own colour space, so the render encodes the picture the way it was decoded
      /// (PQ and HLG included). BT.709 only when the source carries no usable tags.
      nonisolated static func renderColorSpace(for buffer: CVPixelBuffer) -> CGColorSpace {
+diff --git a/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift b/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift
+new file mode 100644
+index 00000000..a1aabf4e
+--- /dev/null
++++ b/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift
+@@ -0,0 +1,204 @@
++import Foundation
++
++/// A Matroska seek table alone isn't a subtitle inventory. Accept only the
++/// mkvmerge all-frames layout, reconciled against the selected track's stats.
++struct MatroskaASSIndex: Sendable {
++    struct Interval: Comparable, Sendable {
++        let start, duration: Int
++        static func < (lhs: Self, rhs: Self) -> Bool {
++            (lhs.start, lhs.duration) < (rhs.start, rhs.duration)
++        }
++    }
++    struct Cue: Sendable {
++        let interval: Interval
++        let location: Int
++    }
++    let sorted: [Interval]
++    private let maxDuration: Int
++    init?(_ cues: [Cue], expected: Int) {
++        guard (1...40_000).contains(expected), cues.count == expected,
++              Set(cues.map(\.location)).count == expected,
++              cues.allSatisfy({ $0.location >= 0 && (0...Int(Int32.max)).contains($0.interval.start)
++                  && (0...Int(Int32.max)).contains($0.interval.duration) }) else { return nil }
++        sorted = cues.map(\.interval).sorted()
++        maxDuration = sorted.map(\.duration).max() ?? 0
++    }
++    func matches(at ms: Int, packets: [SoftwareASSPacket]) -> Bool {
++        var lo = 0, hi = sorted.count
++        while lo < hi {
++            let m = (lo + hi) / 2
++            if sorted[m].start <= ms { lo = m + 1 } else { hi = m }
++        }
++        var active: [Interval] = []
++        var i = lo
++        while i > 0, sorted[i-1].start > ms - maxDuration {
++            i -= 1
++            guard lo - i <= 4096 else { return false }
++            if ms < sorted[i].start + sorted[i].duration { active.append(sorted[i]) }
++        }
++        guard active.count == packets.count else { return false }
++        return active.reversed().elementsEqual(packets.map {
++            Interval(start: Int(($0.start * 1000).rounded()), duration: Int(($0.duration * 1000).rounded()))
++        }.sorted())
++    }
++}
++
++private enum Invalid: Error { case index }
++
++/// Strict finite EBML subset. Header offsets are relative to the byte span;
++/// a partial top-level element may be inspected but never iterated as complete.
++private struct Elements {
++    let bytes: [UInt8]
++    struct Node { let id: Int; let body: Range<Int> }
++    func vint(_ at: Int, id: Bool = false) throws -> (Int, Int) {
++        guard bytes.indices.contains(at), bytes[at] != 0 else { throw Invalid.index }
++        let n = bytes[at].leadingZeroBitCount + 1
++        guard n <= (id ? 4 : 8), n <= bytes.count - at else { throw Invalid.index }
++        var v = Int(bytes[at])
++        if !id { v &= (1 << (8-n))-1 }
++        for i in 1..<n { v = (v << 8) | Int(bytes[at+i]) }
++        guard id || v != (1 << (7*n))-1 else { throw Invalid.index }
++        return (v,n)
++    }
++    func element(_ at: Int) throws -> Node {
++        let (tag,n) = try vint(at,id:true), (size,m) = try vint(at+n)
++        let start = at+n+m
++        return Node(id: tag, body: start..<start+size)
++    }
++    func children(_ node: Node) throws -> [Node] {
++        guard node.body.upperBound <= bytes.count else { throw Invalid.index }
++        var p = node.body.lowerBound, result: [Node] = []
++        while p < node.body.upperBound {
++            let el = try element(p)
++            guard el.body.upperBound <= node.body.upperBound, result.count < 50_000 else { throw Invalid.index }
++            result.append(el); p = el.body.upperBound
++        }
++        return result
++    }
++    func one(_ nodes: [Node], _ id: Int) throws -> Node {
++        let hits = nodes.filter { $0.id == id }; guard hits.count == 1 else { throw Invalid.index }; return hits[0]
++    }
++    func number(_ node: Node) throws -> Int {
++        guard (1...7).contains(node.body.count),node.body.upperBound <= bytes.count else { throw Invalid.index }
++        return bytes[node.body].reduce(0) { ($0 << 8) | Int($1) }
++    }
++    func number(_ nodes: [Node], _ id: Int) throws -> Int { try number(one(nodes,id)) }
++    func text(_ nodes: [Node], _ id: Int) throws -> String {
++        let node = try one(nodes,id)
++        guard let s = String(bytes: bytes[node.body],encoding:.utf8) else { throw Invalid.index }
++        return s
++    }
++}
++
++private final class NoRangeRedirect: NSObject, URLSessionTaskDelegate {
++    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
++                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
++        completionHandler(nil)
++    }
++}
++
++extension MatroskaASSIndex {
++    /// Two bounded metadata ranges, plus at most eight ambiguous BlockGroups.
++    /// Never seek the playback demuxer. If the origin ignores Range, reject
++    /// the headers *before* consuming its body; no sequential-read fallback.
++    static func fetch(url: URL, headers: [String:String], track: TrackInfo, expected: Int,
++                      writer: String) async throws -> Self {
++        guard ["http","https"].contains(url.scheme?.lowercased() ?? ""), let header = track.assHeader,
++              writer.hasPrefix("mkvmerge "), (1...40_000).contains(expected) else { throw Invalid.index }
++        let session = URLSession(configuration: .ephemeral, delegate: NoRangeRedirect(), delegateQueue: nil)
++        defer { session.invalidateAndCancel() }
++        let deadline = ContinuousClock.now + .seconds(12)
++        var tag: String?, length: Int?, spent = 0
++        func read(_ offset: Int, _ count: Int) async throws -> Elements {
++            try Task.checkCancellation()
++            guard ContinuousClock.now < deadline, count > 0, offset >= 0,
++                  offset <= (1<<52)-count, spent + count <= 2_500_000,
++                  length.map({ offset+count <= $0 }) ?? true else { throw Invalid.index }
++            var request = URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:3)
++            request.allHTTPHeaderFields = headers
++            request.setValue("bytes=\(offset)-\(offset+count-1)",forHTTPHeaderField:"Range")
++            request.setValue("identity",forHTTPHeaderField:"Accept-Encoding")
++            if let tag { request.setValue(tag,forHTTPHeaderField:"If-Match") }
++            let (body,response) = try await session.bytes(for:request)
++            guard let http = response as? HTTPURLResponse, http.statusCode == 206,
++                  let etag = http.value(forHTTPHeaderField:"ETag"), etag.hasPrefix("\""), etag.hasSuffix("\""),
++                  tag == nil || tag == etag,
++                  let cr = http.value(forHTTPHeaderField:"Content-Range")?.split(separator:"/"), cr.count == 2,
++                  cr[0] == "bytes \(offset)-\(offset+count-1)", let size = Int(cr[1]), size >= offset+count,
++                  size < 1<<52, length == nil || length == size else { throw Invalid.index }
++            tag = etag; length = size; spent += count
++            var data: [UInt8] = []; data.reserveCapacity(count)
++            for try await b in body {
++                guard data.count < count else { throw Invalid.index }
++                if data.count & 4095 == 0 { try Task.checkCancellation(); guard ContinuousClock.now < deadline else { throw Invalid.index } }
++                data.append(b)
++            }
++            guard data.count == count else { throw Invalid.index }
++            return Elements(bytes:data)
++        }
++        let head = try await read(0,131072)
++        let ebml = try head.element(0); guard ebml.id == 0x1a45dfa3 else { throw Invalid.index }
++        let seg = try head.element(ebml.body.upperBound), base = seg.body.lowerBound
++        guard seg.id == 0x18538067, seg.body.upperBound == length else { throw Invalid.index }
++        let sh = try head.element(base); guard sh.id == 0x114d9b74 else { throw Invalid.index }
++        var locations: [Int:Int] = [:]
++        for el in try head.children(sh) where el.id == 0x4dbb {
++            let args = try head.children(el), id = try head.number(args,0x53ab), pos = try head.number(args,0x53ac)
++            guard locations.updateValue(base+pos,forKey:id) == nil else { throw Invalid.index }
++        }
++        func headNode(_ id: Int) throws -> [Elements.Node] {
++            guard let pos = locations[id] else { throw Invalid.index }
++            let el = try head.element(pos); guard el.id == id else { throw Invalid.index }; return try head.children(el)
++        }
++        let info = try headNode(0x1549a966)
++        guard try head.number(info,0x2ad7b1) == 1_000_000, try head.text(info,0x5741) == writer else { throw Invalid.index }
++        var ids: [Int] = []
++        for entry in try headNode(0x1654ae6b) where entry.id == 0xae {
++            let fields = try head.children(entry)
++            guard try head.number(fields,0x83) == 17, try head.text(fields,0x86) == "S_TEXT/ASS",
++                  (try? head.text(fields,0x536e)) == track.name,
++                  (try? head.text(fields,0x63a2)) == header,
++                  !fields.contains(where:{ [0x6d80,0x23314f,0x537f,0x56aa,0x23e383].contains($0.id) }) else { continue }
++            ids.append(try head.number(fields,0xd7))
++        }
++        guard ids.count == 1, let number = ids.first, let pos = locations[0x1c53bb6b], let length,
++              pos >= base, pos < length-12 else { throw Invalid.index }
++        let prefix = try await read(pos,12), cueElement = try prefix.element(0)
++        guard cueElement.id == 0x1c53bb6b, cueElement.body.count <= 2_000_000 else { throw Invalid.index }
++        let table = try await read(pos+cueElement.body.lowerBound,cueElement.body.count)
++        var cues: [Cue] = [], repairs = 0
++        for point in try table.children(.init(id:cueElement.id,body:0..<table.bytes.count)) where point.id == 0xbb {
++            let fields = try table.children(point), start = try table.number(fields,0xb3)
++            for positions in fields where positions.id == 0xb7 {
++                let values = try table.children(positions)
++                guard try table.number(values,0xf7) == number else { continue }
++                let cluster = base + (try table.number(values,0xf1)), rel = try table.number(values,0xf0)
++                guard cluster >= base, cluster < pos, rel < pos-cluster,
++                      cues.count < expected, start <= Int(Int32.max) else { throw Invalid.index }
++                let duration: Int
++                if values.contains(where:{ $0.id == 0xb2 }) { duration = try table.number(values,0xb2) }
++                else {
++                    // No CueDuration is not zero. Check the actual referenced
++                    // block's track, timestamp, no lacing and explicit BlockDuration.
++                    repairs += 1; guard repairs <= 8 else { throw Invalid.index }
++                    let ch = try await read(cluster,64), cl = try ch.element(0)
++                    guard cl.id == 0x1f43b675, cl.body.upperBound <= pos-cluster, rel < cl.body.count else { throw Invalid.index }
++                    let tc = try ch.element(cl.body.lowerBound)
++                    guard tc.id == 0xe7 else { throw Invalid.index }
++                    let group = try await read(cluster+cl.body.lowerBound+rel,512), g = try group.element(0)
++                    guard g.id == 0xa0, g.body.upperBound <= cl.body.count-rel else { throw Invalid.index }
++                    let parts = try group.children(g), block = try group.one(parts,0xa1)
++                    let (id,n) = try group.vint(block.body.lowerBound), at = block.body.lowerBound+n
++                    guard id == number, at+3 <= block.body.upperBound, group.bytes[at+2]&6 == 0 else { throw Invalid.index }
++                    let delta = Int(Int16(bitPattern:UInt16(group.bytes[at])<<8 | UInt16(group.bytes[at+1])))
++                    guard try ch.number(tc)+delta == start else { throw Invalid.index }
++                    duration = try group.number(parts,0x9b)
++                }
++                cues.append(.init(interval:.init(start:start,duration:duration),location:cluster+rel))
++            }
++        }
++        guard let index = Self(cues,expected:expected) else { throw Invalid.index }
++        EngineLog.emit("[SoftwareASS] verified cue inventory stream=\(track.id) frames=\(expected) bytes=\(spent) blockChecks=\(repairs)", category:.engine)
++        return index
++    }
++}
 diff --git a/Sources/AetherEngine/Subtitles/SubtitleForwardPrefetcher.swift b/Sources/AetherEngine/Subtitles/SubtitleForwardPrefetcher.swift
 index b4ba8926..81ac5f24 100644
 --- a/Sources/AetherEngine/Subtitles/SubtitleForwardPrefetcher.swift
@@ -619,15 +886,19 @@ index 11b9120e..9e276ea1 100644
      }
  
 diff --git a/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift b/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
-index e57c90b5..333f2f52 100644
+index e57c90b5..3e5b1c48 100644
 --- a/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
 +++ b/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
-@@ -109,6 +109,42 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -109,6 +109,50 @@ final class SubtitlePacketStore: @unchecked Sendable {
      private var totalBytes: Int = 0
      /// #362: monotonic harvest order, stamped on every appended entry. See `StoredSubtitlePacket`.
      private var appendCounter: UInt64 = 0
 +    private var maxDuration: [Int32: Double] = [:]
 +    private var incompleteThrough: [Int32: Double] = [:]
++    private var frameIndexes: [Int32: MatroskaASSIndex] = [:]
++    func installFrameASSIndex(_ index: MatroskaASSIndex, stream: Int32) {
++        lock.withLock { frameIndexes[stream] = index }
++    }
 +    func hasStrictPrefix(past seconds: Double) -> Bool {
 +        lock.withLock { coverage.strictlyReadFromOrigin(past: seconds) }
 +    }
@@ -642,19 +913,23 @@ index e57c90b5..333f2f52 100644
 +    /// source origin beyond this PTS and refuse any interval affected by eviction.
 +    func activeASSPackets(stream: Int32, at t: Double) -> [SoftwareASSPacket]? {
 +        lock.withLock {
-+            guard t.isFinite, t >= 0, t > (incompleteThrough[stream] ?? -.infinity),
-+                  coverage.strictlyReadFromOrigin(past: t)
-+            else { return nil }
++            guard t.isFinite, t >= 0, t < Double(Int32.max)/1000,
++                  t > (incompleteThrough[stream] ?? -.infinity) else { return nil }
++            let prefix = coverage.strictlyReadFromOrigin(past: t)
++            guard prefix || frameIndexes[stream] != nil else { return nil }
 +            let entries = entriesByStream[stream] ?? []
 +            let lo = Self.lowerBound(entries, t - (maxDuration[stream] ?? 0) - 0.001)
 +            let hi = Self.upperBound(entries, t + 0.001)
 +            guard hi - lo <= 4096 else { return nil }
-+            return entries[lo..<hi].compactMap { p in
++            let packets: [SoftwareASSPacket] = entries[lo..<hi].compactMap { p in
 +                // Both the container tick and libass frame time use nearest milliseconds.
 +                let ms = (t * 1000).rounded(), start = (p.ptsSeconds * 1000).rounded()
 +                guard start <= ms && ms < start + (p.durationSeconds * 1000).rounded() else { return nil }
 +                return .init(start: p.ptsSeconds, duration: p.durationSeconds, data: p.payload)
 +            }
++            guard prefix || frameIndexes[stream]?.matches(at:Int((t*1000).rounded()),packets:packets) == true
++            else { return nil }
++            return packets
 +        }
 +    }
 +
@@ -665,7 +940,7 @@ index e57c90b5..333f2f52 100644
      /// #416: which spans of the source the readers have actually read. Lives here because this is
      /// the object whose EMPTINESS gets interpreted: every "no packet between here and there" answer
      /// this store gives is only as good as the reading behind it. See `SubtitleHarvestCoverage`.
-@@ -207,6 +243,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -207,6 +251,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
      private func appendLocked(streamIndex: Int32, ptsSeconds: Double, durationSeconds: Double,
                                flags: Int32, payload: Data, webvttSettings: String? = nil) {
          let before = bytesByStream[streamIndex] ?? 0
@@ -673,7 +948,7 @@ index e57c90b5..333f2f52 100644
          // Audit SUB-103: taken out of the dictionary before it is mutated. Left in, the dictionary
          // holds the second reference and the insert below copied every retained packet per append,
          // 10k appends took 0.65 s and 40k took 10.9 s.
-@@ -247,6 +284,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -247,6 +292,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
                  bytes -= entries[dropped].payload.count
                  dropped += 1
              }
@@ -681,7 +956,7 @@ index e57c90b5..333f2f52 100644
              entries.removeFirst(dropped)
              payloadHashesByRun[streamIndex] = nil
          }
-@@ -345,6 +383,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -345,6 +391,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
                  totalBytes -= removed
                  dropped += 1
              }
@@ -689,7 +964,7 @@ index e57c90b5..333f2f52 100644
              entries.removeFirst(dropped)
              payloadHashesByRun[idx] = nil
              if entries.isEmpty {
-@@ -548,6 +587,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -548,6 +595,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
          for (idx, entries) in entriesByStream {
              let kept = entries.drop { $0.ptsSeconds < cutoff }
              if kept.count != entries.count {
@@ -697,7 +972,7 @@ index e57c90b5..333f2f52 100644
                  let newBytes = kept.reduce(0) { $0 + $1.payload.count }
                  totalBytes += newBytes - (bytesByStream[idx] ?? 0)
                  entriesByStream[idx] = Array(kept)
-@@ -568,6 +608,8 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -568,6 +616,8 @@ final class SubtitlePacketStore: @unchecked Sendable {
          totalBytes = 0
          touchCounter = 0
          appendCounter = 0
