@@ -144,10 +144,8 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         system.updateFocusIfNeeded()
         try await Task.sleep(for: .milliseconds(80))
         XCTAssertTrue(system.focusedItem === otherPane)
-        let category = try XCTUnwrap(visibleCategoryFocusItems(in: window, scroll: scroll).first)
-        let targetFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: category, relativeTo: scroll))
-        XCTAssertEqual(targetFrame.minY, initialFrame.minY, accuracy: 1,
-                       "A real departure must retain selected-category entry rather than preferring Search.")
+        let category = try XCTUnwrap(visibleCategoryFocusItems(in: window, scroll: scroll).first { $0 === initial },
+                                     "The selected category must remain eligible after departure.")
         host.target = category
         system.requestFocusUpdate(to: host)
         system.updateFocusIfNeeded()
@@ -229,7 +227,6 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         let scene = try await foregroundScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
         let state = CategoryFocusFixtureState()
-        state.allowsExternalFocus = true
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let host = CategoryFocusHost(rootView: CategoryFocusPage(state: state))
@@ -265,7 +262,12 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(250))
         let scroll = try XCTUnwrap(categoryScrollView(in: window))
         let selected = try XCTUnwrap(system.focusedItem)
+        XCTAssertTrue(NativeFocusRegion.contains(selected, in: scroll))
+        XCTAssertEqual(state.lastFocusedControl, .category(nil))
         let selectedFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: selected, relativeTo: scroll))
+        state.allowsExternalFocus = true
+        await Task.yield()
+        window.layoutIfNeeded()
         let guide = try XCTUnwrap(categoryFocusItems(in: window).first {
             (NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.minX ?? 0) > 500
         })

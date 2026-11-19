@@ -515,22 +515,53 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         }
     }
 
+    #if !SWIFT_PACKAGE
+    // Both app-hosted targets compile this suite. Native scroll views and button
+    // labels need a real scene to capture their composited pixels together.
     func testNoGuideAndMissingListingFillEndsAtTheCurrentTime() async throws {
         let width: CGFloat = 1_000
+        let size = CGSize(width: width, height: PrototypeLayout.rowHeight)
         let timelineWidth = PrototypeLayout.timelineWidth(for: width)
         let lineX = width - timelineWidth + timelineWidth / 4
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let window = UIWindow(windowScene: scene)
+        let container = UIViewController()
+        container.view.backgroundColor = .black
+        window.rootViewController = container
+        // Keep focus on the existing key window; this tests the unfocused shade.
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
         for programs in [[], [program("Later", from: 3_600, to: 21_600)]] {
-            let samples = try await hostedAlphaSamples(
+            let host = UIHostingController(rootView:
                 GuideRowFixture(programs: programs, start: start, nowOffset: 1_800, width: width)
                     .environment(\.plozzCardFocusStyle, .system)
-                    .environment(\.themePalette, ThemePalette.dark),
-                size: CGSize(width: width, height: PrototypeLayout.rowHeight),
-                points: [(Int(lineX - 4), Int(PrototypeLayout.rowHeight - 20)),
-                         (Int(lineX + 4), Int(PrototypeLayout.rowHeight - 20))]
+                    .environment(\.themePalette, ThemePalette.dark)
+                    .frame(width: size.width, height: size.height)
             )
+            host.safeAreaRegions = []
+            host.view.backgroundColor = .black
+            container.addChild(host)
+            host.view.frame = CGRect(origin: .zero, size: size)
+            container.view.addSubview(host.view)
+            host.didMove(toParent: container)
+            window.layoutIfNeeded()
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+                XCTAssertTrue(host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true))
+            }
+            let pixels = try rgbaPixels(XCTUnwrap(image.cgImage))
+            let samples = [-4, 4].map { delta in
+                pixels[(Int(size.height - 20) * Int(width) + Int(lineX) + delta) * 4]
+            }
             XCTAssertEqual(samples.map { $0 > 0 }, [true, false], "\(samples), listings: \(programs.count)")
+            host.willMove(toParent: nil)
+            host.view.removeFromSuperview()
+            host.removeFromParent()
         }
     }
+    #endif
 
     func testCompactChannelOnlyRowsDoNotInventProgressWithoutATimeRuler() throws {
         let samples = try alphaSamples(
@@ -635,41 +666,6 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             XCTAssertTrue(didRender)
         }
         return points.map { x, y in pixels[(y * width + x) * 4 + 3] }
-    }
-
-    private func hostedAlphaSamples<V: View>(
-        _ view: V, size: CGSize, points: [(Int, Int)]
-    ) async throws -> [UInt8] {
-        let controller = UIHostingController(rootView: view.frame(width: size.width, height: size.height))
-        controller.safeAreaRegions = []
-        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        window.backgroundColor = .clear
-        // tvOS may resize the window's root to the display. Keep the sampled
-        // row in its own fixed-size child, independent of the simulator screen.
-        let container = UIViewController()
-        window.rootViewController = container
-        container.addChild(controller)
-        controller.view.frame = CGRect(origin: .zero, size: size)
-        controller.view.backgroundColor = .clear
-        container.view.addSubview(controller.view)
-        controller.didMove(toParent: container)
-        window.isHidden = false
-        defer {
-            window.isHidden = true
-            window.rootViewController = nil
-        }
-        window.layoutIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
-        controller.view.layoutIfNeeded()
-        XCTAssertEqual(controller.view.bounds.size, size)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = false
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
-            controller.view.layer.render(in: context.cgContext)
-        }
-        let pixels = try rgbaPixels(XCTUnwrap(image.cgImage))
-        return points.map { x, y in pixels[(y * Int(size.width) + x) * 4 + 3] }
     }
 
     func testScrollFadesRampOnlyWhereContentExtendsPastTheViewport() {

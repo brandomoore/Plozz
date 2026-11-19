@@ -592,6 +592,12 @@ Runner verdict regressions use the existing host-side unittest runner:
 
 ## App-hosted focus integration
 
+The guide’s elapsed-time boundary test runs in the app-hosted targets: tvOS’s
+native button labels and scroll views need a scene-backed capture. It samples
+both sides of the time line for an empty row and a gap before a later listing.
+The pinned-rail fixture measures the hero through loading and the page bounds
+through native guide entry, when the category pane intentionally collapses.
+
 Episode-panel fixtures activate native window focus before reissuing their
 SwiftUI Browse entry request. Repeated window handoffs must start on Browse and
 still allow the playing episode to receive actual native focus.

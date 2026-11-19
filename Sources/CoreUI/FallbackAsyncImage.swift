@@ -803,7 +803,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         // late arrival must not replace it), but re-resolve when it is no longer
         // offered or when it was only the async fallback standing in for the
         // page's own artwork.
-        if isSameSubject, image != nil, !paintedFromFallback,
+        if isSameSubject, image != nil, !isPreviewQuality, !paintedFromFallback,
            let displayedReference, references.contains(displayedReference) {
             onResolveReference?(displayedReference)
             return

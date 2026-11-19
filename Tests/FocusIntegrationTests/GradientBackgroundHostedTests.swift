@@ -149,7 +149,10 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
                 XCTAssertNotNil(focus.focusedItem)
                 for card in cards {
-                    XCTAssertFalse(card.isEnabled, "Setup actions must wait for explicit content entry.")
+                    let center = card.convert(CGPoint(x: card.bounds.midX, y: card.bounds.midY), to: window)
+                    let hit = window.hitTest(center, with: nil)
+                    XCTAssertTrue(card.isEnabled, "The navigation gate must not dim resting setup cards.")
+                    XCTAssertFalse(hit?.isDescendant(of: card) == true, "Setup actions must wait for explicit content entry.")
                     XCTAssertFalse(card.isFocused, "Setup must not steal focus from horizontal navigation.")
                 }
             }
