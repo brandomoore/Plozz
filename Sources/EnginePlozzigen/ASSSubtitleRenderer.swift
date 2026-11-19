@@ -34,6 +34,33 @@ struct ASSSubtitleDocument: Sendable {
     let header: String
     let fonts: [ASSSubtitleFont]
     let size: CGSize
+
+    func rendererHeader() throws -> String {
+        let limit = 4 * 1_024 * 1_024
+        let bytes = header.utf8
+        guard bytes.count > limit else { return header }
+        guard bytes.count <= 32 * 1_024 * 1_024 else { throw ASSSubtitleRenderError.allocation }
+        // Some Matroska tracks store megabytes of authoring comments in CodecPrivate.
+        // Preserve the other sections verbatim (in particular embedded font data).
+        var result: [UInt8] = []
+        var inEvents = false
+        var start = bytes.startIndex
+        while start < bytes.endIndex {
+            let end = bytes[start...].firstIndex(of: 10) ?? bytes.endIndex
+            let next = end == bytes.endIndex ? end : bytes.index(after: end)
+            let line = bytes[start..<end]
+            if line.first == 91 {
+                inEvents = line.elementsEqual("[Events]".utf8) || line.elementsEqual("[Events]\r".utf8)
+            }
+            if !inEvents || !line.starts(with: "Comment:".utf8) {
+                let retained = bytes[start..<next]
+                guard retained.count <= limit - result.count else { throw ASSSubtitleRenderError.allocation }
+                result.append(contentsOf: retained)
+            }
+            start = next
+        }
+        return String(decoding: result, as: UTF8.self)
+    }
 }
 
 enum ASSSubtitleRenderError: Error {
@@ -159,8 +186,8 @@ actor ASSSubtitleRasterizer {
                   document.size.width <= 3_840, document.size.height <= 2_160 else {
                 throw ASSSubtitleRenderError.invalidCanvas
             }
-            guard document.header.utf8.count <= 4 * 1_024 * 1_024,
-                  document.fonts.count <= 128,
+            let rendererHeader = try document.rendererHeader()
+            guard document.fonts.count <= 128,
                   document.fonts.allSatisfy({ $0.data.count <= 32 * 1_024 * 1_024 }),
                   document.fonts.reduce(0, { $0 + $1.data.count }) <= 128 * 1_024 * 1_024 else {
                 throw ASSSubtitleRenderError.allocation
@@ -193,7 +220,7 @@ actor ASSSubtitleRasterizer {
                 }
             }
             ass_set_fonts(renderer, nil, "Arial", Int32(ASS_FONTPROVIDER_CORETEXT.rawValue), nil, 1)
-            var header = Array(document.header.replacingOccurrences(of: "\0", with: "").utf8CString)
+            var header = Array(rendererHeader.replacingOccurrences(of: "\0", with: "").utf8CString)
             let count = header.count - 1
             header.withUnsafeMutableBufferPointer {
                 ass_process_codec_private(track, $0.baseAddress, Int32(count))

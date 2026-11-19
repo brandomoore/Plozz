@@ -1896,6 +1896,10 @@ cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains
 video-rect mapping, HDR brightness and control avoidance.
 
+For oversized Matroska ASS headers, non-rendering `Comment:` entries in the
+`[Events]` section are discarded before applying the 4 MiB renderer budget.
+Styles, dialogue and font sections still count toward that budget.
+
 `ASSSubtitleRendererTests` checks authored sign starts and ends at millisecond
 boundaries. A deterministic test feeds the real pacer, render-lead estimator
 and libass a virtual clock with 50 or 100 ms per render at 23.976 and 60 Hz.

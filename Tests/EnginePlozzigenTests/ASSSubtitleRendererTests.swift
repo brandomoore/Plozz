@@ -78,6 +78,18 @@ final class ASSSubtitleRendererTests: XCTestCase {
         .init(identity: id, header: Self.header, fonts: [], size: .init(width: 640, height: 360))
     }
 
+    func testOversizedHeaderDropsOnlyNonRenderingEventComments() throws {
+        let payload = String(repeating: "x", count: 6 * 1_024 * 1_024)
+        func header(_ value: String) throws -> String {
+            try ASSSubtitleDocument(identity: "large", header: value, fonts: [], size: .zero).rendererHeader()
+        }
+        let retained = "\r\nDialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,Comment: visible\r\n"
+        XCTAssertEqual(try header(Self.header + "\r\nComment: \(payload)" + retained),
+                       Self.header + retained)
+        XCTAssertThrowsError(try header(Self.header + "\nDialogue: \(payload)"))
+        XCTAssertThrowsError(try header("[Fonts]\nComment: \(payload)"))
+    }
+
     func testVectorDrawingIsRasterizedAtAuthoredPositionAndRepeatedReadOrderKeepsLayers() async throws {
         let renderer = ASSSubtitleRasterizer()
         let events = [
