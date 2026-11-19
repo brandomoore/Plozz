@@ -406,15 +406,20 @@ final class ASSSubtitleRenderer {
         // ticks on 59.94 Hz displays; libass itself uses millisecond timestamps.
         guard pending == nil, let document, let time = requestedTime,
               lastTime.map({ abs(time - $0) >= 0.001 }) ?? true else { return }
-        guard pacer.admit(time, frameRate: frameRate, cueBoundary: nextCueBoundary) else { return }
-        requestedTime = nil
         let crossedBoundary = nextCueBoundary.flatMap { boundary in
             lastTime.map { $0 < boundary && boundary <= time } == true ? boundary : nil
         }
+        // The pacer tracks the requested horizon, not the cue actually drawn.
+        // Consume every pending edge inside the lookahead before pacing animation.
+        let scheduledEdge = scheduled ? crossedBoundary.flatMap {
+            time - $0 <= Self.scheduleLookahead ? $0 : nil
+        } : nil
+        guard scheduledEdge != nil || pacer.admit(time, frameRate: frameRate, cueBoundary: nextCueBoundary) else { return }
+        if scheduledEdge == nil { requestedTime = nil }
         let revision = revision, events = events, eventSnapshotRevision = eventSnapshotRevision, rasterizer = rasterizer
         // A scheduled frame has a real presentation deadline; drawing it faster
         // must not change its timestamp. Snap cue edges to the authored instant.
-        let renderTime = scheduled ? (crossedBoundary ?? time) : renderLead.time(for: time)
+        let renderTime = scheduled ? (scheduledEdge ?? time) : renderLead.time(for: time)
         lastTime = scheduled ? renderTime : time
         let started = ProcessInfo.processInfo.systemUptime
         pending = Task(priority: .userInitiated) { [weak self] in
@@ -462,4 +467,6 @@ final class ASSSubtitleRenderer {
         sampledTime = nil
         onFrame?([])
     }
+
+    static let scheduleLookahead = 0.35
 }

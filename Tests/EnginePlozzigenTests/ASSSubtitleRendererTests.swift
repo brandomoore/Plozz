@@ -496,6 +496,29 @@ final class ASSSubtitleRendererTests: XCTestCase {
     }
 
     @MainActor
+    func testScheduledBurstDrainsThroughClearWithoutFurtherTicks() async throws {
+        let renderer = ASSSubtitleRenderer()
+        var frames: [(Double, Bool)] = []
+        renderer.onFrame = { [weak renderer] cues in
+            if let t = renderer?.sampledTime { frames.append((t, cues.isEmpty)) }
+        }
+        let packet = #"0,0,Default,,0,0,0,,{\an7\pos(10,20)\p1}m 0 0 l 30 0 30 30 0 30"#
+        renderer.update(document: document(), events: [
+            .init(packet: packet, start: 0, end: 1.04),
+            .init(packet: packet, start: 1.08, end: 1.12)
+        ])
+        renderer.tick(1, frameRate: 25, scheduled: true)
+        renderer.tick(1.16, frameRate: 25, scheduled: true)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while frames.count < 4 && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(frames.map(\.0), [1, 1.04, 1.08, 1.12])
+        XCTAssertEqual(frames.map(\.1), [false, true, false, true])
+        renderer.clear()
+    }
+
+    @MainActor
     func testDriverCoalescesBusyTicksToTheLatestAnimationTime() async throws {
         let renderer = ASSSubtitleRenderer()
         var positions: [CGFloat] = []

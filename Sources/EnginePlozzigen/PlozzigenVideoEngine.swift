@@ -2018,7 +2018,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         previousScheduledTime = item == nil ? nil : presentationTime
         // Seat the current picture first (including paused seeks), then build a
         // short queue. The compositor, not the queue depth, decides when to draw.
-        let ahead = item == nil ? 0 : min(0.35, max(0, presentationTime - scheduleStart))
+        let ahead = item == nil ? 0 : min(ASSSubtitleRenderer.scheduleLookahead, max(0, presentationTime - scheduleStart))
         assRenderer.tick(presentationTime - offset + ahead, frameRate: engine.sourceVideoFrameRate,
                          scheduled: item != nil)
     }
