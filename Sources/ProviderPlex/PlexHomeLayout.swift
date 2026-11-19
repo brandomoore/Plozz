@@ -4,6 +4,27 @@ import CoreModels
 import CoreNetworking
 
 extension PlexProvider {
+    public func libraryRecentlyAddedPage(
+        in libraryID: String, kind: MediaItemKind, startIndex: Int, limit: Int
+    ) async throws -> HomeRowPage {
+        guard kind == .movie || kind == .series else {
+            return try await catalogRecentlyAddedPage(in: libraryID, kind: kind, startIndex: startIndex, limit: limit)
+        }
+        guard startIndex >= 0, limit > 0, startIndex < Int.max - limit else { throw AppError.invalidResponse }
+        // An explicitly added library row is available even when it isn't promoted to Home.
+        let hubs = try await client.sectionHubs(sectionID: libraryID, count: min(100, startIndex + limit + 1))
+        guard let (_, hub) = Self.serverHomeSections(hubs, libraryID: libraryID).first(where: {
+            $0.0.kind == .recentlyAdded
+        }) else { return .init(items: [], nextOffset: nil) }
+        if let key = PlexClient.homeShelfKey(hub.key) {
+            return try await homeShelfPage(key: key, libraryID: libraryID, startIndex: startIndex, limit: min(limit, 100))
+        }
+        guard Self.hasCompleteHomePayload(hub) else { throw AppError.invalidResponse }
+        let items = mappedServerHomeItems(hub, libraryID: libraryID, limit: 100)
+        guard hub.more != true || items.count > startIndex + limit else { throw AppError.invalidResponse }
+        return .prefix(items, startIndex: startIndex, limit: limit)
+    }
+
     public func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage {
         guard startIndex >= 0, limit > 0, limit <= PageRequest.defaultLimit,
               startIndex < Int.max - limit else { throw AppError.invalidResponse }
@@ -77,6 +98,10 @@ extension PlexProvider {
         guard let key else {
             return try await homeRowPrefixPage(feed, startIndex: startIndex, limit: limit)
         }
+        return try await homeShelfPage(key: key, libraryID: libraryID, startIndex: startIndex, limit: limit)
+    }
+
+    private func homeShelfPage(key: String, libraryID: String?, startIndex: Int, limit: Int) async throws -> HomeRowPage {
         let page = try await client.homeShelfPage(key: key, startIndex: startIndex, limit: limit)
         return HomeRowPage(
             items: page.items.filter {

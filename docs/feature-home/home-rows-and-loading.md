@@ -15,6 +15,10 @@ through viewing history, watchlisting, or a personal request; untouched library
 shows do not qualify. Movies come from Continue Watching, the watchlist, and
 personal requests. Overlapping interests merge into one release and remain
 independently filterable. The household request list is never used. Seerr is optional.
+Sources with no movie, series, or mixed video libraries do not contribute viewing
+history or history failures. Live-only IPTV and music-only catalogues can still
+contribute watchlisted or personally requested titles. Library discovery failures
+remain failures rather than being mistaken for a successfully empty catalogue.
 
 Upcoming hides automatically when the active profile has no eligible movie or
 series library, saved show/movie, or configured Seerr connection. This is a navigation
@@ -145,8 +149,10 @@ other tabs retain their usual scroll-to-top behavior.
 Same-day, same-season episodes form one card without episode-title spoilers.
 Filters are page-local; hidden titles persist per profile and also affect Home.
 Media type lives inside Filters, rather than in a separate segmented control.
-Calendar and Filters remain at the top while the agenda scrolls: mobile
-uses the native navigation toolbar without a duplicate page title. The shared
+On TV, the Upcoming title, Calendar and Filters scroll with the week strip and
+date rails; native focus brings the header back into view. On mobile, Calendar
+and Filters remain in the native navigation toolbar while the agenda scrolls,
+without a duplicate page title. The shared
 active-profile Settings control sits separately to their right, both in the
 Upcoming tab and when opened from Coming Soon.
 The partial-refresh footer applies to the entire feed, not the final date:
@@ -196,12 +202,18 @@ Initial entry focuses the selected day so the strip remains visible.
 Week arrows browse across month/year boundaries without changing the agenda.
 Choosing a date jumps to that date without filtering other releases, handing
 native focus to the first release on or after it. If no later release exists,
-focus returns to the fixed Calendar control while the chosen date stays visible.
+the page returns to its header and focuses Calendar, with the chosen week visible.
 The full month picker remains available and synchronizes the displayed week.
 Week starts follow the system calendar; unavailable dates and week directions
 are disabled. Calendar arithmetic preserves local dates across daylight-saving changes.
-Both TV calendars mark selection with a subtle neutral background and Today with
-bold text and a dot. The selection background sits beneath the native control;
+Both TV calendars mark selection with a subtle neutral background. The week
+strip labels the current date Today instead of placing a dot against its lower
+edge; the month picker retains its bold date and dot. Week arrows use the same
+native secondary Liquid Glass style at rest and in focus, without a borderless
+style overriding it. Their regular-weight SF chevrons use a tall, narrow profile.
+The buttons trim spacing on the pointed side for optical balance, mirrored in
+right-to-left layouts.
+The selection background sits beneath the native control;
 actual focus retains the much stronger native highlight and contrasting text.
 
 The presentation hosts support `--upcoming-capture-fixture` (Upcoming) and
@@ -438,6 +450,11 @@ browse-navigation journey.
 
 ## Recently Added watched filtering
 
+Jellyfin and Emby library Recently Added rows and See All use the user's
+library-scoped Latest feed in server order. A new episode can move an existing
+show to the front without changing its series creation date. The library grid's
+explicit Date Added sort still uses the item's own date.
+
 Screens & Navigation > Home > Filtering offers **Recently Added** under
 **Hide watched content**, off by default and saved per profile. The shared presentation policy covers combined,
 per-library, and typed server-authored Recently Added rows on TV and mobile. It leaves
@@ -521,6 +538,9 @@ server addresses, credentials, media IDs/titles or response bodies.
   selecting the already active preset does nothing.
   **Include Next Up** is a profile-scoped setting inside the **Continue Watching**
   section's configuration on every platform, alongside its artwork choice.
+  Visible Continue Watching labels show the episode number and name beneath
+  the series title (`S1 E2 · Episode name`). Spoiler protection omits the name
+  for unfinished episodes, including those already in progress.
   **Continue Watching action** chooses **Open details** (the default) or **Play**
   for movie/episode cards on Home, including merged Next Up entries and every TV
   Home layout. Existing saved choices are preserved; profiles without a saved
@@ -826,6 +846,11 @@ together after pending watch-state reads finish. A partial server failure must
 not replace Continue Watching's focusable loading slot with an error while
 healthy cards are still reconciling. Usable cards retain focus; a settled empty
 failed row still presents its error.
+Continue Watching also uses this independent publication boundary during silent
+refresh. Unrelated row completion cannot republish it. Its heading reserves a
+small refresh/status slot; partial failures disclose details only when selected.
+See [refresh and watch state](refresh-and-watch-state.md) for publication triggers
+and authoritative-empty handling.
 If library visibility changes while a load is in flight, the model replaces the
 obsolete load even when Home's view-owned task is absent. Discarding stale
 results must never strand a row on loading placeholders.

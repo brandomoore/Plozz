@@ -444,6 +444,10 @@ typed mode plus a clamped Custom percentage, never a detected picture rectangle.
 Missing zoom fields in older records leave track memory intact; automatic defaults
 and temporary capability fallbacks are not saved. Invalid stored data is logged
 and preserved rather than overwritten by a later preference write.
+Normal is the initial zoom on all platforms. Unversioned Auto-crop choices decode
+as Normal without changing audio/subtitle memory, other modes or framing parameters.
+Newly encoded zoom preferences carry a schema version so explicit Auto-crop opt-ins
+survive subsequent loads and profile transfer.
 
 ## Artwork and profile presentation
 

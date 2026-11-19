@@ -8,6 +8,34 @@ import FoundationNetworking
 #endif
 
 extension SiloProviderTests {
+    func testRegionalSubtitleNamesSurvivePlaybackInventoryWithSameLanguageAndCodec() async throws {
+        let names = ["French (France)", "French (Canadien)", "French (France) (Forced)", "French (Canadien) (Forced)"]
+        let entries = names.enumerated().map { id, name in
+            """
+            {"track_id":"sub\(id)","combined_index":\(id),"source":"embedded","codec":"srt","language":"fr",
+             "label":"\(name)","forced":\(id >= 2),"default":false,"hearing_impaired":false,
+             "delivery":"sidecar_text","url":"https://silo.test/base/api/v2/stream/session1/subtitles/\(id).vtt"}
+            """
+        }
+        var responses = playbackResponses()
+        responses["/api/v2/playback/start"] = try XCTUnwrap(responses["/api/v2/playback/start"])
+            .replacingOccurrences(of: #""inventory":[]"#, with: "\"inventory\":[\(entries.joined(separator: ","))]")
+        let raw = try credential().encoded()
+        let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw),
+                                        http: SiloHTTPStub(responses))
+        let request = try await provider.playbackInfo(for: "movie:1", mediaSourceID: "42", forceTranscode: false)
+        XCTAssertEqual(request.subtitleTracks.map(\.id), [0, 1, 2, 3])
+        for (track, name) in zip(request.subtitleTracks, names) {
+            let label = TrackLabeling.subtitleLabel(
+                displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language,
+                codec: track.codec, isForced: track.isForced, isImageBased: false, trackID: track.id,
+                locale: Locale(identifier: "en")
+            )
+            XCTAssertTrue(label.qualifiers.contains(.title(name)) || label.base == .content(name))
+            XCTAssertEqual(label.qualifiers.contains(.forced), track.id >= 2)
+        }
+    }
+
     func testAddressEditsPreserveActiveMediaAndSubtitleGrantsWithoutCrossLoginReuse() async throws {
         let registry = ProviderRegistry()
         let (provider, _, _, request) = try await subtitleFixture(registry: registry)

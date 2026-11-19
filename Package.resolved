@@ -1,12 +1,12 @@
 {
-  "originHash" : "ee9615242031e7adbdeb9833067a79cf9965d7775bbac5c0536d80997499b711",
+  "originHash" : "db1cb98099d503b2ac68585b8903db7c5cf93ea4407d7bab6c86ceaf705e092c",
   "pins" : [
     {
       "identity" : "aetherengine",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/brandomoore/AetherEngine",
       "state" : {
-        "revision" : "bba604e1ee381958e568a4ec407a22a766d521ab"
+        "revision" : "754eadcb5f6c6018c9e2ce53fd554777b89c6b50"
       }
     },
     {

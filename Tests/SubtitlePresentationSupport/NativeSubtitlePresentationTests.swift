@@ -11,6 +11,43 @@ import XCTest
 
 @MainActor
 final class NativeSubtitlePresentationTests: XCTestCase {
+    func testLocalASSVideoBoundaryTiming() async throws {
+        guard ProcessInfo.processInfo.environment["PLOZZ_ASS_VIDEO_TIMING_PROBE"] == "1" else {
+            throw XCTSkip("Opt-in mounted video/ASS marker probe; record the screen separately for presentation timing.")
+        }
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let model = LiveSubtitleModel()
+        model.beginLiveFeed()
+        var changes: [(visible: Bool, time: Double)] = []
+        var visible = false
+        engine.onSubtitleCues = { cues in
+            model.tick(engine.subtitlePresentationTime)
+            model.updateLiveCues(cues)
+            let next = model.primary.contains(where: \.isImage)
+            if next != visible {
+                changes.append((next, engine.subtitlePresentationTime))
+                visible = next
+            }
+        }
+        let window = try await mount(engine, subtitles: model)
+        defer { engine.onSubtitleCues = nil; engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        await engine.load(request: request(try fixtureURL("ass-sync.mkv"), tracks: []), startPosition: 0)
+        try await waitUntil(timeout: 30) { engine.isPlaybackPositionReady && !engine.subtitleTracks.isEmpty }
+        engine.selectSubtitleTrack(try XCTUnwrap(engine.subtitleTracks.first { $0.codec == "ass" }))
+        try await waitUntil(timeout: 30) { engine.subtitlePresentationTime >= 10.5 }
+        let expected = (2...9).flatMap { [(true, Double($0)), (false, Double($0) + 0.5)] }
+        XCTAssertEqual(changes.count, expected.count)
+        guard changes.count == expected.count else {
+            print("ASS_VIDEO_CLOCK_INCOMPLETE changes=\(changes)")
+            return
+        }
+        for (change, boundary) in zip(changes, expected) {
+            XCTAssertEqual(change.visible, boundary.0)
+            print("ASS_VIDEO_CLOCK route=\(engine.liveSnapshot.route) visible=\(change.visible) boundary=\(boundary.1) deliveryMs=\((change.time - boundary.1) * 1_000)")
+        }
+    }
+
     func testEmbeddedMP4CaptionsRecoverAfterOffAndPausedReselection() async throws {
         let engine = NativeVideoEngine(startsMuted: true)
         let model = LiveSubtitleModel()

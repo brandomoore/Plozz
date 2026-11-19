@@ -630,6 +630,13 @@ SCENARIOS = {
         "description": "Four complete identity passes over 408 metadata-bearing movie/episode artwork sources; no network or rendering.",
         "counters": ["items", "identities", "identityBytes"],
     },
+    "home-continue-watching-refresh": {
+        "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceContinueWatchingRefresh",
+        "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",
+        "description": "Revalidate eight Continue Watching titles while Recently Added takes 400 ms; measure model publication and complete all requests.",
+        "counters": ["providerRequests", "continueWatchingItems", "continueWatchingMicroseconds",
+                     "allContentMicroseconds"],
+    },
     "home-metadata-publication": {
         "suite": "ui", "test": "HomeMetadataPerformanceTests/testPerformanceHomeMetadataPublication",
         "file": "Tests/PerformancePresentationSupport/HomeMetadataPerformanceTests.swift",

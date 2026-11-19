@@ -119,6 +119,137 @@ final class ASSSubtitleRendererTests: XCTestCase {
         XCTAssertTrue(switched.images.isEmpty)
     }
 
+    func testAuthoredSignsStartAndEndAtTheirMillisecondBoundaries() async throws {
+        let renderer = ASSSubtitleRasterizer()
+        let events = (0..<12).map { index in
+            ASSSubtitleEvent(
+                packet: "\(index),0,Default,,0,0,0,,{\\an7\\pos(100,50)\\p1}m 0 0 l 30 0 30 30 0 30",
+                start: 1.03 + Double(index) * 0.5,
+                end: 1.28 + Double(index) * 0.5
+            )
+        }
+        var visible = false
+        for event in events {
+            for (time, expected) in [(event.start - 0.001, false), (event.start, true),
+                                     (event.end - 0.001, true), (event.end, false)] {
+                let frame = try await renderer.render(
+                    document: document(), events: events, time: time, snapshotRevision: 1
+                )
+                if frame.changed { visible = !frame.images.isEmpty }
+                XCTAssertEqual(visible, expected, "Authored sign at \(time)")
+            }
+        }
+    }
+
+    func testSlowSteadyStateASSFramesMatchTheMediaTimeAtCompletion() async throws {
+        let signs = (0..<4).map { index in
+            ASSSubtitleEvent(
+                packet: "\(index),0,Default,,0,0,0,,{\\an7\\pos(100,50)\\p1}m 0 0 l 30 0 30 30 0 30",
+                start: 1.031 + Double(index) * 0.713, end: 1.344 + Double(index) * 0.713
+            )
+        }
+        for hz in [24_000.0 / 1_001, 60.0] {
+            for cost in [0.050, 0.100] {
+                let rasterizer = ASSSubtitleRasterizer(), doc = document()
+                var lead = ASSSubtitleRenderLead(), pacer = ASSSubtitleFramePacer()
+                var available = 0.0, boundary: Double?, visible = false
+                var transitions: [Double] = []
+                for tick in 0..<Int(4.5 * hz) {
+                    let now = Double(tick) / hz
+                    lead.tick(now, uptime: now)
+                    // A scheduled render occupies one worker; no concurrent raster samples.
+                    guard now >= available, pacer.admit(now, frameRate: 24, cueBoundary: boundary) else { continue }
+                    let frame = try await rasterizer.render(document: doc, events: signs,
+                                                           time: lead.time(for: now), snapshotRevision: 1)
+                    available = now + cost
+                    lead.complete(elapsed: cost)
+                    pacer.complete(renderSeconds: cost)
+                    boundary = frame.nextCueBoundary
+                    if frame.changed, visible != !frame.images.isEmpty {
+                        visible.toggle()
+                        transitions.append(available)
+                    }
+                    let completion = (available * 1_000).rounded() / 1_000
+                    XCTAssertEqual(visible, signs.contains { $0.start <= completion && completion < $0.end },
+                                   "\(hz) Hz, \(cost)s render delivered stale or premature artwork at \(completion)")
+                }
+                let authored = signs.flatMap { [$0.start, $0.end] }
+                XCTAssertEqual(transitions.count, authored.count)
+                for (delivery, expected) in zip(transitions, authored) {
+                    XCTAssertGreaterThanOrEqual(delivery - expected, -0.0005)
+                    XCTAssertLessThanOrEqual(delivery - expected, cost / 0.7 + 1 / hz + 0.0005,
+                                             "Do not retain a stale sign past the next available render slot.")
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testLocalASSDriverBoundaryTiming() async throws {
+        guard ProcessInfo.processInfo.environment["PLOZZ_ASS_TIMING_PROBE"] == "1" else {
+            throw XCTSkip("Opt-in wall-clock renderer delivery measurement, not physical display timing.")
+        }
+        let filmRate = 24_000.0 / 1_001
+        for (frameRate, displayRate) in [(filmRate, 60.0), (filmRate, filmRate), (24.0, 24.0), (60.0, 60.0)] {
+            let renderer = ASSSubtitleRenderer()
+            defer { renderer.clear() }
+            let events = (0..<12).map { index in
+                ASSSubtitleEvent(
+                    packet: "\(index),0,Default,,0,0,0,,{\\an7\\pos(100,50)\\p1}m 0 0 l 30 0 30 30 0 30",
+                    start: 1.03 + Double(index) * 0.37,
+                    end: 1.16 + Double(index) * 0.37
+                )
+            }
+            let warmup = ASSSubtitleEvent(
+                packet: #"100,0,Default,,0,0,0,,{\an7\pos(100,50)\p1}m 0 0 l 30 0 30 30 0 30"#,
+                start: -1, end: 0
+            )
+            renderer.update(document: document(), events: [warmup] + events)
+            var ready = false
+            renderer.onFrame = { ready = !$0.isEmpty }
+            renderer.tick(-0.5)
+            var deadline = ContinuousClock.now + .seconds(10)
+            while !ready, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            XCTAssertTrue(ready, "Warm the rasterizer before measuring steady-state delivery.")
+            renderer.tick(0)
+            deadline = ContinuousClock.now + .seconds(10)
+            while ready, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            XCTAssertFalse(ready)
+            let started = ProcessInfo.processInfo.systemUptime
+            var changes: [(visible: Bool, time: Double)] = []
+            var visible = false
+            renderer.onFrame = { cues in
+                let next = !cues.isEmpty
+                if next != visible {
+                    changes.append((next, ProcessInfo.processInfo.systemUptime - started))
+                    visible = next
+                }
+            }
+            var nextTick = started
+            while ProcessInfo.processInfo.systemUptime - started < 6 {
+                let now = ProcessInfo.processInfo.systemUptime
+                renderer.tick(now - started, frameRate: frameRate)
+                nextTick += 1.0 / displayRate
+                let delay = max(0.001, nextTick - ProcessInfo.processInfo.systemUptime)
+                try await Task.sleep(for: .seconds(delay))
+            }
+            let boundaries = events.flatMap { [(true, $0.start), (false, $0.end)] }
+            XCTAssertEqual(changes.count, boundaries.count)
+            guard changes.count == boundaries.count else {
+                print("ASS_TIMING_INCOMPLETE fps=\(frameRate) displayHz=\(displayRate) changes=\(changes)")
+                continue
+            }
+            for (change, boundary) in zip(changes, boundaries) {
+                XCTAssertEqual(change.visible, boundary.0)
+                print("ASS_TIMING fps=\(frameRate) displayHz=\(displayRate) visible=\(change.visible) boundary=\(boundary.1) deliveryMs=\((change.time - boundary.1) * 1_000)")
+            }
+        }
+    }
+
     func testUnchangedASSReadAheadDoesNotReprocessPacketsButStillAdmitsFutureAndSeekedCues() async throws {
         let renderer = ASSSubtitleRasterizer()
         let early = ASSSubtitleEvent(

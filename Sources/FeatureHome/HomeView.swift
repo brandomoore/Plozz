@@ -906,7 +906,7 @@ public struct HomeView: View {
         )
         .background(
             HomeShareScanRefreshObserver(
-                onRefresh: { Task { await viewModel.load(showLoadingState: false) } },
+                onRefresh: { viewModel.setNeedsRefresh() },
                 isTrailerPlaying: heroTrailerController.isPlaying,
                 isFrontmost: heroIsFrontmost,
                 onPollShares: onPollShares,
@@ -921,7 +921,8 @@ public struct HomeView: View {
             case .reloadHome:
                 await viewModel.loadIfNeeded(
                     for: visibility.visibility,
-                    trigger: request.reason.diagnosticTrigger
+                    trigger: request.reason.diagnosticTrigger,
+                    forceRefresh: true
                 )
             case .reloadSeriesContext, .refreshWatchStateOnly:
                 break
@@ -1440,6 +1441,15 @@ public struct HomeView: View {
         return { onBrowse(.row(viewModel.browseRow(row))) }
     }
 
+    private var continueWatchingRefreshStatus: MediaRowRefreshStatus {
+        .init(
+            isRefreshing: viewModel.isRefreshingContinueWatching,
+            failure: viewModel.rowFailures[.continueWatching],
+            report: viewModel.continueWatchingDiagnostic.map(PlaybackDiagnosticReport.library),
+            onRetry: { Task { await viewModel.load(showLoadingState: false) } }
+        )
+    }
+
     @ViewBuilder
     private func homeRowContent(
         _ row: HomeRow, reservesLoadingFocus: Bool, onBrowse: (() -> Void)?
@@ -1459,6 +1469,7 @@ public struct HomeView: View {
             )
             .browsingRow(row.items.isEmpty ? nil : onBrowse)
             .environment(\.plozzArtworkArea, .continueWatching)
+            .environment(\.mediaRowRefreshStatus, continueWatchingRefreshStatus)
         case .watchlist:
             MediaRowView(
                 title: row.displayName,
@@ -1799,6 +1810,7 @@ public struct HomeView: View {
                     )
                     .browsingRow(row.items.isEmpty ? nil : onBrowse)
                     .environment(\.plozzArtworkArea, .continueWatching)
+                    .environment(\.mediaRowRefreshStatus, continueWatchingRefreshStatus)
                 case .watchlist:
                     MediaRowView(
                         title: row.displayName,
@@ -2290,18 +2302,14 @@ enum HomeHeroDisplayResolver {
 /// Keyed on the newest completion across all shares rather than one id, since
 /// Home aggregates every account.
 struct HomeShareScanRefreshObserver: View {
-    /// Silent — the loaded rows stay on screen while fresher ones swap in, so a
-    /// background poll never flashes a skeleton or moves focus.
+    /// Marks the next Home visit stale without replacing the visible lineup.
     let onRefresh: () -> Void
-    /// Whether a hero trailer is playing. Stillness alone is not idleness: a
-    /// viewer watching a trailer sends no move commands for its whole duration,
-    /// so the idle window would elapse mid-playback and the reload would tear the
-    /// trailer down under them.
+    /// Preserves the scanner's delivery debounce while a hero trailer is playing.
     let isTrailerPlaying: Bool
     let isFrontmost: Bool
     /// Gives the shares a chance to notice new files. Deliberately separate from
     /// `onRefresh`: polling must cost no UI work, so this pokes the scanner and
-    /// nothing else. A reload happens only if that pass reports a real change.
+    /// nothing else. Only a real change invalidates the next Home visit.
     let onPollShares: () -> Void
 
     @Environment(ShareScanStatusModel.self) private var status: ShareScanStatusModel?
@@ -2315,9 +2323,7 @@ struct HomeShareScanRefreshObserver: View {
     /// A background view cannot receive the focused rails' move commands itself.
     let navigationActivity: HomeNavigationActivity
 
-    /// Whether content may be swapped in without disturbing the viewer: they have
-    /// been still for a while *and* nothing is playing.
-    /// A change is waiting for a quiet moment to be shown.
+    /// A catalogue change awaiting delivery through the observer's debounce.
     @State private var hasPendingChange = false
 
     /// Whether a change time has been seen at all yet.
@@ -2330,7 +2336,7 @@ struct HomeShareScanRefreshObserver: View {
 
     @State private var nextPollAt: ContinuousClock.Instant?
 
-    /// Show a pending share change once nothing is in the way. Foreground and
+    /// Invalidate the next visit after the observer's debounce. Foreground and
     /// surface-return refreshes belong to `ContentRefreshCoordinator`; this
     /// observer only reports changes the share scanner actually found.
     private func refreshIfSafe() {
@@ -2360,13 +2366,7 @@ struct HomeShareScanRefreshObserver: View {
         let trailerPlaying: Bool
     }
 
-    /// How long the viewer must have been still before a poll may swap content in.
-    ///
-    /// Reloading Home re-fetches and re-sorts every rail, so rows can reorder
-    /// under the cursor mid-browse — content moving while someone is reading it
-    /// is worse than seeing it a minute late. A refresh therefore waits for a
-    /// quiet moment, which on a living-room screen is the overwhelmingly common
-    /// state.
+    /// Coalesces catalogue changes; delivery invalidates but never reloads Home.
     private static let idleGrace: Duration = .seconds(30)
 
     var body: some View {
@@ -2405,11 +2405,7 @@ struct HomeShareScanRefreshObserver: View {
                     try? await Task.sleep(until: deadline, clock: .continuous)
                     guard !Task.isCancelled, pollingEnabled else { return }
                     nextPollAt = .now.advanced(by: pollInterval)
-                    // Never swap content in under an active viewer: wait for the
-                    // remote to be still. Re-querying the catalog is what spawns a
-                    // scan; the reload then picks up whatever that pass found.
-                    // Poking costs nothing on screen, so it needs no idle check —
-                    // only the reload that a real change triggers does.
+                    // Re-querying starts a scan, not a visible Home reload.
                     onPollShares()
                     // Deliver anything that arrived while the viewer was busy.
                     refreshIfSafe()

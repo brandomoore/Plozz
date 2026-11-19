@@ -5,6 +5,153 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class AetherReleaseIntegrationTests: XCTestCase {
+    func testMP4SubtitleNamesDoNotCollideWithGeneratedNativeRenditionSuffixes() throws {
+        let demuxer = Demuxer()
+        defer { demuxer.close() }
+        try demuxer.open(url: XCTUnwrap(Bundle.module.url(
+            forResource: "track-name-collisions", withExtension: "mp4", subdirectory: "Fixtures"
+        )))
+        let tracks = demuxer.subtitleTrackInfos()
+        XCTAssertEqual(tracks.map(\.sourceTitle), ["English", "English", "English 2"])
+        let entries = tracks.map { track in
+            AetherEngine.NativeSubtitleTrackEntry(
+                sourceStreamIndex: track.id, language: track.language, isForced: track.isForced,
+                title: track.sourceTitle, isHearingImpaired: track.isHearingImpaired
+            )
+        }
+        let infos = AetherEngine.nativeSubtitleRenditionInfos(for: entries)
+        XCTAssertEqual(infos.count, 3)
+        XCTAssertEqual(Set(infos.map(\.name)).count, 3)
+        XCTAssertEqual(infos.map(\.language), tracks.map(\.language))
+        XCTAssertEqual(infos.map(\.isForced), tracks.map(\.isForced))
+        XCTAssertEqual(infos.map(\.isHearingImpaired), tracks.map(\.isHearingImpaired))
+        let last = try XCTUnwrap(tracks.last)
+        XCTAssertEqual(infos.last?.name, AetherEngine.nativeSubtitleRenditionBaseName(
+            language: last.language, title: last.sourceTitle
+        ))
+
+        let untagged = ["English", "English", "English 2", "English 3", "English"].map {
+            AetherEngine.NativeSubtitleTrackEntry(sourceStreamIndex: 0, language: nil, title: $0)
+        }
+        XCTAssertEqual(
+            AetherEngine.nativeSubtitleRenditionInfos(for: untagged).map(\.name),
+            ["English", "English 4", "English 2", "English 3", "English 5"]
+        )
+    }
+
+    func testMP4AuthoredHandlerNamesReachTheEngine() throws {
+        for name in ["track-names", "track-metadata-name"] {
+            let demuxer = Demuxer()
+            defer { demuxer.close() }
+            try demuxer.open(url: XCTUnwrap(Bundle.module.url(
+                forResource: name, withExtension: "mp4", subdirectory: "Fixtures"
+            )))
+            XCTAssertEqual(demuxer.audioTrackInfos().map(\.name), ["Audio Description"])
+            XCTAssertEqual(demuxer.subtitleTrackInfos().map(\.name), ["Signs & Songs"])
+            let tracks = PlozzigenVideoEngine.selectableAudioTracks(from: demuxer.audioTrackInfos(), route: .loopback)
+            XCTAssertEqual(tracks.first?.sourceTitle, "Audio Description")
+            XCTAssertFalse(try XCTUnwrap(tracks.first).isVisualImpaired, "A title must not invent a disposition.")
+        }
+    }
+
+    func testMP4MuxerDefaultsStayGeneratedAndMatroskaRetainsAuthoredNamesAndFlags() throws {
+        let demuxer = Demuxer()
+        defer { demuxer.close() }
+        try demuxer.open(url: XCTUnwrap(Bundle.module.url(
+            forResource: "track-defaults", withExtension: "mp4", subdirectory: "Fixtures"
+        )))
+        XCTAssertEqual(demuxer.audioTrackInfos().map(\.name), ["ENG (aac)"])
+        XCTAssertEqual(demuxer.subtitleTrackInfos().map(\.name), ["ENG (mov_text)"])
+        let matroska = Demuxer()
+        defer { matroska.close() }
+        try matroska.open(url: XCTUnwrap(Bundle.module.url(
+            forResource: "track-names", withExtension: "mkv", subdirectory: "Fixtures"
+        )))
+        let audio = try XCTUnwrap(PlozzigenVideoEngine.selectableAudioTracks(
+            from: matroska.audioTrackInfos(), route: .loopback
+        ).first)
+        let subtitle = try XCTUnwrap(PlozzigenVideoEngine.selectableSubtitleTracks(
+            from: matroska.subtitleTrackInfos(), route: .loopback
+        ).first)
+        XCTAssertEqual(audio.sourceTitle, "Narration [Fixture]")
+        XCTAssertTrue(audio.isVisualImpaired)
+        XCTAssertFalse(audio.isCommentary)
+        XCTAssertEqual(subtitle.sourceTitle, "Signs & Songs [Fixture]")
+        XCTAssertTrue(subtitle.isForced)
+        XCTAssertTrue(subtitle.isHearingImpaired)
+    }
+
+    func testEngineTrackTitleMetadataPrecedence() {
+        XCTAssertEqual(Demuxer.resolvedTrackTitle(title: "Full", name: "Signs", handlerName: "Other"), "Full")
+        XCTAssertEqual(Demuxer.resolvedTrackTitle(title: " \n", name: "Signs & Songs", handlerName: "Other"), "Signs & Songs")
+        XCTAssertEqual(Demuxer.resolvedTrackTitle(title: "SoundHandler", name: nil, handlerName: nil), "SoundHandler")
+        for value in [nil, "", " \n", "SoundHandler", "SubtitleHandler", "VideoHandler",
+                      "TextHandler", "Core Media Audio", "GPAC ISO Subtitle Handler"] {
+            XCTAssertNil(Demuxer.resolvedTrackTitle(title: nil, name: nil, handlerName: value))
+        }
+    }
+
+    func testContainerTrackNamesReachLabelsWithoutProviderMetadata() throws {
+        let subtitleName = "Signs & Songs [MangaUK (Lyrics by Kiyoshi)]"
+        let subtitle = try XCTUnwrap(PlozzigenVideoEngine.selectableSubtitleTracks(from: [
+            TrackInfo(id: 3, name: subtitleName, codec: "ass", language: "en", isDefault: true)
+        ], route: .loopback).first)
+        XCTAssertEqual(
+            TrackLabeling.subtitleLabel(
+                displayTitle: subtitle.displayTitle, sourceTitle: subtitle.sourceTitle,
+                language: subtitle.language, codec: subtitle.codec,
+                isForced: subtitle.isForced, isImageBased: subtitle.isImageBasedSubtitle,
+                trackID: subtitle.id, locale: Locale(identifier: "en")
+            ),
+            TrackLabel(base: .content("English"), qualifiers: [.title(subtitleName)])
+        )
+        let audioName = "Commentary by Director Ridley Scott"
+        let audio = try XCTUnwrap(PlozzigenVideoEngine.selectableAudioTracks(from: [
+            TrackInfo(id: 2, name: audioName, codec: "ac3", language: "en", channels: 2, isDefault: false)
+        ], route: .loopback).first)
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(
+                displayTitle: audio.displayTitle, sourceTitle: audio.sourceTitle, language: audio.language,
+                codec: audio.codec, channels: audio.channels, trackID: audio.id, locale: Locale(identifier: "en")
+            ),
+            TrackLabel(base: .content("English"), qualifiers: [.title(audioName), .format("Dolby Digital Stereo")])
+        )
+        let provider = MediaTrack(id: 3, kind: .subtitle, displayTitle: "English", sourceTitle: "Full subs", language: "en")
+        XCTAssertEqual(subtitle.enriched(withProvider: provider).sourceTitle, subtitleName)
+        let native = try XCTUnwrap(PlozzigenVideoEngine.selectableSubtitleTracks(from: [
+            TrackInfo(id: 3, name: "English", codec: "ass", language: "en", isDefault: true)
+        ], route: .remoteBypass).first)
+        XCTAssertNil(native.sourceTitle, "AVFoundation display names are not original container names.")
+        XCTAssertEqual(native.enriched(withProvider: provider).sourceTitle, "Full subs")
+    }
+
+    func testGeneratedEngineNamesDoNotBecomeContainerTitlesOrChangeBitmapRouting() throws {
+        for name in ["ENG (aac)", "Track 3 (aac)"] {
+            let track = try XCTUnwrap(PlozzigenVideoEngine.selectableAudioTracks(from: [
+                TrackInfo(id: 3, name: name, codec: "aac", language: "eng", channels: 2, isDefault: false)
+            ], route: .loopback).first)
+            XCTAssertNil(track.sourceTitle)
+            XCTAssertEqual(track.id, 3)
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(
+                    displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language,
+                    codec: track.codec, channels: track.channels, trackID: track.id, locale: Locale(identifier: "en")
+                ),
+                TrackLabel(base: .content("English"), qualifiers: [.format("AAC Stereo")])
+            )
+        }
+        let track = try XCTUnwrap(PlozzigenVideoEngine.selectableSubtitleTracks(from: [
+            TrackInfo(id: 5, name: "ENG (pgssub)", codec: "pgssub", language: "eng",
+                      isDefault: true, isForced: true, isHearingImpaired: true)
+        ], route: .loopback).first)
+        XCTAssertNil(track.sourceTitle)
+        XCTAssertTrue(track.isDefault)
+        XCTAssertTrue(track.isForced)
+        XCTAssertTrue(track.isHearingImpaired)
+        XCTAssertFalse(track.isImageBasedSubtitle)
+        XCTAssertTrue(track.isBitmapSubtitle)
+    }
+
     func testAudioSyncOnlyAdvertisesRoutesThatCanApplyTheOffset() {
         for route in [VideoRoute.software, .loopback, .remoteBypass, .audio, .none] {
             XCTAssertEqual(

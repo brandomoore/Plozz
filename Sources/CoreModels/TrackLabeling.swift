@@ -56,8 +56,11 @@ public enum TrackLabeling {
     /// A short uppercase format hint for an image/subtitle codec token, or `nil`
     /// when nothing useful can be said. Text codecs return `nil` (the language is
     /// the useful fact); image codecs surface their family so a bitmap track
-    /// reads as "Spanish (PGS)" rather than a bare "Track 8".
-    public static func subtitleFormatHint(codec: String?, isImageBased: Bool) -> String? {
+    /// reads as "Spanish (PGS)" rather than a bare "Track 8". Menu collision
+    /// resolution can opt into text formats to distinguish SRT from ASS, etc.
+    public static func subtitleFormatHint(
+        codec: String?, isImageBased: Bool, includesTextFormats: Bool = false
+    ) -> String? {
         let token = (codec ?? "").lowercased()
         if token.contains("pgs") { return "PGS" }
         if token.contains("vob") { return "VobSub" }
@@ -66,6 +69,18 @@ public enum TrackLabeling {
         // Unknown image codec: still signal it's a bitmap so the viewer knows
         // why there's no language and that it can't be restyled.
         if isImageBased { return "Image" }
+        if includesTextFormats {
+            switch token {
+            case "srt", "subrip": return "SRT"
+            case "ass": return "ASS"
+            case "ssa": return "SSA"
+            case "webvtt", "vtt": return "WebVTT"
+            case "mov_text", "tx3g": return "TX3G"
+            case "ttml", "dfxp": return "TTML"
+            case "sami", "smi": return "SAMI"
+            default: break
+            }
+        }
         return nil
     }
 
@@ -209,6 +224,7 @@ public enum TrackLabeling {
     /// first, which would hide the copy from the catalog forever.
     public static func subtitleLabel(
         displayTitle: String,
+        sourceTitle: String? = nil,
         language: String?,
         codec: String?,
         isForced: Bool,
@@ -242,7 +258,10 @@ public enum TrackLabeling {
         }
         if providerName == nil, detectedName != nil { qualifiers.append(.autoDetected) }
 
-        return TrackLabel(base: base, qualifiers: qualifiers)
+        return retainingSourceTitle(
+            sourceTitle, in: TrackLabel(base: base, qualifiers: qualifiers),
+            language: language ?? detectedLanguage, locale: locale
+        )
     }
 
     private static func versionTags(in title: String) -> [String] { // l10n:content - provider/container track title.
@@ -288,6 +307,7 @@ public enum TrackLabeling {
     /// `subtitleLabel` — see that method's doc comment.
     public static func audioLabel(
         displayTitle: String,
+        sourceTitle: String? = nil,
         language: String?,
         codec: String? = nil,
         profile: String? = nil,
@@ -295,6 +315,7 @@ public enum TrackLabeling {
         isAtmos: Bool = false,
         isDTSX: Bool = false,
         isCommentary: Bool = false,
+        isVisualImpaired: Bool = false,
         trackID: Int,
         locale: Locale = .current
     ) -> TrackLabel {
@@ -354,8 +375,74 @@ public enum TrackLabeling {
         if isCommentary, !baseTitle.localizedCaseInsensitiveContains("commentary") {
             qualifiers.append(.commentary)
         }
+        if isVisualImpaired, !baseTitle.localizedCaseInsensitiveContains("audio description") {
+            qualifiers.append(.audioDescription)
+        }
 
-        return TrackLabel(base: base, qualifiers: qualifiers)
+        return retainingSourceTitle(
+            sourceTitle, in: TrackLabel(base: base, qualifiers: qualifiers),
+            language: language, locale: locale
+        )
+    }
+
+    fileprivate static func meaningfulSourceTitle(_ sourceTitle: String?) -> String? { // l10n:content - container title.
+        guard let title = sourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return nil }
+        if !isGenericTitle(title) { return title }
+        // The generic display-title detector strips parentheses as codec hints.
+        // An explicitly authored name may instead put its distinction there.
+        if let start = title.firstIndex(of: "(") {
+            let detail = String(title[title.index(after: start)...])
+                .trimmingCharacters(in: CharacterSet(charactersIn: "()").union(.whitespacesAndNewlines))
+            if !isGenericTitle(detail) { return title }
+        }
+        return nil
+    }
+
+    private static func retainingSourceTitle(
+        _ sourceTitle: String?, in label: TrackLabel, language: String?, locale: Locale
+    ) -> TrackLabel { // l10n:content - original container track names, never translated.
+        guard let title = meaningfulSourceTitle(sourceTitle) else { return label }
+        guard case .content(let base) = label.base else {
+            return TrackLabel(base: .content(title), qualifiers: label.qualifiers)
+        }
+        func words(_ value: String) -> [String] {
+            value.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        }
+        // Language/version/format-only names are already represented. Compare
+        // English server labels as well as the app locale without translating names.
+        var represented = [
+            base, language ?? "",
+            languageName(forCode: language, in: locale) ?? "",
+            languageName(forCode: language, in: Locale(identifier: "en")) ?? "",
+            trackLanguageName(forCode: language, in: Locale(identifier: "en")) ?? ""
+        ]
+        represented += versionTags(in: base)
+        for qualifier in label.qualifiers {
+            switch qualifier {
+            case .format(let value), .title(let value):
+                represented.append(value)
+            case .version(let value):
+                represented.append(value)
+            case .forced: represented.append("Forced")
+            case .hearingImpaired: represented += ["SDH", "CC", "HOH", "Hearing Impaired"]
+            case .commentary: represented.append("Commentary")
+            case .audioDescription: represented += ["Audio Description", "AD"]
+            case .autoDetected, .channelCount: break
+            }
+        }
+        let titleWords = words(title)
+        var remainder = titleWords.joined(separator: " ")
+        if !remainder.isEmpty, (" " + words(base).joined(separator: " ") + " ").contains(" " + remainder + " ") {
+            return label
+        }
+        let phrases = Set(represented.map { words($0).joined(separator: " ") }).sorted { $0.count > $1.count }
+        for phrase in phrases where !phrase.isEmpty {
+            let pattern = #"(?<!\S)"# + NSRegularExpression.escapedPattern(for: phrase) + #"(?!\S)"#
+            remainder = remainder.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+        guard titleWords.isEmpty || !remainder.trimmingCharacters(in: .whitespaces).isEmpty else { return label }
+        return TrackLabel(base: label.base, qualifiers: [.title(title)] + label.qualifiers)
     }
 
     private static func audioTitleContainsFormat(
@@ -413,7 +500,7 @@ public enum TrackLabeling {
 ///
 /// Kept in `CoreModels` (Foundation-only) so `TrackLabeling` can stay
 /// unit-testable without SwiftUI, but the label is never assembled into one
-/// `String` here — `base`, `.format`, and `.version` are resolved *content*
+/// `String` here — `base`, `.title`, `.format`, and `.version` are resolved *content*
 /// (a language name, a provider title, a codec or version token) while the other
 /// qualifiers are Plozz's *own words* ("Forced", "SDH", "Commentary", "auto").
 /// Joining those into a single `String` up front would permanently hide the
@@ -434,6 +521,8 @@ public struct TrackLabel: Equatable, Sendable {
     /// A qualifier appended in parentheses after the base, in a fixed,
     /// caller-defined order, joined with ", ".
     public enum Qualifier: Equatable, Sendable {
+        /// Original container track name — content.
+        case title(String)
         /// "Forced" — copy.
         case forced
         /// "SDH" — copy (Plozz's own wording for a hearing-impaired track; not
@@ -441,6 +530,8 @@ public struct TrackLabel: Equatable, Sendable {
         case hearingImpaired
         /// "Commentary" — copy.
         case commentary
+        /// "Audio Description" — copy for an explicitly flagged audio track.
+        case audioDescription
         /// "auto" — copy, appended when the language came only from on-device
         /// content detection rather than a provider/container tag.
         case autoDetected
@@ -500,6 +591,17 @@ public extension MediaTrack {
         if !merged.isDTSX { merged.isDTSX = provider.isDTSX }
         if !merged.isHearingImpaired { merged.isHearingImpaired = provider.isHearingImpaired }
         if !merged.isCommentary { merged.isCommentary = provider.isCommentary }
+        if !merged.isVisualImpaired,
+           id == provider.id, kind == .audio, provider.kind == .audio,
+           language == nil || provider.language == nil || LanguageMatch.matches(language, provider.language) {
+            merged.isVisualImpaired = provider.isVisualImpaired
+        }
+        if TrackLabeling.meaningfulSourceTitle(merged.sourceTitle) == nil,
+           kind == provider.kind,
+           id == provider.id,
+           language == nil || provider.language == nil || LanguageMatch.matches(language, provider.language) {
+            merged.sourceTitle = provider.sourceTitle
+        }
         // Only adopt the provider's title to replace a *generic* engine title,
         // and only when the provider's own title actually says something.
         if TrackLabeling.isGenericTitle(merged.displayTitle),

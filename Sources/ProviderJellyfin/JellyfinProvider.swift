@@ -2844,6 +2844,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
             id: dto.Index,
             kind: isSubtitle ? .subtitle : .audio,
             displayTitle: TrackLabeling.trackDisplayTitle(title, sourceTitles: [dto.Title]),
+            sourceTitle: dto.Title,
             language: dto.Language,
             codec: dto.Codec,
             profile: isSubtitle ? nil : MediaSourceMetadata.audioProfile(
@@ -2884,6 +2885,7 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
             displayTitle: TrackLabeling.trackDisplayTitle(
                 dto.DisplayTitle ?? dto.Language ?? dto.Codec ?? "Track \(dto.Index)", sourceTitles: [dto.Title]
             ),
+            sourceTitle: dto.Title,
             language: dto.Language,
             codec: dto.Codec,
             isDefault: dto.IsDefault ?? false,

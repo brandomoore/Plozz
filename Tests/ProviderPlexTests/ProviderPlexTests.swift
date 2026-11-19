@@ -578,6 +578,26 @@ final class PlexProviderMappingTests: XCTestCase {
         }
     }
 
+    func testExplicitPlexAudioDescriptionFlagSurvivesMappingAndEnrichment() throws {
+        let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
+        for value in ["true", "1", #""1""#] {
+            let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
+                (#"{"index":3,"streamType":2,"codec":"aac","languageTag":"en","visualImpaired":"# + value + "}").utf8
+            ))
+            let mapped = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
+            XCTAssertTrue(mapped.isVisualImpaired)
+            XCTAssertTrue(MediaTrack(id: 3, kind: .audio, displayTitle: "English", language: "en")
+                .enriched(withProvider: mapped).isVisualImpaired)
+            XCTAssertFalse(mapped.isCommentary)
+        }
+        for fields in [#""title":"Audio Description""#, #""visualImpaired":false"#] {
+            let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
+                (#"{"index":3,"streamType":2,"# + fields + "}").utf8
+            ))
+            XCTAssertFalse(try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file").isVisualImpaired)
+        }
+    }
+
     func testAudioMappingPreservesRawVersionTitle() throws {
         let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
         let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(
@@ -588,21 +608,52 @@ final class PlexProviderMappingTests: XCTestCase {
         XCTAssertEqual(track.language, "fr")
         XCTAssertEqual(track.displayTitle, "French DTS 5.1 VFQ")
         XCTAssertEqual(
-            TrackLabeling.audioLabel(displayTitle: track.displayTitle, language: track.language,
+            TrackLabeling.audioLabel(displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language,
                                     codec: track.codec, channels: track.channels, trackID: track.id,
                                     locale: Locale(identifier: "fr")),
             TrackLabel(base: .content("Français"), qualifiers: [.version("VFQ"), .format("DTS 5.1")])
         )
     }
 
+    func testContainerNamesSurvivePlexGeneratedTitlesAndEngineEnrichment() throws {
+        let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
+        for (streamType, title, expected) in [
+            (2, "Director Commentary", TrackLabel(base: .content("English"),
+                qualifiers: [.title("Director Commentary"), .format("AAC Stereo")])),
+            (3, "Signs & Songs", TrackLabel(base: .content("English"), qualifiers: [.title("Signs & Songs")])),
+            (3, "Full subs", TrackLabel(base: .content("English"), qualifiers: [.title("Full subs")]))
+        ] {
+            let json = """
+            {"index":3,"streamType":\(streamType),"codec":"\(streamType == 2 ? "aac" : "srt")",
+             "channels":2,"languageTag":"en","displayTitle":"English",
+             "extendedDisplayTitle":"English","title":"\(title)"}
+            """
+            let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(json.utf8))
+            let track = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
+            let engine = MediaTrack(id: track.id, kind: track.kind, displayTitle: "English", language: "en")
+            let enriched = engine.enriched(withProvider: track)
+            XCTAssertEqual(enriched.sourceTitle, title)
+            let label = streamType == 2
+                ? TrackLabeling.audioLabel(
+                    displayTitle: enriched.displayTitle, sourceTitle: enriched.sourceTitle, language: enriched.language,
+                    codec: enriched.codec, channels: enriched.channels, trackID: enriched.id, locale: Locale(identifier: "en"))
+                : TrackLabeling.subtitleLabel(
+                    displayTitle: enriched.displayTitle, sourceTitle: enriched.sourceTitle, language: enriched.language,
+                    codec: enriched.codec, isForced: false, isImageBased: false, trackID: enriched.id,
+                    locale: Locale(identifier: "en"))
+            XCTAssertEqual(label, expected)
+        }
+    }
+
     func testSubtitleMappingPreservesRawVersionsAlongsideForcedAndRegionalMetadata() throws {
         let provider = PlexProvider(session: makeSession(), http: StubHTTPClient())
-        for (metadata, version) in [
-            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFF)""#, "VFF"),
-            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFQ)""#, "VFQ"),
-            (#""extendedDisplayTitle":"French (Forced)","displayTitle":"French (VFQ)""#, "VFQ"),
-            (#""extendedDisplayTitle":"French (VFF)","title":"French (VFQ)""#, "VFF")
-        ] {
+        for (metadata, qualifiers) in [
+            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFF)""#, [.version("VFF"), .forced]),
+            (#""extendedDisplayTitle":"French (Forced)","title":"French (VFQ)""#, [.version("VFQ"), .forced]),
+            (#""extendedDisplayTitle":"French (Forced)","displayTitle":"French (VFQ)""#, [.version("VFQ"), .forced]),
+            (#""extendedDisplayTitle":"French (VFF)","title":"French (VFQ)""#,
+             [.title("French (VFQ)"), .version("VFF"), .forced])
+        ] as [(String, [TrackLabel.Qualifier])] {
             let json = #"{"index":3,"streamType":3,"codec":"srt","languageTag":"fr-CA","forced":true,"# + metadata + "}"
             let dto = try JSONDecoder.plozz.decode(PlexStream.self, from: Data(json.utf8))
             let track = try provider.map(stream: dto, itemID: "movie", mediaSourceID: "file")
@@ -612,11 +663,11 @@ final class PlexProviderMappingTests: XCTestCase {
             XCTAssertNil(track.channels)
             XCTAssertEqual(
                 TrackLabeling.subtitleLabel(
-                    displayTitle: track.displayTitle, language: track.language, codec: track.codec,
+                    displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language, codec: track.codec,
                     isForced: track.isForced, isImageBased: track.isImageBasedSubtitle,
                     trackID: track.id, locale: Locale(identifier: "en")
                 ),
-                TrackLabel(base: .content("French (Canada)"), qualifiers: [.version(version), .forced])
+                TrackLabel(base: .content("French (Canada)"), qualifiers: qualifiers)
             )
         }
     }

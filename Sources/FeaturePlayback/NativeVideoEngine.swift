@@ -1458,7 +1458,8 @@ public final class NativeVideoEngine: VideoEngine {
                     MediaTrack(
                         id: index, kind: .audio, displayTitle: option.displayName,
                         language: option.extendedLanguageTag ?? option.locale?.identifier,
-                        isDefault: option == group.defaultOption
+                        isDefault: option == group.defaultOption,
+                        isVisualImpaired: option.hasMediaCharacteristic(.describesVideoForAccessibility)
                     )
                 }
             }

@@ -38,16 +38,17 @@ struct UpcomingWeekCalendar: View {
                     Button { displayedWeek = week.previous } label: {
                         Image(systemName: "chevron.backward")
                             .resizable()
-                            .fontWeight(.light)
-                            .frame(width: 20, height: 60)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .fontWeight(.regular)
+                            .frame(width: 22, height: 54)
+                            .padding(.trailing, 4)
+                            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
                     }
-                        .buttonStyle(.borderless)
+                        .buttonBorderShape(.roundedRectangle(radius: 16))
                         .accessibilityLabel("Previous week")
                         .help("Previous week")
                         .accessibilityIdentifier("upcoming.week.previous")
                         .disabled(!week.canMoveBackward(in: interval)),
-                    width: 80
+                    width: 78
                 )
                 ForEach(week.days, id: \.self) { day in
                     control(dayButton(day))
@@ -60,16 +61,17 @@ struct UpcomingWeekCalendar: View {
                     Button { displayedWeek = week.next } label: {
                         Image(systemName: "chevron.forward")
                             .resizable()
-                            .fontWeight(.light)
-                            .frame(width: 20, height: 60)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .fontWeight(.regular)
+                            .frame(width: 22, height: 54)
+                            .padding(.leading, 4)
+                            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
                     }
-                        .buttonStyle(.borderless)
+                        .buttonBorderShape(.roundedRectangle(radius: 16))
                         .accessibilityLabel("Next week")
                         .help("Next week")
                         .accessibilityIdentifier("upcoming.week.next")
                         .disabled(!week.canMoveForward(in: interval)),
-                    width: 80
+                    width: 78
                 )
             }
         }
@@ -86,7 +88,7 @@ struct UpcomingWeekCalendar: View {
             selectedDay = day
         } label: {
             VStack(spacing: 4) {
-                Text(day, format: .dateTime.weekday(.abbreviated))
+                (isToday ? Text("Today") : Text(day, format: .dateTime.weekday(.abbreviated)))
                     .font(.caption)
                 Text(day, format: .dateTime.day())
                     .font(.title3)
@@ -96,13 +98,6 @@ struct UpcomingWeekCalendar: View {
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .frame(maxWidth: .infinity)
-            .overlay(alignment: .bottom) {
-                if isToday {
-                    Circle().fill().frame(width: 5, height: 5).offset(y: 5)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
         }
         .buttonBorderShape(.roundedRectangle(radius: 16))
         .plozzActionButton(role: .secondary)

@@ -601,6 +601,51 @@ Native and tvOS track menus share `TrackLabeling` and `TrackMenuBuilder`.
 Bare language titles no longer suppress known codec/channel facts, for example
 `English (Opus 5.1)`. Custom names and commentary are retained, existing format
 facts are not duplicated, and unknown formats are not invented.
+Plex and Jellyfin/Emby keep original container track names separately from
+generated display titles. Audio, primary-subtitle, and secondary-subtitle menus
+retain names such as `Director Commentary`, `Full subs`, and `Signs & Songs`
+alongside the existing language/format label. Names are content, not translated
+app copy; empty/generic names keep the previous fallback. Matching provider
+names fill engine metadata gaps without replacing an explicit engine name.
+Plozzigen also retains names read directly from the container when the server
+omits them. Its generated language/codec and numbered fallback labels are not
+treated as authored names. Real-world metadata regression cases cover release
+groups, translation credits, regional/script variants, colored SDH and commentary;
+names never change automatic selection or forced-subtitle disposition.
+Colliding subtitle labels first expose known format differences, such as SRT,
+ASS or WebVTT. Codec aliases normalize to the same format, and missing/unknown
+formats are not invented. Labels still identical after that gain a localized
+track-number suffix. This applies to primary and secondary subtitles, including
+the native mobile menu; unique names,
+selection IDs, preferred-language ordering and external-subtitle markers are unchanged.
+This keeps the useful title/language/format distinction found in
+[Kodi](https://github.com/xbmc/xbmc/blob/master/xbmc/video/dialogs/GUIDialogSubtitleSettings.cpp)
+and [mpv](https://github.com/mpv-player/mpv/blob/master/player/lua/select.lua)
+without adding format noise to every subtitle row.
+Native subtitle renditions also reserve original names before numbering duplicates,
+so a title such as `English 2` cannot collide with a generated suffix.
+Source version tags are deduplicated only when actually shown in the label; conflicting
+source/display metadata is preserved, not interpreted as a correction or a language.
+Explicit audio-description flags from Plex, Plozzigen and native local audio
+selection appear as `Audio Description`, independently of commentary. Jellyfin/Emby
+titles remain intact; their current stream DTOs do not expose a separate equivalent
+flag, but direct Plozzigen demuxing retains the container disposition.
+MP4 stream `title`, `name` and custom `handler_name` values are resolved in the
+engine, not guessed in the app. Muxer defaults such as `SoundHandler` and
+`SubtitleHandler` retain generated fallback labels.
+
+`TrackMenuBuilderTests.testSampledServerMetadataHasDistinctLabelsAndStableSelections`
+accepts a private normalized corpus through `PLOZZ_TRACK_METADATA_CORPUS`; it
+checks audio and both subtitle menus in four locales without changing selection.
+The corpus must contain track metadata only, never tokens, server URLs, media paths
+or item identifiers. Do not commit personal-library samples or rendered output.
+The small `track-names.mp4`, `track-metadata-name.mp4`, `track-defaults.mp4`
+and `track-names.mkv` fixtures
+contain 0.2 seconds of generated silent AAC and the original cue
+`Track metadata fixture.` They verify actual demuxed names, default handlers and
+accessibility flags without downloading copyrighted media.
+`track-name-collisions.mp4` repeats the same original cue on three subtitle tracks
+to cover native rendition names that collide with numeric suffixes.
 Explicit French audio/subtitle version tags (`VFQ`, `VFF`, `VFI`, `VFB`, `VQ`, `VOF`,
 `VOQ`) survive generated server titles, matching-track provider enrichment, and
 app-locale changes. These are source-authored community conventions, rendered
@@ -1542,7 +1587,10 @@ artwork boundary through that same zoom/stretch geometry before moving a region.
 
 The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
 It applies to movies, episodes, extras, trailers and Live TV; each platform starts
-with Auto-crop black bars. Unsupported engines fall back to Normal without changing
+with Normal. Older saved Auto-crop defaults and title choices reset to Normal once;
+other modes, Custom percentages and cutout-safe preferences remain intact.
+New explicit Auto-crop choices survive reloads and profile transfer.
+Unsupported engines fall back to Normal without changing
 the saved choice. Unidentified disc-menu timelines retain Normal framing.
 An explicit zoom-mode choice, including Normal or a Custom percentage, is remembered
 per profile and movie/series using the existing title preference store. Auto-crop's
@@ -1847,6 +1895,28 @@ Rendering uses source time minus the subtitle offset. Paused frames redraw only 
 cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains
 video-rect mapping, HDR brightness and control avoidance.
+
+`ASSSubtitleRendererTests` checks authored sign starts and ends at millisecond
+boundaries. A deterministic test feeds the real pacer, render-lead estimator
+and libass a virtual clock with 50 or 100 ms per render at 23.976 and 60 Hz.
+Each completed bitmap must match the cue at its delivery time; a previous
+bitmap may remain visible between completions. This models steady render
+cost, not a particular device, async driver scheduling or screen composition.
+Its opt-in `testLocalASSDriverBoundaryTiming` probe
+(`PLOZZ_ASS_TIMING_PROBE=1`) warms the rasterizer, then measures callback delivery
+for short original vector cues at simulated 23.976, 24 and 60 Hz tick cadences.
+It reports every boundary and rejects missing transitions; it is not a
+wall-clock latency gate. These measurements exclude video decoding, SwiftUI
+overlay composition, physical display latency and cold font initialization.
+Passing parser/rasterizer tests alone does not establish frame-accurate A/V sync;
+small reported offsets require the affected media and a rendered comparison.
+The app-hosted `NativeSubtitlePresentationTests.testLocalASSVideoBoundaryTiming`
+probe (`PLOZZ_ASS_VIDEO_TIMING_PROBE=1`) uses `Fixtures/ass-sync.mkv`: an original
+640x360, 24 fps black video with a green reference square and a separate white
+ASS vector square, both active for the first half of seconds 2 through 9.
+It logs overlay delivery against the engine clock. A screen recording must
+compare the two squares' actual painted transitions separately; the callback
+log is not proof of compositor timing or physical Apple TV/iPhone behavior.
 
 Authored ASS frames keep clearly separated upper and lower artwork in separate
 bitmap regions. The upper region stays fixed; only a lower region that intersects

@@ -202,13 +202,37 @@ final class SeriesTrackPreferenceStoreTests: XCTestCase {
         }
     }
 
-    func testLegacyAutoCropDefaultsToScreenEdgesAndSafeChoiceRoundTrips() throws {
+    func testLegacyAutoCropResetsToNormalAndNewSafeChoiceRoundTrips() throws {
         let legacy = try JSONDecoder().decode(VideoZoomPreference.self, from: Data(#"{"mode":4}"#.utf8))
         XCTAssertEqual(legacy, .onDemandDefault)
         XCTAssertFalse(legacy.pictureFitsInsideSafeArea)
         let safe = VideoZoomPreference(mode: .picture, pictureFitsInsideSafeArea: true)
         let encoded = try JSONEncoder().encode(safe)
         XCTAssertEqual(try JSONDecoder().decode(VideoZoomPreference.self, from: encoded), safe)
+    }
+
+    func testLegacyTitleMigrationOnlyResetsAutoCropAndAllowsOptingBackIn() throws {
+        let defaults = makeDefaults()
+        let key = "com.plozz.seriesTrackPreferences"
+        let store = SeriesTrackPreferenceStore(defaults: defaults)
+        for mode in VideoZoomPreference.Mode.allCases {
+            let data = Data("""
+            {"a:movie":{"audioLanguage":"fr","subtitle":{"off":{}},
+             "videoZoom":{"mode":\(mode.rawValue),"customPercent":117,"pictureFitsInsideSafeArea":true}}}
+            """.utf8)
+            defaults.set(data, forKey: key)
+            let preference = try XCTUnwrap(store.preference(forKey: "a:movie"))
+            XCTAssertEqual(preference.audioLanguage, "fr")
+            XCTAssertEqual(preference.subtitle, .off)
+            XCTAssertEqual(preference.videoZoom?.mode, mode == .picture ? .fit : mode)
+            XCTAssertEqual(preference.videoZoom?.customPercent, 117)
+            XCTAssertEqual(preference.videoZoom?.pictureFitsInsideSafeArea, true)
+            store.setVideoZoom(.init(mode: .picture), forKey: "a:movie")
+            let reopened = SeriesTrackPreferenceStore(defaults: defaults)
+            XCTAssertEqual(reopened.preference(forKey: "a:movie")?.videoZoom?.mode, .picture)
+            XCTAssertEqual(reopened.preference(forKey: "a:movie")?.audioLanguage, "fr")
+            XCTAssertEqual(reopened.preference(forKey: "a:movie")?.subtitle, .off)
+        }
     }
 
     func testPersistsAcrossStoreInstances() {

@@ -218,7 +218,7 @@ extension SiloFileVersion {
             MediaTrack(
                 id: index, kind: .subtitle,
                 displayTitle: track.title ?? track.language ?? track.codec ?? String(index),
-                language: track.language, codec: track.codec,
+                sourceTitle: track.title, language: track.language, codec: track.codec,
                 isDefault: track.default, isForced: track.forced, isExternal: track.external
             )
         }

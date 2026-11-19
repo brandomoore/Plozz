@@ -13,7 +13,8 @@ public struct ContinueWatchingPolicy: Sendable, Equatable, Codable {
     /// `nil`: time away from a series is not an instruction to hide its next episode.
     public var nextUpCutoff: TimeInterval?
 
-    /// How old loaded Home content may be before returning to Home refreshes it.
+    /// How old loaded Home content may be before ordinary in-app navigation refreshes it.
+    /// App foreground and explicit refresh requests bypass this debounce.
     ///
     /// Home cannot see a title watched, finished or dismissed on another device,
     /// because nothing tells it to look. Without a bound it will keep showing the

@@ -27,6 +27,20 @@ struct EmbyHomeQueryDto: Decodable {
 }
 
 extension JellyfinProvider {
+    public func libraryRecentlyAddedPage(
+        in libraryID: String, kind: MediaItemKind, startIndex: Int, limit: Int
+    ) async throws -> HomeRowPage {
+        guard kind == .series || kind == .movie else {
+            return try await catalogRecentlyAddedPage(in: libraryID, kind: kind, startIndex: startIndex, limit: limit)
+        }
+        guard startIndex >= 0, limit > 0, startIndex < Int.max - limit else { throw AppError.invalidResponse }
+        // The server ranks grouped shows by new episodes, not by the series' DateCreated.
+        let items = try await client.latestItems(
+            userID: session.userID, limit: startIndex + limit + 1, parentID: libraryID, videoOnly: true
+        )
+        return .prefix(items.map { map(item: $0).taggingLibrary(libraryID) }, startIndex: startIndex, limit: limit)
+    }
+
     public func homeRowPage(_ feed: HomeRowFeed, startIndex: Int, limit: Int) async throws -> HomeRowPage {
         guard startIndex >= 0, limit > 0, limit <= PageRequest.defaultLimit,
               startIndex < Int.max - limit else { throw AppError.invalidResponse }

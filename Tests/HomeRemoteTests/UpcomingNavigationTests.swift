@@ -28,6 +28,8 @@ final class UpcomingNavigationTests: XCTestCase {
             format: "label BEGINSWITH %@", "Upcoming day \(offset)"
         )).firstMatch, in: app)
         XCTAssertFalse(nextWeek.isHittable, "The week strip must scroll away rather than stay pinned.")
+        XCTAssertFalse(app.buttons["upcoming.calendar"].isHittable, "The page header must scroll away too.")
+        XCTAssertFalse(app.buttons["upcoming.filters"].isHittable)
         XCUIRemote.shared.press(.up)
         assertFocused(app.buttons.matching(NSPredicate(
             format: "label BEGINSWITH %@", "Upcoming day \(offset - 1)"
