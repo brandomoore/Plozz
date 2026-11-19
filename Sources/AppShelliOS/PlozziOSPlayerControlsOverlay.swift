@@ -849,7 +849,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                         .padding(.bottom, PlayerTouchLayout.timelineRowHeight + 12)
                 }
             }
-            .playerCameraSafeRow(minimumHitHeight: 44)
+            .playerCameraSafeTimeline()
 
             // Info / Cast tabs sit BELOW the scrubber, matching tvOS, and the
             // card grows upward out of them.

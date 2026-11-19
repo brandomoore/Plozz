@@ -812,9 +812,9 @@ VOD and Live chrome use the larger of the
 window safe area and native edge margins (21 horizontal, 24 vertical), rather
 than adding the two. When UIKit identifies a landscape corner occlusion on a
 phone with a one-sided safe inset, main and Live use the ordinary margin on
-unobstructed rows. Only the end of a control row whose hit area intersects that
-corner moves inward. For example, rotating the folded Duo exchanges clearance
-at Close for clearance at the trailing timeline target. Video is not inset.
+unobstructed rows. Close moves inward when its corner is occupied. The timeline
+keeps both time labels aligned with the title and options; if its 44-point hit
+area meets a lower camera corner, it rises just enough to clear it. Video is not inset.
 Without that geometry, the controls keep the conservative safe margins. Adjacent
 routing and playback-option controls share one untinted glass capsule while
 retaining independent actions. Grouped children have no individual glass

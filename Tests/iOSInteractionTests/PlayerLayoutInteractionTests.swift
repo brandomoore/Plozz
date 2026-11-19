@@ -275,13 +275,22 @@ final class PlayerLayoutInteractionTests: XCTestCase {
                 let viewport = app.frame
                 let leading = timeline.frame.minX - viewport.minX
                 let trailing = viewport.maxX - timeline.frame.maxX
+                let elements = app.descendants(matching: .any)
+                let prefix = live ? "live-timeline" : "player-timeline"
+                let current = elements["\(prefix)-current-time"].firstMatch
+                let end = elements["\(prefix)-end-time"].firstMatch
+                let scrubber = elements[live ? "live-channel-timeline-scrubber" : "player-timeline-scrubber"].firstMatch
+                XCTAssertEqual(current.frame.minX, timeline.frame.minX, accuracy: 1)
+                XCTAssertEqual(end.frame.maxX, options.frame.maxX, accuracy: 1)
+                XCTAssertEqual(end.frame.maxX, timeline.frame.maxX, accuracy: 1)
+                for target in [current, scrubber, end] { XCTAssertGreaterThanOrEqual(target.frame.height, 44) }
                 XCTAssertGreaterThanOrEqual(leading, 20.5)
                 if viewport.size == CGSize(width: 678, height: 466) {
-                    // The 44pt timeline target clips the upper 7pt of the
-                    // lower-right reserved corner. Its leading end stays put.
                     let corner = CGRect(x: left ? 594 : 0, y: left ? 384 : 0, width: 84, height: 82)
                     XCTAssertEqual(leading, 21, accuracy: 1)
-                    XCTAssertEqual(trailing, left ? 84 : 21, accuracy: 1)
+                    XCTAssertEqual(trailing, 21, accuracy: 1)
+                    XCTAssertEqual(end.frame.maxY, left ? corner.minY : 391, accuracy: 1)
+                    XCTAssertTrue(end.frame.intersection(corner).isEmpty)
                     XCTAssertEqual(close.frame.minX, left ? 21 : 84, accuracy: 1)
                     XCTAssertEqual(info.frame.minX, 21, accuracy: 1)
                     XCTAssertEqual(viewport.maxX - options.frame.maxX, 21, accuracy: 1)
@@ -300,6 +309,12 @@ final class PlayerLayoutInteractionTests: XCTestCase {
                     XCTAssertEqual(options.frame.maxX, timeline.frame.maxX, accuracy: 1)
                 }
                 for button in [close, info, options] { XCTAssertTrue(button.isHittable) }
+                if !live {
+                    let label = end.label
+                    end.tap()
+                    XCTAssertNotEqual(end.label, label, "The end label must still switch clock modes.")
+                    XCTAssertEqual(end.frame.maxX, options.frame.maxX, accuracy: 1)
+                }
                 let state = "\(live ? "Live" : "Main") \(left ? "landscape-left" : "landscape-right")"
                 attachMeasurements([state, "Margins: \(leading), \(trailing)", app.debugDescription])
                 app.terminate()

@@ -695,7 +695,8 @@ instead of `--capture-player-landscape` for the opposite camera corner.
 compares the app frame with the raw display before any screenshot resizing.
 `testLandscapePlayerMarginsInBothRotations` checks the main and behind-live
 controls against both edges and the folded Duo's reserved camera corner,
-including the timeline's 44-point hit area. Use its AX frames for measurements.
+including both time-label edges, their alignment with the ellipsis, and clearance
+for the full 44-point hit area. Use its AX frames for measurements.
 For visual evidence capture the whole folded display with
 `xcrun simctl io "$PLOZZ_SIM_ID" screenshot --display=1 player.png`, not an
 XCTest app crop. For the Big Buck Bunny footage capture, place a rights-cleared

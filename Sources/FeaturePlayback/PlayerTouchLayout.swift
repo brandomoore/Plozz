@@ -141,6 +141,32 @@ public extension View {
     func playerCameraSafeRow(minimumHitHeight: CGFloat = 0) -> some View {
         modifier(PlayerCameraSafeRow(minimumHitHeight: minimumHitHeight))
     }
+
+    func playerCameraSafeTimeline() -> some View {
+        modifier(PlayerCameraSafeTimeline())
+    }
+}
+
+private struct PlayerCameraSafeTimeline: ViewModifier {
+    @Environment(\.playerCameraCorners) private var corners
+    @State private var lift: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        let hitHeight: CGFloat = 44
+        content
+            .playerCameraSafeRow(minimumHitHeight: hitHeight)
+            .padding(.bottom, lift)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                guard !corners.isEmpty else { return 0 }
+                // The tabs anchor the bottom of this slot. Measure the unlifted
+                // hit band from that edge so padding cannot feed back into itself.
+                let slot = proxy.frame(in: .global)
+                let hitBottom = slot.maxY + (hitHeight - PlayerTouchLayout.timelineRowHeight) / 2
+                let band = CGRect(x: slot.minX, y: hitBottom - hitHeight, width: slot.width, height: hitHeight)
+                return corners.filter { $0.minY > 0 && !$0.intersection(band).isEmpty }
+                    .map { hitBottom - $0.minY }.max() ?? 0
+            } action: { lift = $0 }
+    }
 }
 
 private struct PlayerCameraSafeRow: ViewModifier {

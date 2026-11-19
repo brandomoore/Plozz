@@ -1561,7 +1561,7 @@ extension LiveChannelOverlay {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("live-channel-timeline")
                     .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .timeline)
-                    .playerCameraSafeRow(minimumHitHeight: 44)
+                    .playerCameraSafeTimeline()
                     .transition(.opacity)
             }
             HStack(spacing: 12) {
