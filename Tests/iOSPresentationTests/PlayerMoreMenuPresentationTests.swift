@@ -116,23 +116,23 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         try await waitUntil { more.presentedMenu != nil }
         state.layout = .separate
         try await waitUntil {
-            self.buttons(in: host.view).count == 4 && !state.presentation.isBusy
+            self.buttons(in: host.view).count == 3 && !state.presentation.isBusy
                 && more.presentedMenu == nil
         }
         XCTAssertEqual(
-            Set(buttons(in: host.view).compactMap(\.accessibilityIdentifier)),
-            ["player-subtitles", "player-audio", "player-playback-speed", "player-video"]
+            buttons(in: host.view).sorted {
+                $0.convert($0.bounds, to: window).midX < $1.convert($1.bounds, to: window).midX
+            }.compactMap(\.accessibilityIdentifier),
+            ["player-audio", "player-subtitles", "player-settings"]
         )
-        let video = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-video" })
-        XCTAssertEqual(video.accessibilityLabel, "Video")
-        XCTAssertEqual(PlayerOptionsMenuButton.Kind.video.symbol, "slider.horizontal.3")
-        XCTAssertEqual(PlayerOptionsMenuButton.Kind.video.symbol, LiveChannelTrackMenuKind.playback.icon)
+        let settings = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-settings" })
+        XCTAssertEqual(settings.accessibilityLabel, "Playback settings")
         XCTAssertEqual(PlayerOptionsMenuButton.Kind.subtitles.symbol, LiveChannelTrackMenuKind.subtitles.icon)
-        let videoImage = try XCTUnwrap(video.image(for: .normal))
+        let settingsImage = try XCTUnwrap(settings.image(for: .normal))
         let adjustmentsImage = try XCTUnwrap(UIImage(
-            systemName: "slider.horizontal.3", withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)
+            systemName: "gearshape", withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)
         ))
-        XCTAssertTrue(videoImage.isEqual(adjustmentsImage), "Video options must not look like a fullscreen action.")
+        XCTAssertTrue(settingsImage.isEqual(adjustmentsImage))
         let audio = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-audio" })
         audio.performPrimaryAction()
         try await waitUntil { audio.presentedMenu != nil && state.presentation.isPresented }
@@ -142,7 +142,7 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         XCTAssertEqual(visible(menu).map(\.title), ["English (Opus 5.1)", "French (AAC Stereo)"])
         let stale = try XCTUnwrap(visible(menu).first as? UIAction)
         state.controls.audioOptions = []
-        try await waitUntil { self.buttons(in: host.view).count == 3 && !state.presentation.isBusy }
+        try await waitUntil { self.buttons(in: host.view).count == 2 && !state.presentation.isBusy }
         perform(stale)
         XCTAssertTrue(state.audioSelections.isEmpty)
         state.layout = .consolidated
@@ -169,7 +169,7 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitUntil { self.buttons(in: host.view).count == 4 }
+        try await waitUntil { self.buttons(in: host.view).count == 3 }
         let audio = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-audio" })
         let subtitles = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-subtitles" })
         let audioInteraction = try XCTUnwrap(audio.contextMenuInteraction)
@@ -362,16 +362,17 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
                 window.rootViewController = nil
                 previous?.makeKeyAndVisible()
             }
-            let identifier = layout == .consolidated ? "player-playback-options" : "player-video"
+            let identifier = layout == .consolidated ? "player-playback-options" : "player-settings"
             try await waitUntil { self.buttons(in: host.view).contains { $0.accessibilityIdentifier == identifier } }
             let button = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == identifier })
             button.performPrimaryAction()
             try await waitUntil { button.presentedMenu != nil }
             let menu = try XCTUnwrap(button.presentedMenu)
-            let video = try (layout == .consolidated ? submenu("Video", in: menu) : menu)
-            XCTAssertEqual(video.title, layout == .consolidated ? "Video" : "")
+            let video = try submenu("Video", in: menu)
             XCTAssertEqual(try XCTUnwrap(video.children.first as? UIMenu).title, "Zoom Mode")
-            if layout == .separate { XCTAssertEqual(button.accessibilityLabel, "Video") }
+            if layout == .separate {
+                XCTAssertFalse(visible(menu).contains { ["Audio", "Subtitles"].contains($0.title) })
+            }
             perform(try XCTUnwrap(visible(video).first { $0.title == "Quality" } as? UIAction))
             XCTAssertTrue(state.presentation.isPresented)
             XCTAssertNil(state.sheet)
@@ -402,11 +403,11 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitUntil { self.buttons(in: host.view).count == 4 }
-        let button = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-video" })
+        try await waitUntil { self.buttons(in: host.view).count == 3 }
+        let button = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-settings" })
         button.performPrimaryAction()
         try await waitUntil { button.presentedMenu != nil }
-        let oldQuality = try XCTUnwrap(visible(try XCTUnwrap(button.presentedMenu)).last as? UIAction)
+        let oldQuality = try XCTUnwrap(visible(try submenu("Video", in: XCTUnwrap(button.presentedMenu))).last as? UIAction)
         let generation = state.presentation.generation
         state.qualityAvailable = false
         try await waitUntil { state.presentation.generation > generation && !state.presentation.isBusy && button.presentedMenu == nil }
@@ -415,10 +416,10 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         XCTAssertNil(state.sheet)
         state.qualityAvailable = true
         try await waitUntil { state.presentation.generation > generation + 1 }
-        let next = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-video" })
+        let next = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-settings" })
         next.performPrimaryAction()
         try await waitUntil { next.presentedMenu != nil }
-        let oldZoom = try XCTUnwrap(visible(try XCTUnwrap(next.presentedMenu)).first as? UIAction)
+        let oldZoom = try XCTUnwrap(visible(try submenu("Video", in: XCTUnwrap(next.presentedMenu))).first as? UIAction)
         state.controls.videoZoom.settings.mode = .fill
         let zoomGeneration = state.presentation.generation
         state.controls.engineCapabilities.remove(.videoZoom)

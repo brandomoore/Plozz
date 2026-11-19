@@ -564,13 +564,12 @@ processing for every engine route. Undocumented integration carries OS
 compatibility and App Review risk. This system-preference bridge is tvOS-only.
 
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
-controls. Portrait uses one ellipsis; landscape exposes the available menus as
-separate controls, with Version and Multiview opening their existing destinations
-directly. Audio, Subtitles and Video reuse the existing player-category icons
-(waveform, captions and adjustment sliders) in both VOD and Live TV. Video combines
+controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles and
+a playback settings cog, in that order, omitting controls with no options.
+The cog groups the remaining options, including Version for on-demand playback
+or Multiview for live channels. Video combines
 zoom choices with Quality in both layouts; Quality opens its existing editor and
-never acts as a selectable zoom mode. The standalone Video popup omits its redundant
-category heading; portrait retains the named Video entry. Quality remains
+never acts as a selectable zoom mode. Quality remains
 available in Video even when zoom is unsupported. Layout follows the actual player
 viewport, including iPad split windows, not the device's global orientation.
 Subtitles and Audio offer their existing tracks directly with real active-track
@@ -753,7 +752,7 @@ group contains only available Picture in Picture and AirPlay controls, with no
 separate Stop button. Pause/resume, player dismissal, and session cleanup retain
 their existing behavior. Playback options, track selection, and multiview sit
 at the bottom trailing edge above the timeline. Portrait keeps the title on its
-own row above those actions; track menus open upward without covering the seek
+own row above a single options menu; track menus open upward without covering the seek
 bar. The controls scrim dims the video
 beneath the transport as well as the edge chrome, so white scenes remain legible
 without coloring the glass itself. Mobile Info, Cast, and Live TV Info/On Now/Guide

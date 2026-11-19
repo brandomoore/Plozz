@@ -6,11 +6,12 @@ import UIKit
 /// Builds a native menu only when opened, not on the player's clock updates.
 public struct PlayerOptionsMenuButton: UIViewRepresentable {
     public enum Kind {
-        case playbackOptions, audio, subtitles, speed, video
+        case playbackOptions, settings, audio, subtitles, speed, video
 
         var symbol: String {
             switch self {
             case .playbackOptions: "ellipsis"
+            case .settings: "gearshape"
             case .audio: PlayerControls.Category.audio.icon
             case .subtitles: PlayerControls.Category.subtitles.icon
             case .speed: "speedometer"
@@ -21,6 +22,7 @@ public struct PlayerOptionsMenuButton: UIViewRepresentable {
         var label: LocalizedStringResource {
             switch self {
             case .playbackOptions: "Playback options"
+            case .settings: "Playback settings"
             case .audio: "Audio"
             case .subtitles: "Subtitles"
             case .speed: "Playback Speed"
@@ -31,6 +33,7 @@ public struct PlayerOptionsMenuButton: UIViewRepresentable {
         var identifier: String {
             switch self {
             case .playbackOptions: "player-playback-options"
+            case .settings: "player-settings"
             case .audio: "player-audio"
             case .subtitles: "player-subtitles"
             case .speed: "player-playback-speed"

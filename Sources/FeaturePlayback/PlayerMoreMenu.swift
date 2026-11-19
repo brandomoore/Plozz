@@ -164,7 +164,8 @@ public enum PlayerMoreMenu {
 
     public static func make(
         model: PlayerControlsModel, availability: PlayerMoreMenuAvailability,
-        locale: Locale = .current, section: PlayerMenuSection? = nil, actions: PlayerMoreMenuActions
+        locale: Locale = .current, section: PlayerMenuSection? = nil, settingsOnly: Bool = false,
+        actions: PlayerMoreMenuActions
     ) -> UIMenu {
         func localized(_ resource: LocalizedStringResource) -> String {
             var resource = resource
@@ -264,7 +265,8 @@ public enum PlayerMoreMenu {
             if let menu = entries[section] as? UIMenu { return menu }
             return UIMenu(children: entries[section].map { [$0] } ?? [])
         }
-        var items = [PlayerMenuSection.subtitles, .audio, .speed].compactMap { entries[$0] }
+        let primary: [PlayerMenuSection] = settingsOnly ? [.speed] : [.subtitles, .audio, .speed]
+        var items = primary.compactMap { entries[$0] }
         let secondary = [PlayerMenuSection.video, .versions, .multiview].compactMap { entries[$0] }
         if !secondary.isEmpty { items.append(UIMenu(options: .displayInline, children: secondary)) }
         return UIMenu(children: items)
@@ -303,26 +305,17 @@ public struct PlayerMoreMenuButton: View {
                         identifier: accessibilityIdentifier, actions: actions
                     )
                 } else {
-                    ForEach(sections) { section in
-                        if let destination = section.destination {
-                            Button {
-                                guard actions.isCurrent() else { return }
-                                presentation.request(destination, generation: presentation.generation)
-                            } label: {
-                                Image(systemName: section.symbol)
-                                    .font(.title3)
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
-                            .accessibilityLabel(Text(section.title))
-                            .accessibilityIdentifier(identifier(section))
-                        } else {
-                            PlayerNativeSectionMenu(
-                                model: model, availability: availability, presentation: presentation, section: section,
-                                identifier: identifier(section), actions: actions
-                            )
-                        }
+                    ForEach([PlayerMenuSection.audio, .subtitles].filter(sections.contains)) { section in
+                        PlayerNativeSectionMenu(
+                            model: model, availability: availability, presentation: presentation, section: section,
+                            identifier: identifier(section.rawValue), actions: actions
+                        )
+                    }
+                    if sections.contains(where: { $0 != .audio && $0 != .subtitles }) {
+                        PlayerNativeSectionMenu(
+                            model: model, availability: availability, presentation: presentation, section: nil,
+                            settingsOnly: true, identifier: identifier("settings"), actions: actions
+                        )
                     }
                 }
             }
@@ -334,12 +327,12 @@ public struct PlayerMoreMenuButton: View {
         .onChange(of: availability.video && model.engineCapabilities.contains(.videoZoom)) { presentation.reset() }
     }
 
-    private func identifier(_ section: PlayerMenuSection) -> String {
+    private func identifier(_ action: String) -> String {
         let suffix = "playback-options"
         if accessibilityIdentifier.hasSuffix(suffix) {
-            return String(accessibilityIdentifier.dropLast(suffix.count)) + section.rawValue
+            return String(accessibilityIdentifier.dropLast(suffix.count)) + action
         }
-        return accessibilityIdentifier + "-" + section.rawValue
+        return accessibilityIdentifier + "-" + action
     }
 }
 
@@ -348,13 +341,14 @@ private struct PlayerNativeSectionMenu: View {
     let availability: PlayerMoreMenuAvailability
     let presentation: PlayerMenuPresentation
     let section: PlayerMenuSection?
+    var settingsOnly = false
     let identifier: String
     let actions: PlayerMoreMenuActions
     @Environment(\.locale) private var locale
 
     var body: some View {
         PlayerOptionsMenuButton(
-            kind: section?.kind ?? .playbackOptions,
+            kind: section?.kind ?? (settingsOnly ? .settings : .playbackOptions),
             accessibilityIdentifier: identifier,
             makeMenu: {
                 let generation = presentation.generation
@@ -369,7 +363,8 @@ private struct PlayerNativeSectionMenu: View {
                 guarded.setVideoUpscaling = { if isCurrent() { actions.setVideoUpscaling($0) } }
                 guarded.request = { if isCurrent() { presentation.request($0, generation: generation) } }
                 return PlayerMoreMenu.make(
-                    model: model, availability: availability, locale: locale, section: section, actions: guarded
+                    model: model, availability: availability, locale: locale, section: section,
+                    settingsOnly: settingsOnly, actions: guarded
                 )
             },
             onPresentationChange: { owner, presented in presentation.setPresented(presented, owner: owner) }
