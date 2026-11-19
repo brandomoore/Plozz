@@ -63,6 +63,7 @@ struct PlozziOSItemDetailView: View {
 
     var body: some View {
         detailBody
+            .environment(\.plozziOSDetailArtworkReplay, appModel.detailArtworkReplay)
             .modifier(PlozziOSDetailScrollEdge())
             // Detail-path telemetry anchor (PLZXFAN-gated; kind only). Deliberately
             // at the page body: the episode browser sits inside a lazy container, so

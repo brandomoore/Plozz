@@ -177,9 +177,12 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     /// identifies the displayed resolution, including its source/policy boundary.
     public func resolvedBitmap<ResolvedContent: View>(
         reportingHeroArtwork id: String? = nil,
+        replay: ArtworkBitmapReplay? = nil,
         @ViewBuilder content: @escaping (UIImage?, String?) -> ResolvedContent
     ) -> some View {
         ArtworkPolicyReader(policy: artworkPolicy) { policy, sourceReady in
+            let identity = displayIdentity(policy)
+            let previous = replay?.image(for: identity)
             if sourceReady {
                 FilteredArtworkImage(
                     references: references,
@@ -197,11 +200,17 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
                     lookupIdentity: lookupIdentity,
                     reportedHeroID: id,
                     showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
-                    content: .bitmap(content),
+                    content: .bitmap { image, key in
+                        content(image ?? previous, key)
+                            .onChange(of: image.map(ObjectIdentifier.init), initial: true) { _, _ in
+                                if let image { replay?.remember(image, for: identity) }
+                            }
+                    },
                     placeholder: { EmptyView() }
                 )
+                .id(replay.map(ObjectIdentifier.init))
             } else {
-                content(nil, nil)
+                content(previous, nil)
             }
         }
     }
@@ -452,6 +461,29 @@ enum ArtworkSeedMemo {
         entries.removeAll()
         order.removeAll()
         residentCostBytes = 0
+    }
+}
+
+/// Remembers what a destination actually displayed, not what a card prefetched.
+/// The decoded cache owns the pixels; a replay entry cannot extend their lifetime.
+@MainActor
+public final class ArtworkBitmapReplay {
+    private struct Entry { weak var image: UIImage? }
+    private var entries: [ArtworkDisplayIdentity: Entry] = [:]
+    private var order: [ArtworkDisplayIdentity] = []
+
+    public init() {}
+
+    fileprivate func image(for identity: ArtworkDisplayIdentity) -> UIImage? {
+        entries[identity]?.image
+    }
+
+    fileprivate func remember(_ image: UIImage, for identity: ArtworkDisplayIdentity) {
+        if entries[identity] == nil {
+            if order.count == 120 { entries.removeValue(forKey: order.removeFirst()) }
+            order.append(identity)
+        }
+        entries[identity] = Entry(image: image)
     }
 }
 

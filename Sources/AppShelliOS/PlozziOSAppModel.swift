@@ -40,21 +40,29 @@ final class PlozziOSAppModel {
     /// `DetailSnapshotCache.ephemeral`, so nothing they loaded was restored: every
     /// visit rebuilt the page instead of painting the cached hero/seasons.
     @ObservationIgnored private let detailCacheFactory = DetailSnapshotCacheFactory()
+    @ObservationIgnored private var recentDetailArtwork: (scope: String, replay: ArtworkBitmapReplay)?
 
     /// The cache for the active profile and its current servers. Switching profile
     /// or Plex Home user switches scope, so one household member never restores
     /// another's cached page.
     var detailSnapshotCache: DetailSnapshotCache {
+        detailCacheFactory.cache(for: detailCacheScope)
+    }
+
+    var detailArtworkReplay: ArtworkBitmapReplay {
+        let scope = detailCacheScope.digest
+        if let recentDetailArtwork, recentDetailArtwork.scope == scope { return recentDetailArtwork.replay }
+        let replay = ArtworkBitmapReplay()
+        recentDetailArtwork = (scope, replay)
+        return replay
+    }
+
+    private var detailCacheScope: DetailSnapshotCacheScope {
         let accounts = accountsProviders.homeAccounts.map(\.account)
         let profile = profiles.activeProfile
         let material = profile.plexPlaybackIdentityKey(for: accounts)
             + "|" + accounts.map(\.connectionScopeKey).sorted().joined(separator: "|")
-        return detailCacheFactory.cache(
-            for: DetailSnapshotCacheScope(
-                profileID: profiles.activeProfileID,
-                identityMaterial: material
-            )
-        )
+        return DetailSnapshotCacheScope(profileID: profiles.activeProfileID, identityMaterial: material)
     }
 
     let music: PlozziOSMusicRuntime? = AppReleaseChannel.current.isBeta ? PlozziOSMusicRuntime() : nil

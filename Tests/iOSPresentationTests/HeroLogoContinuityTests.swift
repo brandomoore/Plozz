@@ -180,6 +180,29 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
+    func testReopenedRowMoviePaintsPreviousDetailArtworkBeforeSourceVerification() async throws {
+        let fixture = try Fixture(size: CGSize(width: 390, height: 844))
+        defer { fixture.close() }
+        let url = try fixture.seedArtwork()
+        let state = ArtworkState(url: url, sourceReady: true)
+        let replay = ArtworkBitmapReplay()
+        fixture.host.rootView = AnyView(ArtworkFixture(state: state).environment(\.plozziOSDetailArtworkReplay, replay))
+        try await waitUntil { try fixture.artworkSample().values[1] > 230 }
+        fixture.host.rootView = AnyView(Color.black)
+        try await waitUntil { try fixture.artworkSample().values[1] < 10 }
+
+        // A new destination from an ordinary row has no displayed Home-hero handoff.
+        state.sourceReady = false
+        state.item.backdropURL = nil
+        fixture.host.rootView = AnyView(ArtworkFixture(state: state).environment(\.plozziOSDetailArtworkReplay, replay))
+        XCTAssertGreaterThan(try fixture.artworkSample(afterScreenUpdates: true).values[1], 230,
+                             "Reopening must paint the last detail hero without waiting for live hydration.")
+        fixture.host.rootView = AnyView(ArtworkFixture(state: state)
+            .environment(\.plozziOSDetailArtworkReplay, ArtworkBitmapReplay()))
+        XCTAssertLessThan(try fixture.artworkSample(afterScreenUpdates: true).values[1], 10,
+                          "Another profile cannot borrow this image.")
+    }
+
     func testArtworkArrivingWhileCoveredIsImmediatelyOpaqueOnReturn() async throws {
         let fixture = try Fixture(defersAppearance: true, size: CGSize(width: 390, height: 844))
         defer { fixture.close() }
@@ -1186,8 +1209,8 @@ final class HeroLogoContinuityTests: XCTestCase {
             return url
         }
 
-        func artworkSample() throws -> (image: UIImage, values: [Double]) {
-            let sample = try pixels()
+        func artworkSample(afterScreenUpdates: Bool = false) throws -> (image: UIImage, values: [Double]) {
+            let sample = try pixels(afterScreenUpdates: afterScreenUpdates)
             let width = Int(window.bounds.width)
             let values = [18, 100, 22, 24, 26, 568, 570, 574, 620].map { y in
                 Double(sample.bytes[(y * width + width / 2) * 4 + 1])
@@ -1252,13 +1275,13 @@ final class HeroLogoContinuityTests: XCTestCase {
             }.count > 300
         }
 
-        private func pixels() throws -> (image: UIImage, bytes: [UInt8]) {
+        private func pixels(afterScreenUpdates: Bool = false) throws -> (image: UIImage, bytes: [UInt8]) {
             window.layoutIfNeeded()
             let surface: UIView = navigation == nil ? window : host.view
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1
             let image = UIGraphicsImageRenderer(bounds: surface.bounds, format: format).image { _ in
-                surface.drawHierarchy(in: surface.bounds, afterScreenUpdates: false)
+                surface.drawHierarchy(in: surface.bounds, afterScreenUpdates: afterScreenUpdates)
             }
             let cgImage = try XCTUnwrap(image.cgImage)
             var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)

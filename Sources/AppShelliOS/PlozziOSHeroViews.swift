@@ -1213,8 +1213,13 @@ private struct PlozziOSHeroArtworkReveal<Content: View>: View, Animatable {
     }
 }
 
+extension EnvironmentValues {
+    @Entry var plozziOSDetailArtworkReplay: ArtworkBitmapReplay? = nil
+}
+
 private struct PlozziOSDetailHeroArtwork<Content: View>: View {
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    @Environment(\.plozziOSDetailArtworkReplay) private var replay
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var frozenReferences: [ArtworkReference]?
     @State private var pageIsVisible = false
@@ -1261,8 +1266,8 @@ private struct PlozziOSDetailHeroArtwork<Content: View>: View {
                 sharedResolutionIdentity, style: style
             )
         ) { _ in EmptyView() } placeholder: { EmptyView() }
-        .resolvedBitmap(reportingHeroArtwork: presentation.itemID) { resolved, _ in
-            let image = resolved ?? seedArtwork
+        .resolvedBitmap(reportingHeroArtwork: presentation.itemID, replay: replay) { resolved, key in
+            let image = key == nil ? seedArtwork ?? resolved : resolved ?? seedArtwork
             let needsFade = openedWithoutArtwork && !reduceMotion
             let opacity = needsFade ? revealOpacity : 1
             content(PlozziOSPreparedHeroArtwork(

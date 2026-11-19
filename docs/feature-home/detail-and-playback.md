@@ -207,6 +207,11 @@ artwork and native Back button do not participate. The plain Play button fits it
 label; a progress bar or episode number takes space only when displayed.
 Cached metadata does not wait for live artwork-source resolution.
 Artwork handed off from Home or ready on the first frame displays immediately.
+Reopening a title from any mobile row can reuse the detail backdrop that actually
+painted on its previous visit, while that bitmap is resident. It does not need
+to wait for live source verification or substitute the row's poster. The replay
+is scoped to the current profile, server access, title, artwork policy and shape;
+ordinary row browsing does not download every title's full-size hero.
 If the page opens without a usable bitmap, the first artwork and its reflections
 fade together over 350 ms, starting no earlier than the end of navigation.
 Reduce Motion shows it immediately. Later enrichment and optional sections
