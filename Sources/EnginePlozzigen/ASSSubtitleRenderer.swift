@@ -174,7 +174,7 @@ actor ASSSubtitleRasterizer {
                      nextCueBoundary: nextCueBoundary.isFinite ? nextCueBoundary : nil)
     }
 
-    private final class Context {
+    final class Context {
         let library: OpaquePointer
         let renderer: OpaquePointer
         let track: UnsafeMutablePointer<ASS_Track>

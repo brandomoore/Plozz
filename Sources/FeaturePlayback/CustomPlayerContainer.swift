@@ -577,6 +577,8 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         subtitleClock?.invalidate()
         subtitleClock = nil
         setArtworkSinkEnabled(false)
+        _ = engine.updateFrameSubtitlePresentation(eligible: false, offset: 0)
+        subtitleModel?.primaryInVideoFrame = false
     }
 
     private func setArtworkSinkEnabled(_ enabled: Bool) {
@@ -589,6 +591,14 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     @objc private func tickSubtitleClock() {
         updateSubtitleVideoRect()
         setArtworkSinkEnabled(subtitleModel?.permitsScheduledASSArtwork == true)
+        if let subtitleModel {
+            let style = subtitleModel.style
+            let eligible = subtitleModel.permitsScheduledASSArtwork && !subtitleModel.isHDR && !subtitleModel.hasSecondaryTrack
+                && style.permitsFrameSubtitle && subtitleModel.offset == 0 && model.videoZoom.settings.mode == .fit
+                && (!style.avoidsPlayerControls || model.subtitleLayout.frames.isEmpty)
+            let owns = engine.updateFrameSubtitlePresentation(eligible: eligible, offset: subtitleModel.offset)
+            if owns != subtitleModel.primaryInVideoFrame { subtitleModel.primaryInVideoFrame = owns }
+        }
         let time = engine.subtitlePresentationTime
         if let subtitleModel, subtitleModel.hasContent {
             engine.renderSubtitles(at: time, offset: subtitleModel.offset, style: subtitleModel.style)

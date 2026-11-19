@@ -1905,6 +1905,27 @@ The same fullscreen controller owns this surface on Apple TV, iPhone and iPad.
 It uses the overlay's bitmap placement, control avoidance and master opacity.
 HDR with custom luminance stays on the ordinary overlay, as do secondary cues
 and live auxiliary players.
+
+Local tvOS builds can also compose the primary ASS directly into the decoded
+picture before it is enqueued. Run `tools/prepare-frame-ass-engine.sh` before
+generating/building; it accepts an optional local Git clone as its source.
+It verifies the pinned revision and patch in an isolated checkout. Unprepared
+builds keep the remote dependency and existing rendering paths.
+
+Admission uses the normal subtitle preference/series memory on the probed
+tracks, not a filename or launch flag. The current envelope is seekable SDR
+Matroska H.264 through 1080p30 with mono/stereo AAC, FLAC, Opus, Vorbis or MP3
+on all audio tracks. External output, disc/live/rendition playback and spatial
+audio do not opt in. The fullscreen controller yields to the normal overlay for
+custom placement or opacity, secondary tracks, controls avoidance, zoom and
+nonzero timing offsets. Uncertified packet coverage is not a blank subtitle:
+the overlay remains responsible for that sample. Other platforms are unchanged.
+
+`FrameASSArtworkTests` can exercise ordinary route and track selection on local
+media by passing `PLOZZ_ASS_PLAYBACK_FILES` as a JSON array of paths accessible
+to the test process. It checks that playback advances while the submitted
+frames own the subtitle; it does not measure displayed subtitle timing.
+
 Rendering uses source time minus the subtitle offset. Paused frames redraw only for changed
 cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains

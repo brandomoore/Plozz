@@ -2,6 +2,14 @@
 import PackageDescription
 import Foundation
 
+// Until the pre-enqueue API has a fetchable upstream revision, a local build
+// can consume a separately prepared checkout without changing either lockfile.
+let frameEnginePath = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    .appendingPathComponent(".build/normal-ass/AetherEngine").path
+let localASSEngine = FileManager.default.fileExists(atPath: frameEnginePath + "/.plozz-frame-ass")
+    ? frameEnginePath : nil
+let assEngineSettings: [SwiftSetting] = localASSEngine == nil ? [] : [.define("PLOZZ_FRAME_ASS", .when(platforms: [.tvOS]))]
+
 // Experimental Java menus are local-only. Native compilation also rejects
 // this opt-in in Release, including a cached experimental package graph.
 let experimentalDiscJava = ProcessInfo.processInfo.environment["PLOZZ_EXPERIMENTAL_BDJ"] == "1"
@@ -261,7 +269,7 @@ let package = Package(
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
         // Buffered direct-rendering PCM supports audio-only sync correction without seeking.
-        .package(
+        localASSEngine.map { .package(path: $0, traits: ["DolbyVisionFelCurves"]) } ?? .package(
             url: "https://github.com/brandomoore/AetherEngine",
             revision: "754eadcb5f6c6018c9e2ce53fd554777b89c6b50",
             traits: ["DolbyVisionFelCurves"]
@@ -836,7 +844,8 @@ let package = Package(
                 .product(name: "AetherEngine", package: "AetherEngine"),
                 "Libass",
                 .target(name: "DiscNavigation", condition: .when(platforms: [.iOS, .tvOS])),
-            ]
+            ],
+            swiftSettings: assEngineSettings
         ),
 
         .target(
@@ -1258,7 +1267,8 @@ let package = Package(
                 "TestSupportPerformance",
                 .product(name: "AetherEngine", package: "AetherEngine"),
             ],
-            resources: [.copy("Fixtures")]
+            resources: [.copy("Fixtures")],
+            swiftSettings: assEngineSettings
         ),
     ],
     // Pin Swift 5 language mode: bumping tools-version to 6.0 (required for the

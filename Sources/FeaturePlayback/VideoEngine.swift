@@ -264,6 +264,10 @@ public protocol VideoEngine: AnyObject {
     /// Keeps the picture clock and viewer delay distinct for item-time scheduling.
     func renderSubtitles(at presentationTime: TimeInterval, offset: TimeInterval, style: SubtitleStyle)
     func setScheduledASSArtworkSink(_ sink: (any ScheduledASSArtworkSink)?)
+    /// Ask the normal track picker which probed stream would actually play, before routing.
+    func setFrameSubtitleSelection(_ select: @escaping @MainActor ([MediaTrack]) -> Int?)
+    /// Returns ownership of the currently presented sample, not the next sample being decoded.
+    func updateFrameSubtitlePresentation(eligible: Bool, offset: Double) -> Bool
 
     /// Whether position is settled enough for corrective seeks. A decoder can
     /// report ready before its initial frame/seek or a retained reload settles.
@@ -432,6 +436,8 @@ public extension VideoEngine {
         renderSubtitles(at: presentationTime - offset, style: style)
     }
     func setScheduledASSArtworkSink(_ sink: (any ScheduledASSArtworkSink)?) {}
+    func setFrameSubtitleSelection(_ select: @escaping @MainActor ([MediaTrack]) -> Int?) {}
+    func updateFrameSubtitlePresentation(eligible: Bool, offset: Double) -> Bool { false }
     func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool { true }
     var streamingFailure: StreamingPlaybackFailure? { nil }
     var streamingOutputDynamicRange: SourceDynamicRange? { nil }

@@ -289,6 +289,29 @@ final class SubtitleTrackControllerTests: XCTestCase {
 
     // MARK: - Load-time default: once-per-load guard
 
+    func testFrameRouteUsesActualLanguageAndOffMemoryAndDefersForOffsetOrSidecar() {
+        let (sut, host, _) = makeSUT(engineKind: .plozzigen)
+        let tracks = [embeddedText(3, language: "ja"), embeddedText(4)]
+        var request = PlaybackRequest(item: .init(id: "show", title: "Show", kind: .episode),
+                                      streamURL: URL(fileURLWithPath: "/episode.mkv"), subtitleTracks: tracks)
+        host.rule = .init(mode: .all, preferredLanguages: ["en"])
+        XCTAssertEqual(sut.frameSubtitleCandidate(tracks, request: request), 4)
+        host.remembered = .off
+        XCTAssertNil(sut.frameSubtitleCandidate(tracks, request: request))
+        host.remembered = .language("ja")
+        XCTAssertEqual(sut.frameSubtitleCandidate(tracks, request: request), 3)
+        host.style.opacity = 0.5
+        XCTAssertNil(sut.frameSubtitleCandidate(tracks, request: request))
+        host.style = .default
+        host.liveSubtitles.offset = -0.5
+        XCTAssertNil(sut.frameSubtitleCandidate(tracks, request: request))
+        host.liveSubtitles.offset = 0
+        var sidecar = textSidecar(7)
+        sidecar.isExternal = true
+        request.subtitleTracks.append(sidecar)
+        XCTAssertNil(sut.frameSubtitleCandidate(tracks, request: request))
+    }
+
     func testSDHDefaultsApplyAcrossEnginesAndPreserveManualChoice() throws {
         for kind in [PlaybackEngineKind.native, .plozzigen] {
             let (sut, host, engine) = makeSUT(engineKind: kind)

@@ -34,6 +34,7 @@ public final class LiveSubtitleModel {
     /// a phantom empty lane — and shift the primary line — on a later
     /// single-subtitle playback.
     public private(set) var hasSecondaryTrack: Bool = false
+    var primaryInVideoFrame = false
     /// The resolved appearance the overlay renders with.
     public var style: SubtitleStyle = .default
     /// Whether the current video frame is HDR, so the overlay can clamp luminance.
@@ -240,7 +241,7 @@ struct LiveSubtitleOverlay: View {
     var body: some View {
         let style = SystemCaptionStyle.shared.resolved(model.style)
         SubtitleOverlayView(
-            primary: model.primary,
+            primary: model.primaryInVideoFrame ? [] : model.primary,
             secondary: model.secondary,
             secondaryActive: model.hasSecondaryTrack,
             style: style,
@@ -261,11 +262,19 @@ struct LiveSubtitleOverlay: View {
                         )
                     ))
                 }
+
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             }
         }
         .ignoresSafeArea()
+    }
+}
+
+extension SubtitleStyle {
+    var permitsFrameSubtitle: Bool {
+        !followsSystemStyle && usesSourcePosition && usesSourceColors && usesSourceEmphasis
+            && positionReference == .screen && opacity == 1
     }
 }
 
