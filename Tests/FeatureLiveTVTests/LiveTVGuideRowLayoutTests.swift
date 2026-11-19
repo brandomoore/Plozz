@@ -644,8 +644,15 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         controller.safeAreaRegions = []
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
         window.backgroundColor = .clear
-        window.rootViewController = controller
+        // tvOS may resize the window's root to the display. Keep the sampled
+        // row in its own fixed-size child, independent of the simulator screen.
+        let container = UIViewController()
+        window.rootViewController = container
+        container.addChild(controller)
+        controller.view.frame = CGRect(origin: .zero, size: size)
         controller.view.backgroundColor = .clear
+        container.view.addSubview(controller.view)
+        controller.didMove(toParent: container)
         window.isHidden = false
         defer {
             window.isHidden = true
@@ -654,6 +661,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(100))
         controller.view.layoutIfNeeded()
+        XCTAssertEqual(controller.view.bounds.size, size)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
