@@ -194,23 +194,23 @@ final class ProfilePickerInteractionTests: XCTestCase {
         for digit in digits { app.buttons[digit].tap() }
     }
 
-    func testPlexVerificationMovesProfileIdentityBeforeRevealingPIN() throws {
+    func testProfileStaysOnPickerUntilPlexConfirmsPIN() throws {
         app.launchArguments = ["--profile-selection-fixture", "--slow-plex-check"]
         app.launch()
         let profile = app.buttons["Protected"]
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
         let originalFrame = profile.frame
         profile.tap()
-        XCTAssertTrue(app.staticTexts["profile-pin-name"].waitForExistence(timeout: 2), app.debugDescription)
-        XCTAssertEqual(app.staticTexts["profile-pin-name"].label, "Protected")
-        XCTAssertFalse(app.progressIndicators["profile-picker-verifying"].exists)
-        XCTAssertFalse(app.otherElements["pin-requirement-check"].exists)
+        XCTAssertTrue(app.activityIndicators["profile-picker-verifying"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["profile-pin-name"].exists)
+        XCTAssertTrue(app.staticTexts["Who’s watching?"].exists)
         XCTAssertFalse(app.buttons["1"].exists)
         XCTAssertFalse(app.staticTexts["Plex PIN"].exists)
-        XCTAssertFalse(app.buttons["Alex"].isHittable)
+        XCTAssertFalse(app.buttons["Alex"].isEnabled)
         XCTAssertFalse(app.buttons["profile-picker-edit"].exists)
         try assertHomeIsCovered()
         XCTAssertTrue(app.staticTexts["Plex PIN"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["profile-pin-name"].label, "Protected")
         XCTAssertFalse(app.buttons["profile-picker-close"].exists)
         XCTAssertEqual(app.buttons.matching(identifier: "Cancel").count, 1)
         app.buttons["Cancel"].tap()
@@ -225,8 +225,9 @@ final class ProfilePickerInteractionTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["Protected"].waitForExistence(timeout: 10))
         app.buttons["Protected"].tap()
-        XCTAssertTrue(app.staticTexts["profile-pin-name"].waitForExistence(timeout: 2), app.debugDescription)
-        app.buttons["Cancel"].tap()
+        let cancel = app.buttons["profile-picker-cancel-verification"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 2), app.debugDescription)
+        cancel.tap()
         XCTAssertTrue(app.buttons["Alex"].wait(for: \.isEnabled, toEqual: true, timeout: 5))
         XCTAssertFalse(app.staticTexts["Plex PIN"].waitForExistence(timeout: 6))
         try assertHomeIsCovered()
@@ -236,12 +237,19 @@ final class ProfilePickerInteractionTests: XCTestCase {
 
     func testUnprotectedPlexVerificationCompletesWithoutAPINPage() throws {
         app.launchArguments = [
-            "--profile-selection-fixture", "--slow-plex-check", "--unprotected-plex-check"
+            "--profile-selection-fixture", "--launch-selection", "--slow-plex-check", "--unprotected-plex-check"
         ]
         app.launch()
-        XCTAssertTrue(app.buttons["Protected"].waitForExistence(timeout: 10))
-        app.buttons["Protected"].tap()
-        XCTAssertTrue(app.staticTexts["profile-pin-name"].waitForExistence(timeout: 2), app.debugDescription)
+        let profile = app.buttons["Family"]
+        XCTAssertTrue(profile.wait(for: \.isHittable, toEqual: true, timeout: 10))
+        XCTAssertEqual(profile.value as? String ?? "", "")
+        let originalFrame = profile.frame
+        profile.tap()
+        XCTAssertTrue(app.activityIndicators["profile-picker-verifying"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Who’s watching?"].exists)
+        XCTAssertEqual(profile.frame.midX, originalFrame.midX, accuracy: 1)
+        XCTAssertEqual(profile.frame.midY, originalFrame.midY, accuracy: 1)
+        XCTAssertFalse(app.staticTexts["profile-pin-name"].exists)
         XCTAssertFalse(app.buttons["1"].exists)
         XCTAssertFalse(app.otherElements["pin-requirement-check"].exists)
         try assertHomeIsCovered()
@@ -351,12 +359,12 @@ final class ProfilePickerInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["Protected"].waitForExistence(timeout: 10))
         app.buttons["Protected"].tap()
         XCTAssertTrue(app.buttons["Try Again"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["profile-pin-name"].label, "Protected")
+        XCTAssertTrue(app.staticTexts["Protected"].exists)
         XCTAssertFalse(app.buttons["1"].exists)
         try assertHomeIsCovered()
         app.buttons["Try Again"].tap()
         XCTAssertTrue(app.buttons["Try Again"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["profile-pin-name"].label, "Protected")
+        XCTAssertTrue(app.staticTexts["Protected"].exists)
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons["Protected"].waitForExistence(timeout: 5))
     }
