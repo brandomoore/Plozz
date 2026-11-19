@@ -734,6 +734,48 @@ final class SettingsTabDelegateTests: XCTestCase {
         XCTAssertFalse(more.isNavigationBarHidden)
     }
 
+    func testMoreDoesNotDeliverPendingRowSelectionAfterLeavingTheList() throws {
+        let root = UIViewController()
+        let tabs = UITabBarController()
+        let pages = (0..<12).map { _ in UIViewController() }
+        tabs.viewControllers = pages
+        root.addChild(tabs)
+        let more = tabs.moreNavigationController
+        let list = try XCTUnwrap(more.topViewController)
+        func table(in view: UIView) -> UITableView? {
+            if let table = view as? UITableView { return table }
+            return view.subviews.lazy.compactMap(table).first
+        }
+        let rows = try XCTUnwrap(table(in: list.view))
+        let receiver = MoreRowReceiver()
+        rows.delegate = receiver
+        let controller = bridge(in: root)
+        defer { controller.restore() }
+        controller.install()
+        XCTAssertTrue(rows.delegate === controller)
+        let row = IndexPath(row: 0, section: 0)
+        func deliver() { rows.delegate?.tableView?(rows, didSelectRowAt: row) }
+        deliver()
+        XCTAssertEqual(receiver.selections, 1)
+
+        more.setViewControllers([list, pages[11]], animated: false)
+        deliver() // UITableView can finish a pending selection after the destination is already on the stack.
+        XCTAssertEqual(receiver.selections, 1)
+
+        more.popToRootViewController(animated: false)
+        controller.navigationController(more, willShow: list, animated: true)
+        deliver()
+        XCTAssertEqual(receiver.selections, 1, "The root can already be top while a pop is still in flight.")
+        controller.navigationController(more, didShow: list, animated: true)
+        deliver()
+        XCTAssertEqual(receiver.selections, 2, "A new tap after Back must still reach UIKit.")
+    }
+
+    private final class MoreRowReceiver: NSObject, UITableViewDelegate {
+        var selections = 0
+        func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) { selections += 1 }
+    }
+
     func testLayoutDoesNotReverseAForwardMoreTransition() throws {
         let root = UIViewController()
         let tabs = UITabBarController()

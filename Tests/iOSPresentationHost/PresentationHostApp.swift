@@ -141,7 +141,8 @@ struct PresentationHostApp: App {
                 enabled = [
                     NavigationLibraryLayout.homeKey, NavigationLibraryLayout.liveTVKey,
                     NavigationLibraryLayout.settingsKey, NavigationLibraryLayout.watchlistKey,
-                    NavigationLibraryLayout.searchKey, NavigationLibraryLayout.downloadsKey
+                    NavigationLibraryLayout.searchKey, NavigationLibraryLayout.downloadsKey,
+                    NavigationLibraryLayout.upcomingKey
                 ]
             } else if ProcessInfo.processInfo.arguments.contains("--profile-rail-fixture") {
                 enabled = [

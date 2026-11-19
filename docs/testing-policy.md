@@ -553,6 +553,8 @@ last-destination safeguard, and iPhone overflow labels when six tabs are enabled
 On compact layouts with overflow, UIKit's More list pushes the existing tab
 stacks. Check placement before selecting a row: Search should already use its
 subpage header, and the same placement should survive the push and return.
+A pending More row selection must not push another page once the list has left
+or while it is returning. After Back settles, the same row must open again.
 More uses the same page background as Search, including the flat fill when
 Gradient Backgrounds is off, both on entry and after returning from a row.
 Settings opens its existing sheet directly.

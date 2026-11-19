@@ -2441,6 +2441,17 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             return indexPath
         }
 
+        func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+            // UITableView can finish a pending selection after the list has
+            // started leaving. Forwarding it then can push the same tab twice.
+            guard tableView === overflowTable, !moreIsTransitioning,
+                  owner?.moreNavigationController.viewControllers.count == 1 else {
+                tableView.deselectRow(at: indexPath, animated: false)
+                return
+            }
+            previousOverflowDelegate?.tableView?(tableView, didSelectRowAt: indexPath)
+        }
+
         private static func overflowIndices(controllers: [UIViewController?], visibleItems: [UITabBarItem]) -> [Int] {
             controllers.indices.filter { index in
                 guard let controller = controllers[index] else { return true }

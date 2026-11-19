@@ -802,6 +802,21 @@ final class SettingsInteractionTests: XCTestCase {
         }
     }
 
+    func testUpcomingCanReopenFromMoreAfterBack() throws {
+        launchNavigation(arguments: ["--content-in-more"])
+        try XCTSkipIf(app.windows.firstMatch.frame.width >= 600, "Regular-width iPad has direct tabs.")
+        app.tabBars.buttons["More"].tap()
+        let row = app.tables.cells.containing(.staticText, identifier: "Upcoming").firstMatch
+        let back = app.buttons["more-navigation-back"]
+        for _ in 0..<2 {
+            XCTAssertTrue(row.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            row.tap()
+            XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            back.tap()
+            XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 5))
+        }
+    }
+
     func testMoreBackgroundMatchesNormalPageWithGradient() throws {
         try verifyMoreBackground(gradient: true)
     }
