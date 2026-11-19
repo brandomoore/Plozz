@@ -107,7 +107,9 @@ struct PlayerLayoutFixture: View {
             (chapterScrollFixture ? Color(red: 0.25, green: 0.45, blue: 0.65)
                 : ProcessInfo.processInfo.arguments.contains("--white-video") ? Color.white : .black)
                 .ignoresSafeArea()
-            if ProcessInfo.processInfo.arguments.contains("--native-avkit") {
+            if ProcessInfo.processInfo.arguments.contains("--live-presentation-row") {
+                LivePresentationRowFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--native-avkit") {
                 NativePlayerGlassFixture(showsControls: true).ignoresSafeArea()
             } else {
                 if ProcessInfo.processInfo.arguments.contains("--video") {
@@ -192,6 +194,32 @@ struct PlayerLayoutFixture: View {
                 .accessibilityValue("\(timelineSampleIndex)")
                 .padding(.top, 110)
             }
+        }
+    }
+
+    private struct LivePresentationRowFixture: View {
+        @State private var expanded = true
+
+        var body: some View {
+            LiveChannelPlayerView(
+                channelID: "sample", title: "Sample Channel",
+                input: .stream(url: URL(string: "https://fixture.invalid/live.m3u8")!, httpHeaders: [:]), logoURL: nil,
+                makeEngine: { PlayerLayoutLiveEngine() }, onPreviousChannel: {}, onNextChannel: {},
+                isFavorite: false, canToggleFavorite: false, onToggleFavorite: {},
+                isExpanded: expanded, onExpandPreview: { expanded = true },
+                presentationControls: { _ in
+                    // PiP/AirPlay hide in preview. Keep a measurable control in their actual row.
+                    AnyView(Button { expanded.toggle() } label: {
+                        Rectangle().fill(.white).frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Toggle preview")
+                    .accessibilityIdentifier(expanded ? "fullscreen-row-probe" : "preview-row-probe"))
+                }
+            )
+            .frame(width: expanded ? nil : 280, height: expanded ? nil : 158)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea()
         }
     }
 

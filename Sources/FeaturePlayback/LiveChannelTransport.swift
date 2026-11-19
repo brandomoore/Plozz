@@ -1867,7 +1867,7 @@ struct WindowSafeAreaPadding: ViewModifier {
         let minimum = isEnabled ? minimumInset : 0
         let horizontal = isEnabled ? minimumHorizontalInset : 0
         let rtl = layoutDirection == .rightToLeft
-        let balance = balancesLandscapeMargins && window.size.width > window.size.height
+        let balance = isEnabled && balancesLandscapeMargins && window.size.width > window.size.height
         let corners = balance && clearsCameraByRow ? window.cameraCorners : []
         // Only relax a one-sided inset when UIKit identifies what occupies it.
         // Older SDKs, ordinary sensor housings and unadapted overlays stay safe.

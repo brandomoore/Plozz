@@ -2,72 +2,77 @@ import XCTest
 
 @MainActor
 final class PlaybackOptionsRemoteTests: XCTestCase {
-    func testSyncPanelsEnterTheControlAndNavigateBetweenBackControlAndReset() throws {
-        for (category, valueID, step) in [
-            ("Audio", "audio-sync-milliseconds", 10),
-            ("Subtitles", "subtitle-sync-milliseconds", 50)
-        ] {
-            let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
-            app.launchArguments = ["--subtitle-style-input-fixture", "--production-player-input", "--sync-controls"]
-            app.launch()
-            defer { app.terminate() }
-            let toolbar = app.buttons[category]
-            XCTAssertTrue(toolbar.waitForExistence(timeout: 10))
-            XCUIRemote.shared.press(.up)
-            for _ in 0..<12 where !toolbar.hasFocus { XCUIRemote.shared.press(.left) }
-            for _ in 0..<12 where !toolbar.hasFocus { XCUIRemote.shared.press(.right) }
-            XCTAssertTrue(toolbar.hasFocus, app.debugDescription)
-            XCUIRemote.shared.press(.select)
-            let sync = app.buttons[category == "Audio" ? "Audio Sync" : "Subtitle Sync"]
+    func testAudioSyncResetAndBack() throws {
+        try checkSyncPanel(category: "Audio", syncLabel: "Audio Sync", valueID: "audio-sync-milliseconds", step: 10)
+    }
+
+    func testSubtitleSyncResetAndBack() throws {
+        try checkSyncPanel(category: "Subtitles", syncLabel: "Subtitle Sync", valueID: "subtitle-sync-milliseconds", step: 50)
+    }
+
+    private func checkSyncPanel(category: String, syncLabel: String, valueID: String, step: Int) throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--subtitle-style-input-fixture", "--production-player-input", "--sync-controls"]
+        app.launch()
+        defer { app.terminate() }
+        let toolbar = app.buttons[category]
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 10))
+        XCUIRemote.shared.press(.up)
+        for _ in 0..<12 where !toolbar.hasFocus { XCUIRemote.shared.press(.left) }
+        for _ in 0..<12 where !toolbar.hasFocus { XCUIRemote.shared.press(.right) }
+        XCTAssertTrue(toolbar.hasFocus, app.debugDescription)
+        XCUIRemote.shared.press(.select)
+        let sync = app.buttons[syncLabel]
+        func openSync() {
             XCTAssertTrue(sync.waitForExistence(timeout: 5))
             for _ in 0..<4 where !sync.hasFocus { XCUIRemote.shared.press(.up) }
             for _ in 0..<2 where !sync.hasFocus { XCUIRemote.shared.press(.left) }
             XCTAssertTrue(sync.hasFocus, app.debugDescription)
             XCUIRemote.shared.press(.select)
-
-            let control = app.buttons.matching(NSPredicate(format: "value MATCHES %@", "[-+0-9.]+s")).firstMatch
-            let back = app.buttons["player-options-back"]
-            let reset = app.buttons["Reset"]
-            let value = app.staticTexts[valueID]
-            XCTAssertTrue(waitUntil { control.exists && control.hasFocus }, app.debugDescription)
-            XCTAssertTrue(reset.isEnabled, "A nonzero offset must not make Reset steal entry focus.")
-            for _ in 0..<3 {
-                XCUIRemote.shared.press(.up)
-                XCTAssertTrue(waitUntil { back.hasFocus }, app.debugDescription)
-                XCUIRemote.shared.press(.down)
-                XCTAssertTrue(waitUntil { control.hasFocus }, app.debugDescription)
-                XCUIRemote.shared.press(.down)
-                XCTAssertTrue(waitUntil { reset.hasFocus }, app.debugDescription)
-                XCUIRemote.shared.press(.up)
-                XCTAssertTrue(waitUntil { control.hasFocus }, app.debugDescription)
-            }
-            XCUIRemote.shared.press(.right)
-            XCTAssertTrue(waitUntil { value.label == String(200 + step) })
-            XCTAssertTrue(control.hasFocus)
-            XCUIRemote.shared.press(.right, forDuration: 0.8)
-            XCTAssertGreaterThan(try XCTUnwrap(Int(value.label)), 200 + step * 2)
-            XCTAssertTrue(control.hasFocus)
-            XCUIRemote.shared.press(.down)
-            XCTAssertTrue(waitUntil { reset.hasFocus })
-            XCUIRemote.shared.press(.select)
-            XCTAssertTrue(waitUntil { value.label == "0" && control.hasFocus })
-            XCTAssertFalse(reset.isEnabled)
-            XCUIRemote.shared.press(.up)
-            XCTAssertTrue(waitUntil { back.hasFocus })
-            XCUIRemote.shared.press(.select)
-            XCTAssertTrue(sync.waitForExistence(timeout: 5))
-            for _ in 0..<4 where !sync.hasFocus { XCUIRemote.shared.press(.up) }
-            for _ in 0..<2 where !sync.hasFocus { XCUIRemote.shared.press(.left) }
-            XCTAssertTrue(sync.hasFocus)
-            XCUIRemote.shared.press(.select)
-            XCTAssertTrue(waitUntil { control.exists && control.hasFocus },
-                          "Reopening at zero must prefer the control, not Back.")
-            XCTAssertEqual(app.staticTexts["subtitle-navigation-open-attempts"].label, "0")
-            let attachment = XCTAttachment(screenshot: app.screenshot())
-            attachment.name = "\(category) Sync native focus"
-            attachment.lifetime = .keepAlways
-            add(attachment)
         }
+        openSync()
+        let control = app.buttons.matching(NSPredicate(format: "value MATCHES %@", "[-+0-9.]+s")).firstMatch
+        let back = app.buttons["player-options-back"]
+        let reset = app.buttons["Reset"]
+        let value = app.staticTexts[valueID]
+        XCTAssertTrue(waitUntil { control.exists && control.hasFocus }, app.debugDescription)
+        XCTAssertTrue(reset.isEnabled, "A nonzero offset must not make Reset steal entry focus.")
+        for _ in 0..<3 {
+            XCUIRemote.shared.press(.up)
+            XCTAssertTrue(waitUntil { back.hasFocus }, app.debugDescription)
+            XCUIRemote.shared.press(.down)
+            XCTAssertTrue(waitUntil { control.hasFocus }, app.debugDescription)
+            XCUIRemote.shared.press(.down)
+            XCTAssertTrue(waitUntil { reset.hasFocus }, app.debugDescription)
+            XCUIRemote.shared.press(.up)
+            XCTAssertTrue(waitUntil { control.hasFocus }, app.debugDescription)
+        }
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(waitUntil { value.label == String(200 + step) })
+        XCTAssertTrue(control.hasFocus)
+        XCUIRemote.shared.press(.right, forDuration: 0.8)
+        XCTAssertGreaterThan(try XCTUnwrap(Int(value.label)), 200 + step * 2)
+        XCTAssertTrue(control.hasFocus)
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(waitUntil { reset.hasFocus })
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(waitUntil { value.label == "0" }, "Reset did not clear the \(category) offset.")
+        XCTAssertFalse(reset.isEnabled)
+        XCTAssertTrue(waitUntil { control.hasFocus },
+                      "Reset cleared \(category) but did not return focus to the stepper. \(app.debugDescription)")
+        capture("\(category) Sync after Reset")
+        XCUIRemote.shared.press(.up)
+        XCTAssertTrue(waitUntil { back.hasFocus }, app.debugDescription)
+        XCUIRemote.shared.press(.select)
+        openSync()
+        XCTAssertTrue(waitUntil { control.exists && control.hasFocus }, "Reopening at zero must focus the stepper.")
+        XCTAssertEqual(value.label, "0")
+        XCTAssertFalse(reset.isEnabled)
+        XCTAssertEqual(app.staticTexts["subtitle-navigation-open-attempts"].label, "0")
+        capture("\(category) Sync native focus")
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(sync.waitForExistence(timeout: 5), "Remote Back must return to \(category).")
     }
 
     func testRemoteInlineSpeedZoomSubmenuAndBackUseTheProductionPlayer() throws {

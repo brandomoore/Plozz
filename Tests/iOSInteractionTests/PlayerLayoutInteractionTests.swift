@@ -245,6 +245,38 @@ final class PlayerLayoutInteractionTests: XCTestCase {
         }
     }
 
+    func testCompactLivePresentationRowDropsFullscreenCameraClearance() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--player-layout-fixture", "--live-presentation-row", "--capture-player-landscape"]
+        app.launch()
+        defer { app.terminate() }
+
+        let fullscreen = app.buttons["fullscreen-row-probe"]
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 10))
+        let viewport = app.frame
+        XCTAssertGreaterThan(viewport.width, viewport.height)
+        let fullscreenFrame = fullscreen.frame
+        // The row leaves 44 pt for Close plus a 12 pt gap in both modes.
+        let closeSlot: CGFloat = 44 + 12
+        let fullscreenLeading = fullscreenFrame.minX - viewport.minX - closeSlot
+        if viewport.size == CGSize(width: 678, height: 466) {
+            XCTAssertEqual(fullscreenLeading, 84, accuracy: 1, "Clear the folded Duo's upper-left camera.")
+        } else {
+            XCTAssertGreaterThanOrEqual(fullscreenLeading, 21)
+        }
+
+        fullscreen.tap()
+        let preview = app.buttons["preview-row-probe"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        let previewFrame = preview.frame
+        attachMeasurements(["Fullscreen row: \(fullscreenFrame)", "Compact row: \(previewFrame)", "Window: \(viewport)"])
+        XCTAssertEqual(previewFrame.minX - viewport.minX, closeSlot, accuracy: 1,
+                       "The compact row must use preview-local spacing, even when it overlaps the camera corner.")
+        XCTAssertEqual(previewFrame.minY, viewport.minY, accuracy: 1)
+    }
+
     func testLandscapePlayerMarginsInBothRotations() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         continueAfterFailure = false

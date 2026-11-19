@@ -92,6 +92,9 @@ Back, the control and Reset remain vertically reachable. On submenu entry,
 Back and Reset become eligible only after the stepper reports actual native
 focus; writing the panel's row FocusState does not focus a separately hosted
 stepper. This entry gate resets on reopening, not on ordinary Up/Down movement.
+Reset clears the offset and explicitly returns focus to the stepper's own
+button. Disabling Reset at zero does not itself move tvOS focus; the next Up
+from the stepper must reach Back.
 
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and
@@ -814,6 +817,7 @@ phone with a one-sided safe inset, main and Live use the ordinary margin on
 unobstructed rows. Close moves inward when its corner is occupied. The timeline
 keeps both time labels aligned with the title and options; if its 44-point hit
 area meets a lower camera corner, it rises just enough to clear it. Video is not inset.
+Compact Live TV controls do not reserve fullscreen camera clearance.
 Without that geometry, the controls keep the conservative safe margins. Adjacent
 routing and playback-option controls share one untinted glass capsule while
 retaining independent actions. Grouped children have no individual glass

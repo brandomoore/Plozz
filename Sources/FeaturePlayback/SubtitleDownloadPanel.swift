@@ -273,6 +273,7 @@ struct PlaybackSyncScreen: View {
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
     var allowsResetFocus = true
     var onControlFocus: () -> Void = {}
+    @State private var stepperFocusRequest = 0
 
     private var indices: ClosedRange<Int> {
         Int((range.lowerBound / step).rounded())...Int((range.upperBound / step).rounded())
@@ -297,6 +298,7 @@ struct PlaybackSyncScreen: View {
             )
             .reservingValueWidth(for: [indices.lowerBound, indices.upperBound])
             .swipeToAdjust()
+            .focusOnRequest(stepperFocusRequest)
             .accessibilityLabel("Subtitle Delay")
             .frame(maxWidth: .infinity)
             .plozzFocusSection()
@@ -308,9 +310,12 @@ struct PlaybackSyncScreen: View {
                 .frame(maxWidth: .infinity)
                 .animation(.easeInOut(duration: 0.15), value: value)
             if showsReset {
-                Button("Reset") { onChange(0) }
-                    .focused($focus, equals: .row(1))
-                    .disabled(value == 0 || !allowsResetFocus)
+                Button("Reset") {
+                    onChange(0)
+                    stepperFocusRequest &+= 1
+                }
+                .focused($focus, equals: .row(1))
+                .disabled(value == 0 || !allowsResetFocus)
             }
         }
         .padding(.horizontal, 28)
@@ -324,6 +329,7 @@ struct AudioSyncScreen: View {
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
     var allowsResetFocus = true
     var onControlFocus: () -> Void = {}
+    @State private var stepperFocusRequest = 0
     private var adjustment: PlayerAudioSyncEditor { model.audioSyncAdjustment }
 
     private var value: TimeInterval { adjustment.value ?? model.audioDelaySeconds }
@@ -356,6 +362,7 @@ struct AudioSyncScreen: View {
                 adjustment.endEditing(cancelled: $0, commit: actions.setAudioDelay)
             })
             .swipeToAdjust(onEditingBegan: { adjustment.beginEditing() })
+            .focusOnRequest(stepperFocusRequest)
             .accessibilityLabel("Audio Delay")
             .frame(maxWidth: .infinity)
             .plozzFocusSection()
@@ -368,6 +375,7 @@ struct AudioSyncScreen: View {
             Button("Reset") {
                 adjustment.cancel()
                 change(0)
+                stepperFocusRequest &+= 1
             }
             .focused($focus, equals: .row(1))
             .disabled(value == 0 || !allowsResetFocus)

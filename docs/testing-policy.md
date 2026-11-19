@@ -697,6 +697,10 @@ compares the app frame with the raw display before any screenshot resizing.
 controls against both edges and the folded Duo's reserved camera corner,
 including both time-label edges, their alignment with the ellipsis, and clearance
 for the full 44-point hit area. Use its AX frames for measurements.
+`testCompactLivePresentationRowDropsFullscreenCameraClearance` collapses the
+same Live player with its presentation-controls row over the upper-left corner.
+The fullscreen row must clear the camera; the compact row must use only its
+preview-local spacing.
 For visual evidence capture the whole folded display with
 `xcrun simctl io "$PLOZZ_SIM_ID" screenshot --display=1 player.png`, not an
 XCTest app crop. For the Big Buck Bunny footage capture, place a rights-cleared
