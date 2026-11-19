@@ -88,7 +88,9 @@ enum Wire {
         size: UInt64,
         fileID: UInt64,
         fsID: UInt64 = 7,
-        mtimeSeconds: UInt32
+        mtimeSeconds: UInt32,
+        ctimeSeconds: UInt32 = 22,
+        ctimeNanoseconds: UInt32 = 0
     ) -> Data {
         var e = XDREncoder()
         e.encode(type)
@@ -104,7 +106,7 @@ enum Wire {
         e.encode(fileID)          // fileid
         e.encode(UInt32(11)); e.encode(UInt32(0))          // atime
         e.encode(mtimeSeconds); e.encode(UInt32(0))        // mtime
-        e.encode(UInt32(22)); e.encode(UInt32(0))          // ctime
+        e.encode(ctimeSeconds); e.encode(ctimeNanoseconds)
         return e.data
     }
 
@@ -258,6 +260,21 @@ final class NFSProcedureTests: XCTestCase {
         XCTAssertEqual(attributes.size, 4096)
         XCTAssertEqual(attributes.fileID, 99)
         XCTAssertEqual(attributes.modifiedAt, Date(timeIntervalSince1970: 1000))
+    }
+
+    func testCatalogTokenDistinguishesInPlaceRewriteAndReplacementWithoutUsingAtime() throws {
+        func token(fileID: UInt64 = 99, ctime: UInt32 = 22, nanos: UInt32 = 1) throws -> String? {
+            var decoder = XDRDecoder(Wire.fattr3(
+                type: 1, size: 4096, fileID: fileID, mtimeSeconds: 1000,
+                ctimeSeconds: ctime, ctimeNanoseconds: nanos
+            ))
+            return try decoder.decodeFileAttributes().changeToken
+        }
+        let original = try XCTUnwrap(token())
+        XCTAssertNotEqual(original, try token(nanos: 2))
+        XCTAssertNotEqual(original, try token(fileID: 100))
+        XCTAssertNil(try token(fileID: 0))
+        XCTAssertNil(try token(ctime: 0, nanos: 0))
     }
 
     func testGetAttributesMapsStatusToError() async {
