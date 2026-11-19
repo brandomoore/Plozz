@@ -291,7 +291,7 @@ let package = Package(
         // SMBClient transitively and owns the playback byte-reads (SMBConnection);
         // SwiftPM unifies both onto one version.
         //
-        // Pinned to thatcube/SMBClient@smb3, our fork that adds SMB 3.x + 3.1.1
+        // Pinned to our SMBClient fork, which adds SMB 3.x + 3.1.1
         // GCM encryption and Session.isGuestSession (see the guest/credential
         // handling in ProviderShare/SMBDiscovery). This root-level reference
         // overrides the same-identity ("smbclient") reference AetherEngine pulls
@@ -301,7 +301,8 @@ let package = Package(
         // once that lands.
         // This pin also consumes connection completion once across queued
         // network-state callbacks, including failure after a successful connect.
-        .package(url: "https://github.com/thatcube/SMBClient.git", revision: "5d5bceb6fa0833c98b0eecc676609c9476bd9423"),
+        // Its checked share-list decoder handles Windows replies with null fields.
+        .package(url: "https://github.com/thatcube/SMBClient.git", revision: "c778237de5e2525a46005241dc5e7926703bddcf"),
 
         // swift-nio-ssh — Apple's pure-Swift SSH protocol implementation
         // (Apache-2.0), used ONLY by the isolated **MediaTransportSFTP** adapter.
