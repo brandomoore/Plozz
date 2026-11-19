@@ -346,13 +346,17 @@ final class PlayerLayoutInteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
         defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
-        XCUIDevice.shared.orientation = .landscapeLeft
         app.launchArguments = ["--player-layout-fixture", "--populated-player", "--video"]
         if ProcessInfo.processInfo.environment["PLOZZ_CAPTURE_OPEN_MOVIE"] == "1" {
             app.launchArguments.append("--capture-open-movie")
             app.launchEnvironment["PLOZZ_SHOTS_NFS_HOST"] = "fixture.invalid"
             app.launchEnvironment["PLOZZ_SHOTS_HOLD_CONTROLS"] = "1"
         }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        // A folded phone may keep its scene portrait despite XCUIDevice rotation.
+        // Use the fixture's real landscape scene on phones; keep live rotation on iPad.
+        let constrainScene = UIDevice.current.userInterfaceIdiom == .phone
+        if constrainScene { app.launchArguments.append("--capture-player-landscape-left") }
         app.launch()
         let more = app.buttons["player-settings"]
         XCTAssertTrue(more.waitForExistence(timeout: 10))
@@ -373,12 +377,25 @@ final class PlayerLayoutInteractionTests: XCTestCase {
         more.tap()
         let quality = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Quality'")).firstMatch
         XCTAssertTrue(quality.waitForExistence(timeout: 3))
+        XCTAssertTrue(quality.label.contains("1080p · 8 Mbps"))
         XCTAssertLessThan(app.buttons["Version"].frame.maxY, top)
         try frame("Movie landscape open")
         quality.tap()
+        let currentQuality = app.buttons["1080p · 8 Mbps"]
+        XCTAssertTrue(currentQuality.waitForExistence(timeout: 3))
+        XCTAssertTrue(currentQuality.isSelected)
+        try frame("Movie landscape Quality submenu")
+        let advanced = app.buttons["Advanced…"]
+        XCTAssertTrue(advanced.isHittable, "The editor should be reachable without scrolling on this display.")
+        advanced.tap()
         XCTAssertTrue(app.navigationBars["Streaming quality"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
         XCUIDevice.shared.orientation = .portrait
+        if constrainScene {
+            app.terminate()
+            app.launchArguments.removeAll { $0 == "--capture-player-landscape-left" }
+            app.launch()
+        }
         let portrait = app.buttons["player-playback-options"]
         XCTAssertTrue(portrait.waitForExistence(timeout: 5))
         XCTAssertFalse(rate.exists)

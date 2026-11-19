@@ -906,6 +906,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
             availability: .init(
                 maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
                 quality: viewModel.streamingQualityAvailable ? viewModel.streamingOptions?.quality : nil,
+                qualitySupport: viewModel.streamingQualitySupport,
                 versions: hasVersions, disc: .init(player: viewModel)
             ),
             presentation: menuPresentation,
@@ -926,6 +927,13 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         actions.selectSubtitle = { viewModel.selectSubtitleOption(id: $0); onInteraction() }
         actions.setDialogueEnhancement = { viewModel.setDialogEnhanceEnabled($0); onInteraction() }
         actions.setSpeed = { viewModel.setPlaybackSpeed($0); onInteraction() }
+        actions.setQuality = { quality in
+            guard viewModel.streamingQualityAvailable, var options = viewModel.streamingOptions,
+                  viewModel.streamingQualitySupport.validationMessage(for: quality) == nil else { return }
+            options.quality = quality
+            viewModel.changeStreamingOptions(options)
+            onInteraction()
+        }
         actions.setDolbyVisionFELConversion = { viewModel.setDolbyVisionFELConversion($0); onInteraction() }
         actions.setVideoUpscaling = { viewModel.setVideoUpscaling($0); onInteraction() }
         return actions

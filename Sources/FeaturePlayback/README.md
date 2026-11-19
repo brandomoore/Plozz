@@ -566,8 +566,9 @@ compatibility and App Review risk. This system-preference bridge is tvOS-only.
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
 controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles, the
 current speed (on demand), and an ellipsis, omitting unavailable controls.
-In landscape, Quality opens its editor directly from the overflow menu rather
-than from the zoom choices. Version (on demand) or Multiview (live) also lives
+Quality lists the server-supported presets and marks the current limit. Selecting
+a preset keeps the codec and other stream settings; Advanced opens the full editor
+for custom limits, transcoding and stream details. Version (on demand) or Multiview (live) also lives
 in overflow when available. Layout follows the actual player
 viewport, including iPad split windows, not the device's global orientation.
 Subtitles and Audio offer their existing tracks directly with real active-track
@@ -576,13 +577,13 @@ tracks first, then Search & Download, then Advanced. Native menu configurations
 preserve this top-to-bottom order even when opening upward. Advanced opens a touch sheet for supported
 appearance, timing and dual-track controls. Live TV
 does not offer search/download or dual subtitles. Native speed presets and Video
-modes apply immediately; Custom, Quality, Version and supported sync controls
+modes apply immediately; Custom Speed, Advanced Quality, Version and supported sync controls
 open their existing editors. Live multiview is another menu action; Go Live
 remains a transport action. A sole audio track stays visible as disabled metadata.
 Opening a menu pins transport controls; playback-clock updates do not rebuild
 its snapshot. `PlayerMenuPresentation` releases editor requests only after native
 menu dismissal completes. Context changes invalidate pending requests and old
-audio/subtitle/speed/zoom actions, and programme transitions release live controls.
+audio/subtitle/speed/quality/zoom actions, and programme transitions release live controls.
 Each native popup has its own presentation owner, so overlapping dismissal and
 teardown callbacks cannot unpin a newer popup or release a sheet too early.
 Popup rows are text-only: checkmarks belong to real track/mode/rate choices.

@@ -113,18 +113,20 @@ public struct PlayerMoreMenuAvailability {
     public var video: Bool
     public var videoModel: PlayerVideoZoomModel?
     public var quality: StreamingQuality?
+    public var qualitySupport: StreamingQualitySupport
     public var versions: Bool
     public var multiview: Bool
     public var disc: Disc?
 
     public init(
         maximumSpeed: Double? = nil, video: Bool = true, videoModel: PlayerVideoZoomModel? = nil, quality: StreamingQuality? = nil,
-        versions: Bool = false, multiview: Bool = false, disc: Disc? = nil
+        qualitySupport: StreamingQualitySupport = .standard, versions: Bool = false, multiview: Bool = false, disc: Disc? = nil
     ) {
         self.maximumSpeed = maximumSpeed
         self.video = video
         self.videoModel = videoModel
         self.quality = quality
+        self.qualitySupport = qualitySupport
         self.versions = versions
         self.multiview = multiview
         self.disc = disc
@@ -138,6 +140,7 @@ public struct PlayerMoreMenuActions {
     public var selectSubtitle: (Int) -> Void = { _ in }
     public var setDialogueEnhancement: (Bool) -> Void = { _ in }
     public var setSpeed: (Double) -> Void = { _ in }
+    public var setQuality: (StreamingQuality) -> Void = { _ in }
     public var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
     public var setVideoUpscaling: (VideoUpscaling) -> Void = { _ in }
     public var request: (PlayerMenuDestination) -> Void = { _ in }
@@ -268,9 +271,20 @@ public enum PlayerMoreMenu {
             entries[.zoom] = UIMenu(title: localized(PlayerMenuSection.zoom.title), options: .singleSelection, children: zoom.children)
         }
         if let quality = availability.quality {
-            let action = destination(PlayerMenuSection.quality.title, .quality)
-            action.subtitle = localized(quality.title)
-            entries[.quality] = action
+            let support = availability.qualitySupport
+            var presets = StreamingQuality.allCases.filter { support.validationMessage(for: $0) == nil }
+            if !presets.contains(quality) { presets.append(quality) }
+            let choices = presets.map { preset in
+                UIAction(title: localized(preset.title),
+                         attributes: support.validationMessage(for: preset) == nil ? [] : .disabled,
+                         state: preset == quality ? .on : .off) { _ in actions.setQuality(preset) }
+            }
+            // An inline section adds separator padding above and below the presets,
+            // pushing Advanced out of the visible menu on compact landscape players.
+            let menu = UIMenu(title: localized(PlayerMenuSection.quality.title),
+                              children: choices + [destination("Advanced…", .quality)])
+            menu.subtitle = localized(quality.title)
+            entries[.quality] = menu
         }
         if availability.versions { entries[.versions] = destination(PlayerMenuSection.versions.title, .versions) }
         if availability.multiview { entries[.multiview] = destination(PlayerMenuSection.multiview.title, .multiview) }
@@ -334,6 +348,7 @@ public struct PlayerMoreMenuButton: View {
             .onChange(of: layout) { presentation.reset() }
             .onChange(of: sections) { presentation.reset() }
             .onChange(of: availability.quality) { presentation.reset() }
+            .onChange(of: availability.qualitySupport) { presentation.reset() }
     }
 
     private func controls(_ sections: [PlayerMenuSection]) -> some View {
@@ -399,6 +414,7 @@ private struct PlayerNativeSectionMenu: View {
                 guarded.selectSubtitle = { if isCurrent() { actions.selectSubtitle($0) } }
                 guarded.setDialogueEnhancement = { if isCurrent() { actions.setDialogueEnhancement($0) } }
                 guarded.setSpeed = { if isCurrent() { actions.setSpeed($0) } }
+                guarded.setQuality = { if isCurrent() { actions.setQuality($0) } }
                 guarded.setDolbyVisionFELConversion = { if isCurrent() { actions.setDolbyVisionFELConversion($0) } }
                 guarded.setVideoUpscaling = { if isCurrent() { actions.setVideoUpscaling($0) } }
                 guarded.request = { if isCurrent() { presentation.request($0, generation: generation) } }
