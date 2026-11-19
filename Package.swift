@@ -263,7 +263,7 @@ let package = Package(
         // Buffered direct-rendering PCM supports audio-only sync correction without seeking.
         .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "754eadcb5f6c6018c9e2ce53fd554777b89c6b50",
+            revision: "d98f93de1bc05635279ab5ce7831910327452e3f",
             traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision
