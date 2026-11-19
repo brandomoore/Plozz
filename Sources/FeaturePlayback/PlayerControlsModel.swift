@@ -154,6 +154,7 @@ public final class ControlBarEntryModel {
     /// Episode browsing gets a longer idle window than the other bottom cards.
     public var episodeBrowserOpen: Bool = false
     public var discVideosOpen: Bool = false
+    var hasDiscActions = false
 
     public init() {}
 }

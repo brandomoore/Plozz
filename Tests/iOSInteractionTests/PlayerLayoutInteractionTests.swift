@@ -245,6 +245,217 @@ final class PlayerLayoutInteractionTests: XCTestCase {
         }
     }
 
+    func testCompactLivePresentationRowDropsFullscreenCameraClearance() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--player-layout-fixture", "--live-presentation-row", "--capture-player-landscape"]
+        app.launch()
+        defer { app.terminate() }
+
+        let fullscreen = app.buttons["fullscreen-row-probe"]
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 10))
+        let viewport = app.frame
+        XCTAssertGreaterThan(viewport.width, viewport.height)
+        let fullscreenFrame = fullscreen.frame
+        // The row leaves 44 pt for Close plus a 12 pt gap in both modes.
+        let closeSlot: CGFloat = 44 + 12
+        let fullscreenLeading = fullscreenFrame.minX - viewport.minX - closeSlot
+        if viewport.size == CGSize(width: 678, height: 466) {
+            XCTAssertEqual(fullscreenLeading, 84, accuracy: 1, "Clear the folded Duo's upper-left camera.")
+        } else {
+            XCTAssertGreaterThanOrEqual(fullscreenLeading, 21)
+        }
+
+        fullscreen.tap()
+        let preview = app.buttons["preview-row-probe"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        let previewFrame = preview.frame
+        attachMeasurements(["Fullscreen row: \(fullscreenFrame)", "Compact row: \(previewFrame)", "Window: \(viewport)"])
+        XCTAssertEqual(previewFrame.minX - viewport.minX, closeSlot, accuracy: 1,
+                       "The compact row must use preview-local spacing, even when it overlaps the camera corner.")
+        XCTAssertEqual(previewFrame.minY, viewport.minY, accuracy: 1)
+    }
+
+    func testLandscapePlayerMarginsInBothRotations() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        defer { app.terminate() }
+        for live in [false, true] {
+            let close = app.buttons[live ? "live-channel-close" : "Close player"]
+            let info = app.buttons[live ? "live-channel-info" : "Info"]
+            let timeline = app.descendants(matching: .any)[live ? "live-channel-timeline" : "player-timeline"].firstMatch
+            let options = app.buttons[live ? "live-channel-settings" : "player-settings"]
+            // The folded Duo does not reliably honor XCUIDevice orientation
+            // changes. Constrain the fixture scene, not its view dimensions.
+            for left in [false, true] {
+                let mask = left ? "--capture-player-landscape-left" : "--capture-player-landscape"
+                app.launchArguments = ["--player-layout-fixture", "--populated-player", "--video", mask] + (live ? ["--live-player"] : [])
+                app.launch()
+                XCTAssertTrue(close.waitForExistence(timeout: 10))
+                wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    app.frame.width > app.frame.height && options.exists && close.frame.minY < 40
+                }, object: nil)], timeout: 10)
+                if live {
+                    let bar = app.descendants(matching: .any)["live-channel-timeline-scrubber"].firstMatch
+                    bar.coordinate(withNormalizedOffset: .init(dx: 0.6, dy: 0.5)).press(
+                        forDuration: 0.2, thenDragTo: bar.coordinate(withNormalizedOffset: .init(dx: 0.39, dy: 0.5))
+                    )
+                }
+                if live { XCTAssertTrue(app.buttons["live-channel-go-live"].waitForExistence(timeout: 5)) }
+                let prefix = live ? "live-channel" : "player"
+                let audio = app.buttons["\(prefix)-audio"]
+                let subtitles = app.buttons["\(prefix)-subtitles"]
+                let rate = app.buttons["\(prefix)-playback-speed"]
+                let row = live ? [app.buttons["live-channel-go-live"], audio, subtitles, options]
+                    : [audio, subtitles, rate, options]
+                for (first, next) in zip(row, row.dropFirst()) {
+                    XCTAssertTrue(first.isHittable && next.isHittable)
+                    XCTAssertGreaterThanOrEqual(first.frame.width, 44)
+                    XCTAssertGreaterThanOrEqual(next.frame.width, 44)
+                    XCTAssertLessThanOrEqual(first.frame.maxX, next.frame.minX + 1)
+                    XCTAssertEqual(first.frame.midY, next.frame.midY, accuracy: 1)
+                }
+                if live { XCTAssertFalse(rate.exists) }
+                else { XCTAssertEqual(rate.value as? String, "1×") }
+                let viewport = app.frame
+                let leading = timeline.frame.minX - viewport.minX
+                let trailing = viewport.maxX - timeline.frame.maxX
+                let elements = app.descendants(matching: .any)
+                let timelinePrefix = live ? "live-timeline" : "player-timeline"
+                let current = elements["\(timelinePrefix)-current-time"].firstMatch
+                let end = elements["\(timelinePrefix)-end-time"].firstMatch
+                let scrubber = elements[live ? "live-channel-timeline-scrubber" : "player-timeline-scrubber"].firstMatch
+                XCTAssertEqual(current.frame.minX, timeline.frame.minX, accuracy: 1)
+                XCTAssertEqual(end.frame.maxX, options.frame.maxX, accuracy: 1)
+                XCTAssertEqual(end.frame.maxX, timeline.frame.maxX, accuracy: 1)
+                for target in [current, scrubber, end] { XCTAssertGreaterThanOrEqual(target.frame.height, 44) }
+                XCTAssertGreaterThanOrEqual(leading, 20.5)
+                if viewport.size == CGSize(width: 678, height: 466) {
+                    let corner = CGRect(x: left ? 594 : 0, y: left ? 384 : 0, width: 84, height: 82)
+                    XCTAssertEqual(leading, 21, accuracy: 1)
+                    XCTAssertEqual(trailing, 21, accuracy: 1)
+                    XCTAssertEqual(end.frame.maxY, left ? corner.minY : 391, accuracy: 1)
+                    XCTAssertTrue(end.frame.intersection(corner).isEmpty)
+                    XCTAssertEqual(close.frame.minX, left ? 21 : 84, accuracy: 1)
+                    XCTAssertEqual(info.frame.minX, 21, accuracy: 1)
+                    XCTAssertEqual(viewport.maxX - options.frame.maxX, 21, accuracy: 1)
+                    let title = live ? app.staticTexts["live-channel-program-title"] : app.staticTexts["Wayward"]
+                    XCTAssertEqual(title.frame.minX, 21, accuracy: 1)
+                    for button in app.buttons.allElementsBoundByIndex {
+                        XCTAssertTrue(button.frame.intersection(corner).isEmpty, button.debugDescription)
+                    }
+                } else {
+                    if viewport.size == CGSize(width: 956, height: 440) {
+                        XCTAssertEqual(leading, 62, accuracy: 1)
+                    }
+                    XCTAssertEqual(leading, trailing, accuracy: 1)
+                    XCTAssertEqual(close.frame.minX, timeline.frame.minX, accuracy: 1)
+                    XCTAssertEqual(info.frame.minX, timeline.frame.minX, accuracy: 1)
+                    XCTAssertEqual(options.frame.maxX, timeline.frame.maxX, accuracy: 1)
+                }
+                for button in [close, info, options] { XCTAssertTrue(button.isHittable) }
+                if !live {
+                    let label = end.label
+                    end.tap()
+                    XCTAssertNotEqual(end.label, label, "The end label must still switch clock modes.")
+                    XCTAssertEqual(end.frame.maxX, options.frame.maxX, accuracy: 1)
+                }
+                let state = "\(live ? "Live" : "Main") \(left ? "landscape-left" : "landscape-right")"
+                attachMeasurements([state, "Margins: \(leading), \(trailing)", app.debugDescription])
+                let top = options.frame.minY
+                options.tap()
+                let last = app.buttons[live ? "Zoom" : "Version"]
+                XCTAssertTrue(last.waitForExistence(timeout: 3))
+                XCTAssertLessThan(last.frame.maxY, top, "The open menu must not cover the transport row.")
+                app.terminate()
+            }
+        }
+    }
+
+    func testRotatingMovieKeepsQualityAccessibleAndMovesSpeedIntoPortraitMenu() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
+        app.launchArguments = ["--player-layout-fixture", "--populated-player", "--video"]
+        if ProcessInfo.processInfo.environment["PLOZZ_CAPTURE_OPEN_MOVIE"] == "1" {
+            app.launchArguments.append("--capture-open-movie")
+            app.launchEnvironment["PLOZZ_SHOTS_NFS_HOST"] = "fixture.invalid"
+            app.launchEnvironment["PLOZZ_SHOTS_HOLD_CONTROLS"] = "1"
+        }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        // A folded phone may keep its scene portrait despite XCUIDevice rotation.
+        // Use the fixture's real landscape scene on phones; keep live rotation on iPad.
+        let constrainScene = UIDevice.current.userInterfaceIdiom == .phone
+        if constrainScene { app.launchArguments.append("--capture-player-landscape-left") }
+        app.launch()
+        let more = app.buttons["player-settings"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        let rate = app.buttons["player-playback-speed"]
+        rate.tap()
+        app.buttons["1.25×"].tap()
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1.25×"), object: rate)],
+             timeout: 3)
+        func frame(_ name: String) throws {
+            let image = uprightImage(XCUIScreen.main.screenshot().image, screen: app.frame)
+            let attachment = XCTAttachment(data: try XCTUnwrap(image.pngData()), uniformTypeIdentifier: "public.png")
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        try frame("Movie landscape closed")
+        let top = more.frame.minY
+        more.tap()
+        let quality = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Quality'")).firstMatch
+        XCTAssertTrue(quality.waitForExistence(timeout: 3))
+        XCTAssertTrue(quality.label.contains("1080p · 8 Mbps"))
+        XCTAssertLessThan(app.buttons["Version"].frame.maxY, top)
+        try frame("Movie landscape open")
+        quality.tap()
+        let currentQuality = app.buttons["1080p · 8 Mbps"]
+        XCTAssertTrue(currentQuality.waitForExistence(timeout: 3))
+        XCTAssertTrue(currentQuality.isSelected)
+        try frame("Movie landscape Quality submenu")
+        let advanced = app.buttons["Advanced…"]
+        XCTAssertTrue(advanced.isHittable, "The editor should be reachable without scrolling on this display.")
+        advanced.tap()
+        XCTAssertTrue(app.navigationBars["Streaming quality"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].tap()
+        XCUIDevice.shared.orientation = .portrait
+        if constrainScene {
+            app.terminate()
+            app.launchArguments.removeAll { $0 == "--capture-player-landscape-left" }
+            app.launch()
+        }
+        let portrait = app.buttons["player-playback-options"]
+        XCTAssertTrue(portrait.waitForExistence(timeout: 5))
+        XCTAssertFalse(rate.exists)
+        XCTAssertFalse(app.buttons["player-audio"].exists || app.buttons["player-subtitles"].exists)
+        portrait.tap()
+        XCTAssertTrue(app.buttons["Playback Speed"].waitForExistence(timeout: 5))
+    }
+
+    func testLandscapePlayerCaptureFillsPhoneDisplay() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--player-layout-fixture", "--capture-player-landscape", "--live-player"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-channel-play-pause"].waitForExistence(timeout: 10))
+        let rotated = NSPredicate { _, _ in app.frame.width > app.frame.height }
+        wait(for: [XCTNSPredicateExpectation(predicate: rotated, object: nil)], timeout: 10)
+
+        // The app and its controls can agree on a compatibility-sized window. Measure the display independently.
+        let pixels = try XCTUnwrap(XCUIScreen.main.screenshot().image.cgImage)
+        let frame = app.frame
+        let shortSide = CGFloat(min(pixels.width, pixels.height))
+        let longSide = CGFloat(max(pixels.width, pixels.height))
+        let expectedHeight = frame.width * shortSide / longSide
+        XCTAssertEqual(frame.height, expectedHeight, accuracy: 1,
+                       "The player window must fill the phone display. For Duo, build with the iOS 27.1 SDK or newer.")
+    }
+
     func testLiveInlineTimelineSeeksWithinTheBarAndPreservesChannelActions() {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
@@ -276,8 +487,14 @@ final class PlayerLayoutInteractionTests: XCTestCase {
         // The bar spans one hour of history plus the programme's remaining 15 minutes.
         XCTAssertEqual(Double(landing ?? -1), 3600 - 4500 * 0.25, accuracy: 20)
         XCTAssertTrue(value.hasSuffix("scrubs:1"))
-        app.buttons["live-channel-go-live"].tap()
+        let jump = app.buttons["live-channel-go-live"]
+        XCTAssertEqual(jump.label, "Jump to live")
+        jump.tap()
         XCTAssertTrue((fixture.value as? String)?.contains("behind:0,") == true)
+        XCTAssertFalse(jump.exists)
+        let settings = app.buttons["live-channel-settings"]
+        (settings.exists ? settings : app.buttons["live-channel-playback-options"]).tap()
+        XCTAssertTrue(app.buttons["Zoom"].waitForExistence(timeout: 3))
     }
 
     func testNativeFullscreenPlayerEdgeReferenceAfterRotation() {
@@ -395,13 +612,13 @@ final class PlayerLayoutInteractionTests: XCTestCase {
                 if backdrop == "white" { app.launchArguments.append("--white-video") }
                 if backdrop == "video" { app.launchArguments.append("--video") }
                 app.launch()
-                let options = app.buttons["player-playback-options"]
+                let landscape = app.frame.width > app.frame.height
+                let options = app.buttons[landscape ? "player-settings" : "player-playback-options"]
                 XCTAssertTrue(options.waitForExistence(timeout: 10))
                 options.tap()
-                let speed = app.buttons["Playback Speed"]
-                XCTAssertTrue(speed.waitForExistence(timeout: 5))
-                XCTAssertTrue(app.buttons["Audio"].exists)
-                XCTAssertTrue(app.buttons["Zoom Mode"].exists)
+                XCTAssertTrue(app.buttons["Zoom"].waitForExistence(timeout: 5))
+                let speed = app.buttons[landscape ? "player-playback-speed" : "Playback Speed"]
+                if !landscape { XCTAssertTrue(app.buttons["Audio"].exists) }
                 XCTAssertFalse(app.buttons["Playback Sync"].exists)
                 capture(app, name: "Plozz native menu \(appearance) \(backdrop) video")
                 if backdrop == "black" {
@@ -414,13 +631,15 @@ final class PlayerLayoutInteractionTests: XCTestCase {
                     XCTAssertGreaterThan(ink.width, 80, "The native menu's title must retain light ink.")
                     XCTAssertLessThan(ink.height, interior.height - 2, "Measure label ink, not a pale menu background.")
                 }
+                if landscape { app.coordinate(withNormalizedOffset: .init(dx: 0.1, dy: 0.2)).tap() }
                 speed.tap()
+                app.buttons["Custom…"].tap()
                 XCTAssertTrue(app.navigationBars["Playback Speed"].waitForExistence(timeout: 5))
                 app.buttons["Done"].tap()
                 XCTAssertTrue(app.navigationBars["Playback Speed"].waitForNonExistence(timeout: 5))
                 XCTAssertTrue(options.waitForExistence(timeout: 5))
                 options.tap()
-                XCTAssertTrue(app.buttons["Playback Speed"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.buttons["Zoom"].waitForExistence(timeout: 5))
                 app.terminate()
             }
         }

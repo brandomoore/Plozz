@@ -242,7 +242,7 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
         model.playbackSpeed = 1.5
         model.engineCapabilities = [.playbackSpeed]
         XCTAssertEqual(PlayerOptionsPanel.preferredFocus(
-            for: .playback, subtitleScreen: .tracks, model: model),
+            for: .speed, subtitleScreen: .tracks, model: model),
                        .row(PlaybackOptionsPane.speedSlot))
         model.engineCapabilities = []
         XCTAssertNil(PlayerOptionsPanel.preferredFocus(for: .sync, subtitleScreen: .tracks, model: model))

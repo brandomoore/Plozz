@@ -7,6 +7,8 @@ struct PlaybackOptionsPane: View {
     static let zoomSlot = 0
     static let speedSlot = 2
     static let upscalingSlot = 4
+    static let versionSlot = 5
+    static let multiviewSlot = 6
     static var customSlot: Int { modeSlot(.custom) }
 
     static func modeSlot(_ mode: PlayerVideoZoom.Mode) -> Int { 10 + mode.rawValue }
@@ -17,7 +19,8 @@ struct PlaybackOptionsPane: View {
     let actions: PlayerOptionsActions
     let screen: PlayerControls.PlaybackScreen
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
-    var offersPlaybackSpeed = true
+    var speedOnly = false
+    var additionalRows: [PlayerOptionsRowSpec] = []
     let openScreen: (PlayerControls.PlaybackScreen) -> Void
 
     var body: some View {
@@ -71,7 +74,7 @@ struct PlaybackOptionsPane: View {
     var rows: [PlayerOptionsRowSpec] {
         Self.rows(
             model: model, zoom: zoom, actions: actions, screen: screen,
-            offersPlaybackSpeed: offersPlaybackSpeed, openScreen: openScreen
+            speedOnly: speedOnly, additionalRows: additionalRows, openScreen: openScreen
         )
     }
 
@@ -79,17 +82,35 @@ struct PlaybackOptionsPane: View {
         model: PlayerControlsModel, zoom: PlayerVideoZoomModel,
         actions: PlayerOptionsActions,
         screen: PlayerControls.PlaybackScreen = .options,
-        offersPlaybackSpeed: Bool = true,
+        speedOnly: Bool = false,
+        additionalRows: [PlayerOptionsRowSpec] = [],
         openScreen: @escaping (PlayerControls.PlaybackScreen) -> Void
     ) -> [PlayerOptionsRowSpec] {
-        if screen == .upscaling { return [] }
+        if speedOnly {
+            guard model.engineCapabilities.contains(.playbackSpeed) else { return [] }
+            return [.init(slot: Self.speedSlot, title: "Speed", kind: .number(
+                value: Text(verbatim: PlayerControls.speedLabel(model.playbackSpeed)),
+                step: { delta in
+                    let index = PlayerControls.nearestSpeedIndex(model.playbackSpeed)
+                    let next = min(max(index + delta, 0), PlayerControls.speedGridCount - 1)
+                    actions.setPlaybackSpeed(PlayerControls.speedGridValue(next))
+                }
+            ))]
+        }
+        if screen == .upscaling || screen == .version { return [] }
         if screen == .zoom {
             return [.init(slot: Self.customSlot, title: "Custom", kind: .number(
                 value: Text(Double(zoom.settings.customPercent) / 100, format: .percent.precision(.fractionLength(0))),
                 step: { zoom.setCustomPercent(zoom.settings.customPercent + $0) }
             ), isSelected: zoom.settings.mode == .custom)]
         }
-        var rows: [PlayerOptionsRowSpec] = []
+        var rows = additionalRows
+        if model.engineCapabilities.contains(.videoZoom) {
+            rows.append(.init(slot: Self.zoomSlot, title: "Zoom Mode", kind: .submenu(
+                summary: Text(zoom.settings.mode.title),
+                open: { openScreen(.zoom) }
+            )))
+        }
         if model.upscaling.isAvailable {
             rows.append(.init(slot: Self.upscalingSlot, title: "Upscaling", kind: .submenu(
                 summary: Text(model.upscaling.selection.title), open: { openScreen(.upscaling) }
@@ -101,20 +122,9 @@ struct PlaybackOptionsPane: View {
                 flip: { actions.setDolbyVisionFELConversion(!model.felConversion.isEnabled) }
             )))
         }
-        if model.engineCapabilities.contains(.videoZoom) {
-            rows.append(.init(slot: Self.zoomSlot, title: "Zoom Mode", kind: .submenu(
-                summary: Text(zoom.settings.mode.title),
-                open: { openScreen(.zoom) }
-            )))
-        }
-        if offersPlaybackSpeed, model.engineCapabilities.contains(.playbackSpeed) {
-            rows.append(.init(slot: Self.speedSlot, title: "Playback Speed", kind: .number(
-                value: Text(verbatim: PlayerControls.speedLabel(model.playbackSpeed)),
-                step: { delta in
-                    let index = PlayerControls.nearestSpeedIndex(model.playbackSpeed)
-                    let next = min(max(index + delta, 0), PlayerControls.speedGridCount - 1)
-                    actions.setPlaybackSpeed(PlayerControls.speedGridValue(next))
-                }
+        if model.versions.isAvailable {
+            rows.append(.init(slot: Self.versionSlot, title: "Version", kind: .submenu(
+                summary: Text(verbatim: ""), open: { openScreen(.version) }
             )))
         }
         return rows

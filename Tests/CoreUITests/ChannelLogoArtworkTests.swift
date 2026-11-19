@@ -7,6 +7,154 @@ import XCTest
 
 @MainActor
 final class ChannelLogoArtworkTests: XCTestCase {
+    func testIndependentInsetsGiveCompactLogosHeightAndWideLogosSideClearance() throws {
+        for (sourceSize, hasPlate) in [(CGSize(width: 20, height: 20), false), (CGSize(width: 20, height: 20), true),
+                                       (CGSize(width: 32, height: 20), true), (CGSize(width: 80, height: 20), true)] {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let logo = UIGraphicsImageRenderer(size: sourceSize, format: format).image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(origin: .zero, size: sourceSize))
+            }
+            let renderer = ImageRenderer(content: ChannelLogoPlateContent(
+                name: "", image: logo, plate: ChannelLogoPlate(tone: nil),
+                size: CGSize(width: 140, height: 72), cornerRadius: 16, artworkInset: 4,
+                isTile: true, hasSourcePlate: hasPlate, usesControlBackground: true, horizontalArtworkInset: 20
+            ))
+            renderer.scale = 1
+            let image = try XCTUnwrap(renderer.cgImage)
+            let pixels = try rgbaPixels(image)
+            let ink = stride(from: 0, to: pixels.count, by: 4).filter {
+                pixels[$0] > 200 && pixels[$0 + 1] < 50 && pixels[$0 + 3] > 128
+            }.map { CGPoint(x: ($0 / 4) % image.width, y: ($0 / 4) / image.width) }
+            let width = try XCTUnwrap(ink.map(\.x).max()) - XCTUnwrap(ink.map(\.x).min()) + 1
+            let height = try XCTUnwrap(ink.map(\.y).max()) - XCTUnwrap(ink.map(\.y).min()) + 1
+            XCTAssertEqual(width / height, sourceSize.width / sourceSize.height, accuracy: 0.05)
+            if sourceSize.width == sourceSize.height {
+                XCTAssertEqual(height, hasPlate ? 48 : 64, accuracy: 1)
+            } else if sourceSize.width == 32 {
+                XCTAssertEqual(width, 81, accuracy: 1)
+                XCTAssertEqual(height, 51, accuracy: 1)
+            } else {
+                XCTAssertEqual(width, 100, accuracy: 1)
+                XCTAssertGreaterThanOrEqual(try XCTUnwrap(ink.map(\.x).min()), 20)
+            }
+        }
+    }
+
+    func testNativeControlArtworkKeepsItsFullRestingBackground() throws {
+        for id: String? in [nil, "plozz-channel"] {
+            for usesControlBackground in [false, true] {
+                let renderer = ImageRenderer(content: ChannelLogoArtwork(
+                    name: "News", logoURL: nil, size: CGSize(width: 160, height: 72),
+                    cornerRadius: 16, artworkInset: 8, plozzChannelID: id,
+                    usesControlBackground: usesControlBackground
+                ))
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.cgImage)
+                let pixels = try rgbaPixels(image)
+                for point in [(80, 2), (4, 36), (156, 36)] {
+                    let alpha = pixels[(point.1 * image.width + point.0) * 4 + 3]
+                    XCTAssertEqual(alpha, 255)
+                }
+            }
+        }
+    }
+
+    func testNativeControlUsesTheExistingFullPlateBehindLogoInk() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        for (color, tone, expected) in [
+            (UIColor.white, ResolvedLogoTone(luminance: 1, coverage: 0.4, brightInk: 1), [255, 255, 255]),
+            (UIColor.black, ResolvedLogoTone(luminance: 0, coverage: 0.4), [0, 0, 0]),
+            (UIColor.red, ResolvedLogoTone(luminance: 0.21, coverage: 0.4, red: 1), [255, 0, 0])
+        ] {
+            let logo = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 20), format: format).image { context in
+                color.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+            }
+            for prefersLight in [false, true] {
+                let plate = ChannelLogoPlate(tone: tone, prefersLight: prefersLight)
+                let renderer = ImageRenderer(content: ChannelLogoPlateContent(
+                    name: "", image: logo, plate: plate,
+                    size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 8,
+                    usesControlBackground: true
+                ))
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.cgImage)
+                let pixels = try rgbaPixels(image)
+                let center = (36 * image.width + 80) * 4
+                XCTAssertEqual(pixels[center..<(center + 3)].map(Int.init), expected)
+                let side = (36 * image.width + 4) * 4
+                XCTAssertEqual(pixels[(2 * image.width + 80) * 4 + 3], 255)
+                XCTAssertEqual(pixels[side + 3], 255)
+                for (channel, component) in [plate.red, plate.green, plate.blue].enumerated() {
+                    XCTAssertEqual(Double(pixels[side + channel]), component * 255, accuracy: 1)
+                }
+            }
+        }
+    }
+
+    func testMixedAndBoxedLogosKeepEveryInkColourAcrossFocusSurfaces() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let logo = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 20), format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 20, y: 0, width: 20, height: 20))
+        }
+        for tile in [false, true] {
+            for prefersLight in [false, true] {
+                let tone = ResolvedLogoTone(
+                    luminance: 0.6, coverage: tile ? 1 : 0.4,
+                    red: 1, green: 0.5, blue: 0.5, brightInk: 0.5
+                )
+                let renderer = ImageRenderer(content: ChannelLogoPlateContent(
+                    name: "", image: logo, plate: ChannelLogoPlate(tone: tone, prefersLight: prefersLight),
+                    size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 8,
+                    isTile: tile, usesControlBackground: true
+                ))
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.cgImage)
+                let pixels = try rgbaPixels(image)
+                for (x, expected) in [(60, [255, 255, 255]), (100, [255, 0, 0])] {
+                    let offset = (36 * image.width + x) * 4
+                    XCTAssertEqual(pixels[offset..<(offset + 3)].map(Int.init), expected)
+                }
+            }
+        }
+    }
+
+    func testNativeControlRestoresSourceBackgroundAcrossTheWholePlate() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let logo = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 20), format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 10, y: 0, width: 20, height: 20))
+        }
+        let renderer = ImageRenderer(content: ChannelLogoPlateContent(
+            name: "", image: logo, plate: ChannelLogoPlate(tone: ResolvedLogoTone(
+                luminance: 1, coverage: 0.4,
+                backgroundPlate: HeroBackgroundSample(red: 1, green: 0, blue: 0, luminance: 0.21)
+            )),
+            size: CGSize(width: 160, height: 72), cornerRadius: 16, artworkInset: 8,
+            usesControlBackground: true
+        ).environment(\.colorScheme, .light))
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        let pixels = try rgbaPixels(image)
+        let center = (36 * image.width + 80) * 4
+        XCTAssertEqual(Array(pixels[center..<(center + 4)]), [255, 255, 255, 255])
+        let edge = (36 * image.width + 4) * 4
+        XCTAssertEqual(Array(pixels[edge..<(edge + 4)]), [255, 0, 0, 255])
+        let redPixels = stride(from: 0, to: pixels.count, by: 4).filter {
+            pixels[$0] > 250 && pixels[$0 + 1] < 5 && pixels[$0 + 2] < 5 && pixels[$0 + 3] == 255
+        }
+        XCTAssertGreaterThan(redPixels.count, image.width * image.height / 2)
+    }
+
     func testPlozzWordmarksKeepTheirMoodAcrossSizesAndRespectTheAppTheme() throws {
         for mood in LibraryChannelArtworkMood.allCases {
             var themeLuminances: [Double] = []

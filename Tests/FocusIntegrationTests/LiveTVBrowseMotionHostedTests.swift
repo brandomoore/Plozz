@@ -106,7 +106,7 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         XCTAssertTrue(system.focusedItem === target, "A visible category must still accept real native focus.")
     }
 
-    func testCategoryEntryRestoresSelectionAfterFocusLeavesThePane() async throws {
+    func testCategoryEntryRestoresLastFocusAfterThePaneIsRecreated() async throws {
         let scene = try await foregroundScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
         let state = CategoryFocusFixtureState()
@@ -164,13 +164,252 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         system.requestFocusUpdate(to: host)
         system.updateFocusIfNeeded()
         try await Task.sleep(for: .milliseconds(80))
+        let lastControl = try XCTUnwrap(state.lastFocusedControl)
+        XCTAssertNotEqual(lastControl, .category(state.model.category),
+                          "Focus a category without selecting it.")
+        let nextFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: next, relativeTo: scroll))
         host.target = nil
         state.request += 1
         try await Task.sleep(for: .milliseconds(250))
         let restored = try XCTUnwrap(system.focusedItem)
         let restoredFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: restored, relativeTo: scroll))
-        XCTAssertEqual(restoredFrame.minY, initialFrame.minY, accuracy: 1,
-                       "A new explicit entry request must still restore the selected category.")
+        XCTAssertEqual(restoredFrame.minY, nextFrame.minY, accuracy: 1,
+                       "Entry must restore the last focused category, not the selected filter.")
+
+        host.target = otherPane
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(80))
+        host.target = nil
+        state.showsSidebar = false
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(state.lastFocusedControl, lastControl)
+        state.isRevealing = true
+        state.showsSidebar = true
+        state.request += 1
+        try await Task.sleep(for: .milliseconds(80))
+        state.isRevealing = false
+        try await Task.sleep(for: .milliseconds(250))
+        let reopenedScroll = try XCTUnwrap(categoryScrollView(in: window))
+        XCTAssertTrue(NativeFocusRegion.contains(system.focusedItem, in: reopenedScroll))
+        XCTAssertEqual(state.lastFocusedControl, lastControl)
+        XCTAssertNil(state.model.category, "Restoring focus must not select a different filter.")
+
+        guard case .category(let removedCategory) = lastControl else {
+            return XCTFail("Expected a remembered category")
+        }
+        host.target = otherPane
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(80))
+        host.target = nil
+        state.showsSidebar = false
+        try await Task.sleep(for: .milliseconds(80))
+        try state.model.replaceChannels(state.model.channels.filter { $0.category != removedCategory })
+        state.isRevealing = true
+        state.showsSidebar = true
+        state.request += 1
+        try await Task.sleep(for: .milliseconds(80))
+        state.isRevealing = false
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertTrue(NativeFocusRegion.contains(system.focusedItem, in: try XCTUnwrap(categoryScrollView(in: window))))
+        XCTAssertEqual(state.lastFocusedControl, .category(nil),
+                       "A removed category must fall back to the current filter.")
+    }
+
+    func testCategoryFocusRequestWaitsForRevealCompletionWithoutNativeOwner() async throws {
+        try await assertCategoryRevealHandoff(usesNativeOwner: false)
+    }
+
+    func testNativeCategoryFocusArrivesDuringRevealAndDoesNotReplayOnCompletion() async throws {
+        try await assertCategoryRevealHandoff(usesNativeOwner: true)
+    }
+
+    private func assertCategoryRevealHandoff(usesNativeOwner: Bool) async throws {
+        let scene = try await foregroundScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let state = CategoryFocusFixtureState()
+        state.allowsExternalFocus = true
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = CategoryFocusHost(rootView: CategoryFocusPage(state: state))
+        var nativeRequests = 0
+        if usesNativeOwner {
+            state.nativeFocusRequest = { [weak host] marker in
+                guard let host, let window = marker.window,
+                      let system = UIFocusSystem.focusSystem(for: window),
+                      let target = NavigationRowFocusRequester.target(for: marker, in: window) else { return false }
+                nativeRequests += 1
+                host.target = target
+                defer { host.target = nil }
+                system.requestFocusUpdate(to: host)
+                system.updateFocusIfNeeded()
+                return system.focusedItem === target
+            }
+        }
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        let deadline = ContinuousClock.now + .seconds(2)
+        while system.focusedItem == nil, ContinuousClock.now < deadline {
+            window.layoutIfNeeded()
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(250))
+        let scroll = try XCTUnwrap(categoryScrollView(in: window))
+        let selected = try XCTUnwrap(system.focusedItem)
+        let selectedFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: selected, relativeTo: scroll))
+        let guide = try XCTUnwrap(categoryFocusItems(in: window).first {
+            (NavigationRowFocusRequester.frame(of: $0, relativeTo: window)?.minX ?? 0) > 500
+        })
+        host.target = guide
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertTrue(system.focusedItem === guide)
+        host.target = nil
+
+        state.isRevealing = true
+        state.request += 1
+        if usesNativeOwner {
+            let deadline = ContinuousClock.now + .seconds(2)
+            while !NativeFocusRegion.contains(system.focusedItem, in: scroll), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertTrue(state.isRevealing)
+            XCTAssertTrue(NativeFocusRegion.contains(system.focusedItem, in: scroll),
+                          "The native handoff must not wait for animation completion.")
+            let early = try XCTUnwrap(system.focusedItem)
+            XCTAssertEqual(try XCTUnwrap(NavigationRowFocusRequester.frame(of: early, relativeTo: scroll)).minY,
+                           selectedFrame.minY, accuracy: 1)
+            let count = nativeRequests
+            host.target = guide
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            host.target = nil
+            state.isRevealing = false
+            try await Task.sleep(for: .milliseconds(250))
+            XCTAssertTrue(system.focusedItem === guide,
+                          "Leaving during reveal must not let completion pull focus back.")
+            XCTAssertEqual(nativeRequests, count)
+            return
+        }
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertTrue(system.focusedItem === guide, "SwiftUI-only hosts still wait for the pane to finish opening.")
+
+        state.isRevealing = false
+        try await Task.sleep(for: .milliseconds(250))
+        let focused = try XCTUnwrap(system.focusedItem)
+        let focusedFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focused, relativeTo: scroll))
+        XCTAssertTrue(NativeFocusRegion.contains(focused, in: scroll))
+        XCTAssertEqual(focusedFrame.minY, selectedFrame.minY, accuracy: 1,
+                       "Presentation completion must focus the selected category without another input.")
+    }
+
+    func testCategoryReturnPreservesItsScrollPosition() async throws {
+        try await assertCategoryScrollRestoration()
+    }
+
+    func testCategoryReturnPreservesItsScrollPositionInRightToLeftLayout() async throws {
+        try await assertCategoryScrollRestoration(direction: .rightToLeft)
+    }
+
+    func testCategoryReturnPreservesItsScrollPositionWithoutAnimation() async throws {
+        try await assertCategoryScrollRestoration(disablesAnimations: true)
+    }
+
+    private func assertCategoryScrollRestoration(
+        direction: LayoutDirection = .leftToRight, disablesAnimations: Bool = false
+    ) async throws {
+        let scene = try await foregroundScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let state = CategoryFocusFixtureState()
+        state.allowsExternalFocus = true
+        state.usesBrowseLayout = true
+        state.direction = direction
+        state.disablesAnimations = disablesAnimations
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = CategoryFocusHost(rootView: CategoryFocusPage(state: state))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        for _ in 0..<30 where system.focusedItem == nil {
+            window.layoutIfNeeded()
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(250))
+        let scroll = try XCTUnwrap(categoryScrollView(in: window))
+        XCTAssertTrue(NativeFocusRegion.contains(system.focusedItem, in: scroll))
+
+        for fraction in [0.45, 0.8, 0.6] {
+            scroll.setContentOffset(
+                CGPoint(x: 0, y: (scroll.contentSize.height - scroll.bounds.height) * fraction),
+                animated: false
+            )
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            let target = try XCTUnwrap(visibleCategoryFocusItems(in: window, scroll: scroll).first {
+                guard let frame = NavigationRowFocusRequester.frame(of: $0, relativeTo: scroll) else { return false }
+                let viewportY = frame.minY - scroll.bounds.minY
+                return viewportY > 60 && viewportY < scroll.bounds.height / 3
+            })
+            host.target = target
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(200))
+            XCTAssertTrue(system.focusedItem === target)
+            let remembered = try XCTUnwrap(state.lastFocusedControl)
+            let before = try XCTUnwrap(NavigationRowFocusRequester.frame(of: target, relativeTo: window))
+            let offset = scroll.contentOffset.y
+            let guide = try XCTUnwrap(categoryFocusItems(in: window).first {
+                guard let frame = NavigationRowFocusRequester.frame(of: $0, relativeTo: window) else { return false }
+                return abs(frame.width - 300) < 1 && abs(frame.height - 100) < 1
+            })
+            host.target = guide
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(80))
+            XCTAssertTrue(system.focusedItem === guide)
+            host.target = nil
+            state.collapsed = true
+            try await Task.sleep(for: .milliseconds(400))
+            XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1)
+
+            state.isRevealing = true
+            state.request += 1
+            withAnimation(
+                disablesAnimations ? nil : PrototypeLayout.sidebarAnimation, completionCriteria: .removed
+            ) {
+                state.collapsed = false
+            } completion: {
+                state.isRevealing = false
+            }
+            try await Task.sleep(for: .milliseconds(600))
+            let reopenedScroll = try XCTUnwrap(categoryScrollView(in: window))
+            let restored = try XCTUnwrap(system.focusedItem)
+            let after = try XCTUnwrap(NavigationRowFocusRequester.frame(of: restored, relativeTo: window))
+            XCTAssertTrue(reopenedScroll === scroll, "Collapsing must retain the native category viewport.")
+            XCTAssertTrue(NativeFocusRegion.contains(restored, in: scroll))
+            XCTAssertEqual(state.lastFocusedControl, remembered)
+            XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1, "Returning must not recenter the category.")
+            XCTAssertEqual(after.minY, before.minY, accuracy: 1, "The focused category must stay at the same screen height.")
+            XCTAssertNil(state.model.category, "Focus restoration must not select the category.")
+        }
     }
 
     private func categoryScrollView(in view: UIView) -> UIScrollView? {
@@ -208,6 +447,14 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         var active = false
         var request = 1
         var allowsExternalFocus = false
+        var isRevealing = false
+        var showsSidebar = true
+        var usesBrowseLayout = false
+        var collapsed = false
+        var direction = LayoutDirection.leftToRight
+        var disablesAnimations = false
+        var nativeFocusRequest: (@MainActor (UIView) -> Bool)?
+        var lastFocusedControl: PrototypeBrowseSidebar.Control?
         let model = LiveTVPrototypeModel(channels: (0..<80).map {
             LiveTVPrototypeChannel(
                 id: "category-\($0)", number: $0, name: "Channel \($0)",
@@ -221,21 +468,53 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         @Bindable var state: CategoryFocusFixtureState
 
         var body: some View {
-            HStack(alignment: .top, spacing: 80) {
-                PrototypeBrowseSidebar(
-                    model: state.model, configuration: .empty, active: $state.active, focusRequest: 0,
-                    categoryFocusRequest: state.request, restoresCategoryFocus: true,
-                    search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
-                )
-                .frame(width: 384, height: 900)
-                Button("Guide") {}
-                    .frame(width: 300, height: 100)
-                    .disabled(!state.allowsExternalFocus)
+            Group {
+                if state.usesBrowseLayout {
+                    let layout = PrototypePreviewLayout(
+                        size: CGSize(width: 1800, height: 960), hidesSidebar: state.collapsed
+                    )
+                    PrototypeBrowseLayout(layout: layout) {
+                        Color.clear.frame(height: layout.heroHeight)
+                    } sidebar: {
+                        sidebar
+                    } guide: {
+                        guide
+                    }
+                    .frame(width: layout.contentFrame.width, height: layout.contentFrame.height)
+                } else {
+                    HStack(alignment: .top, spacing: 80) {
+                        if state.showsSidebar {
+                            sidebar.frame(width: 384, height: 900)
+                        }
+                        guide
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(60)
             .environment(\.themePalette, .dark)
             .environment(\.colorScheme, .dark)
+            .environment(\.layoutDirection, state.direction)
+            .environment(\.plozzNativeControlFocusRequest, state.nativeFocusRequest)
+            .transaction { $0.disablesAnimations = state.disablesAnimations }
+        }
+
+        private var sidebar: some View {
+            PrototypeBrowseSidebar(
+                model: state.model, configuration: .empty, active: $state.active,
+                lastFocusedControl: $state.lastFocusedControl, focusRequest: 0,
+                categoryFocusRequest: state.request, restoresCategoryFocus: true,
+                isRevealing: state.isRevealing,
+                search: {}, enterGuide: {}, selectSource: { _ in }, addSource: {}
+            )
+        }
+
+        private var guide: some View {
+            Button {} label: {
+                Text("Guide").frame(width: 300, height: 100)
+            }
+            .buttonStyle(.plain)
+            .disabled(!state.allowsExternalFocus)
         }
     }
 
@@ -296,7 +575,15 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         XCTAssertEqual(reference.count, 3)
         for collapsed in [false, true] {
             let start = try mixedGuideTextEdges(in: window)
-            model.collapsed = collapsed
+            // Opening from the station wraps the focus handoff in an explicit
+            // transaction; closing relies on the layout's value animation.
+            if collapsed {
+                model.collapsed = true
+            } else {
+                withAnimation(disablesAnimations ? nil : PrototypeLayout.sidebarAnimation) {
+                    model.collapsed = false
+                }
+            }
             var history: [[CGFloat]] = []
             let sampleCount = rapidReversal && !collapsed ? 3 : 20
             for _ in 0..<sampleCount {
@@ -494,6 +781,78 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         XCTAssertFalse(samples.contains { $0 > closed + 1 && $0 < opened - 1 })
     }
 
+    func testCollapsingCategoriesFadeToClearBeforePinnedNavigationIcons() throws {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            let layout = PrototypePreviewLayout(
+                size: CGSize(width: 1920, height: 1080),
+                navigationInset: NavigationRailMetrics.contentInset
+            )
+            let contentStart = layout.contentFrame.minX
+            let clearEdge = contentStart - layout.sidebarLeadingFadeWidth
+            let iconEdge = NavigationRailMetrics.leadingInset + NavigationRailMetrics.iconColumnWidth
+            XCTAssertGreaterThan(clearEdge, iconEdge)
+            for remainingWidth: CGFloat in [layout.sidebarWidth, 160, 16] {
+                let pixels = try sidebarAlpha(
+                    layout: layout, remainingWidth: remainingWidth, displacement: 96, direction: direction
+                )
+                for x in 0..<Int(clearEdge) {
+                    XCTAssertEqual(pixels[x], 0, "No category pixels may remain beneath the pinned icons.")
+                }
+                let start = Int(clearEdge)
+                let end = Int(contentStart)
+                XCTAssertLessThan(pixels[start], 3)
+                XCTAssertTrue((100...155).contains(pixels[(start + end) / 2]))
+                XCTAssertGreaterThan(pixels[end], 250)
+                for x in start..<end {
+                    XCTAssertLessThanOrEqual(pixels[x], pixels[x + 1])
+                }
+            }
+            let resting = try sidebarAlpha(
+                layout: layout, remainingWidth: layout.sidebarWidth, displacement: 0, direction: direction
+            )
+            XCTAssertGreaterThan(resting[Int(contentStart)], 250,
+                                 "Resting category controls must not be washed out by the feather.")
+            let overhang = try sidebarAlpha(
+                layout: layout, remainingWidth: layout.sidebarWidth, displacement: -12, direction: direction
+            )
+            XCTAssertGreaterThan(overhang[Int(contentStart + layout.sidebarWidth + 8)], 250,
+                                 "The sidebar viewport must not crop native focus at its trailing edge.")
+        }
+    }
+
+    private func sidebarAlpha(
+        layout: PrototypePreviewLayout, remainingWidth: CGFloat,
+        displacement: CGFloat, direction: LayoutDirection
+    ) throws -> [Int] {
+        let screenWidth = Int(layout.bounds.width)
+        let content = Color.white
+            .frame(width: layout.availableSidebarWidth, height: 20)
+            .offset(x: -displacement)
+            .frame(width: remainingWidth, alignment: .leading)
+            .modifier(PrototypeSidebarViewport(
+                sidebarWidth: layout.availableSidebarWidth, fadeWidth: layout.sidebarLeadingFadeWidth
+            ))
+            .padding(.leading, layout.contentFrame.minX)
+            .frame(width: layout.bounds.width, height: 20, alignment: .leading)
+            .environment(\.layoutDirection, direction)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        var pixels = [UInt8](repeating: 0, count: screenWidth * 20 * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: screenWidth, height: 20, bitsPerComponent: 8,
+                bytesPerRow: screenWidth * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: screenWidth, height: 20))
+        }
+        return (0..<screenWidth).map {
+            let x = direction == .rightToLeft ? screenWidth - 1 - $0 : $0
+            return Int(pixels[(10 * screenWidth + x) * 4 + 3])
+        }
+    }
+
     private func makeFixture(disablesAnimations: Bool = false, realSidebar: Bool = false) async throws -> Fixture {
         let scene = try await foregroundScene()
         let fixture = Fixture(scene: scene, disablesAnimations: disablesAnimations, realSidebar: realSidebar)
@@ -614,6 +973,7 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
                     PrototypeBrowseSidebar(
                         model: model.sidebar, configuration: .empty,
                         active: Binding(get: { model.sidebarActive }, set: { model.sidebarActive = $0 }),
+                        lastFocusedControl: .constant(nil),
                         focusRequest: 0, search: {}, enterGuide: {},
                         selectSource: { _ in }, addSource: {}, multiviews: {}
                     )

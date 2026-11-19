@@ -78,9 +78,15 @@ public struct PlayerTouchCardStrip: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: PlayerTouchLayout.cardSpacing) {
             tabRow
+                #if os(iOS)
+                .playerCameraSafeRow()
+                #endif
             if let openPanel {
                 card(for: openPanel)
                     .reportSubtitleControlsFrame(in: model.subtitleLayout, region: .card)
+                    #if os(iOS)
+                    .playerCameraSafeRow()
+                    #endif
                     // Grows upward out of the tabs, matching tvOS. The card is
                     // laid out ABOVE its strip in the enclosing bottom-anchored
                     // stack, so a bottom anchor is what makes it read as opening

@@ -75,6 +75,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var preview: LiveTVPreviewController
     @State private var imports: LiveTVPrototypeImportModel
     @State private var playback: LiveTVPlaybackCoordinator
+    @State private var previewActivity: LiveTVPreviewActivity?
     @State private var playbackResolvers: LiveTVPlaybackResolverContext
     @State private var sourceAuthority: LiveTVPlaybackSourceAuthority
     @State private var appliedSourceAuthorizationID: String?
@@ -107,9 +108,12 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var nowRequest = 0
     @State private var channelSequence = LiveTVChannelSequence(channels: [])
     @State private var controlsActive = false
+    @State private var categorySidebarCollapsed = false
+    @State private var categorySidebarRevealing = false
     @State private var toolbarControlsBottom: CGFloat?
     @State private var categoryFocusRequest = 0
     @State private var sidebarRestoresCategoryFocus = false
+    @State private var sidebarLastFocusedControl: PrototypeBrowseSidebar.Control?
     @State private var guideHasFocus = false
     @State private var toolbarFocusRequest = 0
     @State private var focusedProgram: LiveTVPrototypeProgram?
@@ -388,7 +392,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 nativeNavigation: usesNativeFullscreen && !isMultiviewWorkspace,
                 topNavigationInsets: isMultiviewWorkspace ? EdgeInsets() : topNavigationInsets,
                 largeText: typeSize.isAccessibilitySize,
-                isSearching: isSearching, showsCategories: showsCategoryDirectory,
+                isSearching: isSearching, hidesSidebar: categorySidebarCollapsed,
+                showsCategories: showsCategoryDirectory,
                 showsVideoPreview: playback.preparation.current != nil || playback.pendingWatchChannelID != nil,
                 toolbarControlsBottom: toolbarControlsBottom.map { $0 - geometry.frame(in: .global).minY }
             )
@@ -444,6 +449,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                                              leadingReflectionWidth: leadingReflectionWidth,
                                              trailingReflectionWidth: trailingReflectionWidth,
                                              isPreviewVisible: !expanded && layout.heroHeight > 0))
+                    #if os(tvOS)
+                    .environment(\.liveTVShowsActivityInHeader, !expanded && !multiview.isEnabled && !isSearching)
+                    #endif
                     .environment(\.playbackReflectionColorScheme, palette.isLight ? .light : .dark)
                     .environment(\.themePalette, ThemePalette.dark)
                     .environment(\.colorScheme, .dark)
@@ -564,7 +572,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 #else
                 .offset(y: expanded && !reduceMotion ? geometry.size.height * 0.55 : 0)
                 #endif
+                #if !os(tvOS)
                 .disabled(expanded || !isActive || showsPreviewIntroduction)
+                #endif
                 .allowsHitTesting(!expanded && isActive && !showsPreviewIntroduction)
                 .accessibilityHidden(expanded || !isActive || showsPreviewIntroduction)
                 .animation(isMultiviewWorkspace && expanded ? nil : playerTransition, value: expanded)
@@ -648,6 +658,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             ))
             #endif
         }
+        #if os(tvOS)
+        .onPreferenceChange(LiveTVPreviewActivityKey.self) { previewActivity = $0 }
+        #endif
         .environment(\.themePalette, palette)
         .tint(palette.accent)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
@@ -1190,9 +1203,13 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         .onChange(of: model.favoritesOnly) { _, _ in persistViewFilters() }
         .onChange(of: model.guideOnly) { _, _ in persistViewFilters() }
         .onChange(of: controlsActive) { _, active in
+            if active { categorySidebarCollapsed = false }
             updatePreviewAvailability()
         }
         .onChange(of: guideHasFocus) { _, focused in
+            #if os(tvOS)
+            if focused && !isSearching { categorySidebarCollapsed = true }
+            #endif
             updatePreviewAvailability()
         }
         .onChange(of: sheet?.id) { _, _ in
@@ -1727,7 +1744,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         )
         .modifier(LiveTVMultiviewGuideExit(
             cancel: multiviewSelection == nil ? nil : finishMultiviewSelection))
-        .disabled(blocksBrowseControls)
+        .prototypeFocusGate(blocksBrowseControls)
     }
 
     private func usesCategoryDirectory(_ layout: PrototypePreviewLayout) -> Bool {
@@ -1769,9 +1786,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 } else {
                     guideBrowser(
                         closeSearch: closeSearch,
-                        leadingExit: layout.availableSidebarWidth > 0 ? revealCategories : nil
+                        leadingExit: layout.availableSidebarWidth > 0 && categorySidebarCollapsed
+                            ? revealCategories : nil
                     )
-                    .disabled(usesNativeFullscreen && controlsActive)
+                    .prototypeFocusGate(usesNativeFullscreen && controlsActive && !categorySidebarCollapsed)
                 }
             }
         }
@@ -1785,9 +1803,11 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             } else {
                 PrototypeBrowseSidebar(
                     model: model, configuration: imports.configuration, active: $controlsActive,
+                    lastFocusedControl: $sidebarLastFocusedControl,
                     focusRequest: toolbarFocusRequest, isSearching: isSearching,
                     categoryFocusRequest: categoryFocusRequest,
                     restoresCategoryFocus: sidebarRestoresCategoryFocus,
+                    isRevealing: categorySidebarRevealing,
                     search: { if isSearching { closeSearch() } else { openSearch() } },
                     enterGuide: enterGuide,
                     selectSource: selectBrowseSource,
@@ -1800,9 +1820,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     cancel: multiviewSelection == nil ? nil : finishMultiviewSelection))
             }
         }
-        .disabled(blocksBrowseControls)
+        .prototypeFocusGate(blocksBrowseControls)
         #if os(tvOS)
-        .disabled(!controlsActive && !model.guideChannels.isEmpty)
+        .prototypeFocusGate(!controlsActive && !model.guideChannels.isEmpty)
         #endif
     }
 
@@ -1821,7 +1841,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 channel: heroChannel, program: heroProgram, layout: layout,
                 watch: { if let id = heroChannel?.id { tune(id) } },
                 watchTitle: multiviewSelection?.title,
-                isLoading: isInitialCatalogLoading
+                isLoading: isInitialCatalogLoading,
+                activityLabel: previewActivity?.channelID == heroChannel?.id ? previewActivity?.label : nil
             )
             .opacity(isSearching ? 0 : 1)
             .allowsHitTesting(!isSearching)
@@ -1898,6 +1919,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 }
                 controlsActive = true
                 sidebarRestoresCategoryFocus = false
+                categorySidebarCollapsed = false
                 toolbarFocusRequest &+= 1
             },
             isLoading: isInitialCatalogLoading,
@@ -1930,8 +1952,18 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         guard activity.acceptsInteraction, !isSearching, !preview.isRestoringGuideFocus,
               sheet == nil, !needsPreviewChoice else { return }
         sidebarRestoresCategoryFocus = true
-        controlsActive = true
         categoryFocusRequest &+= 1
+        let request = categoryFocusRequest
+        categorySidebarRevealing = true
+        withAnimation(reduceMotion ? nil : PrototypeLayout.sidebarAnimation, completionCriteria: .removed) {
+            categorySidebarCollapsed = false
+            controlsActive = true
+        } completion: {
+            guard categoryFocusRequest == request, controlsActive, !categorySidebarCollapsed,
+                  sidebarRestoresCategoryFocus, activity.acceptsInteraction,
+                  !isSearching, sheet == nil, !needsPreviewChoice else { return }
+            categorySidebarRevealing = false
+        }
     }
 
     #if os(tvOS)
@@ -2307,8 +2339,13 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             }
         }
         searchOrigin = nil
-        enterGuide()
         isSearching = false
+        #if os(tvOS)
+        sidebarLastFocusedControl = .search
+        revealCategories()
+        #else
+        enterGuide()
+        #endif
     }
 
     private func showCategory(_ category: String?, enteringGuide: Bool = true) {

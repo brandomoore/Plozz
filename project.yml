@@ -501,6 +501,8 @@ targets:
       - path: Tests/PlaybackPresentationSupport/DiscReviewFixture.swift
       - path: Tests/LiveTVPresentationSupport/IPTVOrganizationFixture.swift
       - path: Tests/LiveTVPresentationSupport/LiveTVCategorySearchFixture.swift
+      - path: Tests/SubtitlePresentationSupport/Fixtures/live-continuity.mp4
+        buildPhase: resources
       - path: Tests/AuthPresentationSupport/IPTVSetupFixture.swift
       - path: Tests/AuthPresentationSupport/ServerAddressNavigationFixture.swift
       - path: Tests/AuthPresentationSupport/PlexHomeOnboardingFixture.swift
@@ -709,6 +711,7 @@ targets:
       - path: Tests/CoreModelsTests/ContinueWatchingInPlayerSettingsTests.swift
       - path: Tests/FeaturePlaybackTests/ContinueWatchingSelectionTests.swift
       - path: Tests/CoreUITests/DetailInformationPreviewTests.swift
+      - path: Tests/CoreUITests/ChannelLogoArtworkTests.swift
       - path: Tests/EnginePlozzigenTests/SpatialAudioLayoutPreferenceTests.swift
       - path: Tests/HomePresentationSupport
         excludes: ["ContentRefreshReturnFixture.swift", "ContentRefreshReturnInteractionTests.swift", "DetailSelectionFixture.swift", "DetailSelectionInteractionTests.swift"]
@@ -716,6 +719,8 @@ targets:
       - path: Tests/PerformancePresentationSupport
       - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideFocusTests.swift
+      - path: Tests/FeatureLiveTVTests/LiveTVGuideRowLayoutTests.swift
+      - path: Tests/FeatureLiveTVCoreTests/LiveTVPreviewControllerTests.swift
       - path: Tests/AppearancePresentationSupport
       - path: Tests/CoreUITests/DialogSurfaceTests.swift
       - path: Tests/AuthPresentationSupport

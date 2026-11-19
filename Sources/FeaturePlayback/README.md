@@ -92,6 +92,9 @@ Back, the control and Reset remain vertically reachable. On submenu entry,
 Back and Reset become eligible only after the stepper reports actual native
 focus; writing the panel's row FocusState does not focus a separately hosted
 stepper. This entry gate resets on reopening, not on ordinary Up/Down movement.
+Reset clears the offset and explicitly returns focus to the stepper's own
+button. Disabling Reset at zero does not itself move tvOS focus; the next Up
+from the stepper must reach Back.
 
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and
@@ -564,14 +567,12 @@ processing for every engine route. Undocumented integration carries OS
 compatibility and App Review risk. This system-preference bridge is tvOS-only.
 
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
-controls. Portrait uses one ellipsis; landscape exposes the available menus as
-separate controls, with Version and Multiview opening their existing destinations
-directly. Audio, Subtitles and Video reuse the existing player-category icons
-(waveform, captions and adjustment sliders) in both VOD and Live TV. Video combines
-zoom choices with Quality in both layouts; Quality opens its existing editor and
-never acts as a selectable zoom mode. The standalone Video popup omits its redundant
-category heading; portrait retains the named Video entry. Quality remains
-available in Video even when zoom is unsupported. Layout follows the actual player
+controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles, the
+current speed (on demand), and an ellipsis, omitting unavailable controls.
+Quality lists the server-supported presets and marks the current limit. Selecting
+a preset keeps the codec and other stream settings; Advanced opens the full editor
+for custom limits, transcoding and stream details. Version (on demand) or Multiview (live) also lives
+in overflow when available. Layout follows the actual player
 viewport, including iPad split windows, not the device's global orientation.
 Subtitles and Audio offer their existing tracks directly with real active-track
 checkmarks. Audio has no redundant track-section heading. Subtitles lists all
@@ -579,13 +580,13 @@ tracks first, then Search & Download, then Advanced. Native menu configurations
 preserve this top-to-bottom order even when opening upward. Advanced opens a touch sheet for supported
 appearance, timing and dual-track controls. Live TV
 does not offer search/download or dual subtitles. Native speed presets and Video
-modes apply immediately; Custom, Quality, Version and supported sync controls
+modes apply immediately; Custom Speed, Advanced Quality, Version and supported sync controls
 open their existing editors. Live multiview is another menu action; Go Live
 remains a transport action. A sole audio track stays visible as disabled metadata.
 Opening a menu pins transport controls; playback-clock updates do not rebuild
 its snapshot. `PlayerMenuPresentation` releases editor requests only after native
 menu dismissal completes. Context changes invalidate pending requests and old
-audio/subtitle/speed/zoom actions, and programme transitions release live controls.
+audio/subtitle/speed/quality/zoom actions, and programme transitions release live controls.
 Each native popup has its own presentation owner, so overlapping dismissal and
 teardown callbacks cannot unpin a newer popup or release a sheet too early.
 Popup rows are text-only: checkmarks belong to real track/mode/rate choices.
@@ -751,9 +752,12 @@ without tint or a colored backing. Like AVKit video chrome, their symbols and
 progress remain white in both appearances. Mobile Live TV's top presentation
 group contains only available Picture in Picture and AirPlay controls, with no
 separate Stop button. Pause/resume, player dismissal, and session cleanup retain
-their existing behavior. Playback options, track selection, and multiview sit
+their existing behavior. When playback is behind live, a separate **Jump to live**
+button returns to the live edge and disappears. Scheduled channels use **Jump to
+now**. In landscape the button sits immediately before the playback menus.
+Playback options, track selection, and multiview sit
 at the bottom trailing edge above the timeline. Portrait keeps the title on its
-own row above those actions; track menus open upward without covering the seek
+own row above a single options menu; track menus open upward without covering the seek
 bar. The controls scrim dims the video
 beneath the transport as well as the edge chrome, so white scenes remain legible
 without coloring the glass itself. Mobile Info, Cast, and Live TV Info/On Now/Guide
@@ -808,7 +812,13 @@ badge during transient phases and while paused at the edge, retaining its
 localized layout space so the header and timeline do not shift.
 VOD and Live chrome use the larger of the
 window safe area and native edge margins (21 horizontal, 24 vertical), rather
-than adding the two. Adjacent
+than adding the two. When UIKit identifies a landscape corner occlusion on a
+phone with a one-sided safe inset, main and Live use the ordinary margin on
+unobstructed rows. Close moves inward when its corner is occupied. The timeline
+keeps both time labels aligned with the title and options; if its 44-point hit
+area meets a lower camera corner, it rises just enough to clear it. Video is not inset.
+Compact Live TV controls do not reserve fullscreen camera clearance.
+Without that geometry, the controls keep the conservative safe margins. Adjacent
 routing and playback-option controls share one untinted glass capsule while
 retaining independent actions. Grouped children have no individual glass
 backgrounds or circular clipping, including UIKit menu buttons; Close and the
@@ -2699,8 +2709,9 @@ the single control the pressed direction targets.
 
 `LiveChannelTransport.swift` is the expanded live player's chrome, assembled from
 the VOD transport's parts rather than drawn separately: the title block and
-`playerGlassButton` badges (Audio · Subtitles · Multiview, plus Go Live when
-time-shifted), `PlayerScrubTrackSurface` for the timeline, `PlayerTabButtonStyle`
+track controls (Audio · Subtitles · More, with Zoom and Multiview under More).
+The separate Jump to live action precedes them when time-shifted. The player uses
+`PlayerScrubTrackSurface` for the timeline, `PlayerTabButtonStyle`
 tabs, the shared `PlayerOptionsPanel` for track/style menus, and
 `PlayerOverVideoCardStyle` cards. The card parks by one cluster offset exactly as
 rules 2–3 above describe, with the same constants on tvOS. Track menus live in

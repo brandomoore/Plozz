@@ -397,10 +397,11 @@ struct PlozziOSPlayerView: View {
                 PlozziOSPlayerCloseButton(action: dismiss)
                 Spacer()
             }
+            .playerCameraSafeRow()
             Spacer()
         }
         .foregroundStyle(.white)
-        .modifier(PlayerTouchChromePadding())
+        .modifier(PlayerTouchChromePadding(clearsCameraByRow: true))
     }
 
     private func dismiss() { orientation.close() }

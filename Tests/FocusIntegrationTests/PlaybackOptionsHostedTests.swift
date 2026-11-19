@@ -20,7 +20,7 @@ final class PlaybackOptionsHostedTests: XCTestCase {
             try await self.waitUntil { probe.focus == .row(3) }
             try await Task.sleep(for: .milliseconds(350))
             try self.assertFocusedText("P7 FEL → P8.1 conversion", in: window)
-            XCTAssertTrue(try self.text(in: DetailTransitionSnapshot.image(of: window))
+            XCTAssertFalse(try self.text(in: DetailTransitionSnapshot.image(of: window))
                 .contains { $0.text.contains("Playback Speed") })
             let rows = PlaybackOptionsPane.rows(
                 model: probe.model, zoom: probe.model.videoZoom,
@@ -78,27 +78,11 @@ final class PlaybackOptionsHostedTests: XCTestCase {
         XCTAssertEqual(report.foreground, ThemePalette.light.primaryText)
     }
 
-    func testInlineSpeedKeepsNativeFocusAndZoomBackRestoresItsEntryRow() async throws {
+    func testZoomBackRestoresItsOverflowEntryRow() async throws {
         try await withPanel { probe, host, window in
             let input = try XCTUnwrap(self.inputController(in: host))
             XCTAssertFalse(input.ownsHorizontalNavigationInput)
             try self.assertFocusedText("Zoom Mode", in: window)
-            probe.request(.row(PlaybackOptionsPane.speedSlot))
-            try await self.waitUntil { probe.focus == .row(PlaybackOptionsPane.speedSlot) }
-            try self.assertFocusedText("Playback Speed", in: window)
-            let initialFrame = try XCTUnwrap(self.focusFrame(in: window))
-            input.beginPress(.right)
-            input.stopRepeating()
-            try await self.waitUntil { probe.model.playbackSpeed == 1.55 }
-            try await Task.sleep(for: .milliseconds(100))
-            XCTAssertEqual(self.focusFrame(in: window), initialFrame)
-            try self.assertFocusedText("Playback Speed", in: window)
-            input.beginPress(.left)
-            input.stopRepeating()
-            XCTAssertEqual(probe.model.playbackSpeed, 1.5)
-
-            probe.request(.row(PlaybackOptionsPane.zoomSlot))
-            try await self.waitUntil { probe.focus == .row(PlaybackOptionsPane.zoomSlot) }
             input.beginPress(.right)
             input.stopRepeating()
             try await self.waitUntil { probe.screen == .zoom && probe.focus == .row(PlaybackOptionsPane.modeSlot(.fit)) }
@@ -135,7 +119,7 @@ final class PlaybackOptionsHostedTests: XCTestCase {
                           "Submenu navigation must retain the native input host.")
             XCTAssertEqual(probe.model.videoZoom.settings.customPercent, percent)
             XCTAssertEqual(probe.model.playbackSpeed, 1.5)
-            self.attach(window, name: "Playback fixed zoom and speed rows")
+            self.attach(window, name: "Overflow after Zoom Mode")
         }
     }
 
@@ -145,7 +129,7 @@ final class PlaybackOptionsHostedTests: XCTestCase {
             let image = DetailTransitionSnapshot.image(of: window)
             let lines = try self.text(in: image).map(\.text)
             XCTAssertTrue(lines.contains { $0.contains("Zoom Mode") })
-            XCTAssertTrue(lines.contains { $0.contains("Playback Speed") })
+            XCTAssertFalse(lines.contains { $0.contains("Playback Speed") })
             XCTAssertFalse(lines.contains { $0.contains("Zoom Amount") })
             input.beginPress(.left)
             input.stopRepeating()

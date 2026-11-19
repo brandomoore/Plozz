@@ -75,7 +75,7 @@ struct PlozziOSPlayerControlsOverlay: View {
     }
 
     private var isScrubbing: Bool { viewModel.controls.isScrubbing }
-    private var nativeMenuPresented: Bool { menuPresentation.isBusy }
+    private var nativeMenuPresented: Bool { menuPresentation.isBusy || viewModel.showsDiscVideos }
     private var menuSourceID: [String?] {
         let item = viewModel.currentPlaybackItem
         return [item?.sourceAccountID, item?.id, item?.selectedVersionID]
@@ -137,6 +137,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                             },
                             onClose: onClose
                         )
+                        .playerCameraSafeRow()
                     }
                     Spacer(minLength: 0)
                     PlozziOSPlayerTransport(
@@ -194,7 +195,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                         availableSize: availableSize
                     )
                 }
-                .modifier(PlayerTouchChromePadding())
+                .modifier(PlayerTouchChromePadding(clearsCameraByRow: true))
             }
 
             if controlsVisible && !isScrubbing && !isCardOpen && !showsUpNext {
@@ -321,6 +322,9 @@ struct PlozziOSPlayerControlsOverlay: View {
         .onChange(of: versionsPresented) { _, presented in
             if presented { cancelAutoHide() } else { scheduleAutoHide() }
         }
+        .onChange(of: viewModel.showsDiscVideos) { _, presented in
+            if presented { cancelAutoHide() } else { noteInteraction() }
+        }
         .plozzSheet(item: $presentedSheet, onDismiss: scheduleAutoHide) { sheet in
             switch sheet {
             case .speed:
@@ -363,6 +367,13 @@ struct PlozziOSPlayerControlsOverlay: View {
         case .zoom: presentedSheet = .zoom
         case .quality: presentedSheet = .quality
         case .versions: onShowVersions()
+        case .discMenu: viewModel.videoEngine.discMenu?.openMenu()
+        case .discVideos: viewModel.showsDiscVideos = true
+        case .playVideo: viewModel.playVideoWithoutMenus()
+        case .discRegion:
+            if let state = viewModel.videoEngine.discMenu {
+                viewModel.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
+            }
         case .multiview:
             PlozzLog.playback.error("VOD menu requested unavailable multiview destination.")
         }
@@ -771,7 +782,6 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let supportsVideoZoom: Bool
     let hasVersions: Bool
     let menuPresentation: PlayerMenuPresentation
-    @State private var discPresentationOwner = UUID()
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The full player bounds, not this bottom cluster's intrinsic size.
@@ -848,6 +858,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                     )
             }
             .foregroundStyle(.white)
+            .playerCameraSafeRow()
             .playerTouchChromeHidden(isCardOpen || timelineOnly || !showsTransport)
 
             PlozziOSPlayerTimeline(
@@ -871,6 +882,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                         .padding(.bottom, PlayerTouchLayout.timelineRowHeight + 12)
                 }
             }
+            .playerCameraSafeTimeline()
 
             // Info / Cast tabs sit BELOW the scrubber, matching tvOS, and the
             // card grows upward out of them.
@@ -913,28 +925,18 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
 
     private var trackControlGroup: some View {
         let item = viewModel.currentPlaybackItem
-        return PlayerGlassControlGroup {
-            HStack(spacing: 0) {
-                if viewModel.isDiscMenuPlayback || viewModel.hasDiscVideos {
-                    PlayerDiscControlsButton(
-                        model: viewModel, onInteraction: onInteraction,
-                        onPresentationChanged: {
-                            menuPresentation.setPresented($0, owner: discPresentationOwner)
-                        }
-                    )
-                }
-                PlayerMoreMenuButton(
-                    model: viewModel.controls,
-                    availability: .init(
-                        maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
-                        quality: viewModel.streamingQualityAvailable, versions: hasVersions
-                    ),
-                    presentation: menuPresentation,
-                    layout: .init(size: availableSize),
-                    actions: menuActions(for: item)
-                )
-            }
-        }
+        return PlayerMoreMenuButton(
+            model: viewModel.controls,
+            availability: .init(
+                maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
+                quality: viewModel.streamingQualityAvailable ? viewModel.streamingOptions?.quality : nil,
+                qualitySupport: viewModel.streamingQualitySupport,
+                versions: hasVersions, disc: .init(player: viewModel)
+            ),
+            presentation: menuPresentation,
+            layout: .init(size: availableSize),
+            actions: menuActions(for: item)
+        )
         .accessibilityIdentifier("player-track-controls")
     }
 
@@ -949,6 +951,13 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         actions.selectSubtitle = { viewModel.selectSubtitleOption(id: $0); onInteraction() }
         actions.setDialogueEnhancement = { viewModel.setDialogEnhanceEnabled($0); onInteraction() }
         actions.setSpeed = { viewModel.setPlaybackSpeed($0); onInteraction() }
+        actions.setQuality = { quality in
+            guard viewModel.streamingQualityAvailable, var options = viewModel.streamingOptions,
+                  viewModel.streamingQualitySupport.validationMessage(for: quality) == nil else { return }
+            options.quality = quality
+            viewModel.changeStreamingOptions(options)
+            onInteraction()
+        }
         actions.setDolbyVisionFELConversion = { viewModel.setDolbyVisionFELConversion($0); onInteraction() }
         actions.setVideoUpscaling = { viewModel.setVideoUpscaling($0); onInteraction() }
         return actions

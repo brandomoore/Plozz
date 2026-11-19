@@ -261,21 +261,28 @@ final class PlayerRotationInteractionTests: XCTestCase {
     }
 
     func testEmbyQualitySheetDoesNotReplacePlayerAndXStillCloses() {
-        launch("--emby-streaming-fixture")
+        app.launchEnvironment["PLOZZ_SHOTS_NFS_HOST"] = "fixture.invalid"
+        app.launchEnvironment["PLOZZ_SHOTS_HOLD_CONTROLS"] = "1"
+        launch("--emby-streaming-fixture", "--portrait")
         openPlayer()
-        revealControls()
-        app.buttons["Playback options"].tap()
-        XCTAssertTrue(app.buttons["Quality"].waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["Quality"].tap()
+        func openQuality(expectedSubtitle: String? = nil) {
+            revealControls()
+            app.buttons["player-playback-options"].tap()
+            let quality = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Quality'")).firstMatch
+            XCTAssertTrue(quality.waitForExistence(timeout: 5), app.debugDescription)
+            if let expectedSubtitle { XCTAssertTrue(quality.label.contains(expectedSubtitle), quality.label) }
+            quality.tap()
+            XCTAssertTrue(app.buttons["720p · 2 Mbps"].waitForExistence(timeout: 5), app.debugDescription)
+        }
+        openQuality()
+        app.buttons["Advanced…"].tap()
         XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons["Cancel"].waitForNonExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["rotation-load-count"].label, "Loads 1",
                        "Opening and cancelling quality must not recreate the player.")
-        revealControls()
-        app.buttons["Playback options"].tap()
-        XCTAssertTrue(app.buttons["Quality"].waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["Quality"].tap()
+        openQuality()
+        app.buttons["Advanced…"].tap()
         XCTAssertTrue(app.buttons["Advanced"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["Advanced"].tap()
         app.switches["Force transcoding"].switches.firstMatch.tap()
@@ -286,6 +293,17 @@ final class PlayerRotationInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["rotation-load-count"].wait(
             for: \.label, toEqual: "Loads 2", timeout: 10
         ), "Changing quality must reload exactly once without reopening the player: \(app.staticTexts["rotation-load-count"].label)")
+        openQuality()
+        app.buttons["720p · 2 Mbps"].tap()
+        XCTAssertTrue(app.staticTexts["rotation-load-count"].wait(for: \.label, toEqual: "Loads 3", timeout: 10))
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 25), app.debugDescription)
+        openQuality(expectedSubtitle: "720p · 2 Mbps")
+        XCTAssertTrue(app.buttons["720p · 2 Mbps"].isSelected)
+        app.buttons["Advanced…"].tap()
+        app.buttons["Advanced"].tap()
+        XCTAssertEqual(app.switches["Force transcoding"].value as? String, "1",
+                       "A quick preset must preserve the transcoding setting from the full editor.")
+        app.buttons["Cancel"].tap()
         closePlayer()
     }
 

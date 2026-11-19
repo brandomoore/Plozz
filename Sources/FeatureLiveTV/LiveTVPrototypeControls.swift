@@ -189,8 +189,7 @@ struct PrototypeBrowseSourceMenu: View {
                 Image(systemName: "chevron.down").font(.caption.weight(.semibold))
             }
             #if os(tvOS)
-            .frame(maxWidth: .infinity, minHeight: PrototypeLayout.controlHeight, alignment: .leading)
-            .padding(.horizontal, PrototypeLayout.gap)
+            .frame(maxWidth: .infinity, alignment: .leading)
             #else
             .frame(maxWidth: sizeClass == .compact ? 160 : 220)
             .fixedSize(horizontal: false, vertical: true)
