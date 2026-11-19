@@ -1,3 +1,40 @@
+diff --git a/Sources/AetherEngine/AetherEngine+Loading.swift b/Sources/AetherEngine/AetherEngine+Loading.swift
+index fc6a1f94..2122c2d0 100644
+--- a/Sources/AetherEngine/AetherEngine+Loading.swift
++++ b/Sources/AetherEngine/AetherEngine+Loading.swift
+@@ -2238,6 +2238,10 @@ extension AetherEngine {
+         // playhead-paced drainer reads it exactly like the HLS session's store.
+         let packetStore = SubtitlePacketStore()
+         self.softwareSubtitlePacketStore = packetStore
++        if frameASSRouteAdmitted, let startPosition, startPosition > 0, startPosition <= 90,
++           activeEmbeddedSubtitleStreamIndex != nil {
++            startSubtitleForwardPrefetcher(startAt: startPosition)
++        }
+         host.preserveASSMarkupForSubtitleTap = loadedOptions.preserveASSMarkup
+         host.teletextPageForSubtitleTap = loadedOptions.teletextPage
+         host.subtitleTapSink = { idx, pkt, tb, assembleSplitSets in
+diff --git a/Sources/AetherEngine/AetherEngine+Subtitles.swift b/Sources/AetherEngine/AetherEngine+Subtitles.swift
+index 1d893248..39a2f230 100644
+--- a/Sources/AetherEngine/AetherEngine+Subtitles.swift
++++ b/Sources/AetherEngine/AetherEngine+Subtitles.swift
+@@ -886,6 +886,8 @@ extension AetherEngine {
+         cancelSubtitleForwardPrefetcher(reason: .prefetchRebuild)
+         guard let store = activeSubtitlePacketStore,
+             let url = loadedURL else { return }
++        let initialReadAnchor = role == .readAhead && frameASSRouteAdmitted
++            ? store.frameASSInitialReadAnchor(at: anchor) : anchor
+         let isCustom = isCustomSource
+         if isCustom, customReader == nil { return }
+         let headers = loadedOptions.httpHeaders
+@@ -907,7 +909,7 @@ extension AetherEngine {
+                 maxConsecutiveFailures: AetherEngine.subtitleForwardPrefetchMaxConsecutiveFailures,
+                 maxRestarts: AetherEngine.subtitleForwardPrefetchMaxRestarts,
+                 backoffNanoseconds: AetherEngine.subtitleForwardPrefetchRestartBackoffNanoseconds)
+-            var resumeAt = anchor
++            var resumeAt = initialReadAnchor
+             var holdingForMeteredOrigin = false
+             while !Task.isCancelled {
+                 let originPaced = OriginRequestBudget.shared.isPaced(url)
 diff --git a/Sources/AetherEngine/AetherEngine.swift b/Sources/AetherEngine/AetherEngine.swift
 index 770e76e0..74ee6b9f 100644
 --- a/Sources/AetherEngine/AetherEngine.swift
@@ -214,10 +251,10 @@ index 319107b1..31738a3a 100644
          _lastEnqueuedFrame = pixelBuffer
 diff --git a/Sources/AetherEngine/Renderer/SoftwareASSArtwork.swift b/Sources/AetherEngine/Renderer/SoftwareASSArtwork.swift
 new file mode 100644
-index 00000000..52e05629
+index 00000000..8af0fcf2
 --- /dev/null
 +++ b/Sources/AetherEngine/Renderer/SoftwareASSArtwork.swift
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,143 @@
 +import CoreMedia
 +import Foundation
 +
@@ -289,6 +326,19 @@ index 00000000..52e05629
 +}
 +
 +extension AetherEngine {
++    /// Let the existing reader catch the resumed playhead while video is preparing.
++    /// Never change the clock or claim a blank on a timeout or superseded load.
++    public func prerollResumedFrameASS(at position: Double) async {
++        guard frameASSRouteAdmitted, position > 0, position <= 90,
++              let store = softwareSubtitlePacketStore, let track = activeSubtitleTrackIndex,
++              subtitleForwardPrefetchTask != nil, !pictureInPictureActive else { return }
++        let deadline = ContinuousClock.now + .seconds(4)
++        while !Task.isCancelled, softwareSubtitlePacketStore === store, activeSubtitleTrackIndex == track,
++              subtitleForwardPrefetchTask != nil, !pictureInPictureActive, ContinuousClock.now < deadline,
++              !store.hasStrictPrefix(past: position + 0.5) {
++            do { try await Task.sleep(for: .milliseconds(30)) } catch { return }
++        }
++    }
 +    public var hasSoftwareASSArtworkProvider: Bool { softwareHost?.assProvider != nil }
 +    public var softwareFrameOwnsPrimarySubtitle: Bool {
 +        guard let host = softwareHost, let tb = softwarePresentationTimebase else { return false }
@@ -524,10 +574,10 @@ index 11b9120e..9e276ea1 100644
      }
  
 diff --git a/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift b/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
-index e57c90b5..ec81cccf 100644
+index e57c90b5..333f2f52 100644
 --- a/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
 +++ b/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
-@@ -109,6 +109,36 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -109,6 +109,42 @@ final class SubtitlePacketStore: @unchecked Sendable {
      private var totalBytes: Int = 0
      /// #362: monotonic harvest order, stamped on every appended entry. See `StoredSubtitlePacket`.
      private var appendCounter: UInt64 = 0
@@ -535,6 +585,12 @@ index e57c90b5..ec81cccf 100644
 +    private var incompleteThrough: [Int32: Double] = [:]
 +    func hasStrictPrefix(past seconds: Double) -> Bool {
 +        lock.withLock { coverage.strictlyReadFromOrigin(past: seconds) }
++    }
++    // A nonzero cold start leaves a hole before the ordinary backscan. Read
++    // actual packets from zero for nearby landings; never scan a whole film
++    // or claim a blank solely because the player requested a position.
++    func frameASSInitialReadAnchor(at seconds: Double) -> Double {
++        seconds > 0 && seconds <= 90 && !hasStrictPrefix(past: seconds) ? 0 : seconds
 +    }
 +
 +    /// Cannot infer a clear from an empty sparse stream. Require an unbroken read from the
@@ -564,7 +620,7 @@ index e57c90b5..ec81cccf 100644
      /// #416: which spans of the source the readers have actually read. Lives here because this is
      /// the object whose EMPTINESS gets interpreted: every "no packet between here and there" answer
      /// this store gives is only as good as the reading behind it. See `SubtitleHarvestCoverage`.
-@@ -207,6 +237,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -207,6 +243,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
      private func appendLocked(streamIndex: Int32, ptsSeconds: Double, durationSeconds: Double,
                                flags: Int32, payload: Data, webvttSettings: String? = nil) {
          let before = bytesByStream[streamIndex] ?? 0
@@ -572,7 +628,7 @@ index e57c90b5..ec81cccf 100644
          // Audit SUB-103: taken out of the dictionary before it is mutated. Left in, the dictionary
          // holds the second reference and the insert below copied every retained packet per append,
          // 10k appends took 0.65 s and 40k took 10.9 s.
-@@ -247,6 +278,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -247,6 +284,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
                  bytes -= entries[dropped].payload.count
                  dropped += 1
              }
@@ -580,7 +636,7 @@ index e57c90b5..ec81cccf 100644
              entries.removeFirst(dropped)
              payloadHashesByRun[streamIndex] = nil
          }
-@@ -345,6 +377,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -345,6 +383,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
                  totalBytes -= removed
                  dropped += 1
              }
@@ -588,7 +644,7 @@ index e57c90b5..ec81cccf 100644
              entries.removeFirst(dropped)
              payloadHashesByRun[idx] = nil
              if entries.isEmpty {
-@@ -548,6 +581,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -548,6 +587,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
          for (idx, entries) in entriesByStream {
              let kept = entries.drop { $0.ptsSeconds < cutoff }
              if kept.count != entries.count {
@@ -596,7 +652,7 @@ index e57c90b5..ec81cccf 100644
                  let newBytes = kept.reduce(0) { $0 + $1.payload.count }
                  totalBytes += newBytes - (bytesByStream[idx] ?? 0)
                  entriesByStream[idx] = Array(kept)
-@@ -568,6 +602,8 @@ final class SubtitlePacketStore: @unchecked Sendable {
+@@ -568,6 +608,8 @@ final class SubtitlePacketStore: @unchecked Sendable {
          totalBytes = 0
          touchCounter = 0
          appendCounter = 0

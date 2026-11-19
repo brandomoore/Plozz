@@ -944,6 +944,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 MediaChapter(start: $0.startSeconds, title: $0.name)
             }, duration: engine.duration)
             onChaptersChanged?()
+            #if PLOZZ_FRAME_ASS
+            await engine.prerollResumedFrameASS(at: startPosition)
+            guard !Task.isCancelled, probePublicationGate.accepts(probeGeneration),
+                  outputLoadGeneration == outputGeneration else { return }
+            #endif
             engine.play()
             syncTracks()
         } catch is CancellationError {
@@ -2008,11 +2013,13 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var scheduledOffset = 0.0
     #if PLOZZ_FRAME_ASS
     private var nextFrameSelection: (@MainActor ([MediaTrack]) -> Int?)?
+    private var lastFrameOwner: Bool?
     public func setFrameSubtitleSelection(_ select: @escaping @MainActor ([MediaTrack]) -> Int?) {
         nextFrameSelection = select
     }
 
     private func resetFrameArtwork() {
+        lastFrameOwner = nil
         engine.frameASSSelection = nil
         if engine.hasSoftwareASSArtworkProvider { engine.setSoftwareASSArtworkProvider(nil) }
     }
@@ -2032,7 +2039,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             }
             HandoffDiagnostics.emit("subtitle FRAME provider=\(enabled) track=\(engine.activeSubtitleTrackIndex ?? -1)")
         }
-        return engine.softwareFrameOwnsPrimarySubtitle
+        let owns = engine.softwareFrameOwnsPrimarySubtitle
+        if enabled, lastFrameOwner != owns {
+            HandoffDiagnostics.emit("subtitle FRAME sampleOwner=\(owns ? "video" : "overlay") track=\(engine.activeSubtitleTrackIndex ?? -1) offset=\(offset)")
+        }
+        lastFrameOwner = enabled ? owns : nil
+        return owns
     }
     #endif
     private var scheduleStart = 0.0

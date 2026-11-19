@@ -59,6 +59,19 @@ final class FrameASSArtworkTests: XCTestCase {
         XCTAssertFalse(gate.owns(106))
     }
 
+    func testColdResumeCertifiesTheClearInsteadOfInferringItFromTheLanding() throws {
+        let store = SubtitlePacketStore()
+        store.noteHarvestAnchor(.prefetch, at: 40)
+        store.noteHarvestProgress(.prefetch, through: 60)
+        XCTAssertEqual(store.frameASSInitialReadAnchor(at: 55), 0)
+        XCTAssertNil(store.activeASSPackets(stream: 2, at: 55))
+        store.noteHarvestAnchor(.prefetch, at: 0)
+        for i in 1...60 { store.noteHarvestProgress(.prefetch, through: Double(i)) }
+        XCTAssertEqual(store.frameASSInitialReadAnchor(at: 55), 55)
+        XCTAssertTrue(try XCTUnwrap(store.activeASSPackets(stream: 2, at: 55)).isEmpty)
+        XCTAssertEqual(store.frameASSInitialReadAnchor(at: 1_000), 1_000)
+    }
+
     func testUncertifiedPacketsAreNotAnAuthoredClearAndSelectionRebuildsArtwork() throws {
         let art = FrameASSArtwork()
         let header = """

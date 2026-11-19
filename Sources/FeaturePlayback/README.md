@@ -1915,11 +1915,17 @@ builds keep the remote dependency and existing rendering paths.
 Admission uses the normal subtitle preference/series memory on the probed
 tracks, not a filename or launch flag. The current envelope is seekable SDR
 Matroska H.264 through 1080p30 with mono/stereo AAC, FLAC, Opus, Vorbis or MP3
-on all audio tracks. External output, disc/live/rendition playback and spatial
-audio do not opt in. The fullscreen controller yields to the normal overlay for
+on all audio tracks. External output, disc/live/rendition playback, active video
+upscaling and spatial audio do not opt in. The fullscreen controller yields to the normal overlay for
 custom placement or opacity, secondary tracks, controls avoidance, zoom and
 nonzero timing offsets. Uncertified packet coverage is not a blank subtitle:
 the overlay remains responsible for that sample. Other platforms are unchanged.
+On an admitted cold resume in the first 90 seconds, the existing subtitle
+read-ahead reader starts from the origin to certify overlapping events and
+their clears. The adapter waits up to four seconds for coverage while completing
+the load. The engine can already be playing: registration alone does not mean
+that a presented frame owns the subtitle. This does not move the video playhead
+or advance subtitles.
 
 `FrameASSArtworkTests` can exercise ordinary route and track selection on local
 media by passing `PLOZZ_ASS_PLAYBACK_FILES` as a JSON array of paths accessible
