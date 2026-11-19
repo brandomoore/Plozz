@@ -219,6 +219,40 @@ struct PlozziOSItemDetailView: View {
 }
 
 
+/// First-paint schedule text only; the resolver still owns freshness and corrections.
+@MainActor
+final class PlozziOSDetailScheduleReplay {
+    private struct Entry {
+        let subject: String
+        let scope: String
+        let account: String?
+        let title: String
+        let ids: [String: String]
+        let record: SeriesScheduleRecord
+    }
+    private var entries: [Entry] = []
+
+    func remember(_ record: SeriesScheduleRecord?, for item: MediaItem, scope: String) {
+        guard let record, item.kind == .series else { return }
+        let subject = item.stablePresentationID
+        entries.removeAll { $0.subject == subject && $0.scope == scope && $0.account == item.sourceAccountID }
+        guard record.upcomingEpisode != nil, !record.isRefreshDue() else { return }
+        if entries.count >= 32 { entries.removeFirst() }
+        entries.append(Entry(subject: subject, scope: scope, account: item.sourceAccountID, title: item.title,
+                             ids: MetadataQuery(item).logoSubjectIDs, record: record))
+    }
+
+    func record(for item: MediaItem, scope: String, now: Date = .now) -> SeriesScheduleRecord? {
+        guard item.kind == .series, let entry = entries.last(where: {
+            $0.subject == item.stablePresentationID && $0.scope == scope && $0.account == item.sourceAccountID
+        }) else { return nil }
+        let ids = MetadataQuery(item).logoSubjectIDs
+        guard !entry.record.isRefreshDue(now: now), entry.title == item.title,
+              ids.allSatisfy({ entry.ids[$0.key] == nil || entry.ids[$0.key] == $0.value }) else { return nil }
+        return entry.record
+    }
+}
+
 private struct PlozziOSCanonicalItemDetailView: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
@@ -600,10 +634,10 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     scheduleLine: isDiscoveryItem
                         ? (
                             detail.item.kind == .series
-                                ? upcomingHeroLine
+                                ? upcomingHeroLine(for: detail)
                                 : detail.externalAvailability?.primaryLine()
                         )
-                        : upcomingHeroLine,
+                        : upcomingHeroLine(for: detail),
                     selectedSourceAccountID: options.selectedSourceAccountID,
                     versions: options.versions,
                     selectedVersionID: options.selectedVersionID,
@@ -647,6 +681,9 @@ private struct PlozziOSCanonicalItemDetailView: View {
                 )
                 .environment(\.plozzArtworkSourceReady, viewModel.artworkSourceIsReady)
                 .detailHeroLogoVisit(scope: appModel.detailArtworkScopeID, subject: detail.item.stablePresentationID)
+                .onChange(of: detail.upcomingSchedule, initial: true) { _, record in
+                    appModel.detailSchedules.remember(record, for: detail.item, scope: detailScheduleScope)
+                }
                 .environment(\.openingHeroLogo, openingArtwork?.logo(
                     for: detail.item, profileID: appModel.profiles.activeProfileID
                 )))
@@ -797,13 +834,13 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     /// The hero's air-schedule line ("New episode every Wednesday"), or `nil`.
-    private var upcomingHeroLine: LocalizedStringResource? {
-        guard let schedule = viewModel.state.value?.upcomingSchedule else { return nil }
-        return SeriesUpcoming.heroLine(
-            nextEpisode: schedule.upcomingEpisode,
-            cadence: schedule.cadence,
-            schedule: schedule.upcomingEpisodes
-        )
+    private func upcomingHeroLine(for detail: ItemDetailViewModel.Detail) -> LocalizedStringResource? {
+        guard let schedule = detail.upcomingSchedule ?? appModel.detailSchedules.record(for: detail.item, scope: detailScheduleScope) else { return nil }
+        return SeriesUpcoming.heroLine(nextEpisode: schedule.upcomingEpisode, cadence: schedule.cadence, schedule: schedule.upcomingEpisodes)
+    }
+
+    private var detailScheduleScope: String {
+        "\(appModel.detailArtworkScopeID)|\(locale.identifier)"
     }
 
     private var pageInset: CGFloat {

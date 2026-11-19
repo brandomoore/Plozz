@@ -388,6 +388,17 @@ enum HeroLogoMemo {
             let ids = query.logoSubjectIDs
             return prior.logoSubjectIDs.allSatisfy { ids[$0.key] == $0.value }
         }
+
+        func canPreview(from richer: Self, awaitingSource: Bool) -> Bool {
+            guard let fallback, references.isEmpty || references == richer.references,
+                  richer.canRetainImage(from: self) else { return false }
+            if awaitingSource, fallback.sourceAccountID != nil { return true }
+            // Discovery records need not have a server account. Only bridge a
+            // thinner record when it still confirms a catalogue identity.
+            return [.tmdb, .imdb, .tvdb, .aniList, .myAnimeList].contains { (id: ProviderIDNamespace) in
+                fallback.query.providerIDs.providerID(id) != nil
+            }
+        }
     }
 
     private struct Entry {
@@ -419,21 +430,20 @@ enum HeroLogoMemo {
 
     static func value(for key: Key) -> ProcessedLogo? { entries[key]?.logo }
 
-    fileprivate static func replay(for key: Key, visit: DetailLogoVisit?, provisional: Bool = false) -> ProcessedLogo? {
+    fileprivate static func replay(for key: Key, visit: DetailLogoVisit?) -> ProcessedLogo? {
         guard let visit else { return nil }
         if let entry = entries[key], entry.visit == visit { return entry.logo }
         for previous in order.reversed() where entries[previous]?.visit == visit && key.canRetainImage(from: previous) {
             return entries[previous]?.logo
         }
-        // A row's opening record can be a sparse version of the last verified show.
-        // Preview only; never adopt the richer result under the incomplete lookup.
-        if provisional, key.fallback?.sourceAccountID != nil,
-           let previous = order.last(where: { entries[$0]?.visit == visit }),
-           key.references.isEmpty || key.references == previous.references,
-           previous.canRetainImage(from: key) {
-            return entries[previous]?.logo
-        }
         return nil
+    }
+
+    fileprivate static func preview(for key: Key, visit: DetailLogoVisit?, awaitingSource: Bool) -> (key: Key, logo: ProcessedLogo)? {
+        guard let visit, let previous = order.last(where: { entries[$0]?.visit == visit }),
+              key.canPreview(from: previous, awaitingSource: awaitingSource),
+              let entry = entries[previous] else { return nil }
+        return (previous, entry.logo)
     }
 
     static func store(_ value: ProcessedLogo, for key: Key, visit: DetailLogoVisit? = nil) {
@@ -496,7 +506,9 @@ private struct LoadedLogo<TextFallback: View>: View {
         let key = taskKey
         let retained = resolvedKey.map { key.canRetainImage(from: $0) } == true ? image : nil
         let verified = sourceReady ? (retained ?? openingLogo ?? HeroLogoMemo.value(for: key)) : openingLogo
-        let cached = verified ?? HeroLogoMemo.replay(for: key, visit: detailVisit, provisional: !sourceReady)
+        let reusable = verified ?? HeroLogoMemo.replay(for: key, visit: detailVisit)
+        let preview = reusable == nil ? HeroLogoMemo.preview(for: key, visit: detailVisit, awaitingSource: !sourceReady) : nil
+        let cached = reusable ?? preview?.logo
         let shown = cached.map { processed in
             guard let displayedArtworkID else { return processed }
             return HeroLogoAnalysis.refine(processed, backgroundSample: displayedArtwork?.sample(for: displayedArtworkID))
@@ -534,10 +546,10 @@ private struct LoadedLogo<TextFallback: View>: View {
             }
         }
         .onChange(of: shown?.image, initial: true) { _, _ in
-            report(shown, key: retained != nil ? resolvedKey ?? taskKey : taskKey)
+            report(shown, key: preview?.key ?? (retained != nil ? resolvedKey ?? key : key))
         }
         .onChange(of: artworkReporter?.identity) { _, _ in
-            report(shown, key: retained != nil ? resolvedKey ?? taskKey : taskKey)
+            report(shown, key: preview?.key ?? (retained != nil ? resolvedKey ?? key : key))
         }
         .task(id: sourceReady ? taskKey : nil) {
             guard sourceReady else { return }
@@ -671,6 +683,9 @@ private struct LoadedLogo<TextFallback: View>: View {
             }
             return
         }
+        // Keep the original lookup identity. Caching this bitmap under the
+        // thinner record would let a later conflicting ID appear compatible.
+        if HeroLogoMemo.preview(for: key, visit: detailVisit, awaitingSource: false) != nil { return }
         // `HeroLogoPipeline` caches the processed result by URL and runs the heavy
         // pixel work off the main actor, so re-appears / scheme changes / fast
         // scrolling reuse the prepared logo instead of reprocessing it.

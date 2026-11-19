@@ -223,6 +223,11 @@ record can preview that scoped logo without starting a lookup; a conflicting
 source or provider ID cannot. A known schedule badge appears
 with a ready logo or text title. If the logo is late, the badge reserves its
 space but stays hidden until the fade finishes. Reduce Motion skips that wait.
+On a quick reopen, the series can show its last unexpired premiere or cadence
+without waiting for the saved schedule to reload. A thinner record for the
+same confirmed show does not restart the logo fade or hide the badge.
+A conflicting identity cannot reuse the logo or announcement, and a confirmed
+empty schedule clears the announcement.
 
 tvOS detail entry keeps the real primary action focusable while its play target
 loads. An early press queues one activation, replacing the icon with a spinner

@@ -670,6 +670,67 @@ final class HeroLogoContinuityTests: XCTestCase {
         }
     }
 
+    func testDiscoveryPremiereStaysPaintedAcrossSparseReopens() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let logo = try fixture.seedLogo()
+        let seed = MediaItem(id: UUID().uuidString, title: "Premiere", kind: .series,
+                             providerIDs: ["Tmdb": "123"], locallyValidatedPlayableSource: false)
+        var rich = seed
+        rich.providerIDs["Imdb"] = "tt123"
+        let schedules = PlozziOSDetailScheduleReplay()
+        let now = Date.now
+        let episodes = (1...4).map { number in
+            UpcomingEpisode(seriesIdentity: .external(source: "tmdb", value: "123"), seasonNumber: 1,
+                            episodeNumber: number, airDate: now.addingTimeInterval(number <= 3 ? 864000 : 1468800),
+                            datePrecision: .dateAndTime, source: .tvmaze, refreshedAt: now)
+        }
+        let premiere = SeriesScheduleRecord(seriesKey: MetadataQuery(rich).seriesScoped.enrichmentCacheKey,
+                                           upcomingEpisode: episodes.first, upcomingEpisodes: episodes,
+                                           refreshedAt: now, refreshDueAt: now.addingTimeInterval(3600))
+        let lookup = LookupGate()
+        defer { lookup.release(nil) }
+        func mount(_ item: MediaItem, ready: Bool, warm: Bool = false) {
+            let record = warm ? premiere : schedules.record(for: item, scope: "viewer")
+            fixture.host.rootView = AnyView(DetailMetadataFixture(
+                state: SubjectState(item: item), root: item, style: .compactPortrait,
+                fallback: HeroLogoFallback(for: item) { warm ? logo : await lookup.resolve() },
+                schedule: record.flatMap {
+                    SeriesUpcoming.heroLine(nextEpisode: $0.upcomingEpisode, cadence: $0.cadence, schedule: $0.upcomingEpisodes)
+                }
+            )
+            .onAppear { if warm { schedules.remember(premiere, for: item, scope: "viewer") } }
+            .environment(\.plozzArtworkSourceReady, ready)
+            .detailHeroLogoVisit(scope: "viewer", subject: item.stablePresentationID))
+        }
+        mount(rich, ready: true, warm: true)
+        try await waitUntil { let f = try fixture.titleSample(); return f.red > 245 && f.hasWhite }
+        for _ in 0..<3 {
+            fixture.host.rootView = AnyView(Color.black)
+            try await waitUntil { try !fixture.hasRedLogo() }
+            for (item, ready) in [(seed, false), (rich, false), (seed, true), (rich, true)] {
+                mount(item, ready: ready)
+                let frame = try fixture.titleSample(afterScreenUpdates: true)
+                XCTAssertGreaterThan(frame.red, 245)
+                XCTAssertTrue(frame.hasWhite, "The known premiere must stay visible with its logo.")
+            }
+        }
+        XCTAssertEqual(lookup.calls, 0)
+        var corrected = rich
+        corrected.providerIDs["Imdb"] = "tt999"
+        mount(corrected, ready: false)
+        let mismatch = try fixture.titleSample(afterScreenUpdates: true)
+        XCTAssertLessThan(mismatch.red, 10)
+        XCTAssertFalse(mismatch.hasWhite)
+        XCTAssertNil(schedules.record(for: seed, scope: "another viewer"))
+        XCTAssertNil(schedules.record(for: seed, scope: "viewer", now: premiere.refreshDueAt))
+        var noUpcoming = premiere
+        noUpcoming.upcomingEpisode = nil
+        noUpcoming.upcomingEpisodes = []
+        schedules.remember(noUpcoming, for: rich, scope: "viewer")
+        XCTAssertNil(schedules.record(for: seed, scope: "viewer"))
+    }
+
     func testLateDetailWordmarkFadesUnlessMotionIsReduced() async throws {
         for reduced in [false, true] {
             let fixture = try Fixture()

@@ -41,6 +41,7 @@ final class PlozziOSAppModel {
     /// visit rebuilt the page instead of painting the cached hero/seasons.
     @ObservationIgnored private let detailCacheFactory = DetailSnapshotCacheFactory()
     @ObservationIgnored private var recentDetailArtwork: (scope: String, replay: ArtworkBitmapReplay)?
+    let detailSchedules = PlozziOSDetailScheduleReplay()
 
     /// The cache for the active profile and its current servers. Switching profile
     /// or Plex Home user switches scope, so one household member never restores
