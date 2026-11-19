@@ -94,7 +94,8 @@ struct PresentationHostApp: App {
         } else if ProcessInfo.processInfo.arguments.contains("--search-black-theme") {
             model.settings.theme.theme = .pureBlack
         }
-        model.settings.theme.gradientEnabled = true
+        model.settings.theme.gradientEnabled =
+            !ProcessInfo.processInfo.arguments.contains("--navigation-flat-background")
         model.settings.transparency.preference =
             ProcessInfo.processInfo.arguments.contains("--opaque-navigation") ? .off : .system
         model.settings.playback.settings = .default
@@ -865,6 +866,7 @@ private struct SettingsInteractionFixture: View {
         .environment(\.themePalette, ThemePalette.palette(
             for: appModel.settings.theme.theme, systemColorScheme: .dark
         ))
+        .environment(\.gradientBackgroundsEnabled, appModel.settings.theme.gradientEnabled)
         .environment(\.plozzMetrics, .touch(density: .standard))
         .preferredColorScheme(appModel.settings.theme.theme.preferredColorScheme ?? .dark)
         .overlay(alignment: .bottomLeading) {

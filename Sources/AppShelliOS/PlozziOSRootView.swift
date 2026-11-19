@@ -2015,6 +2015,10 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.tabIndex = tabIndex
+        controller.moreBackground = MoreBackground(
+            palette: context.environment.themePalette,
+            gradientEnabled: context.environment.gradientBackgroundsEnabled
+        )
         controller.action = action
         controller.onOverflowVisibilityChange = onOverflowVisibilityChange
         controller.onSettingsVisibilityChange = onSettingsVisibilityChange
@@ -2036,6 +2040,23 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.onBottomBarVisibilityChange = nil
         controller.overflowNavigation = nil
         controller.onPageReselection = nil
+    }
+
+    fileprivate struct MoreBackground: Equatable {
+        let palette: ThemePalette
+        let gradientEnabled: Bool
+
+        @MainActor func makeView() -> UIView {
+            let view = UIHostingConfiguration {
+                AppBackground(palette: palette)
+                    .environment(\.gradientBackgroundsEnabled, gradientEnabled)
+            }
+            .margins(.all, 0)
+            .makeContentView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            return view
+        }
     }
 
     final class Controller: UIViewController, UITabBarControllerDelegate, UITableViewDelegate, UINavigationControllerDelegate {
@@ -2068,6 +2089,10 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         private weak var owner: UITabBarController?
         private weak var previousDelegate: (any UITabBarControllerDelegate)?
         private weak var overflowTable: UITableView?
+        fileprivate var moreBackground: MoreBackground?
+        private var installedBackground: MoreBackground?
+        private var installedBackgroundView: UIView?
+        private var previousBackgroundView: UIView?
         private weak var previousOverflowDelegate: (any UITableViewDelegate)?
         private weak var previousMoreDelegate: (any UINavigationControllerDelegate)?
         private var previousMoreNavigationBarHidden: Bool?
@@ -2176,9 +2201,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             previousMoreDelegate = nil
             previousMoreNavigationBarHidden = nil
             moreIsTransitioning = false
-            if overflowTable?.delegate === self { overflowTable?.delegate = previousOverflowDelegate }
-            overflowTable = nil
-            previousOverflowDelegate = nil
+            restoreOverflowTable()
             if owner?.delegate === self { owner?.delegate = previousDelegate }
             owner = nil
             previousDelegate = nil
@@ -2305,14 +2328,41 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             guard let root = tabs.moreNavigationController.viewControllers.first?.viewIfLoaded,
                   let table = findTable(in: root) else { return }
             if overflowTable !== table {
-                if overflowTable?.delegate === self { overflowTable?.delegate = previousOverflowDelegate }
+                restoreOverflowTable()
                 overflowTable = table
-                previousOverflowDelegate = table.delegate
             }
             if table.delegate !== self {
                 previousOverflowDelegate = table.delegate
                 table.delegate = self
             }
+            if let moreBackground,
+               installedBackground != moreBackground || table.backgroundView !== installedBackgroundView {
+                if installedBackground == nil || table.backgroundView !== installedBackgroundView {
+                    previousBackgroundView = table.backgroundView
+                }
+                let view = moreBackground.makeView()
+                table.backgroundView = view
+                installedBackgroundView = view
+                installedBackground = moreBackground
+                for cell in table.visibleCells { cell.backgroundColor = .clear }
+            }
+        }
+
+        func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+            previousOverflowDelegate?.tableView?(tableView, willDisplay: cell, forRowAt: indexPath)
+            if moreBackground != nil { cell.backgroundColor = .clear }
+        }
+
+        private func restoreOverflowTable() {
+            if overflowTable?.delegate === self { overflowTable?.delegate = previousOverflowDelegate }
+            if let table = overflowTable, let installedBackgroundView, table.backgroundView === installedBackgroundView {
+                table.backgroundView = previousBackgroundView
+            }
+            overflowTable = nil
+            previousOverflowDelegate = nil
+            previousBackgroundView = nil
+            installedBackgroundView = nil
+            installedBackground = nil
         }
 
         func navigationController(
