@@ -30,42 +30,56 @@ final class LiveSubtitleModelTests: XCTestCase {
         view.display([], at: 7.25, item: item)
 
         let timeline = try XCTUnwrap(view.layer.sublayers?.first as? AVSynchronizedLayer)
-        let group = try XCTUnwrap(timeline.sublayers?.first)
-        let interval = try XCTUnwrap(group.animation(forKey: "interval"))
+        let regions = try XCTUnwrap(timeline.sublayers)
+        let interval = try XCTUnwrap(regions.first?.animation(forKey: "contents") as? CAKeyframeAnimation)
         XCTAssertTrue(timeline.playerItem === item)
         XCTAssertEqual(interval.beginTime, 7)
-        XCTAssertEqual(interval.duration, 0.25)
-        XCTAssertEqual(interval.fillMode, .removed, "The clear must end the sign, not reveal it again afterwards.")
-        let regions = try XCTUnwrap(group.sublayers)
-        XCTAssertEqual(regions.map(\.frame), layout.frames(for: [sign, line], in: view.bounds))
-        let oldFrames = regions.map(\.frame)
+        XCTAssertEqual(interval.calculationMode, .discrete)
+        XCTAssertEqual(try XCTUnwrap(interval.keyTimes?[1]).doubleValue * interval.duration, 0.25, accuracy: 0.00001)
+        let size = try XCTUnwrap(regions.first?.animation(forKey: "bounds") as? CAKeyframeAnimation)
+        XCTAssertEqual((size.values?.last as? NSValue)?.cgRectValue, .zero, "Hold the clear after its deadline.")
+        func firstRects() throws -> [CGRect] {
+            try regions.map { region in
+                let position = try XCTUnwrap((region.animation(forKey: "position") as? CAKeyframeAnimation)?.values?.first as? NSValue)
+                let bounds = try XCTUnwrap((region.animation(forKey: "bounds") as? CAKeyframeAnimation)?.values?.first as? NSValue)
+                return CGRect(origin: position.cgPointValue, size: bounds.cgRectValue.size)
+            }
+        }
+        XCTAssertEqual(try firstRects(), layout.frames(for: [sign, line], in: view.bounds))
+        let oldFrames = try firstRects()
         layout.controls = [CGRect(x: 0, y: 480, width: 800, height: 120)]
         view.bitmapLayout = layout
         view.layoutIfNeeded()
-        XCTAssertEqual(regions.map(\.frame), layout.frames(for: [sign, line], in: view.bounds))
-        XCTAssertEqual(regions.first?.frame, oldFrames.first)
-        XCTAssertLessThan(try XCTUnwrap(regions.last).frame.maxY, 480)
+        XCTAssertEqual(try firstRects(), layout.frames(for: [sign, line], in: view.bounds))
+        XCTAssertEqual(try firstRects().first, oldFrames.first)
+        XCTAssertLessThan(try XCTUnwrap(firstRects().last).maxY, 480)
         XCTAssertEqual(view.alpha, 0.6, accuracy: 0.001)
-        XCTAssertEqual(group.animation(forKey: "interval")?.beginTime, 7, "Relayout must not restart item timing.")
+        XCTAssertEqual(regions.first?.animation(forKey: "contents")?.beginTime, 7)
     }
 
     func testScheduledArtworkBoundsFutureChangesAndDiscardsOldItemAndReplacedTail() throws {
         let view = ScheduledASSArtworkView()
         let first = AVPlayerItem(asset: AVMutableComposition())
-        for n in 1...200 { view.display([], at: Double(n), item: first) }
+        let bitmap = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+        let cues = [SubtitleCue(id: 1, start: 0, end: 200, body: .image(.init(cgImage: bitmap, normalizedRect: .zero)))]
+        for n in 1...200 { view.display(cues, at: Double(n), item: first) }
         let old = try XCTUnwrap(view.layer.sublayers?.first as? AVSynchronizedLayer)
-        XCTAssertLessThan(try XCTUnwrap(old.sublayers).count, 200)
-        XCTAssertEqual(old.sublayers?.first?.animation(forKey: "interval")?.beginTime, 1)
+        let slot = try XCTUnwrap(old.sublayers?.first)
+        let animation = try XCTUnwrap(slot.animation(forKey: "contents") as? CAKeyframeAnimation)
+        XCTAssertLessThan(try XCTUnwrap(animation.keyTimes).count, 200)
+        XCTAssertEqual(animation.beginTime, 1)
         view.display([], at: 1, item: first)
         XCTAssertEqual(old.sublayers?.count, 1)
+        XCTAssertTrue(old.sublayers?.first === slot)
 
         let next = AVPlayerItem(asset: AVMutableComposition())
-        view.display([], at: 0, item: next)
+        view.display(cues, at: 0, item: next)
         let fresh = try XCTUnwrap(view.layer.sublayers?.first as? AVSynchronizedLayer)
         XCTAssertNil(old.superlayer)
         XCTAssertNil(old.playerItem)
         XCTAssertTrue(fresh.playerItem === next)
-        XCTAssertEqual(fresh.sublayers?.last?.animation(forKey: "interval")?.beginTime, AVCoreAnimationBeginTimeAtZero)
+        XCTAssertEqual(fresh.sublayers?.last?.animation(forKey: "contents")?.beginTime, AVCoreAnimationBeginTimeAtZero)
         view.reset()
         XCTAssertNil(fresh.playerItem)
         XCTAssertTrue(view.layer.sublayers?.isEmpty ?? true)

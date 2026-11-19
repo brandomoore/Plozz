@@ -1896,6 +1896,8 @@ an `AVSynchronizedLayer` tied to the current player item. The renderer seats
 the current frame, then prepares up to 350 ms of upcoming artwork. Each image
 replacement or clear is scheduled on the item timeline, including the user's
 subtitle offset; the preparation window is not a subtitle timing adjustment.
+Each bitmap region keeps its layer across replacements. Its contents and geometry
+step together at item timestamps rather than fading layers in and out per frame.
 The same fullscreen controller owns this surface on Apple TV, iPhone and iPad.
 It uses the overlay's bitmap placement, control avoidance and master opacity.
 HDR with custom luminance stays on the ordinary overlay, as do secondary cues

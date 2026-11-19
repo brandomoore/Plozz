@@ -284,16 +284,17 @@ private struct ScheduledASSArtworkSurface: UIViewRepresentable {
     }
 }
 
-/// SwiftUI supplies geometry, not frame timing. A prerendered group is visible
-/// precisely on its half-open interval on the native player's item timeline.
+/// Keep each bitmap region on a stable layer. Replacing layers per video frame
+/// can pulse their opacity on Apple TV even when the authored pixels are opaque.
 final class ScheduledASSArtworkView: UIView, ScheduledASSArtworkSink {
     private struct Frame {
         let start: Double
-        let group: CALayer
         let images: [SubtitleImage]
+        var rects: [CGRect]
     }
     private var timeline: AVSynchronizedLayer?
     private var frames: [Frame] = []
+    private var slots: [CALayer] = []
     // One active frame, a short preroll, and a little history for the compositor.
     // Bound retention even if the native item clock is stopped or invalid.
     private static let maximumFrames = 64
@@ -321,46 +322,62 @@ final class ScheduledASSArtworkView: UIView, ScheduledASSArtworkSink {
         let start = max(AVCoreAnimationBeginTimeAtZero, itemTime)
         // A correction at an already queued deadline supersedes that tail.
         while let last = frames.last, last.start >= start {
-            frames.removeLast().group.removeFromSuperlayer()
+            frames.removeLast()
         }
         pruneElapsedFrames()
         if frames.count == Self.maximumFrames {
             // Coalesce the furthest prefetched change, not the visible frame.
-            frames.removeLast().group.removeFromSuperlayer()
+            frames.removeLast()
         }
-        if let previous = frames.last { setVisibility(of: previous, until: start) }
-        let group = CALayer()
-        group.frame = bounds
-        group.opacity = 0
         let images = cues.compactMap { cue -> SubtitleImage? in
             guard case .image(let image) = cue.body else { return nil }
-            let region = CALayer()
-            region.contents = image.cgImage
-            group.addSublayer(region)
             return image
         }
-        let frame = Frame(start: start, group: group, images: images)
-        layoutRegions(of: frame)
-        timeline?.addSublayer(group)
-        setVisibility(of: frame, until: nil)
-        frames.append(frame)
+        frames.append(Frame(start: start, images: images, rects: bitmapLayout?.frames(for: images, in: bounds) ?? []))
+        rebuildSlots()
     }
 
-    private func setVisibility(of frame: Frame, until end: Double?) {
-        let animation = CABasicAnimation(keyPath: "opacity")
-        animation.fromValue = 1
-        animation.toValue = 1
-        animation.beginTime = frame.start
-        animation.duration = end.map { $0 - frame.start } ?? 1
-        animation.fillMode = end == nil ? .forwards : .removed
-        animation.isRemovedOnCompletion = false
-        frame.group.add(animation, forKey: "interval")
+    private func rebuildSlots() {
+        guard let first = frames.first, let last = frames.last else { return }
+        let duration = last.start - first.start + 1
+        let times = frames.map { NSNumber(value: ($0.start - first.start) / duration) }
+        let count = frames.map(\.images.count).max() ?? 0
+        while slots.count < count {
+            let slot = CALayer()
+            slot.anchorPoint = .zero
+            timeline?.addSublayer(slot)
+            slots.append(slot)
+        }
+        for (index, slot) in slots.enumerated() {
+            guard let placeholder = frames.first(where: { $0.images.indices.contains(index) })?.images[index].cgImage else {
+                slot.removeAllAnimations()
+                continue
+            }
+            let rects = frames.map { $0.rects.indices.contains(index) ? $0.rects[index] : .zero }
+            func schedule(_ key: String, _ values: [Any]) {
+                guard let held = values.last else { return }
+                let animation = CAKeyframeAnimation(keyPath: key)
+                animation.values = values + [held]
+                animation.keyTimes = times + [1]
+                animation.calculationMode = .discrete
+                animation.beginTime = first.start
+                animation.duration = duration
+                animation.fillMode = .forwards
+                animation.isRemovedOnCompletion = false
+                slot.add(animation, forKey: key)
+            }
+            // A missing region has empty bounds. Keep every contents keyframe a
+            // CGImage; null entries can invalidate the whole image animation.
+            schedule("contents", frames.map { $0.images.indices.contains(index) ? $0.images[index].cgImage : placeholder })
+            schedule("bounds", rects.map { NSValue(cgRect: CGRect(origin: .zero, size: $0.size)) })
+            schedule("position", rects.map { NSValue(cgPoint: $0.origin) })
+        }
     }
 
     func pruneElapsedFrames() {
         guard frames.count > 1, let now = timeline?.playerItem?.currentTime().seconds, now.isFinite else { return }
         while frames.count > 1, frames[1].start < now - 0.5 {
-            frames.removeFirst().group.removeFromSuperlayer()
+            frames.removeFirst()
         }
     }
 
@@ -370,17 +387,11 @@ final class ScheduledASSArtworkView: UIView, ScheduledASSArtworkSink {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         timeline.frame = bounds
-        for frame in frames {
-            frame.group.frame = bounds
-            layoutRegions(of: frame)
+        for i in frames.indices {
+            frames[i].rects = bitmapLayout?.frames(for: frames[i].images, in: bounds) ?? []
         }
+        rebuildSlots()
         CATransaction.commit()
-    }
-
-    private func layoutRegions(of frame: Frame) {
-        guard let bitmapLayout else { return }
-        let rects = bitmapLayout.frames(for: frame.images, in: bounds)
-        for (region, rect) in zip(frame.group.sublayers ?? [], rects) { region.frame = rect }
     }
 
     func reset() {
@@ -388,6 +399,7 @@ final class ScheduledASSArtworkView: UIView, ScheduledASSArtworkSink {
         timeline?.playerItem = nil
         timeline = nil
         frames.removeAll()
+        slots.removeAll()
     }
 }
 #endif
