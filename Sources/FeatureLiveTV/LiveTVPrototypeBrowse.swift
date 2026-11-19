@@ -1199,11 +1199,14 @@ struct PrototypeGuideRow: View {
             tune()
             #endif
         } label: {
-            // Let the native button fit its proposal; draw in timeline coordinates,
-            // rather than adding glass label insets to the focus item's width.
-            Color.clear.frame(height: rowHeight).overlay {
+            // Fill the proposed button bounds. Freezing a second copy of the
+            // timeline width inside the native label centers it at the *new*
+            // width while its station is still moving.
+            Color.clear.frame(height: rowHeight).overlay(alignment: .leading) {
                 PrototypeGuideGap(channelName: channel.name, height: rowHeight)
+                    #if os(iOS)
                     .frame(width: width)
+                    #endif
                     .background {
                         if followsTimeline {
                             PrototypeTimelineReader(timeline: timeline) {
@@ -1221,7 +1224,8 @@ struct PrototypeGuideRow: View {
             surface: .guide, focusChanged: { focusChanged(target, $0) }
         ))
         #if os(tvOS)
-        .frame(width: width, height: rowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: rowHeight)
         .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous))
         #endif
         .focused(focus, equals: target)

@@ -567,7 +567,15 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         XCTAssertEqual(reference.count, 3)
         for collapsed in [false, true] {
             let start = try mixedGuideTextEdges(in: window)
-            model.collapsed = collapsed
+            // Opening from the station wraps the focus handoff in an explicit
+            // transaction; closing relies on the layout's value animation.
+            if collapsed {
+                model.collapsed = true
+            } else {
+                withAnimation(disablesAnimations ? nil : PrototypeLayout.sidebarAnimation) {
+                    model.collapsed = false
+                }
+            }
             var history: [[CGFloat]] = []
             let sampleCount = rapidReversal && !collapsed ? 3 : 20
             for _ in 0..<sampleCount {

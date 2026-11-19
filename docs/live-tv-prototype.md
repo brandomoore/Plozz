@@ -259,7 +259,8 @@ and accessible names and help text are retained.
 Directional handling belongs to the originating control, not a parent reading
 the newly focused control. Focus moves across the action row before entering
 the guide, and mirrors in RTL. Down from Manage channels enters the category
-list without selecting a filter. Focus handoffs do not dim controls.
+list without selecting a filter. Focus handoffs do not dim controls, including
+on first arrival while the top navigation still owns focus.
 Ordinary sidebar-to-guide handoff does not hide
 app navigation or change its content insets; fullscreen playback return and
 Search retain their separate navigation suppression.

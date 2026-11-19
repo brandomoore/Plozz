@@ -155,6 +155,30 @@ travel**, including target lookup and cell reveal, not remote-event latency,
 presented-frame hitches, network playback, or physical Apple TV performance.
 Local source patches, binary UUIDs, raw runs and screenshots: `.build/guide-travel-lab/`.
 
+For a **remote-driven visual control**, replace `--category-search-guide-first`
+with `--guide-remote-arrival`. This leaves the travel loop off, starts in
+categories and omits listings on alternating rows. Press Right to enter the
+guide, Left to the station, Left again to reveal categories, then Right to
+collapse (reverse the horizontal directions in RTL). Track the unscheduled
+channel **name relative to its station**, not only the row's final bounds.
+Add `--guide-tab-first` to start with the actual Live TV tab focused and test
+one Down into the page.
+
+On the 6475 follow-up, the 1080p recording showed up to 200 px of extra name
+travel on reveal: a fixed-width label was centered in a resizing native
+button. Letting it fill the proposal held the measured spacing constant in
+both directions through 408 px of travel, also on the mirrored RTL capture,
+without changing the 280 ms transition. With Reduce Motion on in simulator
+Settings, only the two endpoints appeared in the recording. The fixture used
+its text station plate, not downloaded provider artwork.
+
+This was **not a vertical performance fix**. Repeating the all-scheduled travel control above
+gave 39.61 → 38.30 ms median p95 and 8/737 → 10/735 intervals over 50 ms.
+A separate main-thread sample showed AttributeGraph updates and hosting-view
+layout, including glass layout; it does not isolate a particular control as
+the cause. A row sizing/focus experiment did not materially improve p95 and
+was discarded.
+
 ### Custom Home rows with multiple sources
 
 Select `home-single-collection-row`, `home-multi-source-row`,

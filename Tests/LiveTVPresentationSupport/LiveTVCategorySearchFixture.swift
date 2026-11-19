@@ -13,6 +13,7 @@ import Observation
 import UIKit
 
 struct LiveTVCategorySearchFixture: View {
+    let isActive: Bool
     @State private var profiles: ProfilesModel
     @State private var showsProfile = false
     @State private var isExpanded = false
@@ -22,7 +23,8 @@ struct LiveTVCategorySearchFixture: View {
         ProcessInfo.processInfo.arguments.contains("--category-preview-light") ? .light : .dark
     }
 
-    init() {
+    init(isActive: Bool = true) {
+        self.isActive = isActive
         let defaults = UserDefaults(suiteName: "CategorySearchProfiles.\(UUID().uuidString)")!
         _profiles = State(initialValue: ProfilesModel(store: ProfileStore(defaults: defaults)))
     }
@@ -30,6 +32,7 @@ struct LiveTVCategorySearchFixture: View {
     var body: some View {
         NavigationStack {
             LiveTVPrototypeView(
+                isActive: isActive,
                 preferencesStore: CategorySearchPreferences(),
                 viewSettingsStore: CategorySearchSettings(),
                 sourceStore: CategorySearchSources(),
@@ -321,7 +324,10 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
         let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970 / 1_800) * 1_800)
         let titles = ["Matchday Live", "Championship Highlights", "World Sports", "The Sports Review", "News Today"]
         let slots = ProcessInfo.processInfo.arguments.contains("--guide-travel") ? 48 : 4
-        let programs = channels.enumerated().flatMap { index, channel in
+        let scheduled = channels.enumerated().filter {
+            !ProcessInfo.processInfo.arguments.contains("--guide-remote-arrival") || $0.offset.isMultiple(of: 2)
+        }
+        let programs = scheduled.flatMap { index, channel in
             (0..<slots).map { slot in
                 LiveTVPrototypeProgram(
                     id: "\(channel.id)-\(slot)", channelID: channel.id,
@@ -332,8 +338,8 @@ private struct CategorySearchLoader: LiveTVSourceLoading {
             }
         }
         return .init(
-            programs: programs, matchedChannelCount: channels.count,
-            guideChannelCount: channels.count, programCount: programs.count,
+            programs: programs, matchedChannelCount: scheduled.count,
+            guideChannelCount: scheduled.count, programCount: programs.count,
             coverageStart: start, coverageEnd: start.addingTimeInterval(Double(slots) * 1_800)
         )
     }

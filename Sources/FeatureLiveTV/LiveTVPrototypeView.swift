@@ -572,7 +572,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 #else
                 .offset(y: expanded && !reduceMotion ? geometry.size.height * 0.55 : 0)
                 #endif
+                #if !os(tvOS)
                 .disabled(expanded || !isActive || showsPreviewIntroduction)
+                #endif
                 .allowsHitTesting(!expanded && isActive && !showsPreviewIntroduction)
                 .accessibilityHidden(expanded || !isActive || showsPreviewIntroduction)
                 .animation(isMultiviewWorkspace && expanded ? nil : playerTransition, value: expanded)

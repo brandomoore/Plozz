@@ -73,6 +73,8 @@ struct LargeNativeNavigationFixture: View {
         }
         .environment(\.themePalette, .dark)
         .environment(\.colorScheme, .dark)
+        // Keep the Live TV tab focused until a real Down press, like a deferred startup entry.
+        .environment(\.navigationStartupFocusAllowed, !ProcessInfo.processInfo.arguments.contains("--guide-tab-first"))
         .environment(\.plozzNavigationStyle, isSidebar ? .sidebar : .tabBar)
         .environment(\.plozzCardFocusStyle,
                      ProcessInfo.processInfo.arguments.contains("--swiftui-library-grid") ? .outlined : .system)
@@ -95,7 +97,7 @@ struct LargeNativeNavigationFixture: View {
                 destinations: NavigationDestinationDefaults.topBar(destinations: destinations),
                 selection: selectionBinding,
                 preventsAccidentalExit: true,
-                content: { destination, _ in AnyView(page(destination)) },
+                content: { destination, active in AnyView(page(destination, isActive: active)) },
                 label: label,
                 profile: profile,
                 onOpenProfileSwitcher: { showsProfilePicker = true },
@@ -128,14 +130,42 @@ struct LargeNativeNavigationFixture: View {
                 .init(key: key, library: library), usesCompactSidebarText: isSidebar
             ))
         }
-        return AnyView(Label(title(for: destination), systemImage: "square"))
+        return AnyView(Label(title(for: destination), systemImage: "square")
+            .background {
+                if destination == .liveTV, ProcessInfo.processInfo.arguments.contains("--guide-tab-first") {
+                    LiveTVTabMarker()
+                }
+            })
     }
 
-    private func page(_ destination: NavigationRailDestination) -> some View {
+    /// Position native focus on the tab, then leave all subsequent input to the remote.
+    private struct LiveTVTabMarker: UIViewRepresentable {
+        func makeUIView(context: Context) -> UIView {
+            let marker = UIView()
+            marker.isUserInteractionEnabled = false
+            Task { @MainActor [weak marker] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let marker, let window = marker.window,
+                      let system = UIFocusSystem.focusSystem(for: window),
+                      let owner = NavigationRailFocusHostController.containing(marker),
+                      let tab = NavigationRowFocusRequester.target(for: marker, in: window),
+                      owner.requestFocus(to: tab, using: system) else {
+                    print("GUIDE_ARRIVAL no native tab"); return
+                }
+                print("GUIDE_ARRIVAL native Live TV tab")
+            }
+            return marker
+        }
+
+        func updateUIView(_ uiView: UIView, context: Context) {}
+    }
+
+    private func page(_ destination: NavigationRailDestination, isActive: Bool = true) -> some View {
         NavigationStack {
             if destination == .liveTV, ProcessInfo.processInfo.arguments.contains("--guide-travel") {
-                LiveTVCategorySearchFixture()
+                LiveTVCategorySearchFixture(isActive: isActive)
                     .task {
+                        guard !ProcessInfo.processInfo.arguments.contains("--guide-remote-arrival") else { return }
                         await GuideTravelProbe().run(tabCount: NavigationDestinationDefaults.topBar(destinations: destinations).count)
                     }
             } else if destination == .settings {
