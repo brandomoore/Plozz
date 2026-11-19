@@ -1807,7 +1807,6 @@ struct PlozziOSHomeHeroCarousel: View {
     @State private var transitionTargetID: String?
     @State private var transitionDirection: CGFloat = 0
     @State private var transitionInProgress = false
-    @State private var foregroundVisible = true
     /// Latest hero stage width. A full-width finger drag maps to exactly one
     /// complete transition.
     @State private var stageWidth: CGFloat = 1
@@ -1965,18 +1964,13 @@ struct PlozziOSHomeHeroCarousel: View {
                         scheduleLines: schedules
                     )
                     .id(currentItem.id)
-                    .transition(.opacity)
-                    .opacity(
-                        max(1 - (progress * 2), 0)
-                            * (foregroundVisible ? 1 : 0)
-                    )
+                    // The backdrop follows the swipe; facts stay with the selected
+                    // title until the selection commits.
+                    .transition(.identity)
+                    .allowsHitTesting(!transitionInProgress && dragOffset == 0)
                     // Shared with the loading placeholder — see
                     // `PlozziOSHeroForegroundPlacement`.
                     .plozziOSHeroForegroundPlacement(style: style, logoSize: appModel.settings.hero.settings.logoSize)
-                    .animation(
-                        .easeInOut(duration: 0.24),
-                        value: currentItem.id
-                    )
 
                 }
             }
@@ -2025,7 +2019,7 @@ struct PlozziOSHomeHeroCarousel: View {
             isActive: isFrontmost
         )
         .overlay(alignment: .topLeading) {
-            if let currentItem, foregroundVisible, !transitionInProgress, dragOffset == 0 {
+            if let currentItem, !transitionInProgress, dragOffset == 0 {
                 let attributionSources = appModel.settings.hero.effectiveSettings
                     .discoveryAttributionSources(for: currentItem)
                 if !attributionSources.isEmpty {
@@ -2041,7 +2035,7 @@ struct PlozziOSHomeHeroCarousel: View {
         }
         .trackHeroExposure(
             item: currentItem,
-            isVisible: isFrontmost && pullModel.isVisible && foregroundVisible
+            isVisible: isFrontmost && pullModel.isVisible
                 && !transitionInProgress && dragOffset == 0,
             scopeID: exposureScopeID,
             onExposure: onItemExposed
@@ -2592,7 +2586,7 @@ struct PlozziOSHomeHeroCarousel: View {
                 transitionDirection = 0
                 dragOffset = 0
                 dragTargetID = nil
-                foregroundVisible = false
+                transitionInProgress = false
             }
             HeroArtDiagnostics.emit(
                 "slide COMMIT now=\(target.title) "
@@ -2601,10 +2595,6 @@ struct PlozziOSHomeHeroCarousel: View {
                 // moment at the very end of the transition.
                 + "nowResident=\(backdropIsResident(target))"
             )
-            withAnimation(.easeInOut(duration: 0.24)) {
-                foregroundVisible = true
-            }
-            transitionInProgress = false
         }
     }
 

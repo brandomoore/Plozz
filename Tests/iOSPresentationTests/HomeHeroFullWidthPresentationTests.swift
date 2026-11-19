@@ -162,6 +162,48 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
+    func testHomeHeroMetadataStaysOpaqueAcrossPageChange() async throws {
+        let first = MediaItem(id: "first", title: "First", kind: .movie,
+                              officialRating: "PG-13", genres: ["Adventure"], allowsTitleBasedMetadataMatching: false)
+        var second = first
+        second.id = "second"
+        second.title = "Next"
+        var pinned: Set<String> = []
+        try await withWindow(
+            item: first, size: CGSize(width: 834, height: 720), sizeClass: .regular,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel(), isRunningOnMac: true,
+            heroItems: [first, second], onHeroPinnedItemsChanged: { pinned = $0 }
+        ) { window, host in
+            // Same facts on both slides: any dip in their ink is a paging effect,
+            // not a different badge or a change in text width.
+            let before = snapshot(window, name: "hero-facts-before-paging")
+            let region = try XCTUnwrap(HeroTextInk.frames(in: before, terms: ["Adventure"])["Adventure"])
+            let full = try pagingControlInk(in: before, region: region).peak
+            XCTAssertGreaterThan(full, 160)
+            let controller = try XCTUnwrap(findController(
+                PlozziOSHeroKeyboardControls.KeyboardViewController.self, in: host
+            ))
+            let next = try XCTUnwrap(controller.keyCommands?.first { $0.input == UIKeyCommand.inputRightArrow })
+            XCTAssertTrue(UIApplication.shared.sendAction(try XCTUnwrap(next.action), to: controller, from: next, for: nil))
+            let renderer = UIGraphicsImageRenderer(size: region.size)
+            var minimum = full
+            var sawTransition = false
+            let start = ContinuousClock.now
+            repeat {
+                try await Task.sleep(for: .milliseconds(16))
+                sawTransition = sawTransition || pinned == [first.id, second.id]
+                let image = renderer.image { context in
+                    context.cgContext.translateBy(x: -region.minX, y: -region.minY)
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+                }
+                minimum = min(minimum, try pagingControlInk(in: image, region: CGRect(origin: .zero, size: region.size)).peak)
+            } while start.duration(to: .now) < .seconds(1)
+            XCTAssertTrue(sawTransition)
+            XCTAssertEqual(pinned, [second.id])
+            XCTAssertGreaterThanOrEqual(Int(minimum), Int(full) - 12, "Home facts must not fade during paging or at landing.")
+        }
+    }
+
     func testMacHeroKeyboardPagesBothWaysAndReleasesKeysWhenScrolledAway() async throws {
         let item = try await artworkItem()
         let second = MediaItem(

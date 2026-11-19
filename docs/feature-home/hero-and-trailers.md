@@ -141,6 +141,8 @@ for a covered page, another item's theme, or a settings preview.
   link sits behind the non-interactive metadata and foreground actions, so Play,
   Watchlist and requests stay independent. Horizontal paging and vertical scrolling
   do not open details; in-flight page transitions disable the artwork link.
+  During horizontal paging, the artwork follows the swipe. The current title's
+  metadata stays readable and switches without a fade when the next title is selected.
   VoiceOver exposes the artwork as More Info with the current title.
   Mobile Home stays stationary beneath a pushed detail page. A transition-scoped,
   non-interactive snapshot covers the outgoing page's native parallax and is

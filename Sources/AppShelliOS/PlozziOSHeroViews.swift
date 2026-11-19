@@ -3136,7 +3136,6 @@ struct PlozziOSHeroMetadata: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.plozziOSHeroLogoSize) private var logoSize
     @Environment(\.metadataTextScale) private var textScale
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var titleFontSize: CGFloat = 34
     @ScaledMetric(relativeTo: .subheadline) private var metadataFontSize: CGFloat = 15
     @ScaledMetric(relativeTo: .body) private var overviewFontSize: CGFloat = 17
@@ -3368,23 +3367,11 @@ struct PlozziOSHeroMetadata: View {
                 }
             }
         }
-        .contentTransition(mode == .detail ? .identity : .opacity)
-        .animation(
-            mode == .home && !reduceMotion ? .easeInOut(duration: 0.24) : nil,
-            value: contentFadeKey
-        )
+        .contentTransition(.identity)
         .frame(maxWidth: .infinity, alignment: style == .compactPortrait ? .center : .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
             if width > 0 { availableWidth = width }
         }
-    }
-
-    private var contentFadeKey: String {
-        "\(titlePresentation.title)|\(descriptionText ?? "")"
-            + "|\(factComponents.joined(separator: ","))"
-            + "|\(effectiveGenres.joined(separator: ","))"
-            + "|\(effectiveTechnicalBadges.map(\.label).joined(separator: ","))"
-            + "|\(effectiveRatings.count)|\(scheduleLine.map(String.init(describing:)) ?? "")"
     }
 
     private var rootPresentation: HeroPresentation {
