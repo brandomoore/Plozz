@@ -179,6 +179,10 @@ final class HomeHeroInteractionTests: XCTestCase {
             capture("home-hero-glass")
             text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             assertDetail("Details for movie from jellyfin")
+            let play = app.buttons["detail-hero-play"]
+            XCTAssertTrue(play.isHittable)
+            XCTAssertLessThan(play.frame.width, 130, "Plain movie Play should fit its icon and label.")
+            XCTAssertGreaterThanOrEqual(play.frame.height, 44)
             capture("detail-hero-glass")
             app.navigationBars.buttons.firstMatch.tap()
             XCTAssertTrue(artwork.wait(for: \.isHittable, toEqual: true, timeout: 5))

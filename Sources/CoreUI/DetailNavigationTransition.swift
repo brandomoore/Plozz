@@ -98,11 +98,76 @@ public extension View {
     func detailEntranceStage(_ stage: DetailEntranceStage) -> some View {
         #if os(tvOS)
         modifier(TVDetailStageReveal(stage: stage))
+        #elseif os(iOS)
+        modifier(MobileDetailStageReveal(stage: stage))
         #else
         self
         #endif
     }
+
+    #if os(iOS)
+    func mobileDetailForegroundEntrance(
+        isReady: Bool = true, hasRevealed: Binding<Bool>? = nil
+    ) -> some View {
+        modifier(MobileDetailForegroundEntrance(isReady: isReady, hasRevealed: hasRevealed))
+    }
+    #endif
 }
+
+#if os(iOS)
+private enum MobileDetailRevealPhase {
+    case waiting, opening, settled
+}
+
+private extension EnvironmentValues {
+    @Entry var mobileDetailRevealPhase: MobileDetailRevealPhase? = nil
+}
+
+private struct MobileDetailForegroundEntrance: ViewModifier {
+    let isReady: Bool
+    let hasRevealed: Binding<Bool>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pageIsVisible = false
+    @State private var phase: MobileDetailRevealPhase = .waiting
+
+    func body(content: Content) -> some View {
+        let returning = phase == .waiting && hasRevealed?.wrappedValue == true
+        content
+            .environment(\.mobileDetailRevealPhase, returning ? .settled : phase)
+            .plozzOnPageAppearanceChange { visible in
+                pageIsVisible = visible
+                if !visible, phase == .opening { phase = .settled }
+            }
+            .onChange(of: pageIsVisible && isReady, initial: true) { _, ready in
+                guard ready, phase == .waiting else { return }
+                phase = returning || reduceMotion ? .settled : .opening
+                hasRevealed?.wrappedValue = true
+            }
+    }
+}
+
+private struct MobileDetailStageReveal: ViewModifier {
+    let stage: DetailEntranceStage
+    @Environment(\.mobileDetailRevealPhase) private var phase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if let phase {
+            let timing = DetailEntranceTiming()
+            let steps = stage == .controls ? 2 : stage == .metadata ? 1 : 0
+            let animation = phase == .opening && !reduceMotion
+                ? DetailEntranceMotion.reveal(duration: timing.reveal).delay(Double(steps) * timing.stagger) : nil
+            // Only opacity gets the delayed transaction, never layout or a native control.
+            content
+                .animation(animation) { $0.opacity(phase == .waiting ? 0 : 1) }
+                .allowsHitTesting(phase != .waiting)
+                .accessibilityHidden(phase == .waiting)
+        } else {
+            content
+        }
+    }
+}
+#endif
 
 private struct DetailNavigationPopKey: EnvironmentKey {
     static let defaultValue: (@MainActor () -> Bool)? = nil

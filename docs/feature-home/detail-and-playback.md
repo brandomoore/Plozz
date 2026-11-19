@@ -191,9 +191,12 @@ remain directly below the complete header. Cast & Crew precedes Related. Related
 renders only real results, including short rows, without a speculative skeleton.
 Its request still starts during page entry, not when the row scrolls into view.
 
-Mobile core foreground has one initial entrance after the native navigation
-transition finishes and cached or native detail is
-available. Cached metadata does not wait for live artwork-source resolution.
+After native navigation finishes, the mobile detail title or logo, metadata
+(including the synopsis and badges), then action row fade in place. Like tvOS,
+each group starts 90 ms after the previous one and fades over 450 ms. Their
+layout and hit targets do not move. The plain Play button fits its icon and
+label; a progress bar or episode number takes space only when displayed.
+Cached metadata does not wait for live artwork-source resolution.
 Artwork handed off from Home or ready on the first frame displays immediately.
 If the page opens without a usable bitmap, the first artwork and its reflections
 fade together over 350 ms, starting no earlier than the end of navigation.

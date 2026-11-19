@@ -327,7 +327,7 @@ final class HeroLogoContinuityTests: XCTestCase {
         XCTAssertTrue(try fixture.hasGreenArtwork(), "Home's ready bitmap must not wait for ownership or a fetch.")
     }
 
-    func testGroupedEntranceWaitsForReadinessAndDoesNotReplayOnRefresh() async throws {
+    func testStagedEntranceWaitsForReadinessAndDoesNotReplayOnRefresh() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
         let state = SubjectState(item: MediaItem(id: "entrance", title: "Initial metadata", kind: .movie))
@@ -343,6 +343,31 @@ final class HeroLogoContinuityTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(try fixture.hasRedLogo(), "A refresh must not hide the revealed group.")
         XCTAssertTrue(try fixture.hasTitleText())
+    }
+
+    func testDetailForegroundStagesOverlapInOrderUnlessMotionIsReduced() async throws {
+        for reduced in [false, true] {
+            let fixture = try Fixture()
+            defer { fixture.close() }
+            let state = SubjectState(item: MediaItem(id: "stagger", title: "Movie", kind: .movie))
+            fixture.host.rootView = AnyView(
+                StagedSwatches(state: state).environment(\._accessibilityReduceMotion, reduced)
+            )
+            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertEqual(try fixture.stageIntensities(), [0, 0, 0])
+            state.metadataIsReady = true
+            var frames = [[Int]]()
+            try await waitUntil {
+                let values = try fixture.stageIntensities()
+                frames.append(values)
+                return values.allSatisfy { $0 > 250 }
+            }
+            if reduced {
+                XCTAssertFalse(frames.contains { $0.contains { (5...249).contains($0) } || Set($0).count > 1 })
+            } else {
+                XCTAssertTrue(frames.contains { $0[0] > $0[1] + 15 && $0[1] > $0[2] + 15 }, "\(frames)")
+            }
+        }
     }
 
     func testRecreatedHeroAndReturnsFromNavigationOrPlayerKeepMetadataVisible() async throws {
@@ -908,14 +933,29 @@ final class HeroLogoContinuityTests: XCTestCase {
         let state: SubjectState
         var body: some View {
             VStack {
-                Color.red.frame(width: 100, height: 50)
-                Text(state.item.title).font(.title).foregroundStyle(.white)
+                Color.red.frame(width: 100, height: 50).detailEntranceStage(.logo)
+                Text(state.item.title).font(.title).foregroundStyle(.white).detailEntranceStage(.metadata)
             }
-            .plozzFadeInOnAppear(
-                duration: DetailEntranceTiming().reveal, isReady: state.metadataIsReady,
+            .mobileDetailForegroundEntrance(
+                isReady: state.metadataIsReady,
                 hasRevealed: Binding(get: { state.hasRevealed }, set: { state.hasRevealed = $0 })
             )
             .frame(width: 400, height: 250)
+            .background(.black)
+        }
+    }
+
+    private struct StagedSwatches: View {
+        let state: SubjectState
+        var body: some View {
+            HStack(spacing: 0) {
+                Color.white.detailEntranceStage(.logo)
+                Color.white.detailEntranceStage(.metadata)
+                Color.white.detailEntranceStage(.controls)
+            }
+            .frame(width: 300, height: 100)
+            .mobileDetailForegroundEntrance(isReady: state.metadataIsReady)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.black)
         }
     }
@@ -1083,6 +1123,12 @@ final class HeroLogoContinuityTests: XCTestCase {
             let width = Int(window.bounds.width)
             return (Double(sample.bytes[(90 * width + width / 2) * 4]),
                     Double(sample.bytes[(290 * width + width / 2) * 4 + 1]))
+        }
+
+        func stageIntensities() throws -> [Int] {
+            let bytes = try pixels().bytes
+            let width = Int(window.bounds.width), y = Int(window.bounds.midY)
+            return [-100, 0, 100].map { Int(bytes[(y * width + width / 2 + $0) * 4]) }
         }
 
         func playTextIntensity() throws -> Double {

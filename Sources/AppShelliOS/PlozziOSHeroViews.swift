@@ -563,7 +563,6 @@ struct PlozziOSDetailHeroSection: View {
             textSize: appModel.settings.detailPage.settings.textSize,
             scheduleLine: scheduleLine,
             pullDistance: pullDistance,
-            metadataHasRevealed: metadataHasRevealed,
             trailerController: trailerController,
             backgroundSettings: appModel.settings.heroBackground,
             trailerResolver: appModel.heroTrailerResolver()
@@ -595,6 +594,7 @@ struct PlozziOSDetailHeroSection: View {
                 presentsEpisodeStill: presentsEpisodeStill
             )
         }
+        .mobileDetailForegroundEntrance(hasRevealed: metadataHasRevealed)
         .environment(\.plozziOSHeroLogoSize, appModel.settings.detailPage.settings.logoSize)
         .environment(
             \.heroScrimHeightScale,
@@ -637,6 +637,7 @@ struct PlozziOSSeriesLoadingHero: View {
                 )
                 .environment(\.metadataTextScale, settings.textSize.scale)
             }
+            .mobileDetailForegroundEntrance()
         }
         .environment(\.plozzArtworkArea, .home)
         .environment(\.plozziOSHeroLogoSize, settings.logoSize)
@@ -679,7 +680,6 @@ struct PlozziOSHeroStage<Foreground: View>: View {
     /// Overscroll pull (points) from the enclosing scroll view. Stretches the
     /// backdrop just like the Home hero; 0 leaves the hero at rest.
     var pullDistance: CGFloat = 0
-    var metadataHasRevealed: Binding<Bool>? = nil
     let trailerController: HeroTrailerController
     let backgroundSettings: HeroBackgroundSettingsModel
     let trailerResolver: HeroTrailerResolving
@@ -762,17 +762,6 @@ struct PlozziOSHeroStage<Foreground: View>: View {
                 Color.clear
             }
         }
-        let presentedForeground = Group {
-            if surfaceRole == .detail {
-                foreground()
-                    .plozzFadeInOnAppear(
-                        duration: DetailEntranceTiming().reveal, hasRevealed: metadataHasRevealed
-                    )
-            } else {
-                foreground()
-            }
-        }
-
         return Group {
             if separatesContent {
                 VStack(spacing: 0) {
@@ -800,9 +789,6 @@ struct PlozziOSHeroStage<Foreground: View>: View {
                         .frame(maxWidth: .infinity)
                         .background(gradientEnabled ? Color.clear : palette.backgroundBase)
                 }
-                .plozzFadeInOnAppear(
-                    duration: DetailEntranceTiming().reveal, hasRevealed: metadataHasRevealed
-                )
                 .background(alignment: .top) {
                     if showsBackdrop {
                         background.frame(height: height)
@@ -811,7 +797,7 @@ struct PlozziOSHeroStage<Foreground: View>: View {
             } else {
                 ZStack {
                     background
-                    presentedForeground
+                    foreground()
                         .frame(
                             maxWidth: PlozziOSPageLayout.heroStageMaxWidth(
                                 for: style,
@@ -2619,6 +2605,7 @@ struct PlozziOSDetailHeroForeground: View {
                 stackedActionRows(actions: entries)
             }
             .controlSize(.large)
+            .detailEntranceStage(.controls)
         }
         .frame(
             maxWidth: PlozziOSPageLayout.heroTextMaxWidth(for: style),
@@ -2635,6 +2622,7 @@ struct PlozziOSDetailHeroForeground: View {
                     root: fallbackPresentation
                 )
                 .frame(width: 280, alignment: .trailing)
+                .detailEntranceStage(.metadata)
             }
         }
         .multilineTextAlignment(style == .compactPortrait ? .center : .leading)
@@ -2870,10 +2858,7 @@ struct PlozziOSDetailHeroForeground: View {
                 }
                 detailContextMenu
             }
-            .buttonStyle(PlozziOSHeroActionButtonStyle(
-                kind: .primary,
-                minimumWidth: style == .compactPortrait && !wrapsText ? 180 : nil
-            ))
+            .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
             .disabled(playableItem == nil)
             .resumePromptAnchor()
         }
@@ -3199,6 +3184,7 @@ struct PlozziOSHeroMetadata: View {
                 if let scheduleLine {
                     scheduleBadge(scheduleLine)
                         .transition(.opacity)
+                        .detailEntranceStage(.logo)
                 }
                 if let seriesBreadcrumb {
                     // The episode is this page's subject, so the show is context
@@ -3219,6 +3205,7 @@ struct PlozziOSHeroMetadata: View {
                     .buttonStyle(.plain)
                     .disabled(onTapBreadcrumb == nil)
                     .accessibilityLabel(Text("Go to \(seriesBreadcrumb)"))
+                    .detailEntranceStage(.logo)
 
                     // `presentation.title` resolves an episode to its *show's* name,
                     // which is right when a series hero fronts an episode but wrong
@@ -3229,6 +3216,7 @@ struct PlozziOSHeroMetadata: View {
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(2)
                         .accessibilityAddTraits(.isHeader)
+                        .detailEntranceStage(.logo)
                 } else {
                     let logoBox = PlozziOSPageLayout.heroLogoBox(
                         for: style, size: logoSize,
@@ -3263,6 +3251,7 @@ struct PlozziOSHeroMetadata: View {
                     }
                     .accessibilityLabel(Text(titlePresentation.title))
                     .accessibilityAddTraits(.isHeader)
+                    .detailEntranceStage(.logo)
                 }
             }
 
@@ -3280,6 +3269,7 @@ struct PlozziOSHeroMetadata: View {
                         }
                     }
                     .foregroundStyle(palette.primaryText.opacity(0.92))
+                    .detailEntranceStage(.metadata)
                 }
 
                 if let descriptionText {
@@ -3293,6 +3283,7 @@ struct PlozziOSHeroMetadata: View {
                             style: .inline
                         )
                         .frame(maxWidth: PlozziOSPageLayout.heroTextMaxWidth(for: style))
+                        .detailEntranceStage(.metadata)
                     } else {
                         Text(
                             descriptionText.overviewMarkdownWithLegibleLinks(
@@ -3316,6 +3307,7 @@ struct PlozziOSHeroMetadata: View {
                         .multilineTextAlignment(
                             style == .compactPortrait ? .center : .leading
                         )
+                        .detailEntranceStage(.metadata)
                     }
                 }
 
@@ -3338,6 +3330,7 @@ struct PlozziOSHeroMetadata: View {
                             familyGuidanceAge: effectiveFamilyGuidanceAge
                         )
                         .padding(.vertical, 8)
+                        .detailEntranceStage(.metadata)
                     }
                 } else if mode == .detail,
                     !factComponents.isEmpty
@@ -3352,6 +3345,7 @@ struct PlozziOSHeroMetadata: View {
                         familyGuidanceAge: effectiveFamilyGuidanceAge,
                         centered: style == .compactPortrait
                     )
+                    .detailEntranceStage(.metadata)
                 }
             }
         }

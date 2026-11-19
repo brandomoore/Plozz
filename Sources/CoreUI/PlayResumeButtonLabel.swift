@@ -259,11 +259,13 @@ public struct PlayResumeButtonLabel: View {
                 resolvedContent
                     .opacity(isPlaceholder ? 0 : 1)
                     .accessibilityHidden(isPlaceholder)
-                placeholderContent
-                    .opacity(isPlaceholder ? 1 : 0)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text(title))
-                    .accessibilityHidden(!isPlaceholder)
+                    .overlay(alignment: .leading) {
+                        placeholderContent
+                            .opacity(isPlaceholder ? 1 : 0)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(Text(title))
+                            .accessibilityHidden(!isPlaceholder)
+                    }
             } else if isPlaceholder {
                 placeholderContent
                     .accessibilityElement(children: .ignore)
@@ -296,7 +298,7 @@ public struct PlayResumeButtonLabel: View {
             Text(title)
                 .lineLimit(1)
                 .hidden()
-                .padding(.trailing, crossfadesPlaceholder && wrapsText ? 0 : capsuleWidth)
+                .padding(.trailing, crossfadesPlaceholder ? 0 : capsuleWidth)
                 .overlay {
                     Capsule()
                         .fill(onLight ? Color.black.opacity(0.18) : Color.white.opacity(0.18))

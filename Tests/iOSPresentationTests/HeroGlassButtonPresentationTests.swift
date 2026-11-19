@@ -217,15 +217,14 @@ final class HeroGlassButtonPresentationTests: XCTestCase {
                                 wrapsText: width == 145
                             )
                         }
-                        .buttonStyle(PlozziOSHeroActionButtonStyle(
-                            kind: .primary, minimumWidth: width == 145 ? nil : 180
-                        ))
+                        .buttonStyle(PlozziOSHeroActionButtonStyle(kind: .primary))
                         .environment(\.dynamicTypeSize, size)
                     }
                     let placeholder = measure(button(placeholder: true), width: width)
                     let ready = measure(button(placeholder: false), width: width)
                     XCTAssertEqual(ready.width, placeholder.width, accuracy: 0.5)
                     XCTAssertEqual(ready.height, placeholder.height, accuracy: 0.5)
+                    if !resumes && size == .large { XCTAssertLessThan(ready.width, 130) }
                     if width == 145 { XCTAssertLessThanOrEqual(ready.width, width + 0.5) }
                 }
             }

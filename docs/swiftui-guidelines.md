@@ -86,7 +86,7 @@ between Home and detail:
 
 - **One wordmark reveal.** Do not let a text title appear first and then swap
   for a logo. Home crossfades its resolved wordmark without gating Play/Watchlist.
-  Mobile detail uses a grouped foreground entrance; a late logo joins quietly.
+  The wordmark leads the mobile detail entrance; a late logo joins quietly.
   Reuse Home's displayed wordmark on detail entry when subject, profile and
   artwork policy still match; discovery ownership must not delay that handoff.
 - **Home slides stay opaque.** A carousel slide whose artwork is already loaded
@@ -97,9 +97,9 @@ between Home and detail:
   native entry completes gets a 0.15-second arrival fade, shared by the image
   and all reflections. Arrivals during navigation or while covered, cached and
   handed-off artwork, quality upgrades and return navigation do not fade.
-  Reduce Motion removes the fallback fade. Mobile detail starts its
-  grouped foreground entrance during native navigation, using available metadata;
-  later enrichment and return navigation do not replay it.
+  Mobile detail fades the title, metadata, then controls in place after native
+  entry. Later enrichment and return navigation do not replay it. Reduce Motion
+  skips the stagger and fades.
 - **Reserve async action slots.** A trailer button (or any action resolved after
   first paint) must reserve its final size from the start, or Play shifts when
   it arrives.
