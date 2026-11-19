@@ -145,10 +145,8 @@ for a covered page, another item's theme, or a settings preview.
   foreground fades away. The next title’s metadata fades in together over 0.24 seconds;
   its certification and review scores fade in place, without sliding sideways.
   VoiceOver exposes the artwork as More Info with the current title.
-  Mobile Home stays stationary beneath a pushed detail page. A transition-scoped,
-  non-interactive snapshot covers the outgoing page's native parallax and is
-  removed on completion or cancellation; destination animation and native Back
-  gestures remain owned by the navigation stack.
+  On iPhone, the navigation stack moves the whole Home page as detail opens
+  and closes. On iPad, Home stays stationary beneath a pushed detail page.
   Opening an episode/season's parent show keeps the known hero artwork and title
   visible while the provider resolves the series, on both iPhone and iPad.
   This read-only preview does not start trailers or expose playback actions;

@@ -128,8 +128,10 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View, PageActions: View>: View {
         .ignoresSafeArea(.container, edges: heroActive && !showsPageActions ? .top : [])
         .modifier(PlozziOSReducedTransparencyScrollFade(enabled: heroActive))
         .background {
-            PlozziOSStationaryNavigationSource()
-                .frame(width: 0, height: 0)
+            if UIDevice.current.userInterfaceIdiom != .phone {
+                PlozziOSStationaryNavigationSource()
+                    .frame(width: 0, height: 0)
+            }
         }
     }
 }

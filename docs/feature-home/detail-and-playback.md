@@ -184,9 +184,10 @@ for timing scope and scrolling limitations.
 
 ## Pending primary action
 
-During an iPhone swipe back, detail follows the finger over a stationary Home
-page. With horizontal navigation bars, the system Back button fades in place;
-Home’s profile and audio controls still scroll away with its content. Only the
+During an iPhone swipe back, detail follows the finger while the Home hero and
+rows slide back into place together. With horizontal navigation bars, the system
+Back button fades in place; Home’s profile and audio controls still scroll away
+with its content. Only the
 page that owns the trailer displays video. Home does not restart its carousel
 or claim playback until the return finishes. Cancelling leaves the detail
 trailer playing and restores Back.
