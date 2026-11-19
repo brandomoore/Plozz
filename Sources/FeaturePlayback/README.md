@@ -565,8 +565,8 @@ compatibility and App Review risk. This system-preference bridge is tvOS-only.
 
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
 controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles and
-a playback settings cog, in that order, omitting controls with no options.
-The cog groups the remaining options, including Version for on-demand playback
+an ellipsis, in that order, omitting controls with no options.
+The ellipsis groups the remaining options, including Version for on-demand playback
 or Multiview for live channels. Video combines
 zoom choices with Quality in both layouts; Quality opens its existing editor and
 never acts as a selectable zoom mode. Quality remains
@@ -810,7 +810,9 @@ badge during transient phases and while paused at the edge, retaining its
 localized layout space so the header and timeline do not shift.
 VOD and Live chrome use the larger of the
 window safe area and native edge margins (21 horizontal, 24 vertical), rather
-than adding the two. Adjacent
+than adding the two. In landscape both sides use the larger horizontal safe
+inset: the timeline stays centered, and rotating a phone with a corner camera
+doesn't put the Close button underneath it. Adjacent
 routing and playback-option controls share one untinted glass capsule while
 retaining independent actions. Grouped children have no individual glass
 backgrounds or circular clipping, including UIKit menu buttons; Close and the

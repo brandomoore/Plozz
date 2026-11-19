@@ -1800,6 +1800,7 @@ struct WindowSafeAreaPadding: ViewModifier {
     var isEnabled = true
     var minimumInset: CGFloat = 0
     var minimumHorizontalInset: CGFloat = 0
+    var balancesLandscapeMargins = false
 
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var window = WindowSafeArea()
@@ -1809,10 +1810,16 @@ struct WindowSafeAreaPadding: ViewModifier {
         let minimum = isEnabled ? minimumInset : 0
         let horizontal = isEnabled ? minimumHorizontalInset : 0
         let rtl = layoutDirection == .rightToLeft
+        let balance = balancesLandscapeMargins && window.size.width > window.size.height
+        // Mirror the protected edge, not the unprotected one: the Duo's
+        // camera shares the Close button's corner in one landscape rotation.
+        let common = max(insets.left, insets.right)
+        let leading = balance ? common : (rtl ? insets.right : insets.left)
+        let trailing = balance ? common : (rtl ? insets.left : insets.right)
         content
             .padding(EdgeInsets(
-                top: max(minimum, insets.top), leading: max(horizontal, rtl ? insets.right : insets.left),
-                bottom: max(minimum, insets.bottom), trailing: max(horizontal, rtl ? insets.left : insets.right)
+                top: max(minimum, insets.top), leading: max(horizontal, leading),
+                bottom: max(minimum, insets.bottom), trailing: max(horizontal, trailing)
             ))
             .ignoresSafeArea()
             // Zero-sized: a full-size UIKit view here sat above the controls in

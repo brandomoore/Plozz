@@ -220,6 +220,7 @@ struct PresentationHostApp: App {
             let arguments = ProcessInfo.processInfo.arguments
             // This fixture renders the controls directly, without the production player's orientation owner.
             if arguments.contains("--player-layout-fixture") {
+                if arguments.contains("--capture-player-landscape-left") { return .landscapeLeft }
                 return arguments.contains("--capture-player-landscape") ? .landscapeRight : .all
             }
             if arguments.contains("--continue-watching-player-fixture") { return .all }

@@ -124,7 +124,8 @@ public struct PlayerTouchChromePadding: ViewModifier {
     public func body(content: Content) -> some View {
         content.modifier(WindowSafeAreaPadding(
             isEnabled: isEnabled, minimumInset: PlayerTouchLayout.edgeInset,
-            minimumHorizontalInset: PlayerTouchLayout.horizontalInset
+            minimumHorizontalInset: PlayerTouchLayout.horizontalInset,
+            balancesLandscapeMargins: true
         ))
     }
 }

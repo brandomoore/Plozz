@@ -689,9 +689,12 @@ Selecting a 27.1 simulator alone is not enough: a 27.0-linked host runs in a
 Select Xcode per command with `DEVELOPER_DIR`; verify the installed host's
 `DTSDKName`. Do not change the deployment target or compensate with player insets.
 Launch `PlozziOSPresentationHost` with `--player-layout-fixture --live-player --video --capture-player-landscape`
-for a repeatable live-controls capture.
+for a repeatable live-controls capture; use `--capture-player-landscape-left`
+instead of `--capture-player-landscape` for the opposite camera corner.
 `PlayerLayoutInteractionTests.testLandscapePlayerCaptureFillsPhoneDisplay`
 compares the app frame with the raw display before any screenshot resizing.
+`testLandscapePlayerMarginsInBothRotations` checks the main and behind-live
+controls against both edges and the folded Duo's reserved camera corner.
 
 The `PlozziOSPresentationTests` scheme supplies a separate iOS app scene for
 native Form/picker and sheet rendering. Run it on an explicitly owned iOS

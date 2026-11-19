@@ -130,7 +130,7 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
         XCTAssertEqual(PlayerOptionsMenuButton.Kind.subtitles.symbol, LiveChannelTrackMenuKind.subtitles.icon)
         let settingsImage = try XCTUnwrap(settings.image(for: .normal))
         let adjustmentsImage = try XCTUnwrap(UIImage(
-            systemName: "gearshape", withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)
+            systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)
         ))
         XCTAssertTrue(settingsImage.isEqual(adjustmentsImage))
         let audio = try XCTUnwrap(buttons(in: host.view).first { $0.accessibilityIdentifier == "player-audio" })

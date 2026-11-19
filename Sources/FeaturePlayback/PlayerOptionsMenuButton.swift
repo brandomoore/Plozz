@@ -10,8 +10,7 @@ public struct PlayerOptionsMenuButton: UIViewRepresentable {
 
         var symbol: String {
             switch self {
-            case .playbackOptions: "ellipsis"
-            case .settings: "gearshape"
+            case .playbackOptions, .settings: "ellipsis"
             case .audio: PlayerControls.Category.audio.icon
             case .subtitles: PlayerControls.Category.subtitles.icon
             case .speed: "speedometer"

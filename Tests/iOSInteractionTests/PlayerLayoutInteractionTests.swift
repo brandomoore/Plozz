@@ -245,6 +245,63 @@ final class PlayerLayoutInteractionTests: XCTestCase {
         }
     }
 
+    func testLandscapePlayerMarginsInBothRotations() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        defer { app.terminate() }
+        for live in [false, true] {
+            let close = app.buttons[live ? "live-channel-close" : "Close player"]
+            let info = app.buttons[live ? "live-channel-info" : "Info"]
+            let timeline = app.descendants(matching: .any)[live ? "live-channel-timeline" : "player-timeline"].firstMatch
+            let options = app.buttons[live ? "live-channel-settings" : "player-settings"]
+            // The folded Duo does not reliably honor XCUIDevice orientation
+            // changes. Constrain the fixture scene, not its view dimensions.
+            for left in [false, true] {
+                let mask = left ? "--capture-player-landscape-left" : "--capture-player-landscape"
+                app.launchArguments = ["--player-layout-fixture", "--video", mask] + (live ? ["--live-player"] : [])
+                app.launch()
+                XCTAssertTrue(close.waitForExistence(timeout: 10))
+                wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    app.frame.width > app.frame.height && options.exists && close.frame.minY < 40
+                }, object: nil)], timeout: 10)
+                if live {
+                    let bar = app.descendants(matching: .any)["live-channel-timeline-scrubber"].firstMatch
+                    bar.coordinate(withNormalizedOffset: .init(dx: 0.6, dy: 0.5)).press(
+                        forDuration: 0.2, thenDragTo: bar.coordinate(withNormalizedOffset: .init(dx: 0.39, dy: 0.5))
+                    )
+                }
+                if live { XCTAssertTrue(app.buttons["live-channel-go-live"].waitForExistence(timeout: 5)) }
+                let viewport = app.frame
+                let leading = timeline.frame.minX - viewport.minX
+                let trailing = viewport.maxX - timeline.frame.maxX
+                XCTAssertEqual(leading, trailing, accuracy: 1)
+                XCTAssertGreaterThanOrEqual(leading, 20.5)
+                if viewport.size == CGSize(width: 678, height: 466) {
+                    // The folded Duo's UIWindow reports this active occlusion
+                    // in addition to the smaller camera lens inside it.
+                    let corner = CGRect(x: left ? 594 : 0, y: left ? 384 : 0, width: 84, height: 82)
+                    for button in app.buttons.allElementsBoundByIndex {
+                        XCTAssertTrue(button.frame.intersection(corner).isEmpty, button.debugDescription)
+                    }
+                } else if viewport.size == CGSize(width: 956, height: 440) {
+                    XCTAssertEqual(leading, 62, accuracy: 1)
+                }
+                XCTAssertEqual(close.frame.minX, timeline.frame.minX, accuracy: 1)
+                XCTAssertEqual(info.frame.minX, timeline.frame.minX, accuracy: 1)
+                XCTAssertEqual(options.frame.maxX, timeline.frame.maxX, accuracy: 1)
+                for button in [close, info, options] { XCTAssertTrue(button.isHittable) }
+                let state = "\(live ? "Live" : "Main") \(left ? "landscape-left" : "landscape-right")"
+                let image = XCTAttachment(screenshot: app.screenshot())
+                image.name = state
+                image.lifetime = .keepAlways
+                add(image)
+                attachMeasurements([state, "Margins: \(leading), \(trailing)", app.debugDescription])
+                app.terminate()
+            }
+        }
+    }
+
     func testLandscapePlayerCaptureFillsPhoneDisplay() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
