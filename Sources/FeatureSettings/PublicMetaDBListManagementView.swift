@@ -69,34 +69,41 @@ struct PublicMetaDBCreateListView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Create a list")
+        GroupedSettingsPage(title: "Create a list", backIdentifier: "publicmetadb.list.back") {
             if operation.succeeded {
                 Text("List created on PublicMetaDB")
             } else {
-                TextField("List name", text: $name)
-                    .accessibilityIdentifier("publicmetadb.list.name")
-                TextField("Description (optional)", text: $description)
-                Toggle("Public list", isOn: $isPublic)
-                Picker("List type", selection: $kind) {
-                    Text("Custom list").tag(PublicMetaDB.ListKind.custom)
-                    Text("Watchlist").tag(PublicMetaDB.ListKind.watchlist)
+                SettingsSectionGroup {
+                    TextField("List name", text: $name)
+                        .accessibilityIdentifier("publicmetadb.list.name")
+                    TextField("Description (optional)", text: $description)
+                    Picker("List type", selection: $kind) {
+                        Text("Custom list").tag(PublicMetaDB.ListKind.custom)
+                        Text("Watchlist").tag(PublicMetaDB.ListKind.watchlist)
+                    }
+                    .pickerStyle(.menu)
+                    Toggle("Public list", isOn: $isPublic)
+                } footer: {
+                    Text(isPublic ? "Anyone can see this list and its items." : "Only you can see this list.")
                 }
-                Text("Creating a list does not select it as a Plozz watchlist destination.")
-                    .foregroundStyle(.secondary)
-                Button("Create list") {
-                    guard let connection = service.connectionID else { return }
-                    let detail = description.trimmingCharacters(in: .whitespacesAndNewlines)
-                    draft = Draft(
-                        name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                        description: detail.isEmpty ? nil : detail, isPublic: isPublic,
-                        kind: kind, connectionID: connection
-                    )
-                    confirming = true
+                SettingsSectionGroup {
+                    Button("Create list") {
+                        guard let connection = service.connectionID else { return }
+                        let detail = description.trimmingCharacters(in: .whitespacesAndNewlines)
+                        draft = Draft(
+                            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                            description: detail.isEmpty ? nil : detail, isPublic: isPublic,
+                            kind: kind, connectionID: connection
+                        )
+                        confirming = true
+                    }
+                    .settingsActionRow()
+                    .disabled(!operation.permitsWrite || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || service.phase != .connected)
+                    .accessibilityIdentifier("publicmetadb.list.create")
+                } footer: {
+                    Text("Creating a list does not turn on watchlist sync.")
                 }
-                .disabled(!operation.permitsWrite || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                          || service.phase != .connected)
-                .accessibilityIdentifier("publicmetadb.list.create")
             }
             PublicMetaDBMutationStatus(operation: operation)
         }
@@ -134,31 +141,35 @@ struct PublicMetaDBOwnedListView: View {
     @State private var operation = PublicMetaDBMutationOperation()
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader(verbatim: list.name)
-            Text(list.isPublic ? "Public" : "Private").foregroundStyle(.secondary)
-            if let description = list.description { Text(verbatim: description) }
+        GroupedSettingsPage(title: "\(list.name)", backIdentifier: "publicmetadb.list.back") {
+            SettingsSectionGroup {
+                LabeledContent("Visibility") { Text(list.isPublic ? "Public" : "Private") }
+                if let description = list.description, !description.isEmpty { Text(verbatim: description) }
+            }
             if operation.succeeded {
                 Text("List deleted from PublicMetaDB")
             } else {
-                NavigationLink("Browse items") {
-                    PublicMetaDBPagedRecords(
-                        service: service, title: "List items",
-                        load: { try await $0.listItems(id: list.id, page: $1).page }
-                    ) { record in
-                        NavigationLink {
-                            PublicMetaDBListItemActionsView(service: service, list: list, record: record)
-                        } label: {
-                            PublicMetaDBContentLabel(content: record.value, allowsFocus: false)
+                SettingsSectionGroup {
+                    PublicMetaDBDetailLink("Browse items") {
+                        PublicMetaDBPagedRecords(
+                            service: service, title: "List items",
+                            load: { try await $0.listItems(id: list.id, page: $1).page }
+                        ) { record in
+                            NavigationLink {
+                                PublicMetaDBListItemActionsView(service: service, list: list, record: record)
+                            } label: {
+                                PublicMetaDBContentLabel(content: record.value, allowsFocus: false)
+                            }
                         }
                     }
+                    Button("Delete list", role: .destructive) {
+                        connection = service.connectionID
+                        confirming = true
+                    }
+                    .settingsActionRow()
+                    .disabled(!operation.permitsWrite || service.phase != .connected)
+                    .accessibilityIdentifier("publicmetadb.list.delete")
                 }
-                Button("Delete list", role: .destructive) {
-                    connection = service.connectionID
-                    confirming = true
-                }
-                .disabled(!operation.permitsWrite || service.phase != .connected)
-                .accessibilityIdentifier("publicmetadb.list.delete")
             }
             PublicMetaDBMutationStatus(operation: operation)
         }
@@ -169,7 +180,11 @@ struct PublicMetaDBOwnedListView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Deletes “\(list.name)” and its list entries on PublicMetaDB. If selected as a Plozz watchlist destination, syncing stops. Watched history and server files are not deleted.")
+            publicMetaDBConfirmationMessage(
+                list.isPublic ? Text("Deletes the public list “\(list.name)” and all its entries on PublicMetaDB.")
+                    : Text("Deletes the private list “\(list.name)” and all its entries on PublicMetaDB."),
+                Text("Watchlist sync stops if it uses this list. Watched history and server files are kept.")
+            )
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false
@@ -189,18 +204,22 @@ private struct PublicMetaDBListItemActionsView: View {
     @State private var operation = PublicMetaDBMutationOperation()
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("List item")
-            PublicMetaDBContentLabel(content: record.value)
-            NavigationLink("Title controls") { PublicMetaDBContentView(service: service, content: record.value) }
+        GroupedSettingsPage(title: "List item", backIdentifier: "publicmetadb.list.item.back") {
+            SettingsSectionGroup {
+                PublicMetaDBContentLabel(content: record.value)
+                PublicMetaDBDetailLink("Title controls") { PublicMetaDBContentView(service: service, content: record.value) }
+            }
             if operation.succeeded {
                 Text("Item removed from this list")
             } else {
-                Button("Remove from list", role: .destructive) {
-                    connection = service.connectionID
-                    confirming = true
+                SettingsSectionGroup {
+                    Button("Remove from list", role: .destructive) {
+                        connection = service.connectionID
+                        confirming = true
+                    }
+                    .settingsActionRow()
+                    .disabled(!operation.permitsWrite || service.phase != .connected)
                 }
-                .disabled(!operation.permitsWrite || service.phase != .connected)
             }
             PublicMetaDBMutationStatus(operation: operation)
         }
@@ -213,7 +232,11 @@ private struct PublicMetaDBListItemActionsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Removes this entry from “\(list.name)”. If this list is a watchlist destination, the change can propagate to other enabled destinations. It does not delete watched history or server files.")
+            publicMetaDBConfirmationMessage(
+                list.isPublic ? Text("Removes this entry from the public list “\(list.name)”.")
+                    : Text("Removes this entry from the private list “\(list.name)”."),
+                Text("If this list syncs with your watchlist, the removal can reach other synced lists. Watched history and server files are kept.")
+            )
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false
@@ -241,9 +264,10 @@ struct PublicMetaDBAddToListView: View {
                 connection = service.connectionID
                 confirming = true
             } label: {
-                VStack(alignment: .leading) {
+                LabeledContent {
+                    Text(list.isPublic ? "Public" : "Private").settingsRowSecondary()
+                } label: {
                     Text(verbatim: list.name)
-                    Text(list.isPublic ? "Public" : "Private").foregroundStyle(.secondary)
                 }
             }
             .disabled(!operation.permitsWrite)
@@ -291,22 +315,24 @@ struct PublicMetaDBOpenListView: View {
     @State private var failure: (any Error)?
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Open a public list")
-            TextField("PublicMetaDB list URL", text: $url)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Open list") {
-                do {
-                    guard let link = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                        throw PublicMetaDB.Failure.invalidInput
-                    }
-                    address = try PublicMetaDB.ListAddress(url: link)
-                    failure = nil
-                    showing = true
-                } catch { failure = error }
+        GroupedSettingsPage(title: "Open a public list", backIdentifier: "publicmetadb.list.open.back") {
+            SettingsSectionGroup {
+                TextField("PublicMetaDB list URL", text: $url)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Open list") {
+                    do {
+                        guard let link = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                            throw PublicMetaDB.Failure.invalidInput
+                        }
+                        address = try PublicMetaDB.ListAddress(url: link)
+                        failure = nil
+                        showing = true
+                    } catch { failure = error }
+                }
+                .settingsActionRow()
+                .disabled(service.phase != .connected)
             }
-            .disabled(service.phase != .connected)
             if let failure { PublicMetaDBFailureMessage(error: failure) }
         }
         .navigationDestination(isPresented: $showing) {

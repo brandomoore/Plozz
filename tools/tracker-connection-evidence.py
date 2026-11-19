@@ -11,14 +11,19 @@ import re
 import sys
 
 APP_ID = "com.thatcube.Plozz"
-METHOD = "PublicMetaDBLiveConnectionTests/testLivePairingCancellationAndInvalidKey()"
 METHODS = {
-    "negative": METHOD,
-    "setup": "PublicMetaDBLiveSetupTests/testNormalOnboarding()",
-    "browser": "PublicMetaDBLiveConnectionTests/testLiveBrowserConnection()",
-    "persistence": "PublicMetaDBLiveConnectionTests/testSavedConnectionAfterRelaunch()",
-    "disconnect": "PublicMetaDBLiveConnectionTests/testReplacementCancellationAndDisconnect()",
-    "manual": "PublicMetaDBLiveConnectionTests/testLiveManualConnection()",
+    "tvOS": {
+        "negative": "PublicMetaDBLiveConnectionTests/testLivePairingCancellationAndInvalidKey()",
+        "setup": "PublicMetaDBLiveSetupTests/testNormalOnboarding()",
+        "browser": "PublicMetaDBLiveConnectionTests/testLiveBrowserConnection()",
+        "persistence": "PublicMetaDBLiveConnectionTests/testSavedConnectionAfterRelaunch()",
+        "disconnect": "PublicMetaDBLiveConnectionTests/testReplacementCancellationAndDisconnect()",
+        "manual": "PublicMetaDBLiveConnectionTests/testLiveManualConnection()",
+    },
+    "iOS": {
+        "negative": "PublicMetaDBLiveHistoryTests/testDirectEntryCancellationAndInvalidKey()",
+        "direct": "PublicMetaDBLiveHistoryTests/testConnectWithDirectAPIKey()",
+    },
 }
 TARGETS = {"tvOS": "PlozzTrackerConnectionTests", "iOS": "PlozziOSTrackerConnectionTests"}
 
@@ -96,8 +101,8 @@ def installed_app(app_path, expected_sha256):
             "build": info.get("CFBundleVersion"), "executableSHA256": actual}
 
 
-def validate_summary(summary, tests, target, scenario="negative"):
-    require(scenario in METHODS, "Unknown live scenario.")
+def validate_summary(summary, tests, platform, scenario="negative"):
+    method = METHODS[platform][scenario]
     require(summary.get("result") == "Passed"
             and type(summary.get("totalTestCount")) is int and summary["totalTestCount"] == 1
             and type(summary.get("passedTests")) is int and summary["passedTests"] == 1
@@ -120,14 +125,17 @@ def validate_summary(summary, tests, target, scenario="negative"):
     require(isinstance(tests, dict) and isinstance(tests.get("testNodes"), list), "Missing test result tree.")
     for node in tests["testNodes"]:
         walk(node)
-    require(bundles == [target] and len(found) == 1
-            and found[0].get("nodeIdentifier") == METHODS[scenario] and found[0].get("result") == "Passed",
+    require(bundles == [TARGETS[platform]] and len(found) == 1
+            and found[0].get("nodeIdentifier") == method and found[0].get("result") == "Passed",
             "The exact live test and bundle must have passed.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="operation", required=True)
+    selector = sub.add_parser("selector")
+    selector.add_argument("platform", choices=TARGETS)
+    selector.add_argument("scenario")
     manifest = sub.add_parser("manifest")
     manifest.add_argument("path", type=Path)
     manifest.add_argument("platform", choices=TARGETS)
@@ -137,17 +145,19 @@ def main():
     verdict.add_argument("summary", type=Path)
     verdict.add_argument("tests", type=Path)
     verdict.add_argument("platform", choices=TARGETS)
-    verdict.add_argument("--scenario", choices=METHODS, default="negative")
+    verdict.add_argument("--scenario", default="negative")
     args = parser.parse_args()
     try:
-        if args.operation == "manifest":
+        if args.operation == "selector":
+            print(METHODS[args.platform][args.scenario].removesuffix("()"))
+        elif args.operation == "manifest":
             target = validate_manifest(plistlib.loads(args.path.read_bytes()), args.platform)
             print(json.dumps({"target": target["BlueprintName"], "applicationBound": False, "automaticCapture": False}))
         elif args.operation == "app":
             print(json.dumps(installed_app(sys.stdin.read().strip(), args.expected_sha256)))
         else:
             validate_summary(json.loads(args.summary.read_bytes()), json.loads(args.tests.read_bytes()),
-                             TARGETS[args.platform], args.scenario)
+                             args.platform, args.scenario)
             print(f"Exact native {args.scenario} scenario passed; broader playback/history acceptance is not implied.")
         return 0
     except (OSError, ValueError, TypeError, KeyError, plistlib.InvalidFileException):

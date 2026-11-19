@@ -46,11 +46,9 @@ struct PlozziOSTrackerSettingsView: View {
             SettingsSectionGroup(verbatim: "MyAnimeList") {
                 MALSettingsContent(service: appModel.malService, makeHistoryImport: appModel.makeMALHistoryImport)
             }
-            SettingsSectionGroup(verbatim: "PublicMetaDB") {
-                PublicMetaDBSettingsContent(
-                    service: appModel.publicMetaDBService, makeHistoryImport: appModel.makePublicMetaDBHistoryImport
-                )
-            }
+            PublicMetaDBSettingsContent(
+                service: appModel.publicMetaDBService, makeHistoryImport: appModel.makePublicMetaDBHistoryImport
+            )
         }
         .settingsPageSurface()
         .navigationTitle("Trackers")

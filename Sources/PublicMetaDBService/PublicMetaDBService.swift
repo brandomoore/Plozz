@@ -162,6 +162,11 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
         await verify(.init(key: key.trimmingCharacters(in: .whitespacesAndNewlines)), saving: true)
     }
 
+    public func switchToManualKeyEntry() {
+        invalidate()
+        phase = .disconnected
+    }
+
     public func connectUsingBrowser() async {
         invalidate()
         phase = .disconnected

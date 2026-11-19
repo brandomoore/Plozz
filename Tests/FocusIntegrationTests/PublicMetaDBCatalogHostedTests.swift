@@ -127,8 +127,9 @@ final class PublicMetaDBCatalogHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
-    func testAPIKeyFieldAndScannableBrowserCodeAreVisibleTogether() async throws {
-        try await withService(connected: false, http: PairingUIHTTP()) { service in
+    func testWebsiteEntryRendersExactChallengeAndSwitchingToManualRevokesIt() async throws {
+        let revoked = expectation(description: "Old challenge revoked")
+        try await withService(connected: false, http: PairingUIHTTP(onRevoke: { revoked.fulfill() })) { service in
             let pairing = Task { await service.connectUsingBrowser() }
             defer { pairing.cancel() }
             try await waitFor { service.browserPairing.challenge != nil }
@@ -137,24 +138,34 @@ final class PublicMetaDBCatalogHostedTests: XCTestCase {
                 let text = try await renderedKeyEntry(
                     window, expectedURL: challenge.url.absoluteString, expectedCode: challenge.displayCode
                 )
-                XCTAssertTrue(text.contains("API key"), text)
-                XCTAssertTrue(text.contains("Connect"), text)
+                XCTAssertTrue(text.contains("plozz.app/pmdb"), text)
+                XCTAssertTrue(text.contains("Enter API key manually"), text)
+                XCTAssertTrue(text.contains("Cancel"), text)
             }
-            pairing.cancel()
+            service.switchToManualKeyEntry()
+            XCTAssertNil(service.browserPairing.challenge)
             await pairing.value
+            await fulfillment(of: [revoked], timeout: 5)
             XCTAssertFalse(service.browserPairing.isActive)
+            XCTAssertFalse(service.hasSavedKey)
+            XCTAssertEqual(service.phase, .disconnected)
         }
     }
     #endif
 
-    func testUnavailablePairingShowsItsActualErrorAndKeepsManualEntryVisible() async throws {
+    func testUnavailablePairingShowsItsActualError() async throws {
         try await withService(connected: false, http: PairingUIHTTP(unavailable: true)) { service in
             await service.connectUsingBrowser()
             XCTAssertEqual(service.phase, .pairingFailed(.unavailable))
             try await withWindow(keyEntryFixture(service)) { window in
                 let text = try await renderedKeyEntry(window, expectedURL: nil)
                 XCTAssertTrue(text.contains("QR code unavailable"), text)
+                #if os(tvOS)
+                XCTAssertTrue(text.contains("Try again") && text.contains("Cancel"), text)
+                XCTAssertTrue(text.contains("Enter API key manually"), text)
+                #else
                 XCTAssertTrue(text.contains("API key"), text)
+                #endif
                 XCTAssertFalse(text.contains("Something went wrong"), text)
             }
         }
@@ -260,12 +271,11 @@ final class PublicMetaDBCatalogHostedTests: XCTestCase {
             let urls = detector.features(in: CIImage(cgImage: bitmap)).compactMap {
                 ($0 as? CIQRCodeFeature)?.messageString
             }
-            let ready = text.contains("API key")
-                && (expectedURL.map { urls.contains($0) } ?? text.contains("QR code unavailable"))
+            let ready = (expectedURL.map { urls.contains($0) } ?? text.contains("QR code unavailable"))
                 && hasSingleLineCode
             if ready || ContinuousClock.now >= deadline {
                 let attachment = XCTAttachment(image: image)
-                attachment.name = expectedURL == nil ? "pairing-unavailable-manual-entry" : "pairing-qr-and-manual-entry"
+                attachment.name = expectedURL == nil ? "pairing-unavailable" : "pairing-qr"
                 attachment.lifetime = .keepAlways
                 add(attachment)
                 if let expectedURL { XCTAssertEqual(urls, [expectedURL]) }
@@ -388,6 +398,7 @@ private struct CatalogHTTP: HTTPClient {
 
 private struct PairingUIHTTP: HTTPClient {
     var unavailable = false
+    var onRevoke: @Sendable () -> Void = {}
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
         if unavailable { throw AppError.invalidResponse }
@@ -404,6 +415,7 @@ private struct PairingUIHTTP: HTTPClient {
             status = 202
             data = Data()
         case (.delete, "/api/publicmetadb/pairing/ABCDEFGH"):
+            onRevoke()
             status = 204
             data = Data()
         default:

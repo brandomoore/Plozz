@@ -5,7 +5,7 @@ import Foundation
 import Observation
 
 public struct PublicMetaDBPairingChallenge: Equatable, Sendable {
-    public static let entryURL = URL(string: "https://plozz.app/publicmetadb")!
+    public static let entryURL = URL(string: "https://plozz.app/pmdb")!
     public let code: String
     public let expiresAt: Date
     public let url: URL

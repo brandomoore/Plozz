@@ -170,12 +170,10 @@ struct ShareWatchStateService: Sendable {
         copy.isPlayed = record.played
         copy.resumePosition = (!record.played && record.position > 1) ? record.position : nil
         copy.lastPlayedAt = record.updatedAt
-        // Carry the learned duration onto the item (a share item has no runtime
-        // until it's played once) and derive the played fraction the Continue
-        // Watching / poster progress bar renders. Only in-progress records get a
-        // fraction — a finished (played) or unstarted item shows no bar.
-        if let duration = record.duration, duration > 0 {
-            if copy.runtime == nil { copy.runtime = duration }
+        if let duration = record.duration, duration.isFinite, duration > 0 {
+            // NFO runtimes can be reported in whole minutes. Prefer playback's
+            // measurement for a single version; grouped cuts share a watch record.
+            if copy.runtime == nil || !copy.hasMultipleVersions { copy.runtime = duration }
             if !record.played, record.position > 1 {
                 copy.playedPercentage = min(max(record.position / duration, 0), 1)
             }

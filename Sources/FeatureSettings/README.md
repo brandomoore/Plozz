@@ -33,14 +33,16 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+On Apple TV, a newly opened Settings page should focus its first enabled
+content control, not the Back button. Back remains reachable with the remote.
+
 PublicMetaDB connection management and browsing are shared across TV and mobile.
-One **Enter API key** action opens a shared form with the manual field and
-browser pairing together, not a separate choice of entry modes. TV shows its
-QR code beside the field; mobile shows a browser link. A short pairing code
-also works from another browser. Direct entry remains usable while the QR is
-loading or unavailable. TV initially focuses the API-key field; the whole entry
-form is a native focus section so Up/Down can traverse between the field and
-the shared Back header. QR loading never requests focus again. PublicMetaDB and
+**Connect PublicMetaDB** opens direct, secure key entry on mobile without
+starting browser pairing. On TV, **Connect PublicMetaDB** immediately starts
+pairing and displays `plozz.app/pmdb`. The QR and short code appear
+when ready. Below them, **Enter API key manually** cancels pairing and
+opens the secure field, including during loading or an outage. The keyboard
+opens only when the viewer selects the field. PublicMetaDB and
 the other trackers share `TrackerConnectedStatus`, including the native-platform
 checkmark and green connected label. Replacement
 still requires confirmation; pairing never enables history or playback consent.
@@ -68,20 +70,24 @@ description discloses title lookups and preserves existing ratings/server metada
 Its server-history comparison is a separate, explicit action: show the server
 user and current state, select differences, then confirm. It does not enable
 ongoing sync. The page owns its ephemeral approval and revokes undelivered work
-on exit. On mobile, comparison entries and actions occupy separate native List
-rows; putting them together in one cell lets switch taps activate neighboring
-buttons. TV retains its native vertical focus layout. See
+on exit. Comparison and export share the grouped Settings result list. Counts,
+status and selected-only filters, title search and bounded pages let users
+review large inventories without bulk selection. Filters never alter the selection;
+competing changes to one destination item cannot be selected together. See
 [PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
 
 The separate **Ongoing sync** page offers only profile-scoped media shares, not
 managed servers. Legacy server permissions can be removed but cannot sync.
-The page requires explicit share and
-category selections after that review. Cancelling grants nothing; enabling
-captures existing evidence without backfilling it. **Sync now** and revocation
-use the same controller on TV and mobile. Pushing the page retains the reviewed
-snapshot as evidence, not the previous page's ephemeral write authorization;
-returning to comparison creates a fresh session.
+**Sync watch history** starts off. Turning it on enrolls the profile’s current
+eligible shares and supported history categories without backfilling old records.
+While it is on, share and category switches edit that selection. Turning it off
+stops future imports without clearing watch history. **Sync now** and revocation
+use the same controller on TV and mobile. `TrackerHistorySyncLink(makeSession:)`
+is the direct connected-account entry; it offers enrollment only when eligible
+and reads no tracker history just to display the link or page. The comparison
+entry retains its reviewed snapshot as evidence, not the previous page's write
+authorization; returning to comparison creates a fresh session.
 
 PublicMetaDB and WeTrakr offer watched state and compatible resume points;
 Trakt, Simkl, AniList and MyAnimeList offer watched state only. AniList and

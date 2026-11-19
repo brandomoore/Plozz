@@ -12,11 +12,20 @@ if [[ "$PLATFORM" != tvOS && "$PLATFORM" != iOS ]] ||
    [[ "$MODE" != --build-only && "$MODE" != --run ]] ||
    [[ "$MODE" == --build-only && $# != 2 ]] ||
    [[ "$MODE" == --run && $# != 4 && $# != 5 ]] ||
-   [[ "$SCENARIO" != negative && "$SCENARIO" != setup && "$SCENARIO" != browser && "$SCENARIO" != persistence && "$SCENARIO" != disconnect && "$SCENARIO" != manual ]] ||
-   [[ "$SCENARIO" != negative && "$PLATFORM" != tvOS ]]; then
+   ! METHOD="$(python3 tools/tracker-connection-evidence.py selector "$PLATFORM" "$SCENARIO" 2>/dev/null)"; then
     echo "Usage: $0 --build-only tvOS|iOS" >&2
-    echo "       $0 --run tvOS|iOS OWNED_BOOTED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256 [negative|setup|browser|persistence|disconnect|manual]" >&2
+    echo "       $0 --run tvOS OWNED_BOOTED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256 [negative|setup|browser|persistence|disconnect|manual]" >&2
+    echo "       $0 --run iOS OWNED_BOOTED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256 [negative|direct]" >&2
     exit 2
+fi
+
+if [[ "$SCENARIO" == direct ]]; then
+    unset PLOZZ_TRACKER_MANUAL_INPUT_URL TEST_RUNNER_PLOZZ_TRACKER_MANUAL_INPUT_URL
+    if [[ -z "${PLOZZ_TRACKER_TEST_LIST_NAME:-}" || "${PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE:-}" != /* ||
+          ! -r "${PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE:-}" || ! -f "${PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE:-}" ]]; then
+        echo "Direct entry requires the dedicated account's PLOZZ_TRACKER_TEST_LIST_NAME and PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE (a readable private file containing only the one-shot loopback URL). No live test started." >&2
+        exit 2
+    fi
 fi
 
 SCHEME=PlozzTrackerConnectionTests
@@ -111,18 +120,21 @@ python3 tools/run-bounded.py 20 "installed production application identity" -- \
     xcrun simctl get_app_container "$SIMULATOR" com.thatcube.Plozz app |
     python3 tools/tracker-connection-evidence.py app "$EXPECTED_APP_SHA256" > "$RUN/application.json"
 
-export TEST_RUNNER_PLOZZ_TRACKER_CONNECTION_LIVE=1
-export TEST_RUNNER_PLOZZ_TRACKER_CONNECTION_SIMULATOR="$SIMULATOR"
-METHOD=PublicMetaDBLiveConnectionTests/testLivePairingCancellationAndInvalidKey
-if [[ "$SCENARIO" == setup ]]; then METHOD=PublicMetaDBLiveSetupTests/testNormalOnboarding; fi
+if [[ "$PLATFORM" == iOS ]]; then
+    export TEST_RUNNER_PLOZZ_TRACKER_HISTORY_LIVE=1
+    export TEST_RUNNER_PLOZZ_TRACKER_HISTORY_SIMULATOR="$SIMULATOR"
+else
+    export TEST_RUNNER_PLOZZ_TRACKER_CONNECTION_LIVE=1
+    export TEST_RUNNER_PLOZZ_TRACKER_CONNECTION_SIMULATOR="$SIMULATOR"
+fi
 if [[ "$SCENARIO" == browser ]]; then
-    METHOD=PublicMetaDBLiveConnectionTests/testLiveBrowserConnection
     export TEST_RUNNER_PLOZZ_TRACKER_CONNECTION_HANDOFF="${PLOZZ_TRACKER_CONNECTION_HANDOFF:?set the private browser-request.json path}"
 fi
-if [[ "$SCENARIO" == persistence ]]; then METHOD=PublicMetaDBLiveConnectionTests/testSavedConnectionAfterRelaunch; fi
-if [[ "$SCENARIO" == disconnect ]]; then METHOD=PublicMetaDBLiveConnectionTests/testReplacementCancellationAndDisconnect; fi
+if [[ "$SCENARIO" == direct ]]; then
+    export TEST_RUNNER_PLOZZ_TRACKER_TEST_LIST_NAME="$PLOZZ_TRACKER_TEST_LIST_NAME"
+    export TEST_RUNNER_PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE="$PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE"
+fi
 if [[ "$SCENARIO" == manual ]]; then
-    METHOD=PublicMetaDBLiveConnectionTests/testLiveManualConnection
     export TEST_RUNNER_PLOZZ_TRACKER_MANUAL_INPUT_URL="${PLOZZ_TRACKER_MANUAL_INPUT_URL:?set the private one-shot loopback input URL}"
 fi
 status=0

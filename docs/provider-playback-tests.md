@@ -352,9 +352,8 @@ requirements; this comparison does not turn fixture tests into live evidence.
 
 ### Production-app live connection check
 
-`PublicMetaDBLiveConnectionTests` is a separate **unbound** XCTest driver for
-the installed production app, not FocusHost or PresentationHost. Build only its
-runner with:
+The tracker connection schemes use **unbound** XCTest drivers for the installed
+production app, not FocusHost or PresentationHost. Build only the runner with:
 
 ```sh
 bash tools/run-tracker-connection-tests.sh --build-only tvOS
@@ -366,9 +365,9 @@ production app running in English and a dedicated test profile/account. Do not
 run connection-changing scenarios against a household profile. Setup,
 authentication and input use production controls, not seeded profiles, injected
 credentials or fixture hosts. TV navigation can open Settings from Live TV.
-The iOS runner currently supports only `negative`; open PublicMetaDB settings
-before running it. The authenticated driver uses the TV QR and navigation, not
-the mobile browser link or mobile relaunch navigation.
+On iOS/iPadOS, open the Trackers page with **Connect PublicMetaDB** available.
+`negative` and `direct` use the native secure field in `PublicMetaDBLiveHistoryTests`.
+Neither uses a browser, pairing code, or relay revocation.
 
 ```sh
 bash tools/run-tracker-connection-tests.sh --run tvOS \
@@ -380,7 +379,8 @@ The optional final argument selects exactly one scenario:
 
 | Scenario | Required state and coverage |
 | --- | --- |
-| `negative` (default) | No saved key. Live relay challenge, automatic TV input focus, repeated Back/input navigation, cancellation/revocation, fresh code, and rejection of a deliberately invalid manually entered key. |
+| `negative` (default) | No saved key. Cancel, reopen and reject a deliberately invalid key. TV also verifies the live relay challenge, native focus, revocation and fresh code. Mobile verifies direct entry without browser controls. |
+| `direct` (iOS/iPadOS only) | No saved key. Paste through the native secure field, submit Connect, verify Connected and the dedicated account's expected Lists row. A negative check is not authentication evidence. |
 | `setup` (TV only) | Isolated first-run app. Imports the public `iptv-org` San Marino playlist through normal controls and completes profile, optional Seerr and appearance setup. This is setup evidence, not connection acceptance. |
 | `browser` (TV only) | No saved key. Decodes the actual production QR, writes a unique private handoff file, waits for real browser authentication, verifies Connected and revoked pairing, and reads the dedicated account's empty Lists page. |
 | `persistence` (TV only) | Saved test connection. Terminates/relaunches the installed app normally, verifies the saved connection, reads Lists and dismisses the account sheet through Done. |
@@ -406,6 +406,21 @@ no credential text in query/action arguments. Its current native-layout coverage
 is the 1080p tvOS 26.2 keyboard; unexpected geometry fails rather than guessing.
 Manual input has a twenty-minute deadline; other scenarios have five minutes.
 
+`direct` uses the same one-shot loopback response, but XCTest receives **only a
+file path**, never the key or one-shot URL in its environment. Set
+`PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE` to an absolute, simulator-readable file
+(mode `0600` in a private directory outside the evidence bundle, non-secret
+filename) containing just the endpoint URL, **not** the key. Set
+`PLOZZ_TRACKER_TEST_LIST_NAME` to the dedicated account's expected test-list name.
+Use an isolated simulator with host clipboard sharing off. The driver uses
+native Paste with a local-only, 30-second-expiring clipboard item and restores
+the previous clipboard. It never reads the field value or attaches UI state for
+a real-key attempt, even on failure. If the private source, Paste action, or
+authenticated read is unavailable, the test fails; there is no typing, browser,
+or fixture fallback. Close the source and remove the private locator afterward.
+The history driver's manual replacement and new-share-profile tests use the same
+file and Paste path. Run them only with automatic capture and diagnostics off.
+
 Obtain the expected executable hash from the approved build's retained
 evidence, not by accepting whatever happens to be installed. The runner verifies
 the installed canonical app against it, rejects application-bound test manifests,
@@ -426,8 +441,8 @@ Private results are retained under
 driver files), the generated runner manifest and installed executable identity.
 
 Each verdict requires the exact selected method, one completed case, and zero
-failures/skips. A setup or negative pass cannot stand in for a successful browser
-or manual connection. Compare complete independent account fingerprints around
+failures/skips. A setup or negative pass cannot stand in for a successful direct,
+browser or manual connection. Compare complete independent account fingerprints around
 connection-only scenarios when checking that lists, watched plays and resume
 records remain unchanged. These scenarios do not establish playback, imports,
 exports, cross-server coexistence, physical-device behavior or other trackers'
@@ -448,10 +463,11 @@ The shared interaction suite covers cancellation and cleared selection on page
 reentry, independent Jellyfin/Plex target selection, zero tracker mirrors,
 connection revocation and changed tracker evidence during approval, concurrent
 server progress, and lost write replies verified by readback without repetition.
-The `--history-ongoing-sync` fixture adds a media share alongside Jellyfin and
-Plex. Only the share is offered for ongoing import. The interaction tests cover
-cancellation without a grant, enrollment without backfill, a new play written to
-the selected share but neither server, and revocation. With `--history-servers-only`,
+The `--history-ongoing-sync` fixture adds Cedar Loft and Mariner Archive alongside
+Jellyfin and Plex. Turning on the master switch selects both shares and every
+supported category without backfilling history. The tests narrow the grant, check
+that a new play reaches only the remaining share, and turn sync off by removing
+the last share or category. With `--history-servers-only`,
 the comparison still offers reviewed imports but no ongoing-sync option.
 `TrackerHistoryImportTests` covers rejected mixed selections, persisted server
 and mixed grants, restart, uncertain-target holds, storage failures and exact
@@ -466,3 +482,11 @@ the existing build-for-testing/test-without-building workflow.
 These are fixture-backed UI integration checks, not authenticated API, real
 server-plugin coexistence, playback, or process-relaunch acceptance. The live
 account and exact-title authorization requirements above remain unchanged.
+
+The opt-in `PublicMetaDBLiveHistoryTests` driver does not turn sync on: the off
+page hides the full set of destinations, so a comparison row cannot prove that
+the master switch would enroll only the authorized share. The `testVerifyOngoing…`
+selectors inspect an existing grant on the dedicated single-share profile.
+Before tapping **Sync now**, the driver verifies the share ID and requires
+`PLOZZ_TRACKER_ONGOING_CATEGORIES` to match the enabled options exactly
+(`watched`, `resume`, or `watched,resume`).

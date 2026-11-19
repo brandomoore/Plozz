@@ -9,8 +9,10 @@ language every other module speaks.
 consent and delivery receipts. Ongoing imports target `.mediaShare` accounts
 only. Mixed or server-only grants cannot run, including grants saved before
 this restriction. Reviewed one-time imports and playback reporting are independent.
-Enrollment excludes existing tracker observations;
-it does not backfill. New forward resume updates and watched completion may
+Enrollment excludes existing tracker observations; it does not backfill. The
+direct Settings entry reads a complete tracker baseline on opt-in, then rechecks
+it through the same scope and grant fences as enrollment from a comparison.
+It does not need to inventory or modify managed servers. New forward resume updates and watched completion may
 continue a previously synchronized resume only when the fresh destination
 baseline exactly matches its persisted confirmed fingerprint. That baseline
 includes the available played/history flags, resume, runtime, last-played date
@@ -30,6 +32,21 @@ history still requires review. New and unresolved competing records remain
 protected, including those outside the current write batch or consented
 categories. Manual comparisons and dispatch revalidation retain the full
 snapshot; historical records are not deleted or rewritten to permit continuation.
+
+`updateSelection(accountIDs:categories:)` edits an enabled grant. Both sets must
+be nonempty; use `disable()` for revocation. Removing choices needs no tracker
+read. Adding choices requires a complete current snapshot, but never compares
+or writes server items during the edit. Existing share/category pairs keep their
+receipts, resume proof and unprocessed observations. New categories exclude
+their current observations; new or re-added shares get a separate baseline and
+cannot inherit another viewer’s proof.
+
+The edit cancels this controller's old delivery and publishes a new grant ID
+only after all ledger pages are durable. Other controllers honor the existing
+grant until publication; stale edits cannot replace a revoked or newer grant.
+A read or storage failure leaves the existing grant usable. Already dispatched
+writes cannot be undone. Uncertain deliveries remain held for review, so the
+review count can include work for a removed selection.
 
 History comparisons reuse a freshly read parent series only within that one
 comparison and account/provider. Every episode's state is still read separately.

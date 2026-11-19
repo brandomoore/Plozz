@@ -120,12 +120,18 @@ public final class TrackerHistoryImportSession {
         }
     }
 
-    public func snapshotAfterReview(_ reviewed: TrackerHistorySnapshot) async throws -> TrackerHistorySnapshot {
+    func enrollmentSnapshot(validating: @MainActor () throws -> Void = {}) async throws -> TrackerHistorySnapshot {
         let current = generation
         try requireCurrent(current)
         guard !isBusy else { throw TrackerHistoryError.stalePreview }
+        try validating()
         let snapshot = try await readSnapshot()
         try requireCurrent(current)
+        return snapshot
+    }
+
+    public func snapshotAfterReview(_ reviewed: TrackerHistorySnapshot) async throws -> TrackerHistorySnapshot {
+        let snapshot = try await enrollmentSnapshot()
         guard snapshot.trackerID == reviewed.trackerID,
               snapshot.connectionID == reviewed.connectionID,
               Dictionary(uniqueKeysWithValues: snapshot.observations.map { ($0.recordID, $0) })

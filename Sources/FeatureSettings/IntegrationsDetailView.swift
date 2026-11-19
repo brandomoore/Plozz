@@ -564,32 +564,56 @@ struct MALAuthorizationCodeEntryView: View {
     @State private var codeInput: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Scan the QR code or visit the URL on your phone, sign in to MyAnimeList, then enter the code shown:")
-                .font(.callout)
-                .plozzForeground(.secondary)
+        if case let .awaitingAuthorizationCode(authorizationURL) = mal.phase {
+            TrackerPhoneEntryPanel(
+                instruction: "Scan the QR code or visit the URL on your phone, sign in to MyAnimeList, then enter the code shown:",
+                qrPayload: authorizationURL, website: "plozz.app/myanimelist"
+            ) {
+                TextField("Enter code", text: $codeInput)
+                HStack(spacing: 16) {
+                    Button("Connect") {
+                        mal.submitAuthorizationCode(codeInput)
+                    }
+                    .disabled(codeInput.trimmingCharacters(in: .whitespacesAndNewlines).count < 4)
+                    Button("Cancel", role: .cancel) {
+                        mal.cancelConnect()
+                    }
+                }
+            }
+        }
+    }
+}
 
-            if case let .awaitingAuthorizationCode(authorizationURL) = mal.phase {
-                HStack(alignment: .center, spacing: 32) {
-                    QRCodeView(authorizationURL)
+/// Keep the credential-bearing QR payload separate from its human-readable website.
+struct TrackerPhoneEntryPanel<Controls: View>: View {
+    let instruction: LocalizedStringKey?
+    let qrPayload: String?
+    let website: String
+    @ViewBuilder let controls: Controls
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let instruction {
+                Text(instruction)
+                    .font(.callout)
+                    .plozzForeground(.secondary)
+            }
+            HStack(alignment: .center, spacing: 32) {
+                if let qrPayload {
+                    QRCodeView(qrPayload)
                         .frame(width: 160, height: 160)
                         .padding(10)
                         .background(.white, in: RoundedRectangle(cornerRadius: PlozzTheme.Metrics.Radius.control))
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("plozz.app/myanimelist")
-                            .font(.title3.weight(.semibold))
-                        TextField("Enter code", text: $codeInput)
-                        HStack(spacing: 16) {
-                            Button("Connect") {
-                                mal.submitAuthorizationCode(codeInput)
-                            }
-                            .disabled(codeInput.trimmingCharacters(in: .whitespacesAndNewlines).count < 4)
-                            Button("Cancel", role: .cancel) {
-                                mal.cancelConnect()
-                            }
-                        }
-                    }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("QR code")
+                        .accessibilityAddTraits(.isImage)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(verbatim: website)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    controls
                 }
             }
         }

@@ -23,12 +23,13 @@ public struct PublicMetaDBSettingsContent: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: SettingsFormMetrics.controlSpacing) {
-            if !showingEntry {
+        connectionSection {
+            if !showingEntry && (service.phase != .disconnected || service.hasSavedKey) {
                 PublicMetaDBConnectionStatus(phase: service.phase)
             }
             if service.phase == .connected {
                 Button("Browse PublicMetaDB") { showingAccount = true }
+                    .settingsActionRow()
                     .accessibilityIdentifier("publicmetadb.browse")
             }
             if showingEntry {
@@ -37,10 +38,11 @@ public struct PublicMetaDBSettingsContent: View {
                     onConnect: connectManually, onRetry: startPairing, onCancel: cancelEntry
                 )
             } else {
-                Button(service.hasSavedKey ? "Replace API key" : "Enter API key") {
+                Button(service.hasSavedKey ? "Replace API key" : "Connect PublicMetaDB") {
                     if service.hasSavedKey { confirmingReplacement = true }
                     else { beginEntry() }
                 }
+                .settingsActionRow()
                 .disabled(service.phase == .connecting)
                 .accessibilityIdentifier("publicmetadb.pair")
             }
@@ -49,16 +51,18 @@ public struct PublicMetaDBSettingsContent: View {
                     operation?.cancel()
                     operation = Task { await service.refreshStatus() }
                 }
+                .settingsActionRow()
             }
             if service.hasSavedKey {
                 Button("Disconnect") { confirmingDisconnect = true }
+                    .settingsActionRow()
             }
         }
         .confirmationDialog("Replace this profile's PublicMetaDB API key?", isPresented: $confirmingReplacement) {
             Button("Replace API key", role: .destructive, action: beginEntry)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The replacement applies to this profile on your synced Plozz devices. It does not revoke the previous key on PublicMetaDB.")
+            Text("Replaces the key on this profile’s synced devices. The old key stays valid on PublicMetaDB.")
         }
         .confirmationDialog("Disconnect PublicMetaDB?", isPresented: $confirmingDisconnect) {
             Button("Disconnect", role: .destructive) {
@@ -67,7 +71,7 @@ public struct PublicMetaDBSettingsContent: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Removes this profile's saved key from your synced Plozz devices. Your PublicMetaDB records and media-server history are not deleted. Revoke the key on the website if needed.")
+            Text("Removes the key from this profile’s synced devices. Your history stays intact. To revoke the key, use PublicMetaDB.")
         }
         .alert("PublicMetaDB", isPresented: Binding(
             get: { storageError != nil }, set: { if !$0 { storageError = nil } }
@@ -108,15 +112,28 @@ public struct PublicMetaDBSettingsContent: View {
         }
     }
 
+    @ViewBuilder private func connectionSection<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
+        #if os(iOS)
+        SettingsSectionGroup(verbatim: "PublicMetaDB", content: rows)
+        #else
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.controlSpacing, content: rows)
+        #endif
+    }
+
     private func beginEntry() {
         key = ""
         showingEntry = true
+        #if os(tvOS)
         startPairing()
+        #endif
     }
 
     private func startPairing() {
         operation?.cancel()
-        operation = Task { await service.connectUsingBrowser() }
+        operation = Task {
+            guard !Task.isCancelled else { return }
+            await service.connectUsingBrowser()
+        }
     }
 
     private func connectManually() {
@@ -126,14 +143,14 @@ public struct PublicMetaDBSettingsContent: View {
     }
 
     private func cancelEntry() {
-        let restoreSavedKey = showingEntry && service.hasSavedKey
+        let restoreStatus = showingEntry && (service.hasSavedKey || service.phase != .disconnected)
             && service.phase != .connected && service.phase != .credentialChangeFailed
         let namespace = service.profileNamespace
         operation?.cancel()
         service.browserPairing.cancel()
         showingEntry = false
         key = ""
-        if restoreSavedKey {
+        if restoreStatus {
             operation = Task {
                 guard !Task.isCancelled, service.profileNamespace == namespace else { return }
                 await service.refreshStatus()
@@ -150,106 +167,102 @@ struct PublicMetaDBKeyEntryView: View {
     let onCancel: () -> Void
     #if os(tvOS)
     @Environment(\.isEnabled) private var isEnabled
-    @FocusState private var keyIsFocused: Bool
+    @State private var manual = false
+    private enum EntryFocus { case manualAction, key }
+    @FocusState private var entryFocus: EntryFocus?
     #endif
 
     var body: some View {
-        layout {
-            PublicMetaDBBrowserEntryView(
-                pairing: service.browserPairing,
-                isVerifying: service.phase == .connecting, onRetry: onRetry
-            )
-            VStack(alignment: .leading, spacing: 16) {
-                SecureField("API key", text: $key)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    #if os(tvOS)
-                    .focused($keyIsFocused)
-                    #endif
-                    .accessibilityIdentifier("publicmetadb.key")
-                if case .failed(let error) = service.phase {
-                    Text(error.userMessage)
-                }
-                if service.phase == .credentialChangeFailed {
-                    Text("Connection change failed. Retry before closing the app.")
-                }
-                if case .pairingFailed(let error) = service.phase {
-                    Text(error.userMessage)
-                        .accessibilityIdentifier("publicmetadb.pair.error")
-                }
-                if service.phase == .connecting {
-                    ProgressView("Checking API key…")
-                }
+        #if os(tvOS)
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.controlSpacing) {
+            if manual {
+                keyField.focused($entryFocus, equals: .key)
+                statusRows
+                HStack(spacing: 16) { actions }
+            } else {
+                websiteEntry
                 HStack(spacing: 16) {
-                    Button("Connect", action: onConnect)
-                        .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.phase == .connecting)
-                        .accessibilityIdentifier("publicmetadb.connect")
-                    Button("Cancel", role: .cancel, action: onCancel)
-                        .accessibilityIdentifier("publicmetadb.pair.cancel")
+                    Button("Enter API key manually") {
+                        service.switchToManualKeyEntry()
+                        manual = true
+                    }
+                    .disabled(service.phase == .connecting)
+                    .focused($entryFocus, equals: .manualAction)
+                    .accessibilityIdentifier("publicmetadb.pair.manual")
+                    cancelButton
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        #if os(tvOS)
         .focusSection()
-        .task {
+        .task(id: manual) {
             await Task.yield()
             guard !Task.isCancelled, isEnabled else { return }
-            keyIsFocused = true
+            entryFocus = manual ? .key : .manualAction
         }
-        #endif
-    }
-
-    private var layout: AnyLayout {
-        #if os(tvOS)
-        AnyLayout(HStackLayout(alignment: .top, spacing: 32))
         #else
-        AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
+        keyField
+        statusRows
+        actions
         #endif
     }
-}
 
-private struct PublicMetaDBBrowserEntryView: View {
-    let pairing: PublicMetaDBBrowserPairing
-    let isVerifying: Bool
-    let onRetry: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    #if os(tvOS)
+    private var websiteEntry: some View {
+        let pairing = service.browserPairing
+        return TrackerPhoneEntryPanel(
+            instruction: pairing.challenge == nil ? nil : "Scan to enter your API key, or visit:",
+            qrPayload: pairing.challenge?.url.absoluteString, website: "plozz.app/pmdb"
+        ) {
             if let challenge = pairing.challenge {
-                #if os(tvOS)
-                SettingsQRCode(string: challenge.url.absoluteString, centerMark: nil)
-                    .frame(width: 260, height: 260)
-                    .accessibilityLabel("Enter your API key in a browser")
-                Text("plozz.app/publicmetadb")
-                    .font(.callout)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                #else
-                Link("Enter API key in a browser", destination: challenge.url)
-                Text("On another device, visit plozz.app/publicmetadb.")
-                    .font(.callout)
-                #endif
-                Text("Pairing code")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(verbatim: challenge.displayCode)
-                    .font(.title3.monospaced())
-                    #if os(tvOS)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    #endif
-                    .accessibilityIdentifier("publicmetadb.pair.code")
+                HStack {
+                    Text("Pairing code").plozzForeground(.secondary)
+                    Text(verbatim: challenge.displayCode)
+                        .font(.headline.monospaced())
+                        .accessibilityIdentifier("publicmetadb.pair.code")
+                }
+                .lineLimit(1)
             } else if pairing.isStarting {
                 ProgressView("Loading QR code…")
-            } else if !isVerifying {
+            }
+            statusRows
+            if !pairing.isActive && service.phase != .connecting {
                 Button("Try again", action: onRetry)
                     .accessibilityIdentifier("publicmetadb.pair.retry")
             }
         }
-        #if os(tvOS)
-        .frame(width: 260, alignment: .leading)
-        #endif
+    }
+    #endif
+
+    private var keyField: some View {
+        SecureField("API key", text: $key)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .accessibilityIdentifier("publicmetadb.key")
+    }
+
+    @ViewBuilder private var statusRows: some View {
+        if case .failed(let error) = service.phase { Text(error.userMessage) }
+        if service.phase == .credentialChangeFailed {
+            Text("Connection change failed. Retry before closing the app.")
+        }
+        if case .pairingFailed(let error) = service.phase {
+            Text(error.userMessage).accessibilityIdentifier("publicmetadb.pair.error")
+        }
+        if service.phase == .connecting { ProgressView("Checking API key…") }
+    }
+
+    @ViewBuilder private var actions: some View {
+        Button("Connect", action: onConnect)
+            .settingsActionRow()
+            .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.phase == .connecting)
+            .accessibilityIdentifier("publicmetadb.connect")
+        cancelButton
+    }
+
+    private var cancelButton: some View {
+        Button("Cancel", role: .cancel, action: onCancel)
+            .settingsActionRow()
+            .accessibilityIdentifier("publicmetadb.pair.cancel")
     }
 }
 

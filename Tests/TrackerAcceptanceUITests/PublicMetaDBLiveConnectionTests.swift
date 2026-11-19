@@ -2,7 +2,8 @@ import CoreImage
 import Foundation
 import XCTest
 
-/// Drives the normally configured production app without fixtures or credential seeding.
+#if os(tvOS)
+/// Drives the normally configured TV app without fixtures or credential seeding.
 /// Explicit lifecycle scenarios relaunch it with no custom arguments or environment.
 @MainActor
 final class PublicMetaDBLiveConnectionTests: XCTestCase {
@@ -28,12 +29,12 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCTAssertEqual(simulator, environment["SIMULATOR_UDID"])
         XCTAssertEqual(environment["PLOZZ_TRACKER_CONNECTION_LIVE"], "1")
         XCTAssertEqual(app.state, .runningForeground)
-        if keyField.exists && !app.buttons["publicmetadb.browse"].exists {
+        if cancel.exists && !app.buttons["publicmetadb.browse"].exists {
             entered = true
             try cancelEntry()
         }
         try requireUnconnectedPage()
-        let code = try await openEntry()
+        let code = try await openWebsiteEntry()
 
         let screenshot = app.screenshot()
         let image = try XCTUnwrap(screenshot.image.cgImage)
@@ -48,7 +49,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         let components = try XCTUnwrap(URLComponents(string: url))
         XCTAssertEqual(components.scheme, "https")
         XCTAssertEqual(components.host, "plozz.app")
-        XCTAssertEqual(components.path, "/publicmetadb")
+        XCTAssertEqual(components.path, "/pmdb")
         let fragment = try XCTUnwrap(components.fragment)
         let parameters = try XCTUnwrap(URLComponents(string: "https://plozz.app/?" + fragment)?.queryItems)
         XCTAssertEqual(parameters.first(where: { $0.name == "code" })?.value, code)
@@ -96,7 +97,6 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         try verifyAccountLists()
     }
 
-    #if os(tvOS)
     func testLiveManualConnection() async throws {
         continueAfterFailure = false
         let environment = ProcessInfo.processInfo.environment
@@ -105,7 +105,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCTAssertEqual(simulator, environment["SIMULATOR_UDID"])
         XCTAssertEqual(environment["PLOZZ_TRACKER_CONNECTION_LIVE"], "1")
         XCTAssertEqual(app.state, .runningForeground)
-        if keyField.exists {
+        if cancel.exists {
             entered = true
             try cancelEntry()
         }
@@ -125,12 +125,11 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCTAssertTrue(replacement.waitForExistence(timeout: 5))
         try PublicMetaDBLiveNavigation.select(replacement.buttons["Replace API key"].firstMatch, moving: .right)
         entered = true
-        XCTAssertTrue(keyField.waitForExistence(timeout: 5))
-        try focused(keyField)
+        try revealManualEntry()
         XCUIRemote.shared.press(.select)
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
-        let input = try await Self.readManualInput()
+        let input = try await PublicMetaDBLiveManualInput.readKey()
         try PublicMetaDBLiveKeyboard.enter(input, in: keyboard)
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
@@ -179,8 +178,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCTAssertTrue(replacement.waitForExistence(timeout: 5))
         try PublicMetaDBLiveNavigation.select(replacement.buttons["Replace API key"].firstMatch, moving: .right)
         entered = true
-        XCTAssertTrue(keyField.waitForExistence(timeout: 5))
-        try focused(keyField)
+        try PublicMetaDBLiveNavigation.requirePairingEntry(in: app)
         let codeLabel = app.staticTexts["publicmetadb.pair.code"]
         guard codeLabel.waitForExistence(timeout: 50) else {
             throw Failure.precondition("The replacement entry did not obtain a live challenge.")
@@ -198,8 +196,6 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCTAssertTrue(replacement.waitForExistence(timeout: 5))
         try PublicMetaDBLiveNavigation.select(replacement.buttons["Replace API key"].firstMatch, moving: .right)
         entered = true
-        XCTAssertTrue(keyField.waitForExistence(timeout: 5))
-        try focused(keyField)
         try submitInvalidKey()
         guard app.staticTexts["Your session has expired. Please sign in again."].waitForExistence(timeout: 50) else {
             throw Failure.precondition("The real invalid replacement was not rejected.")
@@ -222,7 +218,6 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         try PublicMetaDBLiveNavigation.select(confirmation.buttons["Disconnect"].firstMatch, moving: .right)
         XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
         try requireUnconnectedPage()
-        XCTAssertTrue(app.staticTexts["Not connected"].exists)
         XCTAssertTrue(app.launchArguments.isEmpty)
         XCTAssertTrue(app.launchEnvironment.isEmpty)
         app.terminate()
@@ -230,32 +225,20 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         try PublicMetaDBLiveNavigation.openSettings(in: app)
         try requireUnconnectedPage()
     }
-    #endif
-
     private func verifyAccountLists() throws {
-        #if os(tvOS)
         try PublicMetaDBLiveNavigation.focus(back, moving: .up)
         try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.browse"], moving: .down)
         try PublicMetaDBLiveNavigation.select(app.buttons["Lists"], moving: .down)
-        #else
-        app.buttons["publicmetadb.browse"].tap()
-        app.buttons["Lists"].tap()
-        #endif
         let expectedName = ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"] ?? "No records"
         XCTAssertFalse(expectedName.isEmpty)
         let expectedRow = app.staticTexts[expectedName]
         XCTAssertTrue(expectedRow.waitForExistence(timeout: 45),
                       "The dedicated account's expected real list response did not appear.")
         XCTAssertTrue(app.staticTexts["Page 1 of 1"].exists)
-        #if os(tvOS)
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(expectedRow.waitForNonExistence(timeout: 5))
         try PublicMetaDBLiveNavigation.select(app.buttons["Done"], moving: .down)
         XCTAssertTrue(app.buttons["Done"].waitForNonExistence(timeout: 5))
-        #else
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.buttons["Done"].tap()
-        #endif
         XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 5))
     }
 
@@ -275,20 +258,21 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         try requireUnconnectedPage()
         defer { cancelIfPossible() }
 
-        let firstCode = try await openEntry()
-        #if os(tvOS)
+        let firstCode = try await openWebsiteEntry()
+        try PublicMetaDBLiveNavigation.focus(manual, moving: .down, maximumPresses: 2)
         for _ in 0..<3 {
             try move(.up, to: back)
-            try move(.down, to: keyField)
+            try move(.down, to: manual)
         }
-        #endif
+        try move(.right, to: cancel)
         try cancelEntry()
         try await verifyRevoked(firstCode)
         try requireUnconnectedPage()
 
-        let secondCode = try await openEntry()
+        let secondCode = try await openWebsiteEntry()
         guard secondCode != firstCode else { throw Failure.unexpectedRelayResponse }
         try submitInvalidKey()
+        try await verifyRevoked(secondCode)
 
         let rejected = app.staticTexts["Your session has expired. Please sign in again."]
         guard rejected.waitForExistence(timeout: 50),
@@ -296,7 +280,6 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
               keyField.exists else {
             throw Failure.precondition("The real app did not show the expected live invalid-key rejection.")
         }
-        try await verifyRevoked(secondCode)
         try cancelEntry()
         try requireUnconnectedPage()
 
@@ -313,61 +296,49 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
     }
 
     private func submitInvalidKey() throws {
-        #if os(tvOS)
+        try revealManualEntry()
         XCUIRemote.shared.press(.select)
         guard app.keyboards.firstMatch.waitForExistence(timeout: 5) else {
             throw Failure.precondition("API-key keyboard did not open.")
         }
-        #else
-        keyField.tap()
-        #endif
         keyField.typeText("pm-" + String(repeating: "a", count: 60))
-        #if os(tvOS)
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         try focusKeyEntry()
         try move(.down, to: cancel)
         try move(.left, to: app.buttons["publicmetadb.connect"])
         XCUIRemote.shared.press(.select)
-        #else
-        app.buttons["publicmetadb.connect"].tap()
-        #endif
-
     }
 
     private var keyField: XCUIElement { app.secureTextFields["publicmetadb.key"] }
+    private var manual: XCUIElement { app.buttons["publicmetadb.pair.manual"] }
     private var back: XCUIElement { app.buttons["settings-workspace-back"] }
     private var cancel: XCUIElement { app.buttons["publicmetadb.pair.cancel"] }
     private var enter: XCUIElement { app.buttons["publicmetadb.pair"] }
 
     private func requireUnconnectedPage() throws {
         guard app.state == .runningForeground, enter.waitForExistence(timeout: 5),
-              enter.label == "Enter API key", enter.isEnabled,
+              enter.label == "Connect PublicMetaDB", enter.isEnabled, !app.buttons["Disconnect"].exists,
               !app.buttons["publicmetadb.browse"].exists, !keyField.exists else {
             throw Failure.precondition("Open English PublicMetaDB settings with no saved key; existing connections are never replaced.")
         }
     }
 
-    private func openEntry() async throws -> String {
+    private func openPairingEntry() throws {
         try requireUnconnectedPage()
-        #if os(tvOS)
         if !enter.hasFocus {
             guard back.hasFocus else {
-                throw Failure.precondition("Focus must be on Back or Enter API key.")
+                throw Failure.precondition("Focus must be on Back or Connect PublicMetaDB.")
             }
             try move(.down, to: enter)
         }
         XCUIRemote.shared.press(.select)
-        #else
-        enter.tap()
-        #endif
         entered = true
-        guard keyField.waitForExistence(timeout: 5) else {
-            throw Failure.precondition("The native API-key field did not appear.")
-        }
-        #if os(tvOS)
-        try focused(keyField)
-        #endif
+        try PublicMetaDBLiveNavigation.requirePairingEntry(in: app)
+    }
+
+    private func openWebsiteEntry() async throws -> String {
+        try openPairingEntry()
         let codeLabel = app.staticTexts["publicmetadb.pair.code"]
         guard codeLabel.waitForExistence(timeout: 50) else {
             throw Failure.precondition("The actual app did not obtain a live pairing challenge.")
@@ -389,9 +360,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
               challenge.publicKey.range(of: "^[A-Za-z0-9_-]{87}$", options: .regularExpression) != nil else {
             throw Failure.unexpectedRelayResponse
         }
-        #if os(tvOS)
-        try focused(keyField)
-        #endif
+        XCTAssertTrue(manual.isEnabled)
         return code
     }
 
@@ -399,23 +368,27 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         guard entered, app.state == .runningForeground, cancel.exists else {
             throw Failure.precondition("Cannot safely dismiss the expected pairing entry.")
         }
-        #if os(tvOS)
         if app.keyboards.firstMatch.exists {
             XCUIRemote.shared.press(.menu)
             guard app.keyboards.firstMatch.waitForNonExistence(timeout: 5) else {
                 throw Failure.precondition("API-key keyboard did not close.")
             }
         }
-        if !keyField.hasFocus && !app.buttons["publicmetadb.connect"].hasFocus && !cancel.hasFocus {
-            try focusKeyEntry()
+        if !cancel.hasFocus {
+            if keyField.exists {
+                if app.buttons["publicmetadb.connect"].hasFocus { try move(.right, to: cancel) }
+                else {
+                    try focusKeyEntry()
+                    try move(.down, to: cancel)
+                }
+            } else {
+                try PublicMetaDBLiveNavigation.focus(back, moving: .up)
+                try PublicMetaDBLiveNavigation.focus(manual, moving: .down, maximumPresses: 4)
+                try move(.right, to: cancel)
+            }
         }
-        if keyField.hasFocus { try move(.down, to: cancel) }
-        else if app.buttons["publicmetadb.connect"].hasFocus { try move(.right, to: cancel) }
         try focused(cancel)
         XCUIRemote.shared.press(.select)
-        #else
-        cancel.tap()
-        #endif
         guard enter.waitForExistence(timeout: 5), !keyField.exists else {
             throw Failure.precondition("Pairing entry did not close.")
         }
@@ -430,25 +403,6 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
 
     private func verifyRevoked(_ code: String) async throws {
         try await Self.verifyRelayRevoked(code)
-    }
-
-    static func readManualInput() async throws -> String {
-        let location = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_MANUAL_INPUT_URL"])
-        let url = try XCTUnwrap(URL(string: location))
-        XCTAssertEqual(url.scheme, "http")
-        XCTAssertEqual(url.host, "127.0.0.1")
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 10
-        let session = URLSession(configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-        let (data, response) = try await session.data(from: url)
-        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-        struct Input: Decodable { let key: String }
-        let input = try JSONDecoder().decode(Input.self, from: data)
-        guard input.key.range(of: "^pm-[A-Za-z0-9]{60}$", options: .regularExpression) != nil else {
-            throw Failure.precondition("The dedicated manual input source returned an invalid key shape.")
-        }
-        return input.key
     }
 
     static func verifyRelayRevoked(_ code: String) async throws {
@@ -478,13 +432,17 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         return (data, response.statusCode)
     }
 
-    #if os(tvOS)
+    private func revealManualEntry() throws {
+        try PublicMetaDBLiveNavigation.requirePairingEntry(in: app)
+        try PublicMetaDBLiveNavigation.select(manual, moving: .down, maximumPresses: 4)
+        try focused(keyField)
+        XCTAssertFalse(app.staticTexts["publicmetadb.pair.code"].exists || app.keyboards.firstMatch.exists)
+    }
+
     private func focusKeyEntry() throws {
         if keyField.hasFocus { return }
         try PublicMetaDBLiveNavigation.focus(back, moving: .up)
         XCUIRemote.shared.press(.down)
-        let retry = app.buttons["publicmetadb.pair.retry"]
-        if retry.exists && retry.hasFocus { XCUIRemote.shared.press(.right) }
         try focused(keyField)
     }
 
@@ -501,7 +459,57 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCUIRemote.shared.press(direction)
         try focused(target)
     }
-    #endif
+}
+#endif
+
+enum PublicMetaDBLiveManualInput {
+    enum Failure: Error {
+        case requiresPrivateLoopbackLocatorFile
+        case requiresOneShotLoopbackInputURL
+        case oneShotInputUnavailable
+        case invalidOneShotKeyResponse
+    }
+
+    static func readKey() async throws -> String {
+        let environment = ProcessInfo.processInfo.environment
+        #if os(iOS)
+        // XCTest can retain its launch environment. Pass the file name, not the one-shot capability.
+        guard let path = environment["PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE"], path.hasPrefix("/"),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let mode = attributes[.posixPermissions] as? NSNumber, mode.intValue & 0o077 == 0,
+              let size = attributes[.size] as? NSNumber, (1...2048).contains(size.intValue),
+              let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
+            throw Failure.requiresPrivateLoopbackLocatorFile
+        }
+        let location = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+        #else
+        guard let location = environment["PLOZZ_TRACKER_MANUAL_INPUT_URL"] else {
+            throw Failure.requiresOneShotLoopbackInputURL
+        }
+        #endif
+        guard let url = URL(string: location), url.scheme == "http", url.host == "127.0.0.1",
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
+            throw Failure.requiresOneShotLoopbackInputURL
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 10
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        let session = URLSession(configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        // URLSession errors can include the private one-shot URL. Never attach them or the response.
+        guard let (data, response) = try? await session.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.oneShotInputUnavailable }
+        struct Input: Decodable { let key: String }
+        guard data.count <= 4096, let input = try? JSONDecoder().decode(Input.self, from: data),
+              input.key.utf8.count == 63,
+              input.key.range(of: "^pm-[A-Za-z0-9]{60}$", options: .regularExpression) != nil else {
+            throw Failure.invalidOneShotKeyResponse
+        }
+        return input.key
+    }
 }
 
 private final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {

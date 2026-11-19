@@ -99,8 +99,11 @@ struct PublicMetaDBReadContent<Value: Sendable, Content: View>: View {
             if operation.connectionID == service.connectionID, operation.selectionID == id, let value = operation.value {
                 content(value)
             }
-            Button("Refresh") { operation.refresh() }
-                .disabled(operation.loading || service.phase != .connected)
+            SettingsSectionGroup {
+                Button("Refresh") { operation.refresh() }
+                    .settingsActionRow()
+                    .disabled(operation.loading || service.phase != .connected)
+            }
         }
     }
 }
@@ -111,34 +114,36 @@ struct PublicMetaDBContentRatingsView: View {
     @State private var ratings = PublicMetaDBReadOperation<PublicMetaDB.Ratings>()
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Community and personal ratings")
+        GroupedSettingsPage(title: "Community and personal ratings", backIdentifier: "publicmetadb.ratings.back") {
             PublicMetaDBContentLabel(content: content)
-            Text("Ratings are public contributions. Contributor names do not establish which records belong to this API key.")
-                .foregroundStyle(.secondary)
-            NavigationLink("Submit a rating") { PublicMetaDBSubmitRatingView(service: service, content: content) }
+            SettingsSectionGroup {
+                PublicMetaDBDetailLink("Submit a rating") { PublicMetaDBSubmitRatingView(service: service, content: content) }
+            }
             PublicMetaDBReadContent(service: service, operation: ratings, id: content) { ratings in
-                if !ratings.isComplete {
-                    Text("Showing \(ratings.items.count) of \(ratings.total) ratings")
-                        .foregroundStyle(.secondary)
-                    Text("PublicMetaDB limited this response. Changes require a complete result.")
-                        .foregroundStyle(.secondary)
-                } else if ratings.items.isEmpty {
-                    Text("No ratings")
-                }
-                ForEach(ratings.items) { record in
-                    NavigationLink {
-                        PublicMetaDBRatingRecordView(service: service, record: record)
-                    } label: {
-                        VStack(alignment: .leading) {
-                            Text(verbatim: record.value.label)
-                            Text("\(record.value.score.formatted()) / 100")
-                            if let contributor = record.contributor {
-                                Text(verbatim: contributor).foregroundStyle(.secondary)
+                SettingsSectionGroup {
+                    if ratings.isComplete && ratings.items.isEmpty { Text("No ratings") }
+                    ForEach(ratings.items) { record in
+                        NavigationLink {
+                            PublicMetaDBRatingRecordView(service: service, record: record)
+                        } label: {
+                            SettingsDisclosureLabel {
+                                VStack(alignment: .leading) {
+                                    Text(verbatim: record.value.label)
+                                    if let contributor = record.contributor {
+                                        Text(verbatim: contributor).font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
+                                    }
+                                }
+                            } value: {
+                                Text("\(record.value.score.formatted()) / 100")
                             }
                         }
+                        .settingsActionRow()
+                        .accessibilityIdentifier("publicmetadb.rating.record.\(record.id)")
                     }
-                    .accessibilityIdentifier("publicmetadb.rating.record.\(record.id)")
+                } footer: {
+                    if !ratings.isComplete {
+                        Text("Showing \(ratings.items.count) of \(ratings.total) ratings. Changes require a complete result.")
+                    }
                 }
             }
         }
@@ -164,41 +169,47 @@ private struct PublicMetaDBSubmitRatingView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Submit a rating")
+        GroupedSettingsPage(title: "Submit a rating", backIdentifier: "publicmetadb.rating.submit.back") {
             PublicMetaDBContentLabel(content: content)
             if operation.succeeded {
                 Text("Rating confirmed on PublicMetaDB")
             } else {
-                TextField("Rating label", text: $label)
-                    .accessibilityIdentifier("publicmetadb.rating.label")
-                Picker("Score out of 100", selection: $score) {
-                    ForEach(0...100, id: \.self) { value in Text(value, format: .number).tag(value) }
+                SettingsSectionGroup {
+                    SettingsInputRow("Rating label", axis: .horizontal) {
+                        TextField("Overall", text: $label)
+                            .accessibilityIdentifier("publicmetadb.rating.label")
+                    }
+                    Picker("Score out of 100", selection: $score) {
+                        ForEach(0...100, id: \.self) { value in Text(value, format: .number).tag(value) }
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("Score out of 100")
+                    .accessibilityValue(Text(score, format: .number))
+                    .accessibilityIdentifier("publicmetadb.rating.score")
+                } footer: {
+                    Text("Your score and contributor name will be public. Your server rating stays the same.")
                 }
-                .pickerStyle(.menu)
-                .accessibilityLabel("Score out of 100")
-                .accessibilityValue(Text(score, format: .number))
-                .accessibilityIdentifier("publicmetadb.rating.score")
-                Text("The rating and your PublicMetaDB contributor name will be public. This does not change your media server's rating.")
-                    .foregroundStyle(.secondary)
-                Button("Submit rating") {
-                    do {
-                        guard let connection = service.connectionID else { throw PublicMetaDB.Failure.disconnected }
-                        let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
-                        try PublicMetaDB.Rating.validateSubmissionLabel(label)
-                        draft = Draft(
-                            rating: try .init(
-                                content: content, score: Double(score),
-                                label: label
-                            ), connection: connection
-                        )
-                        failure = nil
-                        confirming = true
-                    } catch { failure = error }
+                SettingsSectionGroup {
+                    Button("Submit rating") {
+                        do {
+                            guard let connection = service.connectionID else { throw PublicMetaDB.Failure.disconnected }
+                            let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
+                            try PublicMetaDB.Rating.validateSubmissionLabel(label)
+                            draft = Draft(
+                                rating: try .init(
+                                    content: content, score: Double(score),
+                                    label: label
+                                ), connection: connection
+                            )
+                            failure = nil
+                            confirming = true
+                        } catch { failure = error }
+                    }
+                    .settingsActionRow()
+                    .disabled(!operation.permitsWrite || service.phase != .connected
+                              || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("publicmetadb.rating.submit")
                 }
-                .disabled(!operation.permitsWrite || service.phase != .connected
-                          || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityIdentifier("publicmetadb.rating.submit")
             }
             if let failure { PublicMetaDBFailureMessage(error: failure) }
             PublicMetaDBMutationStatus(operation: operation)
@@ -230,28 +241,34 @@ private struct PublicMetaDBRatingRecordView: View {
     @State private var operation = PublicMetaDBMutationOperation()
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader(verbatim: record.value.label)
+        GroupedSettingsPage(title: "\(record.value.label)", backIdentifier: "publicmetadb.rating.record.back") {
             PublicMetaDBContentLabel(content: record.value.content)
-            Text("\(record.value.score.formatted()) / 100")
-            if let contributor = record.contributor { Text(verbatim: contributor) }
+            SettingsSectionGroup {
+                LabeledContent("Score") { Text("\(record.value.score.formatted()) / 100") }
+                if let contributor = record.contributor {
+                    LabeledContent("Contributor") { Text(verbatim: contributor) }
+                }
+            }
             if operation.succeeded {
                 Text("Rating removed from PublicMetaDB")
             } else {
-                NavigationLink("Vote on this contribution") {
-                    PublicMetaDBVoteView(
-                        service: service,
-                        category: record.value.content.episode == nil ? .ratings : .episodeRatings,
-                        recordID: record.id
-                    )
+                SettingsSectionGroup {
+                    PublicMetaDBDetailLink("Vote on this contribution") {
+                        PublicMetaDBVoteView(
+                            service: service,
+                            category: record.value.content.episode == nil ? .ratings : .episodeRatings,
+                            recordID: record.id
+                        )
+                    }
+                    Button("Delete rating", role: .destructive) {
+                        connection = service.connectionID
+                        confirming = true
+                    }
+                    .settingsActionRow()
+                    .disabled(!operation.permitsWrite || service.phase != .connected)
+                } footer: {
+                    Text("You can delete only your own ratings.")
                 }
-                Text("Only the author can delete a rating. PublicMetaDB verifies ownership using your API key.")
-                    .foregroundStyle(.secondary)
-                Button("Delete rating", role: .destructive) {
-                    connection = service.connectionID
-                    confirming = true
-                }
-                .disabled(!operation.permitsWrite || service.phase != .connected)
             }
             PublicMetaDBMutationStatus(operation: operation)
         }
@@ -284,22 +301,24 @@ struct PublicMetaDBContributionRecordView<Detail: View>: View {
     @State private var connection: UUID?
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Community contribution")
-            detail()
+        GroupedSettingsPage(title: "Community contribution", backIdentifier: "publicmetadb.contribution.back") {
+            SettingsSectionGroup { detail() }
             if operation.succeeded {
                 Text("Contribution removed from PublicMetaDB")
             } else {
-                NavigationLink("Vote on this contribution") {
-                    PublicMetaDBVoteView(service: service, category: category, recordID: recordID)
+                SettingsSectionGroup {
+                    PublicMetaDBDetailLink("Vote on this contribution") {
+                        PublicMetaDBVoteView(service: service, category: category, recordID: recordID)
+                    }
+                    Button("Delete contribution", role: .destructive) {
+                        connection = service.connectionID
+                        confirming = true
+                    }
+                    .settingsActionRow()
+                    .disabled(!operation.permitsWrite || service.phase != .connected)
+                } footer: {
+                    Text("You can delete only your own contributions.")
                 }
-                Text("Only the author can delete a contribution. PublicMetaDB verifies ownership using your API key.")
-                    .foregroundStyle(.secondary)
-                Button("Delete contribution", role: .destructive) {
-                    connection = service.connectionID
-                    confirming = true
-                }
-                .disabled(!operation.permitsWrite || service.phase != .connected)
             }
             PublicMetaDBMutationStatus(operation: operation)
         }
@@ -310,7 +329,11 @@ struct PublicMetaDBContributionRecordView<Detail: View>: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Requests deletion of this exact contribution. PublicMetaDB rejects the request if it is not yours. Media-server data is unchanged.")
+            if category == .animeSeasons {
+                Text("Deletes only this chunk of your public mapping, not the whole logical season. Other contributors’ mappings and server episode numbering stay unchanged.")
+            } else {
+                Text("Deletes only this external ID contribution if it belongs to you. Other mappings and server IDs stay unchanged.")
+            }
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false
@@ -337,20 +360,25 @@ struct PublicMetaDBVoteView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Vote on this contribution")
+        GroupedSettingsPage(title: "Vote on this contribution", backIdentifier: "publicmetadb.vote.back") {
             if operation.succeeded {
                 Text("Your vote was confirmed on PublicMetaDB")
             } else {
                 PublicMetaDBReadContent(service: service, operation: votes) { votes in
-                    Text("\(votes.summary.upvotes) upvotes, \(votes.summary.downvotes) downvotes")
-                    LabeledContent("Your vote") { voteLabel(votes.userVote) }
-                    ForEach(PublicMetaDB.Vote.allCases, id: \.self) { vote in
-                        Button { prepare(vote, observed: votes.userVote) } label: { voteLabel(vote) }
-                            .disabled(!operation.permitsWrite || vote == votes.userVote)
+                    SettingsSectionGroup {
+                        Text("\(votes.summary.upvotes) upvotes, \(votes.summary.downvotes) downvotes")
+                        LabeledContent("Your vote") { voteLabel(votes.userVote) }
                     }
-                    Button("Remove my vote", role: .destructive) { prepare(nil, observed: votes.userVote) }
-                        .disabled(!operation.permitsWrite || votes.userVote == nil)
+                    SettingsSectionGroup {
+                        ForEach(PublicMetaDB.Vote.allCases, id: \.self) { vote in
+                            Button { prepare(vote, observed: votes.userVote) } label: { voteLabel(vote) }
+                                .settingsActionRow()
+                                .disabled(!operation.permitsWrite || vote == votes.userVote)
+                        }
+                        Button("Remove my vote", role: .destructive) { prepare(nil, observed: votes.userVote) }
+                            .settingsActionRow()
+                            .disabled(!operation.permitsWrite || votes.userVote == nil)
+                    }
                 }
             }
             PublicMetaDBMutationStatus(operation: operation)
@@ -359,7 +387,7 @@ struct PublicMetaDBVoteView: View {
             try await service.contributionVotes(category, recordID: recordID, expectedConnectionID: $0)
         }
         .confirmationDialog("Change your PublicMetaDB vote?", isPresented: $confirming, presenting: draft) { draft in
-            Button("Confirm vote") {
+            Button("Confirm vote", role: draft.vote == nil ? .destructive : nil) {
                 operation.perform {
                     try await service.changeContributionVote(
                         draft.vote, category: category, recordID: recordID, observedVote: draft.observed,

@@ -8,6 +8,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz")
     private var startedPlayback = false
     private var authorizedLiveRun = false
+    private var handlingLiveAPIKey = false
     private var preservesProcess: Bool {
         ProcessInfo.processInfo.environment["PLOZZ_TRACKER_PRESERVE_PROCESS"] == "1"
     }
@@ -18,6 +19,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             let environment = ProcessInfo.processInfo.environment
             XCTAssertEqual(environment["PLOZZ_TRACKER_HISTORY_LIVE"], "1")
             let simulator = try XCTUnwrap(environment["PLOZZ_TRACKER_HISTORY_SIMULATOR"])
+            XCTAssertFalse(simulator.isEmpty)
             XCTAssertEqual(simulator, environment["SIMULATOR_UDID"])
             let returnsFromBackground = environment["PLOZZ_TRACKER_HISTORY_METHOD"]
                 == "testReturnToForegroundWithoutManualSync"
@@ -33,8 +35,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        await MainActor.run {
+        try await MainActor.run {
             guard authorizedLiveRun else { return }
+            if handlingLiveAPIKey && app.secureTextFields["publicmetadb.key"].exists {
+                let dismissKeyboard = app.keyboards.buttons["Return"]
+                if dismissKeyboard.exists && dismissKeyboard.isHittable { dismissKeyboard.tap() }
+                try tapVisible(app.buttons["publicmetadb.pair.cancel"])
+                XCTAssertTrue(app.secureTextFields["publicmetadb.key"].waitForNonExistence(timeout: 5),
+                              "Could not dismiss the secure API-key field after the failed connection.")
+            }
             recordState()
             if startedPlayback { app.terminate() }
         }
@@ -67,8 +76,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testInspectServerConnections() throws {
         try openSettings()
-        try tapVisible(app.buttons["Servers"])
-        XCTAssertTrue(app.navigationBars["Servers"].waitForExistence(timeout: 15))
+        try tapVisible(app.buttons["Sources"])
+        XCTAssertTrue(app.buttons["sources-add-source"].waitForExistence(timeout: 15))
         recordState()
     }
 
@@ -253,9 +262,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try openSettings()
         try tapVisible(app.buttons["settings-category-trackers"])
         try tapVisible(app.buttons["publicmetadb.pair"], tapping: false)
-        XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Enter API key")
+        XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
         XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
-        XCTAssertFalse(app.buttons["publicmetadb.playback.disable"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
     }
 
     private func isolatedShareProfileName() throws -> String {
@@ -278,7 +287,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                     "NFS setup must not contain credentials or alternate request parameters")
         try testInspectServerConnections()
         try require(!app.buttons[name].exists, "Do not create a duplicate test share")
-        try tapVisible(app.buttons["Add Network Share"])
+        try tapVisible(app.buttons["sources-add-source"])
+        try tapVisible(app.buttons["add-server-provider-mediaShare"])
         try tapVisible(app.buttons["Enter an address manually"])
         let transport = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Protocol")).firstMatch
         try tapVisible(transport)
@@ -315,8 +325,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(app.buttons["Content, \(try shareContentType())"].exists,
                     "Do not save an automatic mixed-media root")
         try tapVisible(app.buttons["Use This Folder"])
-        try require(app.navigationBars["Servers"].waitForExistence(timeout: 30),
-                    "Expected native share setup to return to Servers")
+        try require(app.buttons["sources-add-source"].waitForExistence(timeout: 30),
+                    "Expected native share setup to return to Sources")
         try require(app.buttons.containing(.staticText, identifier: name).firstMatch.waitForExistence(timeout: 30),
                     "Expected the saved real share")
         recordState()
@@ -875,7 +885,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         settings.tap()
         try tapVisible(app.buttons["settings-category-trackers"])
         try tapVisible(app.buttons["publicmetadb.pair"], tapping: false)
-        XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Enter API key")
+        XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
     }
 
     func testEnablePlaybackReporting() throws {
@@ -885,33 +895,32 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testPlaybackReportingIsDisabled() throws {
         try openPlaybackReporting()
-        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["publicmetadb.playback.disable"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
         recordState()
     }
 
-    func testConnectWithRealBrowserCode() throws {
-        let enter = app.buttons["publicmetadb.pair"]
-        XCTAssertTrue(enter.waitForExistence(timeout: 10))
-        XCTAssertEqual(enter.label, "Enter API key")
-        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
-        enter.tap()
-        let codeLabel = app.staticTexts["publicmetadb.pair.code"]
-        XCTAssertTrue(codeLabel.waitForExistence(timeout: 50))
-        let code = codeLabel.label.replacingOccurrences(of: " ", with: "")
-        XCTAssertNotNil(code.range(of: "^[A-HJ-NP-Z2-9]{8}$", options: .regularExpression))
-        let handoff = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_CONNECTION_HANDOFF"])
-        XCTAssertTrue(handoff.hasPrefix("/") && handoff.hasSuffix("/browser-request.json"))
-        let data = try JSONSerialization.data(withJSONObject: [
-            "url": "https://plozz.app/publicmetadb",
-            "code": code,
-            "displayedProductionCode": true,
-        ])
-        try data.write(to: URL(fileURLWithPath: handoff), options: .withoutOverwriting)
-        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 120))
-        XCTAssertEqual(enter.label, "Replace API key")
-        XCTAssertTrue(app.staticTexts["Connected"].exists)
-        XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
+    func testConnectWithDirectAPIKey() async throws {
+        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
+        try require(!name.isEmpty && name != "No records", "Specify the dedicated account's expected test list.")
+        try beginNewConnectionEntry()
+        try await pasteManualKeyAndConnect()
+        try tapVisible(app.buttons["publicmetadb.browse"])
+        try verifyAccountList(named: name)
+        let back = try XCTUnwrap(app.navigationBars.buttons.allElementsBoundByIndex.first(where: \.isHittable))
+        back.tap()
+        try tapVisible(app.buttons["Done"])
+        try assertSavedConnection()
+    }
+
+    func testDirectEntryCancellationAndInvalidKey() throws {
+        try beginNewConnectionEntry()
+        try tapVisible(app.buttons["publicmetadb.pair.cancel"])
+        try assertDisconnectedConnection()
+        try beginNewConnectionEntry()
+        try rejectSyntheticKey()
+        try tapVisible(app.buttons["publicmetadb.pair.cancel"])
+        try assertDisconnectedConnection()
     }
 
     func testPrepareConnectionReplacement() throws {
@@ -927,16 +936,22 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
-    func testCancelReplacementEntry() async throws {
-        let code = try beginReplacementEntry()
+    func testCancelReplacementEntry() throws {
+        try beginReplacementEntry()
         try tapVisible(app.buttons["publicmetadb.pair.cancel"])
-        try await PublicMetaDBLiveConnectionTests.verifyRelayRevoked(code)
         try assertSavedConnection()
         recordState()
     }
 
-    func testRejectInvalidReplacement() async throws {
-        let code = try beginReplacementEntry()
+    func testRejectInvalidReplacement() throws {
+        try beginReplacementEntry()
+        try rejectSyntheticKey()
+        try tapVisible(app.buttons["publicmetadb.pair.cancel"])
+        try assertSavedConnection()
+        recordState()
+    }
+
+    private func rejectSyntheticKey() throws {
         let field = app.secureTextFields["publicmetadb.key"]
         try tapVisible(field)
         field.typeText("pm-" + String(repeating: "a", count: 60) + "\n")
@@ -946,10 +961,6 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             .waitForExistence(timeout: 50))
         XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
         XCTAssertTrue(field.exists)
-        try await PublicMetaDBLiveConnectionTests.verifyRelayRevoked(code)
-        try tapVisible(app.buttons["publicmetadb.pair.cancel"])
-        try assertSavedConnection()
-        recordState()
     }
 
     func testDisconnectAndVerifyRelaunch() throws {
@@ -981,17 +992,21 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let preference = app.switches["publicmetadb.ratings"]
         try tapVisible(preference, tapping: false)
         XCTAssertEqual(preference.value as? String, "0")
-        try tapVisible(app.buttons["Lists"])
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
         XCTAssertFalse(name.isEmpty)
-        XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 45))
-        XCTAssertTrue(app.staticTexts["Page 1 of 1"].exists)
-        XCTAssertFalse(app.staticTexts["No records"].exists)
+        try verifyAccountList(named: name)
         recordState()
     }
 
+    private func verifyAccountList(named name: String) throws {
+        try tapVisible(app.buttons["Lists"])
+        XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 45))
+        XCTAssertTrue(app.staticTexts["Page 1 of 1"].exists)
+        XCTAssertFalse(app.staticTexts["No records"].exists)
+    }
+
     func testInspectManualKeyPasteMenu() throws {
-        _ = try beginReplacementEntry()
+        try beginReplacementEntry()
         let previous = UIPasteboard.general.items
         defer { UIPasteboard.general.items = previous }
         UIPasteboard.general.string = "Plozz paste inspection"
@@ -1004,8 +1019,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testManualKeyPasteConnection() async throws {
-        let code = try beginReplacementEntry()
-        try await pasteManualKeyAndConnect(code: code)
+        try beginReplacementEntry()
+        try await pasteManualKeyAndConnect()
     }
 
     func testConnectNewShareProfileWithManualKey() async throws {
@@ -1014,72 +1029,81 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                     "Connect only the explicitly selected isolated test profile")
         try openSettings()
         try tapVisible(app.buttons["settings-category-trackers"])
-        try assertDisconnectedConnection()
-        try tapVisible(app.buttons["publicmetadb.pair"])
-        let codeLabel = app.staticTexts["publicmetadb.pair.code"]
-        try require(codeLabel.waitForExistence(timeout: 50), "Expected normal profile-scoped connection entry")
-        let code = codeLabel.label.replacingOccurrences(of: " ", with: "")
-        try require(code.range(of: "^[A-HJ-NP-Z2-9]{8}$", options: .regularExpression) != nil,
-                    "Expected the actual production relay code")
-        try await pasteManualKeyAndConnect(code: code)
+        try beginNewConnectionEntry()
+        try await pasteManualKeyAndConnect()
     }
 
-    private func pasteManualKeyAndConnect(code: String) async throws {
+    private func pasteManualKeyAndConnect() async throws {
+        // A failure can leave the field or a system paste prompt onscreen. Never attach this run's UI.
+        handlingLiveAPIKey = true
         let field = app.secureTextFields["publicmetadb.key"]
         try tapVisible(field)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         let connect = app.buttons["publicmetadb.connect"]
         XCTAssertFalse(connect.isEnabled)
-        let input = try await PublicMetaDBLiveConnectionTests.readManualInput()
-        let previous = UIPasteboard.general.items
-        defer { UIPasteboard.general.items = previous }
-        UIPasteboard.general.setItems(
-            [["public.utf8-plain-text": input]],
-            options: [.localOnly: true, .expirationDate: Date(timeIntervalSinceNow: 30)]
-        )
-        field.doubleTap()
-        let paste = app.menuItems["Paste"]
-        XCTAssertTrue(paste.waitForExistence(timeout: 5))
-        paste.tap()
-        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: connect)
-        await fulfillment(of: [enabled], timeout: 5)
-        UIPasteboard.general.items = previous
-        XCTAssertTrue((UIPasteboard.general.items as NSArray).isEqual(to: previous))
+        let input = try await PublicMetaDBLiveManualInput.readKey()
+        let board = UIPasteboard.general
+        let previous = board.items
+        do {
+            defer {
+                board.items = previous
+                XCTAssertTrue((board.items as NSArray).isEqual(to: previous), "Simulator clipboard restoration failed.")
+            }
+            board.setItems([["public.utf8-plain-text": input]],
+                           options: [.localOnly: true, .expirationDate: Date(timeIntervalSinceNow: 30)])
+            field.doubleTap()
+            let menu = app.menuItems["Paste"]
+            let paste = menu.waitForExistence(timeout: 5) ? menu : app.buttons["Paste"]
+            try require(paste.exists && paste.isHittable, "Native Paste unavailable in the secure field; refusing to type a live key.")
+            paste.tap()
+            try require(connect.wait(for: \.isEnabled, toEqual: true, timeout: 5),
+                        "Secure paste did not enable Connect; refusing to submit.")
+        }
         app.keyboards.buttons["Return"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         try tapVisible(connect)
         try assertSavedConnection()
-        try await PublicMetaDBLiveConnectionTests.verifyRelayRevoked(code)
-        recordState()
     }
 
     private func assertSavedConnection() throws {
+        XCTAssertTrue(app.secureTextFields["publicmetadb.key"].waitForNonExistence(timeout: 45))
         XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 45))
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Replace API key")
         XCTAssertTrue(app.staticTexts["Connected"].exists)
-        XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
     }
 
     private func assertDisconnectedConnection() throws {
         let enter = app.buttons["publicmetadb.pair"]
         try tapVisible(enter, tapping: false)
-        XCTAssertEqual(enter.label, "Enter API key")
-        XCTAssertTrue(app.staticTexts["Not connected"].exists)
+        XCTAssertEqual(enter.label, "Connect PublicMetaDB")
+        XCTAssertTrue(enter.isEnabled)
         XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
         XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
     }
 
-    private func beginReplacementEntry() throws -> String {
+    private func beginNewConnectionEntry() throws {
+        try assertDisconnectedConnection()
+        try tapVisible(app.buttons["publicmetadb.pair"])
+        try requireDirectEntry()
+    }
+
+    private func beginReplacementEntry() throws {
         try prepareConnectionReplacement()
         let confirm = app.popovers.buttons["Replace API key"].firstMatch
         XCTAssertTrue(confirm.exists)
         confirm.tap()
-        XCTAssertTrue(app.secureTextFields["publicmetadb.key"].waitForExistence(timeout: 5))
-        let codeLabel = app.staticTexts["publicmetadb.pair.code"]
-        XCTAssertTrue(codeLabel.waitForExistence(timeout: 50))
-        let code = codeLabel.label.replacingOccurrences(of: " ", with: "")
-        XCTAssertNotNil(code.range(of: "^[A-HJ-NP-Z2-9]{8}$", options: .regularExpression))
-        return code
+        try requireDirectEntry()
+    }
+
+    private func requireDirectEntry() throws {
+        let connect = app.buttons["publicmetadb.connect"]
+        try require(app.secureTextFields["publicmetadb.key"].waitForExistence(timeout: 5) &&
+                    connect.exists && !connect.isEnabled && app.buttons["publicmetadb.pair.cancel"].exists,
+                    "Expected empty secure API-key entry with Connect disabled and Cancel available.")
+        try require(!app.staticTexts["publicmetadb.pair.code"].exists &&
+                    !app.descendants(matching: .any)["Loading QR code…"].firstMatch.exists &&
+                    !app.links["Enter API key in a browser"].exists && !app.buttons["publicmetadb.pair.retry"].exists,
+                    "Browser pairing must not appear on iOS.")
     }
 
     private func prepareConnectionReplacement() throws {
@@ -1096,7 +1120,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testInspectPlaybackReporting() throws {
         try openPlaybackReporting()
-        XCTAssertTrue(app.staticTexts["Playback reporting enabled"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
     }
 
     func testInspectUnsupportedEpisodeReporting() throws {
@@ -1108,14 +1132,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testRenewPlaybackConsent() throws {
         try openPlaybackReporting()
-        try tapVisible(app.buttons["publicmetadb.playback.disable"])
+        try tapVisible(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch)
         try enableReporting()
     }
 
     func testDisablePlaybackReporting() throws {
         try openPlaybackReporting()
-        try tapVisible(app.buttons["publicmetadb.playback.disable"])
-        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 5))
+        try tapVisible(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch)
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.waitForExistence(timeout: 5))
     }
 
     func testDisableCrossServerWatchSync() throws {
@@ -2497,12 +2521,12 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(app.buttons["publicmetadb.list.delete"].exists, "Expected owned-list controls")
     }
 
-    func testEnableOngoingWatchedImport() throws {
-        try enableOngoingImport(categories: [("watched", "Watched")])
+    func testVerifyOngoingWatchedImport() throws {
+        try verifyOngoingImport(categories: ["watched"])
     }
 
-    func testEnableOngoingWatchedImportFromCurrentSettings() throws {
-        try enableOngoingImport(categories: [("watched", "Watched")], fromCurrentSettings: true)
+    func testVerifyOngoingWatchedImportFromCurrentSettings() throws {
+        try verifyOngoingImport(categories: ["watched"], fromCurrentSettings: true)
     }
 
     func testOngoingImportIsDisabled() throws {
@@ -2511,9 +2535,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testRefreshDisabledOngoingImportInCurrentProcess() throws {
-        try require(app.buttons["tracker-history.enable-sync"].exists
-            && !app.buttons["tracker-history.disable-sync"].exists,
-                    "Expected the disabled ongoing-sync page")
+        try assertOngoingImportIsDisabled()
         let back = app.buttons.matching(NSPredicate(format: "label == %@", "Back"))
             .allElementsBoundByIndex.filter(\.isHittable)
         try require(back.count == 1, "Expected the frontmost native Back action")
@@ -2530,77 +2552,58 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func assertOngoingImportIsDisabled() throws {
-        XCTAssertTrue(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["tracker-history.disable-sync"].exists)
-        XCTAssertEqual(app.switches["tracker-history.sync-watched"].value as? String, "0")
-        XCTAssertEqual(app.switches["tracker-history.sync-resume"].value as? String, "0")
-        let destinations = app.switches.matching(NSPredicate(
-            format: "identifier BEGINSWITH %@", "tracker-history.sync-server."
-        )).allElementsBoundByIndex
-        XCTAssertFalse(destinations.isEmpty)
-        for destination in destinations {
-            XCTAssertEqual(destination.value as? String, "0")
-        }
+        try require(ongoingMaster.waitForExistence(timeout: 10) && ongoingMaster.value as? String == "0",
+                    "Expected ongoing sync to be off")
+        try require(ongoingDestinations.count == 0 && !app.switches["tracker-history.sync-watched"].exists
+            && !app.switches["tracker-history.sync-resume"].exists && !app.buttons["tracker-history.sync-now"].exists,
+                    "Off must hide all sync options")
         recordState()
     }
 
-    func testEnableOngoingResumeImport() throws {
-        try enableOngoingImport(categories: [("resume", "Resume points")])
+    func testVerifyOngoingResumeImport() throws {
+        try verifyOngoingImport(categories: ["resume"])
     }
 
-    func testEnableOngoingResumeImportFromCurrentSettings() throws {
-        try enableOngoingImport(categories: [("resume", "Resume points")], fromCurrentSettings: true)
+    func testVerifyOngoingResumeImportFromCurrentSettings() throws {
+        try verifyOngoingImport(categories: ["resume"], fromCurrentSettings: true)
     }
 
-    func testEnableOngoingWatchedAndResumeImport() throws {
-        try enableOngoingImport(categories: [("watched", "Watched"), ("resume", "Resume points")])
+    func testVerifyOngoingWatchedAndResumeImport() throws {
+        try verifyOngoingImport(categories: ["watched", "resume"])
     }
 
-    func testEnableOngoingWatchedAndResumeImportFromCurrentSettings() throws {
-        try enableOngoingImport(
-            categories: [("watched", "Watched"), ("resume", "Resume points")],
-            fromCurrentSettings: true
-        )
+    func testVerifyOngoingWatchedAndResumeImportFromCurrentSettings() throws {
+        try verifyOngoingImport(categories: ["watched", "resume"], fromCurrentSettings: true)
     }
 
-    private func enableOngoingImport(
-        categories: [(id: String, label: String)], fromCurrentSettings: Bool = false
-    ) throws {
-        if !fromCurrentSettings { try openOngoingImportSettings() }
-        try require(app.buttons["tracker-history.enable-sync"].exists
-            && !app.buttons["tracker-history.disable-sync"].exists,
-                    "Expected the disabled ongoing-sync settings before new consent")
+    private var ongoingMaster: XCUIElement { app.switches["tracker-history.sync-enabled"] }
+    private var ongoingDestinations: XCUIElementQuery {
+        app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tracker-history.sync-server."))
+    }
+
+    // Off hides the complete eligible set. A matching comparison row (or an account ID supplied
+    // by the runner) cannot prove there isn't another share. Never grant first and narrow later.
+    private func verifyOngoingImport(categories: Set<String>, fromCurrentSettings: Bool = false) throws {
+        if !fromCurrentSettings { try openOngoingImportSettings(relaunch: false) }
+        try require(ongoingMaster.waitForExistence(timeout: 10) && ongoingMaster.value as? String == "1",
+                    "Prepare the exact dedicated grant separately; the live driver does not enable all defaults")
         let accountID = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
-        let destination = app.switches.matching(NSPredicate(
-            format: "identifier == %@", "tracker-history.sync-server.\(accountID)"
-        )).firstMatch
-        try require(destination.waitForExistence(timeout: 5), "Ongoing import requires an eligible media share")
-        let watched = app.switches["tracker-history.sync-watched"]
-        XCTAssertEqual(destination.value as? String, "0")
-        XCTAssertEqual(watched.value as? String, "0")
-        XCTAssertEqual(app.switches["tracker-history.sync-resume"].value as? String, "0")
-        try tapVisible(destination.switches.firstMatch)
-        for category in categories {
-            try tapVisible(app.switches["tracker-history.sync-\(category.id)"].switches.firstMatch)
+        try require(accountID.hasPrefix("share:") && accountID.count > "share:".count,
+                    "Expected a dedicated share account ID")
+        let destination = ongoingDestinations.element
+        try require(ongoingDestinations.count == 1 && destination.identifier == "tracker-history.sync-server.\(accountID)"
+            && destination.value as? String == "1", "Expected only the dedicated share")
+        let supported: Set<String> = ["watched", "resume"]
+        try require(!categories.isEmpty && categories.isSubset(of: supported), "Expected explicit supported categories")
+        let controls = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tracker-history.sync-"))
+            .allElementsBoundByIndex.map(\.identifier)
+        let expected = ["tracker-history.sync-enabled", destination.identifier] + supported.map { "tracker-history.sync-\($0)" }
+        try require(controls.sorted() == expected.sorted(), "Refuse unknown or ambiguous sync options")
+        for category in supported {
+            let control = app.switches["tracker-history.sync-\(category)"]
+            try require(control.exists && control.value as? String == (categories.contains(category) ? "1" : "0"),
+                        "Existing grant does not match the authorized \(category) selection")
         }
-        let destinations = app.switches.matching(NSPredicate(
-            format: "identifier BEGINSWITH %@", "tracker-history.sync-server."
-        )).allElementsBoundByIndex
-        XCTAssertFalse(destinations.isEmpty)
-        for candidate in destinations {
-            XCTAssertEqual(candidate.value as? String, candidate.identifier == destination.identifier ? "1" : "0")
-        }
-        try tapVisible(app.buttons["tracker-history.enable-sync"])
-        let confirm = app.buttons.matching(NSPredicate(
-            format: "label == %@ AND identifier != %@", "Enable sync", "tracker-history.enable-sync"
-        )).firstMatch
-        try require(confirm.waitForExistence(timeout: 5) && confirm.isHittable,
-                    "Expected the native confirmation action, not the underlying Enable sync form")
-        confirm.tap()
-        try require(app.buttons["tracker-history.disable-sync"].waitForExistence(timeout: 30),
-                    "Expected separate ongoing-import permission")
-        let summary = categories.count == 2 ? "Watched and resume points" : categories[0].label
-        XCTAssertTrue(app.staticTexts[summary].exists)
     }
 
     func testSynchronizeOngoingImport() throws {
@@ -2613,7 +2616,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testInspectOngoingImportWithoutManualSync() throws {
         try openOngoingImportSettings(relaunch: false)
-        try require(app.buttons["tracker-history.disable-sync"].exists, "Expected the retained sync permission")
+        try require(ongoingMaster.value as? String == "1", "Expected the retained sync permission")
         recordState()
     }
 
@@ -2624,8 +2627,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     private func synchronizeOngoingImport(
         expectingReview: Bool, fromCurrentSettings: Bool = false
     ) throws {
-        if !fromCurrentSettings { try openOngoingImportSettings() }
-        try require(app.buttons["tracker-history.disable-sync"].exists, "Expected existing sync permission")
+        let authorized = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_ONGOING_CATEGORIES"])
+        let categories = Set(authorized.components(separatedBy: ","))
+        try verifyOngoingImport(categories: categories, fromCurrentSettings: fromCurrentSettings)
         try tapVisible(app.buttons["tracker-history.sync-now"])
         let completed = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "enabled == true"), object: app.buttons["tracker-history.sync-now"]
@@ -2642,28 +2646,16 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testDisableOngoingImportFromCurrentSettings() throws {
         try disableOngoingImport()
-        let selections = app.switches.matching(NSPredicate(
-            format: "identifier BEGINSWITH %@", "tracker-history.sync-"
-        )).allElementsBoundByIndex.map(\.identifier)
-        try require(!selections.isEmpty && Set(selections).count == selections.count,
-                    "Expected unambiguous disabled-sync selections")
-        for identifier in selections {
-            let selection = app.switches[identifier]
-            try require(["0", "1"].contains(selection.value as? String ?? ""),
-                        "Expected an explicit sync selection state")
-            if selection.value as? String == "1" {
-                try tapVisible(selection.switches.firstMatch)
-            }
-        }
-        try assertOngoingImportIsDisabled()
     }
 
     private func disableOngoingImport() throws {
-        try require(app.buttons["tracker-history.disable-sync"].exists,
-                    "Expected existing sync permission before revocation")
-        try tapVisible(app.buttons["tracker-history.disable-sync"])
-        try require(app.buttons["tracker-history.enable-sync"].waitForExistence(timeout: 10),
-                    "Expected revoked ongoing-import permission")
+        let master = ongoingMaster
+        let target = master.switches.firstMatch.exists ? master.switches.firstMatch : master
+        try tapVisible(target, tapping: false)
+        try require(master.value as? String == "1" && master.isEnabled && target.isHittable,
+                    "Refuse to tap a master switch that is not already on")
+        target.tap()
+        try assertOngoingImportIsDisabled()
     }
 
     private func openOngoingImportSettings(relaunch: Bool = true) throws {
@@ -2677,19 +2669,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let link = app.buttons["tracker-history.ongoing-sync"]
         try tapVisible(link, tapping: false, maximumSwipes: 32)
         try require(link.isEnabled, "Expected ongoing-sync navigation after a successful comparison")
-        let collection = app.collectionViews.containing(.any, identifier: link.identifier).element
-        try require(collection.exists, "Expected the ongoing-sync link in its comparison list")
-        for _ in 0..<4 {
-            if collection.frame.intersection(app.frame).insetBy(dx: 0, dy: 8).contains(link.frame) { break }
-            collection.swipeUp(velocity: .slow)
-        }
-        try require(collection.frame.intersection(app.frame).insetBy(dx: 0, dy: 8).contains(link.frame),
-                    "Expected the complete ongoing-sync link inside the visible list")
-        link.tap()
-        let consent = app.buttons.matching(NSPredicate(
-            format: "identifier IN %@", ["tracker-history.enable-sync", "tracker-history.disable-sync"]
-        )).firstMatch
-        try require(consent.waitForExistence(timeout: 15), "Expected the ongoing-sync settings page")
+        try tapVisible(link)
+        try require(ongoingMaster.waitForExistence(timeout: 15), "Expected the ongoing-sync settings page")
     }
 
     func testFinishIndependentServerLibraries() throws {
@@ -2738,8 +2719,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(importSelection.exists)
         XCTAssertEqual(importSelection.value as? String, "0")
         recordState()
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
     func testPreviewServerHistoryExport() throws {
@@ -2753,18 +2733,19 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.export-history"])
         try tapVisible(app.buttons["publicmetadb.export.account"])
-        let account = app.collectionViews.buttons.matching(historyAccountPredicate(user: user))
+        let account = app.buttons.matching(historyAccountPredicate(user: user))
         try require(account.firstMatch.waitForExistence(timeout: 10) && account.count == 1,
                     "Expected the exact dedicated export user")
         account.element.tap()
         try tapVisible(app.buttons["publicmetadb.export.library"])
-        try tapVisible(app.collectionViews.buttons[library])
+        try tapVisible(app.buttons[library])
         try tapVisible(app.buttons["publicmetadb.export.mode"])
-        try tapVisible(app.collectionViews.buttons[mode])
+        try tapVisible(app.buttons[mode == "Resume points" ? "Where you left off" : mode])
         try tapVisible(app.buttons["publicmetadb.export.preview"])
-        try require(app.buttons["publicmetadb.export.apply"].waitForExistence(timeout: timeout),
+        try require(app.staticTexts["publicmetadb.export.summary"].waitForExistence(timeout: timeout),
                     "Expected a complete real server-history comparison")
-        XCTAssertFalse(app.buttons["publicmetadb.export.apply"].isEnabled)
+        try narrowLargeComparison("publicmetadb.export")
+        XCTAssertFalse(app.buttons["publicmetadb.export.apply"].exists)
     }
 
     func testInspectSelectedHistoryExport() throws {
@@ -2795,7 +2776,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let row = try exportRow()
         try tapVisible(row, tapping: false)
         XCTAssertTrue(row.staticTexts["Confirmed on PublicMetaDB"].waitForExistence(timeout: 60))
-        XCTAssertFalse(app.buttons["publicmetadb.export.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["publicmetadb.export.apply"].exists)
     }
 
     func testPrepareSelectedHistoryExport() throws {
@@ -2831,7 +2812,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertEqual(selection.value as? String, "1")
         let apply = app.buttons["publicmetadb.export.apply"]
         try tapVisible(apply, tapping: false)
-        XCTAssertEqual(apply.label, "Export 1 selected titles")
+        XCTAssertEqual(apply.label, "Review 1 selected")
         XCTAssertTrue(apply.isEnabled)
         apply.tap()
         XCTAssertTrue(app.buttons["Export selected titles"].waitForExistence(timeout: 5))
@@ -2857,8 +2838,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try openHistoryComparison()
         try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
         XCTAssertEqual(importSelection.value as? String, "0")
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
     func testConfirmSelectedHistoryImport() throws {
@@ -2880,7 +2860,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testRejectStaleHistoryImport() throws {
-        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 1 selected changes")
+        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Review 1 selected")
         let confirm = app.buttons["Apply selected changes"]
         XCTAssertTrue(confirm.exists && confirm.isHittable)
         confirm.tap()
@@ -2895,9 +2875,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(rows.firstMatch, tapping: false, maximumSwipes: 32)
         try require(rows.count == 1, "Expected the exact destination's incompatible resume row")
         XCTAssertFalse(importSelection.exists)
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
-        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 0 selected changes")
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
     func testUnmatchedMovieCannotBeImported() throws {
@@ -2905,18 +2883,16 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let movieID = try XCTUnwrap(Int(value))
         try require(movieID > 0, "Expected an independently verified unmatched tracker movie")
         try openHistoryComparison()
-        let rows = app.cells.containing(.staticText, identifier: "tmdb: \(movieID)")
+        let rows = comparisonRows.containing(.staticText, identifier: "tmdb: \(movieID)")
             .containing(.staticText, identifier: "No confirmed library match")
         try tapVisible(rows.firstMatch, tapping: false, maximumSwipes: 32)
         try require(rows.count == 1, "Expected the exact unmatched movie's single tracker record")
         XCTAssertEqual(rows.element.switches.count, 0)
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
-        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 0 selected changes")
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
     func testRejectChangedTrackerHistoryImport() throws {
-        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Apply 1 selected changes")
+        XCTAssertEqual(app.buttons["tracker-history.apply"].label, "Review 1 selected")
         let confirm = app.buttons["Apply selected changes"]
         try require(confirm.exists && confirm.isHittable, "Expected the original reviewed import confirmation")
         confirm.tap()
@@ -2948,8 +2924,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let row = try revealHistoryImportRow(status: "Not confirmed. Compare again before retrying.")
         XCTAssertTrue(row.staticTexts["Not confirmed. Compare again before retrying."].waitForExistence(timeout: 60))
         XCTAssertFalse(row.staticTexts["Confirmed on server"].exists)
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
     func testConfirmFreshHistoryConflict() throws {
@@ -2991,7 +2966,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func inspectResumeConflict(seconds: Double) throws {
         let selection = importSelection
-        let rows = app.cells.containing(NSPredicate(
+        let rows = comparisonRows.containing(NSPredicate(
             format: "identifier == %@ AND label == %@", selection.identifier, selection.label
         ))
         try require(rows.count == 1, "Expected the exact selected history action")
@@ -3016,8 +2991,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testInspectConfirmedHistoryImport() throws {
         let row = try revealHistoryImportRow(status: "Confirmed on server")
         XCTAssertTrue(row.staticTexts["Confirmed on server"].waitForExistence(timeout: 60))
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
     private func revealHistoryImportRow(status: String) throws -> XCUIElement {
@@ -3045,8 +3019,11 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertTrue(rows.firstMatch.staticTexts["Already matches — no change"].exists)
         XCTAssertFalse(importSelection.exists)
-        try tapVisible(app.buttons["tracker-history.apply"], tapping: false, maximumSwipes: 32)
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
+    }
+
+    private var comparisonRows: XCUIElementQuery {
+        app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tracker-history.row."))
     }
 
     private func historyImportRows(status: String) throws -> XCUIElementQuery {
@@ -3056,7 +3033,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             episodeTitle.isEmpty ? environment["PLOZZ_TRACKER_HISTORY_TITLE"] : episodeTitle
         )
         let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
-        return app.cells.containing(.staticText, identifier: title)
+        return comparisonRows.containing(.staticText, identifier: title)
             .containing(historyAccountPredicate(user: user))
             .containing(.staticText, identifier: status)
     }
@@ -3093,8 +3070,24 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(user.isEmpty || item.isEmpty || account.isEmpty)
         try openPublicMetaDBAccount(relaunch: relaunch)
         try tapVisible(app.buttons["publicmetadb.compare-history"])
-        try require(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", user))
-            .firstMatch.waitForExistence(timeout: 60), "Expected the dedicated user's real comparison rows")
+        try require(app.staticTexts["tracker-history.summary"].waitForExistence(timeout: 60),
+                    "Expected the real comparison to finish")
+        try narrowLargeComparison("tracker-history")
+    }
+
+    private func narrowLargeComparison(_ prefix: String) throws {
+        let search = app.textFields["\(prefix).search"]
+        guard search.exists else { return }
+        let env = ProcessInfo.processInfo.environment
+        let candidates = [env["PLOZZ_TRACKER_HISTORY_EPISODE_TITLE"], env["PLOZZ_TRACKER_HISTORY_TITLE"]]
+        var title = candidates.compactMap { $0 }.first { !$0.isEmpty }
+        if prefix == "tracker-history", let id = env["PLOZZ_TRACKER_UNMATCHED_MOVIE_ID"], !id.isEmpty {
+            title = "tmdb: \(id)"
+        }
+        if let title {
+            try tapVisible(search)
+            search.typeText(title + "\n")
+        }
     }
 
     private func selectHistoryImport() throws {
@@ -3106,16 +3099,16 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(apply, tapping: false, maximumSwipes: 32)
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: apply)
         try require(XCTWaiter.wait(for: [selected], timeout: 5) == .completed, "Expected the selected import action")
-        XCTAssertEqual(apply.label, "Apply 1 selected changes")
+        XCTAssertEqual(apply.label, "Review 1 selected")
         try tapVisible(apply)
     }
 
     private func enableReporting() throws {
-        try tapVisible(app.buttons["publicmetadb.playback.enable"])
+        try tapVisible(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch)
         let confirm = app.buttons["Enable reporting"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
-        XCTAssertTrue(app.staticTexts["Playback reporting enabled"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.waitForExistence(timeout: 10))
     }
 
     func testOpenSelectedMovie() throws {
@@ -3605,6 +3598,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func recordState() {
+        guard !handlingLiveAPIKey else { return }
         guard app.state == .runningForeground else {
             let state = XCTAttachment(string: "Application state: \(app.state.rawValue)")
             state.name = "live-history-native-app-state"
@@ -3612,6 +3606,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             add(state)
             return
         }
+        guard !app.secureTextFields["publicmetadb.key"].exists else { return }
         let tree = XCTAttachment(string: app.debugDescription)
         tree.name = "live-history-native-state"
         tree.lifetime = .keepAlways

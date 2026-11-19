@@ -57,7 +57,8 @@ private struct PairingFixtureHTTP: HTTPClient {
         let data: Data
         switch (endpoint.method, endpoint.path) {
         case (.post, "/api/publicmetadb/pairing"):
-            try await Task.sleep(for: .milliseconds(500))
+            let loading = ProcessInfo.processInfo.arguments.contains("--pairing-loading")
+            try await Task.sleep(for: loading ? .seconds(60) : .milliseconds(500))
             if unavailable { throw AppError.invalidResponse }
             status = 201
             data = try JSONSerialization.data(withJSONObject: [

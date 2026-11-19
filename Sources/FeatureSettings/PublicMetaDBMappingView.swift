@@ -9,24 +9,22 @@ struct PublicMetaDBMappingsView: View {
     @State private var mappings = PublicMetaDBReadOperation<[PublicMetaDB.Record<PublicMetaDB.Mapping>]>()
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("External IDs")
+        GroupedSettingsPage(title: "External IDs", backIdentifier: "publicmetadb.mappings.back") {
             PublicMetaDBContentLabel(content: content)
-            Text("Community mappings may disagree. Browsing or contributing here never replaces your server's IDs or episode numbering.")
-                .foregroundStyle(.secondary)
-            NavigationLink("Submit an external ID") {
-                PublicMetaDBMappingEditor(service: service, content: content)
+            SettingsSectionGroup {
+                PublicMetaDBDetailLink("Submit an external ID") {
+                    PublicMetaDBMappingEditor(service: service, content: content)
+                }
+                PublicMetaDBDetailLink("Look up an external ID") { PublicMetaDBMappingLookupView(service: service) }
+            } footer: {
+                Text("Community IDs don’t change server IDs or episode numbering.")
             }
-            NavigationLink("Look up an external ID") { PublicMetaDBMappingLookupView(service: service) }
             PublicMetaDBReadContent(service: service, operation: mappings, id: content) { records in
                 if records.isEmpty { Text("No external IDs") }
                 ForEach(PublicMetaDB.ExternalIDType.allCases, id: \.self) { type in
                     let values = records.filter { $0.value.idType == type }
                     if !values.isEmpty {
-                        Section {
-                            if Set(values.map(\.value.idValue)).count > 1 {
-                                Text("Conflicting IDs: no automatic match selected")
-                            }
+                        SettingsSectionGroup(verbatim: type.databaseName) {
                             ForEach(values) { record in
                                 NavigationLink {
                                     PublicMetaDBContributionRecordView(
@@ -37,11 +35,14 @@ struct PublicMetaDBMappingsView: View {
                                         PublicMetaDBMappingLabel(record: record)
                                     }
                                 } label: {
-                                    PublicMetaDBMappingLabel(record: record)
+                                    SettingsDisclosureLabel { PublicMetaDBMappingLabel(record: record, showsDatabase: false) }
                                 }
+                                .settingsActionRow()
                             }
-                        } header: {
-                            PublicMetaDBExternalIDLabel(type: type)
+                        } footer: {
+                            if Set(values.map(\.value.idValue)).count > 1 {
+                                Text("Conflicting IDs: no automatic match selected")
+                            }
                         }
                     }
                 }
@@ -53,27 +54,52 @@ struct PublicMetaDBMappingsView: View {
     }
 }
 
-private struct PublicMetaDBExternalIDLabel: View {
-    let type: PublicMetaDB.ExternalIDType
-    var body: some View {
-        switch type {
-        case .imdb: Text(verbatim: "IMDb")
-        case .tvdb: Text(verbatim: "TheTVDB")
-        case .mal: Text(verbatim: "MyAnimeList")
-        case .anilist: Text(verbatim: "AniList")
-        case .anidb: Text(verbatim: "AniDB")
-        case .trakt: Text(verbatim: "Trakt")
+private extension PublicMetaDB.ExternalIDType {
+    var databaseName: String {
+        switch self {
+        case .imdb: "IMDb"
+        case .tvdb: "TheTVDB"
+        case .mal: "MyAnimeList"
+        case .anilist: "AniList"
+        case .anidb: "AniDB"
+        case .trakt: "Trakt"
         }
     }
 }
 
 private struct PublicMetaDBMappingLabel: View {
     let record: PublicMetaDB.Record<PublicMetaDB.Mapping>
+    var showsDatabase = true
     var body: some View {
         VStack(alignment: .leading) {
-            PublicMetaDBExternalIDLabel(type: record.value.idType)
-            Text(verbatim: record.value.idValue)
-            if let contributor = record.contributor { Text(verbatim: contributor).foregroundStyle(.secondary) }
+            if showsDatabase {
+                LabeledContent {
+                    Text(verbatim: record.value.idValue)
+                } label: { Text(verbatim: record.value.idType.databaseName) }
+            } else {
+                Text(verbatim: record.value.idValue)
+            }
+            if let contributor = record.contributor {
+                Text(verbatim: contributor).font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
+            }
+        }
+    }
+}
+
+private struct PublicMetaDBMappingFields: View {
+    @Binding var type: PublicMetaDB.ExternalIDType
+    @Binding var value: String
+
+    var body: some View {
+        Picker("Database", selection: $type) {
+            ForEach(PublicMetaDB.ExternalIDType.allCases, id: \.self) { type in
+                Text(verbatim: type.databaseName).tag(type)
+            }
+        }
+        .pickerStyle(.menu)
+        SettingsInputRow("External ID", axis: .horizontal) {
+            TextField("ID", text: $value)
+                .accessibilityIdentifier("publicmetadb.mapping.value")
         }
     }
 }
@@ -88,28 +114,22 @@ private struct PublicMetaDBMappingEditor: View {
     @State private var failure: (any Error)?
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Submit an external ID")
+        GroupedSettingsPage(title: "Submit an external ID", backIdentifier: "publicmetadb.mapping.edit.back") {
             PublicMetaDBContentLabel(content: content)
-            Picker("Database", selection: $type) {
-                ForEach(PublicMetaDB.ExternalIDType.allCases, id: \.self) { type in
-                    PublicMetaDBExternalIDLabel(type: type).tag(type)
+            SettingsSectionGroup {
+                PublicMetaDBMappingFields(type: $type, value: $value)
+                Button("Review mapping") {
+                    do {
+                        candidate = try .init(
+                            content: content, idType: type, idValue: value.trimmingCharacters(in: .whitespacesAndNewlines)
+                        )
+                        failure = nil
+                        showsReview = true
+                    } catch { failure = error }
                 }
-            }
-            TextField("External ID", text: $value)
-                .accessibilityIdentifier("publicmetadb.mapping.value")
-            Text("Use a database ID, not a title or URL. This publishes a new community contribution, not a correction to your server.")
-                .foregroundStyle(.secondary)
-            Button("Review mapping") {
-                do {
-                    candidate = try .init(
-                        content: content, idType: type, idValue: value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    )
-                    failure = nil
-                    showsReview = true
-                } catch { failure = error }
-            }
-            .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.phase != .connected)
+                .settingsActionRow()
+                .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.phase != .connected)
+            } footer: { Text("Use the database ID, not a title or URL.") }
             if let failure { PublicMetaDBFailureMessage(error: failure) }
         }
         .navigationDestination(isPresented: $showsReview) {
@@ -132,31 +152,44 @@ private struct PublicMetaDBMappingReviewView: View {
     @State private var review = PublicMetaDBReadOperation<PublicMetaDB.MappingReview>()
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Review mapping")
-            PublicMetaDBContentLabel(content: mapping.content)
-            PublicMetaDBExternalIDLabel(type: mapping.idType)
-            Text(verbatim: mapping.idValue)
+        GroupedSettingsPage(title: "Review mapping", backIdentifier: "publicmetadb.mapping.review.back") {
+            SettingsSectionGroup {
+                PublicMetaDBContentLabel(content: mapping.content)
+                LabeledContent {
+                    Text(verbatim: mapping.idValue)
+                } label: { Text(verbatim: mapping.idType.databaseName) }
+            }
             if operation.succeeded {
                 Text("Mapping confirmed on PublicMetaDB")
             } else {
                 PublicMetaDBReadContent(service: service, operation: review) { review in
-                    Text("Existing mappings for this title").font(.headline)
-                    if review.records.isEmpty { Text("No external IDs") }
-                    ForEach(review.records) { PublicMetaDBMappingLabel(record: $0) }
-                    Text("Titles currently linked to this external ID").font(.headline)
-                    if review.reverseMatches.isEmpty { Text("No matches") }
-                    ForEach(review.reverseMatches, id: \.self) { PublicMetaDBContentLabel(content: $0) }
-                    if review.reverseMatches.contains(where: { $0 != mapping.content }) {
-                        Text("This ID also points to a different title. Publishing will not remove that conflict.")
+                    SettingsSectionGroup("IDs for this title") {
+                        if review.records.isEmpty { Text("No external IDs") }
+                        ForEach(review.records) { PublicMetaDBMappingLabel(record: $0) }
                     }
-                    Text("Your ID and contributor name will be public. Existing contributions are not edited or removed.")
-                        .foregroundStyle(.secondary)
-                    Button("Publish mapping") {
-                        draft = review
-                        confirming = true
+                    SettingsSectionGroup("Titles linked to this ID") {
+                        if review.reverseMatches.isEmpty {
+                            Text("No matches")
+                        } else {
+                            PublicMetaDBCatalogRows {
+                                ForEach(review.reverseMatches, id: \.self) { PublicMetaDBContentLabel(content: $0) }
+                            }
+                        }
+                    } footer: {
+                        if review.reverseMatches.contains(where: { $0 != mapping.content }) {
+                            Text("Another title uses this ID. Publishing won’t resolve the conflict.")
+                        }
                     }
-                    .disabled(!operation.permitsWrite)
+                    SettingsSectionGroup {
+                        Button("Publish mapping") {
+                            draft = review
+                            confirming = true
+                        }
+                        .settingsActionRow()
+                        .disabled(!operation.permitsWrite)
+                    } footer: {
+                        Text("The ID and your contributor name will be public.")
+                    }
                 }
             }
             PublicMetaDBMutationStatus(operation: operation)
@@ -192,30 +225,33 @@ struct PublicMetaDBMappingLookupView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Look up an external ID")
-            Picker("Database", selection: $type) {
-                ForEach(PublicMetaDB.ExternalIDType.allCases, id: \.self) { type in
-                    PublicMetaDBExternalIDLabel(type: type).tag(type)
+        GroupedSettingsPage(title: "Look up an external ID", backIdentifier: "publicmetadb.mapping.lookup.back") {
+            SettingsSectionGroup {
+                PublicMetaDBMappingFields(type: $type, value: $value)
+                Button("Look up ID") {
+                    query = Query(type: type, value: value.trimmingCharacters(in: .whitespacesAndNewlines))
                 }
+                .settingsActionRow()
+                .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.phase != .connected)
             }
-            TextField("External ID", text: $value)
-            Button("Look up ID") {
-                query = Query(type: type, value: value.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-            .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.phase != .connected)
             if let query {
                 PublicMetaDBReadContent(service: service, operation: matches, id: self.query) { matches in
-                    PublicMetaDBExternalIDLabel(type: query.type)
-                    Text(verbatim: query.value)
-                    if matches.isEmpty { Text("No matches") }
-                    if matches.count > 1 { Text("Multiple matches: choose a title to inspect. No identity is selected automatically.") }
-                    ForEach(matches, id: \.self) { content in
-                        NavigationLink {
-                            PublicMetaDBContentView(service: service, content: content)
-                        } label: {
-                            PublicMetaDBContentLabel(content: content, allowsFocus: false)
+                    SettingsSectionGroup(verbatim: "\(query.type.databaseName) · \(query.value)") {
+                        if matches.isEmpty {
+                            Text("No matches")
+                        } else {
+                            PublicMetaDBCatalogRows {
+                                ForEach(matches, id: \.self) { content in
+                                    NavigationLink {
+                                        PublicMetaDBContentView(service: service, content: content)
+                                    } label: {
+                                        SettingsDisclosureLabel { PublicMetaDBContentLabel(content: content, allowsFocus: false) }
+                                    }
+                                }
+                            }
                         }
+                    } footer: {
+                        if matches.count > 1 { Text("Multiple matches. Choose a title to inspect.") }
                     }
                 }
                 .id(query)

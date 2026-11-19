@@ -315,13 +315,14 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
 
     func testOpenPublicMetaDBSettings() throws {
         try PublicMetaDBLiveNavigation.openSettings(in: app)
-        XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Enter API key")
+        XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
         XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
     }
 
     func testConnectWithRealBrowserQR() throws {
         try testOpenPublicMetaDBSettings()
         try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.pair"], moving: .down)
+        try PublicMetaDBLiveNavigation.requirePairingEntry(in: app)
         let codeLabel = app.staticTexts["publicmetadb.pair.code"]
         XCTAssertTrue(codeLabel.waitForExistence(timeout: 50))
         let code = codeLabel.label.replacingOccurrences(of: " ", with: "")
@@ -338,7 +339,7 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         let components = try XCTUnwrap(URLComponents(string: url))
         XCTAssertEqual(components.scheme, "https")
         XCTAssertEqual(components.host, "plozz.app")
-        XCTAssertEqual(components.path, "/publicmetadb")
+        XCTAssertEqual(components.path, "/pmdb")
         let fragment = try XCTUnwrap(components.fragment)
         let parameters = try XCTUnwrap(URLComponents(string: "https://plozz.app/?" + fragment)?.queryItems)
         XCTAssertEqual(parameters.first(where: { $0.name == "code" })?.value, code)
@@ -391,26 +392,26 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
 
     func testEnablePlaybackReporting() throws {
         try openPlaybackReporting()
-        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].exists)
-        XCTAssertFalse(app.buttons["publicmetadb.playback.disable"].exists)
-        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.playback.enable"], moving: .down)
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
+        try PublicMetaDBLiveNavigation.select(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch, moving: .down)
         let confirm = app.sheets.buttons.matching(identifier: "Enable reporting").firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         try PublicMetaDBLiveNavigation.select(confirm, moving: .right)
-        XCTAssertTrue(app.staticTexts["Playback reporting enabled"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.waitForExistence(timeout: 10))
     }
 
     func testPlaybackReportingIsDisabled() throws {
         try openPlaybackReporting()
-        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["publicmetadb.playback.disable"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
     }
 
     func testDisablePlaybackReporting() throws {
         try openPlaybackReporting()
-        XCTAssertTrue(app.staticTexts["Playback reporting enabled"].exists)
-        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.playback.disable"], moving: .down)
-        XCTAssertTrue(app.buttons["publicmetadb.playback.enable"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
+        try PublicMetaDBLiveNavigation.select(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch, moving: .down)
+        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.waitForExistence(timeout: 10))
     }
 
     func testOpenSelectedMovie() throws {

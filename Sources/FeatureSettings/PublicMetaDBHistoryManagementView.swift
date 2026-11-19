@@ -66,32 +66,39 @@ struct PublicMetaDBHistoryRecordView: View {
     @State private var approvedConnection: UUID?
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("PublicMetaDB record")
-            PublicMetaDBContentLabel(content: action.content)
-            NavigationLink("Title controls") { PublicMetaDBContentView(service: service, content: action.content) }
+        GroupedSettingsPage(title: "PublicMetaDB record", backIdentifier: "publicmetadb.history.record.back") {
+            SettingsSectionGroup {
+                PublicMetaDBContentLabel(content: action.content)
+                if !operation.succeeded, case .deletePlay(let record) = action {
+                    LabeledContent("Watch date") { PublicMetaDBWatchDateLabel(date: record.value.watchedAt) }
+                }
+                if !operation.succeeded, case .clearResume(let record) = action {
+                    LabeledContent("Progress") {
+                        Text(record.value.progress / 100, format: .percent.precision(.fractionLength(1)))
+                    }
+                }
+                PublicMetaDBDetailLink("Title controls") { PublicMetaDBContentView(service: service, content: action.content) }
+            }
             if operation.succeeded {
                 Text("Change confirmed on PublicMetaDB")
             } else {
-                if case .deletePlay(let record) = action {
-                    PublicMetaDBWatchDateLabel(date: record.value.watchedAt)
-                    NavigationLink("Change watch date") {
-                        PublicMetaDBHistoryDateView(service: service, content: record.value.content, existing: record)
+                SettingsSectionGroup {
+                    if case .deletePlay(let record) = action {
+                        PublicMetaDBDetailLink("Change watch date") {
+                            PublicMetaDBHistoryDateView(service: service, content: record.value.content, existing: record)
+                        }
+                        PublicMetaDBDetailLink("Add another play") {
+                            PublicMetaDBHistoryDateView(service: service, content: record.value.content)
+                        }
                     }
-                    NavigationLink("Add another play") {
-                        PublicMetaDBHistoryDateView(service: service, content: record.value.content)
-                    }
+                    Button(role: action.role) {
+                        approvedConnection = service.connectionID
+                        confirming = true
+                    } label: { Text(action.label) }
+                    .settingsActionRow()
+                    .disabled(!operation.permitsWrite || service.phase != .connected)
+                    .accessibilityIdentifier("publicmetadb.history.action")
                 }
-                if case .clearResume(let record) = action {
-                    Text(record.value.progress / 100, format: .percent.precision(.fractionLength(1)))
-                }
-                Text(action.explanation).foregroundStyle(.secondary)
-                Button(role: action.role) {
-                    approvedConnection = service.connectionID
-                    confirming = true
-                } label: { Text(action.label) }
-                .disabled(!operation.permitsWrite || service.phase != .connected)
-                .accessibilityIdentifier("publicmetadb.history.action")
             }
             PublicMetaDBMutationStatus(operation: operation)
         }
@@ -188,39 +195,46 @@ struct PublicMetaDBHistoryDateView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader(existing == nil ? "Add a watched play" : "Change watch date")
+        GroupedSettingsPage(title: existing == nil ? "Add a watched play" : "Change watch date",
+                            backIdentifier: "publicmetadb.history.date.back") {
             PublicMetaDBContentLabel(content: content)
             if operation.succeeded {
                 Text("Change confirmed on PublicMetaDB")
             } else {
-                Toggle("Watch date unknown", isOn: $unknownDate)
-                if !unknownDate {
+                SettingsSectionGroup {
+                    Toggle("Watch date unknown", isOn: $unknownDate)
+                    if !unknownDate {
+                        #if os(tvOS)
+                        TextField("Date and time (ISO 8601)", text: $dateText)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        #else
+                        DatePicker("Watch date", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                        #endif
+                    }
+                } footer: {
                     #if os(tvOS)
-                    TextField("Date and time (ISO 8601)", text: $dateText)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Text("Include the time zone, for example 2026-01-15T20:30:00Z.")
-                        .foregroundStyle(.secondary)
-                    if selectedDate == nil { Text("Enter a valid date and time with its time zone.") }
-                    #else
-                    DatePicker("Watch date", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                    if !unknownDate {
+                        Text(selectedDate == nil
+                             ? "Enter a date with a time zone, such as 2026-01-15T20:30:00Z."
+                             : "Include the time zone, for example 2026-01-15T20:30:00Z.")
+                    }
                     #endif
                 }
-                if existing == nil {
-                    Text("Adds a separate play on PublicMetaDB, even if this title was watched before. This is not a media-server history import.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Changes only this play's date on PublicMetaDB. Media-server history is unchanged.")
-                        .foregroundStyle(.secondary)
+                SettingsSectionGroup {
+                    Button("Review change") {
+                        guard let selectedDate, let connectionID = service.connectionID else { return }
+                        draft = Draft(date: selectedDate, connectionID: connectionID)
+                        confirming = true
+                    }
+                    .settingsActionRow()
+                    .disabled(!initialized || !operation.permitsWrite || selectedDate == nil || service.phase != .connected)
+                    .accessibilityIdentifier("publicmetadb.history.review-date")
+                } footer: {
+                    Text(existing == nil
+                         ? "Adds a separate play on PublicMetaDB without changing server history."
+                         : "Changes only this play’s date on PublicMetaDB.")
                 }
-                Button("Review change") {
-                    guard let selectedDate, let connectionID = service.connectionID else { return }
-                    draft = Draft(date: selectedDate, connectionID: connectionID)
-                    confirming = true
-                }
-                .disabled(!initialized || !operation.permitsWrite || selectedDate == nil || service.phase != .connected)
-                .accessibilityIdentifier("publicmetadb.history.review-date")
             }
             PublicMetaDBMutationStatus(operation: operation)
         }

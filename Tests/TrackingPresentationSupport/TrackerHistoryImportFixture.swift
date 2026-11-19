@@ -39,6 +39,8 @@ struct TrackerHistoryImportFixture: View {
                             summary: "Copies movie completion only.", libraryKinds: [.movie],
                             makeSession: model.makeExportSession
                         )
+                    } else if ProcessInfo.processInfo.arguments.contains("--history-direct-sync") {
+                        SettingsSectionGroup { TrackerHistorySyncLink(makeSession: model.makeSession) }
                     } else {
                         TrackerHistoryImportView(makeSession: model.makeSession)
                     }
@@ -215,13 +217,19 @@ private final class HistoryImportFixtureModel {
     }
 
     init() {
-        var kinds: [ProviderKind] = [.jellyfin, .plex]
+        var sources = [
+            HistoryImportFixtureProvider(kind: .jellyfin, id: "jellyfin", name: "Lantern House", user: "Mara"),
+            HistoryImportFixtureProvider(kind: .plex, id: "plex", name: "Northbank Cinema", user: "Theo")
+        ]
         if arguments.contains("--history-ongoing-sync"), !arguments.contains("--history-servers-only") {
-            kinds.append(.mediaShare)
+            sources += [
+                .init(kind: .mediaShare, id: "cedar", name: "Cedar Loft", user: "Mara"),
+                .init(kind: .mediaShare, id: "mariner", name: "Mariner Archive", user: "Theo")
+            ]
         }
-        providers = kinds.map { HistoryImportFixtureProvider(kind: $0) }
+        providers = sources
         scope = WatchMutationServerScope(
-            profile: .init(id: "fixture-profile", name: "Fixture"),
+            profile: .init(id: "fixture-profile", name: "Mara"),
             accounts: providers.map(\.account)
         )
         index = IdentityIndexSnapshot(byIdentity: [
@@ -234,13 +242,15 @@ private final class HistoryImportFixtureModel {
     }
 
     var report: String {
-        providers.map {
-            "\($0.kind.rawValue)=\($0.writes),played=\($0.current.isPlayed),playback=\($0.playbackWrites),resume=\(Int($0.current.resumePosition ?? 0))"
+        var result = providers.map {
+            "\($0.account.id)=\($0.writes),played=\($0.current.isPlayed),playback=\($0.playbackWrites),resume=\(Int($0.current.resumePosition ?? 0))"
         }.joined(separator: ";") + ";trackers=\(trackerWrites)"
-            + (arguments.contains("--history-ongoing-sync")
-                ? ";sync=\(sync?.isEnabled ?? false);destinations=\(sync?.grant?.scope.accounts.map(\.accountID).sorted().joined(separator: ",") ?? "");storageFailed=\(storageFailed)"
-                : "")
-            + ";reads=\(trackerReads)"
+        if arguments.contains("--history-ongoing-sync") {
+            let destinations = sync?.grant?.scope.accounts.map(\.accountID).sorted().joined(separator: ",") ?? ""
+            let categories = sync?.grant?.categories.map(\.rawValue).sorted().joined(separator: ",") ?? ""
+            result += ";sync=\(sync?.isEnabled ?? false);destinations=\(destinations);categories=\(categories);storageFailed=\(storageFailed)"
+        }
+        return result + ";reads=\(trackerReads)"
     }
 
     func makeSession() -> TrackerHistoryImportSession {
@@ -523,17 +533,24 @@ private final class HistoryImportFixtureModel {
             authorized = false
         }
         let changed = trackerReads > 1 && arguments.contains("--history-change-on-recheck")
-        return try TrackerHistorySnapshot(
-            trackerID: "publicmetadb", connectionID: "fixture-connection",
-            observations: [
-                .init(
-                    recordID: "watch-\(newPlay)", kind: .movie,
-                    identities: [.external(source: "tmdb", value: "550")],
-                    fact: .watched(at: Date(timeIntervalSince1970: changed ? 1_700_000_001 : 1_700_000_000))
-                )
-            ],
-            completeness: .completeResponse
-        )
+        var records = [
+            try TrackerHistoryObservation(
+                recordID: "watch-\(newPlay)", kind: .movie,
+                identities: [.external(source: "tmdb", value: "550")],
+                fact: .watched(at: Date(timeIntervalSince1970: changed ? 1_700_000_001 : 1_700_000_000))
+            )
+        ]
+        if arguments.contains("--history-many-records") {
+            for number in 1...240 {
+                records.append(try .init(
+                    recordID: "unmatched-\(number)", kind: .movie,
+                    identities: [.external(source: "tmdb", value: "\(10_000 + number)")],
+                    sourceTitle: "Archive \(number)", fact: .watched(at: nil)
+                ))
+            }
+        }
+        return try TrackerHistorySnapshot(trackerID: "publicmetadb", connectionID: "fixture-connection",
+                                          observations: records, completeness: .completeResponse)
     }
 
     private func requireScope(_ requested: WatchMutationServerScope) throws {
@@ -576,23 +593,21 @@ private final class HistoryImportFixtureProvider: MediaProvider, WatchStateProvi
     private var reads = 0
     private let arguments = ProcessInfo.processInfo.arguments
 
-    init(kind: ProviderKind) {
+    init(kind: ProviderKind, id: String, name: String, user: String) {
         self.kind = kind
-        let name = kind.displayName
         let server = MediaServer(
-            id: kind.rawValue, name: "\(name) fixture",
-            baseURL: URL(string: kind == .mediaShare ? "smb://example.test/media" : "https://example.test")!, provider: kind
+            id: id, name: name,
+            baseURL: URL(string: kind == .mediaShare ? "smb://\(id).example.test/media" : "https://\(id).example.test")!, provider: kind
         )
         account = Account(
-            id: kind.rawValue, server: server, userID: "\(kind.rawValue)-viewer",
-            userName: "\(name) viewer", deviceID: "fixture-device"
+            id: id, server: server, userID: "\(id)-viewer", userName: user, deviceID: "fixture-device"
         )
         session = UserSession(
             server: server, userID: account.userID, userName: account.userName,
             deviceID: account.deviceID, accessToken: ""
         )
         current = MediaItem(
-            id: "movie", title: "Fixture movie", kind: .movie, runtime: 1_000,
+            id: "movie", title: "The Last Lantern", kind: .movie, runtime: 1_000,
             isPlayed: arguments.contains("--history-export"),
             providerIDs: ["Tmdb": "550"], sourceAccountID: account.id
         )

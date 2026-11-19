@@ -277,3 +277,211 @@ final class DiscReviewScreenshotTests: XCTestCase {
     }
     #endif
 }
+
+@MainActor final class AtlasUI: XCTestCase {
+    #if os(tvOS)
+    let app = XCUIApplication(bundleIdentifier:"com.thatcube.Plozz.FocusHost")
+    #else
+    let app = XCUIApplication(bundleIdentifier:"com.thatcube.Plozz.PresentationHost")
+    #endif
+    func start(_ mode:String, _ args:[String] = []) {
+        continueAfterFailure = false
+        app.launchArguments = ["--disc-review-fixture","detail-atlas","-AtlasPage",mode,"-AppleLanguages","(en)","-AppleLocale","en_US"]+args
+        app.launch()
+    }
+    func el(_ id:String)->XCUIElement { app.descendants(matching:.any).matching(identifier:id).firstMatch }
+    func shot(_ name:String) {
+        Thread.sleep(forTimeInterval:0.45)
+        let a = XCTAttachment(data:XCUIScreen.main.screenshot().pngRepresentation, uniformTypeIdentifier:"public.png"); a.name="atlas-"+name; a.lifetime = .keepAlways; add(a)
+        let t=XCTAttachment(string:app.debugDescription); t.name="tree-"+name; t.lifetime = .keepAlways; add(t)
+    }
+    func go(_ e:XCUIElement) {
+        XCTAssertTrue(e.waitForExistence(timeout:4),app.debugDescription)
+        #if os(iOS)
+        if !e.isHittable { app.swipeUp() }; if e.elementType == .switch && e.switches.firstMatch.exists { e.switches.firstMatch.tap() } else { e.tap() }
+        #else
+        for _ in 0..<8 where !e.hasFocus { XCUIRemote.shared.press(.down) }; if !e.hasFocus { for _ in 0..<8 where !e.hasFocus { XCUIRemote.shared.press(.up) } }; XCTAssertTrue(e.hasFocus,app.debugDescription); XCUIRemote.shared.press(.select)
+        #endif
+    }
+    func testComparison() {
+        start("comparison")
+        let first=el("tracker-history.select.jellyfin:movie"), apply=el("tracker-history.apply")
+        XCTAssertTrue(first.waitForExistence(timeout:8),app.debugDescription); shot("comparison-01-populated"); go(first); XCTAssertTrue(apply.isEnabled); shot("comparison-02-selected"); go(apply); XCTAssertTrue(app.buttons["Apply selected changes"].firstMatch.waitForExistence(timeout:5)); shot("comparison-03-confirmation"); app.terminate()
+    }
+    func testSync() {
+        start("sync",["--history-ongoing-sync"]); let enabled=el("tracker-history.sync-enabled"); XCTAssertTrue(enabled.waitForExistence(timeout:6)); shot("ongoing-sync-off"); go(enabled); XCTAssertTrue(el("tracker-history.sync-watched").waitForExistence(timeout:8)); shot("ongoing-sync-on"); app.terminate()
+    }
+}
+
+extension AtlasUI {
+    func act(_ text:String) -> XCUIElement {
+        if text.hasPrefix("@") { return el(String(text.dropFirst())) }
+        return app.buttons.matching(NSPredicate(format:"label BEGINSWITH %@",text)).firstMatch
+    }
+    func expect(_ text:String) -> Bool {
+        if text.hasPrefix("@") { return el(String(text.dropFirst())).waitForExistence(timeout:4) }
+        return app.descendants(matching:.any).matching(NSPredicate(format:"label CONTAINS[c] %@",text)).firstMatch.waitForExistence(timeout:4)
+    }
+    func frame(_ name:String,_ text:String) {
+        if name.hasSuffix("-confirm") || name.hasSuffix("-consent") {
+            XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout:4) || app.alerts.firstMatch.exists,app.debugDescription)
+        } else { XCTAssertTrue(expect(text),app.debugDescription) }
+        shot(name)
+    }
+    func next(_ text:String,_ name:String,_ visible:String) { go(act(text)); frame(name,visible) }
+    func scenario(_ page:String,_ steps:[(String,String,String)]) {
+        start(page)
+        for (tap,name,marker) in steps {
+            if tap.isEmpty { frame(name,marker) } else { next(tap,name,marker) }
+        }
+        app.terminate()
+    }
+    func testAccount() { scenario("account",[("","account-overview","Playback reporting")]) }
+    func testDisconnect() { scenario("connected",[("","account-connected","Browse PublicMetaDB"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
+    func testReplace() { scenario("connected",[("Replace API key","account-replace-confirm","Replace this profile")]) }
+    func testPairing() {
+        #if os(tvOS)
+        continueAfterFailure = false
+        app.launchArguments = ["--publicmetadb-pairing-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        go(app.buttons["fixture.open-publicmetadb"])
+        #else
+        start("disconnected")
+        #endif
+        defer { app.terminate() }
+        let entry = app.buttons["publicmetadb.pair"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        XCTAssertEqual(entry.label, "Connect PublicMetaDB")
+        shot("account-disconnected")
+        go(entry)
+
+        let field = app.secureTextFields["publicmetadb.key"]
+        let manual = app.buttons["publicmetadb.pair.manual"]
+        XCTAssertTrue(app.buttons["publicmetadb.pair.cancel"].isEnabled)
+        let code = app.staticTexts["publicmetadb.pair.code"]
+        let website = app.staticTexts["plozz.app/pmdb"]
+        let qr = app.images["QR code"]
+        #if os(tvOS)
+        XCTAssertTrue(code.waitForExistence(timeout: 5))
+        XCTAssertTrue(website.exists)
+        XCTAssertTrue(qr.exists)
+        XCTAssertTrue(manual.isEnabled && manual.wait(for: \.hasFocus, toEqual: true, timeout: 5))
+        XCTAssertGreaterThanOrEqual(manual.frame.minY, qr.frame.maxY)
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        XCTAssertFalse(field.exists)
+        XCTAssertFalse(app.buttons["publicmetadb.connect"].exists)
+        shot("pairing")
+        go(manual)
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertFalse(manual.exists || website.exists || code.exists || qr.exists || app.keyboards.firstMatch.exists)
+        shot("manual-key-entry")
+        #else
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertFalse(manual.exists)
+        let section = app.cells.containing(.secureTextField, identifier: "publicmetadb.key").firstMatch
+        XCTAssertEqual(section.buttons.allElementsBoundByIndex.map(\.identifier),
+                       ["publicmetadb.connect", "publicmetadb.pair.cancel"])
+        XCTAssertEqual(section.links.count, 0)
+        XCTAssertFalse(code.exists)
+        XCTAssertFalse(website.exists)
+        XCTAssertFalse(qr.exists)
+        shot("key-entry")
+        #endif
+        let connect = app.buttons["publicmetadb.connect"]
+        XCTAssertTrue(connect.exists)
+        XCTAssertFalse(connect.isEnabled)
+    }
+    func testReport() { scenario("reporting",[("","reporting-off","Enable playback reporting"),("Enable playback reporting","reporting-consent","Enable reporting")]); scenario("reporting-on",[("","reporting-on","Stop reporting playback")]) }
+    func testWatchlist() { scenario("watchlist",[("","watchlist-off","Choose a list"),("Choose a list","watchlist-picker","Weekend matinees"),("Weekend matinees","watchlist-private-consent","Use this list")]); scenario("watchlist-on",[("","watchlist-on","Stop syncing this list")]) }
+    func testPublicConsent() { scenario("watchlist",[("Choose a list","watchlist-picker","Harbor lights"),("Harbor lights","watchlist-public-consent","Use this list")]) }
+    func testWatch() { scenario("account",[("@publicmetadb.history","watch-history","@publicmetadb.history.record.harbor"),("@publicmetadb.history.record.harbor","watch-record","Delete this play"),("@publicmetadb.history.action","delete-play-confirm","Change this PublicMetaDB record?")]) }
+    func testResume() { scenario("account",[("Resume points","resume-points","@publicmetadb.resume.record.lantern"),("@publicmetadb.resume.record.lantern","resume-record","Clear this resume point"),("@publicmetadb.history.action","clear-resume-confirm","Change this PublicMetaDB record?")]) }
+    func testDropped() { scenario("account",[("Dropped titles","dropped-titles","@publicmetadb.dropped.record.north"),("@publicmetadb.dropped.record.north","dropped-record","Undrop title"),("@publicmetadb.history.action","undrop-confirm","Change this PublicMetaDB record?")]) }
+    func testDrop() { scenario("drop-record",[("","drop-show","Drop show"),("@publicmetadb.history.action","drop-show-confirm","Change this PublicMetaDB record?")]) }
+    func testDate() { scenario("new-play",[("","add-play","Watch date unknown"),("@publicmetadb.history.review-date","add-play-confirm","Save play")]) }
+    func testEditDate() { scenario("account",[("@publicmetadb.history","watch-history","@publicmetadb.history.record.harbor"),("@publicmetadb.history.record.harbor","watch-record","Change watch date"),("Change watch date","edit-play","Watch date unknown")]) }
+    func testBulk() { scenario("bulk",[("","bulk-delete","@publicmetadb.history.select.harbor"),("@publicmetadb.history.select.harbor","bulk-selected","Review deletion"),("@publicmetadb.history.bulk.review","bulk-delete-confirm","Delete the selected")]) }
+    func testLists() { scenario("account",[("Lists","lists","@publicmetadb.list.record.weekend"),("@publicmetadb.list.record.weekend","list-detail","Browse items"),("Browse items","list-items","The Last Lantern"),("The Last Lantern","list-item","Remove from list"),("Remove from list","list-remove-confirm","Remove this item?")]) }
+    func testListDelete() { scenario("list-detail",[("@publicmetadb.list.delete","list-delete-confirm","Delete this PublicMetaDB list?")]) }
+    func testAddList() { scenario("add-to-list",[("","add-to-list","Weekend matinees"),("Weekend matinees","list-add-confirm","Add to list")]) }
+    func testListForms() { scenario("create-list",[("","list-create","@publicmetadb.list.name")]); scenario("open-list",[("","public-list-open","Open list")]) }
+    func testPicks() { scenario("account",[("Picks","picks","Coastal mysteries"),("Coastal mysteries","recommendations","The Last Lantern")]) }
+    func testTitles() { scenario("movie",[("","movie-controls","The Last Lantern")]); scenario("show",[("","series-controls","The Mariner's Almanac")]); scenario("episode",[("","episode-controls","The Mariner's Almanac")]) }
+    func testRatings() { scenario("ratings",[("","ratings","@publicmetadb.rating.record.score"),("@publicmetadb.rating.record.score","rating-record","Delete rating"),("Delete rating","rating-delete-confirm","Delete this rating?")]) }
+    func testSubmitRating() { scenario("ratings",[("Submit a rating","rating-submit","@publicmetadb.rating.submit"),("@publicmetadb.rating.submit","rating-submit-confirm","Publish rating")]) }
+    func testVote() { scenario("ratings",[("@publicmetadb.rating.record.score","rating-record","Vote on this contribution"),("Vote on this contribution","votes","upvotes"),("Upvote","vote-confirm","Confirm vote")]) }
+    func testSeason() { scenario("season",[("","season-ratings","Rate multiple episodes"),("Rate multiple episodes","season-rating-editor","Add an episode")]); scenario("season",[("Delete selected episode ratings","season-rating-delete","@publicmetadb.episode-rating.record.pilot"),("@publicmetadb.episode-rating.record.pilot","season-rating-selected","Delete selected ratings"),("Delete selected ratings","season-rating-delete-confirm","Delete these exact ratings?")]) }
+    func testMappings() { scenario("mappings",[("","external-ids","tt4082150"),("Submit an external ID","external-id-editor","Review mapping")]); scenario("lookup",[("","external-id-lookup","Look up ID")]) }
+    func testAnime() { scenario("anime",[("","anime-mappings","Spring Tide"),("Publish or replace my mapping","anime-editor","Review replacement")]); scenario("anime",[("Delete my mapping for a logical season","anime-delete","Review season")]) }
+    func testListening() { scenario("lastfm",[("","lastfm-listening-history","Eastbound Ferry")]) }
+    func choose(_ id:String,_ label:String) {
+        let p=el(id)
+        go(p); go(app.buttons[label].firstMatch)
+    }
+    func export(_ provider:String) {
+        let key=provider == "public" ? "publicmetadb.export":"tracker-export", route=provider+"-export"
+        start(route,["--history-export","--history-"+route]); frame(route+"-setup","Server user")
+        choose(key+".account","Lantern House · Mara"); choose(key+".library","Movies"); go(el(key+".preview"))
+        frame(route+"-preview","The Last Lantern"); go(el(key+".select.movie")); frame(route+"-selected","Review 1 selected"); go(el(key+".apply")); frame(route+"-confirm","Export selected titles"); app.terminate()
+    }
+    func testPublicExport() { export("public") }
+    func testTraktExport() { export("trakt") }
+    func testSimklExport() { export("simkl") }
+    func testWetrakrExport() { export("wetrakr") }
+}
+
+extension AtlasUI {
+    func testAniListExport() { export("anilist") }
+    func testMALExport() { export("mal") }
+    func testOnboarding() {
+        #if os(iOS)
+        app.launchArguments=["--onboarding-page=welcome","-AppleLanguages","(en)","-AppleLocale","en_US"]; app.launch()
+        #else
+        start("onboarding")
+        #endif
+        frame("onboarding-provider-chooser","Free forever and open source."); app.terminate()
+    }
+    #if os(tvOS)
+    func testTrackerHome() { scenario("trackers",[("","trackers","@settings-page-trakt")]) }
+    func provider(_ id:String,_ marker:String) {scenario("trackers",[("@settings-page-"+id,"tracker-"+id,marker)])}
+    func testTrackerTrakt() {provider("trakt","Compare with server history")}
+    func testTrackerSimkl() {provider("simkl","Compare with server history")}
+    func testTrackerWetrakr() {provider("wetrakr","Compare with server history")}
+    func testTrackerAni() {provider("anilist","Compare with server history")}
+    func testTrackerMAL() {provider("mal","Compare with server history")}
+    func testTrackerLast() {provider("lastfm","Listening history")}
+    func testTrackerPub() {provider("publicmetadb","Browse PublicMetaDB")}
+    #endif
+    func field(_ label:String,_ value:String) {
+        let e=label.hasPrefix("@") ? el(String(label.dropFirst())) : app.textFields[label].firstMatch
+        XCTAssertTrue(e.waitForExistence(timeout:4),app.debugDescription)
+        #if os(iOS)
+        if !e.isHittable { app.swipeUp() }; e.tap(); e.typeText(value)
+        if app.keyboards.firstMatch.exists && app.buttons["Return"].exists { app.buttons["Return"].tap() }
+        #else
+        go(e); let k=app.keyboards.firstMatch; XCTAssertTrue(k.waitForExistence(timeout:3)); k.typeText(value); XCUIRemote.shared.press(.menu)
+        #endif
+    }
+    func testCreateListReview() {
+        start("create-list"); field("@publicmetadb.list.name","Lantern festival"); next("@publicmetadb.list.create","list-create-confirm","Create list"); app.terminate()
+    }
+    func testPublicListRead() {
+        start("open-list"); field("PublicMetaDB list URL","https://publicmetadb.com/lists/u/theo/harbor-lights"); next("Open list","public-list-items","The Last Lantern"); app.terminate()
+    }
+    func testMappingReview() {
+        start("mappings"); go(act("Submit an external ID")); field("@publicmetadb.mapping.value","tt4082150"); next("Review mapping","external-id-review","Existing mappings for this title"); next("Publish mapping","external-id-publish-confirm","Publish mapping");app.terminate()
+    }
+    func testLookupResults() {
+        start("lookup"); field("External ID","tt4082150"); next("Look up ID","external-id-results","The Last Lantern"); app.terminate()
+    }
+    func testMappingRecord() { scenario("mappings",[("tt4082150","mapping-contribution","Delete contribution"),("Delete contribution","mapping-delete-confirm","Delete contribution")]) }
+    func testSeasonPublish() {
+        start("season"); go(act("Rate multiple episodes")); field("TMDB episode number","1"); next("Review ratings","season-publish-confirm","Publish ratings"); app.terminate()
+    }
+    func testAnimePublish() {
+        start("anime"); go(act("Publish or replace my mapping")); field("Logical anime season (1 or greater)","1"); field("TMDB season (0 for specials)","1"); next("Review replacement","anime-review","Replace my mapping"); next("Replace my mapping","anime-replace-confirm","Publish replacement"); app.terminate()
+    }
+    func testAnimeRemove() {
+        start("anime"); go(act("Delete my mapping for a logical season")); field("Logical anime season (1 or greater)","1"); next("Review season","anime-delete-review","Delete my mapping"); next("Delete my mapping","anime-delete-confirm","Delete my mapping");app.terminate()
+    }
+}

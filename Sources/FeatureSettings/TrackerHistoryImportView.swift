@@ -6,22 +6,21 @@ import SwiftUI
 public struct TrackerHistoryImportView: View {
     private let makeSession: @MainActor () -> TrackerHistoryImportSession
     @State private var session: TrackerHistoryImportSession?
+    @Environment(\.themePalette) private var palette
 
     public init(makeSession: @escaping @MainActor () -> TrackerHistoryImportSession) {
         self.makeSession = makeSession
     }
 
     public var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Compare with server history")
-            Text("Your server already tracks playback. Nothing changes until you select differences and confirm.")
-                .foregroundStyle(.secondary)
+        GroupedSettingsPage(title: "Compare with server history", backIdentifier: "tracker-history.back") {
             if let session {
                 TrackerHistoryComparisonContent(session: session)
             } else {
                 ProgressView()
             }
         }
+        .tint(palette.primaryText)
         .task {
             guard session == nil || session?.plan == nil else { return }
             let created = makeSession()
@@ -35,82 +34,116 @@ public struct TrackerHistoryImportView: View {
 private struct TrackerHistoryComparisonContent: View {
     let session: TrackerHistoryImportSession
     @State private var selected: Set<UUID> = []
-    @State private var page = 0
     @State private var confirming = false
     @State private var operation: Task<Void, Never>?
 
     var body: some View {
-        comparisonContent
+        TrackerHistorySettingsStack {
+            if session.isBusy { ProgressView("Comparing or verifying history…") }
+            if let error = session.error { TrackerHistoryImportFailure(error: error) }
+            if let plan = session.plan, !plan.rows.isEmpty {
+                let selectedTargets = Set(plan.rows.lazy.filter { selected.contains($0.id) }.compactMap(\.target))
+                TrackerHistoryReviewResults(
+                    rows: plan.rows, selected: selected, identifier: "tracker-history",
+                    hint: session.outcomes.isEmpty && plan.rows.contains(where: { $0.filter == .ready || $0.filter == .conflicts })
+                        ? "Nothing changes until you confirm." : nil,
+                    category: { $0.filter }, title: { $0.displayTitle }
+                ) {
+                    if !selected.isEmpty && session.outcomes.isEmpty {
+                        Button("Review \(selected.count) selected") { confirming = true }
+                            .settingsActionRow()
+                            .disabled(session.isBusy)
+                            .accessibilityIdentifier("tracker-history.apply")
+                    }
+                } content: { row in
+                    TrackerHistoryComparisonRow(
+                        row: row, destination: session.destinations.first { $0.id == row.target?.accountID },
+                        outcome: session.outcomes[row.id],
+                        competingSelection: row.target.map(selectedTargets.contains) == true && !selected.contains(row.id),
+                        canSelect: !session.isBusy && session.outcomes.isEmpty,
+                        selected: Binding(
+                            get: { selected.contains(row.id) },
+                            set: { if $0 { selected.insert(row.id) } else { selected.remove(row.id) } }
+                        )
+                    )
+                }
+                .id(plan.id)
+            } else if session.plan != nil {
+                SettingsSectionGroup { Text("No tracker records to compare.") }
+            }
+            SettingsSectionGroup {
+                Button("Compare again") {
+                    selected = []
+                    operation?.cancel()
+                    operation = Task { await session.compare() }
+                }
+                .settingsActionRow()
+                .disabled(session.isBusy)
+                if let sync = session.ongoingSync, sync.hasSettingsDestination {
+                    TrackerHistorySyncNavigationRow(session: session, sync: sync)
+                        .disabled(session.isBusy || (session.plan == nil && sync.grant?.enabled != true))
+                }
+            }
+        }
         .confirmationDialog("Change server history?", isPresented: $confirming, titleVisibility: .visible) {
             Button("Apply selected changes", role: .destructive) {
                 guard let plan = session.plan else { return }
+                let selection = selected
                 let conflicts = Set(plan.rows.filter {
-                    selected.contains($0.id) && ($0.comparison == .serverConflict || $0.comparison == .trackerConflict)
+                    selection.contains($0.id) && $0.filter == .conflicts
                 }.map(\.id))
                 operation = Task {
-                    await session.apply(rowIDs: selected, overridingConflicts: conflicts, confirmsDestructiveChanges: true)
+                    await session.apply(rowIDs: selection, overridingConflicts: conflicts, confirmsDestructiveChanges: true)
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Only the selected titles and server users shown above will change. Other apps and profiles using those server users will see the changes. Server plugins may forward them to trackers. Original play counts and dates are not imported. This does not enable ongoing sync.")
+            let rows = session.plan?.rows.filter { selected.contains($0.id) } ?? []
+            let accounts = Set(rows.compactMap(\.target?.accountID))
+            let destinations = session.destinations.filter { accounts.contains($0.id) }
+                .map { "\($0.serverName) · \($0.userName)" }.formatted(.list(type: .and))
+            let conflicts = rows.filter { $0.filter == .conflicts }.count
+            let changesServer = rows.contains { $0.target?.providerKind != .mediaShare }
+            let single = rows.count == 1 ? rows.first : nil
+            publicMetaDBConfirmationMessage(
+                single.map { Text("\($0.displayTitle) · \(destinations)") }
+                    ?? Text("Apply \(rows.count) selected changes to \(destinations)?"),
+                single?.change?.actionLabel,
+                conflicts > 0 ? Text("Conflicting history will be replaced.") : nil,
+                changesServer ? Text("Other apps and profiles using these server users see the changes. Server plugins may forward them to trackers.") : nil,
+                Text("Play counts and dates aren’t copied. Ongoing sync stays unchanged.")
+            )
         }
-        .onChange(of: session.plan?.id) { _, _ in selected = []; page = 0; confirming = false }
+        .onChange(of: session.plan?.id) { _, _ in selected = []; confirming = false }
         .onDisappear { operation?.cancel() }
     }
+}
 
-    @ViewBuilder private var comparisonContent: some View {
-        #if os(tvOS)
-        VStack(alignment: .leading, spacing: 20) { rows }
-        #else
-        Section { rows }
-        #endif
+private extension TrackerHistoryImportPlan.Change {
+    var actionLabel: Text {
+        switch self {
+        case .watched(true): Text("Mark watched")
+        case .watched(false): Text("Mark unwatched")
+        case .resume(let seconds):
+            if seconds == 0 { Text("Clear resume point") }
+            else { Text("Set resume to \(seconds.formatted(.number.precision(.fractionLength(0)))) seconds") }
+        }
     }
+}
 
-    @ViewBuilder private var rows: some View {
-        if session.isBusy { ProgressView("Comparing or verifying history…") }
-        if let error = session.error { TrackerHistoryImportFailure(error: error) }
-        if let plan = session.plan {
-            if plan.rows.isEmpty { Text("No tracker records to compare.") }
-            ForEach(Array(plan.rows.dropFirst(page * 50).prefix(50))) { row in
-                TrackerHistoryComparisonRow(
-                    row: row, destination: session.destinations.first { $0.id == row.target?.accountID },
-                    outcome: session.outcomes[row.id],
-                    selected: Binding(
-                        get: { selected.contains(row.id) },
-                        set: { if $0 { selected.insert(row.id) } else { selected.remove(row.id) } }
-                    )
-                )
-            }
-            .disabled(session.isBusy || !session.outcomes.isEmpty)
-            if plan.rows.count > 50 {
-                Text("Page \(page + 1) of \((plan.rows.count + 49) / 50)")
-                    .foregroundStyle(.secondary)
-                if page > 0 {
-                    Button("Previous page") { page -= 1 }
-                        .accessibilityIdentifier("tracker-history.previous-page")
-                }
-                if (page + 1) * 50 < plan.rows.count {
-                    Button("Next page") { page += 1 }
-                        .accessibilityIdentifier("tracker-history.next-page")
-                }
-            }
-            Button("Apply \(selected.count) selected changes") { confirming = true }
-                .disabled(selected.isEmpty || session.isBusy || !session.outcomes.isEmpty)
-                .accessibilityIdentifier("tracker-history.apply")
-        }
-        Button("Compare again") {
-            selected = []
-            operation?.cancel()
-            operation = Task { await session.compare() }
-        }
-        .disabled(session.isBusy)
-        if let sync = session.ongoingSync, !sync.eligibleAccountIDs.isEmpty || sync.grant?.enabled == true {
-            NavigationLink("Ongoing sync") {
-                TrackerHistorySyncSettingsView(session: session, sync: sync)
-            }
-            .disabled(session.isBusy)
-            .accessibilityIdentifier("tracker-history.ongoing-sync")
+private extension TrackerHistoryImportPlan.Row {
+    var displayTitle: String {
+        title ?? observation.sourceTitle ?? observation.identities.compactMap { identity in
+            if case .external(let source, let value) = identity { return "\(source): \(value)" }
+            return nil
+        }.joined(separator: ", ")
+    }
+    var filter: TrackerHistoryResultFilter {
+        switch comparison {
+        case .ready: .ready
+        case .serverConflict, .trackerConflict: .conflicts
+        case .alreadyMatches: .matches
+        case .unmatched, .ambiguous, .unsupported, .playing, .incompatibleRuntime: .unavailable
         }
     }
 }
@@ -119,14 +152,13 @@ private struct TrackerHistoryComparisonRow: View {
     let row: TrackerHistoryImportPlan.Row
     let destination: TrackerHistoryImportSession.Destination?
     let outcome: TrackerHistoryImportSession.Outcome?
+    let competingSelection: Bool
+    let canSelect: Bool
     @Binding var selected: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(verbatim: row.title ?? row.observation.sourceTitle ?? row.observation.identities.map { identity in
-                if case .external(let source, let value) = identity { return "\(source): \(value)" }
-                return ""
-            }.joined(separator: ", "))
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
+            Text(verbatim: row.displayTitle)
             if let destination {
                 Text("\(destination.serverName) · \(destination.userName)").foregroundStyle(.secondary)
             }
@@ -160,22 +192,18 @@ private struct TrackerHistoryComparisonRow: View {
                     }
                 }
                 TrackerHistoryComparisonStatus(comparison: row.comparison)
-                if let change = row.change,
-                   row.comparison == .ready || row.comparison == .serverConflict || row.comparison == .trackerConflict {
-                    Toggle(isOn: $selected) {
-                        switch change {
-                        case .watched(true): Text("Mark watched")
-                        case .watched(false): Text("Mark unwatched")
-                        case .resume(let seconds):
-                            if seconds == 0 { Text("Clear resume point") }
-                            else { Text("Set resume to \(seconds.formatted(.number.precision(.fractionLength(0)))) seconds") }
-                        }
-                    }
+                if competingSelection && row.filter == .conflicts {
+                    Text("Deselect the other change for this title first.")
+                        .foregroundStyle(.secondary)
+                } else if canSelect, let change = row.change, row.filter == .ready || row.filter == .conflicts {
+                    Toggle(isOn: $selected) { change.actionLabel }
                     .accessibilityIdentifier("tracker-history.select.\(row.target?.id ?? row.id.uuidString)")
                 }
             }
         }
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("tracker-history.row.\(row.id.uuidString)")
+        .trackerHistoryRowFocus(readOnly: !canSelect || competingSelection || row.filter == .matches || row.filter == .unavailable)
     }
 }
 
@@ -209,7 +237,7 @@ private struct TrackerHistoryComparisonStatus: View {
     var body: some View {
         Group {
             switch comparison {
-            case .ready: Text("Available to import")
+            case .ready: EmptyView()
             case .alreadyMatches: Text("Already matches — no change")
             case .serverConflict: Text("Different from server — selecting replaces its current state")
             case .trackerConflict: Text("Tracker records disagree — select only one change for this title")

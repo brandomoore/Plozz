@@ -701,7 +701,8 @@ final class TrackerHistoryImportTests: XCTestCase {
         permission: ImportPermission? = nil, connection: String = "connection",
         serverScope: WatchMutationServerScope? = nil, reconciler existingReconciler: WatchStateReconciler? = nil,
         supportedCategories: Set<TrackerHistorySyncCategory> = [.watched, .resume],
-        allowsForegroundChecks: Bool = true, indexSnapshot: IdentityIndexSnapshot? = nil
+        allowsForegroundChecks: Bool = true, indexSnapshot: IdentityIndexSnapshot? = nil,
+        otherProviders: [String: ImportProvider] = [:]
     ) -> TrackerHistorySyncController {
         let scope = serverScope ?? self.scope(provider.kind)
         let permission = permission ?? ImportPermission()
@@ -711,7 +712,7 @@ final class TrackerHistoryImportTests: XCTestCase {
             ]
         ])
         let reconciler = existingReconciler ?? WatchStateReconciler(
-            store: InMemoryWatchMutationStore(), applier: ImportApplier(provider: provider)
+            store: InMemoryWatchMutationStore(), applier: ImportApplier(provider: provider, otherProviders: otherProviders)
         )
         return TrackerHistorySyncController(
             identity: .init(
@@ -728,7 +729,7 @@ final class TrackerHistoryImportTests: XCTestCase {
                         action?()
                         return evidence.snapshot
                     },
-                    index: { index }, resolveProvider: { _ in provider },
+                    index: { index }, resolveProvider: { otherProviders[$0] ?? provider },
                     isAuthorized: { permission.allowed && allowed() }
                 )
             }
@@ -751,6 +752,186 @@ final class TrackerHistoryImportTests: XCTestCase {
         await sync.enable(afterReview: plan, accountIDs: ["account"], categories: categories)
         XCTAssertNil(sync.error)
         XCTAssertTrue(sync.isEnabled)
+    }
+
+    @MainActor
+    func testSelectionEditPreservesUnprocessedResumeAndProofWithoutBackfillingNewPairs() async throws {
+        let context = WatchMutationServerScope(
+            profile: .init(id: "profile", name: "Test"), accounts: [account(.mediaShare), account(.mediaShare, id: "second")]
+        )
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let first = ImportProvider(.mediaShare, item: item())
+        var otherItem = item()
+        otherItem.sourceAccountID = "second"
+        let second = ImportProvider(.mediaShare, item: otherItem)
+        let index = IdentityIndexSnapshot(byIdentity: [
+            .external(source: "tmdb", value: "550"): context.accounts.map {
+                .init(accountID: $0.accountID, itemID: "server-item", providerKind: .mediaShare, kind: .movie)
+            }
+        ])
+        func controller() -> TrackerHistorySyncController {
+            syncController(
+                provider: first, evidence: evidence, store: store, serverScope: context,
+                indexSnapshot: index, otherProviders: ["second": second]
+            )
+        }
+        let sync = controller()
+        await enable(sync, evidence: evidence, categories: [.resume])
+        let settled = try observation(id: "settled", fact: .resume(seconds: 100, runtime: 1_000, updatedAt: nil))
+        evidence.snapshot = try snapshot([settled])
+        await sync.synchronize()
+        XCTAssertEqual(sync.confirmedCount, 1)
+
+        evidence.snapshot = try snapshot([
+            settled, observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil)),
+            observation(id: "existing-watch")
+        ])
+        await sync.updateSelection(accountIDs: ["account", "second"], categories: [.resume, .watched])
+        XCTAssertNil(sync.error)
+        let restored = controller()
+        await restored.synchronize()
+        XCTAssertNil(restored.error)
+        XCTAssertEqual(restored.grant?.reviewCount, 0)
+        let continued = try await first.item(id: "server-item")
+        XCTAssertEqual(continued.resumePosition, 200, "The existing share still processes its unconsumed resume")
+        XCTAssertFalse(continued.isPlayed)
+        var secondWrites = await second.writes
+        XCTAssertEqual(secondWrites, 0, "Neither category may backfill the new share")
+
+        await first.replace(item: item())
+        evidence.snapshot = try snapshot([settled])
+        await restored.synchronize()
+        let firstWrites = await first.writes
+        XCTAssertEqual(firstWrites, 2, "Resetting a share must not replay settled history")
+        evidence.snapshot = try snapshot([observation(id: "new-watch")])
+        await restored.synchronize()
+        XCTAssertEqual(restored.confirmedCount, 2)
+        secondWrites = await second.writes
+        XCTAssertEqual(secondWrites, 1)
+    }
+
+    @MainActor
+    func testSelectionEditRejectsInvalidOrStalePermissionBeforeReadingHistory() async throws {
+        let context = WatchMutationServerScope(
+            profile: .init(id: "profile", name: "Test"), accounts: [account(.mediaShare), account(.plex, id: "managed")]
+        )
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(.mediaShare, item: item())
+        let sync = syncController(
+            provider: provider, evidence: evidence, store: store, serverScope: context, supportedCategories: [.watched]
+        )
+        await enable(sync, evidence: evidence)
+        let original = try XCTUnwrap(sync.grant)
+        evidence.failRead = true
+        let invalid: [(Set<String>, Set<TrackerHistorySyncCategory>)] = [
+            ([], [.watched]), (["account"], []), (["account"], [.resume]),
+            (["account", "managed"], [.watched]), (["unknown"], [.watched])
+        ]
+        for (accounts, categories) in invalid {
+            await sync.updateSelection(accountIDs: accounts, categories: categories)
+            XCTAssertEqual(sync.error as? TrackerHistoryError, .invalidSelection)
+            XCTAssertEqual(sync.grant, original)
+        }
+        await sync.updateSelection(accountIDs: ["account"], categories: [.watched])
+        XCTAssertNil(sync.error)
+        XCTAssertEqual(sync.grant, original, "A no-op must not replace the grant")
+
+        evidence.failRead = false
+        let replacement = syncController(provider: provider, evidence: evidence, store: store, connection: "other")
+        await enable(replacement, evidence: evidence)
+        evidence.failRead = true
+        await sync.updateSelection(accountIDs: ["account"], categories: [.watched])
+        XCTAssertEqual(sync.error as? TrackerHistorySyncError, .permissionChanged)
+        replacement.reload()
+        XCTAssertTrue(replacement.isEnabled)
+        XCTAssertEqual(sync.grant, replacement.grant)
+    }
+
+    @MainActor
+    func testReaddedShareCannotInheritPreviousViewersContinuationProof() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(.mediaShare, item: item())
+        func controller(viewer: String) -> TrackerHistorySyncController {
+            syncController(provider: provider, evidence: evidence, store: store, serverScope: .init(
+                profile: .init(id: "profile", name: "Test"),
+                accounts: [account(.mediaShare, userID: viewer), account(.mediaShare, id: "second")]
+            ))
+        }
+        let first = controller(viewer: "original")
+        await enable(first, evidence: evidence, categories: [.resume])
+        evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 100, runtime: 1_000, updatedAt: nil))])
+        await first.synchronize()
+        XCTAssertEqual(first.confirmedCount, 1)
+        await first.updateSelection(accountIDs: ["second"], categories: [.resume])
+        XCTAssertNil(first.error)
+        let replacement = controller(viewer: "replacement")
+        await replacement.updateSelection(accountIDs: ["account", "second"], categories: [.resume])
+        XCTAssertNil(replacement.error)
+        evidence.snapshot = try snapshot([observation(fact: .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
+        // The extra share isn't indexed in this fixture; check only the re-added destination.
+        evidence.failRead = true
+        await replacement.updateSelection(accountIDs: ["account"], categories: [.resume])
+        XCTAssertNil(replacement.error, "Removing a share needs no tracker read")
+        evidence.failRead = false
+        await replacement.synchronize()
+        XCTAssertNil(replacement.error)
+        let writes = await provider.writes
+        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(replacement.grant?.reviewCount, 1)
+    }
+
+    @MainActor
+    func testSelectionEditCannotPublishOverRevocationOrPartialLedger() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let secure = HistorySyncSecureStore()
+        let store = try DurableLocalStateStore(secureStore: secure)
+        let provider = ImportProvider(.mediaShare, item: item())
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        await enable(sync, evidence: evidence)
+        let original = sync.grant
+        evidence.snapshot = try snapshot([observation()])
+        secure.failWrites(afterSuccessfulWrites: 2)
+        await sync.updateSelection(accountIDs: ["account"], categories: [.watched, .resume])
+        XCTAssertEqual(sync.error as? DurableLocalStateError, .storageUnavailable)
+        secure.allowWrites()
+        let restored = syncController(provider: provider, evidence: evidence, store: store)
+        XCTAssertEqual(restored.grant, original)
+        await restored.synchronize()
+        XCTAssertEqual(restored.confirmedCount, 1)
+
+        evidence.nextRead = { restored.disable() }
+        await sync.updateSelection(accountIDs: ["account"], categories: [.watched, .resume])
+        XCTAssertEqual(sync.error as? TrackerHistorySyncError, .permissionChanged)
+        XCTAssertFalse(sync.isEnabled)
+        XCTAssertEqual(sync.grant?.id, original?.id)
+        XCTAssertEqual(sync.grant?.categories, [.watched])
+    }
+
+    @MainActor
+    func testSelectionEditFencesPendingDispatchEvenFromAnotherController() async throws {
+        for useSameController in [true, false] {
+            let evidence = ImportEvidence(try snapshot([]))
+            let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+            let provider = ImportProvider(.mediaShare, item: item())
+            let sync = syncController(provider: provider, evidence: evidence, store: store)
+            await enable(sync, evidence: evidence, categories: [.watched, .resume])
+            let editor = useSameController ? sync : syncController(provider: provider, evidence: evidence, store: store)
+            evidence.snapshot = try snapshot([observation()])
+            await provider.onNextRead {
+                await provider.onNextRead {
+                    await Task { await editor.updateSelection(accountIDs: ["account"], categories: [.resume]) }.value
+                }
+            }
+            await sync.synchronize()
+            let writes = await provider.writes
+            XCTAssertEqual(writes, 0)
+            editor.reload()
+            XCTAssertEqual(editor.grant?.categories, [.resume])
+            XCTAssertEqual(editor.grant?.reviewCount, 1, "An uncertain delivery must stay held, not disappear")
+        }
     }
 
     @MainActor
@@ -1006,6 +1187,41 @@ final class TrackerHistoryImportTests: XCTestCase {
         XCTAssertEqual(TrackerServerHistoryBaseline(item: actual), .init(item: original))
         let writes = await provider.writes
         XCTAssertEqual(writes, 0)
+    }
+
+    @MainActor
+    func testDirectEnrollmentBaselinesHistoryWithoutComparingOrBackfilling() async throws {
+        let provider = ImportProvider(.mediaShare, item: item())
+        let evidence = ImportEvidence(try snapshot([observation()]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        let (entry, _) = try session(provider: provider, readSnapshot: { evidence.snapshot })
+        await sync.enable(from: entry, accountIDs: ["account"], categories: [.watched])
+        XCTAssertNil(sync.error)
+        XCTAssertTrue(sync.isEnabled)
+        XCTAssertNil(entry.plan)
+        let reads = await provider.itemReads
+        XCTAssertTrue(reads.isEmpty)
+        await sync.synchronize()
+        let writes = await provider.writes
+        XCTAssertEqual(writes, 0)
+    }
+
+    @MainActor
+    func testDirectEnrollmentRejectsChangedBaselineAndClosedSession() async throws {
+        let provider = ImportProvider(.mediaShare, item: item())
+        let reviewed = try snapshot([])
+        let evidence = ImportEvidence(try snapshot([observation()]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        let (entry, _) = try session(provider: provider, readSnapshot: { reviewed })
+        await sync.enable(from: entry, accountIDs: ["account"], categories: [.watched])
+        XCTAssertEqual(sync.error as? TrackerHistoryError, .stalePreview)
+        XCTAssertNil(sync.grant)
+        entry.cancel()
+        await sync.enable(from: entry, accountIDs: ["account"], categories: [.watched])
+        XCTAssertEqual(sync.error as? TrackerHistoryError, .scopeChanged)
+        XCTAssertNil(sync.grant)
     }
 
     @MainActor
@@ -1761,14 +1977,17 @@ private final class HistorySyncSecureStore: SecureStoring, @unchecked Sendable {
 
 private struct ImportApplier: WatchMutationAuthorizationEnforcing {
     let provider: ImportProvider
+    var otherProviders: [String: ImportProvider] = [:]
     func requireServerScope(_ scope: WatchMutationServerScope) async throws {}
     func setPlayed(_ played: Bool, on target: WatchMutationTarget) async throws {
+        let provider = otherProviders[target.accountID] ?? self.provider
         try await WatchMutationDeliveryAuthorization.checkSourcePrecondition(provider: provider, target: target)
         try await provider.setPlayed(played, itemID: target.itemID)
         try await WatchMutationDeliveryAuthorization.check()
     }
 
     func setResumePosition(_ seconds: TimeInterval, on target: WatchMutationTarget, capturedAt: Date) async throws {
+        let provider = otherProviders[target.accountID] ?? self.provider
         try await WatchMutationDeliveryAuthorization.checkSourcePrecondition(provider: provider, target: target)
         try await provider.setResumePosition(seconds, itemID: target.itemID, capturedAt: capturedAt)
         try await WatchMutationDeliveryAuthorization.check()

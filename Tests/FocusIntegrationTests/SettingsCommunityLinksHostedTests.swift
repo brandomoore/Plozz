@@ -89,7 +89,7 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
 
     func testPublicMetaDBPairingCodeDecodesAtItsTVSizeInBothThemes() async throws {
         let publicKey = "BHzrb5wTQBgmoH_IGUWBKCINTu05sE33fikGVZg5pdK-Xd6Lzu_Z1Pbhax7RQRVQeXt8WPbrwy0rt6jX6A4r86U"
-        let payload = "https://plozz.app/publicmetadb#code=ABCDEFGH&key=\(publicKey)"
+        let payload = "https://plozz.app/pmdb#code=ABCDEFGH&key=\(publicKey)"
         for scheme in [ColorScheme.light, .dark] {
             for scale in [CGFloat(1), CGFloat(2)] {
                 _ = try await renderCodes(

@@ -1,5 +1,21 @@
 # PublicMetaDBService
 
+## Live NFS movie verification: 19 November 2026
+
+On the owned iPhone simulator, real muted NFS playback reported five movie
+resume positions and two watched movies to PublicMetaDB. After an independent
+tracker change, a due foreground sync imported all seven into the selected
+share. For `(500) Days of Summer`, the outbound position was 1341.103 seconds
+and the imported position was 2452.489 seconds. The matching Emby copy stayed
+unchanged. An eighth movie with an incompatible runtime remained in review
+without changing the share's position.
+
+The original run missed four imports during a concurrent NFS rescan. Repeating
+the foreground transition after preserving unchanged file attributes verified
+all four; the identity, edition and stale-preview checks remained in force.
+This run did not verify episodes, combined-share fan-out, or exactly-once
+delivery of completed plays. Managed copies were controls, not destinations.
+
 ## Branch reconciliation: 18 November 2026
 
 The feature branch incorporates `main` through `ddf1cd9d4`. The acceptance
@@ -102,7 +118,7 @@ Do not put keys in URLs, QR codes, UserDefaults, or test fixtures.
 ### Browser-assisted key entry
 
 `PublicMetaDBBrowserPairing` creates a ten-minute, eight-character code at
-`plozz.app/publicmetadb`. The browser encrypts a user-pasted key with ephemeral
+`plozz.app/pmdb`. The browser encrypts a user-pasted key with ephemeral
 P-256 ECDH, HKDF-SHA256 and AES-256-GCM for the requesting app's in-memory private
 key. The QR fragment pins that public key; neither the API key nor the app's
 separate 256-bit redemption secret appears in the URL. Manual code entry trusts

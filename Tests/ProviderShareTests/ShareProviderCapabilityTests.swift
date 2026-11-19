@@ -1145,6 +1145,27 @@ final class ShareProviderCapabilityTests: XCTestCase {
         XCTAssertFalse(stamped.isPlayed)
     }
 
+    func testSingleVersionUsesMeasuredPlaybackRuntimeButGroupedCutsKeepCatalogRuntime() {
+        var movie = MediaItem(id: "movie:test", title: "Movie", kind: .movie)
+        movie.runtime = 600
+        let record = ShareWatchStore.Record(position: 120, played: false, updatedAt: Date(), duration: 596.48)
+        XCTAssertEqual(ShareWatchStateService.stamped(movie, with: record).runtime, 596.48)
+
+        movie.versions = [MediaVersion(id: "theatrical"), MediaVersion(id: "extended")]
+        XCTAssertEqual(ShareWatchStateService.stamped(movie, with: record).runtime, 600)
+    }
+
+    func testInvalidPlaybackDurationDoesNotReplaceCatalogRuntime() {
+        var movie = MediaItem(id: "movie:test", title: "Movie", kind: .movie)
+        movie.runtime = 600
+        for duration: TimeInterval in [.infinity, .nan, 0, -1] {
+            let record = ShareWatchStore.Record(position: 120, played: false, updatedAt: Date(), duration: duration)
+            let stamped = ShareWatchStateService.stamped(movie, with: record)
+            XCTAssertEqual(stamped.runtime, 600)
+            XCTAssertNil(stamped.playedPercentage)
+        }
+    }
+
     func testWatchStateServiceLeavesEmptySeriesUnwatched() async throws {
         let reader = FakeCatalogReader()
         let service = ShareWatchStateService(

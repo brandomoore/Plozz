@@ -2,6 +2,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import plistlib
 import subprocess
@@ -40,13 +41,13 @@ def manifest(platform="tvOS"):
     }]}]}
 
 
-def results():
+def results(platform="tvOS", scenario="negative"):
     return (
         {"result": "Passed", "totalTestCount": 1, "passedTests": 1, "failedTests": 0,
          "skippedTests": 0, "expectedFailures": 0, "testFailures": []},
         {"testNodes": [{"nodeType": "Test Plan", "children": [{
-            "nodeType": "UI test bundle", "name": evidence.TARGETS["tvOS"], "children": [{
-                "nodeType": "Test Case", "nodeIdentifier": evidence.METHOD, "result": "Passed",
+            "nodeType": "UI test bundle", "name": evidence.TARGETS[platform], "children": [{
+                "nodeType": "Test Case", "nodeIdentifier": evidence.METHODS[platform][scenario], "result": "Passed",
             }],
         }]}]},
     )
@@ -144,19 +145,28 @@ class TrackerConnectionEvidenceTests(unittest.TestCase):
 
     def test_exact_pass_is_accepted_without_inventing_account_acceptance(self):
         summary, tree = results()
-        evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"])
+        evidence.validate_summary(summary, tree, "tvOS")
 
     def test_each_scenario_requires_its_own_exact_native_verdict(self):
-        for actual, method in evidence.METHODS.items():
-            summary, tree = results()
-            tree["testNodes"][0]["children"][0]["children"][0]["nodeIdentifier"] = method
-            evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"], actual)
-            for requested in evidence.METHODS:
-                if requested != actual:
-                    with self.subTest(actual=actual, requested=requested), self.assertRaises(ValueError):
-                        evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"], requested)
-        with self.assertRaises(ValueError):
-            evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"], "unknown")
+        for platform, methods in evidence.METHODS.items():
+            for actual in methods:
+                summary, tree = results(platform, actual)
+                evidence.validate_summary(summary, tree, platform, actual)
+                for requested in methods.keys() - {actual}:
+                    with self.subTest(platform=platform, actual=actual, requested=requested), self.assertRaises(ValueError):
+                        evidence.validate_summary(summary, tree, platform, requested)
+
+    def test_mobile_direct_entry_rejects_old_pairing_and_negative_only_evidence(self):
+        summary, tree = results("iOS", "direct")
+        case = tree["testNodes"][0]["children"][0]["children"][0]
+        for method in ("PublicMetaDBLiveConnectionTests/testLiveCodeConnection()",
+                       "PublicMetaDBLiveHistoryTests/testConnectWithRealBrowserCode()",
+                       evidence.METHODS["tvOS"]["browser"], evidence.METHODS["iOS"]["negative"]):
+            case["nodeIdentifier"] = method
+            with self.subTest(method=method), self.assertRaises(ValueError):
+                evidence.validate_summary(summary, tree, "iOS", "direct")
+        with self.assertRaises(KeyError):
+            evidence.validate_summary(summary, tree, "iOS", "browser")
 
     def test_skips_expected_failures_zero_cases_and_boolean_counts_never_pass(self):
         for field, value in (
@@ -167,7 +177,7 @@ class TrackerConnectionEvidenceTests(unittest.TestCase):
             summary, tree = results()
             summary[field] = value
             with self.subTest(field=field), self.assertRaises(ValueError):
-                evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"])
+                evidence.validate_summary(summary, tree, "tvOS")
 
     def test_missing_different_or_duplicated_test_results_fail_even_with_green_summary(self):
         for mode in ("missing", "method", "bundle", "bundle-type", "duplicate", "skipped"):
@@ -187,7 +197,7 @@ class TrackerConnectionEvidenceTests(unittest.TestCase):
             else:
                 case["result"] = "Skipped"
             with self.assertRaises(ValueError):
-                evidence.validate_summary(summary, tree, evidence.TARGETS["tvOS"])
+                evidence.validate_summary(summary, tree, "tvOS")
 
     def test_runner_rejects_invalid_invocation_before_build_or_device_work(self):
         for args in ([], ["--run", "macOS", "device", "hash"], ["--build-only", "tvOS", "extra"],
@@ -196,11 +206,22 @@ class TrackerConnectionEvidenceTests(unittest.TestCase):
                      ["--run", "iOS", "device", "hash", "persistence"],
                      ["--run", "iOS", "device", "hash", "disconnect"],
                      ["--run", "iOS", "device", "hash", "manual"],
+                     ["--run", "tvOS", "device", "hash", "direct"],
                      ["--run", "tvOS", "device", "hash", "unknown"]):
             result = subprocess.run(["bash", str(ROOT / "tools/run-tracker-connection-tests.sh"), *args],
                                     cwd=ROOT, capture_output=True, timeout=5)
             self.assertEqual(result.returncode, 2)
             self.assertIn(b"Usage:", result.stderr)
+
+    def test_missing_direct_input_fails_without_build_or_live_work(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("PLOZZ_", "TEST_RUNNER_"))}
+        env["PLOZZ_TRACKER_TEST_LIST_NAME"] = "Example"
+        result = subprocess.run(["bash", str(ROOT / "tools/run-tracker-connection-tests.sh"),
+                                 "--run", "iOS", "device", "hash", "direct"],
+                                cwd=ROOT, env=env, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(b"PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE", result.stderr)
+        self.assertNotIn(b"Private evidence:", result.stdout)
 
 
 if __name__ == "__main__":

@@ -29,35 +29,47 @@ struct PublicMetaDBBulkHistoryView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Delete multiple plays")
-            Text("Select up to 50 plays on this page. Plozz removes only those records on PublicMetaDB, not media-server history or newer plays.")
-                .foregroundStyle(.secondary)
+        GroupedSettingsPage(title: "Delete multiple plays", backIdentifier: "publicmetadb.history.bulk.back") {
             if loading { ProgressView() }
             if let failure { PublicMetaDBFailureMessage(error: failure) }
             if operation.succeeded { Text("Selected plays confirmed removed on PublicMetaDB") }
             if let result, loadedConnection == service.connectionID {
-                if result.items.isEmpty { Text("No records") }
-                PublicMetaDBHistorySelectionRows(records: result.items, selectedIDs: $selectedIDs)
-                    .disabled(loading || !operation.permitsWrite)
-                Text("Page \(result.page) of \(max(1, result.totalPages))")
-                    .foregroundStyle(.secondary)
-                HStack {
-                    if page > 1 { Button("Previous page") { page -= 1 } }
-                    if page < result.totalPages { Button("Next page") { page += 1 } }
+                SettingsSectionGroup("Plays") {
+                    if result.items.isEmpty {
+                        Text("No records")
+                    } else {
+                        PublicMetaDBHistorySelectionRows(records: result.items, selectedIDs: $selectedIDs)
+                            .disabled(loading || !operation.permitsWrite)
+                    }
+                } footer: {
+                    if !result.items.isEmpty {
+                        Text(selectedIDs.isEmpty ? "Select up to 50 plays on this page." : "\(selectedIDs.count) selected")
+                    }
                 }
-                .disabled(loading || operation.running || !selectedIDs.isEmpty)
-                Button("Review deletion") {
-                    guard let connection = loadedConnection, connection == service.connectionID else { return }
-                    draft = Draft(connectionID: connection, records: result.items.filter { selectedIDs.contains($0.id) })
-                    confirming = true
+                if result.totalPages > 1 {
+                    SettingsSectionGroup("Page \(result.page) of \(result.totalPages)") {
+                        if page > 1 { Button("Previous page") { page -= 1 }.settingsActionRow() }
+                        if page < result.totalPages { Button("Next page") { page += 1 }.settingsActionRow() }
+                    }
+                    .disabled(loading || operation.running || !selectedIDs.isEmpty)
                 }
-                .disabled(loading || !operation.permitsWrite || selectedIDs.isEmpty || service.phase != .connected)
-                .accessibilityIdentifier("publicmetadb.history.bulk.review")
+                SettingsSectionGroup {
+                    Button("Review deletion") {
+                        guard let connection = loadedConnection, connection == service.connectionID else { return }
+                        draft = Draft(connectionID: connection, records: result.items.filter { selectedIDs.contains($0.id) })
+                        confirming = true
+                    }
+                    .settingsActionRow()
+                    .disabled(loading || !operation.permitsWrite || selectedIDs.isEmpty || service.phase != .connected)
+                    .accessibilityIdentifier("publicmetadb.history.bulk.review")
+                }
             }
             PublicMetaDBMutationStatus(operation: operation)
-            Button("Refresh history") { reload += 1 }
-                .disabled(loading || operation.running || service.phase != .connected)
+            SettingsSectionGroup {
+                Button("Refresh history") { reload += 1 }
+                    .settingsActionRow()
+                    .disabled(loading || operation.running || service.phase != .connected)
+            }
         }
         .confirmationDialog("Delete the selected PublicMetaDB plays?", isPresented: $confirming, presenting: draft) { draft in
             Button("Delete \(draft.records.count) plays", role: .destructive) {
@@ -68,7 +80,7 @@ struct PublicMetaDBBulkHistoryView: View {
             Button("Cancel", role: .cancel) {}
         } message: { draft in
             publicMetaDBConfirmationMessage(
-                Text("Only these \(draft.records.count) selected records will be removed. This cannot be undone by Plozz."),
+                Text("Only these \(draft.records.count) selected records will be removed. Plozz cannot undo this. Newer plays and media-server history are unchanged."),
                 Text("Other apps connected to PublicMetaDB may also react to this change.")
             )
         }
@@ -112,19 +124,21 @@ private struct PublicMetaDBHistorySelectionRows: View {
     @Binding var selectedIDs: Set<String>
 
     var body: some View {
-        ForEach(records) { record in
-            Toggle(isOn: Binding(
-                get: { selectedIDs.contains(record.id) },
-                set: { selected in
-                    if selected { selectedIDs.insert(record.id) } else { selectedIDs.remove(record.id) }
+        PublicMetaDBCatalogRows {
+            ForEach(records) { record in
+                Toggle(isOn: Binding(
+                    get: { selectedIDs.contains(record.id) },
+                    set: { selected in
+                        if selected { selectedIDs.insert(record.id) } else { selectedIDs.remove(record.id) }
+                    }
+                )) {
+                    VStack(alignment: .leading) {
+                        PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
+                        PublicMetaDBWatchDateLabel(date: record.value.watchedAt)
+                    }
                 }
-            )) {
-                VStack(alignment: .leading) {
-                    PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
-                    PublicMetaDBWatchDateLabel(date: record.value.watchedAt)
-                }
+                .accessibilityIdentifier("publicmetadb.history.select.\(record.id)")
             }
-            .accessibilityIdentifier("publicmetadb.history.select.\(record.id)")
         }
     }
 }

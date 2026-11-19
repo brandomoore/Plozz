@@ -18,37 +18,47 @@ struct PublicMetaDBSeasonRatingsView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Season ratings")
-            TextField("TMDB season number", text: $seasonText)
-            Text("Use TMDB numbering, which may differ from your server. Season 0 contains specials.")
-                .foregroundStyle(.secondary)
-            Button("Load season") { selectedSeason = Int(seasonText) }
-                .disabled(Int(seasonText).map { $0 < 0 } ?? true)
-            if let season = selectedSeason {
-                NavigationLink("Rate multiple episodes") {
-                    PublicMetaDBEpisodeRatingsEditor(service: service, tmdbID: tmdbID, season: season)
+        GroupedSettingsPage(title: "Season ratings", backIdentifier: "publicmetadb.season.back") {
+            SettingsSectionGroup {
+                SettingsInputRow("TMDB season number", axis: .horizontal) {
+                    TextField("Season", text: $seasonText)
                 }
-                NavigationLink("Delete selected episode ratings") {
-                    PublicMetaDBEpisodeRatingsDeletionView(service: service, tmdbID: tmdbID, season: season)
+                Button("Load season") { selectedSeason = Int(seasonText) }
+                    .settingsActionRow()
+                    .disabled(Int(seasonText).map { $0 < 0 } ?? true)
+            } footer: {
+                Text("Use TMDB numbering; season 0 is for specials.")
+            }
+            if let season = selectedSeason {
+                SettingsSectionGroup("Season \(season)") {
+                    PublicMetaDBDetailLink("Rate multiple episodes") {
+                        PublicMetaDBEpisodeRatingsEditor(service: service, tmdbID: tmdbID, season: season)
+                    }
+                    PublicMetaDBDetailLink("Delete selected episode ratings") {
+                        PublicMetaDBEpisodeRatingsDeletionView(service: service, tmdbID: tmdbID, season: season)
+                    }
                 }
                 PublicMetaDBReadContent(service: service, operation: ratings, id: selectedSeason) { result in
-                    if result.episodes.isEmpty { Text("No episode ratings") }
-                    Text("Episodes shown have community ratings; this is not a complete episode list.")
-                        .foregroundStyle(.secondary)
-                    ForEach(result.episodes.sorted(by: { $0.episode < $1.episode }), id: \.episode) { episode in
-                        if let identity = try? PublicMetaDB.Content(tmdbID: tmdbID, mediaType: .tv, season: season, episode: episode.episode) {
-                            NavigationLink {
-                                PublicMetaDBContentRatingsView(service: service, content: identity)
-                            } label: {
-                                VStack(alignment: .leading) {
-                                    Text("Episode \(episode.episode)")
-                                    ForEach(episode.aggregates.keys.sorted(), id: \.self) { key in
-                                        if let score = episode.aggregates[key] {
-                                            Text("\(score.label): \(score.average.formatted()) / 100 (\(score.count) ratings)")
+                    SettingsSectionGroup("Rated episodes") {
+                        if result.episodes.isEmpty { Text("No episode ratings") }
+                        ForEach(result.episodes.sorted(by: { $0.episode < $1.episode }), id: \.episode) { episode in
+                            if let identity = try? PublicMetaDB.Content(tmdbID: tmdbID, mediaType: .tv, season: season, episode: episode.episode) {
+                                NavigationLink {
+                                    PublicMetaDBContentRatingsView(service: service, content: identity)
+                                } label: {
+                                    SettingsDisclosureLabel {
+                                        VStack(alignment: .leading) {
+                                            Text("Episode \(episode.episode)")
+                                            ForEach(episode.aggregates.keys.sorted(), id: \.self) { key in
+                                                if let score = episode.aggregates[key] {
+                                                    Text("\(score.label): \(score.average.formatted()) / 100 (\(score.count) ratings)")
+                                                        .font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
+                                                }
+                                            }
                                         }
                                     }
                                 }
+                                .settingsActionRow()
                             }
                         }
                     }
@@ -101,16 +111,20 @@ private struct PublicMetaDBEpisodeRatingsEditor: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Rate multiple episodes")
-            Text("Season \(season)")
+        GroupedSettingsPage(title: "Rate multiple episodes", backIdentifier: "publicmetadb.episode-rating.edit.back") {
             if operation.succeeded {
                 Text("All selected episode ratings were confirmed on PublicMetaDB")
             } else {
-                TextField("Rating label", text: $label)
+                SettingsSectionGroup("Season \(season)") {
+                    SettingsInputRow("Rating label", axis: .horizontal) {
+                        TextField("Overall", text: $label)
+                    }
+                }
                 ForEach($entries) { $entry in
-                    Section {
-                        TextField("TMDB episode number", text: $entry.episode)
+                    SettingsSectionGroup {
+                        SettingsInputRow("TMDB episode number", axis: .horizontal) {
+                            TextField("Episode", text: $entry.episode)
+                        }
                         Picker("Score out of 100", selection: $entry.score) {
                             ForEach(0...100, id: \.self) { score in Text(score, format: .number).tag(score) }
                         }
@@ -119,24 +133,29 @@ private struct PublicMetaDBEpisodeRatingsEditor: View {
                         .accessibilityValue(Text(entry.score, format: .number))
                         .accessibilityIdentifier("publicmetadb.episode-rating.score.\(entry.id)")
                         Button("Remove row", role: .destructive) { entries.removeAll { $0.id == entry.id } }
+                            .settingsActionRow()
                     }
                 }
                 .disabled(!operation.permitsWrite)
-                Button("Add an episode") { entries.append(.init()) }
-                    .disabled(!operation.permitsWrite || entries.count >= 50)
-                Text("Up to 50 episodes per request. Use TMDB numbering, not a different server order. Ratings and your contributor name will be public.")
-                    .foregroundStyle(.secondary)
-                Button("Review ratings") {
-                    do {
-                        guard let connection = service.connectionID else { throw PublicMetaDB.Failure.disconnected }
-                        let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
-                        try PublicMetaDB.Rating.validateSubmissionLabel(label)
-                        draft = Draft(ratings: try PublicMetaDBEpisodeRatingDraft.inputs(entries), label: label, connection: connection)
-                        failure = nil
-                        confirming = true
-                    } catch { failure = error }
+                SettingsSectionGroup {
+                    Button("Add an episode") { entries.append(.init()) }
+                        .settingsActionRow()
+                        .disabled(!operation.permitsWrite || entries.count >= 50)
+                    Button("Review ratings") {
+                        do {
+                            guard let connection = service.connectionID else { throw PublicMetaDB.Failure.disconnected }
+                            let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
+                            try PublicMetaDB.Rating.validateSubmissionLabel(label)
+                            draft = Draft(ratings: try PublicMetaDBEpisodeRatingDraft.inputs(entries), label: label, connection: connection)
+                            failure = nil
+                            confirming = true
+                        } catch { failure = error }
+                    }
+                    .settingsActionRow()
+                    .disabled(!operation.permitsWrite || service.phase != .connected)
+                } footer: {
+                    Text("Publish up to 50 episode ratings under your contributor name.")
                 }
-                .disabled(!operation.permitsWrite || service.phase != .connected)
             }
             if let failure { PublicMetaDBFailureMessage(error: failure) }
             PublicMetaDBMutationStatus(operation: operation)
@@ -152,7 +171,7 @@ private struct PublicMetaDBEpisodeRatingsEditor: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { draft in
-            Text("Publish \(draft.ratings.count) “\(draft.label)” ratings for TMDB season \(season). A partial result is not a full success and will not be automatically retried.")
+            Text("Your name and \(draft.ratings.count) “\(draft.label)” ratings for TMDB season \(season) will be public. Unconfirmed ratings won’t be retried automatically.")
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false
@@ -179,35 +198,50 @@ private struct PublicMetaDBEpisodeRatingsDeletionView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Delete selected episode ratings")
-            Text("Select up to 50 exact contributions. PublicMetaDB permits deletion only of your own records; contributor names do not prove ownership.")
-                .foregroundStyle(.secondary)
+        GroupedSettingsPage(title: "Delete selected episode ratings", backIdentifier: "publicmetadb.episode-rating.delete.back") {
             if operation.succeeded {
                 Text("All selected ratings were confirmed removed")
             } else {
                 PublicMetaDBReadContent(service: service, operation: ratings) { result in
-                    ForEach(result.episodes.flatMap(\.ratings)) { record in
-                        Toggle(isOn: Binding(
-                            get: { selected[record.id] != nil },
-                            set: { if $0 { selected[record.id] = record } else { selected[record.id] = nil } }
-                        )) {
-                            VStack(alignment: .leading) {
-                                PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
-                                Text("\(record.value.label): \(record.value.score.formatted()) / 100")
-                                if let contributor = record.contributor { Text(verbatim: contributor) }
+                    SettingsSectionGroup("Season \(season)") {
+                        let records = result.episodes.flatMap(\.ratings)
+                        if records.isEmpty {
+                            Text("No episode ratings")
+                        } else {
+                            PublicMetaDBCatalogRows {
+                                ForEach(records) { record in
+                                    Toggle(isOn: Binding(
+                                        get: { selected[record.id] != nil },
+                                        set: { if $0 { selected[record.id] = record } else { selected[record.id] = nil } }
+                                    )) {
+                                        VStack(alignment: .leading) {
+                                            PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
+                                            Text("\(record.value.label): \(record.value.score.formatted()) / 100")
+                                            if let contributor = record.contributor {
+                                                Text(verbatim: contributor).font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
+                                            }
+                                        }
+                                    }
+                                    .accessibilityIdentifier("publicmetadb.episode-rating.record.\(record.id)")
+                                    .disabled(!operation.permitsWrite || (selected.count >= 50 && selected[record.id] == nil))
+                                }
                             }
                         }
-                        .accessibilityIdentifier("publicmetadb.episode-rating.record.\(record.id)")
-                        .disabled(!operation.permitsWrite || (selected.count >= 50 && selected[record.id] == nil))
+                    } footer: {
+                        Text("Select up to 50 of your own ratings. PublicMetaDB checks ownership.")
                     }
                 }
-                Button("Delete selected ratings", role: .destructive) {
-                    guard let connection = service.connectionID else { return }
-                    draft = Draft(records: selected.values.sorted { $0.id < $1.id }, connection: connection)
-                    confirming = true
+                SettingsSectionGroup {
+                    Button("Delete selected ratings", role: .destructive) {
+                        guard let connection = service.connectionID else { return }
+                        draft = Draft(records: selected.values.sorted { $0.id < $1.id }, connection: connection)
+                        confirming = true
+                    }
+                    .settingsActionRow()
+                    .disabled(selected.isEmpty || !operation.permitsWrite || service.phase != .connected)
+                } footer: {
+                    if !selected.isEmpty { Text("\(selected.count) selected") }
                 }
-                .disabled(selected.isEmpty || !operation.permitsWrite || service.phase != .connected)
             }
             PublicMetaDBMutationStatus(operation: operation)
         }

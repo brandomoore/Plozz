@@ -8,12 +8,10 @@ struct PublicMetaDBHistoryExportView: View {
     let service: PublicMetaDBService
     @State private var session: PublicMetaDBHistoryExportSession?
     @State private var error: (any Error)?
+    @Environment(\.themePalette) private var palette
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Export server history")
-            Text("Preview one server user's library, select titles, then confirm. This writes only to PublicMetaDB and does not enable ongoing sync or change your server.")
-                .foregroundStyle(.secondary)
+        GroupedSettingsPage(title: "Export server history", backIdentifier: "publicmetadb.export.back") {
             if let session {
                 PublicMetaDBHistoryExportContent(session: session)
             } else if let error {
@@ -22,12 +20,13 @@ struct PublicMetaDBHistoryExportView: View {
                 ProgressView()
             }
         }
+        .tint(palette.primaryText)
         .task {
             guard session == nil else { return }
             do { session = try service.makeHistoryExportSession() }
             catch { self.error = error }
         }
-        .onDisappear { session?.cancel() }
+        .onDisappear { session?.cancel(); session = nil }
     }
 }
 
@@ -38,60 +37,74 @@ private struct PublicMetaDBHistoryExportContent: View {
     @State private var libraryID = ""
     @State private var mode: PublicMetaDBHistoryExportSession.Mode = .watched
     @State private var selected: Set<UUID> = []
-    @State private var page = 0
     @State private var confirming = false
     @State private var loadingLibraries = false
     @State private var error: (any Error)?
     @State private var operation: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Group {
-                Picker("Server user", selection: $accountID) {
-                    Text("Choose a server user").tag("")
-                    ForEach(session.source.accounts) { account in
-                        Text("\(account.serverName) · \(account.userName)").tag(account.id)
+        TrackerHistorySettingsStack {
+            SettingsSectionGroup("Export to PublicMetaDB") {
+                TrackerHistoryExportSourceRows(
+                    accounts: session.source.accounts, libraries: libraries, loadingLibraries: loadingLibraries,
+                    libraryLoadFailed: error != nil, accountID: $accountID, libraryID: $libraryID, identifier: "publicmetadb.export"
+                )
+                if let library = libraries.first(where: { $0.id == libraryID }), !loadingLibraries {
+                    SettingsMenuRow(title: "History to export", value: mode == .watched ? Text("Watched titles") : Text("Where you left off")) {
+                        Picker("History to export", selection: $mode) {
+                            Text("Watched titles").tag(PublicMetaDBHistoryExportSession.Mode.watched)
+                            Text("Where you left off").tag(PublicMetaDBHistoryExportSession.Mode.resume)
+                        }
+                    }
+                    .accessibilityIdentifier("publicmetadb.export.mode")
+                    Button("Preview export") {
+                        let account = accountID, category = mode
+                        selected = []
+                        operation = Task { await session.compare(accountID: account, library: library, mode: category) }
+                    }
+                    .settingsActionRow()
+                    .accessibilityIdentifier("publicmetadb.export.preview")
+                }
+            } footer: {
+                if !libraryID.isEmpty {
+                    if mode == .watched {
+                        Text("Adds one missing play per title. Uses the last played date if there’s no saved position; otherwise the date is unknown.")
+                    } else {
+                        Text("Copies positions from 2% to below 80% of runtime. PublicMetaDB dates them today.")
                     }
                 }
-                .accessibilityIdentifier("publicmetadb.export.account")
-                Picker("Library", selection: $libraryID) {
-                    Text("Choose a library").tag("")
-                    ForEach(libraries) { library in Text(verbatim: library.title).tag(library.id) }
-                }
-                .disabled(loadingLibraries || accountID.isEmpty)
-                .accessibilityIdentifier("publicmetadb.export.library")
-                Picker("History to export", selection: $mode) {
-                    Text("Watched titles").tag(PublicMetaDBHistoryExportSession.Mode.watched)
-                    Text("Resume points").tag(PublicMetaDBHistoryExportSession.Mode.resume)
-                }
-                .accessibilityIdentifier("publicmetadb.export.mode")
             }
             .disabled(session.isBusy)
-            if mode == .watched {
-                Text("Adds one play only when PublicMetaDB has none. Uses the server's last played date when no resume point exists; otherwise the date is unknown. Original play counts and earlier play dates cannot be reconstructed.")
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Copies the current position and runtime. PublicMetaDB dates the update now; it cannot retain the original progress timestamp. Positions below 2% or at least 80% are not exported.")
-                    .foregroundStyle(.secondary)
-            }
             if let error = error ?? session.error { TrackerHistoryImportFailure(error: error) }
-            if loadingLibraries { ProgressView("Loading libraries…") }
             if session.isBusy {
                 ProgressView("Reading and verifying history…")
                 Text("Loaded \(session.loadedCount) library items").foregroundStyle(.secondary)
             }
-            Button("Preview export") {
-                guard let library = libraries.first(where: { $0.id == libraryID }) else { return }
-                selected = []
-                page = 0
-                operation = Task { await session.compare(accountID: accountID, library: library, mode: mode) }
-            }
-            .disabled(session.isBusy || loadingLibraries || libraryID.isEmpty)
-            .accessibilityIdentifier("publicmetadb.export.preview")
             if session.hasCompared {
-                if session.rows.isEmpty { Text("No matching server history to export.") }
-                ForEach(Array(session.rows.dropFirst(page * 50).prefix(50))) { row in
-                    VStack(alignment: .leading, spacing: 8) {
+                if session.rows.isEmpty {
+                    SettingsSectionGroup { Text("No matching server history to export.") }
+                } else {
+                    TrackerHistoryReviewResults(
+                        rows: session.rows, selected: selected, identifier: "publicmetadb.export",
+                        hint: session.outcomes.isEmpty && session.rows.contains(where: { $0.status == .ready || $0.status == .conflict })
+                            ? "Select up to 50 titles. Nothing is exported until you confirm." : nil,
+                        category: { row in
+                            switch row.status {
+                            case .ready: .ready
+                            case .conflict: .conflicts
+                            case .alreadyMatches: .matches
+                            case .unsupported, .ambiguous, .playing, .previousAttempt: .unavailable
+                            }
+                        }, title: { $0.title }
+                    ) {
+                        if !selected.isEmpty && session.outcomes.isEmpty {
+                            Button("Review \(selected.count) selected") { confirming = true }
+                                .settingsActionRow()
+                                .disabled(session.isBusy)
+                                .accessibilityIdentifier("publicmetadb.export.apply")
+                        }
+                    } content: { row in
+                    VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
                         Text(verbatim: row.title)
                         if let content = row.content, let season = content.season, let episode = content.episode {
                             Text("Season \(season), episode \(episode)").foregroundStyle(.secondary)
@@ -122,17 +135,12 @@ private struct PublicMetaDBHistoryExportContent: View {
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("publicmetadb.export.row.\(row.baseline.itemID)")
+                    .trackerHistoryRowFocus(readOnly: session.isBusy || !session.outcomes.isEmpty ||
+                        (row.status != .ready && row.status != .conflict) || (selected.count >= 50 && !selected.contains(row.id)))
+                    }
                 }
-                if page > 0 { Button("Previous page") { page -= 1 } }
-                if (page + 1) * 50 < session.rows.count { Button("Next page") { page += 1 } }
-                Button("Export \(selected.count) selected titles") { confirming = true }
-                    .disabled(session.isBusy || selected.isEmpty || !session.outcomes.isEmpty)
-                    .accessibilityIdentifier("publicmetadb.export.apply")
             }
         }
-        #if os(iOS)
-        .buttonStyle(.borderless)
-        #endif
         .task(id: accountID) {
             reset()
             libraryID = ""
@@ -155,19 +163,28 @@ private struct PublicMetaDBHistoryExportContent: View {
         .onChange(of: mode) { _, _ in reset() }
         .confirmationDialog("Write selected history to PublicMetaDB?", isPresented: $confirming, titleVisibility: .visible) {
             Button("Export selected titles", role: .destructive) {
-                let conflicts = Set(session.rows.filter { selected.contains($0.id) && $0.status == .conflict }.map(\.id))
-                operation = Task { await session.apply(rowIDs: selected, overridingConflicts: conflicts, confirmed: true) }
+                let selection = selected
+                let conflicts = Set(session.rows.filter { selection.contains($0.id) && $0.status == .conflict }.map(\.id))
+                operation = Task { await session.apply(rowIDs: selection, overridingConflicts: conflicts, confirmed: true) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Only the selected titles for the server user and library shown above will be exported. Selected resume points replace any conflicting tracker progress and may restore progress on a completed title. Adding watched episodes undrops their shows. Other apps using this PublicMetaDB account will see these changes. Remote activity can still race the comparison.")
+            let rows = session.rows.filter { selected.contains($0.id) }
+            publicMetaDBConfirmationMessage(
+                Text("Export \(rows.count) selected titles to PublicMetaDB? Other apps using this tracker account see the changes. Servers and sync settings stay unchanged."),
+                mode == .resume ? Text("Positions replace conflicting progress and can restore progress on completed titles.") : nil,
+                mode == .watched && rows.contains(where: { $0.content?.episode != nil })
+                    ? Text("Adding watched episodes restores dropped shows.") : nil,
+                rows.contains(where: { $0.status == .conflict }) ? Text("Selected conflicts will be overwritten.") : nil,
+                Text("Recent tracker edits may conflict.")
+            )
         }
         .onDisappear { operation?.cancel() }
     }
 
     private func reset() {
         selected = []
-        page = 0
+        operation?.cancel()
         confirming = false
         session.resetPreview()
     }
@@ -175,9 +192,9 @@ private struct PublicMetaDBHistoryExportContent: View {
     private func status(_ status: PublicMetaDBHistoryExportSession.Status) -> some View {
         Group {
             switch status {
-            case .ready: Text("Available to export")
+            case .ready: EmptyView()
             case .alreadyMatches: Text("Already present — no change")
-            case .conflict: Text("Tracker history, progress, or dropped status conflicts — selection explicitly authorizes this change")
+            case .conflict: Text("Conflicts with tracker history. Selecting this replaces the tracker’s state.")
             case .unsupported: Text("No supported exact identity, date, runtime, or resume position — not exported")
             case .ambiguous: Text("Multiple server items match this tracker title — not exported")
             case .playing: Text("Currently playing — not exported")

@@ -7,22 +7,35 @@ struct PublicMetaDBWatchlistSettingsView: View {
     let service: PublicMetaDBService
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Watchlist destination")
-            Text("Choose one of your PublicMetaDB lists to join your Plozz watchlist. This choice applies only to this profile on this device.")
-                .foregroundStyle(.secondary)
-            if let selection = service.watchlistSelection {
-                Text(verbatim: selection.listName)
-                Button("Stop syncing this list") { service.disableWatchlist() }
-                    .accessibilityIdentifier("publicmetadb.watchlist.disable")
-                Text("Stopping sync leaves existing records unchanged.")
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Not syncing a list")
-            }
-            NavigationLink("Choose a list") { PublicMetaDBWatchlistPicker(service: service) }
+        GroupedSettingsPage(title: "Watchlist destination", backIdentifier: "publicmetadb.watchlist.back") {
+            SettingsSectionGroup {
+                NavigationLink {
+                    PublicMetaDBWatchlistPicker(service: service)
+                } label: {
+                    HStack {
+                        Text("PublicMetaDB list")
+                        Spacer()
+                        if let selection = service.watchlistSelection {
+                            Text(verbatim: selection.listName).settingsRowSecondary()
+                        } else {
+                            Text("None").settingsRowSecondary()
+                        }
+                    }
+                }
                 .disabled(service.phase != .connected)
                 .accessibilityIdentifier("publicmetadb.watchlist.choose")
+            } footer: {
+                Text("Sync this profile’s watchlist with one PublicMetaDB list on this device.")
+            }
+            if service.watchlistSelection != nil {
+                SettingsSectionGroup {
+                    Button("Stop syncing") { service.disableWatchlist() }
+                        .settingsActionRow()
+                        .accessibilityIdentifier("publicmetadb.watchlist.disable")
+                } footer: {
+                    Text("Keeps the items in both lists.")
+                }
+            }
         }
     }
 }
@@ -97,9 +110,9 @@ private struct PublicMetaDBWatchlistConsent: View {
     let isPublic: Bool
     var body: some View {
         publicMetaDBConfirmationMessage(
-            Text("Your existing and future Plozz watchlist choices can add or remove movies and shows in “\(name)”. Its items appear in Plozz, and changes can propagate to your other enabled watchlist destinations. PublicMetaDB may undrop shows when added. Watched history and progress are not imported."),
-            isPublic ? Text("This list is public. Other people can see its contents.")
-                : Text("This list is currently private on PublicMetaDB.")
+            Text("“\(name)” and your Plozz watchlist will share additions and removals, including existing items. Changes can reach other synced lists. Adding a show may clear its dropped status."),
+            isPublic ? Text("This list is public. Others can see its contents.")
+                : Text("This list is private.")
         )
     }
 }

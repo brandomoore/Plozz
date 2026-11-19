@@ -28,6 +28,7 @@ public extension View {
 
 private struct PublicMetaDBContentPresentation: ViewModifier {
     let service: PublicMetaDBService
+    @Environment(\.themePalette) private var palette
 
     func body(content: Content) -> some View {
         content.sheet(item: Binding(
@@ -38,13 +39,17 @@ private struct PublicMetaDBContentPresentation: ViewModifier {
                 if let identity = PublicMetaDB.Content.matching(item) {
                     PublicMetaDBContentView(service: service, content: identity, title: item.title)
                 } else {
-                    PublicMetaDBPage {
-                        SettingsPageHeader(verbatim: item.title)
-                        Text("PublicMetaDB needs an unambiguous TMDB identity. Episodes and seasons also need confirmed TMDB numbering. No tracker request was sent for this title.")
-                        Button("Close") { service.dismissContent() }
+                    GroupedSettingsPage(title: "\(item.title)", backIdentifier: "publicmetadb.title.back") {
+                        SettingsSectionGroup {
+                            Text("No confirmed TMDB match. Seasons and episodes also need verified numbering.")
+                            Button("Close") { service.dismissContent() }.settingsActionRow()
+                        } footer: {
+                            Text("No request was sent to PublicMetaDB.")
+                        }
                     }
                 }
             }
+            .tint(palette.primaryText)
         }
     }
 }
@@ -55,50 +60,100 @@ struct PublicMetaDBContentView: View {
     var title: String?
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader(verbatim: title ?? "PublicMetaDB")
-            PublicMetaDBContentLabel(content: content)
-            PublicMetaDBOpenCatalogTitle(service: service, content: content)
-            Text("These controls change PublicMetaDB only. Server history and curated metadata remain separate.")
-                .foregroundStyle(.secondary)
-            if content.isPlayable {
-                NavigationLink("Add a watched play") { PublicMetaDBHistoryDateView(service: service, content: content) }
+        GroupedSettingsPage(title: "\(title ?? "PublicMetaDB")", backIdentifier: "publicmetadb.title.back") {
+            SettingsSectionGroup {
+                PublicMetaDBContentLabel(content: content)
+                PublicMetaDBOpenCatalogTitle(service: service, content: content)
             }
-            NavigationLink("Watch history") {
-                PublicMetaDBPagedRecords(
-                    service: service, title: "Watch history",
-                    load: { try await $0.history(content: content, page: $1) }
-                ) { record in
-                    NavigationLink {
-                        PublicMetaDBHistoryRecordView(service: service, action: .deletePlay(record))
-                    } label: {
-                        VStack(alignment: .leading) {
-                            PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
-                            PublicMetaDBWatchDateLabel(date: record.value.watchedAt)
+            SettingsSectionGroup("Activity") {
+                if content.isPlayable {
+                    PublicMetaDBDetailLink("Add a watched play") { PublicMetaDBHistoryDateView(service: service, content: content) }
+                }
+                PublicMetaDBDetailLink("Watch history") {
+                    PublicMetaDBPagedRecords(
+                        service: service, title: "Watch history",
+                        load: { try await $0.history(content: content, page: $1) }
+                    ) { record in
+                        NavigationLink {
+                            PublicMetaDBHistoryRecordView(service: service, action: .deletePlay(record))
+                        } label: {
+                            VStack(alignment: .leading) {
+                                PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
+                                PublicMetaDBWatchDateLabel(date: record.value.watchedAt)
+                            }
                         }
                     }
                 }
-            }
-            if content.season == nil {
-                NavigationLink("Add to a list") { PublicMetaDBAddToListView(service: service, content: content) }
-                NavigationLink("External IDs") { PublicMetaDBMappingsView(service: service, content: content) }
-            }
-            if content.season == nil || content.episode != nil {
-                NavigationLink("Community and personal ratings") {
-                    PublicMetaDBContentRatingsView(service: service, content: content)
-                }
-            }
-            if content.mediaType == .tv {
                 if content.season == nil {
-                    NavigationLink("Drop show on PublicMetaDB") {
+                    PublicMetaDBDetailLink("Add to a list") { PublicMetaDBAddToListView(service: service, content: content) }
+                }
+                if content.mediaType == .tv && content.season == nil {
+                    PublicMetaDBDetailLink("Drop show on PublicMetaDB") {
                         PublicMetaDBHistoryRecordView(service: service, action: .drop(content))
                     }
                 }
-                NavigationLink("Season ratings") {
-                    PublicMetaDBSeasonRatingsView(service: service, tmdbID: content.tmdbID, initialSeason: content.season)
+            } footer: {
+                Text("Changes apply to PublicMetaDB, not your media server.")
+            }
+            SettingsSectionGroup("Contributions") {
+                if content.season == nil || content.episode != nil {
+                    PublicMetaDBDetailLink("Community and personal ratings") {
+                        PublicMetaDBContentRatingsView(service: service, content: content)
+                    }
                 }
-                NavigationLink("Anime season mappings") {
-                    PublicMetaDBAnimeMappingsView(service: service, tmdbID: content.tmdbID)
+                if content.mediaType == .tv {
+                    PublicMetaDBDetailLink("Season ratings") {
+                        PublicMetaDBSeasonRatingsView(service: service, tmdbID: content.tmdbID, initialSeason: content.season)
+                    }
+                }
+                if content.season == nil {
+                    PublicMetaDBDetailLink("External IDs") { PublicMetaDBMappingsView(service: service, content: content) }
+                }
+                if content.mediaType == .tv {
+                    PublicMetaDBDetailLink("Anime season mappings") {
+                        PublicMetaDBAnimeMappingsView(service: service, tmdbID: content.tmdbID)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct PublicMetaDBDetailLink<Destination: View>: View {
+    let title: LocalizedStringResource
+    @ViewBuilder let destination: () -> Destination
+
+    init(_ title: LocalizedStringResource, @ViewBuilder destination: @escaping () -> Destination) {
+        self.title = title
+        self.destination = destination
+    }
+
+    var body: some View {
+        NavigationLink(destination: destination) {
+            SettingsDisclosureLabel { Text(title) }
+        }
+        .settingsActionRow()
+    }
+}
+
+/// Catalog labels start a lookup on appearance. Keep long results lazy inside
+/// their Settings group rather than starting every title lookup at once.
+struct PublicMetaDBCatalogRows<Rows: View>: View {
+    @ViewBuilder let rows: () -> Rows
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            Group(subviews: rows()) { rows in
+                ForEach(rows) { row in
+                    VStack(alignment: .leading, spacing: 0) {
+                        row
+                            #if os(iOS)
+                            .frame(minHeight: MobileSettingsMetrics.rowMinHeight)
+                            #endif
+                        if row.id != rows.last?.id {
+                            PlozzDivider().accessibilityHidden(true)
+                        }
+                    }
                 }
             }
         }
@@ -115,6 +170,7 @@ private struct PublicMetaDBOpenCatalogTitle: View {
             guard let connection = service.connectionID else { return }
             operation.perform { try await service.openCatalogItem(for: content, expectedConnectionID: connection) }
         }
+        .settingsActionRow()
         .disabled(operation.running || service.phase != .connected || service.resolveCatalogItem == nil)
         .accessibilityIdentifier("publicmetadb.open-title")
         PublicMetaDBMutationStatus(operation: operation)

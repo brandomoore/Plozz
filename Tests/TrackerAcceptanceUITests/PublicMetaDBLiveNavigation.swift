@@ -20,6 +20,16 @@ enum PublicMetaDBLiveNavigation {
     }
 
     #if os(tvOS)
+    static func requirePairingEntry(in app: XCUIApplication) throws {
+        let manual = app.buttons["publicmetadb.pair.manual"]
+        guard manual.waitForExistence(timeout: 5), manual.isEnabled,
+              manual.wait(for: \.hasFocus, toEqual: true, timeout: 5),
+              app.staticTexts["plozz.app/pmdb"].exists,
+              !app.secureTextFields["publicmetadb.key"].exists, !app.keyboards.firstMatch.exists else {
+            throw Failure.unavailableControl("PublicMetaDB QR entry")
+        }
+    }
+
     static func openSettingsCategory(_ identifier: String, in app: XCUIApplication) throws {
         if app.buttons["live-tv-preview-disable"].exists {
             try select(app.buttons["live-tv-preview-disable"], moving: .right)

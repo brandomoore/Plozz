@@ -11,26 +11,26 @@ struct PublicMetaDBPlaybackSettingsView: View {
     @State private var failure: (any Error)?
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Playback reporting")
-            Text("Send future playback from this profile on this device to PublicMetaDB. Connecting a key alone does not enable reporting.")
-                .foregroundStyle(.secondary)
-            Text("Plozz reports supported movies and individual episodes with a TMDB identity and confirmed episode order. Manual watched changes, external players, and library channels are not reported.")
-                .foregroundStyle(.secondary)
-            if let consent = service.playbackConsent {
-                Text("Playback reporting enabled")
-                if let failure = consent.lastFailure { PublicMetaDBPlaybackFailure(failure: failure) }
-                Button("Stop reporting playback") { service.disablePlayback() }
-                    .accessibilityIdentifier("publicmetadb.playback.disable")
-                Text("Existing remote records are left unchanged. Enabling again will not replay old queued sessions.")
-                    .foregroundStyle(.secondary)
-            } else {
-                Button("Enable playback reporting") {
-                    approvedConnection = service.connectionID
-                    confirming = true
-                }
-                .disabled(service.phase != .connected)
-                .accessibilityIdentifier("publicmetadb.playback.enable")
+        GroupedSettingsPage(title: "Playback reporting", backIdentifier: "publicmetadb.playback.back") {
+            SettingsSectionGroup {
+                Toggle("Report playback", isOn: Binding(
+                    get: { service.playbackConsent != nil },
+                    set: { enabled in
+                        if enabled {
+                            approvedConnection = service.connectionID
+                            confirming = true
+                        } else {
+                            service.disablePlayback()
+                        }
+                    }
+                ))
+                .disabled(service.playbackConsent == nil && service.phase != .connected)
+                .accessibilityIdentifier(service.playbackConsent == nil ? "publicmetadb.playback.enable" : "publicmetadb.playback.disable")
+            } footer: {
+                Text("Send movies and episodes you play in this profile on this device to PublicMetaDB.")
+            }
+            if let issue = service.playbackConsent?.lastFailure {
+                SettingsSectionGroup("Last playback") { PublicMetaDBPlaybackFailure(failure: issue) }
             }
             if let failure { PublicMetaDBFailureMessage(error: failure) }
         }
@@ -44,7 +44,7 @@ struct PublicMetaDBPlaybackSettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This sends playback progress and adds a watch at 90% completion, including genuine rewatches. PublicMetaDB clears resume points at 80%. It does not import history into Plex or Jellyfin. If another app or server plugin also reports watches, duplicate records are still possible; disable duplicate reporting there first.")
+            Text("PublicMetaDB clears progress at 80% and records a play at 90%, including rewatches. Turn off other reporting tools to avoid duplicates.")
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false
@@ -60,15 +60,15 @@ private struct PublicMetaDBPlaybackFailure: View {
     var body: some View {
         switch failure {
         case .connectionChanged:
-            Text("A queued session belongs to an earlier connection and was not sent.")
+            Text("Playback wasn't sent because the account changed.")
         case .unsupportedIdentity:
-            Text("A session could not be reported because its content identity or episode order was not confirmed.")
+            Text("Plozz couldn't match the title or episode.")
         case .remoteConflict:
-            Text("A session was stopped from reporting because newer progress or a possible existing watch was found on PublicMetaDB.")
+            Text("Not sent: PublicMetaDB has newer progress or a possible matching play.")
         case .unconfirmed:
-            Text("A session's delivery could not be confirmed. Plozz will not retry that session automatically. Check PublicMetaDB before changing its records.")
+            Text("Check your PublicMetaDB history. Delivery wasn't confirmed and won't be retried.")
         case .retryAfter:
-            Text("A session could not be sent. It remains queued for a later attempt.")
+            Text("Playback couldn't be sent. Plozz will try again.")
         }
     }
 }

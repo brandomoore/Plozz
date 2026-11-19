@@ -44,6 +44,9 @@ public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
     public var enabled: Bool
     public var lastAttemptAt: Date?
     public var reviewCount: Int
+    // Shares added together share an observation baseline, not delivery receipts
+    // or continuation proof. A re-added account starts a new enrollment.
+    var enrollmentIDs: [String: UUID]?
 }
 
 /// Device-local consent and receipts. No timer polls a tracker, and this never
@@ -56,7 +59,9 @@ public final class TrackerHistorySyncController {
     public let supportedCategories: Set<TrackerHistorySyncCategory>
     public private(set) var grant: TrackerHistorySyncGrant?
     public private(set) var error: (any Error)?
-    public private(set) var isBusy = false
+    public var isBusy: Bool { isWorking || isEditing }
+    private var isWorking = false
+    private var isEditing = false
     public private(set) var confirmedCount = 0
     public private(set) var hasMoreChanges = false
     private let store: DurableLocalStateStore
@@ -76,6 +81,7 @@ public final class TrackerHistorySyncController {
     private struct Bucket: DurableLocalStateValue {
         static let durableLocalStateSchemaID = "tracker-history-sync-ledger.v1"
         var baseline: Set<String> = []
+        var shareBaselines: [UUID: Set<String>]?
         var receipts: [String: Receipt] = [:]
         var blockedTargets: Set<String> = []
         var confirmedTargets: [String: String]?
@@ -103,8 +109,9 @@ public final class TrackerHistorySyncController {
     }
 
     private func permits(_ scope: WatchMutationServerScope) -> Bool {
-        scope.profileID == contextScope.profileID && !scope.accounts.isEmpty
-            && scope.accounts.allSatisfy { $0.providerKind == .mediaShare && contextScope.accounts.contains($0) }
+        let ids = Set(scope.accounts.map(\.accountID))
+        return ids.count == scope.accounts.count && scope.accounts.allSatisfy { $0.providerKind == .mediaShare }
+            && (try? contextScope.selectingAccounts(ids)) == scope
     }
 
     public var isEnabled: Bool {
@@ -126,6 +133,10 @@ public final class TrackerHistorySyncController {
                     throw DurableLocalStateError.addressMismatch
                 }
                 guard !stored.scope.accounts.isEmpty, !stored.categories.isEmpty, stored.reviewCount >= 0 else {
+                    throw DurableLocalStateError.malformedPayload
+                }
+                if let enrollments = stored.enrollmentIDs,
+                   !Set(enrollments.keys).isSubset(of: Set(stored.scope.accounts.map(\.accountID))) {
                     throw DurableLocalStateError.malformedPayload
                 }
             }
@@ -157,21 +168,43 @@ public final class TrackerHistorySyncController {
         afterReview plan: TrackerHistoryImportPlan, accountIDs: Set<String>,
         categories: Set<TrackerHistorySyncCategory>
     ) async {
+        await enable(scope: plan.serverScope, accountIDs: accountIDs, categories: categories) {
+            plan.snapshot
+        }
+    }
+
+    /// Direct Settings enrollment needs tracker evidence, not a comparison of
+    /// every managed server. Use the same recheck and grant fences as reviewed enrollment.
+    public func enable(
+        from session: TrackerHistoryImportSession, accountIDs: Set<String>,
+        categories: Set<TrackerHistorySyncCategory>
+    ) async {
+        await enable(scope: session.scope, accountIDs: accountIDs, categories: categories) {
+            try await session.enrollmentSnapshot()
+        }
+    }
+
+    private func enable(
+        scope: WatchMutationServerScope, accountIDs: Set<String>, categories: Set<TrackerHistorySyncCategory>,
+        reviewedSnapshot: @MainActor () async throws -> TrackerHistorySnapshot
+    ) async {
         guard !isBusy else { return }
-        isBusy = true
+        isWorking = true
         generation = UUID()
         let current = generation
-        defer { isBusy = false }
+        defer { isWorking = false }
         do {
-            guard isAuthorized(), plan.serverScope == contextScope, !categories.isEmpty,
+            guard isAuthorized(), scope == contextScope, !categories.isEmpty,
                   categories.isSubset(of: supportedCategories) else {
                 throw TrackerHistoryError.scopeChanged
             }
             let selectedScope = try contextScope.selectingAccounts(accountIDs)
             guard permits(selectedScope) else { throw TrackerHistoryError.invalidSelection }
+            let reviewed = try await reviewedSnapshot()
+            try requireContext(current)
             let session = try makeSession(contextScope, isAuthorized)
             defer { session.cancel() }
-            let snapshot = try await session.snapshotAfterReview(plan.snapshot)
+            let snapshot = try await session.snapshotAfterReview(reviewed)
             try requireContext(current)
             guard snapshot.trackerID == identity.trackerID else { throw TrackerHistoryError.scopeChanged }
             guard snapshot.observations.count <= Self.maximumObservations else {
@@ -212,6 +245,123 @@ public final class TrackerHistorySyncController {
         }
     }
 
+    /// Atomically edits the currently displayed, still-authorized grant. Additions
+    /// start at a complete tracker snapshot; unchanged pairs retain unprocessed
+    /// history. A failed edit leaves the durable selection unchanged.
+    public func updateSelection(accountIDs: Set<String>, categories: Set<TrackerHistorySyncCategory>) async {
+        guard !revocationPending else {
+            report(TrackerHistorySyncError.revocationFailed)
+            return
+        }
+        guard !isEditing, !isWorking || operation != nil else {
+            report(TrackerHistorySyncError.unavailable)
+            return
+        }
+        var current = generation
+        do {
+            guard isEnabled, let previous = grant else { throw TrackerHistorySyncError.permissionChanged }
+            try requireGrant(previous, current)
+            let scope = try contextScope.selectingAccounts(accountIDs)
+            guard permits(scope), !categories.isEmpty, categories.isSubset(of: supportedCategories) else {
+                throw TrackerHistoryError.invalidSelection
+            }
+            guard scope != previous.scope || categories != previous.categories else {
+                error = nil
+                return
+            }
+
+            stop()
+            current = generation
+            isEditing = true
+            defer { isEditing = false }
+            let addedAccounts = accountIDs.subtracting(previous.scope.accounts.map(\.accountID))
+            let addedCategories = categories.subtracting(previous.categories)
+            let enrollment = UUID()
+            var enrollments = (previous.enrollmentIDs ?? [:]).filter { accountIDs.contains($0.key) }
+            for account in addedAccounts { enrollments[account] = enrollment }
+            let additions = try await selectionBaseline(
+                previous: previous, scope: scope, generation: current,
+                addsShares: !addedAccounts.isEmpty, addedCategories: addedCategories
+            )
+
+            // Read the latest receipts *after* the tracker await. No suspension
+            // between copying the ledger and swapping the manifest: another
+            // MainActor controller cannot settle work in a page already copied.
+            let latest = try requireGrant(previous, current)
+            var next = TrackerHistorySyncGrant(
+                id: UUID(), identity: identity, scope: scope, categories: categories,
+                createdAt: latest.createdAt, enabled: true, lastAttemptAt: latest.lastAttemptAt,
+                reviewCount: latest.reviewCount, enrollmentIDs: enrollments
+            )
+            do {
+                var buckets = try loadBuckets(latest)
+                let retained = Set(enrollments.values)
+                for index in buckets.indices {
+                    var shares = buckets[index].shareBaselines?.filter { retained.contains($0.key) } ?? [:]
+                    if let additions {
+                        buckets[index].baseline.formUnion(additions[index].categories)
+                        if !addedAccounts.isEmpty {
+                            shares[enrollment] = additions[index].shares.subtracting(buckets[index].baseline)
+                        }
+                    }
+                    buckets[index].shareBaselines = shares
+                    try store.save(buckets[index], for: bucketKey(next, index))
+                }
+                next.reviewCount = Self.reviewCount(buckets)
+                try requireGrant(latest, current)
+                try store.save(next, for: grantKey())
+            } catch {
+                removeLedger(next)
+                throw error
+            }
+            grant = next
+            error = nil
+            removeLedger(previous)
+        } catch {
+            if generation == current {
+                reload()
+                report(error)
+            }
+        }
+    }
+
+    private struct BaselineAddition {
+        var categories: Set<String> = []
+        var shares: Set<String> = []
+    }
+
+    private func selectionBaseline(
+        previous: TrackerHistorySyncGrant, scope: WatchMutationServerScope, generation: UUID,
+        addsShares: Bool, addedCategories: Set<TrackerHistorySyncCategory>
+    ) async throws -> [BaselineAddition]? {
+        guard addsShares || !addedCategories.isEmpty else { return nil }
+        let session = try makeSession(scope, isAuthorized)
+        defer { session.cancel() }
+        let snapshot = try await session.enrollmentSnapshot { _ = try self.requireGrant(previous, generation) }
+        try requireGrant(previous, generation)
+        guard snapshot.trackerID == identity.trackerID else { throw TrackerHistoryError.scopeChanged }
+        guard snapshot.observations.count <= Self.maximumObservations else { throw TrackerHistorySyncError.historyTooLarge }
+        var pages = Array(repeating: BaselineAddition(), count: Self.bucketCount)
+        for (offset, observation) in snapshot.observations.enumerated() {
+            if offset > 0, offset.isMultiple(of: 512) {
+                await Task.yield()
+                try requireGrant(previous, generation)
+            }
+            let newCategory = addedCategories.contains { $0.includes(observation.fact) }
+            guard newCategory || addsShares else { continue }
+            let hash = try Self.fingerprint(observation)
+            if newCategory { pages[Self.bucket(hash)].categories.insert(hash) }
+            else { pages[Self.bucket(hash)].shares.insert(hash) }
+        }
+        return pages
+    }
+
+    private func removeLedger(_ obsolete: TrackerHistorySyncGrant) {
+        // These pages are unreachable. Cleanup failure must not make a committed
+        // edit look like a failed edit or roll it back over a newer permission.
+        for index in 0..<Self.bucketCount { try? store.remove(bucketKey(obsolete, index)) }
+    }
+
     public func synchronize(manual: Bool = true) async {
         guard !isBusy, !revocationPending else { return }
         reload()
@@ -222,7 +372,7 @@ public final class TrackerHistorySyncController {
         Logger(subsystem: "com.plozz.app", category: "tracker-history")
             .debug("Tracker history synchronization started")
         #endif
-        isBusy = true
+        isWorking = true
         generation = UUID()
         let current = generation
         let work = Task { await perform(grant, generation: current) }
@@ -242,7 +392,7 @@ public final class TrackerHistorySyncController {
         activeSession?.cancel()
         activeSession = nil
         operation = nil
-        isBusy = false
+        isWorking = false
     }
 
     private func perform(_ initial: TrackerHistorySyncGrant, generation current: UUID) async {
@@ -264,7 +414,7 @@ public final class TrackerHistorySyncController {
                         try self.requireGrant(initial, current)
                         return true
                     } catch {
-                        self.report(error)
+                        if self.generation == current { self.report(error) }
                         return false
                     }
                 }
@@ -284,8 +434,8 @@ public final class TrackerHistorySyncController {
                         let hash = try Self.fingerprint(observation)
                         hashes[observation.recordID] = hash
                         guard initial.categories.contains(where: { $0.includes(observation.fact) }),
-                              !buckets[Self.bucket(hash)].baseline.contains(hash) else { continue }
-                        let receipt = Self.receiptKey(account.accountID, hash)
+                              !Self.isEnrolled(hash, account.accountID, initial, buckets) else { continue }
+                        let receipt = Self.receiptKey(account.accountID, hash, initial)
                         if buckets[Self.bucket(receipt)].receipts[receipt] == nil {
                             newRecords.append(observation.recordID)
                         }
@@ -311,7 +461,7 @@ public final class TrackerHistorySyncController {
                     let receipt: Receipt
                     let targetKey = row.target.map { Self.digest(Data($0.id.utf8)) }
                     let blocked = targetKey.map { buckets[Self.bucket($0)].blockedTargets.contains($0) } ?? false
-                    let continues = try canContinue(row, plan: plan, hashes: hashes, buckets: buckets)
+                    let continues = try canContinue(row, plan: plan, hashes: hashes, grant: initial, buckets: buckets)
                     if (row.comparison == .ready || continues), let change = row.change,
                        !change.isDestructive, !blocked {
                         receipt = .pending
@@ -371,23 +521,24 @@ public final class TrackerHistorySyncController {
             let index = Self.bucket(key)
             if value == .pending || value == .confirmed { buckets[index].blockedTargets.insert(key) }
             var confirmed = buckets[index].confirmedTargets ?? [:]
+            let proof = Self.proofKey(target, grant)
             if value == .confirmed || value == .matched {
                 guard let baseline = value == .confirmed ? confirmedBaseline : row.baseline else {
                     throw TrackerHistoryError.incompleteSnapshot
                 }
                 if case .resume(let seconds) = row.change, seconds > 0, !baseline.played,
                    value == .confirmed || !buckets[index].blockedTargets.contains(key) {
-                    confirmed[key] = try Self.baselineFingerprint(baseline)
-                } else { confirmed[key] = nil }
+                    confirmed[proof] = try Self.baselineFingerprint(baseline)
+                } else { confirmed[proof] = nil }
             } else if value == .review {
-                confirmed[key] = nil
+                confirmed[proof] = nil
             }
             buckets[index].confirmedTargets = confirmed
             try store.save(buckets[index], for: bucketKey(grant, index))
         }
         for recordID in row.recordIDs {
             guard let hash = hashes[recordID] else { throw TrackerHistoryError.incompleteSnapshot }
-            let key = Self.receiptKey(accountID, hash)
+            let key = Self.receiptKey(accountID, hash, grant)
             let index = Self.bucket(key)
             buckets[index].receipts[key] = value
             try store.save(buckets[index], for: bucketKey(grant, index))
@@ -403,13 +554,14 @@ public final class TrackerHistorySyncController {
 
     private func canContinue(
         _ row: TrackerHistoryImportPlan.Row, plan: TrackerHistoryImportPlan,
-        hashes: [String: String], buckets: [Bucket]
+        hashes: [String: String], grant: TrackerHistorySyncGrant, buckets: [Bucket]
     ) throws -> Bool {
         guard row.comparison == .serverConflict || row.comparison == .trackerConflict, let target = row.target,
               let baseline = row.baseline, !baseline.played,
               let position = baseline.resumePosition, position > 0 else { return false }
         let key = Self.digest(Data(target.id.utf8))
-        guard buckets[Self.bucket(key)].confirmedTargets?[key] == (try Self.baselineFingerprint(baseline)) else {
+        guard buckets[Self.bucket(key)].confirmedTargets?[Self.proofKey(target, grant)]
+                == (try Self.baselineFingerprint(baseline)) else {
             return false
         }
         if row.comparison == .trackerConflict {
@@ -421,10 +573,11 @@ public final class TrackerHistorySyncController {
             guard competing.allSatisfy({ other in
                 other.recordIDs.allSatisfy { recordID in
                     guard let hash = hashes[recordID] else { return false }
-                    let receiptKey = Self.receiptKey(target.accountID, hash)
-                    let receipt = buckets[Self.bucket(receiptKey)].receipts[receiptKey]
-                    return buckets[Self.bucket(hash)].baseline.contains(hash)
-                        || receipt == .confirmed || receipt == .matched
+                    let receiptKey = Self.receiptKey(target.accountID, hash, grant)
+                    if let receipt = buckets[Self.bucket(receiptKey)].receipts[receiptKey] {
+                        return receipt == .confirmed || receipt == .matched
+                    }
+                    return Self.isEnrolled(hash, target.accountID, grant, buckets)
                 }
             }) else { return false }
         }
@@ -452,7 +605,7 @@ public final class TrackerHistorySyncController {
                 && grant.categories.contains { $0.includes(row.observation.fact) }
         }
         guard !rows.isEmpty else { return }
-        if isBusy { stop() }
+        if isWorking && !isEditing { stop() }
         try requireGrant(grant, generation)
         var buckets = try loadBuckets(grant)
         let hashes = try Dictionary(uniqueKeysWithValues: plan.snapshot.observations.map {
@@ -472,8 +625,10 @@ public final class TrackerHistorySyncController {
     }
 
     private func loadBuckets(_ grant: TrackerHistorySyncGrant) throws -> [Bucket] {
-        try (0..<Self.bucketCount).map { index in
-            guard let bucket: Bucket = try store.load(for: bucketKey(grant, index)) else {
+        let enrollments = grant.enrollmentIDs.map { Set($0.values) }
+        return try (0..<Self.bucketCount).map { index in
+            guard let bucket: Bucket = try store.load(for: bucketKey(grant, index)),
+                  bucket.shareBaselines.map({ Set($0.keys) }) == enrollments else {
                 throw DurableLocalStateError.malformedPayload
             }
             return bucket
@@ -491,14 +646,17 @@ public final class TrackerHistorySyncController {
         guard generation == current, isAuthorized() else { throw TrackerHistoryError.scopeChanged }
     }
 
-    private func requireGrant(_ expected: TrackerHistorySyncGrant, _ current: UUID) throws {
+    @discardableResult
+    private func requireGrant(_ expected: TrackerHistorySyncGrant, _ current: UUID) throws -> TrackerHistorySyncGrant {
         try requireContext(current)
         guard !revocationPending, permits(expected.scope),
               let stored: TrackerHistorySyncGrant = try store.load(for: grantKey()),
               stored.enabled, stored.id == expected.id, stored.identity == identity,
-              stored.scope == expected.scope, stored.categories == expected.categories else {
+              stored.scope == expected.scope, stored.categories == expected.categories,
+              stored.enrollmentIDs == expected.enrollmentIDs else {
             throw TrackerHistorySyncError.permissionChanged
         }
+        return stored
     }
 
     private func grantKey() throws -> DurableLocalStateKey {
@@ -528,10 +686,13 @@ public final class TrackerHistorySyncController {
     }
 
     private func bucketKey(_ grant: TrackerHistorySyncGrant, _ index: Int) throws -> DurableLocalStateKey {
-        try .init(
+        // Older readers don't understand per-enrollment baselines. They must
+        // see missing pages rather than interpreting an edited ledger as v1.
+        let prefix = grant.enrollmentIDs == nil ? "history-sync" : "history-sync/selection"
+        return try .init(
             collection: .trackerDeliveryReceipt,
             scope: .source(profileID: contextScope.profileID, sourceID: identity.trackerID),
-            recordID: "history-sync/\(grant.id.uuidString)/\(index)"
+            recordID: "\(prefix)/\(grant.id.uuidString)/\(index)"
         )
     }
 
@@ -573,8 +734,28 @@ public final class TrackerHistorySyncController {
         )))
     }
 
-    private static func receiptKey(_ accountID: String, _ hash: String) -> String {
-        digest(Data("\(accountID.utf8.count):\(accountID)\(hash)".utf8))
+    private static func enrollmentKey(_ key: String, _ enrollment: UUID) -> String {
+        digest(Data("\(enrollment.uuidString):\(key)".utf8))
+    }
+
+    private static func isEnrolled(
+        _ hash: String, _ accountID: String, _ grant: TrackerHistorySyncGrant, _ buckets: [Bucket]
+    ) -> Bool {
+        let page = buckets[bucket(hash)]
+        if page.baseline.contains(hash) { return true }
+        guard let enrollment = grant.enrollmentIDs?[accountID] else { return false }
+        return page.shareBaselines?[enrollment]?.contains(hash) == true
+    }
+
+    private static func receiptKey(_ accountID: String, _ hash: String, _ grant: TrackerHistorySyncGrant) -> String {
+        let key = digest(Data("\(accountID.utf8.count):\(accountID)\(hash)".utf8))
+        guard let enrollment = grant.enrollmentIDs?[accountID] else { return key }
+        return enrollmentKey(key, enrollment)
+    }
+
+    private static func proofKey(_ target: WatchMutationTarget, _ grant: TrackerHistorySyncGrant) -> String {
+        guard let enrollment = grant.enrollmentIDs?[target.accountID] else { return digest(Data(target.id.utf8)) }
+        return enrollmentKey("\(target.accountID.utf8.count):\(target.accountID)\(target.itemID)", enrollment)
     }
 
     private static func digest(_ data: Data) -> String {

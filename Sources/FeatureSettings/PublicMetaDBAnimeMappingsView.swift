@@ -9,21 +9,22 @@ struct PublicMetaDBAnimeMappingsView: View {
     @State private var mappings = PublicMetaDBReadOperation<PublicMetaDB.AnimeSeasons>()
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Anime season mappings")
+        GroupedSettingsPage(title: "Anime season mappings", backIdentifier: "publicmetadb.anime.back") {
             Text(verbatim: "TMDB \(tmdbID)")
-            Text("Logical anime seasons can span multiple TMDB seasons or shows. These contributions do not change server IDs, episode order or playback matching.")
-                .foregroundStyle(.secondary)
-            NavigationLink("Publish or replace my mapping") {
-                PublicMetaDBAnimeEditor(service: service, tmdbID: tmdbID)
-            }
-            NavigationLink("Delete my mapping for a logical season") {
-                PublicMetaDBAnimeDeleteView(service: service, tmdbID: tmdbID)
+            SettingsSectionGroup {
+                PublicMetaDBDetailLink("Publish or replace my mapping") {
+                    PublicMetaDBAnimeEditor(service: service, tmdbID: tmdbID)
+                }
+                PublicMetaDBDetailLink("Delete my mapping for a logical season") {
+                    PublicMetaDBAnimeDeleteView(service: service, tmdbID: tmdbID)
+                }
+            } footer: {
+                Text("A logical season can span TMDB seasons or shows without changing server numbering or playback.")
             }
             PublicMetaDBReadContent(service: service, operation: mappings, id: tmdbID) { result in
                 if result.seasons.isEmpty { Text("No anime season mappings") }
                 ForEach(result.seasons) { group in
-                    Section {
+                    SettingsSectionGroup {
                         PublicMetaDBAnimeGroupLabel(group: group)
                         ForEach(group.chunks) { record in
                             NavigationLink {
@@ -37,8 +38,9 @@ struct PublicMetaDBAnimeMappingsView: View {
                                     PublicMetaDBAnimeChunkLabel(chunk: record.value, anchorID: tmdbID)
                                 }
                             } label: {
-                                PublicMetaDBAnimeChunkLabel(chunk: record.value, anchorID: tmdbID)
+                                SettingsDisclosureLabel { PublicMetaDBAnimeChunkLabel(chunk: record.value, anchorID: tmdbID) }
                             }
+                            .settingsActionRow()
                         }
                     }
                 }
@@ -53,14 +55,18 @@ struct PublicMetaDBAnimeMappingsView: View {
 private struct PublicMetaDBAnimeGroupLabel: View {
     let group: PublicMetaDB.AnimeSeasons.Group
     var body: some View {
-        VStack(alignment: .leading) {
-            Text("Logical season \(group.seasonNumber)")
-            if let name = group.seasonName { Text(verbatim: name) }
-            Text(verbatim: group.contributor)
-            Text(group.source == "community" ? "Community-maintained mapping" : "Member contribution")
-            if group.recommended { Text("Recommended by PublicMetaDB") }
-            Text("Vote score: \(group.votes)")
+        VStack(alignment: .leading, spacing: 4) {
+            if let name = group.seasonName {
+                Text("Logical season \(group.seasonNumber) · \(name)").font(.headline)
+            } else {
+                Text("Logical season \(group.seasonNumber)").font(.headline)
+            }
+            Text(group.source == "community" ? "Community · \(group.contributor)" : "Member · \(group.contributor)")
+                .settingsRowSecondary()
+            Text(group.recommended ? "Recommended · Vote score: \(group.votes)" : "Vote score: \(group.votes)")
+                .font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -68,14 +74,19 @@ private struct PublicMetaDBAnimeChunkLabel: View {
     let chunk: PublicMetaDB.AnimeChunk
     let anchorID: Int
     var body: some View {
-        VStack(alignment: .leading) {
-            Text(verbatim: "TMDB \(chunk.chunkTmdbID ?? anchorID)")
-            Text("TMDB season \(chunk.tmdbSeason)")
-            if let start = chunk.tmdbEpisodeStart { Text("First episode: \(start)") }
-            else { Text("First episode unspecified") }
-            if let end = chunk.tmdbEpisodeEnd { Text("Last episode: \(end)") }
-            else { Text("Last episode unspecified") }
+        VStack(alignment: .leading, spacing: 4) {
+            Text("TMDB \(String(chunk.chunkTmdbID ?? anchorID)) · Season \(chunk.tmdbSeason)")
+            Group {
+                switch (chunk.tmdbEpisodeStart, chunk.tmdbEpisodeEnd) {
+                case let (start?, end?): Text("Episodes \(start)–\(end)")
+                case let (start?, nil): Text("From episode \(start) · End unspecified")
+                case let (nil, end?): Text("Through episode \(end) · Start unspecified")
+                case (nil, nil): Text("Episode range unspecified")
+                }
+            }
+            .font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -106,10 +117,18 @@ struct PublicMetaDBAnimeChunkDraft: Identifiable {
 private struct PublicMetaDBAnimeChunkFields: View {
     @Binding var draft: PublicMetaDBAnimeChunkDraft
     var body: some View {
-        TextField("TMDB season (0 for specials)", text: $draft.season)
-        TextField("First episode (optional)", text: $draft.firstEpisode)
-        TextField("Last episode (optional)", text: $draft.lastEpisode)
-        TextField("Different TMDB show ID (optional)", text: $draft.showID)
+        SettingsInputRow("TMDB season", axis: .horizontal) {
+            TextField("0 for specials", text: $draft.season)
+        }
+        SettingsInputRow("First episode", axis: .horizontal) {
+            TextField("Optional", text: $draft.firstEpisode)
+        }
+        SettingsInputRow("Last episode", axis: .horizontal) {
+            TextField("Optional", text: $draft.lastEpisode)
+        }
+        SettingsInputRow("Different TMDB show ID", axis: .horizontal) {
+            TextField("Optional", text: $draft.showID)
+        }
     }
 }
 
@@ -124,37 +143,39 @@ private struct PublicMetaDBAnimeEditor: View {
     @State private var failure: (any Error)?
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Publish or replace my mapping")
-            Text(verbatim: "TMDB \(tmdbID)")
-            TextField("Logical anime season (1 or greater)", text: $season)
-            TextField("Season name (optional)", text: $name)
-            Text("Logical seasons are separate from TMDB season numbers. Publishing replaces all your existing chunks for this logical season.")
-                .foregroundStyle(.secondary)
+        GroupedSettingsPage(title: "Publish or replace my mapping", backIdentifier: "publicmetadb.anime.edit.back") {
+            SettingsSectionGroup(verbatim: "TMDB \(tmdbID)") {
+                TextField("Logical anime season (1 or greater)", text: $season)
+                TextField("Season name (optional)", text: $name)
+            } footer: {
+                Text("Publishing replaces all your chunks for this logical season.")
+            }
             ForEach($chunks) { $chunk in
-                Section {
+                SettingsSectionGroup("TMDB chunk") {
                     PublicMetaDBAnimeChunkFields(draft: $chunk)
                     Button("Remove this chunk", role: .destructive) { chunks.removeAll { $0.id == chunk.id } }
-                } header: {
-                    Text("TMDB chunk")
+                        .settingsActionRow()
                 }
             }
-            Button("Add a chunk") { chunks.append(.init()) }
-            Button("Review replacement") {
-                do {
-                    guard let season = Int(season.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                        throw PublicMetaDB.Failure.invalidInput
-                    }
-                    let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    candidate = try .init(
-                        tmdbID: tmdbID, seasonNumber: season, seasonName: name.isEmpty ? nil : name,
-                        chunks: chunks.map { try $0.chunk() }
-                    )
-                    failure = nil
-                    showsReview = true
-                } catch { failure = error }
+            SettingsSectionGroup {
+                Button("Add a chunk") { chunks.append(.init()) }.settingsActionRow()
+                Button("Review replacement") {
+                    do {
+                        guard let season = Int(season.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                            throw PublicMetaDB.Failure.invalidInput
+                        }
+                        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        candidate = try .init(
+                            tmdbID: tmdbID, seasonNumber: season, seasonName: name.isEmpty ? nil : name,
+                            chunks: chunks.map { try $0.chunk() }
+                        )
+                        failure = nil
+                        showsReview = true
+                    } catch { failure = error }
+                }
+                .settingsActionRow()
+                .disabled(chunks.isEmpty || service.phase != .connected)
             }
-            .disabled(chunks.isEmpty || service.phase != .connected)
             if let failure { PublicMetaDBFailureMessage(error: failure) }
         }
         .navigationDestination(isPresented: $showsReview) {
@@ -180,31 +201,36 @@ private struct PublicMetaDBAnimeReviewView: View {
     @State private var mappings = PublicMetaDBReadOperation<PublicMetaDB.AnimeSeasons>()
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Review anime mapping")
-            Text(verbatim: "TMDB \(mapping.tmdbID)")
-            Text("Logical season \(mapping.seasonNumber)")
-            if let name = mapping.seasonName { Text(verbatim: name) }
-            // The immutable reviewed array has no editable per-row state.
-            ForEach(Array(mapping.chunks.enumerated()), id: \.offset) { _, chunk in
-                PublicMetaDBAnimeChunkLabel(chunk: chunk, anchorID: mapping.tmdbID)
+        GroupedSettingsPage(title: "Review anime mapping", backIdentifier: "publicmetadb.anime.review.back") {
+            SettingsSectionGroup("Logical season \(mapping.seasonNumber) · TMDB \(String(mapping.tmdbID))") {
+                if let name = mapping.seasonName { Text(verbatim: name) }
+                // The immutable reviewed array has no editable per-row state.
+                ForEach(Array(mapping.chunks.enumerated()), id: \.offset) { _, chunk in
+                    PublicMetaDBAnimeChunkLabel(chunk: chunk, anchorID: mapping.tmdbID)
+                }
             }
             if operation.succeeded {
                 Text("Anime mapping confirmed on PublicMetaDB")
             } else {
                 PublicMetaDBReadContent(service: service, operation: mappings) { result in
                     PublicMetaDBAnimeExistingGroups(result: result, seasonNumber: mapping.seasonNumber)
-                    Text("Your key selects which existing mapping is replaced. Contributor names do not prove ownership. All your old chunks for this logical season are deleted and the reviewed chunks become public.")
-                    Button("Replace my mapping") {
-                        observed = result
-                        connection = service.connectionID
-                        confirming = true
+                    SettingsSectionGroup {
+                        Button("Replace my mapping") {
+                            observed = result
+                            connection = service.connectionID
+                            confirming = true
+                        }
+                        .settingsActionRow()
+                        .disabled(!operation.permitsWrite)
+                    } footer: {
+                        Text("Your API key identifies the mapping to replace, not the contributor name.")
                     }
-                    .disabled(!operation.permitsWrite)
                 }
             }
-            Text("PublicMetaDB may cache these reads for five minutes. If readback is unconfirmed, inspect the mapping later rather than publishing it again.")
-                .foregroundStyle(.secondary)
+            if operation.failure != nil {
+                Text("Updates can take five minutes to appear. Check again before republishing.")
+                    .settingsHelperText()
+            }
             PublicMetaDBMutationStatus(operation: operation)
         }
         .publicMetaDBRead(mappings, service: service, enabled: !operation.succeeded) {
@@ -219,7 +245,7 @@ private struct PublicMetaDBAnimeReviewView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Replaces all your chunks for logical season \(mapping.seasonNumber) of TMDB \(mapping.tmdbID). Other users' contributions and your media server are not selected for modification.")
+            Text("Deletes all your old chunks for logical season \(mapping.seasonNumber) of TMDB \(String(mapping.tmdbID)) and publishes the \(mapping.chunks.count) reviewed chunks. Other contributors’ mappings and your server stay unchanged.")
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false
@@ -235,12 +261,13 @@ private struct PublicMetaDBAnimeExistingGroups: View {
     let result: PublicMetaDB.AnimeSeasons
     let seasonNumber: Int
     var body: some View {
-        Text("Existing contributions for this logical season").font(.headline)
         let groups = result.seasons.filter { $0.seasonNumber == seasonNumber }
-        if groups.isEmpty { Text("No anime season mappings") }
-        ForEach(groups) { group in
-            PublicMetaDBAnimeGroupLabel(group: group)
-            ForEach(group.chunks) { PublicMetaDBAnimeChunkLabel(chunk: $0.value, anchorID: result.tmdbID) }
+        SettingsSectionGroup("Existing mappings") {
+            if groups.isEmpty { Text("No anime season mappings") }
+            ForEach(groups) { group in
+                PublicMetaDBAnimeGroupLabel(group: group)
+                ForEach(group.chunks) { PublicMetaDBAnimeChunkLabel(chunk: $0.value, anchorID: result.tmdbID) }
+            }
         }
     }
 }
@@ -263,29 +290,34 @@ private struct PublicMetaDBAnimeDeleteView: View {
     }
 
     var body: some View {
-        PublicMetaDBPage {
-            SettingsPageHeader("Delete my logical-season mapping")
-            Text(verbatim: "TMDB \(tmdbID)")
+        GroupedSettingsPage(title: "Delete my logical-season mapping", backIdentifier: "publicmetadb.anime.delete.back") {
             if operation.succeeded {
                 Text("Your logical-season mapping was confirmed removed from PublicMetaDB")
             } else {
-                TextField("Logical anime season (1 or greater)", text: $season)
-                Button("Review season") {
-                    if let number = Int(season.trimmingCharacters(in: .whitespacesAndNewlines)), number > 0 {
-                        selectedSeason = number
-                        failure = nil
-                    } else { failure = PublicMetaDB.Failure.invalidInput }
+                SettingsSectionGroup(verbatim: "TMDB \(tmdbID)") {
+                    TextField("Logical anime season (1 or greater)", text: $season)
+                    Button("Review season") {
+                        if let number = Int(season.trimmingCharacters(in: .whitespacesAndNewlines)), number > 0 {
+                            selectedSeason = number
+                            failure = nil
+                        } else { failure = PublicMetaDB.Failure.invalidInput }
+                    }
+                    .settingsActionRow()
                 }
                 if let selectedSeason {
                     PublicMetaDBReadContent(service: service, operation: mappings, id: self.selectedSeason) { result in
                         PublicMetaDBAnimeExistingGroups(result: result, seasonNumber: selectedSeason)
-                        Text("PublicMetaDB deletes only the chunks owned by this API key for the selected logical season. Plozz does not identify your group from its contributor name.")
-                        Button("Delete my mapping", role: .destructive) {
-                            guard let connection = service.connectionID else { return }
-                            draft = Draft(season: selectedSeason, observed: result, connection: connection)
-                            confirming = true
+                        SettingsSectionGroup {
+                            Button("Delete my mapping", role: .destructive) {
+                                guard let connection = service.connectionID else { return }
+                                draft = Draft(season: selectedSeason, observed: result, connection: connection)
+                                confirming = true
+                            }
+                            .settingsActionRow()
+                            .disabled(!operation.permitsWrite)
+                        } footer: {
+                            Text("Only chunks owned by your API key are removed.")
                         }
-                        .disabled(!operation.permitsWrite)
                     }
                     .id(selectedSeason)
                 }
@@ -308,7 +340,7 @@ private struct PublicMetaDBAnimeDeleteView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { draft in
-            Text("Deletes your entire mapping for logical season \(draft.season) of TMDB \(tmdbID), not just one chunk. Server episode numbering remains unchanged.")
+            Text("Deletes all your public chunks for logical season \(draft.season) of TMDB \(String(tmdbID)). Other contributors’ mappings and server episode numbering stay unchanged.")
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false

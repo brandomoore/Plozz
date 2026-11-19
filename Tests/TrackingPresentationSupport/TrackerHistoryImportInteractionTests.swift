@@ -34,7 +34,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         activate(app.buttons["fixture.history.close"])
         activate(app.buttons["fixture.history.open"])
         XCTAssertTrue(element("tracker-history.select.jellyfin:movie").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
         assertReport(jellyfin: 0, plex: 0)
     }
 
@@ -101,8 +101,8 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["tracker-export.apply"].isEnabled)
         activate(app.buttons["fixture.history.close"])
         activate(app.buttons["fixture.history.open"])
-        XCTAssertTrue(app.buttons["tracker-export.preview"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["tracker-export.preview"].isEnabled)
+        XCTAssertTrue(element("tracker-export.account").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["tracker-export.preview"].exists)
         XCTAssertFalse(element("tracker-export.select.movie").exists)
         assertExportReport(writes: 0)
     }
@@ -113,11 +113,40 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         select("plex")
     }
 
-    func testOngoingShareConsentCancellationAndNewHistoryLeaveServersUnchanged() {
+    func testDirectSyncReadsNothingUntilShareEnrollment() {
+        app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync"]
+        app.launch()
+        activate(app.buttons["fixture.history.open"])
+        activate(element("tracker-history.ongoing-sync"))
+        let master = element("tracker-history.sync-enabled")
+        XCTAssertTrue(master.waitForExistence(timeout: 5))
+        waitForReport(";reads=0")
+        activate(master)
+        waitForReport(";sync=true;destinations=cedar,mariner;categories=resume,watched;")
+        assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
+    }
+
+    func testOngoingShareDefaultsAndEditsLeaveUnselectedSourcesUnchanged() {
         verifyOngoingShareSync()
     }
 
     #if os(iOS)
+    func testLargeComparisonFiltersWithoutSelectingOrWritingHiddenRows() {
+        launch(["--history-many-records"])
+        let summary = element("tracker-history.summary")
+        XCTAssertTrue(summary.label.contains("240 unavailable"))
+        select("plex")
+        chooseExportValue("Unavailable (240)", picker: "tracker-history.filter")
+        XCTAssertFalse(element("tracker-history.select.plex:movie").exists)
+        XCTAssertFalse(element("tracker-history.select.jellyfin:movie").exists)
+        chooseExportValue("Selected (1)", picker: "tracker-history.filter")
+        XCTAssertTrue(element("tracker-history.select.plex:movie").exists)
+        XCTAssertFalse(element("tracker-history.select.jellyfin:movie").exists)
+        confirm()
+        XCTAssertTrue(app.staticTexts["Confirmed on server"].waitForExistence(timeout: 5))
+        assertReport(jellyfin: 0, plex: 1)
+    }
+
     func testExportSelectionDoesNotActivateNeighboringActions() {
         launchExport("Jellyfin")
         let before = app.staticTexts["fixture.history.report"].label
@@ -128,7 +157,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertFalse(app.buttons["Export selected titles"].exists)
         activate(selection)
         XCTAssertEqual(app.staticTexts["fixture.history.report"].label, before)
-        XCTAssertFalse(app.buttons["tracker-export.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-export.apply"].exists)
         XCTAssertFalse(app.buttons["Export selected titles"].exists)
     }
 
@@ -176,7 +205,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         activate(app.buttons["fixture.history.open"])
         XCTAssertTrue(app.staticTexts["Already matches — no change"].waitForExistence(timeout: 5))
         XCTAssertFalse(element("tracker-history.select.plex:movie").exists)
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
         assertReport(jellyfin: 0, plex: 1)
     }
 
@@ -186,7 +215,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         confirm()
         XCTAssertTrue(app.staticTexts["Confirmed on server"].waitForExistence(timeout: 5), app.debugDescription)
         assertReport(jellyfin: server == "jellyfin" ? 1 : 0, plex: server == "plex" ? 1 : 0)
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "confirmed-\(server)-only"
         screenshot.lifetime = .keepAlways
@@ -199,35 +228,23 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         ] + arguments
         app.launch()
         openExport(server)
-        XCTAssertFalse(app.buttons["tracker-export.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-export.apply"].exists)
         assertExportReport(writes: 0)
     }
 
     private func openExport(_ server: String) {
         activate(app.buttons["fixture.history.open"])
-        chooseExportValue("\(server) fixture · \(server) viewer", picker: "tracker-export.account")
+        chooseExportValue(server == "Plex" ? "Northbank Cinema · Theo" : "Lantern House · Mara", picker: "tracker-export.account")
         chooseExportValue("Movies", picker: "tracker-export.library")
         activate(app.buttons["tracker-export.preview"])
-        XCTAssertTrue(app.buttons["tracker-export.apply"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(element("tracker-export.summary").waitForExistence(timeout: 5), app.debugDescription)
     }
 
     private func chooseExportValue(_ label: String, picker identifier: String) {
         let picker = element(identifier)
         XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)
-        #if os(tvOS)
-        let option = picker.buttons[label].firstMatch
-        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
-        activate(picker.buttons.element(boundBy: 0))
-        for _ in 0..<picker.buttons.count {
-            if option.wait(for: \.hasFocus, toEqual: true, timeout: 1) { break }
-            XCUIRemote.shared.press(.right)
-        }
-        XCTAssertTrue(option.hasFocus, app.debugDescription)
-        XCTAssertTrue(option.isSelected, app.debugDescription)
-        #else
         activate(picker)
         activate(app.buttons[label].firstMatch)
-        #endif
     }
 
     private func confirmExport() {
@@ -247,7 +264,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         activate(app.buttons["Export selected titles"].firstMatch)
         XCTAssertTrue(app.staticTexts["Confirmed on \(trackerName)"].waitForExistence(timeout: 5), app.debugDescription)
         assertExportReport(writes: 1)
-        XCTAssertFalse(app.buttons["tracker-export.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-export.apply"].exists)
     }
 
     private func assertExportReport(writes: Int) {
@@ -266,45 +283,68 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
     private func verifyOngoingShareSync(additionalArguments: [String] = []) {
         launch(["--history-ongoing-sync"] + additionalArguments)
         activate(element("tracker-history.ongoing-sync"))
-        let enable = app.buttons["tracker-history.enable-sync"]
-        XCTAssertTrue(enable.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(enable.isEnabled)
-        if additionalArguments.contains("--history-watched-only") {
-            XCTAssertFalse(element("tracker-history.sync-resume").exists)
+        let master = element("tracker-history.sync-enabled")
+        let watchedOnly = additionalArguments.contains("--history-watched-only")
+        let defaults = watchedOnly ? "watched" : "resume,watched"
+        let watched = element("tracker-history.sync-watched")
+        let resume = element("tracker-history.sync-resume")
+        let cedar = element("tracker-history.sync-server.cedar")
+        let mariner = element("tracker-history.sync-server.mariner")
+        let syncNow = app.buttons["tracker-history.sync-now"]
+        func assertOff() {
+            waitForReport(";sync=false;")
+            XCTAssertTrue(master.exists && master.isEnabled)
+            #if os(iOS)
+            XCTAssertEqual(master.value as? String, "0")
+            #endif
+            for option in [watched, resume, cedar, mariner, syncNow] { XCTAssertFalse(option.exists) }
         }
+        XCTAssertTrue(master.waitForExistence(timeout: 5), app.debugDescription)
+        assertOff()
+        activate(master)
+        waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
+        for option in [cedar, mariner, watched, syncNow] { XCTAssertTrue(option.exists && option.isEnabled) }
+        XCTAssertEqual(resume.exists, !watchedOnly)
+        #if os(iOS)
+        for option in [master, cedar, mariner, watched] + (watchedOnly ? [] : [resume]) {
+            XCTAssertEqual(option.value as? String, "1", option.identifier)
+        }
+        #endif
+        XCTAssertTrue(cedar.label.contains("Cedar Loft"))
+        XCTAssertTrue(mariner.label.contains("Mariner Archive"))
         for server in ["jellyfin", "plex"] {
             XCTAssertFalse(element("tracker-history.sync-server.\(server)").exists)
         }
-        let share = element("tracker-history.sync-server.mediaShare")
-        activate(share)
-        activate(element("tracker-history.sync-watched"))
-        activate(enable)
-        XCTAssertTrue(syncConfirmationButton.waitForExistence(timeout: 5))
-        cancelConfirmation()
-        XCTAssertTrue(app.staticTexts["fixture.history.report"].label.contains(";sync=false;"))
-        assertReport(jellyfin: 0, plex: 0, share: 0)
-        activate(enable)
-        activate(syncConfirmationButton)
-        XCTAssertTrue(app.buttons["tracker-history.sync-now"].waitForExistence(timeout: 5), app.debugDescription)
-        if additionalArguments.contains("--history-manual-sync") {
-            XCTAssertTrue(app.staticTexts["Use Sync now to import new history. Conflicts stay unchanged."].exists)
+        if watchedOnly {
+            XCTAssertTrue(app.staticTexts["Use Sync now to import new history."].exists)
+        } else {
+            activate(master)
+            assertOff()
+            activate(master)
+            waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
+            activate(resume)
+            waitForReport(";sync=true;destinations=cedar,mariner;categories=watched;")
         }
-        XCTAssertFalse(share.exists,
-                       "Enrollment must replace the editable destination toggle with a read-only summary")
-        XCTAssertTrue(app.staticTexts["fixture.history.report"].label.contains(";destinations=mediaShare;"))
-        assertReport(jellyfin: 0, plex: 0, share: 0)
+        activate(mariner)
+        waitForReport(";sync=true;destinations=cedar;categories=watched;")
+        #if os(iOS)
+        XCTAssertEqual(mariner.value as? String, "0")
+        if !watchedOnly { XCTAssertEqual(resume.value as? String, "0") }
+        #endif
+        assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
         activate(app.buttons["fixture.history.new-play"])
-        activate(app.buttons["tracker-history.sync-now"])
-        let updated = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                self.app.staticTexts["fixture.history.report"].label.contains("mediaShare=1,played=true")
-            }, object: nil
-        )
+        activate(syncNow)
+        waitForReport("cedar=1,played=true")
+        assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
+        XCTAssertTrue(syncNow.wait(for: \.isEnabled, toEqual: true, timeout: 10))
+        activate(watchedOnly ? watched : cedar)
+        assertOff()
+    }
+
+    private func waitForReport(_ text: String) {
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", text),
+                                                object: app.staticTexts["fixture.history.report"])
         XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 10), .completed, app.debugDescription)
-        assertReport(jellyfin: 0, plex: 0, share: 1)
-        activate(app.buttons["tracker-history.disable-sync"])
-        XCTAssertTrue(enable.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["fixture.history.report"].label.contains(";sync=false;"))
     }
 
     private func launch(_ arguments: [String] = []) {
@@ -314,7 +354,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         app.launch()
         activate(app.buttons["fixture.history.open"])
         XCTAssertTrue(element("tracker-history.select.jellyfin:movie").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["tracker-history.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
         assertReport(jellyfin: 0, plex: 0)
     }
 
@@ -358,11 +398,12 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         assertReport(jellyfin: 0, plex: 0)
     }
 
-    private func assertReport(jellyfin: Int, plex: Int, share: Int? = nil) {
+    private func assertReport(jellyfin: Int, plex: Int, cedar: Int? = nil, mariner: Int? = nil) {
         let report = app.staticTexts["fixture.history.report"]
         XCTAssertTrue(report.waitForExistence(timeout: 5), app.debugDescription)
         var counts = [("jellyfin", jellyfin), ("plex", plex)]
-        if let share { counts.append(("mediaShare", share)) }
+        if let cedar { counts.append(("cedar", cedar)) }
+        if let mariner { counts.append(("mariner", mariner)) }
         for (kind, count) in counts {
             XCTAssertTrue(report.label.contains("\(kind)=\(count),played=\(count > 0),playback=0"), report.label)
         }
@@ -371,14 +412,6 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
 
     private func element(_ id: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
-    }
-
-    private var syncConfirmationButton: XCUIElement {
-        #if os(tvOS)
-        app.sheets.buttons["Enable sync"].firstMatch
-        #else
-        app.buttons["tracker-history.confirm-sync"].firstMatch
-        #endif
     }
 
     private func activate(_ target: XCUIElement) {
@@ -396,11 +429,16 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         #else
         if !target.waitForExistence(timeout: 5) || !target.isHittable {
-            let list = app.collectionViews.firstMatch
-            for _ in 0..<5 {
+            let scroll = app.scrollViews.containing(.any, identifier: target.identifier).firstMatch
+            let list = scroll.exists ? scroll : app.collectionViews.firstMatch
+            for _ in 0..<8 {
                 if target.exists && target.isHittable { break }
                 guard list.exists else { break }
-                list.swipeUp()
+                if target.exists && !target.frame.isEmpty && target.frame.midY < list.frame.midY {
+                    list.swipeDown()
+                } else {
+                    list.swipeUp()
+                }
             }
         }
         XCTAssertTrue(target.exists && target.isHittable, app.debugDescription)
