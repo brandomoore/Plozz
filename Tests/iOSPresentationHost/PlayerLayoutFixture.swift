@@ -171,6 +171,7 @@ struct PlayerLayoutFixture: View {
     }
 
     private struct LivePlayerLayoutFixture: View {
+        private static let channelID = "sample"
         @State private var tracks: LiveChannelPlayerModel
         @State private var paused = false
         @State private var behind: TimeInterval = 0
@@ -195,7 +196,9 @@ struct PlayerLayoutFixture: View {
         init() {
             input = .stream(url: URL(string: "https://fixture.invalid/live.m3u8")!, httpHeaders: [:])
             do {
-                _tracks = State(initialValue: LiveChannelPlayerModel(engine: try PlozzigenVideoEngine(), input: input))
+                _tracks = State(initialValue: LiveChannelPlayerModel(
+                    engine: try PlozzigenVideoEngine(), channelID: Self.channelID, input: input
+                ))
             } catch {
                 preconditionFailure("Could not create Live layout fixture: \(error)")
             }
@@ -204,13 +207,13 @@ struct PlayerLayoutFixture: View {
         var body: some View {
             LiveChannelOverlay(
                 title: "Sample Channel", logoURL: nil, plozzChannelID: scheduled ? "fixture" : nil,
-                channelID: "sample", input: input,
+                channelID: Self.channelID, input: input,
                 program: hasProgram ? .init(
                     title: "Evening News", start: now.addingTimeInterval(-900), end: now.addingTimeInterval(900)
                 ) : nil,
                 earlierPrograms: [], libraryItem: nil, openLibraryItem: nil,
                 phase: cyclesPhase ? phases[phaseIndex] : (paused ? .paused : .playing),
-                isAtLiveEdge: behind == 0, behindLiveSeconds: behind, canPause: true, canGoLive: true,
+                isAtLiveEdge: behind == 0, behindLiveSeconds: behind, canPause: true, canGoLive: behind > 0,
                 seekWindowSeconds: 3600, onSeekBy: { behind = max(0, behind - $0) },
                 onSeekBehindLive: { behind = $0 }, focus: $focus, onClose: {},
                 onPrevious: { channel -= 1 }, onPlayPause: { paused.toggle() }, onGoLive: { behind = 0 },

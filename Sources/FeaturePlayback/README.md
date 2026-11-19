@@ -750,7 +750,10 @@ without tint or a colored backing. Like AVKit video chrome, their symbols and
 progress remain white in both appearances. Mobile Live TV's top presentation
 group contains only available Picture in Picture and AirPlay controls, with no
 separate Stop button. Pause/resume, player dismissal, and session cleanup retain
-their existing behavior. Playback options, track selection, and multiview sit
+their existing behavior. When playback is behind live, a separate **Jump to live**
+button returns to the live edge and disappears. Scheduled channels use **Jump to
+now**. In landscape the button sits immediately before the playback menus.
+Playback options, track selection, and multiview sit
 at the bottom trailing edge above the timeline. Portrait keeps the title on its
 own row above a single options menu; track menus open upward without covering the seek
 bar. The controls scrim dims the video

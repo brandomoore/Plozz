@@ -245,6 +245,26 @@ final class PlayerLayoutInteractionTests: XCTestCase {
         }
     }
 
+    func testLandscapePlayerCaptureFillsPhoneDisplay() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone)
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--player-layout-fixture", "--capture-player-landscape", "--live-player"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["live-channel-play-pause"].waitForExistence(timeout: 10))
+        let rotated = NSPredicate { _, _ in app.frame.width > app.frame.height }
+        wait(for: [XCTNSPredicateExpectation(predicate: rotated, object: nil)], timeout: 10)
+
+        // The app and its controls can agree on a compatibility-sized window. Measure the display independently.
+        let pixels = try XCTUnwrap(XCUIScreen.main.screenshot().image.cgImage)
+        let frame = app.frame
+        let shortSide = CGFloat(min(pixels.width, pixels.height))
+        let longSide = CGFloat(max(pixels.width, pixels.height))
+        let expectedHeight = frame.width * shortSide / longSide
+        XCTAssertEqual(frame.height, expectedHeight, accuracy: 1,
+                       "The player window must fill the phone display. For Duo, build with the iOS 27.1 SDK or newer.")
+    }
+
     func testLiveInlineTimelineSeeksWithinTheBarAndPreservesChannelActions() {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
@@ -276,8 +296,14 @@ final class PlayerLayoutInteractionTests: XCTestCase {
         // The bar spans one hour of history plus the programme's remaining 15 minutes.
         XCTAssertEqual(Double(landing ?? -1), 3600 - 4500 * 0.25, accuracy: 20)
         XCTAssertTrue(value.hasSuffix("scrubs:1"))
-        app.buttons["live-channel-go-live"].tap()
+        let jump = app.buttons["live-channel-go-live"]
+        XCTAssertEqual(jump.label, "Jump to live")
+        jump.tap()
         XCTAssertTrue((fixture.value as? String)?.contains("behind:0,") == true)
+        XCTAssertFalse(jump.exists)
+        let settings = app.buttons["live-channel-settings"]
+        (settings.exists ? settings : app.buttons["live-channel-playback-options"]).tap()
+        XCTAssertTrue(app.buttons["Video"].waitForExistence(timeout: 3))
     }
 
     func testNativeFullscreenPlayerEdgeReferenceAfterRotation() {

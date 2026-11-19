@@ -3040,7 +3040,7 @@ enum LiveChannelPlaybackPhase: Equatable {
 
 enum LibraryChannelPlaybackCopy {
     static func returnToCurrentTitle(isScheduledChannel: Bool) -> LocalizedStringResource {
-        isScheduledChannel ? "Jump to now" : "Go Live"
+        isScheduledChannel ? "Jump to now" : "Jump to live"
     }
 
     static func failureTitle(for kind: MediaItemKind?) -> LocalizedStringResource {

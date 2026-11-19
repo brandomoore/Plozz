@@ -673,7 +673,7 @@ struct LiveChannelOverlay: View {
             if canGoLive {
                 badge(
                     LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: plozzChannelID != nil),
-                    systemImage: plozzChannelID != nil ? "clock.arrow.circlepath" : "dot.radiowaves.left.and.right",
+                    systemImage: "forward.end.fill",
                     control: .goLive, prominent: true, action: onGoLive
                 )
                 .accessibilityIdentifier("live-channel-go-live")
@@ -1537,7 +1537,7 @@ extension LiveChannelOverlay {
                                 touchGoLiveBadge
                                 libraryButton
                             }
-                            touchTrackBadges()
+                            touchTrackBadges
                                 .reportSubtitleControlsFrame(
                                     in: tracks.subtitles.controlsLayout, region: .trackControls,
                                     isVisible: !touchChromeHidden
@@ -1647,7 +1647,10 @@ extension LiveChannelOverlay {
 
     /// The same actions as the tvOS badges, as VOD's touch glass circles.
     private var touchBadges: some View {
-        touchTrackBadges(includesGoLive: true)
+        HStack(spacing: 8) {
+            touchGoLiveBadge
+            touchTrackBadges
+        }
         .reportSubtitleControlsFrame(
             in: tracks.subtitles.controlsLayout, region: .trackControls, isVisible: !touchChromeHidden
         )
@@ -1656,11 +1659,15 @@ extension LiveChannelOverlay {
     @ViewBuilder
     private var touchGoLiveBadge: some View {
         if canGoLive {
-            touchBadge(
-                LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: plozzChannelID != nil),
-                systemImage: plozzChannelID != nil ? "clock.arrow.circlepath" : "dot.radiowaves.left.and.right",
-                action: onGoLive
-            )
+            Button(action: onGoLive) {
+                Label {
+                    Text(LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: plozzChannelID != nil))
+                } icon: {
+                    Image(systemName: "forward.end.fill")
+                }
+                .labelStyle(.titleAndIcon)
+            }
+            .playerTouchTab(selected: false)
             .accessibilityIdentifier("live-channel-go-live")
             .reportSubtitleControlsFrame(
                 in: tracks.subtitles.controlsLayout, region: .trackControls, isVisible: !touchChromeHidden
@@ -1669,9 +1676,8 @@ extension LiveChannelOverlay {
     }
 
     /// Track actions stay above the timeline, below the title in portrait.
-    private func touchTrackBadges(includesGoLive: Bool = false) -> some View {
+    private var touchTrackBadges: some View {
         PlayerGlassControlGroup {
-            if includesGoLive { touchGoLiveBadge }
             PlayerMoreMenuButton(
                 model: trackOptions, availability: mobileMenuAvailability, presentation: mobileMenu,
                 layout: .init(size: touchViewportSize),

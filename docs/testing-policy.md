@@ -683,6 +683,16 @@ Its separate status-inspection method uses `PLOZZ_CAPTURE_INSPECT_STATUS=1`
 and `PLOZZ_CAPTURE_BUNDLE_ID` to retain the actual TV badge screenshot and
 accessibility tree without sending input.
 
+For iPhone Duo captures, build the host with the **iOS 27.1 SDK or newer**.
+Selecting a 27.1 simulator alone is not enough: a 27.0-linked host runs in a
+678 × 386 pt compatibility window on the folded 678 × 466 pt landscape display.
+Select Xcode per command with `DEVELOPER_DIR`; verify the installed host's
+`DTSDKName`. Do not change the deployment target or compensate with player insets.
+Launch `PlozziOSPresentationHost` with `--player-layout-fixture --live-player --video --capture-player-landscape`
+for a repeatable live-controls capture.
+`PlayerLayoutInteractionTests.testLandscapePlayerCaptureFillsPhoneDisplay`
+compares the app frame with the raw display before any screenshot resizing.
+
 The `PlozziOSPresentationTests` scheme supplies a separate iOS app scene for
 native Form/picker and sheet rendering. Run it on an explicitly owned iOS
 simulator under the shared build lease, with a lane-private package workspace
