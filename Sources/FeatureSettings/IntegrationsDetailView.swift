@@ -300,7 +300,7 @@ struct IntegrationsDetailView: View {
             SettingsSplitRow(
                 id: "lastfm",
                 verbatimTitle: "Last.fm",
-                description: "Scrobble the music you play in Plozz to your Last.fm profile.",
+                description: lastfmRowPhase == .connecting ? nil : "Scrobble the music you play in Plozz to your Last.fm profile.",
             ) {
                 if case let .connecting(authURL, _) = lastfm.phase {
                     LastFmConnectingView(
@@ -613,12 +613,8 @@ struct LastFmConnectingView: View {
                 .background(.white, in: RoundedRectangle(cornerRadius: PlozzTheme.Metrics.Radius.control))
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Scan to connect Last.fm")
-                    .font(.title2.weight(.semibold))
-                Text("Scan the code with your phone and approve access on Last.fm. There's no code to type — this screen updates automatically once you approve.")
+                Text("Scan with your phone and approve access.")
                     .font(.callout)
-                    .plozzForeground(.secondary)
-                    .frame(maxWidth: 460, alignment: .leading)
                 HStack(spacing: 14) {
                     ProgressView().controlSize(.small)
                     Text("Waiting for approval…")
@@ -660,6 +656,8 @@ struct DeviceCodeConnectingView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(displayURL)
                     .font(.title2.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text(userCode)
                     .font(.plozzCode(size: 52))
                     .tracking(8)
@@ -678,9 +676,8 @@ struct DeviceCodeConnectingView: View {
                 }
                 .padding(.top, 16)
             }
-
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var activationURL: String {
