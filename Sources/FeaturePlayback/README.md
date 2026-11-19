@@ -1882,7 +1882,7 @@ When a frame exceeds its budget, subtitle rendering yields more time to audio
 and video instead of running continuously. Authored cue starts and ends bypass
 that animation backoff so short-lived glyphs appear and expired artwork clears
 at the next available display tick; seeking still draws immediately.
-Recent render latency leads the sampling clock by at most 200 ms while playback
+On the immediate overlay path, recent render latency leads the sampling clock by at most 200 ms while playback
 is advancing, compensating for slow frames without pushing paused subtitles
 ahead of the video. Costly, heavily layered ASS animations can still drop
 subtitle frames on older hardware; the renderer reserves video/audio headroom
@@ -1891,6 +1891,15 @@ Animated ASS reads the software presentation timebase directly; native
 playback converts the item's continuous clock through Aether's presentation-axis
 map. Seek/wait states retain the engine's held picture time. The published status
 clock is too coarse for animation and must not throttle it to roughly five fps.
+On the native player, the fullscreen host can present authored ASS images on
+an `AVSynchronizedLayer` tied to the current player item. The renderer seats
+the current frame, then prepares up to 350 ms of upcoming artwork. Each image
+replacement or clear is scheduled on the item timeline, including the user's
+subtitle offset; the preparation window is not a subtitle timing adjustment.
+The same fullscreen controller owns this surface on Apple TV, iPhone and iPad.
+It uses the overlay's bitmap placement, control avoidance and master opacity.
+HDR with custom luminance stays on the ordinary overlay, as do secondary cues
+and live auxiliary players.
 Rendering uses source time minus the subtitle offset. Paused frames redraw only for changed
 cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains

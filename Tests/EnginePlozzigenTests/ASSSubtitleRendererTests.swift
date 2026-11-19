@@ -470,6 +470,32 @@ final class ASSSubtitleRendererTests: XCTestCase {
     }
 
     @MainActor
+    func testScheduledArtworkUsesAuthoredReplacementAndClearDeadlines() async throws {
+        let renderer = ASSSubtitleRenderer()
+        var frames: [(Double, Bool)] = []
+        renderer.onFrame = { [weak renderer] cues in
+            if let time = renderer?.sampledTime { frames.append((time, cues.isEmpty)) }
+        }
+        renderer.update(document: document(), events: [
+            .init(packet: #"0,0,Default,,0,0,0,,{\an7\pos(10,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+                  start: 0, end: 1.01),
+            .init(packet: #"1,0,Default,,0,0,0,,{\an7\pos(90,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+                  start: 1.01, end: 1.51)
+        ])
+        for (index, time) in [0.8, 1.035, 1.528].enumerated() {
+            renderer.tick(time, frameRate: 24, scheduled: true)
+            let deadline = ContinuousClock.now + .seconds(3)
+            while frames.count <= index && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        XCTAssertEqual(frames.map(\.0), [0.8, 1.01, 1.51])
+        XCTAssertEqual(frames.map(\.1), [false, false, true])
+        renderer.clear()
+        XCTAssertNil(renderer.sampledTime)
+    }
+
+    @MainActor
     func testDriverCoalescesBusyTicksToTheLatestAnimationTime() async throws {
         let renderer = ASSSubtitleRenderer()
         var positions: [CGFloat] = []

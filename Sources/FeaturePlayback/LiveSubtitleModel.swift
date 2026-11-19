@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import AVFoundation
 import CoreGraphics
 import CoreModels
 import CoreNetworking
@@ -79,6 +80,12 @@ public final class LiveSubtitleModel {
     /// events can be drawn here without promising seek-safe timing offsets.
     public var rendersPrimary: Bool {
         primaryTimeline != nil || isLiveFeed
+    }
+
+    // HDR white-point multiplication is a color operation, not opacity. Leave
+    // those frames on the existing overlay rather than dimming their alpha.
+    var permitsScheduledASSArtwork: Bool {
+        isLiveFeed && (!isHDR || style.hdrLuminanceScale == 1)
     }
     public var supportsPrimaryTimingOffset: Bool {
         primaryTimeline != nil || (isLiveFeed && liveFeedPermitsTimingOffsets)
@@ -228,20 +235,159 @@ public final class LiveSubtitleModel {
 struct LiveSubtitleOverlay: View {
     let model: LiveSubtitleModel
     let controls: PlayerControlsModel
+    var scheduledArtwork: ScheduledASSArtworkView? = nil
 
     var body: some View {
+        let style = SystemCaptionStyle.shared.resolved(model.style)
         SubtitleOverlayView(
             primary: model.primary,
             secondary: model.secondary,
             secondaryActive: model.hasSecondaryTrack,
-            style: SystemCaptionStyle.shared.resolved(model.style),
+            style: style,
             isHDR: model.isHDR,
             videoRect: model.videoRect,
             activePictureRect: model.activePictureRect,
             sourceVideoAspectRatio: model.sourceVideoAspectRatio,
             controlsFrames: controls.subtitleLayout.frames
         )
+        .background {
+            if let scheduledArtwork {
+                GeometryReader { geo in
+                    ScheduledASSArtworkSurface(view: scheduledArtwork, layout: .init(
+                        style: style, videoRect: model.videoRect, activePictureRect: model.activePictureRect,
+                        sourceAspectRatio: model.sourceVideoAspectRatio.map { CGFloat($0) },
+                        controls: SubtitleOverlayGeometry.localControls(
+                            controls.subtitleLayout.frames, style: style, origin: geo.frame(in: .global).origin
+                        )
+                    ))
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
         .ignoresSafeArea()
+    }
+}
+
+private struct ScheduledASSArtworkSurface: UIViewRepresentable {
+    let view: ScheduledASSArtworkView
+    let layout: SubtitleOverlayGeometry.BitmapLayout
+
+    func makeUIView(context: Context) -> ScheduledASSArtworkView {
+        view.isOpaque = false
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: ScheduledASSArtworkView, context: Context) {
+        uiView.bitmapLayout = layout
+    }
+}
+
+/// SwiftUI supplies geometry, not frame timing. A prerendered group is visible
+/// precisely on its half-open interval on the native player's item timeline.
+final class ScheduledASSArtworkView: UIView, ScheduledASSArtworkSink {
+    private struct Frame {
+        let start: Double
+        let group: CALayer
+        let images: [SubtitleImage]
+    }
+    private var timeline: AVSynchronizedLayer?
+    private var frames: [Frame] = []
+    // One active frame, a short preroll, and a little history for the compositor.
+    // Bound retention even if the native item clock is stopped or invalid.
+    private static let maximumFrames = 64
+
+    var bitmapLayout: SubtitleOverlayGeometry.BitmapLayout? {
+        didSet {
+            guard oldValue != bitmapLayout else { return }
+            alpha = CGFloat(bitmapLayout?.style.opacity ?? 1)
+            setNeedsLayout()
+        }
+    }
+
+    func display(_ cues: [CoreModels.SubtitleCue], at itemTime: Double, item: AVPlayerItem) {
+        guard itemTime.isFinite else { reset(); return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        if timeline?.playerItem !== item {
+            reset()
+            let timeline = AVSynchronizedLayer(playerItem: item)
+            timeline.frame = bounds
+            layer.addSublayer(timeline)
+            self.timeline = timeline
+        }
+        let start = max(AVCoreAnimationBeginTimeAtZero, itemTime)
+        // A correction at an already queued deadline supersedes that tail.
+        while let last = frames.last, last.start >= start {
+            frames.removeLast().group.removeFromSuperlayer()
+        }
+        pruneElapsedFrames()
+        if frames.count == Self.maximumFrames {
+            // Coalesce the furthest prefetched change, not the visible frame.
+            frames.removeLast().group.removeFromSuperlayer()
+        }
+        if let previous = frames.last { setVisibility(of: previous, until: start) }
+        let group = CALayer()
+        group.frame = bounds
+        group.opacity = 0
+        let images = cues.compactMap { cue -> SubtitleImage? in
+            guard case .image(let image) = cue.body else { return nil }
+            let region = CALayer()
+            region.contents = image.cgImage
+            group.addSublayer(region)
+            return image
+        }
+        let frame = Frame(start: start, group: group, images: images)
+        layoutRegions(of: frame)
+        timeline?.addSublayer(group)
+        setVisibility(of: frame, until: nil)
+        frames.append(frame)
+    }
+
+    private func setVisibility(of frame: Frame, until end: Double?) {
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 1
+        animation.toValue = 1
+        animation.beginTime = frame.start
+        animation.duration = end.map { $0 - frame.start } ?? 1
+        animation.fillMode = end == nil ? .forwards : .removed
+        animation.isRemovedOnCompletion = false
+        frame.group.add(animation, forKey: "interval")
+    }
+
+    func pruneElapsedFrames() {
+        guard frames.count > 1, let now = timeline?.playerItem?.currentTime().seconds, now.isFinite else { return }
+        while frames.count > 1, frames[1].start < now - 0.5 {
+            frames.removeFirst().group.removeFromSuperlayer()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let timeline else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        timeline.frame = bounds
+        for frame in frames {
+            frame.group.frame = bounds
+            layoutRegions(of: frame)
+        }
+        CATransaction.commit()
+    }
+
+    private func layoutRegions(of frame: Frame) {
+        guard let bitmapLayout else { return }
+        let rects = bitmapLayout.frames(for: frame.images, in: bounds)
+        for (region, rect) in zip(frame.group.sublayers ?? [], rects) { region.frame = rect }
+    }
+
+    func reset() {
+        timeline?.removeFromSuperlayer()
+        timeline?.playerItem = nil
+        timeline = nil
+        frames.removeAll()
     }
 }
 #endif

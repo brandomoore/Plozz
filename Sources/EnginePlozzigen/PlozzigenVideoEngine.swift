@@ -1950,7 +1950,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// the way out and then double-draws with the overlay on the way back.
     public func setNativeSubtitlesActive(_ active: Bool) {
         wantsNativeSubtitles = active
-        if active { assRenderer.clear() }
+        if active { resetScheduledArtwork(); assRenderer.clear() }
         else if let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
         nativeSubtitleOutput?.setSystemPresentation(active)
         applyNativeSubtitleSelection()
@@ -1975,24 +1975,69 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {
+        renderASS(at: time, offset: 0, style: style, canSchedule: false)
+    }
+
+    public func renderSubtitles(at presentationTime: TimeInterval, offset: TimeInterval, style: SubtitleStyle) {
+        renderASS(at: presentationTime, offset: offset, style: style, canSchedule: true)
+    }
+
+    private weak var artworkSink: (any ScheduledASSArtworkSink)?
+    private var scheduledItem: AVPlayerItem?
+    private var scheduledOffset = 0.0
+    private var scheduleStart = 0.0
+    private var previousScheduledTime: Double?
+
+    public func setScheduledASSArtworkSink(_ sink: (any ScheduledASSArtworkSink)?) {
+        guard artworkSink !== sink else { return }
+        if scheduledItem != nil { resetASSFrameForSeek() }
+        artworkSink = sink
+    }
+
+    private func renderASS(at presentationTime: Double, offset: Double, style: SubtitleStyle, canSchedule: Bool) {
         guard let assDocument, !wantsNativeSubtitles else { return }
         let authored = !style.followsSystemStyle && style.usesSourcePosition
             && style.usesSourceColors && style.usesSourceEmphasis
         if authored != rendersAuthoredASS {
             rendersAuthoredASS = authored
             if authored { assRenderer.update(document: assDocument, events: assEvents) }
-            else { assRenderer.clear(); publishPlainASS() }
+            else { resetScheduledArtwork(); assRenderer.clear(); publishPlainASS() }
         }
-        if authored { assRenderer.tick(time, frameRate: engine.sourceVideoFrameRate) }
+        guard authored else { return }
+        let item = canSchedule && artworkSink != nil && engine.softwarePresentationTimebase == nil
+            && engine.hasFirstFrameReadyForDisplay && !engine.isSeeking
+            && engine.presentationAxisMap.itemSeconds(forSourceSeconds: presentationTime) != nil
+            ? engine.currentAVPlayer?.currentItem : nil
+        let jumped = previousScheduledTime.map { presentationTime < $0 - 0.05 || presentationTime > $0 + 1 } ?? false
+        if item !== scheduledItem || (item != nil && (scheduledOffset != offset || jumped)) {
+            resetASSFrameForSeek()
+            scheduledItem = item
+            scheduledOffset = offset
+            scheduleStart = presentationTime
+        }
+        previousScheduledTime = item == nil ? nil : presentationTime
+        // Seat the current picture first (including paused seeks), then build a
+        // short queue. The compositor, not the queue depth, decides when to draw.
+        let ahead = item == nil ? 0 : min(0.35, max(0, presentationTime - scheduleStart))
+        assRenderer.tick(presentationTime - offset + ahead, frameRate: engine.sourceVideoFrameRate,
+                         scheduled: item != nil)
+    }
+
+    private func resetScheduledArtwork() {
+        artworkSink?.reset()
+        scheduledItem = nil
+        previousScheduledTime = nil
     }
 
     private func clearASS() {
+        resetScheduledArtwork()
         assDocument = nil
         assEvents = []
         assRenderer.clear()
     }
 
     private func resetASSFrameForSeek() {
+        resetScheduledArtwork()
         assRenderer.clear()
         if let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
     }
@@ -2025,6 +2070,14 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         assEvents = events
         assRenderer.onFrame = { [weak self] cues in
             guard let self, self.assDocument != nil, !self.wantsNativeSubtitles, self.rendersAuthoredASS else { return }
+            if let item = self.scheduledItem, let sink = self.artworkSink {
+                guard let time = self.assRenderer.sampledTime,
+                      item === self.engine.currentAVPlayer?.currentItem,
+                      let deadline = self.engine.presentationAxisMap.itemSeconds(forSourceSeconds: time + self.scheduledOffset)
+                else { sink.reset(); return }
+                sink.display(cues, at: deadline, item: item)
+                return
+            }
             self.onSubtitleCues?(cues)
         }
         if rendersAuthoredASS { assRenderer.update(document: document, events: events) }

@@ -381,6 +381,8 @@ final class ASSSubtitleRenderer {
     private var renderLead = ASSSubtitleRenderLead()
     private var failed = false
     var onFrame: (([SubtitleCue]) -> Void)?
+    private(set) var sampledTime: Double?
+    private var scheduled = false
 
     func update(document: ASSSubtitleDocument, events: [ASSSubtitleEvent]) {
         if self.document?.identity != document.identity || events.isEmpty { clear() }
@@ -390,8 +392,9 @@ final class ASSSubtitleRenderer {
         lastTime = nil
     }
 
-    func tick(_ time: Double, frameRate: Double? = nil) {
+    func tick(_ time: Double, frameRate: Double? = nil, scheduled: Bool = false) {
         guard !failed, document != nil, time.isFinite else { return }
+        self.scheduled = scheduled
         renderLead.tick(time, uptime: ProcessInfo.processInfo.systemUptime)
         requestedTime = time
         self.frameRate = frameRate
@@ -405,9 +408,14 @@ final class ASSSubtitleRenderer {
               lastTime.map({ abs(time - $0) >= 0.001 }) ?? true else { return }
         guard pacer.admit(time, frameRate: frameRate, cueBoundary: nextCueBoundary) else { return }
         requestedTime = nil
-        lastTime = time
+        let crossedBoundary = nextCueBoundary.flatMap { boundary in
+            lastTime.map { $0 < boundary && boundary <= time } == true ? boundary : nil
+        }
         let revision = revision, events = events, eventSnapshotRevision = eventSnapshotRevision, rasterizer = rasterizer
-        let renderTime = renderLead.time(for: time)
+        // A scheduled frame has a real presentation deadline; drawing it faster
+        // must not change its timestamp. Snap cue edges to the authored instant.
+        let renderTime = scheduled ? (crossedBoundary ?? time) : renderLead.time(for: time)
+        lastTime = scheduled ? renderTime : time
         let started = ProcessInfo.processInfo.systemUptime
         pending = Task(priority: .userInitiated) { [weak self] in
             do {
@@ -420,6 +428,7 @@ final class ASSSubtitleRenderer {
                 nextCueBoundary = frame.nextCueBoundary
                 defer { renderPendingFrame() }
                 guard frame.changed else { return }
+                sampledTime = renderTime
                 onFrame?(frame.images.map {
                     frameID &+= 1
                     return SubtitleCue(id: frameID, start: 0, end: .greatestFiniteMagnitude, body: .image($0))
@@ -429,6 +438,7 @@ final class ASSSubtitleRenderer {
                 pending = nil
                 requestedTime = nil
                 failed = true
+                sampledTime = nil
                 onFrame?([])
                 PlozzLog.playback.error("ASS subtitle rendering failed: \(String(describing: error))")
             }
@@ -449,6 +459,7 @@ final class ASSSubtitleRenderer {
         renderLead = ASSSubtitleRenderLead()
         failed = false
         rasterizer = ASSSubtitleRasterizer()
+        sampledTime = nil
         onFrame?([])
     }
 }
