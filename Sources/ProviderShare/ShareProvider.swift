@@ -337,6 +337,18 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
         try await item(id: id, inspectDiscMenu: true)
     }
 
+    public func trackerHistoryItem(id: String) async throws -> MediaItem {
+        guard libraryConfiguration?.contentType != .personalVideos, let indexed = await catalog.item(id: id)
+        else {
+            var raw = try await item(id: id, inspectDiscMenu: false)
+            raw.runtime = nil
+            return raw
+        }
+        return try await watchState.stampForTracker(indexed) { path in
+            try await playbackSource.currentFileRevision(for: path)
+        }
+    }
+
     private func item(id: String, inspectDiscMenu: Bool) async throws -> MediaItem {
         if let containerID = ShareCatalogID.containerID(forFileBrowserID: id) {
             guard let folder = await store.item(id: containerID) else {
@@ -816,9 +828,9 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
         onStage("locator")
         let disc = ShareBluRayFolder.isIndex(relPath)
             ? try await playbackSource.networkDiscLocator(for: relPath) : nil
-        let opening: (locator: NetworkFileLocator, directoryEntries: [RemoteFileEntry]?)
+        let opening: (locator: NetworkFileLocator, directoryEntries: [RemoteFileEntry]?, revision: String?)
         if let disc {
-            opening = (disc.anchor, nil)
+            opening = (disc.anchor, nil, nil)
         } else {
             opening = try await playbackSource.playbackOpening(
                 for: relPath,
@@ -887,6 +899,10 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing, Exte
                     )
                 ]
             }
+        }
+        if let revision = opening.revision {
+            sourceMetadata = sourceMetadata ?? MediaSourceMetadata()
+            sourceMetadata?.sourceRevision = revision
         }
         // Surface any text sidecar subtitles sitting next to the video (and in a
         // sibling Subs/Subtitles folder) as selectable tracks. Best-effort: a

@@ -51,7 +51,7 @@ final class PublicMetaDBPairingRemoteTests: XCTestCase {
         let error = app.staticTexts["publicmetadb.pair.error"], retry = app.buttons["publicmetadb.pair.retry"]
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertFalse(keyField.exists || code.exists)
-        if cancel.hasFocus { press(.up, expecting: retry) } else { focusFromAbove(retry) }
+        press(.up, expecting: retry)
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         selectManual()

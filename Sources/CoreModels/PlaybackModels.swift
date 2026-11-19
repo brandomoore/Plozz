@@ -593,18 +593,22 @@ public struct PlaybackProgress: Hashable, Sendable {
     /// position to render a Continue Watching progress bar (`position / duration`)
     /// — a bare position can't be turned into a percentage without it.
     public var durationSeconds: TimeInterval?
+    /// Set only when `durationSeconds` was measured by the engine for this file revision.
+    public var measuredFileRevision: String?
 
     public init(
         itemID: String,
         playSessionID: String?,
         positionSeconds: TimeInterval,
         isPaused: Bool,
-        durationSeconds: TimeInterval? = nil
+        durationSeconds: TimeInterval? = nil,
+        measuredFileRevision: String? = nil
     ) {
         self.itemID = itemID
         self.playSessionID = playSessionID
         self.positionSeconds = positionSeconds
         self.isPaused = isPaused
         self.durationSeconds = durationSeconds
+        self.measuredFileRevision = measuredFileRevision
     }
 }

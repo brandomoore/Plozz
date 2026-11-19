@@ -333,16 +333,32 @@ private final class SMBMediaTransportFileSystem: MediaTransportFileSystem, @unch
         let normalizedPath = try normalizedRelativePath(relativePath)
         do {
             let entry = try await backend.stat(path: joinedRootPath(normalizedPath))
-            return try RemoteFileEntry(
-                relativePath: normalizedPath,
-                kind: entry.kind,
-                size: entry.size,
-                modifiedAt: entry.modifiedAt,
-                createdAt: entry.createdAt
-            )
+            return try entry.remoteEntry(relativePath: normalizedPath)
         } catch {
             throw mapSMBError(error)
         }
+    }
+
+    func statForOpening(relativePath: String) async throws -> RemoteFileEntry {
+        let path = try normalizedRelativePath(relativePath)
+        do {
+            if let entry = try await backend.revisionedStat(path: joinedRootPath(path)) {
+                return try entry.remoteEntry(relativePath: path)
+            }
+        } catch {
+            // Some servers don't implement FileAllInformation. Its read-only
+            // share mode can also conflict with an existing writer. Fall back
+            // to ordinary playback metadata, never to a synthesized revision.
+            switch mapSMBError(error) {
+            case .unsupportedCapability, .transport(code: 0xC0000002), .transport(code: 0xC0000003), // not implemented / invalid info class
+                 .transport(code: 0xC000000D), .transport(code: 0xC0000010), // invalid parameter / device request
+                 .transport(code: 0xC0000043), .transport(code: 0xC00000BB): // sharing violation / not supported
+                break
+            case let failure: throw failure
+            }
+        }
+        try Task.checkCancellation()
+        return try await stat(relativePath: path)
     }
 
     func readSmallFile(relativePath: String, maximumBytes: Int) async throws -> Data {
@@ -399,6 +415,7 @@ struct SMBBackendEntry: Sendable, Equatable {
     let createdAt: Date?
     let isHidden: Bool
     let isSystem: Bool
+    let changeToken: String?
 
     init(
         name: String,
@@ -407,7 +424,8 @@ struct SMBBackendEntry: Sendable, Equatable {
         modifiedAt: Date?,
         createdAt: Date?,
         isHidden: Bool = false,
-        isSystem: Bool = false
+        isSystem: Bool = false,
+        changeToken: String? = nil
     ) {
         self.name = name
         self.kind = kind
@@ -416,6 +434,32 @@ struct SMBBackendEntry: Sendable, Equatable {
         self.createdAt = createdAt
         self.isHidden = isHidden
         self.isSystem = isSystem
+        self.changeToken = changeToken
+    }
+
+    /// Keep the raw 100 ns FILETIMEs for comparison. `Date` is only for the
+    /// existing playback stat contract; at modern dates it loses low-order bits.
+    init?(
+        name: String, regularFile: Bool, fileIndex: UInt64, changeTime: UInt64,
+        lastWriteTime: UInt64, creationTime: UInt64, endOfFile: UInt64
+    ) {
+        guard regularFile, fileIndex != 0, fileIndex != .max,
+              let size = Int64(exactly: endOfFile),
+              let change = Int64(exactly: changeTime), change > 0,
+              let write = Int64(exactly: lastWriteTime), write > 0 else { return nil }
+        func date(_ ticks: UInt64) -> Date {
+            Date(timeIntervalSince1970: Double(ticks) / 10_000_000 - 11_644_473_600)
+        }
+        self.init(
+            name: name, kind: .file, size: size, modifiedAt: date(lastWriteTime),
+            createdAt: creationTime > 0 && creationTime <= UInt64(Int64.max) ? date(creationTime) : nil,
+            changeToken: "smb:\(fileIndex):\(changeTime):\(lastWriteTime):\(endOfFile)"
+        )
+    }
+
+    fileprivate func remoteEntry(relativePath: String) throws -> RemoteFileEntry {
+        try RemoteFileEntry(relativePath: relativePath, kind: kind, size: size, modifiedAt: modifiedAt,
+                            createdAt: createdAt, changeToken: changeToken)
     }
 }
 
@@ -429,6 +473,7 @@ protocol SMBTransportBackend: Sendable {
     ) async throws
     func list(path: String) async throws -> [SMBBackendEntry]
     func stat(path: String) async throws -> SMBBackendEntry
+    func revisionedStat(path: String) async throws -> SMBBackendEntry?
     func readSmallFile(path: String, maximumBytes: Int) async throws -> Data
     func openSource(
         path: String,
@@ -462,6 +507,10 @@ private final class SMBClientBackend: SMBTransportBackend, @unchecked Sendable {
 
     func stat(path: String) async throws -> SMBBackendEntry {
         try await state.stat(path: path)
+    }
+
+    func revisionedStat(path: String) async throws -> SMBBackendEntry? {
+        try await state.revisionedStat(path: path)
     }
 
     func readSmallFile(path: String, maximumBytes: Int) async throws -> Data {
@@ -574,6 +623,21 @@ private final class SMBClientBackend: SMBTransportBackend, @unchecked Sendable {
                     size: stat.isDirectory ? nil : Int64(clamping: stat.size),
                     modifiedAt: stat.lastWriteTime,
                     createdAt: stat.creationTime
+                )
+            }
+        }
+
+        func revisionedStat(path: String) async throws -> SMBBackendEntry? {
+            try await enqueue(timeout: .seconds(12)) { client in
+                let info = try await client.fileInfo(path: path)
+                let basic = info.basicInformation
+                let standard = info.standardInformation
+                return SMBBackendEntry(
+                    name: URL(fileURLWithPath: path).lastPathComponent,
+                    regularFile: !standard.directory && !standard.deletePending
+                        && basic.fileAttributes.intersection([.directory, .reparsePoint]).isEmpty,
+                    fileIndex: info.internalInformation.indexNumber, changeTime: basic.changeTime,
+                    lastWriteTime: basic.lastWriteTime, creationTime: basic.creationTime, endOfFile: standard.endOfFile
                 )
             }
         }

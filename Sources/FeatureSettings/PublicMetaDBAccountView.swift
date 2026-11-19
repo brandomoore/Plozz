@@ -21,17 +21,20 @@
                             )
                         )
                         .accessibilityIdentifier("publicmetadb.ratings")
+                        .settingsSearchAnchor("publicmetadb-ratings")
                     } footer: {
                         Text("Look up titles you browse to show their PublicMetaDB scores.")
                     }
                     SettingsSectionGroup("Tracking") {
                         NavigationLink("Playback reporting") { PublicMetaDBPlaybackSettingsView(service: service) }
                             .accessibilityIdentifier("publicmetadb.playback")
+                            .settingsSearchAnchor("publicmetadb-playback")
                         if let makeHistoryImport {
                             TrackerHistorySyncLink(makeSession: makeHistoryImport)
                         }
                         NavigationLink("Watchlist destination") { PublicMetaDBWatchlistSettingsView(service: service) }
                             .accessibilityIdentifier("publicmetadb.watchlist")
+                            .settingsSearchAnchor("publicmetadb-watchlist")
                     }
                     if makeHistoryImport != nil || service.makeHistoryExportSource != nil {
                         SettingsSectionGroup("Transfer history") {

@@ -63,6 +63,24 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertEqual(index.results(for: "rewind").first?.id, "resume-rewind")
     }
 
+    func testPublicMetaDBPreferencesFindTheirAccountNotCrossServerSync() {
+        let locale = Locale(identifier: "en_US")
+        for platform: SettingsSearchEntry.Platform in [.phone, .tablet, .television] {
+            let index = SettingsSearchIndex(entries: SettingsSearchCatalog.entries(on: platform), locale: locale)
+            for (query, expected) in [
+                ("PublicMetaDB API key", "publicmetadb-account"),
+                ("PublicMetaDB title scores", "publicmetadb-ratings"),
+                ("PublicMetaDB report playback", "publicmetadb-playback"),
+                ("PublicMetaDB watchlist destination", "publicmetadb-watchlist")
+            ] {
+                let result = index.results(for: query).first
+                XCTAssertEqual(result?.id, expected, query)
+                XCTAssertEqual(result?.destinationPath(on: platform).map { $0.resolved(locale: locale) },
+                               ["Trackers", "PublicMetaDB"])
+            }
+        }
+    }
+
     func testHeroFindsItsOwnPageBeforeTheDetailBackground() {
         for platform: SettingsSearchEntry.Platform in [.phone, .tablet, .television] {
             let index = SettingsSearchIndex(

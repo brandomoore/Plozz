@@ -1539,7 +1539,7 @@ private struct PlozziOSSettingsSearchDestination: View {
             .id(ObjectIdentifier(appModel.settings.libraryPresentation))
         case .liveTV, .liveTVSources, .liveTVGuide, .liveTVVisibility: profilePage(.liveTV)
         case .language: profilePage(.language)
-        case .trackers: profilePage(.trackers)
+        case .trackers, .publicMetaDB: profilePage(.trackers)
         case .downloads: profilePage(.downloads)
         case .profiles:
             List {

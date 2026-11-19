@@ -58,10 +58,11 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     case downloads, profiles, sync, metadata, diagnostics, trackers, liveTVSources
     case playbackAdvanced, streamingAdvanced, metadataDiagnostics, detailRatingSources
     case liveTVGuide, liveTVVisibility, profileAppearance, profileSettings, accountLibraries, seerr
-    case releaseNotes
+    case releaseNotes, publicMetaDB
 
     public var path: [SettingsSearchLabel] {
         if self == .seerr { return [.verbatim("Seerr")] }
+        if self == .publicMetaDB { return SettingsSearchPage.trackers.path + [.verbatim("PublicMetaDB")] }
         return localizedPath.map(SettingsSearchLabel.localized)
     }
 
@@ -112,7 +113,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .profileAppearance: ["Profiles", "Appearance"]
         case .profileSettings: ["Profiles", "Manage profile"]
         case .accountLibraries: ["Libraries"]
-        case .seerr: []
+        case .seerr, .publicMetaDB: []
         case .detail: ["Screens & Navigation", "Movie & show details"]
         case .liveTV: ["Live TV"]
         case .language: ["Language"]
@@ -137,7 +138,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .sync: "icloud"
         case .metadata, .metadataDiagnostics: "sparkles.rectangle.stack"
         case .diagnostics: "ladybug"
-        case .trackers: "link"
+        case .trackers, .publicMetaDB: "link"
         case .seerr: "sparkles.tv"
         case .releaseNotes: "doc.text"
         }

@@ -97,7 +97,7 @@ final class ShimmerPerformanceTests: XCTestCase {
     }
 
     @MainActor @Observable
-    private final class ShimmerState {
+    fileprivate final class ShimmerState {
         var pageVisible = true
         var rowVisible = false
         var reduceMotion = false

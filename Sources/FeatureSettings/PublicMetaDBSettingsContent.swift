@@ -7,6 +7,7 @@ import SwiftUI
 public struct PublicMetaDBSettingsContent: View {
     private let service: PublicMetaDBService
     private let makeHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @State private var key = ""
     @State private var showingAccount = false
     @State private var confirmingDisconnect = false
@@ -31,6 +32,7 @@ public struct PublicMetaDBSettingsContent: View {
                 Button("Browse PublicMetaDB") { showingAccount = true }
                     .settingsActionRow()
                     .accessibilityIdentifier("publicmetadb.browse")
+                    .settingsSearchAnchor("publicmetadb-account", fallbackFor: Self.searchTargets)
             }
             if showingEntry {
                 PublicMetaDBKeyEntryView(
@@ -45,6 +47,10 @@ public struct PublicMetaDBSettingsContent: View {
                 .settingsActionRow()
                 .disabled(service.phase == .connecting)
                 .accessibilityIdentifier("publicmetadb.pair")
+                .settingsSearchAnchor(
+                    service.hasSavedKey ? "publicmetadb-replace" : "publicmetadb-account",
+                    fallbackFor: service.hasSavedKey ? [] : Self.searchTargets
+                )
             }
             if !showingEntry, service.hasSavedKey, service.phase != .connected, service.phase != .connecting {
                 Button("Retry saved connection") {
@@ -52,6 +58,7 @@ public struct PublicMetaDBSettingsContent: View {
                     operation = Task { await service.refreshStatus() }
                 }
                 .settingsActionRow()
+                .settingsSearchAnchor("publicmetadb-account", fallbackFor: Self.searchTargets)
             }
             if service.hasSavedKey {
                 Button("Disconnect") { confirmingDisconnect = true }
@@ -82,7 +89,13 @@ public struct PublicMetaDBSettingsContent: View {
         }
         .sheet(isPresented: $showingAccount) {
             NavigationStack {
-                PublicMetaDBAccountView(service: service, makeHistoryImport: makeHistoryImport)
+                // A search identifies the setting, not a grant to open private account data.
+                // Reveal the row in the sheet only after the user chooses Browse.
+                if let target = searchRequest?.targetID, target != "publicmetadb-account", Self.searchTargets.contains(target) {
+                    SettingsSearchLanding(targetID: target) { accountPage }
+                } else {
+                    accountPage
+                }
             }
             .environment(\.publicMetaDBCatalogService, service)
         }
@@ -111,6 +124,12 @@ public struct PublicMetaDBSettingsContent: View {
             cancelEntry()
         }
     }
+
+    private var accountPage: some View {
+        PublicMetaDBAccountView(service: service, makeHistoryImport: makeHistoryImport)
+    }
+
+    private static let searchTargets = SettingsSearchCatalog.targets(on: .publicMetaDB)
 
     @ViewBuilder private func connectionSection<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
         #if os(iOS)

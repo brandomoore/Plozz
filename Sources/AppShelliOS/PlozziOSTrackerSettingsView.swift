@@ -49,6 +49,7 @@ struct PlozziOSTrackerSettingsView: View {
             PublicMetaDBSettingsContent(
                 service: appModel.publicMetaDBService, makeHistoryImport: appModel.makePublicMetaDBHistoryImport
             )
+            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .publicMetaDB))
         }
         .settingsPageSurface()
         .navigationTitle("Trackers")

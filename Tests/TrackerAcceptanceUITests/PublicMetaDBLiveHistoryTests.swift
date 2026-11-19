@@ -1208,14 +1208,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testBrowseExactAcceptanceList() throws {
         try openAcceptanceList()
-        XCTAssertTrue(app.staticTexts["Private"].exists)
+        XCTAssertTrue(app.staticTexts["Visibility, Private"].exists)
         try tapVisible(app.buttons["Browse items"])
         try require(app.staticTexts["No records"].waitForExistence(timeout: 30), "Expected an empty new list")
     }
 
     func testBrowseEmptyPublicAcceptanceList() throws {
         try openAcceptanceList()
-        XCTAssertTrue(app.staticTexts["Public"].exists)
+        XCTAssertTrue(app.staticTexts["Visibility, Public"].exists)
         try tapVisible(app.buttons["Browse items"])
         try require(app.staticTexts["No records"].waitForExistence(timeout: 30), "Expected an empty public list")
     }

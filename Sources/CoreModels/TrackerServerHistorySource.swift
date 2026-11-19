@@ -128,7 +128,7 @@ public final class TrackerServerHistorySource {
         loadSeries: (@MainActor (String) async throws -> MediaItem)? = nil
     ) async throws -> MediaItem {
         try validate()
-        var item = try await provider.item(id: itemID)
+        var item = try await provider.trackerHistoryItem(id: itemID)
         try validate()
         guard item.id == itemID, item.sourceAccountID == nil || item.sourceAccountID == accountID else {
             throw AppError.invalidResponse

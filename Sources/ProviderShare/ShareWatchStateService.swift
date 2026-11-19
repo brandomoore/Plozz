@@ -41,10 +41,34 @@ struct ShareWatchStateService: Sendable {
         default:
             break
         }
-        let records = await records(for: [item.id])
-        let canonicalID = await watchItemID(for: item.id)
-        let record = records[canonicalID]
-        return Self.stamped(item, with: record)
+        return Self.stamped(item, with: await record(for: item.id))
+    }
+
+    /// Tracker resume decisions use a fresh transport revision, never the UI's
+    /// duration fallback or the default member of a group of cuts.
+    func stampForTracker(
+        _ item: MediaItem, currentRevision: @Sendable (String) async throws -> String?
+    ) async throws -> MediaItem {
+        guard item.kind == .movie || item.kind == .episode else { return await stamp(item) }
+        let record = await self.record(for: item.id)
+        var result = Self.stamped(item, with: record)
+        result.runtime = nil
+        let exactPath = ShareCatalogID.relPath(forFileID: item.id)
+        let versionPath = item.versions.first?.playbackMediaSourceID
+        guard !item.hasMultipleVersions,
+              item.versions.isEmpty || (versionPath != nil && (exactPath == nil || versionPath == exactPath)),
+              let path = exactPath ?? versionPath,
+              !ShareBluRayFolder.isIndex(path), !ShareMediaParser.isExternalLinkFile(path),
+              let measured = record?.duration, measured.isFinite, measured > 0,
+              let revision = record?.measuredFileRevision, !revision.isEmpty else { return result }
+        if try await currentRevision(path) == revision { result.runtime = measured }
+        return result
+    }
+
+    private func record(for itemID: String) async -> ShareWatchStore.Record? {
+        let records = await records(for: [itemID])
+        let canonicalID = await watchItemID(for: itemID)
+        return records[canonicalID]
     }
 
     func stamp(_ items: [MediaItem]) async -> [MediaItem] {
@@ -171,9 +195,9 @@ struct ShareWatchStateService: Sendable {
         copy.resumePosition = (!record.played && record.position > 1) ? record.position : nil
         copy.lastPlayedAt = record.updatedAt
         if let duration = record.duration, duration.isFinite, duration > 0 {
-            // NFO runtimes can be reported in whole minutes. Prefer playback's
-            // measurement for a single version; grouped cuts share a watch record.
-            if copy.runtime == nil || !copy.hasMultipleVersions { copy.runtime = duration }
+            // A canonical watch record can outlive the file. Keep catalog
+            // runtime when present and retain the UI fallback for untimed cards.
+            if copy.runtime == nil { copy.runtime = duration }
             if !record.played, record.position > 1 {
                 copy.playedPercentage = min(max(record.position / duration, 0), 1)
             }
@@ -267,7 +291,10 @@ struct ShareWatchStateService: Sendable {
         switch event {
         case .progress, .pause, .stop:
             let id = await watchItemID(for: progress.itemID)
-            await watchStore.setResume(progress.positionSeconds, itemID: id, capturedAt: Date(), duration: progress.durationSeconds)
+            await watchStore.setResume(
+                progress.positionSeconds, itemID: id, capturedAt: Date(),
+                duration: progress.durationSeconds, measuredFileRevision: progress.measuredFileRevision
+            )
         case .start, .unpause:
             break
         }

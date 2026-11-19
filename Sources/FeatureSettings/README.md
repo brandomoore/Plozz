@@ -305,6 +305,12 @@ Results use the current platform's destination and retain their query on Back.
 Protected destinations retain their normal profile/PIN checks; search never
 selects a server, library or user, enables a prerequisite, or submits an editor.
 Unavailable controls lead to their existing prerequisite or availability message.
+PublicMetaDB results lead to the current profile's Connect, Retry, or Browse action.
+Choosing Browse reveals **Community ratings**, **Playback reporting**, or **Watchlist
+destination** in the existing account sheet. Search never starts pairing, chooses a
+list, or grants device-local consent. **Ongoing sync** stays in the selected tracker:
+its grant, eligible media shares, and supported categories depend on that connection.
+Individual histories, transfers, contributions, and list contents are not indexed.
 On mobile, custom quality keeps its normal modal editor: Cancel discards the draft, Apply
 updates only the selected network, and either action returns to the search.
 

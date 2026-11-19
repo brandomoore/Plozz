@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import CoreModels
 import CoreNetworking
 import MediaTransportCore
@@ -28,11 +29,15 @@ struct SharePlaybackSourceService: Sendable {
     }
 
     func networkFileLocator(for relativePath: String) async throws -> NetworkFileLocator {
+        let entry = try await openingEntry(for: relativePath)
+        return try networkFileLocator(for: relativePath, entry: entry)
+    }
+
+    private func openingEntry(for relativePath: String) async throws -> RemoteFileEntry {
         HandoffDiagnostics.emit(
             "shareLocator file=\(HandoffDiagnostics.correlationID(relativePath)) stage=statForOpening"
         )
-        let entry = try await store.statForOpening(relativePath: relativePath)
-        return try networkFileLocator(for: relativePath, entry: entry)
+        return try await store.statForOpening(relativePath: relativePath)
     }
 
     func networkDiscLocator(for indexPath: String) async throws -> NetworkDiscLocator {
@@ -176,30 +181,57 @@ struct SharePlaybackSourceService: Sendable {
 
     func playbackOpening(
         for relativePath: String, reuseDirectoryMetadata: Bool
-    ) async throws -> (locator: NetworkFileLocator, directoryEntries: [RemoteFileEntry]?) {
-        let statLocator = reuseDirectoryMetadata ? nil : try await networkFileLocator(for: relativePath)
+    ) async throws -> (locator: NetworkFileLocator, directoryEntries: [RemoteFileEntry]?, revision: String?) {
+        func checked(_ entry: RemoteFileEntry) throws -> (locator: NetworkFileLocator, revision: String?) {
+            (try networkFileLocator(for: relativePath, entry: entry), fileRevision(for: relativePath, entry: entry))
+        }
+        let stat = reuseDirectoryMetadata ? nil : try await checked(openingEntry(for: relativePath))
         let directory = (relativePath as NSString).deletingLastPathComponent
         let entries = try await sidecarDirectoryEntries(directory)
         try Task.checkCancellation()
         let matchingEntries = entries?.filter { $0.relativePath == relativePath } ?? []
-        let locator: NetworkFileLocator
-        if let statLocator {
-            locator = statLocator
+        let opening: (locator: NetworkFileLocator, revision: String?)
+        if let stat {
+            opening = stat
         } else if matchingEntries.count == 1, let entry = matchingEntries.first,
            entry.kind == .file, entry.size != nil,
            entry.strongETag != nil || entry.modifiedAt != nil {
             // This listing is fresh for this Play request, not a browsing cache.
             // Opening/claiming the source still revalidates its identity and size.
-            locator = try networkFileLocator(for: relativePath, entry: entry)
+            opening = try checked(entry)
         } else {
             HandoffDiagnostics.emit(
                 "shareLocator file=\(HandoffDiagnostics.correlationID(relativePath)) stage=listingFallback"
                     + " listed=\(entries != nil) matches=\(matchingEntries.count)"
             )
-            locator = try await networkFileLocator(for: relativePath)
+            opening = try await checked(openingEntry(for: relativePath))
         }
         try Task.checkCancellation()
-        return (locator, entries)
+        return (opening.locator, entries, opening.revision)
+    }
+
+    func currentFileRevision(for relativePath: String) async throws -> String? {
+        do {
+            let entry = try await store.statForOpening(relativePath: relativePath)
+            return fileRevision(for: relativePath, entry: entry)
+        } catch {
+            if Task.isCancelled || error is CancellationError || error as? MediaTransportError == .cancelled {
+                throw CancellationError()
+            }
+            return nil
+        }
+    }
+
+    /// Path, size and mtime can all survive an in-place replacement. Only use
+    /// a transport revision (strong DAV ETag or e.g. NFS's file/change token).
+    private func fileRevision(for path: String, entry: RemoteFileEntry) -> String? {
+        guard entry.relativePath == path, entry.kind == .file, let size = entry.size else { return nil }
+        let validator: String
+        if let etag = entry.strongETag { validator = "etag:\(etag)" }
+        else if let token = entry.changeToken { validator = "change:\(token)" }
+        else { return nil }
+        let identity = [accountID, path, String(size), validator].joined(separator: "\0")
+        return Data(SHA256.hash(data: Data(identity.utf8))).base64EncodedString()
     }
 
     private func networkFileLocator(

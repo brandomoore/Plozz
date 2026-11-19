@@ -261,11 +261,21 @@ final class PublicMetaDBCatalogHostedTests: XCTestCase {
             request.recognitionLanguages = ["en-US"]
             request.customWords = ["PublicMetaDB", "API"]
             try VNImageRequestHandler(cgImage: bitmap).perform([request])
-            let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            let observations = request.results ?? []
+            let lines = observations.compactMap { $0.topCandidates(1).first?.string }
             let text = lines.joined(separator: " ")
             let hasSingleLineCode = expectedCode.map { expected in
-                lines.contains {
-                    $0.replacingOccurrences(of: " ", with: "") == expected.replacingOccurrences(of: " ", with: "")
+                // Vision can split the two groups or include the label in
+                // the same observation. Never join text from different rows.
+                observations.contains { anchor in
+                    let row = observations.filter {
+                        $0.boundingBox.minY <= anchor.boundingBox.midY
+                            && $0.boundingBox.maxY >= anchor.boundingBox.midY
+                    }.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
+                    let compact = row.compactMap { $0.topCandidates(1).first?.string }
+                        .joined().filter { !$0.isWhitespace }
+                    let code = expected.filter { !$0.isWhitespace }
+                    return compact == code || compact == "Pairingcode" + code
                 }
             } ?? true
             let urls = detector.features(in: CIImage(cgImage: bitmap)).compactMap {
@@ -279,7 +289,7 @@ final class PublicMetaDBCatalogHostedTests: XCTestCase {
                 attachment.lifetime = .keepAlways
                 add(attachment)
                 if let expectedURL { XCTAssertEqual(urls, [expectedURL]) }
-                XCTAssertTrue(hasSingleLineCode, "Keep the whole pairing code readable on one line.")
+                XCTAssertTrue(hasSingleLineCode, "Expected the fixture code on one line; recognized \(lines)")
                 return text
             }
             try await Task.sleep(for: .milliseconds(50))

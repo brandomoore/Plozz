@@ -166,7 +166,9 @@ final class ShareWatchStoreTests: XCTestCase {
         for played in [true, false] {
             let account = "measured-\(played)"
             let store = ShareWatchStore(accountKey: account, durableStore: durableStore)
-            await store.setResume(70.175, itemID: itemID, capturedAt: start, duration: 205.152)
+            await store.setResume(
+                70.175, itemID: itemID, capturedAt: start, duration: 205.152, measuredFileRevision: "original"
+            )
             await store.dismissFromContinueWatching(itemID: itemID, at: start.addingTimeInterval(1))
             await store.setPlayed(played, itemID: itemID, capturedAt: start.addingTimeInterval(2))
             await store.setResume(
@@ -176,7 +178,8 @@ final class ShareWatchStoreTests: XCTestCase {
             let afterRestart = ShareWatchStore(accountKey: account, durableStore: durableStore)
             let record = await afterRestart.record(for: itemID)
             XCTAssertEqual(record, ShareWatchStore.Record(
-                position: 0, played: played, updatedAt: start.addingTimeInterval(2), duration: 205.152
+                position: 0, played: played, updatedAt: start.addingTimeInterval(2), duration: 205.152,
+                measuredFileRevision: "original"
             ))
             let resumable = await afterRestart.resumable(limit: 10)
             XCTAssertTrue(resumable.isEmpty)

@@ -57,6 +57,26 @@ final class WatchProgressReporterTests: XCTestCase {
         XCTAssertEqual(recorder.positions, [950])
     }
 
+    func testOnlyEngineDurationIsBoundToCurrentNetworkFile() async throws {
+        let (sut, host, provider, _, _) = makeSUT(item: .init(id: "item-1", title: "Movie", kind: .movie, runtime: 600))
+        host.request?.playbackSource = .networkFile(try NetworkFileLocator(
+            accountID: "share", sourceID: "share", credentialRevision: .init(), relativePath: "movie.mkv",
+            representation: .init(size: 100, identity: .init(kind: .strongETag, value: "\"cut\""), consistency: .changeDetecting)
+        ))
+        host.request?.sourceMetadata = .init(sourceRevision: "original")
+        host.engineDuration = 0
+        await sut.report(event: .pause, isPaused: true)
+        host.engineDuration = 596.48
+        await sut.report(event: .pause, isPaused: true)
+        host.engineDuration = 0
+        await sut.report(event: .pause, isPaused: true, durationOverride: 600)
+        host.request?.sourceMetadata?.sourceRevision = "replacement"
+        await sut.report(event: .stop, isPaused: true, durationOverride: 600)
+        let events = await provider.events
+        XCTAssertEqual(events.map(\.duration), [600, 596.48, 596.48, 600])
+        XCTAssertEqual(events.map(\.measuredFileRevision), [nil, "original", "original", nil])
+    }
+
     func testTrackerViewingIdentitySurvivesEngineHandoffAndFinalClockTeardown() async throws {
         let (sut, host, _, _, recorder) = makeSUT()
         await sut.reportStart(isPaused: false, positionOverride: 0)
@@ -526,6 +546,7 @@ private actor RecordingProvider: MediaProvider {
         let position: TimeInterval
         let isPaused: Bool
         let duration: TimeInterval?
+        let measuredFileRevision: String?
         let sessionID: String?
     }
     private(set) var events: [Reported] = []
@@ -557,7 +578,8 @@ private actor RecordingProvider: MediaProvider {
         try Task.checkCancellation()
         events.append(Reported(
             event: event, position: progress.positionSeconds,
-            isPaused: progress.isPaused, duration: progress.durationSeconds, sessionID: progress.playSessionID
+            isPaused: progress.isPaused, duration: progress.durationSeconds,
+            measuredFileRevision: progress.measuredFileRevision, sessionID: progress.playSessionID
         ))
     }
 

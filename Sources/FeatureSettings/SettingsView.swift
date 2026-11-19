@@ -956,7 +956,7 @@ public struct SettingsView: View {
                 searchPage: page
             )
         case .language: authorizedDestination(for: .language)
-        case .trackers: authorizedDestination(for: .integrations)
+        case .trackers, .publicMetaDB: authorizedDestination(for: .integrations)
         case .topShelf: authorizedDestination(for: .topShelf)
         case .profiles: authorizedDestination(for: .profile)
         case .profileAppearance: authorizedDestination(for: .profileAppearance(profileID: activeProfile.id))

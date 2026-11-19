@@ -45,6 +45,7 @@ final class WatchProgressReporter {
     private let trackerSessionID = UUID()
     private var trackerStartedAt: Date?
     private var trackerDuration: TimeInterval?
+    private var measuredFileDuration: (revision: String, seconds: TimeInterval)?
 
     private var checkpointTask: Task<Void, Never>?
     private var lastCheckpointPosition: TimeInterval = 0
@@ -96,6 +97,7 @@ final class WatchProgressReporter {
 
     func beginSession() {
         discardPendingProgress()
+        measuredFileDuration = nil
         hasEnqueuedPlaybackStart = false
         pendingPlaybackStateReport = nil
         isEndingSession = false
@@ -157,7 +159,8 @@ final class WatchProgressReporter {
             playSessionID: request.playSessionID,
             positionSeconds: position,
             isPaused: isPaused,
-            durationSeconds: knownDuration
+            durationSeconds: measuredFileDuration?.seconds ?? knownDuration,
+            measuredFileRevision: measuredFileDuration?.revision
         )
         let percent = WatchProgressMath.watchedPercent(
             position: position, engineDuration: knownDuration ?? 0, itemRuntime: nil
@@ -325,8 +328,17 @@ final class WatchProgressReporter {
     }
 
     private func captureTrackerDuration() {
+        let request = host?.reporterRequest
+        let revision: String?
+        if case .networkFile = request?.playbackSource {
+            revision = request?.sourceMetadata?.sourceRevision
+        } else {
+            revision = nil
+        }
+        if revision != measuredFileDuration?.revision { measuredFileDuration = nil }
         if let duration = host?.reporterEngineDuration, duration.isFinite, duration > 0 {
             trackerDuration = duration
+            if let revision { measuredFileDuration = (revision, duration) }
         }
     }
 

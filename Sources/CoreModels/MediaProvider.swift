@@ -85,6 +85,10 @@ public protocol MediaProvider: Sendable {
     /// Full presentation metadata without probe-capable playback preparation.
     func item(id: String) async throws -> MediaItem
 
+    /// Fresh watch-state evidence. Providers with presentation-only runtime
+    /// fallbacks can exclude them from tracker edition checks here.
+    func trackerHistoryItem(id: String) async throws -> MediaItem
+
     /// Authoritative file inventory for explicit playback or version selection.
     /// This may trigger expensive server-side probing even without opening a stream.
     /// Unlike browsing detail, unresolved source discovery must throw rather than
@@ -516,6 +520,10 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    func trackerHistoryItem(id: String) async throws -> MediaItem {
+        try await item(id: id)
+    }
+
     func externalMediaLink(for itemID: String, mediaSourceID: String?) async throws -> ExternalMediaLink {
         throw AppError.unknown("This source does not support external title links.")
     }

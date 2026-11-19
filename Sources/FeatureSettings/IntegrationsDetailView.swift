@@ -41,10 +41,27 @@ struct IntegrationsDetailView: View {
     @State private var confirmingWetrakrReconnect = false
     #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     #endif
 
-    var body: some View {
+    @ViewBuilder private var trackerPage: some View {
+        #if os(tvOS)
+        if let searchRequest, SettingsSearchCatalog.entry(id: searchRequest.targetID)?.page == .publicMetaDB {
+            if let row = rows.first(where: { $0.id == "publicmetadb" }) {
+                SettingsFormRowPage(row: row, showsBack: false)
+            } else {
+                ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
+            }
+        } else {
+            SettingsSplitLayout(title: "Trackers", rows: rows)
+        }
+        #else
         SettingsSplitLayout(title: "Trackers", rows: rows)
+        #endif
+    }
+
+    var body: some View {
+        trackerPage
             .confirmationDialog("Reconnect Trakt for this profile?", isPresented: $confirmingTraktReconnect, titleVisibility: .visible) {
                 Button("Reconnect Trakt", role: .destructive) { trakt.connect() }
                 Button("Cancel", role: .cancel) {}

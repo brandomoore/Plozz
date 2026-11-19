@@ -65,6 +65,67 @@ final class SMBMediaTransportTests: XCTestCase {
         XCTAssertEqual(entries.map(\.relativePath), ["Genre/Movies", "Genre/movie.mkv"])
         XCTAssertEqual(entries.map(\.kind), [.directory, .file])
         XCTAssertEqual(entries.last?.size, 42)
+        XCTAssertTrue(backend.revisionedPaths.isEmpty, "A directory listing must not query every file")
+    }
+
+    func testOpeningAndRecheckUseExactFileIndexAndRawChangeTime() async throws {
+        let time: UInt64 = 134_000_000_000_000_000
+        let backend = FakeSMBBackend()
+        func entry(index: UInt64, change: UInt64) throws -> SMBBackendEntry {
+            try XCTUnwrap(SMBBackendEntry(name: "movie.mkv", regularFile: true, fileIndex: index,
+                                          changeTime: change, lastWriteTime: time, creationTime: time, endOfFile: 42))
+        }
+        let adapter = SMBMediaTransportAdapter(configurationProvider: { _, _ in .init(credential: .anonymous) },
+                                               backendFactory: { backend })
+        let session = try await adapter.connect(for: makeKey())
+        let fs = session.fileSystem
+        let path = "Genre/movie.mkv"
+        backend.revisionedResult = .success(try entry(index: 8, change: time))
+        let opened = try await fs.statForOpening(relativePath: path)
+        let token = try XCTUnwrap(opened.changeToken)
+        let sameFile = try await fs.statForOpening(relativePath: path)
+        XCTAssertEqual(sameFile.changeToken, token)
+        backend.revisionedResult = .success(try entry(index: 9, change: time))
+        let replacement = try await fs.statForOpening(relativePath: path)
+        XCTAssertNotEqual(try XCTUnwrap(replacement.changeToken), token)
+        backend.revisionedResult = .success(try entry(index: 8, change: time + 1))
+        let edited = try await fs.statForOpening(relativePath: path)
+        XCTAssertNotEqual(try XCTUnwrap(edited.changeToken), token, "A single 100 ns change tick must survive")
+        XCTAssertEqual(edited.modifiedAt, opened.modifiedAt)
+        XCTAssertEqual(edited.size, opened.size)
+        XCTAssertEqual(backend.revisionedPaths, Array(repeating: "Library/Genre/movie.mkv", count: 4))
+        XCTAssertTrue(backend.listedPaths.isEmpty)
+    }
+
+    func testMissingRevisionFallsBackToOrdinaryStatButErrorsAreNotEvidence() async throws {
+        let backend = FakeSMBBackend()
+        let entry = SMBBackendEntry(name: "movie.mkv", kind: .file, size: 42, modifiedAt: Date(), createdAt: nil)
+        backend.entries = [entry]
+        let adapter = SMBMediaTransportAdapter(configurationProvider: { _, _ in .init(credential: .anonymous) },
+                                               backendFactory: { backend })
+        let session = try await adapter.connect(for: makeKey())
+        let fs = session.fileSystem
+        let path = "Genre/movie.mkv"
+        for (index, change, regular) in [(UInt64(0), UInt64(1), true), (8, 0, true), (8, .max, true), (8, 1, false)] {
+            let incomplete = SMBBackendEntry(name: entry.name, regularFile: regular, fileIndex: index,
+                                             changeTime: change, lastWriteTime: 1, creationTime: 1, endOfFile: 42)
+            XCTAssertNil(incomplete)
+        }
+        let ordinary = try await fs.stat(relativePath: path)
+        XCTAssertTrue(backend.revisionedPaths.isEmpty)
+        for result: Result<SMBBackendEntry?, MediaTransportError> in [.success(nil), .failure(.transport(code: 0xC00000BB))] {
+            backend.revisionedResult = result
+            let fallback = try await fs.statForOpening(relativePath: path)
+            XCTAssertEqual(fallback, ordinary)
+            XCTAssertNil(fallback.changeToken)
+        }
+        for error: MediaTransportError in [.permissionDenied, .timeout, .cancelled] {
+            backend.revisionedResult = .failure(error)
+            do {
+                _ = try await fs.statForOpening(relativePath: path)
+                XCTFail("Must preserve \(error)")
+            } catch let failure as MediaTransportError { XCTAssertEqual(failure, error) }
+        }
     }
 
     func testEachConnectCreatesAnIndependentBackendSession() async throws {
@@ -525,6 +586,11 @@ private final class FakeSMBBackend: SMBTransportBackend, @unchecked Sendable {
     }
     var requiresSigning: Bool? { lock.withLock { requiresSigningStorage } }
     var listedPaths: [String] { lock.withLock { listedPathsStorage } }
+    var revisionedPaths: [String] { lock.withLock { revisionedPathsStorage } }
+    var revisionedResult: Result<SMBBackendEntry?, MediaTransportError> {
+        get { lock.withLock { revisionedResultStorage } }
+        set { lock.withLock { revisionedResultStorage = newValue } }
+    }
     var shutdownCount: Int { lock.withLock { shutdownCountStorage } }
 
     private var entriesStorage: [SMBBackendEntry] = []
@@ -536,6 +602,8 @@ private final class FakeSMBBackend: SMBTransportBackend, @unchecked Sendable {
     private var connectedCredentialStorage: SMBMediaTransportCredential?
     private var requiresSigningStorage: Bool?
     private var listedPathsStorage: [String] = []
+    private var revisionedPathsStorage: [String] = []
+    private var revisionedResultStorage: Result<SMBBackendEntry?, MediaTransportError> = .success(nil)
     private var shutdownCountStorage = 0
     private var shutdownObserver: (@Sendable () -> Void)?
     private let source: (any MediaTransportByteSource)?
@@ -585,6 +653,13 @@ private final class FakeSMBBackend: SMBTransportBackend, @unchecked Sendable {
 
     func readSmallFile(path: String, maximumBytes: Int) async throws -> Data {
         Data()
+    }
+
+    func revisionedStat(path: String) async throws -> SMBBackendEntry? {
+        try lock.withLock {
+            revisionedPathsStorage.append(path)
+            return try revisionedResultStorage.get()
+        }
     }
 
     func openSource(

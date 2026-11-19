@@ -1,5 +1,38 @@
 # PublicMetaDBService
 
+## Tracker-sync acceptance status: 19 November 2026
+
+The feature branch incorporates `main` through `669783d95`. On the reconciled
+source, the normal iPhone simulator app opened the dedicated account's private
+list and showed the expected empty contents. Independent reads before and after
+found no change to watch or resume history. This verifies account access, not
+playback reporting or return sync.
+
+On the same source, Apple TV passed seven hosted account/catalog checks and
+four native remote-control pairing checks. These used fixtures. Both failures
+in the broader playback package run also reproduced with the same assertions
+on the isolated `main` revision. The Settings search guard still reports the
+same 115 diagnostics as `main`.
+
+The playback and import evidence below predates the integration and the
+file-revision check; it is not a full pass for this candidate.
+
+- Apple TV simulator pairing through `/pmdb` passed: the native Lists screen
+  loaded the dedicated account's private list after browser approval.
+- One muted NFS movie completion created exactly one dated play across
+  relaunch. After reporting was disabled, local progress changed without
+  updating the tracker.
+- Reviewed imports updated SMB and WebDAV independently and together. This
+  does **not** prove automatic delivery to both or rejection of a new event
+  after a destination is removed.
+- The tracker rejected cleanup of the single test play with HTTP 403.
+  Independent account reads through 19:26 UTC still found it; the unrelated records
+  and managed-server control were unchanged. New tracker-write trials are
+  paused until that specific play is removed through an authorized path.
+- The inspected share episodes did not establish exact episode identity. A
+  matching episode on Emby and Jellyfin is a control, not a share-sync pass.
+  Switching between two distinct dedicated tracker accounts remains untested.
+
 ## Live NFS movie verification: 19 November 2026
 
 On the owned iPhone simulator, real muted NFS playback reported five movie
@@ -1237,6 +1270,14 @@ credential. The cloud user and machine must match, and that user's discovered
 resource token must equal the supplied server token before any item reads.
 
 ## Opt-in playback reporting
+
+For a share resume import, the one-second edition check uses an engine-measured
+duration only after rechecking the opened file's revision. A single verified
+file can therefore supersede a rounded NFO runtime. A replacement, multiple
+cuts, or a transport with only size and mtime provides no verified resume
+runtime. SMB rechecks the exact file's index, size and raw change/write times
+without querying every entry while browsing. Older watch records still drive
+local progress bars and resume buttons.
 
 Playback consent is separate from key connection, list consent and history imports.
 It is device-local, profile-scoped, and bound to a verified key connection plus a
