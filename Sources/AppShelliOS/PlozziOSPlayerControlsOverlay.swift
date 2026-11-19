@@ -62,7 +62,7 @@ struct PlozziOSPlayerControlsOverlay: View {
     }
 
     private var isScrubbing: Bool { viewModel.controls.isScrubbing }
-    private var nativeMenuPresented: Bool { menuPresentation.isBusy }
+    private var nativeMenuPresented: Bool { menuPresentation.isBusy || viewModel.showsDiscVideos }
     private var menuSourceID: [String?] {
         let item = viewModel.currentPlaybackItem
         return [item?.sourceAccountID, item?.id, item?.selectedVersionID]
@@ -298,6 +298,9 @@ struct PlozziOSPlayerControlsOverlay: View {
         .onChange(of: versionsPresented) { _, presented in
             if presented { cancelAutoHide() } else { scheduleAutoHide() }
         }
+        .onChange(of: viewModel.showsDiscVideos) { _, presented in
+            if presented { cancelAutoHide() } else { noteInteraction() }
+        }
         .plozzSheet(item: $presentedSheet, onDismiss: scheduleAutoHide) { sheet in
             switch sheet {
             case .speed:
@@ -340,6 +343,13 @@ struct PlozziOSPlayerControlsOverlay: View {
         case .zoom: presentedSheet = .zoom
         case .quality: presentedSheet = .quality
         case .versions: onShowVersions()
+        case .discMenu: viewModel.videoEngine.discMenu?.openMenu()
+        case .discVideos: viewModel.showsDiscVideos = true
+        case .playVideo: viewModel.playVideoWithoutMenus()
+        case .discRegion:
+            if let state = viewModel.videoEngine.discMenu {
+                viewModel.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
+            }
         case .multiview:
             PlozzLog.playback.error("VOD menu requested unavailable multiview destination.")
         }
@@ -748,7 +758,6 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let supportsVideoZoom: Bool
     let hasVersions: Bool
     let menuPresentation: PlayerMenuPresentation
-    @State private var discPresentationOwner = UUID()
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The full player bounds, not this bottom cluster's intrinsic size.
@@ -892,28 +901,17 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
 
     private var trackControlGroup: some View {
         let item = viewModel.currentPlaybackItem
-        return PlayerGlassControlGroup {
-            HStack(spacing: 0) {
-                if viewModel.isDiscMenuPlayback || viewModel.hasDiscVideos {
-                    PlayerDiscControlsButton(
-                        model: viewModel, onInteraction: onInteraction,
-                        onPresentationChanged: {
-                            menuPresentation.setPresented($0, owner: discPresentationOwner)
-                        }
-                    )
-                }
-                PlayerMoreMenuButton(
-                    model: viewModel.controls,
-                    availability: .init(
-                        maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
-                        quality: viewModel.streamingQualityAvailable, versions: hasVersions
-                    ),
-                    presentation: menuPresentation,
-                    layout: .init(size: availableSize),
-                    actions: menuActions(for: item)
-                )
-            }
-        }
+        return PlayerMoreMenuButton(
+            model: viewModel.controls,
+            availability: .init(
+                maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
+                quality: viewModel.streamingQualityAvailable ? viewModel.streamingOptions?.quality : nil,
+                versions: hasVersions, disc: .init(player: viewModel)
+            ),
+            presentation: menuPresentation,
+            layout: .init(size: availableSize),
+            actions: menuActions(for: item)
+        )
         .accessibilityIdentifier("player-track-controls")
     }
 

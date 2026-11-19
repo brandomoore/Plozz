@@ -75,21 +75,25 @@ final class PlaybackOptionsRemoteTests: XCTestCase {
         app.launchArguments = ["--subtitle-style-input-fixture", "--production-player-input", "--playback-options"]
         app.launch()
         defer { app.terminate() }
-        let playback = app.buttons["player-control-slider.horizontal.3"]
+        let playback = app.buttons["player-control-ellipsis"]
+        let rate = app.buttons["player-control-speedometer"]
         XCTAssertTrue(playback.waitForExistence(timeout: 10))
         XCUIRemote.shared.press(.up)
-        XCTAssertTrue(waitUntil { playback.hasFocus })
+        for _ in 0..<3 where !rate.hasFocus { XCUIRemote.shared.press(.right) }
+        XCTAssertTrue(waitUntil { rate.hasFocus }, app.debugDescription)
         XCUIRemote.shared.press(.select)
 
         let zoom = app.buttons["player-settings-row-0"]
         let speed = app.buttons["player-settings-row-2"]
-        XCTAssertTrue(waitUntil { zoom.exists && zoom.hasFocus })
-        XCUIRemote.shared.press(.down)
         XCTAssertTrue(waitUntil { speed.hasFocus })
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(waitUntil { app.staticTexts["player-options-speed"].label == "1.55" })
         XCTAssertTrue(speed.hasFocus)
-        XCUIRemote.shared.press(.up)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(waitUntil { rate.hasFocus && (rate.value as? String) == "1.55×" })
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(waitUntil { playback.hasFocus })
+        XCUIRemote.shared.press(.select)
         XCTAssertTrue(waitUntil { zoom.hasFocus })
         XCUIRemote.shared.press(.select)
         let fit = app.buttons["player-option-row-10"]
@@ -97,7 +101,7 @@ final class PlaybackOptionsRemoteTests: XCTestCase {
         let stretch = app.buttons["player-option-row-12"]
         let custom = app.buttons["player-settings-row-13"]
         XCTAssertTrue(waitUntil { fit.exists && fit.hasFocus })
-        XCTAssertTrue(fit.label.contains("Normal (Default)"))
+        XCTAssertTrue(fit.label.contains("Normal"))
         XCTAssertEqual(fill.label, "Crop")
         XCUIRemote.shared.press(.down)
         XCTAssertTrue(waitUntil { fill.hasFocus })
@@ -128,8 +132,8 @@ final class PlaybackOptionsRemoteTests: XCTestCase {
         XCTAssertTrue(waitUntil { app.staticTexts["player-options-play-pause"].label == "1" },
                       "The native input host must not swallow the player's Play/Pause command.")
         XCUIRemote.shared.press(.menu)
-        XCTAssertTrue(waitUntil { zoom.exists && zoom.hasFocus && speed.exists },
-                      "Back returns to the same two Playback rows with Zoom Mode focused.")
+        XCTAssertTrue(waitUntil { zoom.exists && zoom.hasFocus && !speed.exists },
+                      "Back returns to More with Zoom Mode focused; speed has its own button.")
         XCTAssertEqual(app.staticTexts["player-zoom-percent"].label, String(percent))
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(waitUntil { app.staticTexts["player-options-panel-open"].label == "false" && playback.hasFocus },
@@ -139,6 +143,68 @@ final class PlaybackOptionsRemoteTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["player-zoom-mode"].label, "custom")
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Production player Playback menu"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testMovieAndBehindLiveToolbarsOpenMoreAndRestoreRemoteFocus() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        for live in [false, true] {
+            app.launchArguments = ["--toolbar-footage"] + (live ? ["--library-channel-actions", "--preview"] :
+                ["--subtitle-style-input-fixture", "--playback-options", "--production-player-input"])
+            app.launch()
+            if live {
+                let watch = app.buttons["Watch channel"]
+                XCTAssertTrue(waitUntil { watch.exists && watch.hasFocus }, app.debugDescription)
+                XCUIRemote.shared.press(.select)
+            }
+            let audio = app.buttons[live ? "live-channel-audio" : "player-control-waveform"]
+            let subtitles = app.buttons[live ? "live-channel-subtitles" : "player-control-captions.bubble"]
+            let more = app.buttons[live ? "live-channel-playback" : "player-control-ellipsis"]
+            let rate = app.buttons["player-control-speedometer"]
+            let jump = app.buttons["live-channel-go-live"]
+            XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertLessThan(audio.frame.maxX, subtitles.frame.minX)
+            if live {
+                XCTAssertTrue(jump.waitForExistence(timeout: 5))
+                XCTAssertEqual(jump.label, "Jump to live")
+                XCTAssertLessThan(jump.frame.maxX, audio.frame.minX)
+                XCTAssertFalse(rate.exists)
+            } else {
+                XCTAssertLessThan(subtitles.frame.maxX, rate.frame.minX)
+                XCTAssertLessThan(rate.frame.maxX, more.frame.minX)
+                XCTAssertEqual(rate.value as? String, "1×")
+            }
+            XCUIRemote.shared.press(.up)
+            for _ in 0..<4 where !more.hasFocus { XCUIRemote.shared.press(.right) }
+            XCTAssertTrue(waitUntil { more.hasFocus }, app.debugDescription)
+            let name = live ? "live" : "movie"
+            capture("\(name)-row")
+            XCUIRemote.shared.press(.select)
+            let zoom = app.buttons["player-settings-row-0"]
+            let other = app.buttons[live ? "player-settings-row-6" : "player-settings-row-4"]
+            XCTAssertTrue(waitUntil { zoom.exists && other.exists && (live ? other.hasFocus : zoom.hasFocus) }, app.debugDescription)
+            XCTAssertFalse(app.buttons["player-settings-row-2"].exists)
+            capture("\(name)-more")
+            XCUIRemote.shared.press(.menu)
+            XCTAssertTrue(waitUntil { more.hasFocus && !zoom.exists }, app.debugDescription)
+            if live {
+                XCUIRemote.shared.press(.left)
+                XCTAssertTrue(waitUntil { subtitles.hasFocus }, app.debugDescription)
+                XCUIRemote.shared.press(.left)
+                XCUIRemote.shared.press(.left)
+                XCTAssertTrue(waitUntil { jump.hasFocus }, app.debugDescription)
+                XCUIRemote.shared.press(.select)
+                XCTAssertTrue(jump.waitForNonExistence(timeout: 5))
+            }
+            app.terminate()
+        }
+    }
+
+    private func capture(_ name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
     }

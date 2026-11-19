@@ -564,13 +564,11 @@ processing for every engine route. Undocumented integration carries OS
 compatibility and App Review risk. This system-preference bridge is tvOS-only.
 
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
-controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles and
-an ellipsis, in that order, omitting controls with no options.
-The ellipsis groups the remaining options, including Version for on-demand playback
-or Multiview for live channels. Video combines
-zoom choices with Quality in both layouts; Quality opens its existing editor and
-never acts as a selectable zoom mode. Quality remains
-available in Video even when zoom is unsupported. Layout follows the actual player
+controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles, the
+current speed (on demand), and an ellipsis, omitting unavailable controls.
+In landscape, Quality opens its editor directly from the overflow menu rather
+than from the zoom choices. Version (on demand) or Multiview (live) also lives
+in overflow when available. Layout follows the actual player
 viewport, including iPad split windows, not the device's global orientation.
 Subtitles and Audio offer their existing tracks directly with real active-track
 checkmarks. Audio has no redundant track-section heading. Subtitles lists all
@@ -2672,8 +2670,9 @@ the single control the pressed direction targets.
 
 `LiveChannelTransport.swift` is the expanded live player's chrome, assembled from
 the VOD transport's parts rather than drawn separately: the title block and
-`playerGlassButton` badges (Audio · Subtitles · Multiview, plus Go Live when
-time-shifted), `PlayerScrubTrackSurface` for the timeline, `PlayerTabButtonStyle`
+track controls (Audio · Subtitles · More, with Zoom and Multiview under More).
+The separate Jump to live action precedes them when time-shifted. The player uses
+`PlayerScrubTrackSurface` for the timeline, `PlayerTabButtonStyle`
 tabs, the shared `PlayerOptionsPanel` for track/style menus, and
 `PlayerOverVideoCardStyle` cards. The card parks by one cluster offset exactly as
 rules 2–3 above describe, with the same constants on tvOS. Track menus live in

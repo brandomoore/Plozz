@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreModels
 import CoreUI
 import SwiftUI
@@ -33,6 +34,19 @@ struct SubtitleStyleInputFixture: View {
             model.subtitleDelaySeconds = 0.2
         }
         model.subtitleOptions = [PlayerTrackOption(id: PlayerTrackOption.offID, title: Text("Off"), isSelected: true)]
+        if ToolbarFootageView.requested {
+            model.title = "Big Buck Bunny"
+            model.duration = 596
+            model.currentSeconds = 214
+            model.bufferedSeconds = 265
+            model.playbackSpeed = 1
+            model.upscaling.isAvailable = true
+            model.audioOptions = [
+                .init(id: 1, title: Text("English · Stereo"), isSelected: true),
+                .init(id: 2, title: Text("Commentary"), isSelected: false)
+            ]
+            model.subtitleOptions.append(.init(id: 3, title: Text("English"), isSelected: false))
+        }
         model.subtitleStyle = .default
         if ProcessInfo.processInfo.arguments.contains("--minimum-text-size") {
             model.subtitleStyle.fontScale = Double(SubtitleStyle.fontScalePercentages.first!) / 100
@@ -49,7 +63,10 @@ struct SubtitleStyleInputFixture: View {
         Group {
             if ProcessInfo.processInfo.arguments.contains("--production-player-input") {
                 Color.black
-                    .fullScreenCover(isPresented: $playerPresented) { playerContent }
+                    .fullScreenCover(isPresented: $playerPresented) {
+                        if ToolbarFootageView.requested { playerContent.ignoresSafeArea() }
+                        else { playerContent }
+                    }
                     .task { playerPresented = true }
             } else {
                 playerContent
@@ -129,6 +146,7 @@ struct SubtitleStyleInputFixture: View {
                 }
             }
             .allowsHitTesting(false)
+            .opacity(ToolbarFootageView.requested ? 0 : 1)
         }
     }
 }
@@ -137,8 +155,8 @@ struct SubtitleStyleInputFixture: View {
 private final class SubtitleInputFixtureEngine: VideoEngine {
     var status: VideoEngineStatus = .ready
     var isPaused = true
-    var currentTime: TimeInterval = 0
-    var duration: TimeInterval = 7200
+    var currentTime: TimeInterval = ToolbarFootageView.requested ? 214 : 0
+    var duration: TimeInterval = ToolbarFootageView.requested ? 596 : 7200
     var furthestObservedPosition: TimeInterval = 0
     var audioTracks: [MediaTrack] = []
     var subtitleTracks: [MediaTrack] = []
@@ -157,5 +175,35 @@ private final class SubtitleInputFixtureEngine: VideoEngine {
     func stop() { status = .idle }
     func selectAudioTrack(_ track: MediaTrack?) {}
     func selectSubtitleTrack(_ track: MediaTrack?) {}
-    func makeVideoOutputView() -> UIView { UIView() }
+    func makeVideoOutputView() -> UIView {
+        ToolbarFootageView.requested ? ToolbarFootageView(name: "toolbar-movie") : UIView()
+    }
+}
+
+/// Optional local, licensed clip for the TV transport review fixture. Media is not bundled.
+@MainActor
+final class ToolbarFootageView: UIView {
+    static var requested: Bool { ProcessInfo.processInfo.arguments.contains("--toolbar-footage") }
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
+    private let queue = AVQueuePlayer()
+    private var looper: AVPlayerLooper?
+
+    init(name: String, paused: Bool = false) {
+        super.init(frame: .zero)
+        let url = URL.documentsDirectory.appendingPathComponent("\(name).mp4")
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        queue.isMuted = true
+        let layer = self.layer as! AVPlayerLayer
+        layer.player = queue
+        layer.videoGravity = .resizeAspect
+        looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(url: url))
+        if paused {
+            queue.seek(to: CMTime(seconds: 0.4, preferredTimescale: 600),
+                       toleranceBefore: .zero, toleranceAfter: .zero)
+        } else {
+            queue.play()
+        }
+    }
+
+    required init?(coder: NSCoder) { nil }
 }

@@ -36,6 +36,16 @@ struct LibraryChannelActionsFixture: View {
     }
 
     var body: some View {
+        if ToolbarFootageView.requested {
+            player.ignoresSafeArea()
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+        } else {
+            libraryActions
+        }
+    }
+
+    private var libraryActions: some View {
         NavigationStack {
             Group {
                 if ProcessInfo.processInfo.arguments.contains("--guide") {
@@ -80,12 +90,24 @@ struct LibraryChannelActionsFixture: View {
     private var player: some View {
         ZStack(alignment: .topLeading) {
             LiveChannelPlayerView(
-                channelID: "library:fixture", title: "Fixture Channel",
-                input: .libraryChannel(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, authorizationID: "fixture"),
+                channelID: ToolbarFootageView.requested ? "cinema" : "library:fixture",
+                title: ToolbarFootageView.requested ? "Open Movie Channel" : "Fixture Channel",
+                input: ToolbarFootageView.requested
+                    ? .stream(url: URL.documentsDirectory.appendingPathComponent("toolbar-live.mp4"), httpHeaders: [:])
+                    : .libraryChannel(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, authorizationID: "fixture"),
                 logoURL: nil, makeEngine: { engine }, onPreviousChannel: {}, onNextChannel: {},
                 isFavorite: false, canToggleFavorite: true, onToggleFavorite: {},
-                isExpanded: expanded, isActive: opened == nil, onReturnToGuide: { expanded = false },
-                onOpenLibraryItem: { opened = $0.navigationSubject }
+                isExpanded: expanded, usesNativeFullscreen: ToolbarFootageView.requested,
+                isActive: opened == nil, onReturnToGuide: { expanded = false },
+                onMultiview: ToolbarFootageView.requested ? { true } : nil,
+                displayTransitionSettings: {
+                    ToolbarFootageView.requested
+                        ? PlaybackSettings(fadeOnDynamicRangeChange: false, fadeOnFrameRateChange: false)
+                        : .default
+                },
+                onOpenLibraryItem: { opened = $0.navigationSubject },
+                program: ToolbarFootageView.requested ? .init(title: "Big Buck Bunny", start: now.addingTimeInterval(-240),
+                                                              end: now.addingTimeInterval(356)) : nil
             )
             VStack(alignment: .leading) {
                 Text(engine.policy.suppressesDisplayMatching ? "Matching off" : "Matching on")
@@ -94,6 +116,7 @@ struct LibraryChannelActionsFixture: View {
                 }
             }
             .padding(50)
+            .opacity(ToolbarFootageView.requested && expanded ? 0 : 1)
         }
     }
 }
@@ -101,7 +124,8 @@ struct LibraryChannelActionsFixture: View {
 @MainActor @Observable
 private final class ChannelActionsEngine: LiveChannelEngine {
     let currentLibraryItem: LibraryChannelItem?
-    let outputView = UIView()
+    @ObservationIgnored lazy var outputView: UIView = ToolbarFootageView.requested
+        ? ToolbarFootageView(name: "toolbar-live", paused: true) : UIView()
     var policy = LiveChannelOutputPolicy()
     var stops = 0
     var liveSnapshot = LiveChannelEngineSnapshot(
@@ -113,8 +137,15 @@ private final class ChannelActionsEngine: LiveChannelEngine {
     var currentTime: TimeInterval { 100 }
     var duration: TimeInterval { 1_800 }
     var furthestObservedPosition: TimeInterval { 100 }
-    var audioTracks: [MediaTrack] { [] }
-    var subtitleTracks: [MediaTrack] { [] }
+    var supportsConcurrentPlayback: Bool { ToolbarFootageView.requested }
+    var capabilities: PlayerEngineCapabilities { ToolbarFootageView.requested ? [.videoZoom] : [] }
+    var audioTracks: [MediaTrack] { ToolbarFootageView.requested ? [
+        .init(id: 1, kind: .audio, displayTitle: "English", language: "en"),
+        .init(id: 2, kind: .audio, displayTitle: "Commentary", language: "en")
+    ] : [] }
+    var subtitleTracks: [MediaTrack] { ToolbarFootageView.requested ? [
+        .init(id: 3, kind: .subtitle, displayTitle: "English", language: "en")
+    ] : [] }
     var currentAudioTrackID: Int? { nil }
     @ObservationIgnored var onProgress: (@MainActor () -> Void)?
     @ObservationIgnored var onFailure: (@MainActor (AppError) -> Void)?
@@ -125,16 +156,35 @@ private final class ChannelActionsEngine: LiveChannelEngine {
     @ObservationIgnored var onSecondarySubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
     @ObservationIgnored var onLiveSourceReset: (@MainActor () -> Void)?
 
-    init(item: LibraryChannelItem) { currentLibraryItem = item }
+    init(item: LibraryChannelItem) {
+        currentLibraryItem = ToolbarFootageView.requested ? nil : item
+        if ToolbarFootageView.requested {
+            liveSnapshot.position = 1_744
+            liveSnapshot.behindLiveSeconds = 56
+            liveSnapshot.phase = .paused
+            isPaused = true
+        }
+    }
     func configureLiveOutput(_ policy: LiveChannelOutputPolicy) { self.policy = policy }
     func loadChannel(_ input: LiveChannelInput) async throws {}
     func loadLive(url: URL, httpHeaders: [String: String]) async {}
     func load(request: PlaybackRequest, startPosition: TimeInterval) async {}
-    func play() { isPaused = false }
-    func pause() { isPaused = true }
+    func play() {
+        isPaused = false
+        if ToolbarFootageView.requested { liveSnapshot.phase = .playing }
+    }
+    func pause() {
+        isPaused = true
+        if ToolbarFootageView.requested { liveSnapshot.phase = .paused }
+    }
     func stop() { stops += 1; status = .idle }
     func seek(to seconds: TimeInterval) async {}
-    func seekToLiveEdge() async {}
+    func seekToLiveEdge() async {
+        if ToolbarFootageView.requested {
+            liveSnapshot.position = 1_800
+            liveSnapshot.behindLiveSeconds = 0
+        }
+    }
     func selectAudioTrack(_ track: MediaTrack?) {}
     func selectSubtitleTrack(_ track: MediaTrack?) {}
     func makeVideoOutputView() -> UIView { outputView }

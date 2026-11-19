@@ -10,6 +10,12 @@ import SwiftUI
 
 struct PlayerLayoutFixture: View {
     fileprivate static let capturesFilm = ProcessInfo.processInfo.arguments.contains("--capture-open-movie")
+    private static let populated = ProcessInfo.processInfo.arguments.contains("--populated-player")
+    private static let sample = MediaItem(id: "sample", title: "Big Buck Bunny", kind: .movie, versions: [
+        .init(id: "hd", width: 1920, height: 1080), .init(id: "sd", width: 854, height: 480)
+    ])
+    @State private var showsVersions = false
+    @State private var version = "hd"
     @State private var model: PlayerViewModel
     @State private var timelineSampleIndex = 0
     @State private var scrubStarts = 0
@@ -28,6 +34,7 @@ struct PlayerLayoutFixture: View {
         )
         let model = PlayerViewModel(
             provider: provider, itemID: episode.id, episodeItem: episode,
+            streamingOptions: Self.populated ? .init(quality: .hd1080) : nil,
             playlistContext: isContinueWatching ? nil : playlist
         )
         if isContinueWatching {
@@ -53,6 +60,16 @@ struct PlayerLayoutFixture: View {
         if ProcessInfo.processInfo.arguments.contains("--playback-menu") {
             model.controls.engineCapabilities.formUnion([.videoZoom, .dialogEnhance])
         }
+        if Self.populated {
+            model.controls.audioOptions = TrackMenuBuilder.audioOptions(
+                tracks: PlayerLayoutLiveEngine.audio, selectedID: 1, preferred: []
+            )
+            model.controls.subtitleOptions = TrackMenuBuilder.subtitleOptions(
+                tracks: PlayerLayoutLiveEngine.captions, selectedID: nil, preferred: [], detectedLanguages: [:]
+            )
+            model.controls.engineCapabilities.insert(.videoZoom)
+            model.controls.playbackSpeed = 1
+        }
         model.controls.subtitleDelayAdjustable = ProcessInfo.processInfo.arguments.contains("--subtitle-delay")
         if ProcessInfo.processInfo.arguments.contains("--audio-delay") {
             model.controls.engineCapabilities.insert(.audioDelay)
@@ -61,7 +78,7 @@ struct PlayerLayoutFixture: View {
         _model = State(initialValue: model)
     }
 
-    private struct PlayerLayoutProvider: MediaProvider {
+    private struct PlayerLayoutProvider: StreamingQualityProviding {
         let kind = ProviderKind.jellyfin
         let session = UserSession(
             server: MediaServer(id: "layout", name: "Layout", baseURL: URL(string: "https://fixture.invalid")!,
@@ -78,6 +95,9 @@ struct PlayerLayoutFixture: View {
         func children(of itemID: String) async throws -> [MediaItem] { [] }
         func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
         func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+        func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
+                          streaming: StreamingPlaybackOptions) async throws -> PlaybackRequest { throw AppError.notFound }
+        func releaseStreamingSession(_ request: PlaybackRequest) async {}
         func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
         func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
     }
@@ -98,8 +118,12 @@ struct PlayerLayoutFixture: View {
                 } else {
                     PlozziOSPlayerControlsOverlay(
                         viewModel: model, keyboardActions: PlozziOSPlayerKeyboardActions(),
-                        hasVersions: false, versionsPresented: false, onShowVersions: {}, onClose: {}
+                        hasVersions: Self.populated, versionsPresented: showsVersions,
+                        onShowVersions: { showsVersions = true }, onClose: {}
                     )
+                    .plozzSheet(isPresented: $showsVersions) {
+                        PlozziOSPlayerVersionSheet(item: Self.sample, mediaSourceID: version) { version = $0 }
+                    }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("player-layout-fixture")
                     .accessibilityValue("scrubbing:\(model.controls.isScrubbing),starts:\(scrubStarts)")
@@ -198,7 +222,8 @@ struct PlayerLayoutFixture: View {
             input = .stream(url: URL(string: "https://fixture.invalid/live.m3u8")!, httpHeaders: [:])
             do {
                 _tracks = State(initialValue: LiveChannelPlayerModel(
-                    engine: try PlozzigenVideoEngine(), channelID: Self.channelID, input: input
+                    engine: PlayerLayoutFixture.populated ? PlayerLayoutLiveEngine() : try PlozzigenVideoEngine(),
+                    channelID: Self.channelID, input: input
                 ))
             } catch {
                 preconditionFailure("Could not create Live layout fixture: \(error)")
@@ -220,7 +245,7 @@ struct PlayerLayoutFixture: View {
                 seekWindowSeconds: 3600, onSeekBy: { behind = max(0, behind - $0) },
                 onSeekBehindLive: { behind = $0 }, focus: $focus, onClose: {},
                 onPrevious: { channel -= 1 }, onPlayPause: { paused.toggle() }, onGoLive: { behind = 0 },
-                onNext: { channel += 1 }, onMultiview: nil,
+                onNext: { channel += 1 }, onMultiview: PlayerLayoutFixture.populated ? {} : nil,
                 guideContent: { embedding in
                     AnyView(LiveTVPlayerGuideOverlay(
                         model: guide, imports: guideImports, playingChannelID: guide.channels.first?.id ?? "",
@@ -257,8 +282,43 @@ struct PlayerLayoutFixture: View {
                     .padding(.trailing, 21)
                 }
             }
+            .task { if PlayerLayoutFixture.populated { await tracks.start() } }
             .onDisappear { tracks.stop() }
         }
+    }
+
+    /// Supplies demuxed tracks through the same engine/model boundary as a tuned channel.
+    @MainActor
+    private final class PlayerLayoutLiveEngine: LiveChannelEngine {
+        static let audio: [MediaTrack] = [.init(id: 1, kind: .audio, displayTitle: "English", language: "en", codec: "aac", channels: 2)]
+        static let captions: [MediaTrack] = [.init(id: 2, kind: .subtitle, displayTitle: "English", language: "en", codec: "srt")]
+        var status = VideoEngineStatus.ready
+        var isPaused = false
+        let capabilities: PlayerEngineCapabilities = [.videoZoom]
+        let currentTime: TimeInterval = 10
+        let duration: TimeInterval = 0
+        let furthestObservedPosition: TimeInterval = 10
+        var audioTracks: [MediaTrack] { Self.audio }
+        var subtitleTracks: [MediaTrack] { Self.captions }
+        var onProgress: (@MainActor () -> Void)?
+        var onFailure: (@MainActor (AppError) -> Void)?
+        var onEnded: (@MainActor () -> Void)?
+        var onTracksChanged: (@MainActor () -> Void)?
+        var onProbedSourceFactsChanged: (@MainActor (EngineProbedSourceFacts) -> Void)?
+        var onSubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
+        var onSecondarySubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
+        var onLiveSourceReset: (@MainActor () -> Void)?
+        let liveSnapshot = LiveChannelEngineSnapshot(phase: .playing, firstFrameReady: true, position: 10, route: .nativeHLS)
+        func loadLive(url: URL, httpHeaders: [String: String]) async {}
+        func seekToLiveEdge() async {}
+        func load(request: PlaybackRequest, startPosition: TimeInterval) async {}
+        func play() {}
+        func pause() {}
+        func stop() {}
+        func seek(to seconds: TimeInterval) async {}
+        func selectAudioTrack(_ track: MediaTrack?) {}
+        func selectSubtitleTrack(_ track: MediaTrack?) {}
+        func makeVideoOutputView() -> UIView { UIView() }
     }
 
     private var light: Bool { ProcessInfo.processInfo.arguments.contains("--light") }

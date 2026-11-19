@@ -7,6 +7,7 @@ import UIKit
 
 public enum PlayerMenuDestination: String, Identifiable {
     case subtitleSearch, subtitleAdvanced, audioSync, speed, zoom, quality, versions, multiview
+    case discMenu, discVideos, playVideo, discRegion
     public var id: Self { self }
 }
 
@@ -19,7 +20,8 @@ public enum PlayerMenuLayout: Equatable {
 }
 
 public enum PlayerMenuSection: String, CaseIterable, Identifiable {
-    case subtitles, audio, speed = "playback-speed", video, versions, multiview
+    case subtitles, audio, speed = "playback-speed", quality, multiview, zoom, versions, upscaling, fel
+    case discMenu, discVideos, playVideo, discRegion
     public var id: Self { self }
 
     var title: LocalizedStringResource {
@@ -27,9 +29,16 @@ public enum PlayerMenuSection: String, CaseIterable, Identifiable {
         case .subtitles: "Subtitles"
         case .audio: "Audio"
         case .speed: "Playback Speed"
-        case .video: "Video"
+        case .quality: "Quality"
+        case .zoom: "Zoom"
+        case .upscaling: "Upscaling"
+        case .fel: "P7 FEL → P8.1 conversion"
         case .versions: "Version"
         case .multiview: "Multiview"
+        case .discMenu: "Disc menu"
+        case .discVideos: "Disc videos"
+        case .playVideo: "Play video"
+        case .discRegion: "Try another region"
         }
     }
 
@@ -38,24 +47,7 @@ public enum PlayerMenuSection: String, CaseIterable, Identifiable {
         case .subtitles: .subtitles
         case .audio: .audio
         case .speed: .speed
-        case .video: .video
-        case .versions, .multiview: nil
-        }
-    }
-
-    var destination: PlayerMenuDestination? {
-        switch self {
-        case .versions: .versions
-        case .multiview: .multiview
         default: nil
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .versions: "rectangle.stack"
-        case .multiview: "rectangle.split.2x2"
-        default: kind?.symbol ?? "ellipsis"
         }
     }
 }
@@ -106,16 +98,28 @@ public final class PlayerMenuPresentation {
 }
 
 public struct PlayerMoreMenuAvailability {
+    public struct Disc {
+        var canNavigate: Bool
+        var canPlayVideo: Bool
+
+        @MainActor public init?(player: PlayerViewModel) {
+            guard player.isDiscMenuPlayback || player.hasDiscVideos else { return nil }
+            canNavigate = player.isDiscMenuPlayback && player.videoEngine.discMenu != nil
+            canPlayVideo = player.isDiscMenuPlayback || player.isSelectedDiscVideo
+        }
+    }
+
     public var maximumSpeed: Double?
     public var video: Bool
     public var videoModel: PlayerVideoZoomModel?
-    public var quality: Bool
+    public var quality: StreamingQuality?
     public var versions: Bool
     public var multiview: Bool
+    public var disc: Disc?
 
     public init(
-        maximumSpeed: Double? = nil, video: Bool = true, videoModel: PlayerVideoZoomModel? = nil, quality: Bool = false,
-        versions: Bool = false, multiview: Bool = false
+        maximumSpeed: Double? = nil, video: Bool = true, videoModel: PlayerVideoZoomModel? = nil, quality: StreamingQuality? = nil,
+        versions: Bool = false, multiview: Bool = false, disc: Disc? = nil
     ) {
         self.maximumSpeed = maximumSpeed
         self.video = video
@@ -123,6 +127,7 @@ public struct PlayerMoreMenuAvailability {
         self.quality = quality
         self.versions = versions
         self.multiview = multiview
+        self.disc = disc
     }
 }
 
@@ -143,6 +148,10 @@ public struct PlayerMoreMenuActions {
 public enum PlayerMoreMenu {
     public static let speedPresets: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
+    static func rateTitle(_ speed: Double, locale: Locale) -> String {
+        speed.formatted(.number.locale(locale).precision(.fractionLength(0...2))) + "×" // l10n:content - numeric rate.
+    }
+
     public static func hasOptions(_ model: PlayerControlsModel, availability: PlayerMoreMenuAvailability) -> Bool {
         !sections(model, availability: availability).isEmpty
     }
@@ -153,12 +162,18 @@ public enum PlayerMoreMenu {
         if !model.audioOptions.isEmpty || model.engineCapabilities.contains(.dialogEnhance)
             || model.engineCapabilities.contains(.audioDelay) { sections.append(.audio) }
         if availability.maximumSpeed != nil, model.engineCapabilities.contains(.playbackSpeed) { sections.append(.speed) }
-        if availability.quality || model.felConversion.isAvailable || model.upscaling.isAvailable
-            || (availability.video && model.engineCapabilities.contains(.videoZoom)) {
-            sections.append(.video)
-        }
-        if availability.versions { sections.append(.versions) }
+        if availability.quality != nil { sections.append(.quality) }
         if availability.multiview { sections.append(.multiview) }
+        if availability.video && model.engineCapabilities.contains(.videoZoom) { sections.append(.zoom) }
+        if availability.versions { sections.append(.versions) }
+        if model.upscaling.isAvailable { sections.append(.upscaling) }
+        if model.felConversion.isAvailable { sections.append(.fel) }
+        if let disc = availability.disc {
+            if disc.canNavigate { sections.append(.discMenu) }
+            sections.append(.discVideos)
+            if disc.canPlayVideo { sections.append(.playVideo) }
+            if disc.canNavigate { sections.append(.discRegion) }
+        }
         return sections
     }
 
@@ -214,7 +229,7 @@ public enum PlayerMoreMenu {
         }
         if let maximum = availability.maximumSpeed, model.engineCapabilities.contains(.playbackSpeed) {
             let speeds = speedPresets.filter { $0 <= maximum }.map { speed in
-                let title = speed.formatted(.number.locale(locale).precision(.fractionLength(0...2))) + "×" // l10n:content - numeric rate.
+                let title = rateTitle(speed, locale: locale)
                 return UIAction(title: title, state: abs(model.playbackSpeed - speed) < 0.001 ? .on : .off) { _ in
                     actions.setSpeed(speed)
                 }
@@ -224,10 +239,9 @@ public enum PlayerMoreMenu {
                 UIMenu(options: .displayInline, children: [destination("Custom…", .speed)])
             ])
         }
-        var video: [UIMenuElement] = []
         if model.upscaling.isAvailable {
-            video.append(UIMenu(
-                title: localized("Upscaling"),
+            entries[.upscaling] = UIMenu(
+                title: localized(PlayerMenuSection.upscaling.title),
                 children: VideoUpscaling.allCases.map { selection in
                     UIAction(
                         title: localized(selection.title),
@@ -238,36 +252,43 @@ public enum PlayerMoreMenu {
                         actions.setVideoUpscaling(selection)
                     }
                 }
-            ))
+            )
         }
         if model.felConversion.isAvailable {
             let enabled = model.felConversion.isEnabled
-            video.append(UIAction(title: localized("P7 FEL → P8.1 conversion"), state: enabled ? .on : .off) { _ in
+            entries[.fel] = UIAction(title: localized(PlayerMenuSection.fel.title), state: enabled ? .on : .off) { _ in
                 guard actions.isCurrent() else { return }
                 actions.setDolbyVisionFELConversion(!enabled)
-            })
+            }
         }
         if availability.video, model.engineCapabilities.contains(.videoZoom) {
             let zoom = PlayerZoomMenu.make(model: availability.videoModel ?? model.videoZoom, locale: locale, isCurrent: actions.isCurrent) {
                 actions.request(.zoom)
             }
-            video.append(UIMenu(title: zoom.title, options: [.displayInline, .singleSelection], children: zoom.children))
+            entries[.zoom] = UIMenu(title: localized(PlayerMenuSection.zoom.title), options: .singleSelection, children: zoom.children)
         }
-        if availability.quality {
-            video.append(UIMenu(options: .displayInline, children: [destination("Quality", .quality)]))
-        }
-        if !video.isEmpty {
-            entries[.video] = UIMenu(title: section == .video ? "" : localized(PlayerMenuSection.video.title), children: video)
+        if let quality = availability.quality {
+            let action = destination(PlayerMenuSection.quality.title, .quality)
+            action.subtitle = localized(quality.title)
+            entries[.quality] = action
         }
         if availability.versions { entries[.versions] = destination(PlayerMenuSection.versions.title, .versions) }
         if availability.multiview { entries[.multiview] = destination(PlayerMenuSection.multiview.title, .multiview) }
+        if let disc = availability.disc {
+            if disc.canNavigate {
+                entries[.discMenu] = destination(PlayerMenuSection.discMenu.title, .discMenu)
+                entries[.discRegion] = destination(PlayerMenuSection.discRegion.title, .discRegion)
+            }
+            entries[.discVideos] = destination(PlayerMenuSection.discVideos.title, .discVideos)
+            if disc.canPlayVideo { entries[.playVideo] = destination(PlayerMenuSection.playVideo.title, .playVideo) }
+        }
         if let section {
             if let menu = entries[section] as? UIMenu { return menu }
             return UIMenu(children: entries[section].map { [$0] } ?? [])
         }
-        let primary: [PlayerMenuSection] = settingsOnly ? [.speed] : [.subtitles, .audio, .speed]
-        var items = primary.compactMap { entries[$0] }
-        let secondary = [PlayerMenuSection.video, .versions, .multiview].compactMap { entries[$0] }
+        let sections = sections(model, availability: availability)
+        var items = settingsOnly ? [] : sections.filter { $0.kind != nil }.compactMap { entries[$0] }
+        let secondary = sections.filter { $0.kind == nil }.compactMap { entries[$0] }
         if !secondary.isEmpty { items.append(UIMenu(options: .displayInline, children: secondary)) }
         return UIMenu(children: items)
     }
@@ -280,6 +301,7 @@ public struct PlayerMoreMenuButton: View {
     public let layout: PlayerMenuLayout
     public var accessibilityIdentifier: String
     public let actions: PlayerMoreMenuActions
+    @State private var overflowOrigin = PlayerOverflowOrigin()
 
     public init(
         model: PlayerControlsModel, availability: PlayerMoreMenuAvailability,
@@ -297,6 +319,24 @@ public struct PlayerMoreMenuButton: View {
 
     public var body: some View {
         let sections = PlayerMoreMenu.sections(model, availability: availability)
+        PlayerGlassControlGroup { controls(sections) }
+            .background(alignment: .topTrailing) {
+                if layout == .separate, sections.contains(where: { $0.kind == nil }) {
+                    // Keep the native menu's origin outside the glass capsule so
+                    // UIKit doesn't expand the menu over the whole control row.
+                    PlayerOverflowSurface(origin: overflowOrigin)
+                        .frame(width: 1, height: 1)
+                        .offset(y: -9)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .onChange(of: layout) { presentation.reset() }
+            .onChange(of: sections) { presentation.reset() }
+            .onChange(of: availability.quality) { presentation.reset() }
+    }
+
+    private func controls(_ sections: [PlayerMenuSection]) -> some View {
         HStack(spacing: 0) {
             if !sections.isEmpty {
                 if layout == .consolidated {
@@ -305,26 +345,23 @@ public struct PlayerMoreMenuButton: View {
                         identifier: accessibilityIdentifier, actions: actions
                     )
                 } else {
-                    ForEach([PlayerMenuSection.audio, .subtitles].filter(sections.contains)) { section in
+                    ForEach([PlayerMenuSection.audio, .subtitles, .speed].filter(sections.contains)) { section in
                         PlayerNativeSectionMenu(
                             model: model, availability: availability, presentation: presentation, section: section,
                             identifier: identifier(section.rawValue), actions: actions
                         )
                     }
-                    if sections.contains(where: { $0 != .audio && $0 != .subtitles }) {
+                    if sections.contains(where: { $0.kind == nil }) {
                         PlayerNativeSectionMenu(
                             model: model, availability: availability, presentation: presentation, section: nil,
-                            settingsOnly: true, identifier: identifier("settings"), actions: actions
+                            settingsOnly: true, overflowOrigin: overflowOrigin,
+                            identifier: identifier("settings"), actions: actions
                         )
                     }
                 }
             }
         }
         .fixedSize(horizontal: true, vertical: false)
-        .onChange(of: layout) { presentation.reset() }
-        .onChange(of: sections) { presentation.reset() }
-        .onChange(of: availability.quality) { presentation.reset() }
-        .onChange(of: availability.video && model.engineCapabilities.contains(.videoZoom)) { presentation.reset() }
     }
 
     private func identifier(_ action: String) -> String {
@@ -342,6 +379,7 @@ private struct PlayerNativeSectionMenu: View {
     let presentation: PlayerMenuPresentation
     let section: PlayerMenuSection?
     var settingsOnly = false
+    var overflowOrigin: PlayerOverflowOrigin?
     let identifier: String
     let actions: PlayerMoreMenuActions
     @Environment(\.locale) private var locale
@@ -349,6 +387,7 @@ private struct PlayerNativeSectionMenu: View {
     var body: some View {
         PlayerOptionsMenuButton(
             kind: section?.kind ?? (settingsOnly ? .settings : .playbackOptions),
+            valueTitle: section == .speed ? PlayerMoreMenu.rateTitle(model.playbackSpeed, locale: locale) : nil,
             accessibilityIdentifier: identifier,
             makeMenu: {
                 let generation = presentation.generation
@@ -360,6 +399,7 @@ private struct PlayerNativeSectionMenu: View {
                 guarded.selectSubtitle = { if isCurrent() { actions.selectSubtitle($0) } }
                 guarded.setDialogueEnhancement = { if isCurrent() { actions.setDialogueEnhancement($0) } }
                 guarded.setSpeed = { if isCurrent() { actions.setSpeed($0) } }
+                guarded.setDolbyVisionFELConversion = { if isCurrent() { actions.setDolbyVisionFELConversion($0) } }
                 guarded.setVideoUpscaling = { if isCurrent() { actions.setVideoUpscaling($0) } }
                 guarded.request = { if isCurrent() { presentation.request($0, generation: generation) } }
                 return PlayerMoreMenu.make(
@@ -369,7 +409,10 @@ private struct PlayerNativeSectionMenu: View {
             },
             onPresentationChange: { owner, presented in presentation.setPresented(presented, owner: owner) }
         )
-        .frame(width: 44, height: 44)
+        .anchorOverflow(at: overflowOrigin)
+        .fixedSize(horizontal: section == .speed, vertical: false)
+        .frame(minWidth: 44, maxWidth: section == .speed ? nil : 44)
+        .frame(height: 44)
         .id(presentation.generation)
     }
 }

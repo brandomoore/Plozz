@@ -31,7 +31,7 @@ struct PlayerOptionsPanel: View {
     @Binding var playbackScreen: PlaybackScreen
     @Binding var audioScreen: AudioScreen
     let videoZoom: PlayerVideoZoomModel
-    let offersPlaybackSpeed: Bool
+    let additionalPlaybackRows: [PlayerOptionsRowSpec]
     /// Each menu's last measured height, remembered across opens so a reopen
     /// lays out at its settled size from the first frame (see `bodyHeight`).
     @Binding var heightCache: [Category: CGFloat]
@@ -64,8 +64,8 @@ struct PlayerOptionsPanel: View {
         offersDualSubtitles: Bool = true,
         playbackScreen: Binding<PlaybackScreen> = .constant(.options),
         videoZoom: PlayerVideoZoomModel? = nil,
-        offersPlaybackSpeed: Bool = true,
-        audioScreen: Binding<AudioScreen> = .constant(.options)
+        audioScreen: Binding<AudioScreen> = .constant(.options),
+        additionalPlaybackRows: [PlayerOptionsRowSpec] = []
     ) {
         self.category = category
         self.model = model
@@ -75,7 +75,7 @@ struct PlayerOptionsPanel: View {
         _playbackScreen = playbackScreen
         _audioScreen = audioScreen
         self.videoZoom = videoZoom ?? model.videoZoom
-        self.offersPlaybackSpeed = offersPlaybackSpeed
+        self.additionalPlaybackRows = additionalPlaybackRows
         _heightCache = heightCache
         _focus = focus
         self.close = close
@@ -164,7 +164,7 @@ struct PlayerOptionsPanel: View {
         Self.preferredFocus(
             for: category, subtitleScreen: subtitleScreen, model: model,
             offersDualSubtitles: offersDualSubtitles, playbackScreen: playbackScreen,
-            offersPlaybackSpeed: offersPlaybackSpeed, zoomMode: videoZoom.settings.mode, audioScreen: audioScreen
+            zoomMode: videoZoom.settings.mode, audioScreen: audioScreen, additionalPlaybackRows: additionalPlaybackRows
         )
     }
 
@@ -175,9 +175,9 @@ struct PlayerOptionsPanel: View {
         for panel: Category, subtitleScreen: SubtitleScreen, model: PlayerControlsModel,
         offersDualSubtitles: Bool = true,
         playbackScreen: PlaybackScreen = .options,
-        offersPlaybackSpeed: Bool = true,
         zoomMode: PlayerVideoZoom.Mode? = nil,
-        audioScreen: AudioScreen = .options
+        audioScreen: AudioScreen = .options,
+        additionalPlaybackRows: [PlayerOptionsRowSpec] = []
     ) -> FocusSlot? {
         let subtitleScreen = model.subtitleStyleAdjustable ? subtitleScreen : availableSubtitleScreen(
             subtitleScreen, model: model, offersDualSubtitles: offersDualSubtitles
@@ -215,7 +215,12 @@ struct PlayerOptionsPanel: View {
             case .styleOutline, .styleBackground, .styleFileFormatting:
                 return .row(0)
             }
+        case .speed:
+            return .row(PlaybackOptionsPane.speedSlot)
         case .playback:
+            if playbackScreen == .version {
+                return .row(selectedRowIndex(for: .version, model: model))
+            }
             if playbackScreen == .upscaling {
                 return .row(VideoUpscaling.allCases.firstIndex(of: model.upscaling.selection) ?? 0)
             }
@@ -223,12 +228,10 @@ struct PlayerOptionsPanel: View {
                 let mode = zoomMode ?? model.videoZoom.settings.mode
                 return .row(PlaybackOptionsPane.modeSlot(mode))
             }
-            if model.engineCapabilities.contains(.videoZoom) { return .row(PlaybackOptionsPane.zoomSlot) }
-            if offersPlaybackSpeed, model.engineCapabilities.contains(.playbackSpeed) {
-                return .row(PlaybackOptionsPane.speedSlot)
-            }
-            if model.upscaling.isAvailable { return .row(PlaybackOptionsPane.upscalingSlot) }
-            return nil
+            return PlaybackOptionsPane.rows(
+                model: model, zoom: model.videoZoom, actions: .init(),
+                additionalRows: additionalPlaybackRows, openScreen: { _ in }
+            ).first.map { .row($0.slot) }
         case .audio:
             if audioScreen == .sync { return .row(0) }
             #if os(tvOS)
@@ -260,7 +263,7 @@ struct PlayerOptionsPanel: View {
     /// Playback keeps its parent width in submenus so the Back control and localized
     /// title fit without wrapping or moving the menu's horizontal anchor.
     func panelWidth(for category: Category) -> CGFloat {
-        Self.width(for: category, subtitleScreen: subtitleScreen)
+        Self.width(for: category == .playback && playbackScreen == .version ? .version : category, subtitleScreen: subtitleScreen)
     }
 
     static func width(for category: Category, subtitleScreen: SubtitleScreen) -> CGFloat {
@@ -457,7 +460,7 @@ struct PlayerOptionsPanel: View {
 
     @ViewBuilder
     private func panelBodyContent(for category: Category) -> some View {
-        switch category {
+        switch category == .playback && playbackScreen == .version ? .version : category {
         case .version:
             VStack(alignment: .leading, spacing: 12) {
                 PlayerMenuRowStack(rows: Self.versionRows(model: model, locale: locale, close: close), palette: palette, focus: $focus)
@@ -470,11 +473,11 @@ struct PlayerOptionsPanel: View {
         case .subtitles: subtitleBody
         case .audio:
             audioBody
-        case .playback:
+        case .playback, .speed:
             PlaybackOptionsPane(
                 model: model, zoom: videoZoom, palette: palette, actions: actions,
                 screen: playbackScreen, focus: $focus,
-                offersPlaybackSpeed: offersPlaybackSpeed,
+                speedOnly: category == .speed, additionalRows: additionalPlaybackRows,
                 openScreen: openPlaybackScreen
             )
         case .sync: SyncPaneView(model: model, actions: actions, focus: $focus)
@@ -590,6 +593,7 @@ struct PlayerOptionsPanel: View {
             case .options: return category.title
             case .zoom: return "Zoom Mode"
             case .upscaling: return "Upscaling"
+            case .version: return Category.version.title
             }
         }
         guard category == .subtitles else { return category.title }
@@ -700,10 +704,20 @@ struct PlayerOptionsPanel: View {
     }
 
     private func openPlaybackScreen(_ screen: PlaybackScreen) {
+        let previous = playbackScreen
         withAnimation(.easeInOut(duration: 0.28)) {
             playbackScreen = screen
         }
-        restoreFocus(screen == .options ? .row(PlaybackOptionsPane.zoomSlot) : preferredFocus)
+        if screen == .options {
+            switch previous {
+            case .zoom: restoreFocus(.row(PlaybackOptionsPane.zoomSlot))
+            case .upscaling: restoreFocus(.row(PlaybackOptionsPane.upscalingSlot))
+            case .version: restoreFocus(.row(PlaybackOptionsPane.versionSlot))
+            case .options: restoreFocus(preferredFocus)
+            }
+        } else {
+            restoreFocus(preferredFocus)
+        }
     }
 
     private func openAudioScreen(_ screen: AudioScreen) {
@@ -958,8 +972,9 @@ struct PlayerOptionsPanel: View {
         case .audio:
             let rows = audioRows(model: model, actions: actions)
             return rows.first(where: { !$0.isToggle && $0.isSelected })?.id ?? rows.first?.id ?? 0
+        case .speed: return PlaybackOptionsPane.speedSlot
         case .playback:
-            return model.engineCapabilities.contains(.videoZoom) ? PlaybackOptionsPane.zoomSlot : PlaybackOptionsPane.speedSlot
+            return PlaybackOptionsPane.rows(model: model, zoom: model.videoZoom, actions: actions, openScreen: { _ in }).first?.slot ?? 0
         case .sync:
             return 0
         case .info, .cast, .chapters, .episodes, .playlist, .continueWatching:
