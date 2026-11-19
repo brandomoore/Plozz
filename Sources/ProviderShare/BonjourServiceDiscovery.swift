@@ -97,6 +97,25 @@ public final class BonjourServiceDiscovery: @unchecked Sendable {
         self.mapping = mapping
     }
 
+    public func discoverMediaShares(timeout: TimeInterval = 6) -> AsyncStream<DiscoveredNetworkService> {
+        AsyncStream { output in
+            let task = Task {
+                await withTaskGroup(of: Void.self) { group in
+                    for stream in [discover(timeout: timeout), WindowsShareDiscovery.discover()] {
+                        group.addTask {
+                            for await service in stream {
+                                guard !Task.isCancelled else { break }
+                                output.yield(service)
+                            }
+                        }
+                    }
+                }
+                output.finish()
+            }
+            output.onTermination = { _ in task.cancel() }
+        }
+    }
+
     /// Streams unique `DiscoveredNetworkService`s as they resolve, finishing
     /// after `timeout` seconds (or when the consumer stops iterating).
     public func discover(timeout: TimeInterval = 6) -> AsyncStream<DiscoveredNetworkService> {
@@ -292,6 +311,9 @@ public final class BonjourServiceDiscovery: @unchecked Sendable {
 /// Non-Network platforms get an inert discoverer so onboarding still compiles.
 public final class BonjourServiceDiscovery: @unchecked Sendable {
     public init(mapping: BonjourTransportMapping) {}
+    public func discoverMediaShares(timeout: TimeInterval = 6) -> AsyncStream<DiscoveredNetworkService> {
+        discover(timeout: timeout)
+    }
     public func discover(timeout: TimeInterval = 6) -> AsyncStream<DiscoveredNetworkService> {
         AsyncStream { $0.finish() }
     }
