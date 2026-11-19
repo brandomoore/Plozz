@@ -72,6 +72,25 @@ final class FrameASSArtworkTests: XCTestCase {
         XCTAssertEqual(store.frameASSInitialReadAnchor(at: 1_000), 1_000)
     }
 
+    func testLineArtDeliveryMapsAuthoredRegionsOntoTheUpscaledPicture() throws {
+        var plan = UpscalePlan(sourceWidth: 1920, sourceHeight: 1080, mlScale: nil,
+            mlOutputWidth: 3840, mlOutputHeight: 2160, targetWidth: 3840, targetHeight: 2160,
+            displayWidth: 3840, displayHeight: 2160, scaler: .lineArt)
+        XCTAssertTrue(plan.supportsFrameASS)
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: 20, height: 10, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let image = SubtitleImage(cgImage: try XCTUnwrap(ctx.makeImage()),
+            position: CGRect(x: 0.25, y: 0.125, width: 20.0 / 1920, height: 10.0 / 1080),
+            canvasSize: CGSize(width: 1920, height: 1080))
+        let layer = try XCTUnwrap(SubtitleFrameCompositor.regionOverlay([image], width: 3840, height: 2160, options: [:]))
+        XCTAssertEqual(layer.extent, CGRect(x: 960, y: 1870, width: 40, height: 20))
+        plan.scaler = .automatic
+        XCTAssertFalse(plan.supportsFrameASS)
+        plan.scaler = .lineArt
+        plan.targetHeight = 1600
+        XCTAssertFalse(plan.supportsFrameASS)
+    }
+
     func testUncertifiedPacketsAreNotAnAuthoredClearAndSelectionRebuildsArtwork() throws {
         let art = FrameASSArtwork()
         let header = """

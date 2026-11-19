@@ -1915,8 +1915,11 @@ builds keep the remote dependency and existing rendering paths.
 Admission uses the normal subtitle preference/series memory on the probed
 tracks, not a filename or launch flag. The current envelope is seekable SDR
 Matroska H.264 through 1080p30 with mono/stereo AAC, FLAC, Opus, Vorbis or MP3
-on all audio tracks. External output, disc/live/rendition playback, active video
-upscaling and spatial audio do not opt in. The fullscreen controller yields to the normal overlay for
+on all audio tracks. With exact 2× line-art upscaling, authored regions are
+composited onto the upscaler's output at the original frame timestamp. The
+upscaler and its quality policy are unchanged. Other upscale plans, external
+output, disc/live/rendition playback and spatial audio do not opt in.
+The fullscreen controller yields to the normal overlay for
 custom placement or opacity, secondary tracks, controls avoidance, zoom and
 nonzero timing offsets. Uncertified packet coverage is not a blank subtitle:
 the overlay remains responsible for that sample. Other platforms are unchanged.
