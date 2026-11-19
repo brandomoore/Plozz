@@ -216,7 +216,11 @@ Reduce Motion shows it immediately. Later enrichment and optional sections
 do not replay the entrance. If the logo is still loading, its space stays
 empty; the logo itself fades in when it arrives, without delaying Play.
 Row reopens can also reuse the title logo previously displayed for the same
-profile, source and compatible artwork lookup. A known schedule badge appears
+profile, source and compatible artwork lookup. Continue Watching also reuses a
+matching logo its landscape card has already displayed or prepared: a movie
+opens with its own logo, an episode with its parent show's. A sparse opening
+record can preview that scoped logo without starting a lookup; a conflicting
+source or provider ID cannot. A known schedule badge appears
 with a ready logo or text title. If the logo is late, the badge reserves its
 space but stays hidden until the fade finishes. Reduce Motion skips that wait.
 

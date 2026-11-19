@@ -329,7 +329,7 @@ struct DetailLogoVisit: Hashable {
     let subject: String
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     @Entry var detailLogoVisit: DetailLogoVisit? = nil
 }
 
@@ -385,8 +385,8 @@ enum HeroLogoMemo {
                   prior.year == nil || query.year == prior.year,
                   query.seasonNumber == prior.seasonNumber,
                   query.episodeNumber == prior.episodeNumber else { return false }
-            let ids = query.providerIDs.normalizedProviderIDs
-            return prior.providerIDs.normalizedProviderIDs.allSatisfy { ids[$0.key] == $0.value }
+            let ids = query.logoSubjectIDs
+            return prior.logoSubjectIDs.allSatisfy { ids[$0.key] == $0.value }
         }
     }
 
@@ -419,10 +419,18 @@ enum HeroLogoMemo {
 
     static func value(for key: Key) -> ProcessedLogo? { entries[key]?.logo }
 
-    fileprivate static func replay(for key: Key, visit: DetailLogoVisit?) -> ProcessedLogo? {
+    fileprivate static func replay(for key: Key, visit: DetailLogoVisit?, provisional: Bool = false) -> ProcessedLogo? {
         guard let visit else { return nil }
         if let entry = entries[key], entry.visit == visit { return entry.logo }
         for previous in order.reversed() where entries[previous]?.visit == visit && key.canRetainImage(from: previous) {
+            return entries[previous]?.logo
+        }
+        // A row's opening record can be a sparse version of the last verified show.
+        // Preview only; never adopt the richer result under the incomplete lookup.
+        if provisional, key.fallback?.sourceAccountID != nil,
+           let previous = order.last(where: { entries[$0]?.visit == visit }),
+           key.references.isEmpty || key.references == previous.references,
+           previous.canRetainImage(from: key) {
             return entries[previous]?.logo
         }
         return nil
@@ -488,7 +496,7 @@ private struct LoadedLogo<TextFallback: View>: View {
         let key = taskKey
         let retained = resolvedKey.map { key.canRetainImage(from: $0) } == true ? image : nil
         let verified = sourceReady ? (retained ?? openingLogo ?? HeroLogoMemo.value(for: key)) : openingLogo
-        let cached = verified ?? HeroLogoMemo.replay(for: key, visit: detailVisit)
+        let cached = verified ?? HeroLogoMemo.replay(for: key, visit: detailVisit, provisional: !sourceReady)
         let shown = cached.map { processed in
             guard let displayedArtworkID else { return processed }
             return HeroLogoAnalysis.refine(processed, backgroundSample: displayedArtwork?.sample(for: displayedArtworkID))
@@ -935,6 +943,14 @@ public enum HeroLogoPreloader {
         references: [ArtworkReference], fallback: HeroLogoFallback?,
         policy: ArtworkPresentationPolicy
     ) async {
+        await prepare(references: references, fallback: fallback, policy: policy, visit: nil)
+    }
+
+    @MainActor
+    static func prepare(
+        references: [ArtworkReference], fallback: HeroLogoFallback?,
+        policy: ArtworkPresentationPolicy, visit: DetailLogoVisit?
+    ) async {
         let policy = policy.forPlacement(.logo)
         let fallback = fallback?.localized(to: policy.logoLanguage)
         let key = HeroLogoMemo.key(
@@ -942,13 +958,17 @@ public enum HeroLogoPreloader {
             prefersOnlineArtwork: policy.prefersOnlineArtwork,
             providerPolicyIdentity: policy.identity
         )
-        guard HeroLogoMemo.value(for: key) == nil, !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return }
+        if let existing = HeroLogoMemo.value(for: key) {
+            if let visit { HeroLogoMemo.store(existing, for: key, visit: visit) }
+            return
+        }
         guard let prepared = await loadPreparedHeroLogo(
             references: references, asyncFallbackURL: fallback?.resolve,
             priority: .background, prefersOnlineArtwork: policy.prefersOnlineArtwork,
             background: true
         ), !Task.isCancelled else { return }
-        HeroLogoMemo.store(HeroLogoAnalysis.analyze(prepared, backgroundSample: nil), for: key)
+        HeroLogoMemo.store(HeroLogoAnalysis.analyze(prepared, backgroundSample: nil), for: key, visit: visit)
     }
 }
 

@@ -603,6 +603,73 @@ final class HeroLogoContinuityTests: XCTestCase {
         XCTAssertFalse(isolated.hasWhite)
     }
 
+    func testContinueWatchingLogoIsOpaqueWhenMovieOrParentShowOpens() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let app = PlozziOSAppModel(accountStore: AccountStore(secureStore: InMemorySecureStore()))
+        for kind in [MediaItemKind.movie, .episode] {
+            let logo = try fixture.seedLogo()
+            let item = MediaItem(
+                id: UUID().uuidString, title: "Watching", kind: kind,
+                parentTitle: kind == .episode ? "The show" : nil,
+                seriesID: kind == .episode ? UUID().uuidString : nil, logoURL: logo,
+                providerIDs: kind == .episode ? ["SeriesTmdb": "123", "Tmdb": "456"] : [:],
+                sourceAccountID: "server"
+            )
+            fixture.host.rootView = AnyView(PlozziOSHomeMediaRail(
+                title: Text("Continue Watching"), items: [item], style: .landscape, appModel: app,
+                showsResumeChip: true, prefetchesArtwork: true, showsSeriesArtwork: true
+            )
+            .environment(app)
+            .environment(\.plozzArtworkArea, .continueWatching)
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.plozzMetrics, .touch(density: .standard, dynamicTypeSize: .large)))
+            try await waitUntil { try fixture.hasRedLogo() }
+            let target = PlozziOSHomeMediaCard.resolvedItem(item, appModel: app, playsDirectly: false)
+            let root = target.seriesID.map {
+                SeriesEpisodeEntry.seriesSeed(from: target, seriesID: $0, sourceAccountID: target.sourceAccountID)
+            } ?? target
+            if kind == .episode {
+                XCTAssertEqual(root.providerID(.tmdb), "123", "The series seed must never adopt the episode's own ID.")
+            }
+            func mount(_ item: MediaItem, scope: String, verified: Bool = false) {
+                fixture.host.rootView = AnyView(DetailMetadataFixture(
+                    state: SubjectState(item: item), root: item, style: .compactPortrait,
+                    fallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
+                    artworkSettings: app.settings.cardStyle.artwork, schedule: "New episode every Friday"
+                )
+                .environment(\.plozzArtworkArea, .details)
+                .environment(\.plozzArtworkProviders, app.metadataProviderSettingsModel.settings)
+                .environment(\.plozzArtworkSourceReady, verified)
+                .detailHeroLogoVisit(scope: scope, subject: item.stablePresentationID))
+            }
+            mount(root, scope: app.detailArtworkScopeID)
+            let first = try fixture.titleSample(afterScreenUpdates: true)
+            XCTAssertGreaterThan(first.red, 245, "\(kind): a warm logo must not wait for live detail")
+            XCTAssertTrue(first.hasWhite, "\(kind): a known schedule belongs on the same frame")
+            mount(root, scope: "different profile")
+            XCTAssertLessThan(try fixture.titleSample(afterScreenUpdates: true).red, 10)
+            if kind == .episode {
+                var confirmed = root
+                confirmed.providerIDs = ["Tmdb": "123"]
+                confirmed.productionYear = 2022
+                mount(confirmed, scope: app.detailArtworkScopeID, verified: true)
+                XCTAssertGreaterThan(try fixture.titleSample(afterScreenUpdates: true).red, 245,
+                                     "Verifying the same series must not replay the entrance.")
+                var sparse = root
+                sparse.providerIDs = [:]
+                mount(sparse, scope: app.detailArtworkScopeID)
+                XCTAssertGreaterThan(try fixture.titleSample(afterScreenUpdates: true).red, 245,
+                                     "An opening episode may know the server's show ID but no external IDs.")
+                var different = confirmed
+                different.providerIDs = ["Tmdb": "789"]
+                mount(different, scope: app.detailArtworkScopeID)
+                XCTAssertLessThan(try fixture.titleSample(afterScreenUpdates: true).red, 10,
+                                  "A corrected series identity must not replay a conflicting card's logo.")
+            }
+        }
+    }
+
     func testLateDetailWordmarkFadesUnlessMotionIsReduced() async throws {
         for reduced in [false, true] {
             let fixture = try Fixture()

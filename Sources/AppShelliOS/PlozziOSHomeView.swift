@@ -3474,6 +3474,7 @@ struct PlozziOSHomeMediaRail: View {
     #endif
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.locale) private var locale
 
     let title: Text
     let items: [MediaItem]
@@ -3596,6 +3597,7 @@ struct PlozziOSHomeMediaRail: View {
             seriesArtworkPrefetch.cancelAll()
         }
         .environment(\.plozzCardCaptionView, .home)
+        .environment(\.continueWatchingLogoScope, detailLogoScope)
         .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
         .environment(\.plozzArtworkSettings, appModel.settings.cardStyle.artwork)
         .environment(\.plozzArtworkProviders, appModel.metadataProviderSettingsModel.settings)
@@ -3616,6 +3618,7 @@ struct PlozziOSHomeMediaRail: View {
         // about to be swiped to. Per-card `.onAppear` still fills late enrichment.
         return PlozziOSArtworkPrefetchIdentity(
             itemIDs: items.map(\.stablePresentationID),
+            logoScope: detailLogoScope, language: locale.identifier,
             isPortrait: style == .poster,
             showsSeriesArtwork: showsSeriesArtwork,
             spoilers: appModel.settings.spoilers.settings,
@@ -3631,6 +3634,10 @@ struct PlozziOSHomeMediaRail: View {
         prefetchedPreviewIDs.removeAll(keepingCapacity: true)
         lastArtworkPrefetchIndex = nil
         artworkPrefetchDirection = 1
+    }
+
+    private var detailLogoScope: String? {
+        prefetchesArtwork && showsSeriesArtwork && style == .landscape ? appModel.detailArtworkScopeID : nil
     }
 
     /// Mirrors tvOS rail look-ahead. UIKit's lazy stack only creates nearby cards;
@@ -3665,9 +3672,10 @@ struct PlozziOSHomeMediaRail: View {
             lookahead: MediaRowPrefetchWindow.fullArtworkLookahead
         )
         if showsSeriesArtwork {
+            let scope = detailLogoScope
             seriesArtworkPrefetch.update(fullIndices.map {
                 let source = seriesArtworkSource(for: items[$0])
-                return .init(id: source.identity) { await source.prepare() }
+                return .init(id: source.identity) { await source.prepare(detailLogoScope: scope) }
             })
             return
         }
@@ -3733,7 +3741,8 @@ struct PlozziOSHomeMediaRail: View {
             policy: .init(
                 area: .continueWatching,
                 settings: appModel.settings.cardStyle.artwork,
-                providers: appModel.metadataProviderSettingsModel.settings
+                providers: appModel.metadataProviderSettingsModel.settings,
+                logoLanguage: locale.identifier
             )
         )
     }
@@ -3750,6 +3759,8 @@ struct PlozziOSHomeMediaRail: View {
 
 private struct PlozziOSArtworkPrefetchIdentity: Equatable {
     let itemIDs: [String]
+    let logoScope: String?
+    let language: String
     let isPortrait: Bool
     let showsSeriesArtwork: Bool
     let spoilers: SpoilerSettings

@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import MetadataKit
 
 /// Pure, UI-independent helpers for the "series resume" experience: choosing the
 /// episode (or season) the user should jump back into, and formatting resume
@@ -218,6 +219,9 @@ public enum SeriesEpisodeEntry {
             sourceAccountID: sourceAccountID
         )
         if child.kind == .season { series.seasonID = child.id }
+        if child.seriesID == seriesID, child.sourceAccountID == sourceAccountID {
+            series.providerIDs = MetadataQuery.parentSeriesIDs(in: child.providerIDs)
+        }
         if let synopsis = child.seriesSynopsis,
            synopsis.matches(child), synopsis.seriesID == seriesID,
            synopsis.sourceAccountID == sourceAccountID {
