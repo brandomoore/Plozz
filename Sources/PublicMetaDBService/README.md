@@ -26,6 +26,18 @@ control, unselected share control and unrelated tracker records stayed unchanged
 The tracker and local test state were restored. This verifies movie resume
 sync on these shares, not episode delivery or switching between tracker accounts.
 
+On `11cc113aba23`, muted playback of *Pioneer One* S1E1, “Earthfall” (TMDB
+series `33050`, episode `773844`), reported 1,194.182 seconds to the real
+PublicMetaDB account. After 927 seconds in the background, the normal iPhone
+app returned to the foreground. An independent read confirmed that the selected
+WebDAV share advanced from 970.164 to 1,194.182 seconds without **Sync now**.
+The unselected copy stayed at zero; S1E2, the Jellyfin control, 40 unrelated
+watches and four unrelated resumes were unchanged. Before the destination had
+a measured runtime, Plozz withheld the import. The run used a temporary Apache
+WebDAV server with real episode files, not the existing NAS. Test state was
+restored. This verifies episode resume, not episode completion or switching
+between two tracker accounts.
+
 On `f6af81551`, the same app played *Sintel* muted from real SMB and WebDAV
 shares. Both players measured 888.042 seconds. Independent reads confirmed
 that each share retained its own file revision and started with no resume
@@ -64,7 +76,7 @@ file-revision check; it is not a full pass for this candidate.
   Independent account reads through 19:26 UTC still found it; the unrelated records
   and managed-server control were unchanged. The separate *Sintel* trial
   above did not depend on deleting that play.
-- The inspected share episodes did not establish exact episode identity. A
+- The episodes inspected on the existing NAS did not establish exact episode identity. A
   matching episode on Emby and Jellyfin is a control, not a share-sync pass.
   Switching between two distinct dedicated tracker accounts remains untested.
 
