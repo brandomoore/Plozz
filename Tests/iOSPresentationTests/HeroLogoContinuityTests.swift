@@ -204,6 +204,44 @@ final class HeroLogoContinuityTests: XCTestCase {
                           "Another profile cannot borrow this image.")
     }
 
+    func testRowPreparesVisitedArtworkFromDiskBeforeSourceVerification() async throws {
+        let fixture = try Fixture(size: CGSize(width: 390, height: 844))
+        defer { fixture.close() }
+        let state = ArtworkState(url: nil, sourceReady: false)
+        state.item.sourceAccountID = "library"
+        state.item.providerIDs = ["Tmdb": "111"]
+        var saved = state.item
+        saved.posterURL = try fixture.seedArtwork()
+        saved.backdropURL = saved.posterURL
+        saved.logoURL = try fixture.seedLogo()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let policy = ArtworkPresentationPolicy(area: .details, settings: ArtworkSettings(preference: .library))
+        let revisit = PlozziOSDetailArtworkRevisit(scope: "viewer", language: "en", style: .compactPortrait, policy: policy)
+        let key = ItemDetailViewModel.snapshotKey(itemID: saved.id, accountID: saved.sourceAccountID, language: "en")
+        await DetailSnapshotCache(directory: directory, scope: "viewer").store(.init(item: saved, children: []), for: key)
+        let replay = ArtworkBitmapReplay()
+        func firstFrame() throws -> Double {
+            fixture.host.rootView = AnyView(ArtworkFixture(state: state).environment(\.plozziOSDetailArtworkReplay, replay))
+            return try fixture.artworkSample(afterScreenUpdates: true).values[1]
+        }
+        let reader = DetailSnapshotCache(directory: directory, scope: "viewer")
+        var conflicting = state.item
+        conflicting.providerIDs = ["Tmdb": "222"]
+        await revisit.prepare(for: conflicting, snapshots: reader, replay: replay)
+        XCTAssertLessThan(try firstFrame(), 10)
+        fixture.host.rootView = AnyView(Color.black)
+        await revisit.prepare(for: state.item, snapshots: reader, replay: replay)
+        XCTAssertGreaterThan(try firstFrame(), 230)
+
+        fixture.host.rootView = AnyView(DetailMetadataFixture(
+            state: SubjectState(item: state.item), root: state.item, style: .compactPortrait,
+            fallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: state.item)
+        ).environment(\.plozzArtworkSourceReady, false).environment(\.plozzArtworkArea, .details)
+            .detailHeroLogoVisit(scope: revisit.scope, subject: state.item.stablePresentationID))
+        XCTAssertGreaterThan(try fixture.titleSample(afterScreenUpdates: true).red, 245)
+    }
+
     func testArtworkArrivingWhileCoveredIsImmediatelyOpaqueOnReturn() async throws {
         let fixture = try Fixture(defersAppearance: true, size: CGSize(width: 390, height: 844))
         defer { fixture.close() }

@@ -3511,7 +3511,16 @@ struct PlozziOSHomeMediaRail: View {
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSMediaSection(
+        let revisit = PlozziOSDetailArtworkRevisit(
+            scope: appModel.detailArtworkScopeID,
+            language: locale.identifier,
+            style: horizontalSizeClass == .compact ? .compactPortrait : .landscape,
+            policy: ArtworkPresentationPolicy(
+                area: .details, settings: appModel.settings.cardStyle.artwork,
+                providers: appModel.metadataProviderSettingsModel.settings, logoLanguage: locale.identifier
+            )
+        )
+        return PlozziOSMediaSection(
             title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0,
             reservesBrowseSpace: true, onBrowse: onBrowse
         ) {
@@ -3544,7 +3553,8 @@ struct PlozziOSHomeMediaRail: View {
                             isPendingRemoval: pendingRemovalIDs.contains(
                                 item.stablePresentationID
                             ),
-                            provider: provider(for: item)
+                            provider: provider(for: item),
+                            revisit: revisit
                         )
                         .frame(
                             width: metrics.cardSlotWidth(
@@ -3799,6 +3809,7 @@ struct PlozziOSHomeMediaCard: View {
     var showsSeriesArtwork: Bool = false
     var isPendingRemoval: Bool = false
     let provider: (any MediaProvider)?
+    var revisit: PlozziOSDetailArtworkRevisit? = nil
     @State private var downloadRecord: DownloadedMediaRecord?
     @Environment(\.plozziOSRailPlay) private var railPlay
 
@@ -3827,6 +3838,11 @@ struct PlozziOSHomeMediaCard: View {
                     card
                 }
                 .buttonStyle(.plain)
+                .task(id: revisit, priority: .utility) {
+                    guard let revisit, revisit.scope == appModel.detailArtworkScopeID else { return }
+                    await revisit.prepare(for: item, snapshots: appModel.detailSnapshotCache,
+                                          replay: appModel.detailArtworkReplay)
+                }
             } else {
                 card
             }

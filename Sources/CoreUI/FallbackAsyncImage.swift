@@ -474,6 +474,26 @@ public final class ArtworkBitmapReplay {
 
     public init() {}
 
+    /// Restore the detail preview under the same identity the source gate reads.
+    /// A visible page that finishes first always keeps its own selection.
+    public func preparePreview(
+        pinIdentity: String, references: [ArtworkReference], policy: ArtworkPresentationPolicy,
+        prefersLandscape: Bool, maxAspectRatio: CGFloat, asyncFallbackURL: @escaping @Sendable () async -> URL?
+    ) async {
+        let identity = ArtworkDisplayIdentity(
+            subject: pinIdentity, policy: policy.identity, references: references,
+            variant: .heroBackdrop, maxAspectRatio: maxAspectRatio, prefersLandscape: prefersLandscape
+        )
+        guard image(for: identity) == nil,
+              let preview = await ArtworkFirstPaintResolver.resolve(
+                references: references, variant: .heroPreview, maxAspectRatio: maxAspectRatio,
+                prefersLandscape: prefersLandscape, asyncOnlineURL: asyncFallbackURL,
+                prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
+              ), !Task.isCancelled, !prefersLandscape || preview.isLandscape,
+              image(for: identity) == nil else { return }
+        remember(preview.image, for: identity)
+    }
+
     fileprivate func image(for identity: ArtworkDisplayIdentity) -> UIImage? {
         entries[identity]?.image
     }

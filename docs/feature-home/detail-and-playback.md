@@ -210,6 +210,12 @@ painted on its previous visit, while that bitmap is resident. It does not need
 to wait for live source verification or substitute the row's poster. The replay
 is scoped to the current profile, server access, title, artwork policy and shape;
 ordinary row browsing does not download every title's full-size hero.
+After a relaunch, a visible Home row card that opens detail checks for a
+previous visit in the current profile, server and language. On a match it
+prepares the detail-size preview and wordmark before the tap, using the
+existing artwork caches. An episode card prepares its parent show's hero.
+Navigation never waits for this work; if the card is tapped before the
+artwork is ready, the normal late-artwork reveal still applies.
 If the page opens without a usable bitmap, the first artwork and its reflections
 fade together over 350 ms, starting no earlier than the end of navigation.
 Reduce Motion shows it immediately. Later enrichment and optional sections

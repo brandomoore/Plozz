@@ -27,7 +27,9 @@ struct ContinueWatchingDetailsFixture: View {
         // UserDefaults suite per launch, so warm restarts never reproduced the phone's
         // persisted-store first paint. Fixed suite + persistent stores mirror the real wiring.
         let testsHorizontalBack = ProcessInfo.processInfo.arguments.contains("--back-interaction")
-        let suite = testsHorizontalBack ? "HorizontalHomeBack" : "ContinueWatchingDetails"
+        let revisitID = ProcessInfo.processInfo.environment["PLOZZ_TEST_REVISIT_ID"]
+        let suite = revisitID.map { "DetailArtworkRevisit.\($0)" }
+            ?? (testsHorizontalBack ? "HorizontalHomeBack" : "ContinueWatchingDetails")
         let defaults = UserDefaults(suiteName: suite)!
         if testsHorizontalBack {
             // A previous launch's additional persona would require the launch
@@ -37,7 +39,7 @@ struct ContinueWatchingDetailsFixture: View {
         let homeLayoutStore = HomeLayoutStore(defaults: defaults, namespace: "fixture")
         let homeContentStore = HomeContentStore(namespace: "fixture")
         let model = PlozziOSAppModel(accountStore: accounts, profileStore: ProfileStore(defaults: defaults))
-        let profile = model.profiles.add(name: "Details", isAwaitingSetup: false)
+        let profile = revisitID != nil ? model.profiles.activeProfile : model.profiles.add(name: "Details", isAwaitingSetup: false)
         model.profiles.select(profile.id)
         model.refreshActiveProfileSettings()
         let provider = ContinueWatchingDetailsProvider(
@@ -64,6 +66,13 @@ struct ContinueWatchingDetailsFixture: View {
         model.settings.heroBackground.settings.detailMode = .off
         model.settings.spoilers.settings = .default
         model.settings.cardStyle.captions = .init(preference: .show)
+        if revisitID != nil {
+            model.settings.cardStyle.artwork = ArtworkSettings(preference: .library)
+            if ProcessInfo.processInfo.arguments.contains("--seed-revisit-bytes") {
+                ContinueWatchingDetailsProvider.prepareArtwork(url: ContinueWatchingDetailsProvider.revisitURL("backdrop"))
+                ContinueWatchingDetailsProvider.prepareArtwork(url: ContinueWatchingDetailsProvider.revisitURL("logo"), isLogo: true)
+            }
+        }
         model.settings.homeVisibility.useRowDefaults(.combined)
         if ProcessInfo.processInfo.arguments.contains("--browse-library-movies") {
             model.settings.homeVisibility.useRowDefaults(.provider)
@@ -202,22 +211,28 @@ private struct ContinueWatchingDetailsProvider: MediaProvider, SeriesResumeProvi
     }
     private static let artworkURL = URL(string: "https://continue-details.example.invalid/artwork.png")!
 
-    @MainActor static func prepareArtwork() {
-        let size = CGSize(width: 600, height: 900)
+    static func revisitURL(_ name: String) -> URL {
+        artworkURL.deletingLastPathComponent()
+            .appendingPathComponent(ProcessInfo.processInfo.environment["PLOZZ_TEST_REVISIT_ID"]!)
+            .appendingPathComponent("\(name).png")
+    }
+
+    @MainActor static func prepareArtwork(url: URL = artworkURL, isLogo: Bool = false) {
+        let size = isLogo ? CGSize(width: 240, height: 80) : CGSize(width: 600, height: 900)
         let image = UIGraphicsImageRenderer(size: size).image { context in
-            UIColor.systemGreen.setFill()
-            context.fill(CGRect(origin: .zero, size: size))
+            (isLogo ? UIColor.red : UIColor.green).setFill()
+            context.fill(CGRect(origin: .zero, size: size).insetBy(dx: isLogo ? 12 : 0, dy: isLogo ? 8 : 0))
         }
         guard let data = image.pngData(),
               let cache = ArtworkSession.shared.configuration.urlCache,
               let response = HTTPURLResponse(
-                url: artworkURL, statusCode: 200, httpVersion: nil,
+                url: url, statusCode: 200, httpVersion: nil,
                 headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
               ) else {
             fatalError("Could not prepare Films fixture artwork")
         }
         cache.storeCachedResponse(
-            CachedURLResponse(response: response, data: data), for: URLRequest(url: artworkURL)
+            CachedURLResponse(response: response, data: data), for: URLRequest(url: url)
         )
     }
     var session: UserSession {
@@ -334,6 +349,12 @@ private struct ContinueWatchingDetailsProvider: MediaProvider, SeriesResumeProvi
             item = .init(id: id, title: "Continuing movie", kind: .movie)
             item.resumePosition = 600
             item.overview = "Movie-specific synopsis."
+        case "browse-0" where ProcessInfo.processInfo.environment["PLOZZ_TEST_REVISIT_ID"] != nil:
+            item = browseMovie(0)
+            item.posterURL = Self.revisitURL("backdrop")
+            item.backdropURL = item.posterURL
+            item.logoURL = Self.revisitURL("logo")
+            item.overview = "Revisited movie synopsis."
         case "series":
             item = .init(id: id, title: "Fixture show", kind: .series)
             item.overview = ProcessInfo.processInfo.arguments.contains("--detail-route-parity")

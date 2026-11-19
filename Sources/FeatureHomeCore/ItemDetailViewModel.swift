@@ -656,8 +656,13 @@ public final class ItemDetailViewModel {
     }
 
     private func snapshotKey(for itemID: String) -> String {
-        let key = "\(activeSourceAccountID ?? "_")|\(itemID)"
-        return metadataLanguage == "en" ? key : "\(key)|text-language-v2:\(metadataLanguage)"
+        Self.snapshotKey(itemID: itemID, accountID: activeSourceAccountID, language: metadataLanguage)
+    }
+
+    public nonisolated static func snapshotKey(itemID: String, accountID: String?, language: String) -> String {
+        let key = "\(accountID ?? "_")|\(itemID)"
+        let language = Locale.canonicalLanguageIdentifier(from: language)
+        return language == "en" ? key : "\(key)|text-language-v2:\(language)"
     }
 
     public init(

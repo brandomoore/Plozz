@@ -13,6 +13,10 @@ import UIKit
 
 /// Portrait selection is independent of when the separate title logo resolves.
 enum PlozziOSHeroArtworkFallback {
+    static func detailIdentity(_ presentation: HeroPresentation, style: HeroArtworkStyle) -> String {
+        cacheIdentity("detail:\(presentation.artworkIdentity)", style: style)
+    }
+
     static func cacheIdentity(_ identity: String, style: HeroArtworkStyle) -> String {
         style == .compactPortrait ? "\(identity)|portrait-hero-v1" : identity
     }
@@ -34,6 +38,50 @@ enum PlozziOSHeroArtworkFallback {
     ) -> [ArtworkPlacement] {
         let backdrop: ArtworkPlacement = surfaceRole == .home ? .homeHero : .detailBackdrop
         return [backdrop, .poster]
+    }
+}
+
+struct PlozziOSDetailArtworkRevisit: Equatable {
+    let scope: String
+    let language: String
+    let style: HeroArtworkStyle
+    let policy: ArtworkPresentationPolicy
+    private static let limiter = ConcurrencyLimiter(limit: 2)
+
+    @MainActor
+    func prepare(for card: MediaItem, snapshots: DetailSnapshotCache, replay: ArtworkBitmapReplay) async {
+        let subject: MediaItem
+        if (card.kind == .episode || card.kind == .season), !card.isNotInLibraryDiscovery, let seriesID = card.seriesID {
+            subject = SeriesEpisodeEntry.seriesSeed(from: card, seriesID: seriesID, sourceAccountID: card.sourceAccountID)
+        } else {
+            guard card.kind == .movie || card.kind == .series else { return }
+            subject = card
+        }
+        let key = ItemDetailViewModel.snapshotKey(itemID: subject.id, accountID: subject.sourceAccountID, language: language)
+        _ = await Self.limiter.runUnlessCancelled { @MainActor in
+            guard let item = await snapshots.artworkItem(for: key), !Task.isCancelled,
+                  item.id == subject.id, item.sourceAccountID == subject.sourceAccountID,
+                  item.kind == subject.kind, item.stablePresentationID == subject.stablePresentationID,
+                  !ProviderIDNamespace.allCases.contains(where: {
+                      guard let id = subject.providerIDs.providerID($0),
+                            let saved = item.providerIDs.providerID($0) else { return false }
+                      return id != saved
+                  }) else { return }
+            let presentation = HeroPresentation(item: item, artworkStyle: style, surface: .detail)
+            async let backdrop: Void = replay.preparePreview(
+                pinIdentity: PlozziOSHeroArtworkFallback.detailIdentity(presentation, style: style),
+                references: presentation.artworkReferences(settings: policy.settings, in: .details),
+                policy: policy.forPlacement(presentation.artworkPlacement), prefersLandscape: style == .landscape,
+                maxAspectRatio: 3, asyncFallbackURL: {
+                    await PlozziOSHeroArtworkFallback.resolve(for: item, style: style, surfaceRole: .detail)
+                }
+            )
+            await HeroLogoPreloader.prepare(
+                references: presentation.logoReferences, fallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: item),
+                policy: policy, scope: scope, subject: item.stablePresentationID
+            )
+            await backdrop
+        }
     }
 }
 
@@ -1258,9 +1306,7 @@ private struct PlozziOSDetailHeroArtwork<Content: View>: View {
                     frozenReferences = references
                 }
             },
-            pinIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
-                "detail:\(presentation.artworkIdentity)", style: style
-            ),
+            pinIdentity: PlozziOSHeroArtworkFallback.detailIdentity(presentation, style: style),
             sharedResolutionIdentity: PlozziOSHeroArtworkFallback.cacheIdentity(
                 sharedResolutionIdentity, style: style
             )

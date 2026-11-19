@@ -44,6 +44,45 @@ final class ContinueWatchingDetailsInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Movie-specific synopsis."].waitForExistence(timeout: 10), app.debugDescription)
     }
 
+    func testPreviouslyOpenedMoviesRowRestoresArtworkAfterTermination() throws {
+        app.launchEnvironment["PLOZZ_TEST_REVISIT_ID"] = UUID().uuidString
+        for seed in [true, false] {
+            launch(["--browse-movies"] + (seed ? ["--seed-revisit-bytes"] : []))
+            openCard("Browse movie 0")
+            XCTAssertTrue(app.staticTexts["Revisited movie synopsis."].waitForExistence(timeout: 10))
+            let rendered = XCTestExpectation(description: "Green detail backdrop and red wordmark")
+            let end = Date().addingTimeInterval(6)
+            repeat {
+                let screenshot = app.screenshot()
+                let image = try XCTUnwrap(screenshot.image.cgImage)
+                var bytes = [UInt8](repeating: 0, count: 64 * 128 * 4)
+                let counts = try bytes.withUnsafeMutableBytes { buffer -> (green: Int, red: Int) in
+                    let context = try XCTUnwrap(CGContext(
+                        data: buffer.baseAddress, width: 64, height: 128, bitsPerComponent: 8, bytesPerRow: 256,
+                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+                    ))
+                    context.draw(image, in: CGRect(x: 0, y: 0, width: 64, height: 128))
+                    var green = 0, red = 0
+                    for i in stride(from: 0, to: buffer.count, by: 4) {
+                        if buffer[i + 1] > 110 && buffer[i] < 55 && buffer[i + 2] < 55 { green += 1 }
+                        if buffer[i] > 130 && buffer[i + 1] < 60 && buffer[i + 2] < 60 { red += 1 }
+                    }
+                    return (green, red)
+                }
+                if counts.green > 300 && counts.red > 12 {
+                    let attachment = XCTAttachment(screenshot: screenshot)
+                    attachment.name = seed ? "first-visit" : "fresh-process-reopen"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                    rendered.fulfill()
+                    break
+                }
+            } while Date() < end
+            XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 0), .completed)
+            app.terminate()
+        }
+    }
+
     /// Tapping the same card again after backing out must still open it. A
     /// NavigationLink kept its presented/highlighted state on the source card in
     /// some stacks, leaving that one card inert until a different link activated.

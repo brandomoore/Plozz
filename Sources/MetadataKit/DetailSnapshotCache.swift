@@ -226,6 +226,27 @@ public final class DetailSnapshotCache: Sendable {
         }
     }
 
+    /// Browsing a Home row is not a detail visit. Read only the title, without
+    /// decoding the episode lists or extending the snapshot's LRU lifetime.
+    public func artworkItem(for key: String) async -> MediaItem? {
+        struct Header: Decodable {
+            let item: MediaItem
+            let savedAt: Date
+        }
+        return await withCheckedContinuation { continuation in
+            ioQueue.async {
+                guard let url = self.fileURL(for: key),
+                      let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+                      let header = try? JSONDecoder().decode(Header.self, from: data),
+                      Date().timeIntervalSince(header.savedAt) < self.maxAge else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: header.item)
+            }
+        }
+    }
+
     private func readSnapshot(for key: String) -> Snapshot? {
         guard let url = fileURL(for: key),
               let data = try? Data(contentsOf: url),

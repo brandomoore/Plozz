@@ -962,6 +962,15 @@ public enum HeroLogoPreloader {
     }
 
     @MainActor
+    public static func prepare(
+        references: [ArtworkReference], fallback: HeroLogoFallback?,
+        policy: ArtworkPresentationPolicy, scope: String, subject: String
+    ) async {
+        await prepare(references: references, fallback: fallback, policy: policy,
+                      visit: DetailLogoVisit(scope: scope, subject: subject))
+    }
+
+    @MainActor
     static func prepare(
         references: [ArtworkReference], fallback: HeroLogoFallback?,
         policy: ArtworkPresentationPolicy, visit: DetailLogoVisit?
