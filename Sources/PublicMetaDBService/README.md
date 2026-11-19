@@ -8,6 +8,15 @@ list and showed the expected empty contents. Independent reads before and after
 found no change to watch or resume history. This verifies account access, not
 playback reporting or return sync.
 
+On `f6af81551`, the same app played *Sintel* muted from real SMB and WebDAV
+shares. Both players measured 888.042 seconds. Independent reads confirmed
+that each share retained its own file revision and started with no resume
+position. Both shares were selected for automatic sync. PublicMetaDB returned
+HTTP 403 on the independent client's first request to save progress; fresh
+reads confirmed no resume point was created. Removing SMB left WebDAV selected,
+but without a new tracker event neither delivery to both nor delivery to WebDAV
+alone was tested. The controls stayed unchanged and the test setup was restored.
+
 On the same source, Apple TV passed seven hosted account/catalog checks and
 four native remote-control pairing checks. These used fixtures. Both failures
 in the broader playback package run also reproduced with the same assertions
@@ -27,8 +36,8 @@ file-revision check; it is not a full pass for this candidate.
   after a destination is removed.
 - The tracker rejected cleanup of the single test play with HTTP 403.
   Independent account reads through 19:26 UTC still found it; the unrelated records
-  and managed-server control were unchanged. New tracker-write trials are
-  paused until that specific play is removed through an authorized path.
+  and managed-server control were unchanged. The separate *Sintel* trial
+  above did not depend on deleting that play.
 - The inspected share episodes did not establish exact episode identity. A
   matching episode on Emby and Jellyfin is a control, not a share-sync pass.
   Switching between two distinct dedicated tracker accounts remains untested.
