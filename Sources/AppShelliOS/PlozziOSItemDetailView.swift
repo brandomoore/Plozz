@@ -226,7 +226,7 @@ final class PlozziOSDetailScheduleReplay {
         let subject: String
         let scope: String
         let account: String?
-        let title: String
+        let title: String // l10n:content — provider-supplied series title
         let ids: [String: String]
         let record: SeriesScheduleRecord
     }
