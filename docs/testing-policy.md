@@ -550,9 +550,10 @@ On iOS, Settings can be hidden from the tab bar because page-header controls
 remain available. The default tvOS policy still keeps Settings visible.
 `NavigationStyleSettingsStoreTests` covers cross-platform persistence, the
 last-destination safeguard, and iPhone overflow labels when six tabs are enabled.
-On iPhone and compact iPad layouts, overflow uses four direct native tabs plus a
-Plozz More destination with themed shortcut rows. Overflow destinations share
-that tab's navigation stack; Settings opens its existing sheet directly.
+On compact layouts with overflow, UIKit's More list pushes the existing tab
+stacks. Check placement before selecting a row: Search should already use its
+subpage header, and the same placement should survive the push and return.
+Settings opens its existing sheet directly.
 Returning to More stops the hidden Live TV preview, and changing the enabled
 order re-resolves the current destination. Regular-width iPad tabs remain native.
 

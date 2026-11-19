@@ -683,6 +683,12 @@ final class SettingsTabDelegateTests: XCTestCase {
 
         XCTAssertLessThan(tabs.tabBar.items?.count ?? pages.count, pages.count)
         XCTAssertFalse((tabs.tabBar.items ?? []).contains { $0 === pages[destinationIndex].tabBarItem })
+        tabs.selectedViewController = more
+        controller.install()
+        await Task.yield()
+        let placement = overflow.destinationIndices
+        XCTAssertTrue(placement.contains(destinationIndex), "Use the subpage header before the row is tapped.")
+        XCTAssertFalse(placement.contains(0), "Direct tabs keep their full page headers.")
         tabs.selectedTab = tabs.tabs[destinationIndex]
         let deadline = Date().addingTimeInterval(2)
         while overflow.destinationIndex != destinationIndex, Date() < deadline {
@@ -691,6 +697,7 @@ final class SettingsTabDelegateTests: XCTestCase {
 
         XCTAssertTrue(more.isNavigationBarHidden, "The outer bar must not sit above the page's NavigationStack.")
         XCTAssertEqual(overflow.destinationIndex, destinationIndex)
+        XCTAssertEqual(overflow.destinationIndices, placement)
         XCTAssertTrue(more.topViewController === pages[destinationIndex], "Keep the original tab controller and its navigation state.")
         XCTAssertGreaterThan(original.willShowCount, 0)
         XCTAssertGreaterThan(original.didShowCount, 0)
@@ -704,6 +711,7 @@ final class SettingsTabDelegateTests: XCTestCase {
         XCTAssertTrue(more.topViewController === moreRoot)
         XCTAssertFalse(more.isNavigationBarHidden)
         XCTAssertNil(overflow.destinationIndex)
+        XCTAssertEqual(overflow.destinationIndices, placement, "Back must not change the header of the departing page.")
         controller.restore()
         XCTAssertTrue(more.delegate === original)
     }
@@ -724,6 +732,26 @@ final class SettingsTabDelegateTests: XCTestCase {
         controller.restore()
 
         XCTAssertFalse(more.isNavigationBarHidden)
+    }
+
+    func testLayoutDoesNotReverseAForwardMoreTransition() throws {
+        let root = UIViewController()
+        let tabs = UITabBarController()
+        let pages = (0..<12).map { _ in UIViewController() }
+        tabs.viewControllers = pages
+        root.addChild(tabs)
+        let more = tabs.moreNavigationController
+        let list = try XCTUnwrap(more.topViewController)
+        let controller = bridge(in: root)
+        controller.overflowNavigation = PlozziOSOverflowNavigation()
+        defer { controller.restore() }
+        controller.install()
+
+        controller.navigationController(more, willShow: pages[11], animated: true)
+        controller.install() // Layout still sees the outgoing list as the top controller.
+        XCTAssertTrue(more.isNavigationBarHidden, "Layout must not undo the animated bar change.")
+        controller.navigationController(more, didShow: list, animated: true)
+        XCTAssertFalse(more.isNavigationBarHidden, "Reconcile with the page UIKit actually settled on.")
     }
 
     func testOverlappingBridgesNeverForwardToEachOther() {

@@ -72,7 +72,8 @@ interactive Back does not scale the Search page into an inset background.
 The title/profile row collapses as search activates, moving that same field up
 and revealing a separate native Cancel button. Cancel clears the query and
 dismisses the keyboard; ending an empty search restores the title and profile.
-Native More navigation keeps its own Back/title row instead of duplicating it.
+When Search is in More, it uses the centered title beside Back from the start
+of the push. When Search is a direct tab, it keeps its large resting heading.
 Theme text colors keep it legible in light, dark, and black appearances. The native
 Settings navigation entry displays the active profile avatar. Search keeps a
 local avatar only when that navigation entry is not visible, including compact

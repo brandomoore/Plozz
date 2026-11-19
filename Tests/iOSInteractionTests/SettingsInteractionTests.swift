@@ -763,7 +763,7 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(more.isSelected)
     }
 
-    func testMoreDestinationsKeepBackTitleAndProfileInOneNavigationRow() throws {
+    func testMoreDestinationsKeepTheirHeadersAndReturnThroughTheCorrectStack() throws {
         launchNavigation(arguments: ["--content-in-more"])
         try XCTSkipIf(app.windows.firstMatch.frame.width >= 600, "Regular-width iPad has direct tabs.")
         let more = app.tabBars.buttons["More"]
@@ -775,26 +775,27 @@ final class SettingsInteractionTests: XCTestCase {
             row.tap()
             let back = app.buttons["more-navigation-back"]
             XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
-            let bar = app.navigationBars[title]
-            XCTAssertTrue(bar.waitForExistence(timeout: 5), app.debugDescription)
-            let heading = bar.staticTexts[title]
-            let avatar = bar.buttons.matching(NSPredicate(
-                format: "label BEGINSWITH %@", "Settings for "
-            )).firstMatch
-            XCTAssertTrue(heading.exists, app.debugDescription)
-            XCTAssertTrue(avatar.isHittable, app.debugDescription)
             XCTAssertEqual(app.navigationBars.allElementsBoundByIndex.filter(\.isHittable).count, 1)
-            XCTAssertEqual(heading.frame.midY, back.frame.midY, accuracy: 6, "\(title) title alignment")
-            XCTAssertEqual(avatar.frame.midY, back.frame.midY, accuracy: 6, "\(title) profile alignment")
-            XCTAssertFalse(app.buttons["search-settings-avatar"].exists)
             capture("more-single-header-\(title)")
             if title == "Downloads" {
+                let heading = app.scrollViews.staticTexts[title]
+                let avatar = app.buttons["downloads-settings-avatar"]
+                XCTAssertTrue(heading.exists && avatar.isHittable, app.debugDescription)
+                XCTAssertEqual(heading.frame.midY, avatar.frame.midY, accuracy: 6)
                 app.buttons["Download Settings"].tap()
                 let innerBack = app.buttons["BackButton"]
                 XCTAssertTrue(innerBack.waitForExistence(timeout: 5), app.debugDescription)
                 XCTAssertFalse(back.exists, "A deeper page must go back within the existing destination stack.")
                 innerBack.tap()
                 XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            } else {
+                let bar = app.navigationBars[title]
+                let heading = bar.staticTexts[title]
+                let avatar = bar.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings for ")).firstMatch
+                XCTAssertTrue(heading.exists && avatar.isHittable, app.debugDescription)
+                XCTAssertEqual(heading.frame.midY, back.frame.midY, accuracy: 6)
+                XCTAssertEqual(avatar.frame.midY, back.frame.midY, accuracy: 6)
+                XCTAssertFalse(app.buttons["search-settings-avatar"].exists)
             }
             back.tap()
             XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 5), app.debugDescription)

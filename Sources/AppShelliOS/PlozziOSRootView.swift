@@ -1304,9 +1304,7 @@ struct PlozziOSTabShell: View {
 
     @ViewBuilder
     private func tabContent(for destination: PlozziOSDestination) -> some View {
-        let isOverflow = overflowNavigation.destinationIndex.map {
-            tabDestinations.indices.contains($0) && tabDestinations[$0] == destination
-        } ?? false
+        let isOverflow = tabDestinations.firstIndex(of: destination).map(overflowNavigation.destinationIndices.contains) ?? false
         if destination == .music {
             destinationContent(for: destination, keepsNavigationBar: isOverflow)
                 .plozzOpaqueNavigationChrome()
@@ -2073,6 +2071,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         private weak var previousOverflowDelegate: (any UITableViewDelegate)?
         private weak var previousMoreDelegate: (any UINavigationControllerDelegate)?
         private var previousMoreNavigationBarHidden: Bool?
+        private var moreIsTransitioning = false
         private let bottomBarObserver = BottomBarObservationView()
         private let musicContentObserver = BottomBarObservationView()
 
@@ -2176,6 +2175,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             }
             previousMoreDelegate = nil
             previousMoreNavigationBarHidden = nil
+            moreIsTransitioning = false
             if overflowTable?.delegate === self { overflowTable?.delegate = previousOverflowDelegate }
             overflowTable = nil
             previousOverflowDelegate = nil
@@ -2293,7 +2293,9 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                 previousMoreNavigationBarHidden = more.isNavigationBarHidden
                 more.delegate = self
             }
-            if let shown = more.topViewController {
+            // Layout also runs inside the native push. Only willShow may change
+            // the bar during that transition, using UIKit's animation transaction.
+            if !moreIsTransitioning, let shown = more.topViewController {
                 updateOverflowNavigation(in: more, showing: shown, animated: false)
             }
             func findTable(in view: UIView) -> UITableView? {
@@ -2317,6 +2319,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             _ navigationController: UINavigationController,
             willShow viewController: UIViewController, animated: Bool
         ) {
+            moreIsTransitioning = animated
             previousMoreDelegate?.navigationController?(
                 navigationController, willShow: viewController, animated: animated
             )
@@ -2330,19 +2333,28 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         ) {
             guard let owner, let overflowNavigation,
                   navigationController === owner.moreNavigationController else { return }
-            let index = tabControllers(in: owner).firstIndex { $0 === viewController }
+            let controllers = tabControllers(in: owner)
+            let index = controllers.firstIndex { $0 === viewController }
             // More wraps the tab's existing SwiftUI NavigationStack. Only the
             // inner bar should draw chrome while a destination is on screen.
             let hidesOuterBar = index != nil || previousMoreNavigationBarHidden == true
             if navigationController.isNavigationBarHidden != hidesOuterBar {
                 navigationController.setNavigationBarHidden(hidesOuterBar, animated: animated)
             }
-            guard overflowNavigation.destinationIndex != index
+            // UIKit already knows which pages are in More before the user taps
+            // a row. Don't reconfigure the incoming SwiftUI stack mid-slide.
+            let items = owner.tabBar.items ?? []
+            var indices = IndexSet()
+            if items.contains(where: { $0 === navigationController.tabBarItem }) {
+                indices = IndexSet(Self.overflowIndices(controllers: controllers, visibleItems: items))
+            }
+            if let index { indices.insert(index) }
+            guard overflowNavigation.destinationIndices != indices || overflowNavigation.destinationIndex != index
                     || overflowNavigation.navigationController !== navigationController else { return }
             Task { @MainActor [weak self, weak owner, weak navigationController, weak viewController] in
                 guard let self, let owner, let navigationController, let viewController,
                       self.owner === owner, navigationController.topViewController === viewController else { return }
-                overflowNavigation.update(destinationIndex: index, navigationController: navigationController)
+                overflowNavigation.update(destinationIndices: indices, destinationIndex: index, navigationController: navigationController)
             }
         }
 
@@ -2350,6 +2362,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             _ navigationController: UINavigationController,
             didShow viewController: UIViewController, animated: Bool
         ) {
+            moreIsTransitioning = false
             previousMoreDelegate?.navigationController?(
                 navigationController, didShow: viewController, animated: animated
             )
@@ -2363,10 +2376,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             if let owner, let tabIndex, indexPath.section == 0 {
                 let controllers = tabControllers(in: owner)
                 let visibleItems = owner.tabBar.items ?? []
-                let overflow = controllers.indices.filter { index in
-                    guard let controller = controllers[index] else { return true }
-                    return !visibleItems.contains { $0 === controller.tabBarItem }
-                }
+                let overflow = Self.overflowIndices(controllers: controllers, visibleItems: visibleItems)
                 if overflow.count == tableView.numberOfRows(inSection: 0),
                    controllers.indices.contains(tabIndex),
                    overflow.indices.contains(indexPath.row),
@@ -2381,8 +2391,15 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             return indexPath
         }
 
+        private static func overflowIndices(controllers: [UIViewController?], visibleItems: [UITabBarItem]) -> [Int] {
+            controllers.indices.filter { index in
+                guard let controller = controllers[index] else { return true }
+                return !visibleItems.contains { $0 === controller.tabBarItem }
+            }
+        }
+
         private func reportOverflowVisibility() {
-            guard let owner else { return }
+            guard let owner, !moreIsTransitioning else { return }
             let more = owner.moreNavigationController
             let visible = owner.selectedViewController === more && more.viewControllers.count == 1
             guard reportedOverflowVisibility != visible else { return }
