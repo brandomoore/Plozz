@@ -321,6 +321,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             let programmes = try await IPTVHTTP.$performanceMetrics.withValue(metrics) {
                 try await retrieveGuide(channelIDs: channelIDs, from: from, to: to, diagnostics: diagnostics)
             }
+            try Task.checkCancellation()
             diagnostics.finish(rows: programmes.count)
             let counts = metrics?.snapshot
             performance?.finish(
@@ -351,7 +352,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         guard let lineup = try await client.savedGuideLineup() else { return [] }
         var seen = Set<String>()
         let requestedIDs = channelIDs.filter { seen.insert($0).inserted }
-        let guided = requestedIDs.compactMap { lineup.guided[$0] }
+        let guided = requestedIDs.compactMap { lineup.byID[$0] }.filter(\.hasGuideID)
         let saved = try await indexedGuide(channels: guided, lineup: lineup, from: from, to: to, diagnostics: diagnostics)
         var batch = saved ?? []
         if saved == nil, !(try await client.isBatchGuideUnavailable()) {
@@ -418,10 +419,10 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         do {
             guard let rows = try await guideIndex.cachedProgrammes(
                 url: url, channels: channels, from: from, to: to, trustsGuideIDs: true,
-                catalogRevision: lineup.revision, catalog: { Array(lineup.guided.values) }
+                catalogRevision: lineup.revision, pinnedCatalog: { lineup.ordered.filter(\.hasGuideID) }
             ) else { return nil }
             try Task.checkCancellation()
-            guard lineup.revision == (try await client.guideCatalogRevision()) else { return nil }
+            guard try await client.isCurrentGuideLineup(lineup) else { return nil }
             let request = IPTVGuideDiagnostics.Request()
             request.reusedIndex()
             diagnostics.record(request, endpoint: .xmltv, rows: rows.count)
@@ -440,12 +441,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         guard !channelIDs.isEmpty || usesPerChannelLiveTVGuide else { return [] }
         let urls = try await client.guideURLs()
         guard !urls.isEmpty else { return [] }
-        let indexedCatalog = guideIndex == nil ? nil : try await client.guideChannels()
+        let indexedCatalog = guideIndex == nil ? nil : try await client.guideLineup()
         var channels: [IPTVGuideChannel] = []
         if let indexedCatalog {
-            let byID = Dictionary(uniqueKeysWithValues: indexedCatalog.map { ($0.id, $0) })
             channels = try channelIDs.map {
-                guard let channel = byID[$0] else { throw AppError.notFound }
+                guard let channel = indexedCatalog.byID[$0] else { throw AppError.notFound }
                 return channel
             }
         } else {
@@ -508,6 +508,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                 firstFailure = AppError.notFound
             }
         }
+        // Neither a complete nor a partial XMLTV answer may publish rows from a superseded lineup.
+        if !usesPerChannelLiveTVGuide, !result.isEmpty, let indexedCatalog,
+           !(try await client.guideLineupStillMatches(indexedCatalog)) {
+            throw CancellationError()
+        }
         if let firstFailure {
             guard !result.isEmpty else { throw firstFailure }
             throw ServerLiveTVPartialGuideError(programmes: result, failure: firstFailure)
@@ -539,7 +544,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
 
     private func loadXMLTVGuide(
         url: URL, channels: [IPTVGuideChannel], from: Date, to: Date,
-        loader: IPTVGuideLoader?, catalog: [IPTVGuideChannel]?, diagnostics: IPTVGuideDiagnostics
+        loader: IPTVGuideLoader?, catalog: IPTVClient.SavedGuideLineup?, diagnostics: IPTVGuideDiagnostics
     ) async throws -> [ServerLiveTVProgramme] {
         try Task.checkCancellation()
         let request = IPTVGuideDiagnostics.Request()
@@ -548,7 +553,8 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
                 if let guideIndex, let catalog {
                     return try await guideIndex.programmes(
                         url: url, channels: channels, from: from, to: to,
-                        trustsGuideIDs: usesPerChannelLiveTVGuide, catalog: { catalog },
+                        trustsGuideIDs: usesPerChannelLiveTVGuide, catalogRevision: catalog.revision,
+                        pinnedCatalog: { catalog.ordered },
                         download: { [client] previous in
                             let response = try await client.guideResponse(from: url, previous: previous)
                             request.parsing()
@@ -574,12 +580,16 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         }
     }
 
-    public struct IPTVGuideChannel: Sendable {
+    public struct IPTVGuideChannel: Equatable, Sendable {
         public let id: String
         public let name: String
         public let guideID: String?
         public let guideName: String?
         public let country: String?
+
+        fileprivate var hasGuideID: Bool {
+            guideID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }
 
         public init(id: String, name: String, guideID: String?, guideName: String? = nil, country: String? = nil) {
             self.id = id

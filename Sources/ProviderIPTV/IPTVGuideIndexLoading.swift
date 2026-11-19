@@ -11,6 +11,13 @@ public protocol IPTVGuideIndexLoading: Sendable {
         catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel],
         download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
     ) async throws -> [ServerLiveTVProgramme]
+    /// A pinned, immutable lineup can be mapped synchronously on a projection miss.
+    func programmes(
+        url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
+        trustsGuideIDs: Bool, catalogRevision: String?,
+        pinnedCatalog: @escaping @Sendable () throws -> [IPTVProvider.IPTVGuideChannel],
+        download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
+    ) async throws -> [ServerLiveTVProgramme]
     /// Listings from the saved index alone, never the network. `nil` when the saved guide
     /// cannot answer: nothing saved for this lineup and window, past its reuse limit, or
     /// waiting on a requested revalidation. An empty `channels` asks only whether the
@@ -23,6 +30,11 @@ public protocol IPTVGuideIndexLoading: Sendable {
         url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
         trustsGuideIDs: Bool, catalogRevision: String?,
         catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel]
+    ) async throws -> [ServerLiveTVProgramme]?
+    func cachedProgrammes(
+        url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
+        trustsGuideIDs: Bool, catalogRevision: String?,
+        pinnedCatalog: @escaping @Sendable () throws -> [IPTVProvider.IPTVGuideChannel]
     ) async throws -> [ServerLiveTVProgramme]?
     /// Brings an already saved guide up to date when the profile's update interval has
     /// passed. Returns when it next falls due; nil when updates are off or nothing is saved.
@@ -38,6 +50,26 @@ public protocol IPTVGuideIndexLoading: Sendable {
 
 public extension IPTVGuideIndexLoading {
     var updateInterval: TimeInterval? { nil }
+
+    func programmes(
+        url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
+        trustsGuideIDs: Bool, catalogRevision: String?,
+        pinnedCatalog: @escaping @Sendable () throws -> [IPTVProvider.IPTVGuideChannel],
+        download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
+    ) async throws -> [ServerLiveTVProgramme] {
+        try await programmes(url: url, channels: channels, from: from, to: to,
+                             trustsGuideIDs: trustsGuideIDs, catalog: pinnedCatalog, download: download)
+    }
+
+    func cachedProgrammes(
+        url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
+        trustsGuideIDs: Bool, catalogRevision: String?,
+        pinnedCatalog: @escaping @Sendable () throws -> [IPTVProvider.IPTVGuideChannel]
+    ) async throws -> [ServerLiveTVProgramme]? {
+        try await cachedProgrammes(url: url, channels: channels, from: from, to: to,
+                                   trustsGuideIDs: trustsGuideIDs, catalogRevision: catalogRevision,
+                                   catalog: pinnedCatalog)
+    }
 
     func cachedProgrammes(
         url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,

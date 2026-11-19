@@ -3,7 +3,7 @@ import CoreNetworking
 import CryptoKit
 import Foundation
 
-public struct LiveTVGuideIndexState: Codable, Sendable {
+public struct LiveTVGuideIndexState: Codable, Equatable, Sendable {
     let generation: UUID
     let projection: String
     let digest: String
@@ -38,6 +38,7 @@ enum LiveTVGuideIndexError: Error { case generationChanged }
 /// One account/authorization's XMLTV documents. The cache owns synchronous SQLite
 /// work; this actor stays available to cancel or invalidate an in-flight import.
 public actor LiveTVGuideIndex {
+    public typealias PinnedCatalog = @Sendable () throws -> [LiveTVPrototypeChannel]
     public typealias Download = @Sendable () async throws -> XMLTVDownloadedDocument
     public typealias Revalidate = @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
     private let cache: LiveTVIndexedCache
@@ -109,17 +110,27 @@ public actor LiveTVGuideIndex {
         from url: URL, catalog: [LiveTVPrototypeChannel], channels: [LiveTVPrototypeChannel],
         range: DateInterval, trustsGuideIDs: Bool = false, revalidate: @escaping Revalidate
     ) async throws -> [LiveTVPrototypeProgram] {
+        try await programs(from: url, channels: channels, range: range, trustsGuideIDs: trustsGuideIDs,
+                           catalogRevision: nil, pinnedCatalog: { catalog }, revalidate: revalidate)
+    }
+
+    public func programs(
+        from url: URL, channels: [LiveTVPrototypeChannel], range: DateInterval,
+        trustsGuideIDs: Bool = false, catalogRevision: String?,
+        pinnedCatalog: @escaping PinnedCatalog, revalidate: @escaping Revalidate
+    ) async throws -> [LiveTVPrototypeProgram] {
         guard range.duration > 0, range.duration <= 172_800,
               range.start.timeIntervalSince1970.isFinite, range.end.timeIntervalSince1970.isFinite,
-              channels.count <= 2_000, catalog.count <= 100_000 else { throw LiveTVCacheError.invalidRange }
-        let projection = try Self.projection(catalog, language: language)
+              channels.count <= 2_000 else { throw LiveTVCacheError.invalidRange }
+        let (projection, catalog) = try prepareProjection(revision: catalogRevision, catalog: pinnedCatalog)
+        let loadCatalog: PinnedCatalog
+        if let catalog { loadCatalog = { catalog } } else { loadCatalog = pinnedCatalog }
         let sourceID = Self.sourceID(url)
-        while true {
-            try Task.checkCancellation()
-            guard !closed, !invalidating else { throw CancellationError() }
-            let requestEpoch = epoch
+        let requestEpoch = epoch
+        for _ in 0..<2 {
+            try checkRequest(requestEpoch)
             let resolution = try await resolution(
-                url: url, catalog: catalog, projection: projection, range: range, download: revalidate
+                url: url, catalog: loadCatalog, projection: projection, range: range, download: revalidate
             )
             try Task.checkCancellation()
             guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
@@ -129,10 +140,13 @@ public actor LiveTVGuideIndex {
                 do {
                     let result = try await cache.indexedAccountPrograms(
                         sourceID: sourceID, sourceURL: url, generation: state.generation,
-                        channels: channels, range: range, trustsGuideIDs: trustsGuideIDs
+                        channels: channels, range: range, trustsGuideIDs: trustsGuideIDs, expectedState: state
                     )
                     try Task.checkCancellation()
                     guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
+                    #if DEBUG
+                    if !result.isEmpty { IPTVLineupProbe.record?(.nonemptySourceQueries) }
+                    #endif
                     return result
                 } catch LiveTVGuideIndexError.generationChanged { continue }
             case .transient(let data):
@@ -159,6 +173,7 @@ public actor LiveTVGuideIndex {
                 return result
             }
         }
+        throw LiveTVGuideIndexError.generationChanged
     }
 
     /// Answers from a fresh saved index without starting or joining a download.
@@ -169,6 +184,24 @@ public actor LiveTVGuideIndex {
     public func cachedPrograms(
         from url: URL, channels: [LiveTVPrototypeChannel], range: DateInterval,
         trustsGuideIDs: Bool = false, catalogRevision: String? = nil,
+        catalog: @Sendable () async throws -> [LiveTVPrototypeChannel]
+    ) async throws -> [LiveTVPrototypeProgram]? {
+        try await cachedPrograms(from: url, channels: channels, range: range, trustsGuideIDs: trustsGuideIDs,
+                                 catalogRevision: catalogRevision, pinnedCatalog: nil, catalog: catalog)
+    }
+
+    public func cachedPrograms(
+        from url: URL, channels: [LiveTVPrototypeChannel], range: DateInterval,
+        trustsGuideIDs: Bool = false, catalogRevision: String?, pinnedCatalog: @escaping PinnedCatalog
+    ) async throws -> [LiveTVPrototypeProgram]? {
+        // Keep the pinned supplier synchronous through the projection memo check and install.
+        try await cachedPrograms(from: url, channels: channels, range: range, trustsGuideIDs: trustsGuideIDs,
+                                 catalogRevision: catalogRevision, pinnedCatalog: pinnedCatalog, catalog: pinnedCatalog)
+    }
+
+    private func cachedPrograms(
+        from url: URL, channels: [LiveTVPrototypeChannel], range: DateInterval,
+        trustsGuideIDs: Bool, catalogRevision: String?, pinnedCatalog: PinnedCatalog?,
         catalog: @Sendable () async throws -> [LiveTVPrototypeChannel]
     ) async throws -> [LiveTVPrototypeProgram]? {
         guard range.duration > 0, range.duration <= 172_800,
@@ -184,22 +217,26 @@ public actor LiveTVGuideIndex {
         let saved = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)
         var result: [LiveTVPrototypeProgram]?
         if let state = saved, state.contains(range), state.isReusable(at: now, updateInterval: updateInterval()) {
+            try checkRequest(requestEpoch)
             let projection: String
-            if let catalogRevision, let cachedProjection, cachedProjection.revision == catalogRevision {
-                projection = cachedProjection.value
+            if let pinnedCatalog {
+                (projection, _) = try prepareProjection(revision: catalogRevision, catalog: pinnedCatalog)
+            } else if let catalogRevision, cachedProjection?.revision == catalogRevision,
+                      let value = cachedProjection?.value {
+                projection = value
             } else {
                 let lineup = try await catalog()
-                guard lineup.count <= 100_000 else { throw LiveTVCacheError.invalidRange }
-                projection = try Self.projection(lineup, language: language)
-                try Task.checkCancellation()
-                guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
-                if let catalogRevision { cachedProjection = (catalogRevision, projection) }
+                try checkRequest(requestEpoch)
+                (projection, _) = try prepareProjection(revision: catalogRevision, catalog: { lineup })
             }
             if state.projection == projection {
                 do {
                     result = try await cache.indexedAccountPrograms(
                         sourceID: sourceID, sourceURL: url, generation: state.generation,
-                        channels: channels, range: range, trustsGuideIDs: trustsGuideIDs
+                        channels: channels, range: range, trustsGuideIDs: trustsGuideIDs,
+                        isEligible: { [clock, updateInterval] current in
+                            current.projection == projection && current.isReusable(at: clock(), updateInterval: updateInterval())
+                        }
                     )
                 } catch LiveTVGuideIndexError.generationChanged { result = nil }
             }
@@ -210,6 +247,28 @@ public actor LiveTVGuideIndex {
         return result
     }
 
+    private func prepareProjection(
+        revision: String?, catalog: PinnedCatalog
+    ) throws -> (String, [LiveTVPrototypeChannel]?) {
+        try checkRequest(epoch)
+        if let revision, let cachedProjection, cachedProjection.revision == revision {
+            return (cachedProjection.value, nil)
+        }
+        // No suspension between memo lookup and publication. A second cold caller shares
+        // this result, but cancellation of the builder cannot cancel that caller's work.
+        let lineup = try catalog()
+        guard lineup.count <= 100_000 else { throw LiveTVCacheError.invalidRange }
+        let projection = try Self.projection(lineup, language: language)
+        try Task.checkCancellation()
+        if let revision { cachedProjection = (revision, projection) }
+        return (projection, lineup)
+    }
+
+    private func checkRequest(_ requestEpoch: UUID) throws {
+        try Task.checkCancellation()
+        guard epoch == requestEpoch, !closed, !invalidating else { throw CancellationError() }
+    }
+
     /// Brings a guide that is already saved for `url` up to date once it is older than the
     /// chosen update interval. Returns when it next falls due, or nil when automatic updates
     /// are off or nothing is saved; a guide is never downloaded here for the first time.
@@ -218,17 +277,24 @@ public actor LiveTVGuideIndex {
         revalidate: @escaping Revalidate
     ) async throws -> Date? {
         guard let interval = updateInterval(), !closed else { return nil }
+        let requestEpoch = epoch
         let sourceID = Self.sourceID(url)
-        guard let saved = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url) else { return nil }
+        let state = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)
+        try checkRequest(requestEpoch)
+        guard let saved = state else { return nil }
         let now = clock()
         let due = saved.updateDue(interval: interval)
         if now < due { return due }
+        let lineup = try await catalog()
+        try checkRequest(requestEpoch)
         _ = try await programs(
-            from: url, catalog: try await catalog(), channels: [],
+            from: url, catalog: lineup, channels: [],
             range: DateInterval(start: now, duration: 6 * 3_600), revalidate: revalidate
         )
-        return try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)?
+        let next = try await cache.guideIndexState(sourceID: sourceID, sourceURL: url)?
             .updateDue(interval: interval)
+        try checkRequest(requestEpoch)
+        return next
     }
 
     public func invalidate() async {
@@ -253,7 +319,7 @@ public actor LiveTVGuideIndex {
     }
 
     private func resolution(
-        url: URL, catalog: [LiveTVPrototypeChannel], projection: String,
+        url: URL, catalog: @escaping PinnedCatalog, projection: String,
         range: DateInterval, download: @escaping Revalidate
     ) async throws -> Resolution {
         while let existing = flight,
@@ -337,7 +403,7 @@ public actor LiveTVGuideIndex {
     }
 
     private static func resolve(
-        url: URL, catalog: [LiveTVPrototypeChannel], projection: String, range: DateInterval,
+        url: URL, catalog: @escaping PinnedCatalog, projection: String, range: DateInterval,
         cache: LiveTVIndexedCache, language: String?, force: Bool, now: Date,
         updateInterval: TimeInterval?, download: Revalidate
     ) async throws -> Resolution {
@@ -354,16 +420,20 @@ public actor LiveTVGuideIndex {
         // Only validate a representation that can answer this exact projection
         // and window. A 304 cannot supply stations/intervals we never indexed.
         let previous = eligible?.cacheMetadata.flatMap { $0.hasValidator ? $0 : nil }
+        #if DEBUG
+        IPTVLineupProbe.record?(.guideDownloads)
+        #endif
         var downloaded = try await download(previous)
         if case .notModified(let metadata) = downloaded {
-            guard var validated = eligible, let previous, metadata.responseURL == previous.responseURL else {
+            guard let saved = eligible, let previous, metadata.responseURL == previous.responseURL else {
                 throw LiveTVSourceImportError.invalidResponse
             }
             if metadata.permitsPersistence {
                 try Task.checkCancellation()
+                var validated = saved
                 validated.expiresAt = metadata.expiresAt
                 validated.cacheMetadata = metadata
-                try await cache.revalidateGuideIndex(sourceID: sourceID, sourceURL: url, state: validated)
+                try await cache.revalidateGuideIndex(sourceID: sourceID, sourceURL: url, previous: saved, state: validated)
                 PlozzLog.networking.info("IPTV_INDEX outcome=notModified")
                 return .indexed(validated)
             }
@@ -375,6 +445,9 @@ public actor LiveTVGuideIndex {
             try await revoke.value
             try Task.checkCancellation()
             eligible = nil
+            #if DEBUG
+            IPTVLineupProbe.record?(.guideDownloads)
+            #endif
             downloaded = try await download(nil)
         }
         guard case .document(let response) = downloaded else {
@@ -397,12 +470,13 @@ public actor LiveTVGuideIndex {
             hasher.update(data: response.data.subdata(in: offset..<min(response.data.count, offset + 65_536)))
         }
         let digest = LiveTVIdentityDigest.hex(hasher.finalize())
-        if var eligible, eligible.digest == digest {
-            eligible.expiresAt = response.expiresAt
-            eligible.cacheMetadata = response.cacheMetadata
-            try await cache.revalidateGuideIndex(sourceID: sourceID, sourceURL: url, state: eligible)
+        if let eligible, eligible.digest == digest {
+            var validated = eligible
+            validated.expiresAt = response.expiresAt
+            validated.cacheMetadata = response.cacheMetadata
+            try await cache.revalidateGuideIndex(sourceID: sourceID, sourceURL: url, previous: eligible, state: validated)
             PlozzLog.networking.info("IPTV_INDEX outcome=unchanged")
-            return .indexed(eligible)
+            return .indexed(validated)
         }
         let state = LiveTVGuideIndexState(
             generation: UUID(), projection: projection, digest: digest,
@@ -410,12 +484,17 @@ public actor LiveTVGuideIndex {
             upperBound: range.start.addingTimeInterval(7 * 86_400), expiresAt: response.expiresAt,
             cacheMetadata: response.cacheMetadata
         )
+        let lineup = try catalog()
+        try Task.checkCancellation()
         _ = try await cache.importGuide(
-            data: response.data, sourceID: sourceID, channels: catalog,
+            data: response.data, sourceID: sourceID, channels: lineup,
             provider: LiveTVGuideSource.provider(for: url), now: range.start,
             sourceURL: url, preferredLanguage: language, indexState: state
         )
-        PlozzLog.networking.info("IPTV_INDEX outcome=imported channels=\(catalog.count)")
+        #if DEBUG
+        IPTVLineupProbe.record?(.guideImports)
+        #endif
+        PlozzLog.networking.info("IPTV_INDEX outcome=imported channels=\(lineup.count)")
         return .indexed(state)
     }
 
@@ -424,6 +503,9 @@ public actor LiveTVGuideIndex {
     }
 
     private static func projection(_ catalog: [LiveTVPrototypeChannel], language: String?) throws -> String {
+        #if DEBUG
+        IPTVLineupProbe.record?(.projectionBuilds)
+        #endif
         var hasher = SHA256()
         hasher.update(data: try JSONEncoder().encode([
             "account-xmltv-stations-v2", String(LiveTVXMLTVParser.cacheVersion), language

@@ -228,6 +228,15 @@ SCENARIOS = {
         "description": "Capture 12,000 immutable schedule inputs, advance the published guide five times, then capture changed inputs.",
         "counters": ["captures", "fullSnapshotEncodes", "initialItems", "changedItems", "initialEncodedBytes"],
     },
+    "guide-warm-saved-lineup": {
+        "suite": "network", "target": "AppRuntimeTests",
+        "test": "IPTVLineupProbeTests/testPerformanceWarmSavedLineup",
+        "file": "Tests/AppRuntimeTests/IPTVLineupProbeTests.swift",
+        "description": "Real account provider and encrypted XMLTV indexes: eight overlapping 256-channel windows from 6,000 committed channels and two feeds; fresh reader per sample, no HTTP in the measured windows.",
+        "counters": ["rows", "httpRequests", "fullClientMaps", "providerIDMaps", "adapterMaps",
+                     "projectionBuilds", "nonemptySourceQueries", "guideDownloads", "guideImports",
+                     "firstWindowNanoseconds", "warmWindowsNanoseconds"],
+    },
     "guide-large-batches": {
         "suite": "network", "target": "ProviderIPTVTests",
         "test": "IPTVPerformanceProbeTests/testPerformanceLargeGuideBatches",
