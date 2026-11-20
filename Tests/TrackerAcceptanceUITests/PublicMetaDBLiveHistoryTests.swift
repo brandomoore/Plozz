@@ -1000,9 +1000,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func verifyAccountList(named name: String) throws {
         try tapVisible(app.buttons["Lists"])
-        XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 45))
-        XCTAssertTrue(app.staticTexts["Page 1 of 1"].exists)
-        XCTAssertFalse(app.staticTexts["No records"].exists)
+        PublicMetaDBLiveNavigation.assertSingleListPage(in: app, expectedRow: name)
     }
 
     func testInspectManualKeyPasteMenu() throws {

@@ -6,6 +6,17 @@ enum PublicMetaDBLiveNavigation {
         case unavailableControl(String)
     }
 
+    static func assertSingleListPage(in app: XCUIApplication, expectedRow: String,
+                                     file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(app.staticTexts[expectedRow].waitForExistence(timeout: 45),
+                      "The dedicated account's expected real list response did not appear.", file: file, line: line)
+        XCTAssertFalse(app.buttons["Previous page"].exists, file: file, line: line)
+        XCTAssertFalse(app.buttons["Next page"].exists, file: file, line: line)
+        if expectedRow != "No records" {
+            XCTAssertFalse(app.staticTexts["No records"].exists, file: file, line: line)
+        }
+    }
+
     static func openSettings(in app: XCUIApplication) throws {
         if app.buttons["publicmetadb.pair"].exists { return }
         #if os(tvOS)

@@ -125,6 +125,16 @@ This was verified through native accessibility after an XCTest attempt timed
 out without a result. The three-server result above is a service test, not
 three servers shown in the same UI or evidence of automatic managed-server writes.
 
+On the paired iPhone, the existing private list reappeared after relaunch.
+The live test previously failed because it expected “Page 1 of 1”; the list
+screen only shows pagination for multiple pages. The corrected test passed
+with the expected list present and no page controls or empty-state text.
+Independent reads found the list contents, 40 watches and five resumes
+unchanged. The tvOS test driver compiled but was not run. The same iPhone
+still had only Emby connected: Jellyfin's password form was reached, but no
+session was created. Removing a source locally does not revoke that session
+on Jellyfin. A combined native Emby/Jellyfin review remains unverified.
+
 The rebuilt iPhone export prompts now show **Titles to export: 1** instead
 of “1 selected titles.” Two hosted UI checks passed with fixtures; these
 were not additional live transfers.

@@ -373,9 +373,7 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         try PublicMetaDBLiveNavigation.select(app.buttons["Lists"], moving: .down)
         let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
         XCTAssertFalse(name.isEmpty)
-        XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 45))
-        XCTAssertTrue(app.staticTexts["Page 1 of 1"].exists)
-        XCTAssertFalse(app.staticTexts["No records"].exists)
+        PublicMetaDBLiveNavigation.assertSingleListPage(in: app, expectedRow: name)
     }
 
     func testConnectionAndRatingPreferenceAfterRelaunch() throws {

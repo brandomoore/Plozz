@@ -231,12 +231,9 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         try PublicMetaDBLiveNavigation.select(app.buttons["Lists"], moving: .down)
         let expectedName = ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"] ?? "No records"
         XCTAssertFalse(expectedName.isEmpty)
-        let expectedRow = app.staticTexts[expectedName]
-        XCTAssertTrue(expectedRow.waitForExistence(timeout: 45),
-                      "The dedicated account's expected real list response did not appear.")
-        XCTAssertTrue(app.staticTexts["Page 1 of 1"].exists)
+        PublicMetaDBLiveNavigation.assertSingleListPage(in: app, expectedRow: expectedName)
         XCUIRemote.shared.press(.menu)
-        XCTAssertTrue(expectedRow.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[expectedName].waitForNonExistence(timeout: 5))
         try PublicMetaDBLiveNavigation.select(app.buttons["Done"], moving: .down)
         XCTAssertTrue(app.buttons["Done"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 5))
