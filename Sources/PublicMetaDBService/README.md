@@ -45,8 +45,18 @@ The unselected copy stayed at zero; S1E2, the Jellyfin control, 40 unrelated
 watches and four unrelated resumes were unchanged. Before the destination had
 a measured runtime, Plozz withheld the import. The run used a temporary Apache
 WebDAV server with real episode files, not the existing NAS. Test state was
-restored. This verifies episode resume, not episode completion or switching
-between two tracker accounts.
+restored. That run verified episode resume only.
+
+A separate completion run on `33fd184f1296` used the same real episode and
+private WebDAV setup. Muted native playback crossed 90%. Independent reads
+confirmed that PublicMetaDB cleared the 539.805-second resume and recorded
+exactly one dated play, still one after relaunch. After 926 seconds in the
+background, the selected share became watched 6.9 seconds after the app
+returned to the foreground without manual sync. The unselected share, S1E2,
+the managed Jellyfin copy and unrelated tracker records stayed unchanged.
+Cleanup removed the test play and restored the settings. Two local test
+records remained unwatched at zero. Neither episode run tested a second
+tracker account or the later integrated player.
 
 On `f6af81551`, the same app played *Sintel* muted from real SMB and WebDAV
 shares. Both players measured 888.042 seconds. Independent reads confirmed
