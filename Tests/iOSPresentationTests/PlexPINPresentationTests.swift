@@ -9,6 +9,75 @@ import XCTest
 
 @MainActor
 final class PlexPINPresentationTests: XCTestCase {
+    func testPendingIdentityWaitsForChosenProfileAndSuccessfulPlexUser() async throws {
+        let suite = "PlexIdentityQuestion.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        let servers = ["first", "second"]
+        for id in servers {
+            try store.add(Account(
+                id: id, server: .init(id: id, name: "Plex", baseURL: URL(string: "https://plex.invalid")!, provider: .plex),
+                userID: id, userName: "Owner", deviceID: "fixture"
+            ), token: "fixture")
+        }
+        let profileStore = ProfileStore(defaults: defaults)
+        let profiles = ProfilesModel(store: profileStore)
+        let previous = profiles.activeProfileID
+        let next = profiles.add(name: "Other", isAwaitingSetup: false).id
+        for id in [previous, next] {
+            profiles.setActiveAccountIDs(servers, for: id)
+            profiles.noteIdentityQuestions(for: servers, forProfile: id, knownNonPlexAccountIDs: [])
+        }
+        profiles.select(previous)
+        profiles.markFirstRunProfileSetupComplete()
+        let app = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults), accountStore: store, profileStore: profileStore
+        )
+        let user = PlexHomeUser(id: "viewer", name: "Viewer", requiresPIN: true)
+        let plex = try XCTUnwrap(app.plexHomeUsers)
+        plex.plexHomeUsersFetch = { _, _ in [user] }
+        plex.plexHomeUserSwitch = { _, pin, _, _ in
+            guard pin == "2468" else { throw AppError.unauthorized }
+            return "fixture-cloud"
+        }
+        plex.plexServerTokenResolve = { _, _, _ in "fixture-server" }
+        XCTAssertEqual(app.pendingIdentityAccount?.id, servers.first)
+        XCTAssertNil(app.presentableIdentityQuestion, "Restoring the last-used profile is not choosing it.")
+        XCTAssertFalse(app.isActiveProfileAuthorized)
+
+        app.selectProfile(previous)
+        let stale = try XCTUnwrap(app.presentableIdentityQuestion)
+        app.selectProfile(next)
+        let current = try XCTUnwrap(app.presentableIdentityQuestion)
+        XCTAssertNotEqual(current.id, stale.id)
+        app.concludeIdentityPrompt(stale)
+        XCTAssertEqual(app.presentableIdentityQuestion?.id, current.id)
+
+        plex.setPlexHomeUserForActiveProfile(accountID: current.account.id, user: user)
+        app.inlinePlexPINRequest = try XCTUnwrap(plex.pendingPlexPINRequest)
+        await plex.waitForPlexPINRequirementCheck()
+        XCTAssertEqual(app.presentableIdentityQuestion?.id, current.id, "The chooser owns its inline PIN.")
+        app.concludeIdentityPrompt(current)
+        plex.submitPlexPIN("0000")
+        await plex.waitForPlexPINRequirementCheck()
+        plex.cancelPlexPIN()
+        app.inlinePlexPINRequest = nil
+        XCTAssertEqual(app.presentableIdentityQuestion?.id, current.id)
+        XCTAssertNil(app.profiles.activeProfile.homeUserBinding(forPlexAccount: current.account.id))
+
+        plex.setPlexHomeUserForActiveProfile(accountID: current.account.id, user: user)
+        await plex.waitForPlexPINRequirementCheck()
+        plex.submitPlexPIN("2468")
+        await plex.waitForPlexPINRequirementCheck()
+        XCTAssertEqual(app.profiles.activeProfile.homeUserBinding(forPlexAccount: current.account.id)?.homeUserID, user.id)
+        app.concludeIdentityPrompt(current)
+        XCTAssertEqual(app.presentableIdentityQuestion?.account.id, servers.last)
+        let saved = profileStore.loadProfiles()
+        XCTAssertEqual(saved.first { $0.id == next }?.pendingIdentityAccountIDs, ["second"])
+        XCTAssertEqual(saved.first { $0.id == previous }?.pendingIdentityAccountIDs, servers)
+    }
+
     func testUnresolvedDefaultProfilePINDisallowsInteractiveSheetDismissal() async throws {
         try await verifyPINPresentation(isChangingSelection: false)
     }

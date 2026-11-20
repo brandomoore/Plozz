@@ -324,6 +324,11 @@ or in-flight Plex PIN entry. Synced profile changes and locks still pass the
 profile gates, and source membership/credential changes still reconcile or revoke
 Plex access. Deliberate selection, even of the current profile, remains a fresh
 authorization boundary.
+On mobile, a pending “Who are you on this server?” question still blocks the
+watchlist import, but waits for the Plozz profile picker and any unlock or setup
+flow to finish. A successful Plex Home sign-in answers the question for that
+profile and server; a failed or cancelled PIN leaves it pending. Other profiles
+and servers keep their own unanswered questions.
 Automatic sign-in applies to Plozz profiles regardless of their providers,
 including profiles without server accounts. Plex Home token restoration is the
 provider-specific part, not a restriction on who can use the setting.

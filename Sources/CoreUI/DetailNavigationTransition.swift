@@ -102,6 +102,7 @@ public extension View {
         self
         #endif
     }
+
 }
 
 private struct DetailNavigationPopKey: EnvironmentKey {

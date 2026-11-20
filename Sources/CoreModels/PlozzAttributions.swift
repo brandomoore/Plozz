@@ -97,7 +97,7 @@ public enum PlozzAttributions {
                 "Playback is powered by AetherEngine by Vincent Herbst, under "
                 + "LGPL-3.0 with an Apple Store exception. "
                 + "Upstream: https://github.com/superuser404notfound/AetherEngine. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/cc3cb49f4014a208f841bde8d1e0a5af0ff885e9",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/d98f93de1bc05635279ab5ce7831910327452e3f",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(

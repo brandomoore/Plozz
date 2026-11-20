@@ -27,8 +27,17 @@ struct PlozziOSProfileSelectionView: View {
             || appModel.plexHomeUsers.pendingPlexPINRequest != nil
     }
 
+    // A live Plex check blocks Home, but isn't a reason to move the avatar
+    // onto a PIN page. Keep an already-presented local PIN in place when chained.
+    private var isCheckingOnPicker: Bool {
+        selectedProfileID != nil && !hasPresentedAuthorization
+            && appModel.parentalSwitch == nil && appModel.lockedSwitch == nil
+            && appModel.plexHomeUsers.pendingPlexPINRequest != nil
+            && appModel.plexHomeUsers.plexPINEntryAvailability == .checking
+    }
+
     private var presentsAuthorization: Bool {
-        selectedProfileID != nil && (hasPresentedAuthorization || hasPendingAuthorization)
+        selectedProfileID != nil && !isCheckingOnPicker && (hasPresentedAuthorization || hasPendingAuthorization)
     }
 
     private var selectedProfile: Profile? {
@@ -77,6 +86,11 @@ struct PlozziOSProfileSelectionView: View {
                 },
                 manager: pickerManager,
                 onCancel: onCancel,
+                onCancelVerification: isCheckingOnPicker ? {
+                    guard isCheckingOnPicker else { return }
+                    selectedProfileID = nil
+                    appModel.plexHomeUsers.cancelPlexPIN()
+                } : nil,
                 identityNamespace: profileIdentity,
                 selectedProfileID: selectedProfileID,
                 isCovered: presentsAuthorization,
@@ -87,7 +101,7 @@ struct PlozziOSProfileSelectionView: View {
                 ) : nil,
                 isChangingOfflineMode: appModel.isChangingOfflineMode
             )
-            .allowsHitTesting(!presentsAuthorization && selectedProfileID == nil)
+            .allowsHitTesting(selectedProfileID == nil || isCheckingOnPicker)
             .accessibilityHidden(presentsAuthorization)
 
             if presentsAuthorization {
@@ -140,6 +154,8 @@ struct PlozziOSProfilePickerView: View {
     var manager: PlozziOSAppModel?
     /// Closes the picker. `nil` at launch, where there's nothing to go back to.
     var onCancel: (() -> Void)?
+    /// Cancels only the in-flight selection, never the picker itself.
+    var onCancelVerification: (() -> Void)?
     var identityNamespace: Namespace.ID?
     var selectedProfileID: String?
     var isCovered = false
@@ -151,6 +167,7 @@ struct PlozziOSProfilePickerView: View {
     @State private var route: Route?
     @State private var hasAppeared = false
     @State private var hasRevealedProfiles = false
+    @State private var showsVerificationProgress = false
     @Namespace private var localIdentityNamespace
     @Environment(\.themePalette) private var palette
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -201,6 +218,7 @@ struct PlozziOSProfilePickerView: View {
                             onEdit: { route = .edit(profileID: $0.id) },
                             onAdd: { route = .add(isKids: $0) }
                         )
+                        .disabled(onCancelVerification != nil)
                     }
                     .frame(maxWidth: layout.contentWidth)
                     .padding(.horizontal, 24)
@@ -221,14 +239,20 @@ struct PlozziOSProfilePickerView: View {
             .toolbar(manager != nil || offlineMode != nil || onCancel != nil ? .visible : .automatic, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                if let onCancel, !isEditing, !isCovered {
+                if let cancel = onCancelVerification ?? onCancel, !isEditing, !isCovered {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel", systemImage: "xmark", action: onCancel)
+                        Button("Cancel", systemImage: "xmark", action: cancel)
                             .labelStyle(.iconOnly)
-                            .accessibilityIdentifier("profile-picker-close")
+                            .accessibilityIdentifier(onCancelVerification == nil
+                                ? "profile-picker-close" : "profile-picker-cancel-verification")
                     }
                 }
-                if (manager != nil || offlineMode != nil), !isCovered {
+                if onCancelVerification != nil, showsVerificationProgress {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ProgressView().accessibilityLabel("Loading")
+                            .accessibilityIdentifier("profile-picker-verifying")
+                    }
+                } else if (manager != nil || offlineMode != nil), !isCovered {
                     ToolbarItem(placement: .topBarTrailing) {
                         if isEditing {
                             Button("Done") {
@@ -256,6 +280,7 @@ struct PlozziOSProfilePickerView: View {
                                 Label("More", systemImage: "ellipsis").labelStyle(.iconOnly)
                             }
                             .accessibilityIdentifier("profile-picker-options")
+                            .disabled(onCancelVerification != nil)
                         }
                     }
                 }
@@ -263,6 +288,12 @@ struct PlozziOSProfilePickerView: View {
             .navigationDestination(item: $route) { route in
                 destination(for: route)
             }
+        }
+        .task(id: onCancelVerification != nil) {
+            showsVerificationProgress = false
+            guard onCancelVerification != nil else { return }
+            do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
+            showsVerificationProgress = true
         }
     }
 

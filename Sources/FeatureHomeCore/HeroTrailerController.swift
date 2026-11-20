@@ -208,6 +208,12 @@ public final class HeroTrailerController {
         activeSurfaceRole == role && isShowing(itemID)
     }
 
+    /// Fullscreen borrows the layer from its original host; keep that host
+    /// mounted for the return, but never render a detail trailer on Home.
+    public func showsVideo(on role: HeroTrailerSurfaceRole, itemID: String) -> Bool {
+        isPlaying && isShowing(itemID) && (fullScreenSession?.role ?? activeSurfaceRole) == role
+    }
+
     /// Transfer before pushing detail, so Home's disappearance cannot tear down
     /// the shared item regardless of SwiftUI lifecycle callback ordering.
     public func handoffToDetail(itemID: String, destinationItemID: String? = nil) {

@@ -30,6 +30,7 @@ public extension EnvironmentValues {
 }
 
 struct MediaRowRefreshIndicator: View {
+    static let size: CGFloat = 44
     @Environment(\.mediaRowRefreshStatus) private var status
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -55,7 +56,7 @@ struct MediaRowRefreshIndicator: View {
                 }
             }
             .font(.callout)
-            .frame(width: 44, height: 44)
+            .frame(width: Self.size, height: Self.size)
             .tint(palette.primaryText)
             .accessibilityIdentifier("media-row-refresh-status")
             .plozzSheet(isPresented: $showsDetails) {

@@ -37,6 +37,19 @@ final class MediaSegmentTests: XCTestCase {
         XCTAssertEqual(normalized, [.init(id: "valid", kind: .credits, start: 90, end: 100)])
     }
 
+    func testContiguousPiecesOfOneWindowCoalesce() {
+        // A server can split an intro at a chapter boundary; skipping only the
+        // first piece would land inside the same opening and offer it again.
+        let pieces = [
+            MediaSegment(id: "a", kind: .intro, start: 54.392, end: 62.892),
+            MediaSegment(id: "b", kind: .intro, start: 62.892, end: 82.546)
+        ].normalizedSkipMarkers(duration: 2_640)
+        XCTAssertEqual(pieces.count, 1)
+        XCTAssertEqual(pieces[0].kind, .intro)
+        XCTAssertEqual(pieces[0].start, 54.392)
+        XCTAssertEqual(pieces[0].end, 82.546)
+    }
+
     func testExplicitSceneSplitsOnlyItsOwnOverlappingCredits() {
         let credits = MediaSegment(id: "credits", kind: .credits, start: 100, end: 300)
         let scene = MediaSegment(kind: .unknown, start: 200, end: 250)

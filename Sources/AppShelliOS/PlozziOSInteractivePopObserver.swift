@@ -2,12 +2,24 @@
 import SwiftUI
 import UIKit
 
-/// Keeps horizontal back navigation from also stretching the detail's scroll view.
+/// Reports the enclosing navigation controller's interactive back-swipe.
+///
+/// The detail page's hero grows with a vertical overscroll (pull-to-stretch,
+/// mirroring Home). During an edge back-swipe the system's pan can deliver a
+/// small vertical component to the page's scroll view as well, so the hero
+/// starts stretching and rebounding while the finger is still moving the page
+/// horizontally. Freezing the pull for the duration of the pop gesture keeps the
+/// hero fixed; a normal vertical overscroll still stretches it.
 struct PlozziOSInteractivePopObserver: UIViewRepresentable {
     @Binding var isActive: Bool
 
     func makeUIView(context: Context) -> ObserverView {
-        ObserverView()
+        let view = ObserverView()
+        view.onChange = { active in
+            guard isActive != active else { return }
+            isActive = active
+        }
+        return view
     }
 
     func updateUIView(_ view: ObserverView, context: Context) {
@@ -15,71 +27,55 @@ struct PlozziOSInteractivePopObserver: UIViewRepresentable {
             guard isActive != active else { return }
             isActive = active
         }
-        view.attach()
-    }
-
-    static func dismantleUIView(_ view: ObserverView, coordinator: ()) {
-        view.detach()
-        view.onChange = nil
     }
 
     final class ObserverView: UIView {
         var onChange: ((Bool) -> Void)?
-        private weak var navigation: UINavigationController?
+        private weak var gesture: UIGestureRecognizer?
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            if window == nil { detach() } else { attach() }
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
+            guard window != nil else {
+                detach()
+                return
+            }
             attach()
         }
 
-        func attach() {
-            guard window != nil,
-                  let enclosing = enclosingNavigationController(),
-                  navigation !== enclosing else { return }
-            detach()
-            navigation = enclosing
-            for gesture in gestures {
-                gesture.addTarget(self, action: #selector(handle(_:)))
-            }
+        private func attach() {
+            guard gesture == nil, let navigation = enclosingNavigationController(),
+                  let recognizer = navigation.interactivePopGestureRecognizer else { return }
+            gesture = recognizer
+            recognizer.addTarget(self, action: #selector(handle(_:)))
         }
 
-        func detach() {
-            for gesture in gestures {
-                gesture.removeTarget(self, action: #selector(handle(_:)))
-            }
-            navigation = nil
-            onChange?(false)
-        }
-
-        private var gestures: [UIGestureRecognizer] {
-            guard let navigation else { return [] }
-            var result = [navigation.interactivePopGestureRecognizer].compactMap { $0 }
-            if #available(iOS 26.0, *), let content = navigation.interactiveContentPopGestureRecognizer {
-                result.append(content)
-            }
-            return result
+        private func detach() {
+            gesture?.removeTarget(self, action: nil)
+            gesture = nil
         }
 
         @objc private func handle(_ recognizer: UIGestureRecognizer) {
-            onChange?(gestures.contains { $0.state == .began || $0.state == .changed })
+            switch recognizer.state {
+            case .began, .changed:
+                onChange?(true)
+            case .ended, .cancelled, .failed:
+                onChange?(false)
+            default:
+                break
+            }
         }
 
         private func enclosingNavigationController() -> UINavigationController? {
             var responder: UIResponder? = self
             while let current = responder {
-                if let controller = current as? UIViewController,
-                   let navigation = controller as? UINavigationController ?? controller.navigationController {
-                    return navigation
+                if let controller = current as? UIViewController {
+                    return controller.navigationController
                 }
                 responder = current.next
             }
             return nil
         }
+
     }
 }
 #endif

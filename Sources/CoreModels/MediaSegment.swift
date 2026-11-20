@@ -12,6 +12,24 @@ import Foundation
 ///
 /// Times are stored in **seconds** so the player can compare them directly
 /// against the engine's `currentTime` without unit juggling.
+/// The coverage rules every skip marker has to satisfy, whatever its kind.
+///
+/// Providers and community databases occasionally report a marker that spans
+/// most of the item or that starts inside the opening. Presenting those would
+/// produce a Skip button whose action jumps through the episode (and would let
+/// Up Next claim a bogus closing window), so they are treated as absent.
+public enum SegmentPlausibility {
+    /// A skippable marker may cover at most this share of the known runtime.
+    /// A skip has to leave most of the item playable.
+    public static let maximumSpanShare = 0.5
+
+    /// Kinds that describe the item's opening. Only these may sit inside the
+    /// opening region; every other kind must start after it has finished.
+    public static func isOpening(_ kind: MediaSegment.Kind) -> Bool {
+        kind == .intro || kind == .recap
+    }
+}
+
 public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
     /// The kind of segment. Every kind except `.unknown` is skippable.
     public enum Kind: String, Codable, CaseIterable, Sendable {
@@ -180,12 +198,40 @@ public extension Array where Element == MediaSegment {
                   segment.start > 0, segment.end > segment.start else { return nil }
             return segment
         }
+        // Where the opening ends, for the rule that keeps every other kind out
+        // of it. Openings that are themselves malformed (pinned to the item's
+        // final frame) are excluded so they cannot suppress every later marker.
+        let openingEnd = self
+            .filter { SegmentPlausibility.isOpening($0.kind) }
+            .filter { $0.start.isFinite && $0.end.isFinite && $0.end > $0.start }
+            .filter { segment in
+                guard let duration else { return true }
+                return segment.end < duration - 0.5
+            }
+            .map(\.end)
+            .max()
         var result: [MediaSegment] = []
         for var segment in self {
             guard segment.isSkippable, segment.start.isFinite, segment.end.isFinite,
                   segment.start >= 0, segment.end > segment.start else { continue }
             if let duration { segment.end = Swift.min(segment.end, duration) }
             guard segment.end > segment.start else { continue }
+            // Every kind is subject to the same coverage rules: a marker is a
+            // bounded interruption that leaves most of the item playable, and
+            // nothing but an opening may begin before the opening has ended. A
+            // malformed analysis (an outro running from an intro's end to EOF, an
+            // intro pinned to the last frame) is therefore absent entirely rather
+            // than surfacing a skip that jumps through the item.
+            if let duration, duration > 0 {
+                guard segment.end - segment.start <= duration * SegmentPlausibility.maximumSpanShare else {
+                    continue
+                }
+                if SegmentPlausibility.isOpening(segment.kind) {
+                    guard segment.end < duration - 0.5 else { continue }
+                } else if let openingEnd, segment.start <= openingEnd {
+                    continue
+                }
+            }
             if segment.kind == .credits, let protected,
                protected.start < segment.end, protected.end > segment.start {
                 if segment.start < protected.start {
@@ -209,10 +255,20 @@ public extension Array where Element == MediaSegment {
             if $0.kind != $1.kind { return $0.kind.rawValue < $1.kind.rawValue }
             return $0.id < $1.id
         }
-        return sorted.reduce(into: []) { unique, segment in
-            if let previous = unique.last, previous.kind == segment.kind,
-               previous.start == segment.start, previous.end == segment.end { return }
-            unique.append(segment)
+        // Contiguous pieces of one window are one segment. A server can split an
+        // intro at a chapter boundary (for example at a title card), and skipping
+        // only the first piece landed inside the opening and offered the same
+        // button again. Only directly adjacent/overlapping same-kind reports
+        // coalesce, so credits with a scene between them stay separate.
+        return sorted.reduce(into: []) { merged, segment in
+            if let index = merged.indices.last, merged[index].kind == segment.kind {
+                if merged[index].start == segment.start, merged[index].end == segment.end { return }
+                if abs(segment.start - merged[index].end) <= 0.25 {
+                    merged[index].end = Swift.max(merged[index].end, segment.end)
+                    return
+                }
+            }
+            merged.append(segment)
         }
     }
 

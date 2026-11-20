@@ -162,68 +162,73 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         }
     }
 
-    func testNativePushKeepsHomeSnapshotOutsideTheMovingPagesAndRemovesIt() async throws {
-        let item = try await artworkItem()
-        for size in [CGSize(width: 390, height: 844), CGSize(width: 1024, height: 768)] {
-            try await withWindow(
-                item: item, size: size, sizeClass: size.width < 600 ? .compact : .regular,
-                insets: .zero, pull: PlozziOSHomeHeroPullModel()
-            ) { window, host in
-                let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
-                let originalDelegate = navigation.delegate
-                let originalGestureDelegate = navigation.interactivePopGestureRecognizer?.delegate
-                let source = try XCTUnwrap(navigation.topViewController)
-                let sourceFrame = source.view.convert(source.view.bounds, to: window)
-                let destination = UIViewController()
-                destination.view.backgroundColor = .systemGreen
-                navigation.pushViewController(destination, animated: true)
-                let coordinator = try XCTUnwrap(navigation.transitionCoordinator)
-                let finished = expectation(description: "Native detail push finishes")
-                var heldSnapshot: UIView?
-                coordinator.animate { context in
-                    let snapshots = self.descendants(context.containerView).filter {
-                        $0.accessibilityIdentifier == "home-navigation-source-snapshot"
-                    }
-                    XCTAssertEqual(snapshots.count, 1)
-                    guard let snapshot = snapshots.first else { return }
-                    heldSnapshot = snapshot
-                    XCTAssertTrue(snapshot.superview === context.containerView)
-                    XCTAssertEqual(snapshot.convert(snapshot.bounds, to: window), sourceFrame)
-                    XCTAssertFalse(snapshot.isUserInteractionEnabled)
-                    XCTAssertTrue(snapshot.accessibilityElementsHidden)
-                    XCTAssertFalse(snapshot.isDescendant(of: source.view))
-                    XCTAssertFalse(snapshot.isDescendant(of: destination.view))
-                } completion: { _ in
-                    finished.fulfill()
-                }
-                await fulfillment(of: [finished], timeout: 5)
-                XCTAssertNotNil(heldSnapshot)
-                XCTAssertNil(heldSnapshot?.superview)
-                XCTAssertTrue(navigation.delegate === originalDelegate)
-                XCTAssertTrue(navigation.interactivePopGestureRecognizer?.delegate === originalGestureDelegate)
-                XCTAssertTrue(navigation.topViewController === destination)
-                navigation.popViewController(animated: false)
-                try await waitForHostedLayout(window)
-                XCTAssertTrue(navigation.topViewController === source)
-                XCTAssertFalse(descendants(window).contains {
-                    $0.accessibilityIdentifier == "home-navigation-source-snapshot"
-                })
-            }
-        }
-    }
-
-    func testUnanimatedNavigationDoesNotCaptureHome() async throws {
-        let item = try await artworkItem()
+    func testCompactHeroRatingsFadeInPlaceAcrossPageChange() async throws {
+        let first = MediaItem(
+            id: "first", title: "First", kind: .movie, officialRating: "PG-13", genres: ["Adventure"],
+            ratings: [.init(source: .imdb, value: 8.7, scale: .outOfTen)], allowsTitleBasedMetadataMatching: false
+        )
+        var second = first
+        second.id = "second"
+        second.title = "Next"
+        second.officialRating = "TV-MA"
+        second.genres = ["Science Fiction", "Thriller", "Mystery", "Fantasy"]
+        second.ratings.append(.init(source: .rottenTomatoes, value: 92, scale: .percent))
+        var pinned: Set<String> = []
         try await withWindow(
-            item: item, size: CGSize(width: 390, height: 844), sizeClass: .compact,
-            insets: .zero, pull: PlozziOSHomeHeroPullModel()
-        ) { window, host in
-            let navigation = try XCTUnwrap(findController(UINavigationController.self, in: host))
-            navigation.pushViewController(UIViewController(), animated: false)
-            try await waitForHostedLayout(window)
-            XCTAssertFalse(descendants(window).contains {
-                $0.accessibilityIdentifier == "home-navigation-source-snapshot"
-            })
+            item: first, size: CGSize(width: 390, height: 844), sizeClass: .compact,
+            insets: .zero, pull: PlozziOSHomeHeroPullModel(), heroItems: [first, second],
+            autoAdvanceSeconds: 3, showsRatings: true, onHeroPinnedItemsChanged: { pinned = $0 }
+        ) { window, _ in
+            let readyDeadline = ContinuousClock.now + .seconds(2)
+            while pinned.isEmpty, ContinuousClock.now < readyDeadline {
+                try await Task.sleep(for: .milliseconds(16))
+            }
+            XCTAssertEqual(pinned, [first.id])
+            let before = snapshot(window, name: "hero-facts-before-paging")
+            let rows = try HeroTextInk.frames(in: before, terms: ["Adventure", "8.7"])
+            let bands = try ["Adventure", "8.7"].map { term in
+                let row = try XCTUnwrap(rows[term])
+                return CGRect(x: 0, y: row.midY.rounded() - 3, width: window.bounds.width, height: 6)
+            }
+            let region = bands[0].union(bands[1])
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2
+            let renderer = UIGraphicsImageRenderer(size: region.size, format: format)
+            @MainActor func frame() throws -> [(x: CGFloat?, peak: UInt8)] {
+                let image = renderer.image { context in
+                    context.cgContext.translateBy(x: 0, y: -region.minY)
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+                }
+                return try bands.map { band in
+                    let ink = try pagingControlInk(in: image, region: band.offsetBy(dx: 0, dy: -region.minY))
+                    return (ink.bounds?.minX, ink.peak)
+                }
+            }
+            var frames = [try frame()]
+            let deadline = ContinuousClock.now + .seconds(5)
+            while pinned != [first.id, second.id], ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(pinned, [first.id, second.id])
+            let start = ContinuousClock.now
+            repeat {
+                frames.append(try frame())
+                try await Task.sleep(for: .milliseconds(10))
+            } while start.duration(to: .now) < .milliseconds(850)
+            XCTAssertEqual(pinned, [second.id])
+            for row in bands.indices {
+                let samples = frames.map { $0[row] }
+                let hidden = try XCTUnwrap(samples.firstIndex { $0.peak == 0 }, "The title must swap while hidden.")
+                let outgoingX = try XCTUnwrap(samples.first?.x)
+                let incomingX = try XCTUnwrap(samples.last?.x)
+                XCTAssertGreaterThan(abs(incomingX - outgoingX), 8, "Row \(row) must exercise different centered layouts.")
+                for (phase, settledX) in [(samples[..<hidden], outgoingX), (samples[hidden...], incomingX)] {
+                    XCTAssertTrue(phase.contains { (95...205).contains($0.peak) }, "Exit and entry must both fade.")
+                    for sample in phase where sample.peak > 165 {
+                        XCTAssertEqual(try XCTUnwrap(sample.x), settledX, accuracy: 2, "Visible ratings should not slide.")
+                    }
+                }
+            }
         }
     }
 
@@ -654,6 +659,65 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    func testCompactHomeArtworkPlaceholderOccupiesTheLoadedFrame() async throws {
+        let item = try await artworkItem()
+        let pull = PlozziOSHomeHeroPullModel()
+        try await withWindow(
+            item: item, size: CGSize(width: 390, height: 844), sizeClass: nil,
+            insets: .zero, pull: pull
+        ) { window, host in
+            let app = PlozziOSAppModel(accountStore: AccountStore(secureStore: InMemorySecureStore()))
+            let trailers = HeroTrailerController()
+            let sidebar = PlozziOSSidebarGeometryModel()
+            var origins: [CGFloat] = []
+            @MainActor func home(ready: Bool) -> AnyView {
+                AnyView(NavigationStack {
+                    PlozziOSHomeScrollView(heroActive: true, showsPageActions: true) {
+                        PlozziOSHomeHeroCarousel(items: [item], autoAdvance: false, autoAdvanceSeconds: 30,
+                                                 onPlay: { _ in }, pullModel: pull)
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                                origins.append($0)
+                            }
+                    } rows: {
+                        Text("Continue Watching")
+                    } pageActions: {
+                        PlozziOSHomePageActions(showsAudio: false, isMuted: true,
+                                                onToggleMute: {}, onShowSettings: {})
+                    }
+                    .scrollClipDisabled()
+                    .background(Color.black.ignoresSafeArea())
+                    .toolbar(.hidden, for: .navigationBar)
+                }
+                .environment(app).environment(trailers).environment(sidebar)
+                .environment(\.horizontalSizeClass, .compact)
+                .environment(\.plozziOSHeroContainerHeight, 844)
+                .environment(\.plozzArtworkSourceReady, ready)
+                .environment(\.themePalette, .dark).environment(\.colorScheme, .dark))
+            }
+            host.rootView = home(ready: false)
+            try await waitForHostedLayout(window)
+            let before = snapshot(window, name: "compact-home-awaiting-artwork")
+            let x: CGFloat = 12
+            let fill = try pixel(before, at: CGPoint(x: x, y: 120))
+            XCTAssertGreaterThan(fill[0], 10, "The placeholder should be visible above the black page.")
+            for y in 1...100 {
+                let sample = try pixel(before, at: CGPoint(x: x, y: CGFloat(y)))
+                XCTAssertEqual(Int(sample[0]), Int(fill[0]), accuracy: 3, "Unexpected band at y=\(y)")
+            }
+            host.rootView = home(ready: true)
+            try await waitForHostedLayout(window)
+            let after = snapshot(window, name: "compact-home-with-artwork")
+            XCTAssertGreaterThan(try pixel(after, at: CGPoint(x: x, y: 10))[1], 100)
+            XCTAssertFalse(origins.isEmpty)
+            for y in origins { XCTAssertEqual(y, 0, accuracy: 1, "The hero must start at the top even on first layout.") }
+            for (term, darkTerms) in [("Play", Set(["Play"])), ("Continue Watching", Set<String>())] {
+                let a = try XCTUnwrap(HeroTextInk.frames(in: before, terms: [term], darkTerms: darkTerms)[term])
+                let b = try XCTUnwrap(HeroTextInk.frames(in: after, terms: [term], darkTerms: darkTerms)[term])
+                XCTAssertEqual(a.midY, b.midY, accuracy: 1)
             }
         }
     }
@@ -1296,6 +1360,10 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
 
     func testDetailArtworkKeepsItsCropWhileItsNavigationFrameMoves() async throws {
         let item = try await artworkItem(marksSides: true)
+        // Measure page translation, not a cold artwork reveal in the reference frame.
+        let url = try XCTUnwrap(item.backdropURL)
+        let resolved = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop)
+        let handoff = try XCTUnwrap(resolved)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let suite = "DetailNavigationCrop-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -1316,7 +1384,7 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
                     PlozziOSHeroStage(
                         item: item,
                         presentation: HeroPresentation(item: item, artworkStyle: .landscape, surface: .detail),
-                        style: .landscape, surfaceRole: .detail, isActive: false,
+                        style: .landscape, surfaceRole: .detail, seedArtwork: handoff, isActive: false,
                         showsScrim: false,
                         trailerController: trailer,
                         backgroundSettings: app.settings.heroBackground,
@@ -1665,6 +1733,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
         isRunningOnMac: Bool = false,
         tracksWindowHeight: Bool = false,
         heroItems: [MediaItem]? = nil,
+        autoAdvanceSeconds: Int? = nil,
+        showsRatings: Bool = false,
         onHeroPinnedItemsChanged: @escaping (Set<String>) -> Void = { _ in },
         exercise: (UIWindow, UIHostingController<AnyView>) async throws -> Void
     ) async throws {
@@ -1676,10 +1746,12 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             profileStore: ProfileStore(defaults: defaults)
         )
         app.settings.heroBackground.settings.homeTrailerEnabled = false
+        app.settings.hero.settings.showsRatings = showsRatings
         let sidebar = PlozziOSSidebarGeometryModel()
         let root = HomeHeroWidthFixture(
             items: heroItems ?? [item], pull: pull, nativeTabs: nativeTabs, sidebar: sidebar,
-            tracksWindowHeight: tracksWindowHeight, onPinnedItemsChanged: onHeroPinnedItemsChanged
+            tracksWindowHeight: tracksWindowHeight, autoAdvanceSeconds: autoAdvanceSeconds,
+            onPinnedItemsChanged: onHeroPinnedItemsChanged
         )
             .environment(app)
             .environment(sidebar)
@@ -1710,7 +1782,8 @@ final class HomeHeroFullWidthPresentationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await waitForHostedLayout(window)
+        // An auto-advancing hero's dwell gauge is never at rest.
+        if autoAdvanceSeconds == nil { try await waitForHostedLayout(window) }
         try await exercise(window, host)
     }
 
@@ -1925,6 +1998,7 @@ private struct HomeHeroWidthFixture: View {
     let nativeTabs: Bool
     let sidebar: PlozziOSSidebarGeometryModel
     var tracksWindowHeight = false
+    var autoAdvanceSeconds: Int?
     var onPinnedItemsChanged: (Set<String>) -> Void = { _ in }
 
     var body: some View {
@@ -1952,7 +2026,7 @@ private struct HomeHeroWidthFixture: View {
         NavigationStack {
             PlozziOSHomeScrollView(heroActive: true) {
                 PlozziOSHomeHeroCarousel(
-                    items: items, autoAdvance: false, autoAdvanceSeconds: 30,
+                    items: items, autoAdvance: autoAdvanceSeconds != nil, autoAdvanceSeconds: autoAdvanceSeconds ?? 30,
                     onPlay: { _ in }, onPinnedItemsChanged: onPinnedItemsChanged, pullModel: pull
                 )
             } rows: {

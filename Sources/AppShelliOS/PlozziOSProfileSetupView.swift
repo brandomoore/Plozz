@@ -126,8 +126,30 @@ struct PlozziOSProfileSetupView: View {
     }
 }
 
-/// Asks who a profile watches as on a Plex server it just switched on.
-///
+struct PlozziOSServerIdentityPresenter: ViewModifier {
+    let appModel: PlozziOSAppModel
+    let isEnabled: Bool
+    @State private var displayed: PlozziOSAppModel.ServerIdentityQuestion.ID?
+
+    func body(content: Content) -> some View {
+        let question = isEnabled ? appModel.presentableIdentityQuestion : nil
+        return content.plozzSheet(item: Binding(
+            get: { question },
+            set: { value in
+                guard value == nil, let question, displayed == question.id else { return }
+                appModel.concludeIdentityPrompt(question)
+            }
+        )) { presented in
+            PlozziOSServerIdentityPromptView(
+                appModel: appModel, account: presented.account,
+                onFinish: { appModel.concludeIdentityPrompt(presented) },
+                onDecline: { appModel.concludeIdentityPrompt(presented, decline: true) }
+            )
+            .onAppear { displayed = presented.id }
+        }
+    }
+}
+
 /// Reuses the Home-user page from Settings, which is already the screen for this
 /// question on iOS — the difference is only that here it's asked rather than
 /// gone looking for. See `ProfileServerIdentityPrompts` for why enabling a
@@ -135,10 +157,7 @@ struct PlozziOSProfileSetupView: View {
 struct PlozziOSServerIdentityPromptView: View {
     let appModel: PlozziOSAppModel
     let account: Account
-    /// Closes the question. Whether that counts as answered or declined is
-    /// decided by whether a user was actually picked — see
-    /// `PlozziOSAppModel.concludeIdentityPrompt(for:)`. Done and a swipe are the
-    /// same gesture here, and neither is consent on its own.
+    /// Done and swipe keep the current identity; declining the watchlist is explicit.
     let onFinish: () -> Void
     let onDecline: () -> Void
 

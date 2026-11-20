@@ -175,10 +175,14 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     /// Supplies the resolver's initial cached bitmap directly to native artwork,
     /// retaining one content identity while an uncached image arrives. The key
     /// identifies the displayed resolution, including its source/policy boundary.
-    func resolvedBitmap<ResolvedContent: View>(
+    public func resolvedBitmap<ResolvedContent: View>(
+        reportingHeroArtwork id: String? = nil,
+        replay: ArtworkBitmapReplay? = nil,
         @ViewBuilder content: @escaping (UIImage?, String?) -> ResolvedContent
     ) -> some View {
         ArtworkPolicyReader(policy: artworkPolicy) { policy, sourceReady in
+            let identity = displayIdentity(policy)
+            let previous = replay?.image(for: identity)
             if sourceReady {
                 FilteredArtworkImage(
                     references: references,
@@ -194,12 +198,19 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
                     pinIdentity: pinIdentity,
                     sharedResolutionIdentity: sharedResolutionIdentity,
                     lookupIdentity: lookupIdentity,
+                    reportedHeroID: id,
                     showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
-                    content: .bitmap(content),
+                    content: .bitmap { image, key in
+                        content(image ?? previous, key)
+                            .onChange(of: image.map(ObjectIdentifier.init), initial: true) { _, _ in
+                                if let image { replay?.remember(image, for: identity) }
+                            }
+                    },
                     placeholder: { EmptyView() }
                 )
+                .id(replay.map(ObjectIdentifier.init))
             } else {
-                content(nil, nil)
+                content(previous, nil)
             }
         }
     }
@@ -453,6 +464,49 @@ enum ArtworkSeedMemo {
     }
 }
 
+/// Remembers what a destination actually displayed, not what a card prefetched.
+/// The decoded cache owns the pixels; a replay entry cannot extend their lifetime.
+@MainActor
+public final class ArtworkBitmapReplay {
+    private struct Entry { weak var image: UIImage? }
+    private var entries: [ArtworkDisplayIdentity: Entry] = [:]
+    private var order: [ArtworkDisplayIdentity] = []
+
+    public init() {}
+
+    /// Restore the detail preview under the same identity the source gate reads.
+    /// A visible page that finishes first always keeps its own selection.
+    public func preparePreview(
+        pinIdentity: String, references: [ArtworkReference], policy: ArtworkPresentationPolicy,
+        prefersLandscape: Bool, maxAspectRatio: CGFloat, asyncFallbackURL: @escaping @Sendable () async -> URL?
+    ) async {
+        let identity = ArtworkDisplayIdentity(
+            subject: pinIdentity, policy: policy.identity, references: references,
+            variant: .heroBackdrop, maxAspectRatio: maxAspectRatio, prefersLandscape: prefersLandscape
+        )
+        guard image(for: identity) == nil,
+              let preview = await ArtworkFirstPaintResolver.resolve(
+                references: references, variant: .heroPreview, maxAspectRatio: maxAspectRatio,
+                prefersLandscape: prefersLandscape, asyncOnlineURL: asyncFallbackURL,
+                prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
+              ), !Task.isCancelled, !prefersLandscape || preview.isLandscape,
+              image(for: identity) == nil else { return }
+        remember(preview.image, for: identity)
+    }
+
+    fileprivate func image(for identity: ArtworkDisplayIdentity) -> UIImage? {
+        entries[identity]?.image
+    }
+
+    fileprivate func remember(_ image: UIImage, for identity: ArtworkDisplayIdentity) {
+        if entries[identity] == nil {
+            if order.count == 120 { entries.removeValue(forKey: order.removeFirst()) }
+            order.append(identity)
+        }
+        entries[identity] = Entry(image: image)
+    }
+}
+
 private enum ResolvedArtworkContent<Content: View> {
     case image((Image) -> Content)
     case bitmap((UIImage?, String?) -> Content)
@@ -517,6 +571,11 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     @State private var displayedReference: ArtworkReference?
     @State private var selectedPrimaryPriority: Bool
     @State private var selectedDisplayIdentity: ArtworkDisplayIdentity
+    /// Whether the painted image came from the async fallback lookup rather than
+    /// the item's own candidates. A hydrated candidate set supersedes a fallback
+    /// poster, but never a painted candidate: library cells keep the artwork the
+    /// viewer is already looking at while new candidates settle.
+    @State private var paintedFromFallback = false
     @Environment(\.heroArtworkDisplayReporter) private var heroArtworkReporter
 
     private struct ReportIdentity: Equatable {
@@ -724,6 +783,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             loadedKey = nil
             pinnedIdentity = nil
             displayedReference = nil
+            paintedFromFallback = false
             selectedDisplayIdentity = displayIdentity
         }
         let key = taskKey
@@ -735,19 +795,27 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             onResolveReference?(displayedReference)
             return
         }
+        // Retain the pinned asset only for the inputs it was resolved for. A new
+        // candidate set (detail hydration replacing a poster fallback) must run
+        // the selection below, or the poster pins forever.
         let isSameSubject = pinIdentity != nil && pinnedIdentity == pinIdentity && hasSamePriority
-        if isSameSubject, image != nil, let displayedReference {
+        // Keep a painted candidate while it is still one of the candidates (a
+        // late arrival must not replace it), but re-resolve when it is no longer
+        // offered or when it was only the async fallback standing in for the
+        // page's own artwork.
+        if isSameSubject, image != nil, !isPreviewQuality, !paintedFromFallback,
+           let displayedReference, references.contains(displayedReference) {
             onResolveReference?(displayedReference)
-            if isPreviewQuality {
-                let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
-                guard !Task.isCancelled else { return }
-                if let loaded, Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
-                    image = loaded
-                    isPreviewQuality = false
-                    if let loadedKey {
-                        ArtworkSeedMemo.store(loaded, reference: displayedReference, for: loadedKey)
-                    }
-                }
+            return
+        }
+        if loadedKey == key, isSameSubject, image != nil, isPreviewQuality, let displayedReference {
+            onResolveReference?(displayedReference)
+            let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
+            guard !Task.isCancelled else { return }
+            if let loaded, Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
+                image = loaded
+                isPreviewQuality = false
+                ArtworkSeedMemo.store(loaded, reference: displayedReference, for: key)
             }
             return
         }
@@ -757,6 +825,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             isPreviewQuality = false
             loadedKey = key
             pinnedIdentity = pinIdentity
+            paintedFromFallback = false
             displayedReference = prepared.reference
             onResolveReference?(prepared.reference)
             return
@@ -777,6 +846,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             resolved = true
             isPreviewQuality = false
             pinnedIdentity = pinIdentity
+            paintedFromFallback = false
             displayedReference = references.indices.contains(seeded.index)
                 ? references[seeded.index]
                 : nil
@@ -867,6 +937,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             isPreviewQuality = true
             loadedKey = key
             pinnedIdentity = pinIdentity
+            paintedFromFallback = false
             displayedReference = first
             rememberPreview(loaded, reference: first)
         }
@@ -890,6 +961,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 loadedKey = key
                 ArtworkSeedMemo.store(loaded, reference: reference, for: key)
                 pinnedIdentity = pinIdentity
+                paintedFromFallback = false
                 displayedReference = reference
                 onResolveReference?(reference)
                 return
@@ -913,6 +985,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     isPreviewQuality = true
                     loadedKey = key
                     pinnedIdentity = pinIdentity
+                    paintedFromFallback = true
                     displayedReference = .remote(url)
                     rememberPreview(preview, reference: .remote(url))
                 }
@@ -927,6 +1000,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                     loadedKey = key
                     ArtworkSeedMemo.store(loaded, reference: .remote(url), for: key)
                     pinnedIdentity = pinIdentity
+                    paintedFromFallback = true
                     displayedReference = .remote(url)
                     onResolveReference?(.remote(url))
                     return
@@ -953,6 +1027,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         isPreviewQuality = firstPaint.variant != variant
         loadedKey = key
         pinnedIdentity = pinIdentity
+        paintedFromFallback = !references.contains(firstPaint.reference)
         displayedReference = firstPaint.reference
         if isPreviewQuality {
             rememberPreview(firstPaint.image, reference: firstPaint.reference)

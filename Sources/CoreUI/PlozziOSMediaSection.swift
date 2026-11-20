@@ -141,6 +141,7 @@ public struct PlozziOSPosterGridLayout {
 
 public struct PlozziOSMediaSection<Content: View>: View {
     @Environment(\.homeRowEditAction) private var editAction
+    @Environment(\.themePalette) private var palette
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozzMetrics) private var metrics
@@ -148,6 +149,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
     var horizontalInset: CGFloat?
     var artworkInset: CGFloat = 0
     var reservesBrowseSpace = false
+    var reservesRefreshStatusSpace = false
     var onSeeAll: (() -> Void)? = nil
     var onBrowse: (() -> Void)? = nil
     var onHeadingTap: (() -> Void)? = nil
@@ -155,7 +157,8 @@ public struct PlozziOSMediaSection<Content: View>: View {
 
     public init(
         title: Text, horizontalInset: CGFloat? = nil, artworkInset: CGFloat = 0,
-        reservesBrowseSpace: Bool = false, onSeeAll: (() -> Void)? = nil,
+        reservesBrowseSpace: Bool = false, reservesRefreshStatusSpace: Bool = false,
+        onSeeAll: (() -> Void)? = nil,
         onBrowse: (() -> Void)? = nil, onHeadingTap: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
@@ -163,6 +166,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
         self.horizontalInset = horizontalInset
         self.artworkInset = artworkInset
         self.reservesBrowseSpace = reservesBrowseSpace
+        self.reservesRefreshStatusSpace = reservesRefreshStatusSpace
         self.onSeeAll = onSeeAll
         self.onBrowse = onBrowse
         self.onHeadingTap = onHeadingTap
@@ -180,6 +184,11 @@ public struct PlozziOSMediaSection<Content: View>: View {
                     else { title }
                 }
                     .font(PlozziOSMediaRailLayout.headingFont)
+                    // Resolve from the active theme, not the hosting view's
+                    // inherited primary colour: the offscreen Mac snapshot hosted
+                    // this section with a light primary while the rest of the page
+                    // was dark, leaving the heading nearly invisible.
+                    .foregroundStyle(palette.primaryText)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
@@ -191,6 +200,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
                         .font(.subheadline)
                 }
             }
+                .frame(minHeight: reservesRefreshStatusSpace ? MediaRowRefreshIndicator.size : nil)
                 .padding(.horizontal, horizontalInset ?? PlozziOSMediaRailLayout.pageInset(
                     for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing
                 ))

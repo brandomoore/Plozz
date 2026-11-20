@@ -17,7 +17,10 @@ final class MusicPlaylistArtworkTests: XCTestCase {
         XCTAssertEqual(artwork.url, cover)
         XCTAssertNotNil(artwork.asyncFallbackURL)
         XCTAssertEqual(artwork.variant, .musicThumbnail)
-        XCTAssertEqual(artwork.pinIdentity, track.id)
+        // Pinned first-paint identity is account-namespaced, so two accounts can
+        // hold the same track id without sharing a row's pinned artwork.
+        XCTAssertEqual(artwork.pinIdentity, MusicArtworkFallback.trackIdentity(track))
+        XCTAssertEqual(artwork.pinIdentity, "0:track")
     }
 
     func testTrackThumbnailKeepsPlaylistCoverAndOnlineLookupWhenTrackHasNoCover() {

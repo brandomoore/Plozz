@@ -561,6 +561,48 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     #endif
 
     #if os(tvOS)
+    func testSkipLandingSuppressesTheFollowingMarkerForTheGraceWindow() {
+        let model = PlayerControlsModel()
+        model.duration = 2_400
+        model.skipModes = SkipMarkerModes(base: .on)
+        model.skipSegments.segments = [
+            .init(id: "intro", kind: .intro, start: 54.346, end: 82.5),
+            .init(id: "credits", kind: .credits, start: 82.5, end: 2_400)
+        ]
+        model.skipSegments.dismissedWindow = .init(model.skipSegments.segments[0])
+        model.skipSegments.skippedLanding = 82.5
+
+        model.currentSeconds = 82.5
+        XCTAssertNil(model.activeSkipSegment, "The pressed button must leave at its own landing.")
+        model.currentSeconds = 86
+        XCTAssertNil(model.activeSkipSegment, "A marker starting at the landing waits for playback.")
+        model.currentSeconds = 88
+        XCTAssertEqual(model.activeSkipSegment?.id, "credits",
+                       "The following marker returns once playback has moved into it.")
+    }
+
+    func testDismissalSurvivesAMarkerListRefreshWithANewId() throws {
+        let model = PlayerControlsModel()
+        model.duration = 2_400
+        model.currentSeconds = 60
+        // A server-detected intro can end early; the live playhead is then still
+        // inside the community report for the same opening.
+        let original = MediaSegment(id: "server-intro", kind: .intro, start: 55, end: 63)
+        model.skipSegments.segments = [original]
+        model.skipSegments.dismissedSegmentID = original.id
+        model.skipSegments.dismissedWindow = .init(original)
+        XCTAssertNil(model.activeSkipSegment)
+
+        // Re-published after the press with a provider-specific id, and (in this
+        // report) a wider window: pressing must not bring the button back.
+        let replacement = MediaSegment(
+            id: "theintrodb-intro-0", kind: .intro, start: 54.346, end: 82.5
+        )
+        model.skipSegments.segments = [replacement]
+        XCTAssertNil(model.activeSkipSegment,
+                     "Re-publishing the same opening under a provider-specific id or window must not resurrect the button.")
+    }
+
     func testActualTVScrubBarShowsMarkersWithoutChangingSkipState() throws {
         let model = PlayerControlsModel()
         model.duration = 100

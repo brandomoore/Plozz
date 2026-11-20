@@ -312,7 +312,11 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertTrue(requester.requestFocus())
         XCTAssertEqual(focus.request.wrappedValue.generation, generation)
         XCTAssertFalse(focus.request.wrappedValue.wantsFocus)
+        // UIKit publishes the restored focus state on its next focus update, so
+        // give the already-focused source one bounded turn to report it.
+        try await waitUntil { focus.focusState.wrappedValue }
         XCTAssertTrue(focus.focusState.wrappedValue)
+        try await waitUntil { (try? XCTUnwrap(nativePoster(in: fixture.window)))?.isFocused == true }
         XCTAssertTrue(try XCTUnwrap(nativePoster(in: fixture.window)).isFocused)
     }
 

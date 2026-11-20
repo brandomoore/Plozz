@@ -2380,6 +2380,9 @@ public final class PlayerViewModel {
         segmentsTask?.cancel()
         segmentsTask = nil
         controls.skipSegments.segments = []
+        controls.skipSegments.dismissedSegmentID = nil
+        controls.skipSegments.dismissedWindow = nil
+        controls.skipSegments.skippedLanding = nil
         let wantsMarkers = modes.fetchesMarkers || playbackSettings.showUpNextCard
         guard wantsMarkers else { return }
         let provider = provider
@@ -2456,13 +2459,18 @@ public final class PlayerViewModel {
     public func skipActiveSegment() {
         guard let segment = controls.activeSkipSegment else { return }
         controls.skipSegments.dismissedSegmentID = segment.id
+        controls.skipSegments.dismissedWindow = .init(segment)
+        controls.skipSegments.skippedLanding = segment.end
         requestSeek(to: segment.end, origin: "skip-segment")
     }
 
     /// Dismisses the skip button for the active segment without seeking (Menu /
     /// swipe-away), so it won't keep stealing focus for the rest of the window.
     public func dismissActiveSkipSegment() {
-        controls.skipSegments.dismissedSegmentID = controls.activeSkipSegment?.id
+        if let segment = controls.activeSkipSegment {
+            controls.skipSegments.dismissedSegmentID = segment.id
+            controls.skipSegments.dismissedWindow = .init(segment)
+        }
     }
 
     /// Auto-skips the active segment when the per-profile Auto-skip setting is on:
@@ -2472,6 +2480,8 @@ public final class PlayerViewModel {
     public func autoSkipActiveSegment() {
         guard let segment = controls.activeSkipSegment else { return }
         controls.skipSegments.dismissedSegmentID = segment.id
+        controls.skipSegments.dismissedWindow = .init(segment)
+        controls.skipSegments.skippedLanding = segment.end
         controls.autoSkipNotice = AutoSkipNotice(label: segment.kind.autoSkippedLabel)
         requestSeek(to: segment.end, origin: "auto-skip-segment")
         autoSkipNoticeTask?.cancel()
@@ -3125,7 +3135,7 @@ public final class PlayerViewModel {
         }
         var prefix = ""
         if let season = item.seasonNumber, let episode = item.episodeNumber {
-            prefix = "S\(season), E\(episode)"
+            prefix = "S\(season) · E\(episode)"
         } else if let episode = item.episodeNumber {
             prefix = "E\(episode)"
         }
