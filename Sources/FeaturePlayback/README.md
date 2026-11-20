@@ -1917,7 +1917,8 @@ tracks, not a filename or launch flag. The current envelope is seekable SDR
 Matroska H.264 through 1080p30 with mono/stereo AAC, FLAC, Opus, Vorbis or MP3
 on all audio tracks. With exact 2× line-art upscaling, authored regions are
 composited onto the upscaler's output at the original frame timestamp. The
-upscaler and its quality policy are unchanged. Other upscale plans, external
+upscaler and its quality policy are unchanged. If it disables itself, a session
+that still needs software output for ASS continues without reloading. Other upscale plans, external
 output, disc/live/rendition playback and spatial audio do not opt in.
 The fullscreen controller yields to the normal overlay for
 custom placement or opacity, secondary tracks, controls avoidance, zoom and
@@ -1933,7 +1934,8 @@ or advance subtitles.
 Far landings can also use a complete, track-specific mkvmerge cue index. The
 reader checks the track header, declared frame count, distinct block locations
 and cue durations; it reads the referenced block when a duration is omitted.
-Bounded, version-checked HTTP ranges run independently of playback. A frame
+Bounded, version-checked HTTP ranges use spare request slots only; indexing
+is skipped for serial or rate-limited origins. A frame
 is eligible only when every indexed overlap is present in the packet store,
 including multiple layers with identical timestamps. An incomplete index or
 missing packet leaves the existing fallback intact.

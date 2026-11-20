@@ -52,7 +52,7 @@ index 1d893248..39a2f230 100644
              while !Task.isCancelled {
                  let originPaced = OriginRequestBudget.shared.isPaced(url)
 diff --git a/Sources/AetherEngine/AetherEngine.swift b/Sources/AetherEngine/AetherEngine.swift
-index 770e76e0..a9e3044f 100644
+index 770e76e0..eb87dd55 100644
 --- a/Sources/AetherEngine/AetherEngine.swift
 +++ b/Sources/AetherEngine/AetherEngine.swift
 @@ -1025,9 +1025,14 @@ public final class AetherEngine: ObservableObject {
@@ -97,10 +97,10 @@ index 770e76e0..a9e3044f 100644
  
      /// ASS script header ([Script Info] + [V4+ Styles] + [Events] Format line) for the primary sidecar, or nil.
      /// Populated when `LoadOptions.preserveASSMarkup` is set and the file is ASS/SSA; `subtitleCues` then carry
-@@ -6442,6 +6451,30 @@ public final class AetherEngine: ObservableObject {
+@@ -6440,6 +6449,31 @@ public final class AetherEngine: ObservableObject {
+             EngineLog.emit(line, category: .engine)
+         }
          sourceUpscalePlan = upscaleDecision.plan
-         sourceSoftwareOnlyForUpscale = sourceUpscalePlan != nil && !useSoftwarePath
-         if sourceUpscalePlan != nil { useSoftwarePath = true }
 +        // Do not trade native delivery features for subtitle styling. Admit only
 +        // the bounded SDR workload and never use the process-wide test override.
 +        frameASSRouteAdmitted = false
@@ -125,10 +125,11 @@ index 770e76e0..a9e3044f 100644
 +            EngineLog.emit("[SoftwareASS] fullscreen primary admitted stream=\(id)", category: .engine)
 +        }
 +        #endif
++        // Only reload on scaler failure if nothing else requires software output.
+         sourceSoftwareOnlyForUpscale = sourceUpscalePlan != nil && !useSoftwarePath
+         if sourceUpscalePlan != nil { useSoftwarePath = true }
          // TEST-ONLY: forces SW path for aetherctl live --sw; unset in shipping builds.
-         if Self.forceSoftwarePathForTesting {
-             useSoftwarePath = true
-@@ -7293,6 +7326,10 @@ public final class AetherEngine: ObservableObject {
+@@ -7293,6 +7327,10 @@ public final class AetherEngine: ObservableObject {
              // silently extends one run over the whole offset, which is exactly the claim
              // `SubtitleHarvestCoverage` exists to refuse.
              let landingSource = host.sourceSeconds(forSession: clockTarget)
@@ -139,7 +140,7 @@ index 770e76e0..a9e3044f 100644
              softwareSubtitlePacketStore?.noteHarvestAnchor(.pump, at: landingSource)
              // AE#1022: the landing read goes out with the seek, not with the first drain tick after
              // it, which comes only once the landed frame has prerolled (measured 0.67 s). The ground
-@@ -9179,6 +9216,7 @@ public final class AetherEngine: ObservableObject {
+@@ -9179,6 +9217,7 @@ public final class AetherEngine: ObservableObject {
          softwareHost?.stop()
          softwarePiPSource = nil
          softwareHost = nil
@@ -147,7 +148,7 @@ index 770e76e0..a9e3044f 100644
  
          // Clear audioHost so music<->video handoffs start from a clean slate; the engine is a process-wide
          // singleton and a lingering host would keep the old synchronizer alive under the next session.
-@@ -9278,6 +9316,8 @@ public final class AetherEngine: ObservableObject {
+@@ -9278,6 +9317,8 @@ public final class AetherEngine: ObservableObject {
          stopSubtitleDrainer(reason: .sessionStopped)   // #112 rework: both channels
          resetSubtitleOCRState()                // Phase D
          subtitleDrainTargets.removeAll()
@@ -591,10 +592,10 @@ index 8dcf16e6..bdd1a90c 100644
      nonisolated static func renderColorSpace(for buffer: CVPixelBuffer) -> CGColorSpace {
 diff --git a/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift b/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift
 new file mode 100644
-index 00000000..a1aabf4e
+index 00000000..a3880120
 --- /dev/null
 +++ b/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,211 @@
 +import Foundation
 +
 +/// A Matroska seek table alone isn't a subtitle inventory. Accept only the
@@ -695,6 +696,11 @@ index 00000000..a1aabf4e
 +}
 +
 +extension MatroskaASSIndex {
++    static func reserveRange(for url: URL, budget: OriginRequestBudget = .shared) -> OriginRequestBudget.Ticket? {
++        guard !budget.requiresSerialRequests(url), !budget.isPaced(url) else { return nil }
++        return budget.tryAcquire(for: url, label: "subtitle-index")
++    }
++
 +    /// Two bounded metadata ranges, plus at most eight ambiguous BlockGroups.
 +    /// Never seek the playback demuxer. If the origin ignores Range, reject
 +    /// the headers *before* consuming its body; no sequential-read fallback.
@@ -711,6 +717,8 @@ index 00000000..a1aabf4e
 +            guard ContinuousClock.now < deadline, count > 0, offset >= 0,
 +                  offset <= (1<<52)-count, spent + count <= 2_500_000,
 +                  length.map({ offset+count <= $0 }) ?? true else { throw Invalid.index }
++            guard let ticket = Self.reserveRange(for: url) else { throw Invalid.index }
++            defer { OriginRequestBudget.shared.release(ticket) }
 +            var request = URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:3)
 +            request.allHTTPHeaderFields = headers
 +            request.setValue("bytes=\(offset)-\(offset+count-1)",forHTTPHeaderField:"Range")

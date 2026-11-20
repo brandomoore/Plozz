@@ -141,7 +141,7 @@ actor ASSSubtitleRasterizer {
             snapshot = incoming
             snapshotRevision = revision
         }
-        if changedSnapshot || time >= nextCueBoundary {
+        if movedBackward || changedSnapshot || time >= nextCueBoundary {
             nextCueBoundary = .infinity
             for event in incoming where event.start.isFinite && event.end.isFinite && event.end > event.start {
                 if event.start > time { nextCueBoundary = min(nextCueBoundary, event.start) }

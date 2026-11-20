@@ -140,6 +140,7 @@ final class ASSSubtitleRendererTests: XCTestCase {
                 end: 1.28 + Double(index) * 0.5
             )
         }
+
         var visible = false
         for event in events {
             for (time, expected) in [(event.start - 0.001, false), (event.start, true),
@@ -151,6 +152,16 @@ final class ASSSubtitleRendererTests: XCTestCase {
                 XCTAssertEqual(visible, expected, "Authored sign at \(time)")
             }
         }
+    }
+
+    func testRewindRecomputesNextBoundaryWithAnUnchangedPacketSnapshot() async throws {
+        let renderer = ASSSubtitleRasterizer()
+        let doc = document()
+        let events = [ASSSubtitleEvent(packet: "0,0,Default,,0,0,0,,Sign", start: 2, end: 3)]
+        let past = try await renderer.render(document: doc, events: events, time: 4, snapshotRevision: 1)
+        XCTAssertNil(past.nextCueBoundary)
+        let rewind = try await renderer.render(document: doc, events: events, time: 1.99, snapshotRevision: 1)
+        XCTAssertEqual(rewind.nextCueBoundary, 2)
     }
 
     func testSlowSteadyStateASSFramesMatchTheMediaTimeAtCompletion() async throws {

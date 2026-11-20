@@ -91,6 +91,20 @@ final class FrameASSArtworkTests: XCTestCase {
         XCTAssertFalse(plan.supportsFrameASS)
     }
 
+    func testIndexReadsCannotCompeteWithSingleSlotPlaybackOrExceedTheOriginLimit() throws {
+        let origin = try XCTUnwrap(URL(string: "https://subtitle-index.invalid/video"))
+        let budget = OriginRequestBudget()
+        budget.setHostLimit(1, for: origin)
+        XCTAssertNil(MatroskaASSIndex.reserveRange(for: origin, budget: budget))
+        let playback = try XCTUnwrap(budget.tryAcquire(for: origin, label: "playback"))
+        defer { budget.release(playback) }
+        XCTAssertNil(MatroskaASSIndex.reserveRange(for: origin, budget: budget))
+        budget.setHostLimit(2, for: origin)
+        let index = try XCTUnwrap(MatroskaASSIndex.reserveRange(for: origin, budget: budget))
+        defer { budget.release(index) }
+        XCTAssertNil(budget.tryAcquire(for: origin, label: "over limit"))
+    }
+
     func testFarLandingRequiresEveryIndexedOverlapAndTrackIdentity() throws {
         typealias Cue = MatroskaASSIndex.Cue
         let cues = [Cue(interval:.init(start:10, duration:1_060_750), location:100),
