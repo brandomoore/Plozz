@@ -176,7 +176,7 @@ public struct PlozziOSMediaSection<Content: View>: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.headingSpacing) {
-            HStack(spacing: refreshStatus == nil ? nil : 4) {
+            HStack(spacing: refreshStatus == nil ? nil : 8) {
                 Group {
                     if onBrowse != nil || reservesBrowseSpace || editAction != nil {
                         BrowseRowHeading(title: title, action: onBrowse, reservesChevronSpace: refreshStatus == nil)
