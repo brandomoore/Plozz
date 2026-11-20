@@ -185,6 +185,7 @@ private struct ThemeMusicScope: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .environment(model)
             .environment(\.themeMusicController, controller)
             .environment(\.themeMusicPreviewController, controller)
             .environment(\.themeMusicSettings, model.settings)
