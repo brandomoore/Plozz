@@ -332,7 +332,7 @@ public final class UnifiedAddShareModel {
         fullDoorsByHost = [:]
         scanTask = Task { [discovery] in
             var services: [DiscoveredNetworkService] = []
-            for await service in discovery.discover(timeout: 6) {
+            for await service in discovery.discoverMediaShares(timeout: 6) {
                 if Task.isCancelled { break }
                 services.append(service)
                 // Record the advertised door (Bonjour carries the REAL port).

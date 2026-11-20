@@ -192,7 +192,7 @@ public enum PlozzAttributions {
                 "SMB network shares use SMBClient by Kishikawa Katsumi, "
                 + "with Plozz's SMB3 and connection-handling changes. "
                 + "Upstream: https://github.com/kishikawakatsumi/SMBClient. "
-                + "Source: https://github.com/thatcube/SMBClient/tree/5d5bceb6fa0833c98b0eecc676609c9476bd9423.",
+                + "Source: https://github.com/thatcube/SMBClient/tree/c778237de5e2525a46005241dc5e7926703bddcf.",
             licenses: [.init("MIT", family: .mit)]
         ),
         PlozzAttribution(
