@@ -8,8 +8,14 @@ not the app or tracker code.
 The signed iPhone simulator app built at `d3da98cea`. Its season ratings
 screen matched independent PublicMetaDB reads for all ten rated episodes of
 *The Crown* season 1 (40 ratings). The live test now waits for an independently
-expected episode instead of obsolete help text. No rating was changed. The
-corrected tvOS driver compiled; this was not a live TV season test.
+expected episode instead of obsolete help text. No rating was changed.
+
+On `12d85b8d6`, the signed tvOS app reached PublicMetaDB Settings after a
+dedicated Emby sign-in. It showed **Connect PublicMetaDB**, not **Browse**:
+the earlier PublicMetaDB pairing belonged to a simulator that had since been
+removed. The season test built but did not run. Independent API reads before
+and after agreed on all ten episodes and 40 ratings; they do not verify what
+the tvOS ratings screen displays.
 
 On `7636ca222`, the iPhone app showed the same four individual ratings for
 episode 1 as the authenticated API. Each row offered **Delete rating**. Opening
