@@ -280,7 +280,8 @@ measurements show contention on the loaded page, not server CPU or display FPS.
 **tvOS, holding server count fixed:** four alternating launches of the same
 optimized production `RootView` used one loopback Jellyfin fixture, the same
 40 libraries, and 20 distinct movies and posters per library. Only the number
-of enabled server rows changed. The hero was disabled. Prelaunch video and
+of enabled server rows changed. The featured hero was disabled, but the
+saved default row style remained Showcase, not classic carousel. Prelaunch video and
 native focus measured returning-profile selection independently of data loading.
 
 | tvOS simulator (two recorded runs per configuration) | 3 rows / 60 cards | 40 rows / 800 cards |
@@ -361,6 +362,38 @@ Brief placeholders were visible; the pixel test did **not** require every
 poster or even the focused poster to be painted. No traffic reached a real
 server. Keep classic Home unchanged: neither the four-row limit nor preloading
 all posters is justified by these trials.
+
+#### Isolating the dense Showcase layout
+
+The original dense fixture changed `HeroSettings.default.isEnabled`, not the
+saved style. On tvOS, switching off the featured hero does not turn Showcase
+rows into classic carousel rows. To isolate the layout, a follow-up used the
+**same binary, enabled hero and 40 × 20 dataset**, changing only the saved
+style in Showcase → carousel → Showcase order. The object of measurement was
+returning-profile selection to native Home content focus, not a display callback.
+
+| Unrecorded simulator starts | Carousel | Showcase |
+|---|---:|---:|
+| Selection to first native Home content focus | 1.05 s | 27.12 / 93.27 s |
+| Image GETs completed by that focus | 32 | 692 / 623 |
+| Single-item detail GETs completed by that focus | 2 | 178 / 198 |
+
+Across each full load the local origin received all 40 shelf queries exactly
+once and Home published 41 nonempty rows / 801 entries. Timings varied widely;
+this isolates a slow layout, not a specific CPU hot spot or a hardware estimate.
+In a separate prelaunch recording the original Showcase's first shelf artwork
+appeared at about 9.3 s, and the bright Resume action at about 23.9 s.
+
+**Rejected experiment:** limiting speculative detail and artwork work to nearby
+shelves (including card appearance-triggered prefetch) reduced response bodies
+received through two seconds after completion from **6.94–7.43 MB to
+0.63–0.67 MB**. Exact-key duplicate requests fell from 150–151 to 18–24;
+no shelf queries or content were lost. But fast navigation after a 10 s dwell
+left shelf 7 gray on the descent: recognizable artwork appeared only on the way
+back, about 2.24 s after its Down, versus 185 ms on the original. Eight Ups
+returned to Resume on the original, but not on the candidate, including in an
+unrecorded repeat. The change was **not adopted**. These are HTTP receipts on
+a loopback Jellyfin-shaped origin, not live-server CPU measurements.
 
 ## Baseline → attribution → candidate → regression
 
