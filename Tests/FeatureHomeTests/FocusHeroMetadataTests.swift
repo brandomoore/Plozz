@@ -134,6 +134,11 @@ final class FocusHeroMetadataTests: XCTestCase {
         await pending.value
         XCTAssertEqual(newHome.item(for: item).genres, ["New profile"])
         XCTAssertFalse(oldHome.hasDetails(for: item))
+        // Retry the same admitted key on the cancelled request's owner, not a fresh cache.
+        await oldHome.load(item) { items in
+            items.map { var full = $0; full.genres = ["Retry"]; return full }
+        }
+        XCTAssertEqual(oldHome.item(for: item).genres, ["Retry"])
     }
 
     func testPrefetchBoundsBatchesAndDeduplicatesAcrossRows() async {

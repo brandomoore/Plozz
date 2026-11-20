@@ -670,7 +670,7 @@ final class FocusHeroMetadata {
     }
 
     private func store(_ batch: [MediaItem], using enrich: Enrich) async {
-        let enriched = await HeroMetadataEnricher.withPinnedSeries({ batch }) {
+        let enriched = await HeroMetadataEnricher.withShowcasePresentations(batch) {
             await enrich(batch)
         }
         guard !Task.isCancelled, enriched.count == batch.count else {

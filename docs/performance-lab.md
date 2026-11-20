@@ -4,8 +4,8 @@ Use this for the agent-driven optimization loop without installing on an Apple
 TV, iPhone, or iPad. It complements [physical profiling](performance-debugging.md),
 not a replacement for device-specific evidence. No cloud account, real media
 server, credential, or external model service is required.
-The separately authorized `home-jellyfin-live` investigation below is the
-exception; no suite, including `all`, selects it automatically.
+Live-server workloads require separate authorization and explicit scenario
+selection; no suite, including `all`, selects them automatically.
 
 ## Agent entry point
 
@@ -106,6 +106,97 @@ Artwork bytes use the normal bounded cache; compare repeated, warmed-byte-cache
 runs and retain the recorded starting disk-cache size rather than purging caches.
 Raw traces and XCTest evidence can contain private media: keep them local and
 publish only sanitized aggregates.
+
+For **first sign-in frames**, use the standalone tvOS `PlozzFocusHost` instead
+of the navigation driver. Use a fresh process for each command. Start external
+`simctl io ... recordVideo` and wait for “Recording started” **before** launching
+`account` or `profile`. With the authorized loopback broker URLs in the environment:
+
+```sh
+host=com.thatcube.Plozz.FocusHost
+SIMCTL_CHILD_PLOZZ_JELLYFIN_ONBOARDING_BROKER="$PLOZZ_JELLYFIN_ONBOARDING_BROKER" \
+  xcrun simctl launch --terminate-running-process "$SIM" "$host" --first-frame-account
+
+export SIMCTL_CHILD_PLOZZ_JELLYFIN_HOME_BROKER="$PLOZZ_JELLYFIN_HOME_BROKER"
+xcrun simctl launch --terminate-running-process "$SIM" "$host" --first-frame-seed
+# Wait for seededUs in the seed PID's report. Keep this same broker/session alive.
+xcrun simctl launch --terminate-running-process "$SIM" "$host" --first-frame-profile
+```
+
+Read `Library/Caches/first-frame-<launch PID>.json` in the host's data
+container. Reject `failure` or missing required anchors. `authSuccessUs` starts
+at real password-service success; verify the first **library selection** pixels.
+For the returning viewer, `gateUs` starts at profile selection; verify shell,
+populated Home, and (where present) `contentFocusUs` separately. The seed saves
+profile configuration, not a token; the cold process restores the authorized
+credential from the broker in memory before normal `RootView` bootstrap.
+The yellow strip's first frame matches `referenceTargetUs` approximately;
+use the movie's actual frame **PTS**, not DTS, assumed FPS or callback time.
+The remaining bits mark gate, auth/authorization, next callback, content and
+focus. They can coalesce. Read the screen **outside** the strip for first pixels.
+To attach a profiler before the gate, add `--first-frame-hold` and touch
+`Library/Caches/first-frame-<PID>.go` once ready. Diagnostics are already armed.
+
+### Showcase: requests to prepare a row of series (#472)
+
+Run `showcase-enrichment-jellyfin`, `showcase-enrichment-emby` and
+`showcase-enrichment-plex` together with `run --platform tvOS --sim-id <UUID>
+--scenario ...`. Each exercises the production row prefetch, metadata enricher
+and provider mapping against in-memory HTTP responses. The 16 series each have
+two seasons. Counts cover one complete preparation, not an entire Home load.
+
+| Requests per provider | Before | After |
+|---|---:|---:|
+| Series detail | 16 | 16 |
+| Season lists | 16 | 0 |
+| Episode lists | 32 | 0 |
+| Refocusing prepared cards | 0 | 0 |
+| Explicit Play (resolves the expected episode) | 3 | 3 |
+| Unpinned carousel enrichment | 4 | 4 |
+
+With five retained samples on each side, median workload CPU was 3.97 → 1.75 ms
+for Jellyfin, 4.24 → 2.26 ms for Emby, and 3.58 → 2.18 ms for Plex. These are
+client CPU and provider-call measurements, not live server CPU, startup latency
+or scrolling FPS. The optimization avoids computing a play target the
+presentation would discard; it does not cache requests across users or loads.
+
+**Live Jellyfin control:** select `showcase-series-live-jellyfin` with a
+dedicated `PLOZZ_LIVE_HOME_BROKER` serving `/jellyfin`. This takes one real
+series from the viewer's library and runs the previous pinning behavior against
+the fixed behavior in the same binary. It alternates order, disables the HTTP
+response cache, bounds each pass to 24 read requests, and checks that the two
+presentations are equal. Setup and library selection are outside the timed
+region. In five retained pairs, client reads were **3 → 1**, decoded response
+bytes **18,505 → 2,038**, and median elapsed time **152 → 51 ms**. This measures
+preparing that series, not the time to launch the app.
+
+**First pixels and scrolling (tvOS simulator, real servers):**
+
+| From → visible result | Baseline | Candidate |
+|---|---:|---:|
+| Jellyfin password success → first library-selection pixels | 149 ms | 182 ms |
+| Returning profile selection → first Home shell pixels | 409 ms | 4,533 ms |
+| Returning profile selection → first rail artwork | 1,397 ms | 4,938 ms |
+| Returning profile selection → focus in populated Home | 3,972 ms | 5,074 ms |
+
+These are paired single captures, not medians. Three further candidate captures
+reached the first shell pixels at **6.50, 0.59 and 0.69 s**. In the slow one,
+profile authorization finished at 77 ms. Preselection process samples did not
+isolate the cause of the delay before Home appeared. The lower series-enrichment
+cost is **not** evidence of a faster first frame.
+
+On the separate carousel navigation workload (no production hero enrichment),
+both Jellyfin runs completed 34 directional presses with 30 focus changes.
+The validating relay forwarded 23 → 22 metadata GETs, including 3 → 2 exact
+repeats, **all before the first Down**. Both runs forwarded 18 artwork GETs
+after first Down, none repeated. Maximum navigation display-link gap was
+40 → 33 ms; the initial artwork cache differed, so do not claim a scrolling
+speedup. The actual Jellyfin application and console logs confirmed session
+lifecycle but did not record successful request paths. On Plex, native logs
+identified 38 artwork completions (3 repeated targets) and no metadata
+completions after first Down. Emby completed the navigation workload; its
+native log showed five disconnected artwork requests, not a complete access
+trail. These are not measurements of server CPU or physical display FPS.
 
 ## Baseline → attribution → candidate → regression
 

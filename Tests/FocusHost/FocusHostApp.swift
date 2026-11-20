@@ -29,7 +29,10 @@ private struct LiveJellyfinOnboardingFixture: View {
 
 @main
 struct FocusHostApp: App {
+    private let firstFrame: SignInFirstFrameRun?
+
     init() {
+        firstFrame = SignInFirstFrameRun.requested()
         if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
             URLProtocol.registerClass(SourceSmokeNetworkBlocker.self)
         }
@@ -37,7 +40,9 @@ struct FocusHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--upcoming-capture-fixture") {
+            if let firstFrame {
+                SignInFirstFrameFixture(run: firstFrame)
+            } else if ProcessInfo.processInfo.arguments.contains("--upcoming-capture-fixture") {
                 UpcomingCaptureFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-onboarding") {
                 LiveJellyfinOnboardingFixture()
