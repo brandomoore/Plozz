@@ -298,6 +298,10 @@ snapshot. Home and Settings warm it through live library discovery. It never
 resolves credentials or authorizes a profile; callers supply currently resolved
 accounts. Profile-local providers, including downloaded-media projections, bypass
 both cache reads and writes so they cannot replace the server's full inventory.
+When Plex reads sections to match the server's Home layout, that same Home
+refresh can use the live result once, for the exact provider, account, viewer,
+and credential revision. A newer published inventory or access denial retires
+it. Navigation and later Home refreshes still contact the server.
 See [Libraries behavior](../FeatureSettings/README.md#responsibility) for
 refresh, error, and storage limits.
 

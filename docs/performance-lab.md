@@ -185,6 +185,30 @@ profile authorization finished at 77 ms. Preselection process samples did not
 isolate the cause of the delay before Home appeared. The lower series-enrichment
 cost is **not** evidence of a faster first frame.
 
+**Returning-profile crossover:** six fresh processes per build, same signed-in
+Jellyfin viewer, simulator, optimized harness and prelaunch video. Only the two
+Showcase production files differed between binaries. Builds ran in balanced
+`ABBABAABABBA` order. All 12 launches showed the following milestones,
+measured from profile selection (median, with full range):
+
+| What the recording showed | Before Showcase change | After Showcase change |
+|---|---:|---:|
+| First Home shell pixels | 462 ms (453–503) | 493 ms (450–535) |
+| First rail artwork | 798 ms (751–1,596) | 840 ms (786–865) |
+| Focus inside populated Home | 938 ms (836–1,596) | 938 ms (885–1,022) |
+
+The original 409 ms started **2.28 s after the launch command** and measured
+faint sidebar pixels, not usable Home. Timed from the launch command instead,
+the crossover medians were **2.772 → 2.767 s** for shell pixels and
+**3.262 → 3.213 s** for focus in populated Home. These include the fixture's
+automated selection of the returning profile. The crossover did not reproduce the
+multi-second stalls; it does not explain them. In a separate same-viewer
+baseline experiment, the first shell took 536 and 535 ms without a local Home
+snapshot, versus 569 and 483 ms on the corresponding warm relaunches. Diagnostic
+runs verified that both the miss and the successful read/decode happened
+*before* profile selection. The original run did not record cache hits. Server
+and OS caches were not flushed; only one cache timing run had a focus witness.
+
 On the separate carousel navigation workload (no production hero enrichment),
 both Jellyfin runs completed 34 directional presses with 30 focus changes.
 The validating relay forwarded 23 → 22 metadata GETs, including 3 → 2 exact
@@ -197,6 +221,39 @@ identified 38 artwork completions (3 repeated targets) and no metadata
 completions after first Down. Emby completed the navigation workload; its
 native log showed five disconnected artwork requests, not a complete access
 trail. These are not measurements of server CPU or physical display FPS.
+
+### Plex: one fewer library-list request per Home refresh (#472)
+
+Match Server layout and Home content both need the viewer's library sections.
+Home now uses the layout's fresh, successful read once instead of requesting the
+same list again. Navigation still reads independently, as do future refreshes.
+There is no time-based cache; a newer inventory or access denial supersedes the
+earlier response even if Home is still waiting for promoted rows.
+
+The same real Plex viewer ran the carousel traversal four times per build:
+three fresh processes on a simulator with warm artwork and one on a new
+simulator without app data. Native Plex logs counted completed GETs for the
+viewer, not requests inferred from the UI. All responses were HTTP 200.
+
+| Per traversal | Before | After |
+|---|---:|---:|
+| `/library/sections` reads | 3 | 2 |
+| Section response bytes | 2,799–2,805 | 1,870–1,876 |
+| Total metadata reads (unique targets) | 17 (15) | 16 (15) |
+| Metadata completions after first Down | 0 | 0 |
+| Libraries / items / focus changes | 3 / 74 / 30 | 3 / 74 / 30 |
+
+All eight runs completed 34 directional presses with no navigation display-link
+gap over 50 ms. In the fresh-simulator pair, artwork completions during scrolling
+went **29 → 40**, while their total response bytes went **2.91 → 1.61 MB**;
+none were repeated targets. Warm runs had no artwork completions after first
+Down. Artwork demand varied; the reliable saving here is the single metadata
+request, not a change in scrolling speed or overall artwork traffic.
+
+The Jellyfin control forwarded 22 metadata GETs on each build (two repeated
+targets, all before first Down). Jellyfin and Emby both retained their item
+counts (83 and 66), with 30 focus changes and no discovery, layout or row
+failures in either build.
 
 ## Baseline → attribution → candidate → regression
 

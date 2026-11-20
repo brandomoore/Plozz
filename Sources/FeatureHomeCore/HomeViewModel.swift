@@ -454,7 +454,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     /// accounts; the per-item row filter still lives in the view so toggles that
     /// need no re-fetch (Plex, already-tagged items) apply instantly.
     private let currentVisibility: () -> HomeLibraryVisibility
-    private let prepareVisibility: @MainActor () async -> Void
+    private let prepareVisibility: @MainActor (HomeLoadLibraryInventory) async -> Void
     private let sectionDiagnostics: HomeSectionDiagnosticsModel?
 
     /// A snapshot of the durable watch-outbox's not-yet-confirmed mutations, read
@@ -578,6 +578,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         currentVisibility: @escaping () -> HomeLibraryVisibility = { .default },
         prepareVisibility: @escaping @MainActor () async -> Void = {},
+        prepareHomeVisibility: (@MainActor (HomeLoadLibraryInventory) async -> Void)? = nil,
         isLoadingAllowed: @escaping @MainActor () -> Bool = { true },
         isSnapshotAccessAllowed: (@MainActor () -> Bool)? = nil,
         sectionDiagnostics: HomeSectionDiagnosticsModel? = nil,
@@ -604,7 +605,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         self.heroExposureState = HeroExposureState.state(for: contentStore)
         self.identitySources = identitySources
         self.currentVisibility = currentVisibility
-        self.prepareVisibility = prepareVisibility
+        self.prepareVisibility = prepareHomeVisibility ?? { _ in await prepareVisibility() }
         self.isLoadingAllowed = isLoadingAllowed
         self.isSnapshotAccessAllowed = isSnapshotAccessAllowed ?? isLoadingAllowed
         self.sectionDiagnostics = sectionDiagnostics
@@ -981,7 +982,8 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         }
         PlozzLog.boot("HomeVM.load START vm=\(UInt(bitPattern: ObjectIdentifier(self).hashValue)) accounts=\(accounts.count) state=\(state.diagnosticName) silent=\(!showLoadingState)")
         loadingVisibility = currentVisibility()
-        await prepareVisibility()
+        let homeLoad = HomeLoadLibraryInventory()
+        await prepareVisibility(homeLoad)
         guard canLoadContent, generation == loadGeneration else { return }
         guard !Task.isCancelled else {
             // A replacement view task may already have coalesced into this load.
@@ -1055,7 +1057,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             let aggregationTask = Task.detached(priority: .userInitiated) {
                 await HomeRecommendationScope.$current.withValue(recommendationContext) {
                     await aggregator.content(
-                        from: accounts, policy: policy, visibility: visibility,
+                        from: accounts, policy: policy, visibility: visibility, homeLoad: homeLoad,
                         identitySources: identitySources, onContinueWatching: receiveResume,
                         onProgress: receiveProgress
                     )
@@ -1117,7 +1119,7 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
             let unmergedTask = Task.detached(priority: .userInitiated) {
                 await HomeRecommendationScope.$current.withValue(recommendationContext) {
                     await aggregator.unmergedContent(
-                        from: accounts, policy: policy, visibility: visibility,
+                        from: accounts, policy: policy, visibility: visibility, homeLoad: homeLoad,
                         identitySources: identitySources, onContinueWatching: receiveResume,
                         onProgress: receiveProgress
                     )

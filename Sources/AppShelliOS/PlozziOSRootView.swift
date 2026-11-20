@@ -1525,10 +1525,10 @@ struct PlozziOSTabShell: View {
             currentVisibility: { [weak appModel] in
                 appModel?.settings.homeVisibility.visibility ?? .default
             },
-            prepareVisibility: { [weak appModel] in
+            prepareHomeVisibility: { [weak appModel] load in
                 guard let appModel else { return }
                 await appModel.settings.homeVisibility.prepareServerDefaults(
-                    accounts: appModel.accountsProviders.homeAccounts
+                    accounts: appModel.accountsProviders.homeAccounts, homeLoad: load
                 )
             },
             isLoadingAllowed: { [weak appModel] in

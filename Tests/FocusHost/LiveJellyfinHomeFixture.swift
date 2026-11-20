@@ -141,7 +141,9 @@ private final class LiveJellyfinHomeState: NSObject {
         model = HomeViewModel(
             accounts: accounts, layoutStore: InMemoryHomeLayoutStore(),
             contentStore: InMemoryHomeContentStore(), currentVisibility: { visibility.visibility },
-            prepareVisibility: { await visibility.prepareServerDefaults(accounts: accounts) }
+            prepareHomeVisibility: { load in
+                await visibility.prepareServerDefaults(accounts: accounts, homeLoad: load)
+            }
         )
         super.init()
         MetadataProviderSettingsStore().save(.init(
