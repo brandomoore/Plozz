@@ -49,6 +49,19 @@ not the app UI or its Keychain. Cleanup of just the new resume returned
 HTTP 403 and was not retried. The row remained present, so replay prevention
 *after removal* is still unverified for this lost-reply case.
 
+On `2591a5130`, a separate test used muted NFS playback of *Charge* instead
+of the existing Jellyfin resume. PublicMetaDB accepted one export at 100,244
+of 262,763 ms. The exporter lost the HTTP 200 reply; a fresh process found the
+matching remote resume without posting again. After one removal confirmation
+in the normal iPhone app, independent reads found no *Charge* resume. With
+the same durable receipt, a fresh comparison returned `previousAttempt`;
+applying that row sent no POST and the resume stayed absent.
+
+This verifies the export service's replay protection after actual removal.
+The test had cleared the local resume too early, so the final comparison used
+the original real playback snapshot rather than a still-live local resume.
+It does not verify that native sequence or cleanup of the separate *Dune* row.
+
 On `c1c30c2b2`, the production comparison code read that same *Dune* resume
 and compared three dedicated server users together. Independent reads matched
 the TMDB and IMDb IDs, file size and runtime on all three, even though Plex
