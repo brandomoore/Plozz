@@ -40,9 +40,15 @@ struct MediaRowRefreshIndicator: View {
         if let status {
             ZStack {
                 if status.isRefreshing {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .symbolEffect(.rotate, options: .repeating.speed(0.75), isActive: !reduceMotion)
-                        .foregroundStyle(palette.primaryText)
+                    Group {
+                        if reduceMotion {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundStyle(palette.primaryText)
+                        } else {
+                            ProgressView()
+                        }
+                    }
+                        .scaleEffect(0.85, anchor: .leading)
                         .accessibilityLabel("Refreshing")
                 } else if status.failure != nil {
                     Button("Details", systemImage: "exclamationmark.circle") { showsDetails = true }
