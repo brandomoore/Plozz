@@ -44,8 +44,9 @@ replacing the visible lineup during an idle pause. Return, explicit refresh and
 local playback/watch actions remain publication triggers. Profile retirement and
 authorization still fence asynchronous results.
 
-A small, reserved indicator beside Continue Watching's heading shows its refresh,
-not the lifetime of unrelated Home requests. Available titles remain usable if
+A small refresh symbol sits at the title-facing edge of Continue Watching's reserved
+status space. It turns slowly (or stays still with Reduce Motion) only while that
+row refreshes, not for unrelated Home requests. Available titles remain usable if
 another source fails. A quiet status button opens error details and retry only
 when selected; it never raises an automatic alert or banner. Existing empty-row
 recovery remains available when no usable titles arrive. A confirmed empty response
