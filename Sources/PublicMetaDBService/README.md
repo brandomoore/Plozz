@@ -102,6 +102,16 @@ review, after backing out, and after the test found no changes: Emby retained
 two plays and its 388.823-second resume; PublicMetaDB retained one play and
 no resume for S1E3. This verifies the wording and review, not an applied change.
 
+On `12d85b8d6`, a reviewed import for the dedicated Plex user queued one
+change: mark S1E3 watched. The test paused delivery of Plex's successful
+parent-series read during the final check before writing, cancelled the import,
+then released the unchanged response. The production reconciler rejected the
+cancelled change. No Plex or PublicMetaDB write was attempted, the queue
+emptied, and independent reads found no change to S1E3, S1E4 or tracker
+history. This verifies cancellation after apply starts but before dispatch in
+one process, using an in-memory queue. It does not test cancellation after a
+server accepts a write or recovery after app termination.
+
 Separately, the normal iPhone app showed the configured Emby user's row as
 **Set resume to 2,401 seconds**, unselected. The tracker detail showed 25.7%,
 consistent with the independent read; all 15 comparison controls stayed off.
