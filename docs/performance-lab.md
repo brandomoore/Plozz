@@ -412,6 +412,44 @@ display waits still accounted for 84% and 76% of samples without the mask.
 All five runs fetched each of 40 shelves once and published 801 entries.
 These unrecorded trials did not time first pixels. Keep the existing fade.
 
+#### Preparing more Showcase shelves while the viewer stays on the hero
+
+A simulator prototype kept each row's native owner and measured size, but
+attached the first four shelves first and added more while idle or approaching
+them. The viewer did not have to scroll to fetch row data or prepare later views.
+In five alternating recorded starts, first shelf artwork moved from **8.85–11.05 s
+to 1.99–2.09 s** after profile selection, and first native Home focus from
+**17.96–19.19 s to 5.92–8.82 s**. In the 10-second dwell trial, all 41 row views
+were attached before the first Down. Some extra rows were attached before the
+first visible Resume button; this was not a strict first-frame gate.
+
+Staging also introduced unnecessary reads. A poster on shelf 16, for example,
+was decoded at 3.59 s, evicted at 7.20 s, then explicitly prefetched at 8.12 s
+when its row was attached. This was the same URL **and** decode variant. The
+origin sent `Cache-Control: no-store`; there was no reusable encoded response.
+In all 30 sampled repeats where a preceding insert and eviction could be
+unambiguously attributed, the second caller was the row's explicit prefetch.
+This does not attribute every repeated request to eviction.
+
+A correction initiated speculative prefetch on real card focus rather than
+buffered card appearance for deferred poster rows only. Visible cards could
+still load directly; neither row fetching nor cache policy changed. Six matched
+recorded launches, one per configuration and input pattern:
+
+| 10 s on hero before first Down | Original | Staged | Staged + corrected prefetch |
+|---|---:|---:|---:|
+| Selection to visible highlighted Resume | 32.91 s | 6.82 s | 5.57 s |
+| Repeated artwork GETs through navigation report | 2 | 446 | 30 |
+| Total response bodies through report | 6.13 MB | 12.81 MB | 5.11 MB |
+| Shelf reached after eight Downs | 8 | 8 | 8 |
+
+With immediate input, repeated artwork GETs were **10 / 339 / 23** and total
+bodies **6.83 / 11.65 / 4.99 MB**, respectively. But eight Downs reached only
+shelf **6 / 7 / 7**. All six runs fetched each of 40 shelves once, published
+41 nonempty rows / 801 entries, and returned to Resume. These are local HTTP
+receipts, not estimates of server CPU or production traffic. The correction
+isolates a real prefetch cost, not a fix for the missed early navigation.
+
 ## Baseline → attribution → candidate → regression
 
 ### tvOS: rapid vertical IPTV guide travel
