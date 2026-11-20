@@ -1925,6 +1925,11 @@ reader is still filling the opening lyrics. New overlapping packets behind the
 decode cursor reopen that part of the window without another seek. Reading
 the same packet again does not restart decoding.
 
+When resuming inside dense karaoke, the decoder can have several batches of
+lyrics already due. It starts the next batch without waiting for the half-second
+timer until it has caught up. Decoding stays serial and off the main thread;
+future lyrics keep their normal pacing and authored timestamps.
+
 Admission uses the same embedded tracks, registered sidecars and profile
 preferences as playback. An unselected server rendition does not veto an
 embedded ASS track; if the sidecar wins, it stays on the overlay.

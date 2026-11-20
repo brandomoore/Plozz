@@ -45,9 +45,20 @@ index fc6a1f94..0f2138a0 100644
                      autostarts: transportIntentUnderReconstruction ?? resumesPlaying,
                      generation: gen,
 diff --git a/Sources/AetherEngine/AetherEngine+Subtitles.swift b/Sources/AetherEngine/AetherEngine+Subtitles.swift
-index 1d893248..a4c8fdf2 100644
+index 1d893248..20e12720 100644
 --- a/Sources/AetherEngine/AetherEngine+Subtitles.swift
 +++ b/Sources/AetherEngine/AetherEngine+Subtitles.swift
+@@ -359,8 +359,8 @@ extension AetherEngine {
+             let events = await BlockingWork.detached(priority: .userInitiated) { handoff.decode() }.value
+             guard let self, self.subtitleDrainTickSerial == serial else { return }
+             self.subtitleDrainTickInFlight = nil
+-            self.finishSubtitleDrainTick(work, events: events)
+-            if self.subtitleDrainTickRequested {
++            let needsCatchUp = self.finishSubtitleDrainTick(work, events: events)
++            if needsCatchUp || self.subtitleDrainTickRequested {
+                 self.subtitleDrainTickRequested = false
+                 self.requestSubtitleDrainTick()
+             }
 @@ -452,13 +452,25 @@ extension AetherEngine {
                  if step == .reconstruct { subtitleDrainCursors[channel] = nil }
              }
@@ -85,7 +96,44 @@ index 1d893248..a4c8fdf2 100644
              let step = SubtitleOverlayDrainer.harvestGapStep(
                  count: batchEnd,
                  ptsAt: { entries[$0].ptsSeconds },
-@@ -886,6 +898,8 @@ extension AetherEngine {
+@@ -558,9 +570,11 @@ extension AetherEngine {
+     /// AE#628: the MainActor half after the decode. `events` holds one decoded result per packet
+     /// the prepare half handed out, channel by channel. A channel re-selected, cleared or rebuilt
+     /// while its batch decoded is skipped: its cursor did not move, so the next tick redoes it.
++    @discardableResult
+     func finishSubtitleDrainTick(_ work: SubtitleDrainTickWork,
+-                                 events decodedByChannel: [[EmbeddedSubtitleDecoder.SubtitleEvent?]]) {
++                                 events decodedByChannel: [[EmbeddedSubtitleDecoder.SubtitleEvent?]]) -> Bool {
+         let playhead = work.playhead
++        var needsCatchUp = false
+         for (job, events) in zip(work.channels, decodedByChannel) {
+             let channel = job.channel
+             let streamIndex = job.streamIndex
+@@ -577,6 +591,15 @@ extension AetherEngine {
+             let batchEnd = job.batchEnd
+             let decodeEnd = job.decodeEnd
+             let gapHold = job.gapHold
++            // A dense ASS backscan can fill many batches before reaching the landing.
++            // Keep the worker serial and capped, but don't sleep between already-due
++            // batches. Retain normal pacing for distant lookahead and unread gaps.
++            if gapHold == nil, decodeEnd > 0, decodeEnd == batchEnd, batchEnd < entries.count,
++               entries[batchEnd].ptsSeconds <= playhead + Double(Self.subtitleDrainTickNanoseconds) / 1e9,
++               sidecarBitmapSources[channel] == nil,
++               subtitleTracks.contains(where: { $0.id == Int(streamIndex) && $0.assHeader != nil }) {
++                needsCatchUp = true
++            }
+             // #271: bind the channel's cue array ONCE for the whole batch. `subtitleCues` is
+             // `@Published`, whose wrapper exposes get/set and no `_modify`, so passing it inout per
+             // event both copy-on-writes the array and publishes it: every consumer then walks a
+@@ -765,6 +788,7 @@ extension AetherEngine {
+         // SubtitlePacketStore.perStreamByteCap (evict-oldest per stream): text tracks keep the whole
+         // session, bitmap tracks keep a wide trailing window. Mirrors the segment cache retaining
+         // history for backward seeks rather than clamping to a time window ahead of the playhead.
++        return needsCatchUp
+     }
+ 
+     // MARK: - #151: subtitle forward prefetch
+@@ -886,6 +910,8 @@ extension AetherEngine {
          cancelSubtitleForwardPrefetcher(reason: .prefetchRebuild)
          guard let store = activeSubtitlePacketStore,
              let url = loadedURL else { return }
@@ -94,7 +142,7 @@ index 1d893248..a4c8fdf2 100644
          let isCustom = isCustomSource
          if isCustom, customReader == nil { return }
          let headers = loadedOptions.httpHeaders
-@@ -907,7 +921,7 @@ extension AetherEngine {
+@@ -907,7 +933,7 @@ extension AetherEngine {
                  maxConsecutiveFailures: AetherEngine.subtitleForwardPrefetchMaxConsecutiveFailures,
                  maxRestarts: AetherEngine.subtitleForwardPrefetchMaxRestarts,
                  backoffNanoseconds: AetherEngine.subtitleForwardPrefetchRestartBackoffNanoseconds)
@@ -1183,10 +1231,10 @@ index 4a0b65e9..df272cbd 100644
  /// Whether a load takes the low-resolution upscale route, and if not, why. Pure so every exit is
 diff --git a/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift b/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift
 new file mode 100644
-index 00000000..c7e20888
+index 00000000..4a7edea4
 --- /dev/null
 +++ b/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,286 @@
 +import XCTest
 +import CoreMedia
 +import AetherLibavformat
@@ -1195,6 +1243,41 @@ index 00000000..c7e20888
 +@testable import AetherEngine
 +
 +final class SoftwareArtworkGateTests: XCTestCase {
++    @MainActor func testColdASSResumeDrainsThroughLandingWithoutWaitingForTheTimer() async throws {
++        let format = try XCTUnwrap(avformat_alloc_context())
++        defer { avformat_free_context(format) }
++        let stream = try XCTUnwrap(avformat_new_stream(format, nil))
++        stream.pointee.time_base = AVRational(num: 1, den: 1000)
++        stream.pointee.codecpar.pointee.codec_type = AVMEDIA_TYPE_SUBTITLE
++        stream.pointee.codecpar.pointee.codec_id = AV_CODEC_ID_ASS
++        let engine = try AetherEngine()
++        let store = SubtitlePacketStore()
++        engine.softwareSubtitlePacketStore = store
++        engine.isSubtitleActive = true
++        engine.subtitleDrainTargets[.primary] = 0
++        engine.subtitleTracks = [.init(id: 0, name: "test", codec: "ass", language: "en", isDefault: true, assHeader: "ASS")]
++        engine.subtitleDrainDecoderFactoryForTesting = { _ in
++            EmbeddedSubtitleDecoder(stream: stream, sourceVideoWidth: 320, sourceVideoHeight: 180, preserveASSMarkup: true)
++        }
++        func packet(_ n: Int, at t: Double, for duration: Double) {
++            store.append(streamIndex: 0, ptsSeconds: t, durationSeconds: duration,
++                         payload: Data("\(n),0,Default,,0,0,0,,Layer\(n)".utf8))
++        }
++        let landing = 162.0
++        engine.clock.sourceTime = landing
++        for n in 0..<900 { packet(n, at: 148 + Double(n) / 100, for: 0.01) }
++        for n in 900..<903 { packet(n, at: 161.5, for: 2) }
++        for n in 903..<1800 { packet(n, at: 170 + Double(n - 903) / 100, for: 0.01) }
++
++        // One wake, no periodic timer and no second selection or seek.
++        engine.requestSubtitleDrainTick()
++        while let pending = engine.subtitleDrainTickInFlight { await pending.value }
++        let visible = engine.subtitleCues.filter { $0.startTime <= landing && landing < $0.endTime }
++        XCTAssertEqual(visible.count, 3)
++        XCTAssertLessThan(try XCTUnwrap(engine.subtitleCues.last).startTime, 178,
++                          "Distant lookahead must still use the ordinary paced batches")
++    }
++
 +    @MainActor func testLateKaraokeBandsPublishOnFirstLandingWithoutAnotherSeek() throws {
 +        let format = try XCTUnwrap(avformat_alloc_context())
 +        defer { avformat_free_context(format) }
