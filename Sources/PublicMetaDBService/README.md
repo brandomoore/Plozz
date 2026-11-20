@@ -131,9 +131,17 @@ screen only shows pagination for multiple pages. The corrected test passed
 with the expected list present and no page controls or empty-state text.
 Independent reads found the list contents, 40 watches and five resumes
 unchanged. The tvOS test driver compiled but was not run. The same iPhone
-still had only Emby connected: Jellyfin's password form was reached, but no
-session was created. Removing a source locally does not revoke that session
-on Jellyfin. A combined native Emby/Jellyfin review remains unverified.
+had only Emby connected during that list test.
+
+With the dedicated Jellyfin account signed in and enabled for the active
+profile in **Settings → Libraries**, the iPhone comparison showed both users
+for *The Crown* S1E3 (“Windsor”) on the same screen, including after a cold
+relaunch. Emby showed **previously watched**, a 389-second resume, a warning
+that selecting would replace server state, and **Mark watched** unchecked.
+Jellyfin showed **Already matches — no change** and offered no action. The
+adjacent episode S1E4 had no row under **All**. Independent reads confirmed
+that both users' episode histories and the tracker were unchanged. This
+verifies native two-server review, not a transfer or automatic sync.
 
 The rebuilt iPhone export prompts now show **Titles to export: 1** instead
 of “1 selected titles.” Two hosted UI checks passed with fixtures; these
