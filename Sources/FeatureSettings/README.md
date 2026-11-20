@@ -90,6 +90,8 @@ is the direct connected-account entry; it offers enrollment only when eligible
 and reads no tracker history just to display the link or page. The comparison
 entry retains its reviewed snapshot as evidence, not the previous page's write
 authorization; returning to comparison creates a fresh session.
+The comparison distinguishes a previously watched title from one never watched,
+even when the current viewing is incomplete. Its resume position is shown separately.
 
 PublicMetaDB and WeTrakr offer watched state and compatible resume points;
 Trakt, Simkl, AniList and MyAnimeList offer watched state only. AniList and

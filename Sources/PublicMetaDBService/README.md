@@ -92,6 +92,16 @@ Each single-account comparison returned only that user's row. S1E4 did not
 match on any server, and independent reads found no history changes.
 This was a read-only service comparison; no import was applied.
 
+On the signed iPhone simulator app, the same Emby conflict originally showed
+“Server: not watched” for that unfinished rewatch. Build `6724.1` showed
+**Server: previously watched**, a 389-second resume, and the replacement
+warning before and after cold relaunch. **Mark watched** stayed off. Other
+real rows still distinguished watched from not watched, and S1E4 had no
+comparison row. The focused live UI test passed. Independent reads before
+review, after backing out, and after the test found no changes: Emby retained
+two plays and its 388.823-second resume; PublicMetaDB retained one play and
+no resume for S1E3. This verifies the wording and review, not an applied change.
+
 Separately, the normal iPhone app showed the configured Emby user's row as
 **Set resume to 2,401 seconds**, unselected. The tracker detail showed 25.7%,
 consistent with the independent read; all 15 comparison controls stayed off.

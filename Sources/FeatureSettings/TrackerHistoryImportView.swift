@@ -199,8 +199,13 @@ private struct TrackerHistoryComparisonRow: View {
                 }
                 if let baseline = row.baseline {
                     Group {
-                        if isShare { Text(baseline.played ? "Plozz: watched" : "Plozz: not watched") }
-                        else { Text(baseline.played ? "Server: watched" : "Server: not watched") }
+                        if baseline.played {
+                            Text(isShare ? "Plozz: watched" : "Server: watched")
+                        } else if baseline.hasBeenPlayed {
+                            Text(isShare ? "Plozz: previously watched" : "Server: previously watched")
+                        } else {
+                            Text(isShare ? "Plozz: not watched" : "Server: not watched")
+                        }
                     }
                     .foregroundStyle(.secondary)
                     if let position = baseline.resumePosition, position > 0 {

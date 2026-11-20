@@ -2729,6 +2729,21 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
+    func testReviewPreviouslyWatchedServerEpisode() throws {
+        let env = ProcessInfo.processInfo.environment
+        let episode = try XCTUnwrap(env["PLOZZ_TRACKER_HISTORY_EPISODE_TITLE"])
+        let seconds = try XCTUnwrap(Double(env["PLOZZ_TRACKER_IMPORT_EXPECTED_RESUME_SECONDS"] ?? ""))
+        try require(!episode.isEmpty && seconds.isFinite && seconds > 0, "Expected an independently verified rewatch")
+        try openHistoryComparison()
+        try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
+        let rows = try historyImportRows(status: "Server: previously watched")
+            .containing(NSPredicate(format: "identifier == %@ AND label == %@", importSelection.identifier, "Mark watched"))
+        try require(rows.count == 1, "Expected the previously watched episode on the exact server user")
+        XCTAssertTrue(rows.element.staticTexts["Server resume: \(seconds.formatted(.number.precision(.fractionLength(0)))) seconds"].exists)
+        XCTAssertTrue(rows.element.staticTexts["Different from server — selecting replaces its current state"].exists)
+        XCTAssertEqual(importSelection.value as? String, "0")
+    }
+
     func testPreviewServerHistoryExport() throws {
         let environment = ProcessInfo.processInfo.environment
         let user = try XCTUnwrap(environment["PLOZZ_TRACKER_IMPORT_USER"])
