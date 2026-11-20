@@ -1664,9 +1664,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testReadRealSeasonRatings() throws {
         let evidence = try openSelectedSeasonRatings()
         for episode in evidence.episodes.sorted(by: { $0.episode < $1.episode }) {
-            let row = app.buttons.matching(NSPredicate(
-                format: "label == %@ OR label BEGINSWITH %@", "Episode \(episode.episode)", "Episode \(episode.episode),"
-            )).firstMatch
+            let row = ratedEpisode(episode.episode)
             try tapVisible(row, tapping: false)
             for aggregate in episode.aggregates.values {
                 let expected = "\(aggregate.label): \(aggregate.average.formatted()) / 100 (\(aggregate.count) ratings)"
@@ -1721,9 +1719,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         season.typeText("\(evidence.season)\n")
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         try tapVisible(app.buttons["Load season"])
-        let disclosure = app.staticTexts["Episodes shown have community ratings; this is not a complete episode list."]
-        try require(disclosure.waitForExistence(timeout: 45), "Expected real season ratings rather than a rejected snapshot")
+        let first = try XCTUnwrap(evidence.episodes.map(\.episode).min())
+        try require(ratedEpisode(first).waitForExistence(timeout: 45), "Expected the first independently verified rated episode")
         return evidence
+    }
+
+    private func ratedEpisode(_ number: Int) -> XCUIElement {
+        app.buttons.matching(NSPredicate(
+            format: "label == %@ OR label BEGINSWITH %@", "Episode \(number)", "Episode \(number),"
+        )).firstMatch
     }
 
     func testPrepareRealEpisodeRatings() throws {

@@ -498,9 +498,7 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
     func testReadRealSeasonRatings() throws {
         let evidence = try openSelectedSeasonRatings()
         for episode in evidence.episodes.sorted(by: { $0.episode < $1.episode }) {
-            let row = app.buttons.matching(NSPredicate(
-                format: "label == %@ OR label BEGINSWITH %@", "Episode \(episode.episode)", "Episode \(episode.episode),"
-            )).firstMatch
+            let row = ratedEpisode(episode.episode)
             try PublicMetaDBLiveNavigation.focus(row, moving: .down)
             for aggregate in episode.aggregates.values {
                 let expected = "\(aggregate.label): \(aggregate.average.formatted()) / 100 (\(aggregate.count) ratings)"
@@ -641,10 +639,15 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         try PublicMetaDBLiveNavigation.select(app.buttons["Season ratings"], moving: .down)
         try enterNonsecretText("1", into: app.textFields["TMDB season number"])
         try PublicMetaDBLiveNavigation.select(app.buttons["Load season"], moving: .down)
-        XCTAssertTrue(app.staticTexts[
-            "Episodes shown have community ratings; this is not a complete episode list."
-        ].waitForExistence(timeout: 45))
+        let first = try XCTUnwrap(evidence.episodes.map(\.episode).min())
+        XCTAssertTrue(ratedEpisode(first).waitForExistence(timeout: 45))
         return evidence
+    }
+
+    private func ratedEpisode(_ number: Int) -> XCUIElement {
+        app.buttons.matching(NSPredicate(
+            format: "label == %@ OR label BEGINSWITH %@", "Episode \(number)", "Episode \(number),"
+        )).firstMatch
     }
 
     private func openSelectedTitleControls() throws {

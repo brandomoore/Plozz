@@ -2,9 +2,18 @@
 
 ## Tracker-sync acceptance status: 20 November 2026
 
-The feature branch now includes `main` through `58127facaf60`. The normal
-iPhone simulator app built after reconciliation, and Settings search passed
-all 25 guard tests and checked 921 source components.
+The branch is not merge-ready. It includes `main` through `e87d4331d659`.
+The signed iPhone simulator app built at `d3da98cea`. Its season ratings
+screen matched independent PublicMetaDB reads for all ten rated episodes of
+*The Crown* season 1 (40 ratings). The live test now waits for an independently
+expected episode instead of obsolete help text. No rating was changed. The
+corrected tvOS driver compiled; this was not a live TV season test.
+
+On that integration, `FeaturePlaybackTests` passed 1,403 tests with eight
+skipped and no failures. Of the two tests that failed on an earlier `main`,
+auto-crop framing passed; audio/upscaling navigation was skipped, not verified.
+Settings search passed all 25 guard tests and checked 921 source components on
+the preceding integration through `58127facaf60`.
 
 On `91d3a9faa`, the normal iPhone simulator app played *Charge* (2022) muted
 from NFS with playback reporting and ongoing sync off. The local resume was
