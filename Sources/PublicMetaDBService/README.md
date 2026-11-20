@@ -1,6 +1,6 @@
 # PublicMetaDBService
 
-## Tracker-sync acceptance status: 19 November 2026
+## Tracker-sync acceptance status: 20 November 2026
 
 The feature branch incorporates `main` through `18990651b3ee` at `4ff869675cca`.
 This integration changed the player and SMB dependency revisions. On the integrated
@@ -9,13 +9,28 @@ CoreModels, PublicMetaDBService, ProviderShare and MediaTransportSMB. Separately
 all 381 tests in the Trakt, Simkl, WeTrakr, AniList, MyAnimeList and Last.fm
 packages passed. These are package results, not tests with real tracker accounts.
 The Settings search guard still fails with the same 115 diagnostics as that
-`main` revision (ignoring source line numbers). The live playback results below
-predate this integration.
+`main` revision (ignoring source line numbers).
+
+On the integrated iPhone simulator app at `d6d6ca20f`, muted NFS playback of
+*Charge* (2022) reached 100.264 seconds. Independent reads found the same
+position on PublicMetaDB and in Plozz's history for the selected SMB share,
+which started at zero. No manual sync or reviewed import ran. A foreground
+check completed after 926 seconds in the background, but the SMB record was
+already written 137 seconds **before backgrounding**. This verifies automatic
+delivery on the updated player and SMB dependencies, not first delivery at
+that foreground check. The unselected share, Jellyfin, 40 unrelated watches
+and four unrelated resumes were unchanged. The test resume was cleared,
+the original settings and volume were restored, and the simulator shut down.
+The two-receiver and revocation results below are from the earlier build.
 
 On the integrated iPhone simulator app, choosing the dedicated account's
 private list and then cancelling left the destination unset after relaunch.
 Independent reads confirmed unchanged membership, 40 watches and four resumes.
-This tests cancellation, not synchronization after consent.
+An independent attempt to create a disposable private list returned HTTP 403.
+It was not retried. Fresh reads confirmed no new list or membership and
+unchanged watch and resume history. Cancellation passed; live membership
+sync and recovery after a lost write reply remain unverified. The existing
+private list was not used as a substitute write target.
 
 A separate read-only tvOS simulator check exercised the production service
 against the real account, without driving the TV UI. Independent API reads
