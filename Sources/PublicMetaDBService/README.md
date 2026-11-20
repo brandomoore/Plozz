@@ -2,7 +2,9 @@
 
 ## Tracker-sync acceptance status: 20 November 2026
 
-The branch is not merge-ready. It includes `main` through `e87d4331d659`.
+The branch is not merge-ready. It includes `main` through `48975ad6bbc1`;
+that last upstream commit changed a PIN appearance test and its documentation,
+not the app or tracker code.
 The signed iPhone simulator app built at `d3da98cea`. Its season ratings
 screen matched independent PublicMetaDB reads for all ten rated episodes of
 *The Crown* season 1 (40 ratings). The live test now waits for an independently
@@ -78,7 +80,20 @@ delivery on the updated player and SMB dependencies, not first delivery at
 that foreground check. The unselected share, Jellyfin, 40 unrelated watches
 and four unrelated resumes were unchanged. The test resume was cleared,
 the original settings and volume were restored, and the simulator shut down.
-The two-receiver and revocation results below are from the earlier build.
+
+On `b52a57a42`, muted NFS playback of *Charge* produced a 139.330-second
+PublicMetaDB resume. The normal iPhone app delivered it to both selected
+shares, SMB and WebDAV, on a cold foreground launch. The first warm return
+was not verified: the audio guard had stopped the app after a simulator volume
+reset while no media was playing. After revoking only SMB, a second playback
+advanced PublicMetaDB to 181.711 seconds. On return from 928 seconds in the
+background, WebDAV advanced to 181.711; SMB's signed history record remained
+byte-identical at 139.330. Both deliveries preceded the independent observer.
+Neither used manual sync or a reviewed import. The managed-server controls,
+40 unrelated watches, five unrelated resumes and the private list were
+unchanged. The run's tracker resume and temporary sources were removed and
+the original settings and volume restored. Plozz retained the measured file
+durations, not a playable resume, after clearing the local test history.
 
 On `18f41e069`, a separate one-time import used an existing *Big Buck Bunny*
 watch on PublicMetaDB. Cancelling the review left the selected NFS share
