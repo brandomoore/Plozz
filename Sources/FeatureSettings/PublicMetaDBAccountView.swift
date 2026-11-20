@@ -39,7 +39,7 @@
                     if makeHistoryImport != nil || service.makeHistoryExportSource != nil {
                         SettingsSectionGroup("Transfer history") {
                             if let makeHistoryImport {
-                                NavigationLink("Compare with server history") {
+                                NavigationLink("Compare watch history") {
                                     TrackerHistoryImportView(makeSession: makeHistoryImport)
                                 }
                                 .accessibilityIdentifier("publicmetadb.compare-history")

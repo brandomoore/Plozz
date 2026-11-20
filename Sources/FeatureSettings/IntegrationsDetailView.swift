@@ -193,7 +193,7 @@ struct IntegrationsDetailView: View {
                         onDisconnect: { Task { await trakt.disconnect() } }
                     )
                     if case .connected = trakt.phase, makeTraktHistoryImport != nil {
-                        Button("Compare with server history") { showingTraktHistory = true }
+                        Button("Compare watch history") { showingTraktHistory = true }
                             .accessibilityIdentifier("trakt.compare-history")
                     }
                     if case .connected = trakt.phase, trakt.makeHistoryExport != nil {
@@ -224,7 +224,7 @@ struct IntegrationsDetailView: View {
                         onDisconnect: { Task { await simkl.disconnect() } }
                     )
                     if case .connected = simkl.phase, makeSimklHistoryImport != nil {
-                        Button("Compare with server history") { showingSimklHistory = true }
+                        Button("Compare watch history") { showingSimklHistory = true }
                             .accessibilityIdentifier("simkl.compare-history")
                     }
                     if case .connected = simkl.phase, simkl.makeHistoryExport != nil {
@@ -257,7 +257,7 @@ struct IntegrationsDetailView: View {
                         onDisconnect: { Task { await wetrakr.disconnect() } }
                     )
                     if case .connected = wetrakr.phase, makeWetrakrHistoryImport != nil {
-                        Button("Compare with server history") { showingWetrakrHistory = true }
+                        Button("Compare watch history") { showingWetrakrHistory = true }
                             .accessibilityIdentifier("wetrakr.compare-history")
                     }
                     if case .connected = wetrakr.phase, wetrakr.makeHistoryExport != nil {
@@ -281,7 +281,7 @@ struct IntegrationsDetailView: View {
                         onDisconnect: { Task { await anilist.disconnect() } }
                     )
                     if case .connected = anilist.phase, makeAniListHistoryImport != nil {
-                        Button("Compare with server history") { showingAniListHistory = true }
+                        Button("Compare watch history") { showingAniListHistory = true }
                             .accessibilityIdentifier("anilist.compare-history")
                     }
                     if case .connected = anilist.phase, anilist.makeHistoryExport != nil {
@@ -305,7 +305,7 @@ struct IntegrationsDetailView: View {
                         onDisconnect: { Task { await mal.disconnect() } }
                     )
                     if case .connected = mal.phase, makeMALHistoryImport != nil {
-                        Button("Compare with server history") { showingMALHistory = true }
+                        Button("Compare watch history") { showingMALHistory = true }
                             .accessibilityIdentifier("mal.compare-history")
                     }
                     if case .connected = mal.phase, mal.makeHistoryExport != nil {

@@ -89,7 +89,7 @@ struct TrackerHistorySyncSettingsView: View {
                     ForEach(shares) { share in
                         Toggle(isOn: choice(share.id, in: selected) { update($0, grant.categories) }) {
                             if shares.contains(where: { $0.id != share.id && $0.serverName == share.serverName }) {
-                                Text("\(share.serverName) · \(share.userName)")
+                                Text(verbatim: share.historyDisplayName)
                             } else {
                                 Text(verbatim: share.serverName)
                             }

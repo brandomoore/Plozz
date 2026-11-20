@@ -131,6 +131,28 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
     }
 
     #if os(iOS)
+    func testReviewedConsentNamesOnlySelectedHistoryOwners() {
+        launch(["--history-ongoing-sync"])
+        select("jellyfin")
+        openConfirmation()
+        XCTAssertTrue(app.staticTexts["Change server history?"].exists)
+        let warning = app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Other apps and profiles using these server users see the changes."
+        ))
+        XCTAssertTrue(warning.firstMatch.exists)
+        cancelConfirmation()
+        assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
+
+        activate(element("tracker-history.select.jellyfin:movie"))
+        select("cedar")
+        openConfirmation()
+        XCTAssertTrue(app.staticTexts["Change share history in Plozz?"].exists)
+        XCTAssertFalse(warning.firstMatch.exists)
+        activate(app.buttons["Apply selected changes"].firstMatch)
+        XCTAssertTrue(app.staticTexts["Confirmed in Plozz"].waitForExistence(timeout: 5))
+        assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
+    }
+
     func testLargeComparisonFiltersWithoutSelectingOrWritingHiddenRows() {
         launch(["--history-many-records"])
         let summary = element("tracker-history.summary")

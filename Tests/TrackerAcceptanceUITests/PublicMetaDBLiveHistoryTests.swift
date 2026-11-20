@@ -2919,14 +2919,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(failure, tapping: false, maximumSwipes: 32)
         try tapVisible(importSelection, tapping: false, maximumSwipes: 32)
         XCTAssertEqual(importSelection.value as? String, "1")
-        XCTAssertFalse(app.staticTexts["Confirmed on server"].exists)
+        XCTAssertFalse(app.staticTexts[importConfirmationStatus].exists)
         XCTAssertFalse(app.staticTexts["Queued for verification"].exists)
     }
 
     func testInspectRejectedHistoryImport() throws {
         let row = try revealHistoryImportRow(status: "Not confirmed. Compare again before retrying.")
         XCTAssertTrue(row.staticTexts["Not confirmed. Compare again before retrying."].waitForExistence(timeout: 60))
-        XCTAssertFalse(row.staticTexts["Confirmed on server"].exists)
+        XCTAssertFalse(row.staticTexts[importConfirmationStatus].exists)
         XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
@@ -2974,11 +2974,12 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         ))
         try require(rows.count == 1, "Expected the exact selected history action")
         let row = rows.element
+        let owner = importingToShare ? "Plozz" : "Server"
         XCTAssertTrue(row.staticTexts[
-            "Server resume: \(seconds.formatted(.number.precision(.fractionLength(0)))) seconds"
+            "\(owner) resume: \(seconds.formatted(.number.precision(.fractionLength(0)))) seconds"
         ].exists)
         XCTAssertTrue(
-            row.staticTexts["Different from server — selecting replaces its current state"].exists
+            row.staticTexts[importingToShare ? "Different from Plozz — selecting replaces this title’s current state" : "Different from server — selecting replaces its current state"].exists
                 || row.staticTexts["Tracker records disagree — select only one change for this title"].exists
         )
     }
@@ -2992,8 +2993,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testInspectConfirmedHistoryImport() throws {
-        let row = try revealHistoryImportRow(status: "Confirmed on server")
-        XCTAssertTrue(row.staticTexts["Confirmed on server"].waitForExistence(timeout: 60))
+        let row = try revealHistoryImportRow(status: importConfirmationStatus)
+        XCTAssertTrue(row.staticTexts[importConfirmationStatus].waitForExistence(timeout: 60))
         XCTAssertFalse(app.buttons["tracker-history.apply"].exists)
     }
 
@@ -3027,6 +3028,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private var comparisonRows: XCUIElementQuery {
         app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tracker-history.row."))
+    }
+
+    private var importingToShare: Bool {
+        ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"]?.hasPrefix("share:") == true
+    }
+
+    private var importConfirmationStatus: String {
+        importingToShare ? "Confirmed in Plozz" : "Confirmed on server"
     }
 
     private func historyImportRows(status: String) throws -> XCUIElementQuery {

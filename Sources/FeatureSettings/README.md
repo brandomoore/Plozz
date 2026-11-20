@@ -67,9 +67,11 @@ current-key season deletion and exact-chunk deletion. Cached or uncertain
 readback blocks replay rather than claiming the operation was confirmed.
 Community-rating lookup is a separate, default-off profile preference. Its
 description discloses title lookups and preserves existing ratings/server metadata.
-Its server-history comparison is a separate, explicit action: show the server
-user and current state, select differences, then confirm. It does not enable
-ongoing sync. The page owns its ephemeral approval and revokes undelivered work
+**Compare watch history** is a separate, one-time import. The review names the
+selected destination: a share changes this profile's history in Plozz; a managed
+server changes that server user's history. An anonymous share displays its name
+without a username. Confirmation does not enable ongoing sync.
+The page owns its ephemeral approval and revokes undelivered work
 on exit. Comparison and export share the grouped Settings result list. Counts,
 status and selected-only filters, title search and bounded pages let users
 review large inventories without bulk selection. Filters never alter the selection;

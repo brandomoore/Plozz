@@ -454,11 +454,11 @@ extension AtlasUI {
     #if os(tvOS)
     func testTrackerHome() { scenario("trackers",[("","trackers","@settings-page-trakt")]) }
     func provider(_ id:String,_ marker:String) {scenario("trackers",[("@settings-page-"+id,"tracker-"+id,marker)])}
-    func testTrackerTrakt() {provider("trakt","Compare with server history")}
-    func testTrackerSimkl() {provider("simkl","Compare with server history")}
-    func testTrackerWetrakr() {provider("wetrakr","Compare with server history")}
-    func testTrackerAni() {provider("anilist","Compare with server history")}
-    func testTrackerMAL() {provider("mal","Compare with server history")}
+    func testTrackerTrakt() {provider("trakt","Compare watch history")}
+    func testTrackerSimkl() {provider("simkl","Compare watch history")}
+    func testTrackerWetrakr() {provider("wetrakr","Compare watch history")}
+    func testTrackerAni() {provider("anilist","Compare watch history")}
+    func testTrackerMAL() {provider("mal","Compare watch history")}
     func testTrackerLast() {provider("lastfm","Listening history")}
     func testTrackerPub() {provider("publicmetadb","Browse PublicMetaDB")}
     #endif

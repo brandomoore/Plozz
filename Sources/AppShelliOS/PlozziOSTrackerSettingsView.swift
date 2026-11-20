@@ -129,7 +129,7 @@ private struct TraktSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare with server history") { showingHistory = true }
+            Button("Compare watch history") { showingHistory = true }
                 .accessibilityIdentifier("trakt.compare-history")
             if service.makeHistoryExport != nil {
                 Button("Export server history") { showingExport = true }
@@ -229,7 +229,7 @@ private struct WetrakrSettingsContent: View {
                 .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare with server history") { showingHistory = true }
+            Button("Compare watch history") { showingHistory = true }
                 .accessibilityIdentifier("wetrakr.compare-history")
             if service.makeHistoryExport != nil {
                 Button("Export server history") { showingExport = true }
@@ -308,7 +308,7 @@ private struct SimklSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare with server history") { showingHistory = true }
+            Button("Compare watch history") { showingHistory = true }
                 .accessibilityIdentifier("simkl.compare-history")
             if service.makeHistoryExport != nil {
                 Button("Export server history") { showingExport = true }
@@ -372,7 +372,7 @@ private struct AniListSettingsContent: View {
             }
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare with server history") { showingHistory = true }
+            Button("Compare watch history") { showingHistory = true }
                 .accessibilityIdentifier("anilist.compare-history")
             if service.makeHistoryExport != nil {
                 Button("Export server history") { showingExport = true }
@@ -477,7 +477,7 @@ private struct MALSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare with server history") { showingHistory = true }
+            Button("Compare watch history") { showingHistory = true }
                 .accessibilityIdentifier("mal.compare-history")
             if service.makeHistoryExport != nil {
                 Button("Export server history") { showingExport = true }

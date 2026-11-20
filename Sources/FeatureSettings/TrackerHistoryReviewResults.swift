@@ -146,6 +146,13 @@ struct TrackerHistoryReviewResults<Row: Identifiable, Content: View, Action: Vie
     }
 }
 
+extension TrackerHistoryImportSession.Destination {
+    var historyDisplayName: String {
+        let user = userName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return user.isEmpty ? serverName : "\(serverName) · \(user)"
+    }
+}
+
 struct TrackerHistoryExportSourceRows: View {
     let accounts: [TrackerHistoryImportSession.Destination]
     let libraries: [MediaLibrary]
@@ -160,10 +167,10 @@ struct TrackerHistoryExportSourceRows: View {
             Text("No server users available.")
         } else {
             let account = accounts.first { $0.id == accountID }
-            SettingsMenuRow(title: "Server user", value: account.map { Text("\($0.serverName) · \($0.userName)") } ?? Text("Choose")) {
+            SettingsMenuRow(title: "Server user", value: account.map { Text(verbatim: $0.historyDisplayName) } ?? Text("Choose")) {
                 Picker("Server user", selection: $accountID) {
                     Text("Choose a server user").tag("")
-                    ForEach(accounts) { Text("\($0.serverName) · \($0.userName)").tag($0.id) }
+                    ForEach(accounts) { Text(verbatim: $0.historyDisplayName).tag($0.id) }
                 }
             }
             .accessibilityIdentifier("\(identifier).account")

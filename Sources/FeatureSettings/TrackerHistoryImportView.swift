@@ -13,7 +13,7 @@ public struct TrackerHistoryImportView: View {
     }
 
     public var body: some View {
-        GroupedSettingsPage(title: "Compare with server history", backIdentifier: "tracker-history.back") {
+        GroupedSettingsPage(title: "Compare watch history", backIdentifier: "tracker-history.back") {
             if let session {
                 TrackerHistoryComparisonContent(session: session)
             } else {
@@ -36,6 +36,19 @@ private struct TrackerHistoryComparisonContent: View {
     @State private var selected: Set<UUID> = []
     @State private var confirming = false
     @State private var operation: Task<Void, Never>?
+
+    private var selectedRows: [TrackerHistoryImportPlan.Row] {
+        session.plan?.rows.filter { selected.contains($0.id) } ?? []
+    }
+
+    private var confirmationTitle: LocalizedStringKey {
+        let rows = selectedRows
+        let hasShares = rows.contains { $0.target?.providerKind == .mediaShare }
+        let hasServers = rows.contains { $0.target?.providerKind != .mediaShare }
+        if hasShares && hasServers { return "Change share and server history?" }
+        if hasShares { return "Change share history in Plozz?" }
+        return "Change server history?"
+    }
 
     var body: some View {
         TrackerHistorySettingsStack {
@@ -85,7 +98,7 @@ private struct TrackerHistoryComparisonContent: View {
                 }
             }
         }
-        .confirmationDialog("Change server history?", isPresented: $confirming, titleVisibility: .visible) {
+        .confirmationDialog(confirmationTitle, isPresented: $confirming, titleVisibility: .visible) {
             Button("Apply selected changes", role: .destructive) {
                 guard let plan = session.plan else { return }
                 let selection = selected
@@ -98,10 +111,10 @@ private struct TrackerHistoryComparisonContent: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            let rows = session.plan?.rows.filter { selected.contains($0.id) } ?? []
+            let rows = selectedRows
             let accounts = Set(rows.compactMap(\.target?.accountID))
             let destinations = session.destinations.filter { accounts.contains($0.id) }
-                .map { "\($0.serverName) · \($0.userName)" }.formatted(.list(type: .and))
+                .map(\.historyDisplayName).formatted(.list(type: .and))
             let conflicts = rows.filter { $0.filter == .conflicts }.count
             let changesServer = rows.contains { $0.target?.providerKind != .mediaShare }
             let single = rows.count == 1 ? rows.first : nil
@@ -160,12 +173,12 @@ private struct TrackerHistoryComparisonRow: View {
         VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
             Text(verbatim: row.displayTitle)
             if let destination {
-                Text("\(destination.serverName) · \(destination.userName)").foregroundStyle(.secondary)
+                Text(verbatim: destination.historyDisplayName).foregroundStyle(.secondary)
             }
             if let outcome {
                 switch outcome {
                 case .queued: Text("Queued for verification")
-                case .confirmed: Text("Confirmed on server")
+                case .confirmed: Text(isShare ? "Confirmed in Plozz" : "Confirmed on server")
                 case .unconfirmed: Text("Not confirmed. Compare again before retrying.")
                 }
             } else {
@@ -181,17 +194,25 @@ private struct TrackerHistoryComparisonRow: View {
                 if case .resumePercentage(let percent, _) = row.observation.fact {
                     Text("Tracker resume: \((percent / 100).formatted(.percent.precision(.fractionLength(1))))")
                         .foregroundStyle(.secondary)
-                    Text("The tracker provides a percentage, not a verified file runtime. Server progress will not change.")
+                    Text("The tracker provides a percentage, not a verified file runtime. Progress will not change.")
                         .foregroundStyle(.secondary)
                 }
                 if let baseline = row.baseline {
-                    Text(baseline.played ? "Server: watched" : "Server: not watched").foregroundStyle(.secondary)
+                    Group {
+                        if isShare { Text(baseline.played ? "Plozz: watched" : "Plozz: not watched") }
+                        else { Text(baseline.played ? "Server: watched" : "Server: not watched") }
+                    }
+                    .foregroundStyle(.secondary)
                     if let position = baseline.resumePosition, position > 0 {
-                        Text("Server resume: \(position.formatted(.number.precision(.fractionLength(0)))) seconds")
-                            .foregroundStyle(.secondary)
+                        let seconds = position.formatted(.number.precision(.fractionLength(0)))
+                        Group {
+                            if isShare { Text("Plozz resume: \(seconds) seconds") }
+                            else { Text("Server resume: \(seconds) seconds") }
+                        }
+                        .foregroundStyle(.secondary)
                     }
                 }
-                TrackerHistoryComparisonStatus(comparison: row.comparison)
+                TrackerHistoryComparisonStatus(comparison: row.comparison, isShare: isShare)
                 if competingSelection && row.filter == .conflicts {
                     Text("Deselect the other change for this title first.")
                         .foregroundStyle(.secondary)
@@ -205,6 +226,8 @@ private struct TrackerHistoryComparisonRow: View {
         .accessibilityIdentifier("tracker-history.row.\(row.id.uuidString)")
         .trackerHistoryRowFocus(readOnly: !canSelect || competingSelection || row.filter == .matches || row.filter == .unavailable)
     }
+
+    private var isShare: Bool { row.target?.providerKind == .mediaShare }
 }
 
 private struct TrackerAnimeProgressSummary: View {
@@ -234,16 +257,18 @@ private struct TrackerAnimeProgressSummary: View {
 
 private struct TrackerHistoryComparisonStatus: View {
     let comparison: TrackerHistoryImportPlan.Comparison
+    let isShare: Bool
     var body: some View {
         Group {
             switch comparison {
             case .ready: EmptyView()
             case .alreadyMatches: Text("Already matches — no change")
-            case .serverConflict: Text("Different from server — selecting replaces its current state")
+            case .serverConflict:
+                Text(isShare ? "Different from Plozz — selecting replaces this title’s current state" : "Different from server — selecting replaces its current state")
             case .trackerConflict: Text("Tracker records disagree — select only one change for this title")
             case .unmatched: Text("No confirmed library match")
             case .ambiguous: Text("Multiple library matches — not imported")
-            case .unsupported: Text("The server cannot import this kind of record")
+            case .unsupported: Text("This kind of record cannot be imported")
             case .playing: Text("Currently playing — not imported")
             case .incompatibleRuntime: Text("Different or unknown runtime — resume not imported")
             }

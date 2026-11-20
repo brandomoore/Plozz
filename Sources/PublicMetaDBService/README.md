@@ -23,6 +23,22 @@ and four unrelated resumes were unchanged. The test resume was cleared,
 the original settings and volume were restored, and the simulator shut down.
 The two-receiver and revocation results below are from the earlier build.
 
+On `18f41e069`, a separate one-time import used an existing *Big Buck Bunny*
+watch on PublicMetaDB. Cancelling the review left the selected NFS share
+unwatched. After explicit confirmation, Plozz marked only that share watched;
+the signed record was byte-identical after cold relaunch. The other NFS copy
+of the same movie, an unrelated title, Jellyfin, the private list and all
+tracker history (40 watches and four resumes) stayed unchanged. The run did
+not enable ongoing sync, play media, or write to a managed server.
+
+The rebuilt iPhone app then verified the corrected confirmation on an
+anonymous NFS share: **Change share history in Plozz?** named the selected
+share without a trailing separator or a managed-server warning. Cancelling
+left both share stores, the tracker and Jellyfin unchanged. A separate UI
+fixture verified that a managed-server selection still shows its warning and
+a confirmed share change says **Confirmed in Plozz**. The rebuilt-app live
+check was cancellation only; the live write above used the preceding build.
+
 On the integrated iPhone simulator app, choosing the dedicated account's
 private list and then cancelling left the destination unset after relaunch.
 Independent reads confirmed unchanged membership, 40 watches and four resumes.
