@@ -255,6 +255,51 @@ targets, all before first Down). Jellyfin and Emby both retained their item
 counts (83 and 66), with 30 focus changes and no discovery, layout or row
 failures in either build.
 
+### Dense Home: scrolling while server rows arrive (#472)
+
+On `d7c639d1a`, iPhone 17 Pro simulator (iOS 26.2), run
+`mobile-home-one-server-startup-scroll`, `mobile-home-multi-server-startup-scroll`
+and `mobile-home-multi-server-scroll` together. Run
+`bcfcd0bbb127422f9280fc0f2a6246d1` passed with one warmup and five retained
+samples per scenario. Figures below are medians, from release of the simulated
+provider responses, **not** from sign-in or first pixels:
+
+| Mobile Home | First populated row | All rows ready | Counted provider calls |
+|---|---:|---:|---:|
+| 1 source, 2 rows, 40 cards | 343 ms | 350 ms | 5 |
+| 20 sources, 40 rows, 800 cards | 623 ms | 9.90 s | 100 |
+
+With 40 rows, the median longest main-actor scheduling gap was **85 ms during
+loading** (80–95 ms) versus **49 ms after loading** (46–53 ms) over the same
+24 animated scroll targets. The two-row control fit on screen and is **not**
+a scrolling baseline. Each provider deliberately staggers its response times;
+row count, source count and latency all change between configurations. The
+fixtures use cached artwork and make no requests to a real server. These
+measurements show contention on the loaded page, not server CPU or display FPS.
+
+**tvOS, holding server count fixed:** four alternating launches of the same
+optimized production `RootView` used one loopback Jellyfin fixture, the same
+40 libraries, and 20 distinct movies and posters per library. Only the number
+of enabled server rows changed. The hero was disabled. Prelaunch video and
+native focus measured returning-profile selection independently of data loading.
+
+| tvOS simulator (two recorded runs per configuration) | 3 rows / 60 cards | 40 rows / 800 cards |
+|---|---:|---:|
+| Selection to first distinct Home sidebar in recording | 0.85–1.27 s | 10.19–11.79 s |
+| Selection to focus in Home content | 1.30–1.80 s | 10.18–11.80 s |
+| Peak sampled app resident memory | 432–438 MiB | 937–957 MiB |
+| Requests reaching loopback, selection through completion report | 113–164 | 1,364–1,979 |
+
+All 40 dense row requests succeeded exactly once. Artwork (918–1,157 requests)
+and single-item detail (382–758) accounted for most traffic. No traffic reached
+a real Jellyfin server. Gaps of up to 1.7 s between recorded frames limit the
+precision of first-pixel timing. Full dense Home loads took 151–153 s with
+recording, versus 23 s in a separately paced, unrecorded navigation run; these
+are not hardware load-time estimates. In that run the same six verified focus
+moves took 11.47 s while rows were arriving and 3.65 s once settled, including
+XCTest overhead. Focus subsequently reached row nine. This isolates a repeatable
+row-count problem, not the cause of the earlier intermittent small-Home stalls.
+
 ## Baseline → attribution → candidate → regression
 
 ### tvOS: rapid vertical IPTV guide travel
