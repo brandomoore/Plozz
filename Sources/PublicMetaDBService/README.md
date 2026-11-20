@@ -151,6 +151,17 @@ that file. Independent reads found Emby still at 242.375 seconds, Jellyfin at
 120.394 seconds, and the excluded share and tracker unchanged. This verifies
 the automatic check and unchanged histories, not delivery of a new resume.
 
+The follow-up verified delivery with a **new** resume. With Emby and Jellyfin
+enabled, muted SMB playback of *(500) Days of Summer* reported 999.922 seconds
+to PublicMetaDB. After 925 seconds in the background, the iPhone app returned
+to the foreground and automatically updated the enrolled NFS copy from zero to
+999.922 seconds. The write occurred between sync start and completion; no
+manual sync or import ran. Both managed users remained unplayed at zero for
+the same edition. The excluded share, *Wedlocked* and unrelated tracker records
+were unchanged. The test resume and temporary shares were removed; the
+original grants, pairings and volume were restored. This verifies movie
+resume delivery, not a watched-completion event.
+
 The rebuilt iPhone export prompts now show **Titles to export: 1** instead
 of “1 selected titles.” Two hosted UI checks passed with fixtures; these
 were not additional live transfers.
