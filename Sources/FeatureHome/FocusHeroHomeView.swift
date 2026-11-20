@@ -47,6 +47,25 @@ struct FocusHeroRow: Identifiable {
         rows.dropFirst(initialShelfCount).compactMap { nearby.contains($0.id) ? nil : $0.id }
     }
 
+    /// Likely destinations of one remote press. Warm full details, not the
+    /// base shelf or its posters, only for these neighbors.
+    static func metadataNeighbors(in rows: [Self], active: Int, subject: MediaItem?) -> [MediaItem] {
+        guard rows.indices.contains(active) else { return [] }
+        let row = rows[active]
+        let id = subject?.stablePresentationID
+        let column = row.items.firstIndex { $0.stablePresentationID == id } ?? 0
+        var neighbors = [column + 1, column - 1].compactMap {
+            row.items.indices.contains($0) ? row.items[$0] : nil
+        }
+        let next = rows.indices.dropFirst(active + 1).first { rows[$0].acceptsEntry(at: $0) }
+        let previous = rows.indices.prefix(active).last { rows[$0].acceptsEntry(at: $0) }
+        for index in [next, previous].compactMap({ $0 }) {
+            let items = rows[index].items
+            if !items.isEmpty { neighbors.append(items[min(column, items.count - 1)]) }
+        }
+        return neighbors
+    }
+
     /// The picture a focused card in this row is most likely showing.
     func shownArtwork(for item: MediaItem) -> [ArtworkReference] {
         cardArtwork.map { Array($0(item).prefix(1)) } ?? []
@@ -488,6 +507,9 @@ struct FocusHeroHomeView<RowContent: View>: View {
             }
             FocusHeroArtworkPrefetch(rows: rows, model: model, metadata: metadata, isFrontmost: isFrontmost)
                 .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
+            if let enrich, isFrontmost, scenePhase == .active {
+                FocusHeroMetadataPrefetch(rows: rows, model: model, metadata: metadata, enrich: enrich)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(
@@ -499,10 +521,6 @@ struct FocusHeroHomeView<RowContent: View>: View {
         .onChange(of: rows.map(\.items)) { _, _ in model.seed(from: rows) }
         .onChange(of: rows.map(\.liveChannels)) { _, _ in model.seed(from: rows) }
         .onChange(of: rows.map(\.isPlaceholder)) { _, _ in model.seed(from: rows) }
-        .task(id: rows.map { $0.items.map(FocusHeroMetadata.Key.init) }) {
-            guard let enrich else { return }
-            await metadata.prefetch(rows.map { Array($0.items.prefix(16)) }, using: enrich)
-        }
     }
 
     private func showcaseDetails(active: Bool) -> some View {
@@ -546,6 +564,26 @@ struct FocusHeroHomeView<RowContent: View>: View {
         .ignoresSafeArea(.container, edges: .trailing)
         .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
         .environment(\.plozzCardCaptionIsShowcase, true)
+    }
+}
+
+private struct FocusHeroMetadataPrefetch: View {
+    let rows: [FocusHeroRow]
+    let model: FocusHeroModel
+    let metadata: FocusHeroMetadata
+    let enrich: FocusHeroMetadata.Enrich
+
+    var body: some View {
+        let neighbors = FocusHeroRow.metadataNeighbors(
+            in: rows, active: model.activeIndex(in: rows), subject: model.subject?.item
+        )
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task(id: neighbors.map(FocusHeroMetadata.Key.init), priority: .utility) {
+                await metadata.prefetch([neighbors], using: enrich)
+            }
     }
 }
 
@@ -648,7 +686,7 @@ final class FocusHeroMetadata {
     }
 
     @ObservationIgnored private var details: [Key: Entry] = [:]
-    @ObservationIgnored private var requested: Set<Key> = []
+    @ObservationIgnored private var pending: [Key: Task<Void, Never>] = [:]
 
     private func entry(for key: Key) -> Entry {
         if let entry = details[key] { return entry }
@@ -697,8 +735,10 @@ final class FocusHeroMetadata {
         for items in rows {
             for start in stride(from: 0, to: items.count, by: 4) {
                 guard !Task.isCancelled else { return }
+                var seen = Set<Key>()
                 let batch = items[start..<min(start + 4, items.count)].filter {
-                    entry(for: Key($0)).item == nil && requested.insert(Key($0)).inserted
+                    let key = Key($0)
+                    return entry(for: key).item == nil && pending[key] == nil && seen.insert(key).inserted
                 }
                 guard !batch.isEmpty else { continue }
                 await store(batch, using: enrich)
@@ -706,28 +746,33 @@ final class FocusHeroMetadata {
         }
     }
 
-    private func store(_ batch: [MediaItem], using enrich: Enrich) async {
-        let enriched = await HeroMetadataEnricher.withShowcasePresentations(batch) {
-            await enrich(batch)
-        }
-        guard !Task.isCancelled, enriched.count == batch.count else {
-            if !Task.isCancelled, enriched.count != batch.count {
-                PlozzLog.app.error("Showcase metadata returned an incomplete batch; allowing retry")
+    private func store(_ batch: [MediaItem], using enrich: @escaping Enrich) async {
+        let keys = batch.map(Key.init)
+        let task = Task {
+            defer { for key in keys { pending[key] = nil } }
+            guard !Task.isCancelled else { return }
+            let enriched = await HeroMetadataEnricher.withShowcasePresentations(batch) {
+                await enrich(batch)
             }
-            batch.forEach { requested.remove(Key($0)) }
-            return
+            guard !Task.isCancelled else { return }
+            guard enriched.count == batch.count else {
+                PlozzLog.app.error("Showcase metadata returned an incomplete batch; allowing retry")
+                return
+            }
+            for (key, full) in zip(keys, enriched) { entry(for: key).item = full }
         }
-        for (original, full) in zip(batch, enriched) {
-            entry(for: Key(original)).item = full
-            requested.remove(Key(original))
-        }
+        for key in keys { pending[key] = task }
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     /// Loads the focused title's details straight away, ahead of the rest of its
     /// row. A load cut short is tried again next time.
-    func load(_ item: MediaItem, using enrich: Enrich) async {
+    func load(_ item: MediaItem, using enrich: @escaping Enrich) async {
         let key = Key(item)
-        guard !Task.isCancelled, entry(for: key).item == nil, requested.insert(key).inserted else { return }
+        // A neighbor can become focused just as its speculative task is
+        // cancelled. Join completed work, but never leave that title blank.
+        while !Task.isCancelled, let task = pending[key] { await task.value }
+        guard !Task.isCancelled, entry(for: key).item == nil else { return }
         await store([item], using: enrich)
     }
 }
@@ -761,7 +806,7 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             ? FocusHeroRow.idleShelfIDs(in: rows, nearby: nearby) : []
         VStack(alignment: .leading, spacing: FocusHeroLayout.rowSpacing) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                rowBody(row, index: index, mount: !stages || index < FocusHeroRow.initialShelfCount
+                rowBody(row, index: index, stages: stages, mount: !stages || index < FocusHeroRow.initialShelfCount
                         || nearby.contains(row.id) || prepared.contains(row.id),
                         waitsForEntry: awaitsFirstEntry && index > 0)
                     .navigationEntryFocus(index == 0 ? (row.isPlaceholder ? .pending : .content) : nil)
@@ -794,7 +839,7 @@ private struct FocusHeroRowStack<RowContent: View>: View {
     }
 
     @ViewBuilder
-    private func rowBody(_ row: FocusHeroRow, index: Int, mount: Bool, waitsForEntry: Bool) -> some View {
+    private func rowBody(_ row: FocusHeroRow, index: Int, stages: Bool, mount: Bool, waitsForEntry: Bool) -> some View {
         let content = rowContent(row, reporter(for: row))
             .environment(\.plozzRowTitleOffset, {
                 model.resolvedActiveRowID(in: rows) == row.id ? -FocusHeroLayout.activeTitleLift : 0
@@ -804,7 +849,7 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             content: content.fixedSize(horizontal: false, vertical: true)
                 .safeAreaPadding(.leading, FocusHeroLayout.maskHorizontalOverhang),
             motion: model.motion, kind: .row(row.id),
-            entrySourceRowIDs: entrySourceRowIDs(at: index), mount: mount,
+            entrySourceRowIDs: entrySourceRowIDs(at: index), mount: mount, stagesPosterPrefetch: stages,
             entryGate: stagesRowViews ? featuredEntry : nil, waitsForEntry: waitsForEntry
         )
         .padding(.leading, -FocusHeroLayout.maskHorizontalOverhang)
@@ -1996,14 +2041,16 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
     var columnFit: FocusHeroColumnFit? = nil
     var entrySourceRowIDs: Set<String> = []
     var mount = true
+    var stagesPosterPrefetch = false
     var entryGate: FeaturedRowEntryGate?
     var waitsForEntry = false
 
     func makeUIViewController(context: Context) -> Controller {
-        let controller = Controller(content: hostedContent(environment: context.environment, deferred: !mount), motion: motion,
+        let shelf = stagesPosterPrefetch ? StagedPosterShelf() : nil
+        let controller = Controller(content: hostedContent(environment: context.environment, shelf: shelf), motion: motion,
                    kind: kind, columnFit: columnFit, entrySourceRowIDs: entrySourceRowIDs)
+        controller.posterShelf = shelf
         controller.configureEntry(entryGate, waiting: waitsForEntry)
-        controller.startedDeferred = !mount
         controller.mount = mount
         return controller
     }
@@ -2016,19 +2063,22 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
         #if DEBUG
         controller.measurement = context.environment.focusHeroLayoutMeasurement
         #endif
-        controller.host.rootView = hostedContent(environment: context.environment, deferred: controller.startedDeferred)
+        if stagesPosterPrefetch != (controller.posterShelf != nil) {
+            controller.posterShelf = stagesPosterPrefetch ? StagedPosterShelf() : nil
+        }
+        controller.host.rootView = hostedContent(environment: context.environment, shelf: controller.posterShelf)
     }
 
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
         controller.unbind()
     }
 
-    private func hostedContent(environment source: EnvironmentValues, deferred: Bool) -> AnyView {
+    private func hostedContent(environment source: EnvironmentValues, shelf: StagedPosterShelf?) -> AnyView {
         // Preserve public presentation/actions, not another hosting tree's
         // internal accessibility environment, which hides this tree's children.
         AnyView(content.transformEnvironment(\.self) { target in
             target.copyHostedPresentation(from: source)
-            target.plozzPosterWarmOnFocus = deferred
+            target.plozzStagedPosterShelf = shelf
             #if DEBUG
             target.focusHeroLayoutMeasurement = source.focusHeroLayoutMeasurement
             #endif
@@ -2078,12 +2128,14 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
 
         override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
             super.didUpdateFocus(in: context, with: coordinator)
+            posterShelf?.record(context.focusHeading, from: context.previouslyFocusedItem,
+                               to: context.nextFocusedItem, in: view)
             if let entryGate, let target = context.nextFocusedItem, view.contains(target) {
                 entryGate.didEnter()
             }
         }
 
-        var startedDeferred = false
+        var posterShelf: StagedPosterShelf?
         var mount = true {
             didSet {
                 guard mount, !oldValue, isViewLoaded else { return }

@@ -108,12 +108,39 @@ public struct MediaRowHeader: View {
 }
 
 extension EnvironmentValues {
-    @Entry public var plozzPosterWarmOnFocus = false
+    @Entry public var plozzStagedPosterShelf: StagedPosterShelf? = nil
+}
+
+/// One native row host, not a remembered card index. SwiftUI focus may briefly
+/// be nil on a fast hold, or return to a different index after vertical travel.
+@MainActor
+public final class StagedPosterShelf {
+    private var physicalDirection: Int?
+    public init() {}
+
+    #if os(tvOS)
+    public func record(
+        _ heading: UIFocusHeading, from previous: (any UIFocusItem)?, to next: (any UIFocusItem)?, in shelf: UIView
+    ) {
+        physicalDirection = nil
+        guard heading == .left || heading == .right, let previous, let next, previous !== next,
+              shelf.contains(previous), shelf.contains(next) else { return }
+        physicalDirection = heading == .right ? 1 : -1
+    }
+    #endif
+
+    func takeDirection(in layout: LayoutDirection) -> Int? {
+        defer { physicalDirection = nil }
+        return physicalDirection.map { layout == .rightToLeft ? -$0 : $0 }
+    }
 }
 
 public struct MediaRowView: View {
-    @Environment(\.plozzPosterWarmOnFocus) private var warmsPosterOnFocus
-    private var usesFocusDrivenWarm: Bool { warmsPosterOnFocus && presentation == .poster && !showsSeriesArtwork }
+    @Environment(\.plozzStagedPosterShelf) private var stagedShelf
+    @Environment(\.layoutDirection) private var layoutDirection
+    private var stagedPosterShelf: StagedPosterShelf? {
+        presentation == .poster && !showsSeriesArtwork ? stagedShelf : nil
+    }
 
     public enum Presentation: Equatable, Sendable {
         case poster
@@ -1022,7 +1049,7 @@ public struct MediaRowView: View {
             }
             .onAppear {
                 activity.visibleIDs.insert(item.stablePresentationID)
-                if !usesFocusDrivenWarm { prefetchArtwork(around: item) }
+                if stagedPosterShelf == nil { prefetchArtwork(around: item) }
             }
             .onDisappear {
                 activity.visibleIDs.remove(item.stablePresentationID)
@@ -1229,12 +1256,12 @@ public struct MediaRowView: View {
     /// far right, early posters have correctly been evicted. The old prefetcher
     /// only looked toward larger indexes and remembered every card forever, so the
     /// return trip did no work until an evicted card was already visible.
-    private func prefetchArtwork(around item: MediaItem) {
+    private func prefetchArtwork(around item: MediaItem, browseDirection: Int? = nil) {
         #if canImport(UIKit)
         guard let index = itemIndexByID[item.stablePresentationID] else {
             return
         }
-        let direction = MediaRowPrefetchWindow.direction(
+        let direction = browseDirection ?? MediaRowPrefetchWindow.direction(
             from: activity.lastArtworkPrefetchIndex,
             to: index,
             fallback: activity.artworkPrefetchDirection
@@ -1267,6 +1294,9 @@ public struct MediaRowView: View {
         }
         for i in fullIndices {
             let candidate = items[i]
+            // Realised posters already own their preview and full display requests.
+            // Do not claim them: after recycling they may need a later warm.
+            if browseDirection != nil, activity.visibleIDs.contains(candidate.stablePresentationID) { continue }
             if presentation == .episodeColumn {
                 if activity.prefetchedIDs.insert(candidate.stablePresentationID).inserted {
                     let source = EpisodeArtworkSource(
@@ -1318,6 +1348,7 @@ public struct MediaRowView: View {
                 lookahead: MediaRowPrefetchWindow.previewArtworkLookahead
             ) where !near.contains(i) {
                 let candidate = items[i]
+                if browseDirection != nil, activity.visibleIDs.contains(candidate.stablePresentationID) { continue }
                 guard let preview = MediaArtworkPrefetchPolicy.candidates(
                           for: candidate,
                           style: artworkStyle,
@@ -1426,7 +1457,9 @@ public struct MediaRowView: View {
         // (focus actually left the row, up to the season bar).
         guard let newValue else { return }
         activity.hasBrowsedSinceTargetChange = true
-        if usesFocusDrivenWarm, let item = itemByID[newValue] { prefetchArtwork(around: item) }
+        if let direction = stagedPosterShelf?.takeDirection(in: layoutDirection), let item = itemByID[newValue] {
+            prefetchArtwork(around: item, browseDirection: direction)
+        }
         if let onCardFocused, let item = itemByID[newValue] { onCardFocused(item) }
         if !activity.focusEngaged { onFocusEntered?() }
         activity.lastFocusedID = newValue

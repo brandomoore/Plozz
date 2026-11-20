@@ -158,6 +158,51 @@ final class FocusHeroMetadataTests: XCTestCase {
         XCTAssertTrue(items.allSatisfy(metadata.hasDetails(for:)))
     }
 
+    func testDistantShelfPublicationDoesNotChangeTheMetadataWindow() {
+        func row(_ number: Int, _ count: Int) -> FocusHeroRow {
+            let items = (0..<count).map { MediaItem(id: "\(number)-\($0)", title: "Movie", kind: .movie) }
+            return FocusHeroRow(id: "\(number)", itemIDs: items.map(\.stablePresentationID),
+                                leadItem: items.first, items: items)
+        }
+        let rows = [row(0, 3), row(1, 0), row(2, 20), row(3, 10)]
+        let subject = rows[2].items[5]
+        for snapshot in [rows, rows + (4..<40).map { row($0, 20) }] {
+            let targets = FocusHeroRow.metadataNeighbors(in: snapshot, active: 2, subject: subject)
+            XCTAssertEqual(targets.map(\.id), ["2-6", "2-4", "3-5", "0-2"],
+                           "Prepare both horizontal directions and aligned vertical destinations; skip empty shelves.")
+        }
+    }
+
+    func testFocusedLoadJoinsNeighborWorkAndRecoversIfTheNeighborIsCancelled() async {
+        let item = MediaItem(id: "neighbor", title: "Movie", kind: .movie)
+        for cancelNeighbor in [false, true] {
+            let metadata = FocusHeroMetadata()
+            let started = expectation(description: "Neighbor admitted")
+            let gate = AsyncStream<Void>.makeStream()
+            let warming = Task {
+                await metadata.prefetch([[item]]) { items in
+                    started.fulfill()
+                    for await _ in gate.stream { break }
+                    return items.map { var full = $0; full.genres = ["Warm"]; return full }
+                }
+            }
+            await fulfillment(of: [started], timeout: 2)
+            // The focused caller reaches load before this main-actor task
+            // can release the held batch. No polling or network timing.
+            let release = Task { @MainActor in
+                if cancelNeighbor { warming.cancel() }
+                gate.continuation.finish()
+            }
+            await metadata.load(item) { items in
+                XCTAssertTrue(cancelNeighbor, "Joining a successful batch must not issue another request.")
+                return items.map { var full = $0; full.genres = ["Focused"]; return full }
+            }
+            XCTAssertEqual(metadata.item(for: item).genres, cancelNeighbor ? ["Focused"] : ["Warm"])
+            await release.value
+            await warming.value
+        }
+    }
+
     func testIncompleteBatchCanBeRetried() async {
         let metadata = FocusHeroMetadata()
         let item = MediaItem(id: "retry", title: "Retry", kind: .movie)

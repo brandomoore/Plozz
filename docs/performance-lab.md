@@ -518,6 +518,87 @@ polled between the two remote presses; the expected result is a native shelf 1
 → shelf 2 transition and final focus on shelf 2. Disconnecting just the native
 row-entry callback made this assertion fail; restoring it made the test pass.
 
+#### What the 40-shelf Home requested before the viewer could navigate
+
+On `83774fd4c`, the synthetic origin logged **224 and 240** movie-detail GETs
+started by first native Home focus in the immediate and dwell launches above.
+Only **128 and 136** were distinct request keys: **96 and 104 repeats** occurred
+before the viewer pressed Down. One attempt aborted in the immediate sample.
+These counts exclude artwork, shelf membership, and the featured title. Each of
+the 40 base shelves was fetched once. Starting an HTTP request is not evidence
+that a frame was delayed or a server CPU core was busy.
+
+The Showcase detail prefetcher selected 16 titles per shelf and keyed its task
+on the items in *all* shelves; publishing another shelf could cancel and repeat
+pending work. Focus also needs a path to recover if it lands on a title owned
+by a speculative request that is then cancelled.
+
+Direct, same-viewer checks on populated Recently Added movie shelves also
+showed why **skipping every detail fetch** is not equivalent to controlling
+prefetch. On Jellyfin, four shelf records matched detail for title, year,
+overview, certification and artwork references, but lacked genres and taglines.
+Requesting those two fields on the shelf added 5,598 bytes across 20 items
+without changing membership or order; fetching the four full records cost
+59,475 bytes. On Plex, the four records already matched the detail descriptions
+and artwork references but not all genres; the four full responses totaled
+76,292 bytes.
+
+On Emby and Silo, each sample covered three movies and three series. Emby's
+six detail reads totaled 71,252 bytes; five added certification and genres,
+and four added taglines. Asking the shelves for genres and taglines added
+7,599 bytes, but only one of six records then matched detail on all nine
+fields checked. Silo's six detail reads totaled 89,785 bytes. All six added
+ratings and cast, and all six had a different logo reference; image bytes
+were not compared. These were API probes, not app traffic savings. They do
+not establish that a wider shelf response would help all shelves or providers.
+
+#### Warming neighboring details and posters under heavy load
+
+The candidate prepares full details for plausible next cards and only starts
+directional poster warming after a horizontal move within a staged shelf.
+Base shelf requests, displayed posters, and idle attachment still run without
+scrolling. We compared it to `83774fd4c` using the same optimized tvOS host,
+returning profile, 40-shelf Jellyfin-shaped origin and remote driver. Video
+and diagnostics were armed before launch. Each build had three immediate and
+three 10-second dwell runs; the builds were tested in groups, not interleaved.
+
+| Median, baseline → candidate | Immediate input | 10 s dwell |
+|---|---:|---:|
+| Launch → first recognizable Home shell | 8.16 → 8.95 s | 8.21 → 7.48 s |
+| Profile selection → first recognizable Home shell | 2.07 → 1.79 s | 2.03 → 1.77 s |
+| Profile selection → first shelf artwork | 2.07 → 2.08 s | 2.03 → 2.25 s |
+| Profile selection → visibly highlighted Resume | 5.38 → 6.10 s | 5.57 → 5.56 s |
+| Down 2 → shelf 2 native focus | 39 → 36 ms | 510 → 458 ms |
+| Down 2 → shelf 2 recognizable artwork | 771 → 774 ms | 837 → 776 ms |
+| Movie-detail GETs completed by first native Home focus | 220 → 5 | 216 → 4 |
+| Exact repeats among those GETs | 96 → 1 | 92 → 0 |
+| All non-art metadata requests at the settled endpoint | 844 → 91 | 844 → 85 |
+| Artwork GETs at the settled endpoint | 680 → 568 | 682 → 568 |
+| Exact repeats among those artwork GETs | 30 → 4 | 30 → 4 |
+
+The settled endpoint is eight seconds after verified return to Resume and full
+row publication, not eight seconds after launch. A metadata-only control (one
+start per input pattern) had 4 / 6 movie-detail reads at first focus, but still
+695 / 704 settled artwork GETs. In every timed run, all 40 shelf responses
+arrived once, 41 rows / 801 entries were published, eight Downs reached shelf 8
+in order, and eight Ups restored Resume. A separate remote test verified
+horizontal warming and reversal on both eager and deferred shelves. A sparse
+list fixture also rendered the correct full synopsis after vertical entry,
+four Rights and three Lefts.
+
+This reduced traffic, **not consistently time to usable Home**. There were
+still 434 artwork GETs (3.00 MB) on unvisited shelves 10–40 in every group;
+the log cannot distinguish display from prefetch callers. Largest observed
+navigation frame gaps were 1,150 → 888 ms immediate and 715 → 677 ms after
+dwell, not evidence of smooth hardware scrolling. In separate startup-through-
+return process samples, main-thread CPU was 18.44 s over 24.52 s elapsed
+before and 15.27 s over 21.36 s after (one sample per build). SwiftUI/UIKit
+sizing and layout dominated; `FocusHeroMotionSurface.sizeThatFits` was the
+nearest app frame in 479 / 358 stack observations. This points to reducing
+redundant row measurements, not running UIKit layout on a background queue.
+These are simulator and loopback origin measurements, not live server CPU,
+password-sign-in timing, or physical Apple TV performance.
+
 ## Baseline → attribution → candidate → regression
 
 ### tvOS: rapid vertical IPTV guide travel

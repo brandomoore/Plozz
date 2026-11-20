@@ -317,6 +317,12 @@ struct ProductionHomeFixture: View {
                 .overlay(alignment: .topTrailing) {
                     VStack {
                         Text("Production Home ready")
+                        if let ids = ProcessInfo.processInfo.environment["PLOZZ_FIXTURE_POSTER_PROBE"] {
+                            TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+                                Text(verbatim: fixture.decodedPosters(ids))
+                                    .accessibilityIdentifier("home-decoded-posters")
+                            }
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--home-browse-fixture") {
                             Text(verbatim: "\(path.count)")
                                 .accessibilityIdentifier("home-detail-depth-probe")
@@ -1315,6 +1321,14 @@ private final class ProductionHomeState {
     private let provider: ProductionHomeProvider
     private var details: [String: ItemDetailViewModel] = [:]
 
+    /// Read-only decoded-memory witness; never starts an artwork request.
+    func decodedPosters(_ ids: String) -> String {
+        let resident = ids.split(separator: ",").compactMap { Int($0) }.filter { index in
+            let url = ProductionHomeProvider.artworkURL(provider.poster, index: index)
+            return ArtworkImageCache.shared.cachedImage(for: url, variant: .posterCard) != nil
+        }
+        return resident.map(String.init).joined(separator: ",")
+    }
     private init(poster: URL, backdrop: URL, logo: URL, trailerURL: URL?) {
         self.trailerURL = trailerURL
         let provider = ProductionHomeProvider(poster: poster, backdrop: backdrop, logo: logo)

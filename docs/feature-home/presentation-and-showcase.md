@@ -139,9 +139,10 @@ when moving back up. If an earlier shelf finishes loading, the nearest usable
 shelf above focus is prepared immediately, just like the next shelves below.
 Disabled recovery actions do not count as destinations. VoiceOver keeps the
 full row tree. This changes presentation
-work only: base row queries do not wait for focus. Deferred poster shelves still
-load displayed art normally, but start directional prefetch on card focus rather
-than warming the same posters again when the host joins the screen.
+work only: base row queries do not wait for focus. On staged pages, ordinary
+poster shelves (including the first four) load displayed art normally. Only a
+native horizontal move within the shelf starts directional poster prefetch;
+attaching the host or re-entering it vertically does not.
 
 The featured row host releases its first-entry reservation when UIKit commits
 focus to a row. A second Down must not wait for the focus animation or a later
@@ -474,9 +475,11 @@ candidates; they never publish those replacements into the current lineup.
 Metadata belongs to the current Home view-model identity (profile, account set,
 and credential generation), never a process-global cache. Cached details only
 fill presentation gaps in the current row record: watched/resume state, source
-identity, availability, and the selected series remain current. Background
-enrichment publishes batches of at most four, and focus-driven loads share the
-same deduplication. Each title observes only its own metadata entry, so unrelated
+identity, availability, and the selected series remain current. Showcase prepares
+full details for cards to the left and right and the aligned card in the next
+eligible shelf above and below, not for every shelf as it arrives. A focused
+title joins a pending request for its details and retries if that work was
+cancelled. Each title observes only its own metadata entry, so unrelated
 enrichment does not rebuild the active hero. `FocusHeroMetadataTests` covers freshness and ownership;
 `ShowcaseNavigationTests` covers geometry and native presented-frame hitches.
 For existing-library coverage, the guarded physical driver supports

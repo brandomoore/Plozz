@@ -332,12 +332,66 @@ final class ShowcaseNavigationTests: XCTestCase {
             waitForStableCard(in: app)
             XCTAssertEqual(focusedCard(in: app).label, card)
         }
+
         XCUIRemote.shared.press(.down)
         waitForStableCard(in: app)
         XCTAssertNotEqual(focusedCard(in: app).label, card)
         XCUIRemote.shared.press(.up)
         waitForStableCard(in: app)
         XCTAssertEqual(focusedCard(in: app).label, card)
+    }
+
+    func testFeaturedPosterShelvesWaitForHorizontalBrowsing() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--production-home-fixture", "--native-sidebar-home", "--hero-showcase-home",
+            "--cached-home-hero", "--short-showcase-rows", "--distinct-home-artwork", "--focus-style=system"
+        ]
+        // Full-width ordinary shelves 2 and 6; shelf 6 originally starts detached.
+        let starts = [24, 104]
+        app.launchEnvironment["PLOZZ_FIXTURE_POSTER_PROBE"] = starts.flatMap { Array($0..<($0 + 20)) }
+            .map(String.init).joined(separator: ",")
+        app.launch()
+        defer { app.terminate() }
+        let hero = app.buttons["home-hero-action-row"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 30))
+        func awaitCondition(_ message: String, _ condition: @escaping () -> Bool) {
+            let check = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [check], timeout: 10), .completed, message)
+        }
+        awaitCondition("Featured action must own focus") { hero.hasFocus }
+        let probe = app.staticTexts["home-decoded-posters"]
+        func decoded(_ index: Int) -> Bool {
+            probe.exists && probe.label.split(separator: ",").contains(Substring(String(index)))
+        }
+        func press(_ key: XCUIRemote.Button, _ count: Int) {
+            for _ in 0..<count { XCUIRemote.shared.press(key) }
+        }
+        for start in starts {
+            press(.down, start == starts[0] ? 2 : 4)
+            waitForStableCard(in: app)
+            let label = focusedCard(in: app).label
+            let entry = try XCTUnwrap(Int(label.split(separator: " ").last ?? ""))
+            XCTAssertTrue((start..<(start + 20)).contains(entry), "Expected shelf starting at \(start); got \(label).")
+            XCTAssertLessThan(entry + 12, start + 20, "The fixture needs 12 browsable posters past native entry.")
+            awaitCondition("Vertical entry must load the displayed poster \(entry)") { decoded(entry) }
+            XCTAssertFalse(decoded(entry + 12), "Attachment or vertical entry warmed an offscreen full poster.")
+            press(.right, 4)
+            waitForStableCard(in: app)
+            XCTAssertEqual(focusedCard(in: app).label, "Fixture movie \(entry + 4)")
+            awaitCondition("Right must warm a full poster eight cards ahead of focus") { decoded(entry + 12) }
+            press(.right, 8)
+            waitForStableCard(in: app)
+            XCTAssertEqual(focusedCard(in: app).label, "Fixture movie \(entry + 12)")
+            let witness = XCTAttachment(screenshot: app.screenshot())
+            witness.name = "Featured horizontal traversal to poster \(entry + 12)"
+            witness.lifetime = .keepAlways
+            add(witness)
+            press(.left, 12)
+            waitForStableCard(in: app)
+            XCTAssertEqual(focusedCard(in: app).label, "Fixture movie \(entry)")
+        }
     }
 
     func testPartialServerFailureKeepsContinueWatchingFocusThroughReconciliation() throws {
