@@ -12,6 +12,19 @@ The Settings search guard still fails with the same 115 diagnostics as that
 `main` revision (ignoring source line numbers). The live playback results below
 predate this integration.
 
+On the integrated iPhone simulator app, choosing the dedicated account's
+private list and then cancelling left the destination unset after relaunch.
+Independent reads confirmed unchanged membership, 40 watches and four resumes.
+This tests cancellation, not synchronization after consent.
+
+A separate read-only tvOS simulator check exercised the production service
+against the real account, without driving the TV UI. Independent API reads
+matched three external IDs for *Fight Club*, its IMDb reverse lookup, and four
+*One Piece* mapping groups with five chunks. The account had no vote on the
+checked mapping. The service returned 30 of 77 available film ratings to its
+browsing caller and rejected that partial set for management. No contributions
+were submitted, changed or deleted.
+
 On the earlier reconciliation through `669783d95`, the normal iPhone simulator
 app opened the dedicated account's private
 list and showed the expected empty contents. Independent reads before and after

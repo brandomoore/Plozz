@@ -2424,22 +2424,25 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testCancelWatchlistDestinationConsent() throws {
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.watchlist"])
-        try require(app.staticTexts["Not syncing a list"].exists, "Expected no existing watchlist grant")
-        try tapVisible(app.buttons["publicmetadb.watchlist.choose"])
+        let picker = app.buttons["publicmetadb.watchlist.choose"]
+        try require(picker.waitForExistence(timeout: 5) && picker.label.contains("None")
+                    && !app.buttons["publicmetadb.watchlist.disable"].exists, "Expected no existing watchlist grant")
+        try tapVisible(picker)
         try tapVisible(acceptanceListChoice())
         try require(app.popovers.buttons["Use this list"].waitForExistence(timeout: 5), "Expected separate sync consent")
         let message = app.popovers.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS %@", "PublicMetaDB may undrop shows when added."
+            format: "label CONTAINS %@", "including existing items"
         )).firstMatch
-        try require(message.waitForExistence(timeout: 5), "Expected conditional upstream effects, not guaranteed undropping")
-        XCTAssertTrue(message.label.contains("changes can propagate to your other enabled watchlist destinations"))
-        XCTAssertTrue(message.label.contains("Watched history and progress are not imported."))
-        XCTAssertTrue(message.label.contains("This list is currently private on PublicMetaDB."))
+        try require(message.waitForExistence(timeout: 5), "Expected consent to synchronization of existing items")
+        XCTAssertTrue(message.label.contains("Changes can reach other synced lists."))
+        XCTAssertTrue(message.label.contains("Adding a show may clear its dropped status."))
+        XCTAssertTrue(message.label.contains("This list is private."))
         try dismissConfirmation()
         XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.watchlist"])
-        XCTAssertTrue(app.staticTexts["Not syncing a list"].exists)
+        try require(picker.waitForExistence(timeout: 5) && picker.label.contains("None"),
+                    "Cancelling must leave the destination unset after relaunch")
         XCTAssertFalse(app.buttons["publicmetadb.watchlist.disable"].exists)
     }
 
