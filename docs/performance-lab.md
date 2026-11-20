@@ -395,6 +395,23 @@ returned to Resume on the original, but not on the candidate, including in an
 unrecorded repeat. The change was **not adopted**. These are HTTP receipts on
 a loopback Jellyfin-shaped origin, not live-server CPU measurements.
 
+**Where the time went.** In one profiled launch per style, the picker took
+about 1.5 s in both. From selection to first native Home focus, Showcase took
+38.02 s elapsed but only 8.25 s of main-thread CPU; carousel took 1.07 s
+elapsed and 0.86 s of main-thread CPU. In Showcase, 3,238 of 4,155 main-thread
+samples were waiting inside RenderBox display during a Core Animation
+transaction. Image-queue surface waits and buffer registration accounted for
+3,049 of those samples; neither signature appeared in the carousel control.
+This identifies a wait, not the layer responsible for it.
+
+Removing only the Showcase viewport fade mask did **not** isolate the cause.
+In run order, selection to native focus took **84.4 s original → 67.7 s
+without mask → 53.4 s original → 40.0 s without mask → 21.1 s original**.
+Both apparent gains disappeared against the next original run; RenderBox
+display waits still accounted for 84% and 76% of samples without the mask.
+All five runs fetched each of 40 shelves once and published 801 entries.
+These unrecorded trials did not time first pixels. Keep the existing fade.
+
 ## Baseline → attribution → candidate → regression
 
 ### tvOS: rapid vertical IPTV guide travel
