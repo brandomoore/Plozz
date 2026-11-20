@@ -143,6 +143,14 @@ adjacent episode S1E4 had no row under **All**. Independent reads confirmed
 that both users' episode histories and the tracker were unchanged. This
 verifies native two-server review, not a transfer or automatic sync.
 
+With both managed users still enabled, the iPhone app started and completed
+automatic sync after 928 seconds in the background. The newly enrolled NFS
+share did not import the existing 242.374-second *Wedlocked* resume: enrollment
+does not backfill old activity, and the share lacked a measured runtime for
+that file. Independent reads found Emby still at 242.375 seconds, Jellyfin at
+120.394 seconds, and the excluded share and tracker unchanged. This verifies
+the automatic check and unchanged histories, not delivery of a new resume.
+
 The rebuilt iPhone export prompts now show **Titles to export: 1** instead
 of “1 selected titles.” Two hosted UI checks passed with fixtures; these
 were not additional live transfers.
