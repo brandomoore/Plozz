@@ -40,23 +40,26 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
     }
 
     func testSeriesHeaderShowsSeriesSynopsisAndRatingsForEpisodeContextEntry() async throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        let model = PrimaryFocusModel(mode: .seriesPage)
-        let detail = try XCTUnwrap(model.detail)
-        await model.gate.release()
-        await detail.load()
-        defer {
-            detail.suspendEnrichment()
-            window.isHidden = true
-            window.rootViewController = nil
-            previous?.makeKeyAndVisible()
-        }
-        let episode = try XCTUnwrap(detail.state.value?.children.first)
         for explicitEpisode in [false, true] {
-            window.rootViewController = UIHostingController(rootView:
+            // Each route is a fresh page entrance. Replacing a visible root can
+            // leave its outgoing page suspending the next page's shared model.
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            let model = PrimaryFocusModel(mode: .seriesPage)
+            let detail = try XCTUnwrap(model.detail)
+            await model.gate.release()
+            await detail.load()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                detail.suspendEnrichment()
+                previous?.makeKeyAndVisible()
+            }
+            let episode = try XCTUnwrap(detail.state.value?.children.first)
+            let host = UIHostingController(rootView:
                 ItemDetailView(
                     viewModel: detail, spoilerSettings: .default, onPlay: { _ in }, onSelectChild: { _ in },
                     initialEpisode: explicitEpisode ? episode : nil
@@ -69,8 +72,11 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
                 .environment(\.scenePhase, .active)
                 .preferredColorScheme(.dark)
             )
+            window.rootViewController = host
             window.makeKeyAndVisible()
-            try await waitUntil(timeout: .seconds(15)) { UIFocusSystem.focusSystem(for: window)?.focusedItem != nil }
+            try await waitUntil(timeout: .seconds(15)) {
+                NativeFocusRegion.contains(UIFocusSystem.focusSystem(for: window)?.focusedItem, in: host.view)
+            }
             try await waitForHostedLayout(window)
             var text = ""
             var playFrame: CGRect?
@@ -433,10 +439,13 @@ final class DetailPrimaryFocusHostedTests: XCTestCase {
         file: StaticString = #filePath, line: UInt = #line, _ condition: @MainActor () throws -> Bool
     ) async throws {
         let deadline = ContinuousClock.now + timeout
-        while !(try condition()), ContinuousClock.now < deadline {
+        while !(try condition()) {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("Condition did not become true before the timeout", file: file, line: line)
+                return
+            }
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTAssertTrue(try condition(), file: file, line: line)
     }
 }
 
