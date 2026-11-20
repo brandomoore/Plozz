@@ -8,6 +8,24 @@ import XCTest
 
 @MainActor
 final class HeroReflectionPresentationTests: XCTestCase {
+    func testCompactDetailArtworkUsesTheExtendedHomeArtworkHeight() {
+        for windowHeight: CGFloat in [667, 844, 956] {
+            for textSize: DynamicTypeSize in [.large, .accessibility3] {
+                let detail = PlozziOSHeroMetrics.height(
+                    style: .compactPortrait, surfaceRole: .detail, dynamicTypeSize: textSize,
+                    containerHeight: windowHeight
+                )
+                let home = PlozziOSHeroMetrics.height(
+                    style: .compactPortrait, surfaceRole: .home, dynamicTypeSize: textSize,
+                    containerHeight: windowHeight
+                )
+                XCTAssertEqual(detail, home)
+                XCTAssertGreaterThanOrEqual(detail, 520)
+                XCTAssertLessThanOrEqual(detail, windowHeight - 96)
+            }
+        }
+    }
+
     func testReducedTransparencyKeepsTheSharpTopReflectionAndOriginalGeometry() throws {
         for height in [CGFloat(200), 340] {
             for scheme in [ColorScheme.light, .dark] {
@@ -84,7 +102,7 @@ final class HeroReflectionPresentationTests: XCTestCase {
         }
     }
 
-    func testDetailReflectionDoesNotReceiveTheHomeStatusAreaBlur() throws {
+    func testDetailReflectionMatchesHomeBlurAndReducedTransparencyFallback() throws {
         for scheme in [ColorScheme.light, .dark] {
             func artwork(role: HeroTrailerSurfaceRole, reduced: Bool) -> some View {
                 PlozziOSExtendedHeroArtwork(height: 340, surfaceRole: role) { layout in
@@ -99,16 +117,22 @@ final class HeroReflectionPresentationTests: XCTestCase {
                 .opacity(0.5)
                 .background(scheme == .dark ? Color.black : Color.white)
             }
-            let reference = try render(artwork(role: .home, reduced: true), height: 340)
             for reduced in [false, true] {
+                let reference = try render(artwork(role: .home, reduced: reduced), height: 340)
                 let detail = try render(artwork(role: .detail, reduced: reduced), height: 340)
                 for x: CGFloat in [98, 102] {
                     for y: CGFloat in [4, 18, 24, 28, 32, 80, 310] {
                         for (actual, expected) in zip(try rgb(detail, x: x, y: y), try rgb(reference, x: x, y: y)) {
                             XCTAssertEqual(actual, expected, accuracy: 0.01,
-                                           "Detail must retain the sharp reflection, opacity, and original artwork.")
+                                           "Detail must match Home's blur, fallback, opacity, and original artwork.")
                         }
                     }
+                }
+                for (role, image) in [("home", reference), ("detail", detail)] {
+                    let attachment = XCTAttachment(image: image)
+                    attachment.name = "\(role)-top-blur-\(scheme)-reduced-\(reduced)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
                 }
             }
         }

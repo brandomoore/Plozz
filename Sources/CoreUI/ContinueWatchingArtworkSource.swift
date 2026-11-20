@@ -2,7 +2,12 @@
 import CoreModels
 import Foundation
 import MetadataKit
+import SwiftUI
 import UIKit
+
+public extension EnvironmentValues {
+    @Entry var continueWatchingLogoScope: String? = nil
+}
 
 /// Shared logo/background composition for Continue Watching and opt-in landscape rows.
 public struct ContinueWatchingArtworkSource: Sendable {
@@ -117,14 +122,22 @@ public struct ContinueWatchingArtworkSource: Sendable {
         })
     }
 
+    func logoVisit(in scope: String?) -> DetailLogoVisit? {
+        guard let scope, item.kind == .movie || item.kind == .series
+                || (item.kind == .episode && item.seriesID != nil) else { return nil }
+        let subject = item.kind == .episode ? ArtworkRouter.seriesArtworkItem(for: item) : item
+        return DetailLogoVisit(scope: scope, subject: subject.stablePresentationID)
+    }
+
     @MainActor
-    public func prepare(store: TextlessBackdropStore = .shared) async {
+    public func prepare(store: TextlessBackdropStore = .shared, detailLogoScope: String? = nil) async {
         guard style == .landscape else {
             await prepareBackground(store: store)
             return
         }
         async let logo: Void = HeroLogoPreloader.prepare(
-            references: logoReferences, fallback: logoFallback(background: true), policy: policy
+            references: logoReferences, fallback: logoFallback(background: true), policy: policy,
+            visit: logoVisit(in: detailLogoScope)
         )
         await prepareBackground(store: store)
         await logo

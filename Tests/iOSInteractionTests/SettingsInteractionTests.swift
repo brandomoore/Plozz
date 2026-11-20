@@ -763,7 +763,7 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(more.isSelected)
     }
 
-    func testMoreDestinationsKeepBackTitleAndProfileInOneNavigationRow() throws {
+    func testMoreDestinationsKeepTheirHeadersAndReturnThroughTheCorrectStack() throws {
         launchNavigation(arguments: ["--content-in-more"])
         try XCTSkipIf(app.windows.firstMatch.frame.width >= 600, "Regular-width iPad has direct tabs.")
         let more = app.tabBars.buttons["More"]
@@ -775,30 +775,135 @@ final class SettingsInteractionTests: XCTestCase {
             row.tap()
             let back = app.buttons["more-navigation-back"]
             XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
-            let bar = app.navigationBars[title]
-            XCTAssertTrue(bar.waitForExistence(timeout: 5), app.debugDescription)
-            let heading = bar.staticTexts[title]
-            let avatar = bar.buttons.matching(NSPredicate(
-                format: "label BEGINSWITH %@", "Settings for "
-            )).firstMatch
-            XCTAssertTrue(heading.exists, app.debugDescription)
-            XCTAssertTrue(avatar.isHittable, app.debugDescription)
             XCTAssertEqual(app.navigationBars.allElementsBoundByIndex.filter(\.isHittable).count, 1)
-            XCTAssertEqual(heading.frame.midY, back.frame.midY, accuracy: 6, "\(title) title alignment")
-            XCTAssertEqual(avatar.frame.midY, back.frame.midY, accuracy: 6, "\(title) profile alignment")
-            XCTAssertFalse(app.buttons["search-settings-avatar"].exists)
             capture("more-single-header-\(title)")
             if title == "Downloads" {
+                let heading = app.scrollViews.staticTexts[title]
+                let avatar = app.buttons["downloads-settings-avatar"]
+                XCTAssertTrue(heading.exists && avatar.isHittable, app.debugDescription)
+                XCTAssertEqual(heading.frame.midY, avatar.frame.midY, accuracy: 6)
                 app.buttons["Download Settings"].tap()
                 let innerBack = app.buttons["BackButton"]
                 XCTAssertTrue(innerBack.waitForExistence(timeout: 5), app.debugDescription)
                 XCTAssertFalse(back.exists, "A deeper page must go back within the existing destination stack.")
                 innerBack.tap()
                 XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            } else {
+                let bar = app.navigationBars[title]
+                let heading = bar.staticTexts[title]
+                let avatar = bar.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings for ")).firstMatch
+                XCTAssertTrue(heading.exists && avatar.isHittable, app.debugDescription)
+                XCTAssertEqual(heading.frame.midY, back.frame.midY, accuracy: 6)
+                XCTAssertEqual(avatar.frame.midY, back.frame.midY, accuracy: 6)
+                XCTAssertFalse(app.buttons["search-settings-avatar"].exists)
             }
             back.tap()
             XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 5), app.debugDescription)
         }
+    }
+
+    func testUpcomingCanReopenFromMoreAfterBack() throws {
+        launchNavigation(arguments: ["--content-in-more"])
+        try XCTSkipIf(app.windows.firstMatch.frame.width >= 600, "Regular-width iPad has direct tabs.")
+        app.tabBars.buttons["More"].tap()
+        let row = app.tables.cells.containing(.staticText, identifier: "Upcoming").firstMatch
+        let back = app.buttons["more-navigation-back"]
+        for _ in 0..<2 {
+            XCTAssertTrue(row.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            row.tap()
+            XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            back.tap()
+            XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 5))
+        }
+    }
+
+    func testMoreBackgroundMatchesNormalPageWithGradient() throws {
+        try verifyMoreBackground(gradient: true)
+    }
+
+    func testMoreBackgroundMatchesNormalPageWithoutGradient() throws {
+        try verifyMoreBackground(gradient: false)
+    }
+
+    private func verifyMoreBackground(gradient: Bool) throws {
+        for light in [false, true] {
+            let name = "more-background-\(light ? "light" : "dark")-\(gradient ? "gradient" : "flat")"
+            launchNavigation(arguments: ["--content-in-more"]
+                + (light ? ["--search-light-theme"] : [])
+                + (gradient ? [] : ["--navigation-flat-background"]))
+            try XCTSkipIf(app.windows.firstMatch.frame.width >= 600, "Regular-width iPad has direct tabs.")
+            let more = app.tabBars.buttons["More"]
+            XCTAssertTrue(more.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            more.tap()
+            let bar = app.navigationBars["More"]
+            XCTAssertTrue(bar.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            let search = app.tables.cells.containing(.staticText, identifier: "Search").firstMatch
+            XCTAssertTrue(search.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            let screen = app.frame
+            let rows = app.tables.cells.allElementsBoundByIndex.filter(\.isHittable)
+            let lastRow = try XCTUnwrap(rows.map(\.frame.maxY).max())
+            // Inside each More row but outside Search's inset field and navigation controls.
+            let x = screen.minX + 6
+            let regions: [(String, CGRect)] = rows.enumerated().map { index, row in
+                ("row-\(index)", CGRect(x: x, y: row.frame.midY, width: 6, height: 6))
+            } + [
+                ("below-rows", CGRect(x: x, y: lastRow + 60, width: 6, height: 6)),
+                ("lower-page", CGRect(x: x, y: screen.height * 0.83, width: 6, height: 6))
+            ]
+            let initial = app.screenshot()
+            capture("\(name)-at-rest")
+            search.tap()
+            let back = app.buttons["more-navigation-back"]
+            XCTAssertTrue(back.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            XCTAssertTrue(app.textFields["Search your libraries"].waitForExistence(timeout: 5))
+            let normal = app.screenshot()
+            capture("\(name)-search")
+            back.tap()
+            XCTAssertTrue(bar.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            XCTAssertTrue(search.isHittable)
+            XCTAssertTrue(more.isSelected)
+            let returned = app.screenshot()
+            capture("\(name)-returned")
+            for (region, frame) in regions {
+                let expected = try backgroundColor(normal, in: frame)
+                for (phase, screenshot) in [("at-rest", initial), ("returned", returned)] {
+                    let actual = try backgroundColor(screenshot, in: frame)
+                    let difference = zip(actual, expected).map { abs(Int($0) - Int($1)) }.max() ?? 0
+                    XCTAssertLessThanOrEqual(
+                        difference, 8,
+                        "\(name) \(phase) \(region) must match the normal page: \(actual) versus \(expected)"
+                    )
+                }
+            }
+            let top = try backgroundColor(normal, in: regions[0].1)
+            let bottom = try backgroundColor(normal, in: regions[regions.count - 1].1)
+            let variation = zip(top, bottom).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            if gradient {
+                XCTAssertGreaterThan(variation, 8, "The reference must really render the enabled gradient.")
+            } else {
+                XCTAssertLessThanOrEqual(variation, 2, "The reference must really render the disabled gradient.")
+            }
+            app.terminate()
+        }
+    }
+
+    private func backgroundColor(_ screenshot: XCUIScreenshot, in frame: CGRect) throws -> [UInt8] {
+        let image = try XCTUnwrap(screenshot.image.cgImage)
+        let scale = CGFloat(image.width) / app.frame.width
+        let crop = try XCTUnwrap(image.cropping(to: CGRect(
+            x: frame.minX * scale, y: frame.minY * scale,
+            width: frame.width * scale, height: frame.height * scale
+        )))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        try pixel.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return Array(pixel.prefix(3))
     }
 
     func testAllLibrariesFromMoreCombinesMoviesAndShows() throws {

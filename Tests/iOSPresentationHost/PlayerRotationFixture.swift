@@ -72,6 +72,11 @@ struct PlayerRotationFixture: View {
             model.settings.playback.settings.skipForwardInterval = .five
             model.settings.playback.settings.skipBackwardInterval = .thirty
         }
+        if arguments.contains("--skip-player-fixture") {
+            model.settings.playback.settings.skipIntros = .on
+            model.settings.playback.settings.showUpNextCard = false
+            model.settings.playback.settings.autoPlayNextEpisode = false
+        }
         if arguments.contains("--no-level-gestures") {
             model.settings.playback.settings.volumeBrightnessGestures = false
         }
@@ -133,6 +138,7 @@ struct PlayerRotationFixture: View {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--end-player") { return 165 }
         if arguments.contains("--keyboard-up-next-fixture") { return 135 }
+        if arguments.contains("--skip-player-fixture") { return 60 }
         return arguments.contains("--gesture-player-fixture") ? 60 : 0
     }
 
@@ -317,6 +323,14 @@ private struct RotationProvider: MediaProvider, StreamingQualityProviding {
     func releaseStreamingSession(_ request: PlaybackRequest) async {}
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+
+    /// A real server-shaped intro window for `PlayerSkipInteractionTests`: the
+    /// production overlay shows "Skip Intro" and the press must seek past the
+    /// WHOLE window, not a ±skip interval.
+    func mediaSegments(for itemID: String) async throws -> [MediaSegment] {
+        guard ProcessInfo.processInfo.arguments.contains("--skip-player-fixture") else { return [] }
+        return [MediaSegment(id: "fixture-intro", kind: .intro, start: 60, end: 90)]
+    }
 
     private static func movie() async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("rotation-fixture.mov")

@@ -789,7 +789,8 @@ public final class PlexHomeUsersModel {
             avatarURL: user.avatarURL?.absoluteString, requiresPIN: user.requiresPIN,
             isManaged: user.isRestricted, pinRequirementVerified: user.pinRequirementVerified
         )
-        if profile.homeUserBinding(forPlexAccount: accountID) == binding {
+        if profile.homeUserBinding(forPlexAccount: accountID) == binding,
+           !profile.pendingIdentityAccountIDs.contains(accountID) {
             ensurePlexIdentityForActiveProfile()
             return
         }
@@ -1667,11 +1668,14 @@ public final class PlexHomeUsersModel {
             plexCredentialSources[accountID] = CredentialSource(account)
             plexHomeAuthorizationScopes[accountID] = authorizationScope
             foregroundReauthenticationAccounts.remove(accountID)
+            var updated = profilesModel.activeProfile
             if liveBinding != savedBinding {
-                profilesModel.update(profilesModel.activeProfile.settingHomeUserBinding(
-                    liveBinding, forPlexAccount: accountID
-                ))
+                updated = updated.settingHomeUserBinding(liveBinding, forPlexAccount: accountID)
             }
+            // Onboarding can save the intended binding before it is proved.
+            // Answer only after this exact profile, server and user authenticate.
+            let answeredQuestion = updated.resolveAccountAwaitingIdentity(accountID)
+            if updated != profilesModel.activeProfile { profilesModel.update(updated) }
             if change != nil { pendingBindingChange = nil }
             cachedIdentityAccounts.remove(accountID)
             if offlineSignInEnabled && refreshServerCredential && (liveBinding.requiresPIN != true || verifier != nil) {
@@ -1701,6 +1705,7 @@ public final class PlexHomeUsersModel {
                     bumpIdentityGeneration(for: accountID, site: "performPlexSwitch")
                 } else {
                     PlozzLog.boot("refresh unchanged — no genBump acct=\(accountID) home=\(homeUserID)")
+                    if answeredQuestion { onIdentityChanged() }
                 }
                 // Other servers in this login reuse the authorized Home session.
                 if completedPINRequest { ensurePlexIdentityForActiveProfile() }

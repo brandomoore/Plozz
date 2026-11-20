@@ -23,12 +23,17 @@ struct PlozziOSOverflowBackToolbarItem: ToolbarContent {
 @MainActor
 @Observable
 final class PlozziOSOverflowNavigation {
-    private(set) var destinationIndex: Int?
+    // Placement belongs to the tab layout, not to the current push or pop.
+    private(set) var destinationIndices = IndexSet()
+    @ObservationIgnored private(set) var destinationIndex: Int?
     @ObservationIgnored private(set) weak var navigationController: UINavigationController?
 
-    func update(destinationIndex: Int?, navigationController: UINavigationController) {
+    func update(destinationIndices: IndexSet, destinationIndex: Int?, navigationController: UINavigationController) {
         self.navigationController = navigationController
         self.destinationIndex = destinationIndex
+        if self.destinationIndices != destinationIndices {
+            self.destinationIndices = destinationIndices
+        }
     }
 
     func returnToMore() {

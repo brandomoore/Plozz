@@ -6,6 +6,7 @@ import SwiftUI
 struct PlozziOSExtrasSection: View {
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let state: LoadState<[MediaExtra]>
     let inset: CGFloat
@@ -16,6 +17,10 @@ struct PlozziOSExtrasSection: View {
 
     var body: some View {
         content
+            // Crossfade when the extras arrive; the section is inserted into the
+            // page after the hero, so an appearance-driven fade can finish offscreen.
+            .transition(.opacity)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: state.diagnosticName)
             .environment(\.plozzCardCaptionView, .extras)
             .task(id: state.diagnosticName) {
                 showsLoadingPlaceholders = false

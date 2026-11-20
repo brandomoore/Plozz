@@ -175,14 +175,36 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         content.lifetime = .keepAlways
         add(content)
         if pinned {
+            let heroFrames = geometry.frames.filter { $0.key != "page" }
+            let heroPresentation = geometry.presentedFrames.filter { $0.key != "page" }
+            // Opening the rail above deliberately gives it focus. Once the saved
+            // channel is visible, exercise entry rather than expecting load to steal it.
+            let cell = try XCTUnwrap(geometry.guide?.visibleCells.first)
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let owner = try XCTUnwrap(NavigationRailFocusHostController.containing(cell))
+            let entry = try XCTUnwrap(try DetailTintFocusProbe.nativeFocusItems(in: window).first { item in
+                let frame = try DetailTintFocusProbe.nativeFocusFrame(item, in: window)
+                return cell.convert(cell.bounds, to: window).contains(CGPoint(x: frame.midX, y: frame.midY))
+            })
+            XCTAssertTrue(owner.requestFocus(to: entry, using: system))
+            XCTAssertTrue(system.focusedItem === entry)
             try await Task.sleep(for: .milliseconds(350))
-            XCTAssertTrue(geometry.navigationSuppressions.contains(true),
-                          "Exercise the real initial-channel focus handoff, not only catalog loading.")
-            XCTAssertEqual(geometry.navigationSuppressions.last, false)
-            let frames = geometry.frames.values.flatMap { $0 }
-            XCTAssertTrue(geometry.frames.keys.contains("storage"))
-            XCTAssertTrue(geometry.frames.keys.contains("loading"))
-            XCTAssertTrue(geometry.frames.keys.contains("content"))
+            XCTAssertFalse(geometry.navigationSuppressions.contains(true),
+                           "Initial browsing focus must not suppress the navigation rail.")
+            // The category pane deliberately collapses on entry. The hero stays
+            // stationary through loading; the outer page stays put through both.
+            for history in [geometry.frames, geometry.presentedFrames] {
+                let page = try XCTUnwrap(history["page"])
+                let first = try XCTUnwrap(page.first)
+                for frame in page {
+                    XCTAssertEqual(frame.minX, first.minX, accuracy: 1)
+                    XCTAssertEqual(frame.width, first.width, accuracy: 1)
+                }
+            }
+            let frames = heroFrames.values.flatMap { $0 }
+            XCTAssertTrue(heroFrames.keys.contains("storage"))
+            XCTAssertTrue(heroFrames.keys.contains("loading"))
+            XCTAssertTrue(heroFrames.keys.contains("content"))
             let positions = frames.map(\.minX)
             let minimum = try XCTUnwrap(positions.min())
             let maximum = try XCTUnwrap(positions.max())
@@ -195,7 +217,7 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
             let widths = frames.map(\.width)
             XCTAssertEqual(try XCTUnwrap(widths.max()), try XCTUnwrap(widths.min()), accuracy: 1,
                            "The guide must not resize when its container's safe area settles.")
-            let presentation = geometry.presentedFrames.values.flatMap { $0 }.map(\.minX)
+            let presentation = heroPresentation.values.flatMap { $0 }.map(\.minX)
             let presentationHistory = XCTAttachment(string: String(describing: geometry.presentedFrames))
             presentationHistory.name = "Pinned Live TV presentation frame history"
             presentationHistory.lifetime = .keepAlways
@@ -248,6 +270,7 @@ private final class LiveTVLoadingGeometry {
     @ObservationIgnored var presentedFrames: [String: [CGRect]] = [:]
     @ObservationIgnored var interaction: PlozzPinnedSidebarInteraction?
     @ObservationIgnored var navigationSuppressions: [Bool] = []
+    @ObservationIgnored weak var guide: UICollectionView?
 
     func setNavigationSuppressed(_ suppressed: Bool) {
         if navigationSuppressions.last != suppressed { navigationSuppressions.append(suppressed) }
@@ -262,6 +285,10 @@ private final class LiveTVLoadingGeometry {
 
     func recordPresentation(in window: UIWindow) {
         func visit(_ view: UIView) {
+            if let list = view as? UICollectionView,
+               list.collectionViewLayout is PrototypeGuideCollectionLayout {
+                guide = list
+            }
             if let marker = view as? PrototypeHeroLayoutView {
                 let layer = marker.layer.presentation() ?? marker.layer
                 let frame = layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer)
@@ -309,7 +336,11 @@ private struct LiveTVPinnedLoadingFixture<Content: View>: View {
         let active = geometry.selection == .liveTV
         return ZStack {
             Color.clear
-            RetainedLiveTVDestination(isActive: active) { loadingContent }
+            RetainedLiveTVDestination(isActive: active) {
+                loadingContent.background {
+                    Color.clear.modifier(PrototypeHeroLayoutObservation(phase: "page"))
+                }
+            }
                 .opacity(active ? 1 : 0)
                 .disabled(!active)
         }

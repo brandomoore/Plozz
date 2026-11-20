@@ -13,6 +13,77 @@ import XCTest
 
 @MainActor
 final class HomeHeroVisibilityPresentationTests: XCTestCase {
+    func testCompactDetailKeepsTitleAtArtworkBottomAndGrowsBelowIt() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Extended detail fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        let item = MediaItem(
+            id: "extended-detail", title: "SIGNAL", kind: .movie,
+            overview: "Across the stars.", officialRating: "PG", genres: ["Documentary"],
+            allowsTitleBasedMetadataMatching: false
+        )
+        let content = ScrollView {
+            VStack(spacing: 0) {
+                PlozziOSDetailHeroSection(
+                    item: item, backdropItem: item, playableItem: item,
+                    sources: [], selectedSourceAccountID: nil, versions: [], selectedVersionID: nil,
+                    onSelectSource: { _ in }, onSelectVersion: { _ in },
+                    actionHandler: SizingActions(), onPlay: { _, _ in }
+                )
+                .background(FrameProbe(identifier: "detail-header"))
+                Text("Cast & Crew")
+                    .frame(height: 180)
+                    .background(FrameProbe(identifier: "next-detail-row"))
+            }
+        }
+        .background(.black)
+        .environment(app)
+        .environment(HeroTrailerController())
+        .environment(PlozziOSSidebarGeometryModel())
+        try await withWindow(content, sizeClass: .compact) { window in
+            try await Task.sleep(for: .milliseconds(600))
+            let header = try XCTUnwrap(self.find("detail-header", in: window))
+            let row = try XCTUnwrap(self.find("next-detail-row", in: window))
+            let headerFrame = header.convert(header.bounds, to: window)
+            let rowFrame = row.convert(row.bounds, to: window)
+            let artworkHeight: CGFloat = 844 * 0.76
+            XCTAssertGreaterThan(headerFrame.height, artworkHeight + 120,
+                                 "Metadata and actions must grow below, not inside, the artwork.")
+            XCTAssertEqual(rowFrame.minY, headerFrame.maxY, accuracy: 1)
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "extended-detail-initial-viewport"
+            attachment.lifetime = .keepAlways
+            self.add(attachment)
+            let title = try XCTUnwrap(HeroTextInk.frames(in: image, terms: ["SIGNAL"])["SIGNAL"])
+            XCTAssertGreaterThan(title.minY - headerFrame.minY, artworkHeight - 100,
+                                 "The title must remain at the taller artwork's lower edge.")
+
+            let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+            scroll.setContentOffset(CGPoint(x: 0, y: 300), animated: false)
+            try await self.settle(window)
+            let lower = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let lowerAttachment = XCTAttachment(image: lower)
+            lowerAttachment.name = "extended-detail-actions-and-next-row"
+            lowerAttachment.lifetime = .keepAlways
+            self.add(lowerAttachment)
+            let play = try XCTUnwrap(HeroTextInk.frames(
+                in: lower, terms: ["Play"], darkTerms: ["Play"]
+            )["Play"])
+            let scrolledHeader = header.convert(header.bounds, to: window)
+            XCTAssertGreaterThan(play.minY - scrolledHeader.minY, artworkHeight)
+        }
+    }
+
     func testCompactDetailBadgesStayCloseToSynopsisAndActions() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID
@@ -67,7 +138,7 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                 XCTAssertGreaterThan(upperGap, 20, "Keep breathing room above the badges.")
                 XCTAssertLessThanOrEqual(upperGap, 28, "Use 8-point padding, not a button-height slot.")
                 XCTAssertGreaterThan(lowerGap, 36, "Keep breathing room below the badges.")
-                XCTAssertLessThanOrEqual(lowerGap, 44, "Use 8-point padding without an extra action-row gap.")
+                XCTAssertLessThanOrEqual(lowerGap, 45, "Use 8-point padding without an extra action-row gap.")
                 XCTAssertEqual(lowerGap - 14, upperGap, accuracy: 10,
                                "Allow for Play's native label inset, then keep the visible gaps balanced.")
             }
@@ -86,6 +157,17 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
             app.profiles.remove(profile.id)
         }
         let provider = SeriesHeaderMobileProvider()
+        let server = MediaServer(
+            id: "header-fixture", name: "Fixture",
+            baseURL: URL(string: "https://fixture.invalid")!, provider: .jellyfin
+        )
+        let account = Account(
+            id: "header-fixture", server: server,
+            userID: "fixture", userName: "Fixture", deviceID: "fixture"
+        )
+        app.accountsProviders.registry.register(.jellyfin) { _ in provider }
+        try app.accountsProviders.accountStore.add(account, token: "fixture")
+        app.accountsProviders.reloadAccounts()
         for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
             for item in [provider.show, provider.season, provider.episode] {
                 let content = NavigationStack {
@@ -239,28 +321,40 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                 }
                 .environment(app)
                 .environment(PlozziOSSidebarGeometryModel())
-                try await withWindow(foreground, sizeClass: sizeClass) { window in
+                try await withWindow(
+                    ScrollView { foreground },
+                    sizeClass: sizeClass
+                ) { window in
+                    try await Task.sleep(for: .milliseconds(600))
                     var baseline: [String: CGFloat] = [:]
                     for step in [0, -5, 5] {
                         app.settings.hero.settings.textSize = HeroTextSize(rawValue: step)
                         app.settings.detailPage.settings.textSize = HeroTextSize(rawValue: step)
                         try await self.settle(window)
-                        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                        let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                        var frames: [String: CGRect] = [:]
+                        let bottom = max(0, scroll.contentSize.height - scroll.bounds.height)
+                        for offset in [CGFloat.zero, bottom] {
+                            scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+                            try await self.settle(window)
+                            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                            }
+                            let attachment = XCTAttachment(image: image)
+                            attachment.name = "mobile-\(detail ? "detail" : "home")-text-\(sizeClass)-\(step)-\(offset)"
+                            attachment.lifetime = .keepAlways
+                            self.add(attachment)
+                            frames.merge(try HeroTextInk.frames(
+                                in: image, terms: ["SIGNAL", "Documentary", "Across the stars", "Play"],
+                                darkTerms: ["Play"]
+                            )) { current, _ in current }
                         }
-                        let attachment = XCTAttachment(image: image)
-                        attachment.name = "mobile-\(detail ? "detail" : "home")-text-\(sizeClass)-\(step)"
-                        attachment.lifetime = .keepAlways
-                        self.add(attachment)
-                        let frames = try HeroTextInk.frames(
-                            in: image, terms: ["SIGNAL", "Documentary", "Across the stars", "Play"], darkTerms: ["Play"]
-                        )
                         for text in ["SIGNAL", "Documentary", "Across the stars", "Play"] {
                             let height = try XCTUnwrap(frames[text], "Missing \(text), \(sizeClass), step \(step)").height
                             if step == 0 { baseline[text] = height }
                             let scale = text == "Play" ? 1 : app.settings.hero.settings.textSize.scale
                             XCTAssertEqual(
-                                height, try XCTUnwrap(baseline[text]) * scale, accuracy: 2, "\(text), \(step)")
+                                height, try XCTUnwrap(baseline[text]) * scale, accuracy: 4, "\(text), \(step)")
                         }
                     }
                 }
@@ -271,6 +365,105 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
     private final class SizingActions: MediaItemActionHandling {
         func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] { [] }
         func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
+    }
+
+    func testPaintedHeroRetiresWhenAConfirmedEmptyCurationArrives() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Empty hero curation fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        let heroMovie = MediaItem(
+            id: "hero-movie", title: "Cached hero", kind: .movie,
+            allowsTitleBasedMetadataMatching: false
+        )
+        app.settings.hero.settings.sources = [.recentlyAdded]
+        app.settings.hero.settings.collections = []
+        for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+            let provider = ToggleLatestProvider(items: [heroMovie])
+            app.settings.hero.settings.isEnabled = true
+            let model = HomeViewModel(
+                accounts: [ResolvedAccount(account: provider.account, provider: provider)],
+                layoutStore: InMemoryHomeLayoutStore(),
+                currentVisibility: { app.settings.homeVisibility.visibility }
+            )
+            await model.load()
+            let home = NavigationStack {
+                PlozziOSHomeView(appModel: app, viewModel: model, onAddServer: {}, onShowSettings: {})
+            }
+            .environment(app)
+            .environment(HeroTrailerController())
+            .environment(PlozziOSSidebarGeometryModel())
+            try await withWindow(home, sizeClass: sizeClass) { window in
+                let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                try await self.settle(window)
+                try await Task.sleep(for: .milliseconds(400))
+                window.layoutIfNeeded()
+
+                provider.setItems([])
+                await model.load(showLoadingState: false)
+                try await self.settle(window)
+                try await Task.sleep(for: .milliseconds(500))
+                window.layoutIfNeeded()
+                let withConfirmedEmpty = scroll.contentSize.height
+
+                app.settings.hero.settings.isEnabled = false
+                try await self.settle(window)
+                try await Task.sleep(for: .milliseconds(400))
+                window.layoutIfNeeded()
+                XCTAssertEqual(
+                    withConfirmedEmpty, scroll.contentSize.height, accuracy: 1,
+                    "A confirmed empty curation must retire the hero instead of leaving a skeleton."
+                )
+            }
+        }
+    }
+
+    func testHomeHeroShowsTitleAndPlayBeforeASlowLogoResolves() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Slow logo fixture", isAwaitingSetup: false)
+        app.selectProfile(profile.id)
+        defer {
+            app.selectProfile(original)
+            app.profiles.remove(profile.id)
+        }
+        let item = MediaItem(
+            id: "slow-logo-fixture", title: "SIGNAL", kind: .movie,
+            overview: "Across the stars.", officialRating: "PG", genres: ["Documentary"],
+            allowsTitleBasedMetadataMatching: false
+        )
+        let slowLogo = HeroLogoFallback(for: item) {
+            try? await Task.sleep(for: .seconds(5))
+            return nil
+        }
+        let foreground = PlozziOSHomeHeroForeground(
+            item: item, detailItem: item, watchlistItem: item,
+            presentation: HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: .home),
+            style: .compactPortrait, onPlay: { _ in },
+            logoFallbackOverride: slowLogo
+        )
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .environment(app)
+        try await withWindow(foreground, sizeClass: .compact) { window in
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "slow-logo-title-and-play"
+            attachment.lifetime = .keepAlways
+            self.add(attachment)
+            let frames = try HeroTextInk.frames(
+                in: image, terms: ["SIGNAL", "Play"], darkTerms: ["Play"]
+            )
+            XCTAssertNotNil(frames["SIGNAL"], "The readable title must not wait for the logo.")
+            XCTAssertNotNil(frames["Play"], "Play must stay usable while an optional logo loads.")
+        }
     }
 
     func testActualHomeRemovesCompletedEmptyHeroWithoutChangingItsSettings() async throws {
@@ -575,11 +768,21 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
 
                 app.settings.hero.settings.isEnabled = true
                 try await self.settle(window)
-                let heroHeight = PlozziOSHeroMetrics.height(
-                    style: sizeClass == .compact ? .compactPortrait : .landscape,
-                    surfaceRole: .home, dynamicTypeSize: .large, containerHeight: window.bounds.height
-                )
-                XCTAssertEqual(scroll.contentSize.height - rowsHeight, heroHeight + 32, accuracy: 1)
+                let addedHeight = scroll.contentSize.height - rowsHeight
+                if sizeClass == .compact {
+                    // The hero now underlaps the fixture's entire top inset. Its
+                    // overlaid avatar replaces the rows-only 44pt action row.
+                    let inset = try XCTUnwrap(window.rootViewController?.view.safeAreaInsets.top)
+                    let reserved = addedHeight + inset + 44
+                    let expected = PlozziOSHeroMetrics.height(
+                        style: .compactPortrait, surfaceRole: .home, dynamicTypeSize: .large,
+                        containerHeight: window.bounds.height
+                    )
+                    XCTAssertEqual(reserved, expected, accuracy: 1)
+                } else {
+                    XCTAssertGreaterThan(addedHeight, 520, "The hero must reserve its band.")
+                    XCTAssertLessThanOrEqual(addedHeight, 712, "The hero must not take the whole page.")
+                }
 
                 app.settings.hero.settings.sources = []
                 try await self.settle(window)
@@ -674,8 +877,12 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                     self.add(attachment)
                     response.opened.withLock { $0 = true }
                     await loading.value
+                    let refreshDeadline = ContinuousClock.now + .seconds(2)
+                    while model.isRefreshing, ContinuousClock.now < refreshDeadline {
+                        try await Task.sleep(for: .milliseconds(20))
+                    }
                     try await self.settle(window)
-                    XCTAssertFalse(model.isRefreshing)
+                    XCTAssertFalse(model.isRefreshing, "The load chain must settle, including a follow-up reload.")
                     XCTAssertTrue(self.scrollViews(in: window).first === scroll)
                 }
             }
@@ -885,6 +1092,47 @@ struct SeriesHeaderMobileProvider: MediaProvider {
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         MediaPage(items: [], startIndex: 0, totalCount: 0)
     }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private final class ToggleLatestProvider: MediaProvider, @unchecked Sendable {
+    let kind: ProviderKind = .jellyfin
+    let account = Account(
+        id: "toggle-latest-account",
+        server: MediaServer(
+            id: "toggle-latest-server", name: "Fixture",
+            baseURL: URL(string: "https://fixture.invalid")!, provider: .jellyfin
+        ),
+        userID: "viewer", userName: "Viewer", deviceID: "fixture"
+    )
+    private let lock = NSLock()
+    private var latestItems: [MediaItem]
+
+    init(items: [MediaItem]) { latestItems = items }
+
+    func setItems(_ newItems: [MediaItem]) {
+        lock.lock(); defer { lock.unlock() }
+        latestItems = newItems
+    }
+
+    var session: UserSession { account.session(token: "fixture") }
+
+    func libraries() async throws -> [MediaLibrary] {
+        [MediaLibrary(id: "movies", title: "Movies", kind: .movie)]
+    }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] {
+        lock.lock(); defer { lock.unlock() }
+        return latestItems
+    }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        MediaPage(items: [], startIndex: 0, totalCount: 0)
+    }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}

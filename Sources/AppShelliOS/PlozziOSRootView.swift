@@ -336,17 +336,10 @@ public struct PlozziOSRootView: View {
         }
         // A successful Plex selection changes shellIdentity, not the sheet collecting it.
         // Libraries owns the same question while Settings is presented.
-        .plozzSheet(item: Binding(
-            get: { appModel.isSettingsPresented ? nil : appModel.pendingIdentityAccount },
-            set: { if $0 == nil { appModel.resolveIdentityPromptForPending() } }
-        )) { account in
-            PlozziOSServerIdentityPromptView(
-                appModel: appModel,
-                account: account,
-                onFinish: { appModel.concludeIdentityPrompt(for: account.id) },
-                onDecline: { appModel.declineIdentityPrompt(for: account.id) }
-            )
-        }
+        .modifier(PlozziOSServerIdentityPresenter(
+            appModel: appModel, isEnabled: !appModel.isSettingsPresented
+                && !showingProfileSwitcher && !showsLaunchProfilePicker && !showingAddServer
+        ))
         // Outside the profile-scoped identity, inside its shared environment:
         // changing accounts must not tear down the surface collecting their PIN.
         .plozzFullScreenCover(isPresented: $showingProfileSwitcher, onDismiss: {
@@ -614,7 +607,7 @@ public struct PlozziOSRootView: View {
     private var showsLaunchProfilePicker: Bool {
         // Settings owns a newly enabled Plex source's verification/PIN sheet.
         // Replacing its tab shell with the launch picker tears that presenter down.
-        let needsPlexLaunchGate = appModel.plexHomeUsers.pendingPlexPINRequest != nil
+        let needsPlexLaunchGate = appModel.plexPINRequestForAppPresentation != nil
             && !settingsOwnsActiveProfilePresentation
         return isSelectingLaunchProfile || appModel.mustChooseProfile
             || (!appModel.didCompleteLaunchProfileSelection
@@ -1311,9 +1304,7 @@ struct PlozziOSTabShell: View {
 
     @ViewBuilder
     private func tabContent(for destination: PlozziOSDestination) -> some View {
-        let isOverflow = overflowNavigation.destinationIndex.map {
-            tabDestinations.indices.contains($0) && tabDestinations[$0] == destination
-        } ?? false
+        let isOverflow = tabDestinations.firstIndex(of: destination).map(overflowNavigation.destinationIndices.contains) ?? false
         if destination == .music {
             destinationContent(for: destination, keepsNavigationBar: isOverflow)
                 .plozzOpaqueNavigationChrome()
@@ -1554,7 +1545,8 @@ struct PlozziOSTabShell: View {
             recentlyAppliedRecency: { [weak appModel] in
                 await appModel?.appliedWatchRecency() ?? [:]
             },
-            mediaItemActionHandler: appModel.mediaItemActionHandler
+            mediaItemActionHandler: appModel.mediaItemActionHandler,
+            accountsAreResolved: appModel.accountsProviders.hasResolvedAccounts
         )
     }
 
@@ -2023,6 +2015,10 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.tabIndex = tabIndex
+        controller.moreBackground = MoreBackground(
+            palette: context.environment.themePalette,
+            gradientEnabled: context.environment.gradientBackgroundsEnabled
+        )
         controller.action = action
         controller.onOverflowVisibilityChange = onOverflowVisibilityChange
         controller.onSettingsVisibilityChange = onSettingsVisibilityChange
@@ -2044,6 +2040,23 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         controller.onBottomBarVisibilityChange = nil
         controller.overflowNavigation = nil
         controller.onPageReselection = nil
+    }
+
+    fileprivate struct MoreBackground: Equatable {
+        let palette: ThemePalette
+        let gradientEnabled: Bool
+
+        @MainActor func makeView() -> UIView {
+            let view = UIHostingConfiguration {
+                AppBackground(palette: palette)
+                    .environment(\.gradientBackgroundsEnabled, gradientEnabled)
+            }
+            .margins(.all, 0)
+            .makeContentView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            return view
+        }
     }
 
     final class Controller: UIViewController, UITabBarControllerDelegate, UITableViewDelegate, UINavigationControllerDelegate {
@@ -2076,9 +2089,14 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         private weak var owner: UITabBarController?
         private weak var previousDelegate: (any UITabBarControllerDelegate)?
         private weak var overflowTable: UITableView?
+        fileprivate var moreBackground: MoreBackground?
+        private var installedBackground: MoreBackground?
+        private var installedBackgroundView: UIView?
+        private var previousBackgroundView: UIView?
         private weak var previousOverflowDelegate: (any UITableViewDelegate)?
         private weak var previousMoreDelegate: (any UINavigationControllerDelegate)?
         private var previousMoreNavigationBarHidden: Bool?
+        private var moreIsTransitioning = false
         private let bottomBarObserver = BottomBarObservationView()
         private let musicContentObserver = BottomBarObservationView()
 
@@ -2182,9 +2200,8 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             }
             previousMoreDelegate = nil
             previousMoreNavigationBarHidden = nil
-            if overflowTable?.delegate === self { overflowTable?.delegate = previousOverflowDelegate }
-            overflowTable = nil
-            previousOverflowDelegate = nil
+            moreIsTransitioning = false
+            restoreOverflowTable()
             if owner?.delegate === self { owner?.delegate = previousDelegate }
             owner = nil
             previousDelegate = nil
@@ -2299,7 +2316,9 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
                 previousMoreNavigationBarHidden = more.isNavigationBarHidden
                 more.delegate = self
             }
-            if let shown = more.topViewController {
+            // Layout also runs inside the native push. Only willShow may change
+            // the bar during that transition, using UIKit's animation transaction.
+            if !moreIsTransitioning, let shown = more.topViewController {
                 updateOverflowNavigation(in: more, showing: shown, animated: false)
             }
             func findTable(in view: UIView) -> UITableView? {
@@ -2309,20 +2328,48 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             guard let root = tabs.moreNavigationController.viewControllers.first?.viewIfLoaded,
                   let table = findTable(in: root) else { return }
             if overflowTable !== table {
-                if overflowTable?.delegate === self { overflowTable?.delegate = previousOverflowDelegate }
+                restoreOverflowTable()
                 overflowTable = table
-                previousOverflowDelegate = table.delegate
             }
             if table.delegate !== self {
                 previousOverflowDelegate = table.delegate
                 table.delegate = self
             }
+            if let moreBackground,
+               installedBackground != moreBackground || table.backgroundView !== installedBackgroundView {
+                if installedBackground == nil || table.backgroundView !== installedBackgroundView {
+                    previousBackgroundView = table.backgroundView
+                }
+                let view = moreBackground.makeView()
+                table.backgroundView = view
+                installedBackgroundView = view
+                installedBackground = moreBackground
+                for cell in table.visibleCells { cell.backgroundColor = .clear }
+            }
+        }
+
+        func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+            previousOverflowDelegate?.tableView?(tableView, willDisplay: cell, forRowAt: indexPath)
+            if moreBackground != nil { cell.backgroundColor = .clear }
+        }
+
+        private func restoreOverflowTable() {
+            if overflowTable?.delegate === self { overflowTable?.delegate = previousOverflowDelegate }
+            if let table = overflowTable, let installedBackgroundView, table.backgroundView === installedBackgroundView {
+                table.backgroundView = previousBackgroundView
+            }
+            overflowTable = nil
+            previousOverflowDelegate = nil
+            previousBackgroundView = nil
+            installedBackgroundView = nil
+            installedBackground = nil
         }
 
         func navigationController(
             _ navigationController: UINavigationController,
             willShow viewController: UIViewController, animated: Bool
         ) {
+            moreIsTransitioning = animated
             previousMoreDelegate?.navigationController?(
                 navigationController, willShow: viewController, animated: animated
             )
@@ -2336,19 +2383,28 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
         ) {
             guard let owner, let overflowNavigation,
                   navigationController === owner.moreNavigationController else { return }
-            let index = tabControllers(in: owner).firstIndex { $0 === viewController }
+            let controllers = tabControllers(in: owner)
+            let index = controllers.firstIndex { $0 === viewController }
             // More wraps the tab's existing SwiftUI NavigationStack. Only the
             // inner bar should draw chrome while a destination is on screen.
             let hidesOuterBar = index != nil || previousMoreNavigationBarHidden == true
             if navigationController.isNavigationBarHidden != hidesOuterBar {
                 navigationController.setNavigationBarHidden(hidesOuterBar, animated: animated)
             }
-            guard overflowNavigation.destinationIndex != index
+            // UIKit already knows which pages are in More before the user taps
+            // a row. Don't reconfigure the incoming SwiftUI stack mid-slide.
+            let items = owner.tabBar.items ?? []
+            var indices = IndexSet()
+            if items.contains(where: { $0 === navigationController.tabBarItem }) {
+                indices = IndexSet(Self.overflowIndices(controllers: controllers, visibleItems: items))
+            }
+            if let index { indices.insert(index) }
+            guard overflowNavigation.destinationIndices != indices || overflowNavigation.destinationIndex != index
                     || overflowNavigation.navigationController !== navigationController else { return }
             Task { @MainActor [weak self, weak owner, weak navigationController, weak viewController] in
                 guard let self, let owner, let navigationController, let viewController,
                       self.owner === owner, navigationController.topViewController === viewController else { return }
-                overflowNavigation.update(destinationIndex: index, navigationController: navigationController)
+                overflowNavigation.update(destinationIndices: indices, destinationIndex: index, navigationController: navigationController)
             }
         }
 
@@ -2356,6 +2412,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             _ navigationController: UINavigationController,
             didShow viewController: UIViewController, animated: Bool
         ) {
+            moreIsTransitioning = false
             previousMoreDelegate?.navigationController?(
                 navigationController, didShow: viewController, animated: animated
             )
@@ -2369,10 +2426,7 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             if let owner, let tabIndex, indexPath.section == 0 {
                 let controllers = tabControllers(in: owner)
                 let visibleItems = owner.tabBar.items ?? []
-                let overflow = controllers.indices.filter { index in
-                    guard let controller = controllers[index] else { return true }
-                    return !visibleItems.contains { $0 === controller.tabBarItem }
-                }
+                let overflow = Self.overflowIndices(controllers: controllers, visibleItems: visibleItems)
                 if overflow.count == tableView.numberOfRows(inSection: 0),
                    controllers.indices.contains(tabIndex),
                    overflow.indices.contains(indexPath.row),
@@ -2387,8 +2441,26 @@ struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
             return indexPath
         }
 
+        func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+            // UITableView can finish a pending selection after the list has
+            // started leaving. Forwarding it then can push the same tab twice.
+            guard tableView === overflowTable, !moreIsTransitioning,
+                  owner?.moreNavigationController.viewControllers.count == 1 else {
+                tableView.deselectRow(at: indexPath, animated: false)
+                return
+            }
+            previousOverflowDelegate?.tableView?(tableView, didSelectRowAt: indexPath)
+        }
+
+        private static func overflowIndices(controllers: [UIViewController?], visibleItems: [UITabBarItem]) -> [Int] {
+            controllers.indices.filter { index in
+                guard let controller = controllers[index] else { return true }
+                return !visibleItems.contains { $0 === controller.tabBarItem }
+            }
+        }
+
         private func reportOverflowVisibility() {
-            guard let owner else { return }
+            guard let owner, !moreIsTransitioning else { return }
             let more = owner.moreNavigationController
             let visible = owner.selectedViewController === more && more.viewControllers.count == 1
             guard reportedOverflowVisibility != visible else { return }

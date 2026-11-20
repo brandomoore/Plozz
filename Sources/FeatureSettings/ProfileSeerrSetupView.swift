@@ -51,6 +51,7 @@ public struct ProfileSeerrSetupView: View {
                                 Button("Review account") { reviewing = connection }.settingsActionRow()
                             }
                         }
+                        .settingsSearchAnchor("seerr-profile-user")
                         if case let .failed(message) = seer.phase {
                             Text(message).foregroundStyle(.red)
                             Button("Try again") { statusRetryID = UUID() }

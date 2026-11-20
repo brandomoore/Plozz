@@ -122,6 +122,25 @@ final class TrailerActionPresentationTests: XCTestCase {
         XCTAssertGreaterThan(fixture.controller.player.currentTime().seconds, position + 1)
         XCTAssertTrue(fixture.controller.isClaimed(by: .detail, itemID: fixture.item.id))
         XCTAssertTrue(layers(in: window).contains { $0 === originalLayer && $0.isReadyForDisplay })
+        // During an interactive pop both pages are mounted. Reintroduce the
+        // actual Home backdrop while the detail HLS item is still advancing.
+        let revealedHome = UIHostingController(rootView: PlozziOSHomeStaticBackdrop(
+            item: fixture.item, style: .compactPortrait, height: 320
+        ).environment(fixture.sidebar).environment(fixture.controller))
+        host.addChild(revealedHome)
+        host.view.addSubview(revealedHome.view)
+        revealedHome.view.frame = CGRect(x: 0, y: 0, width: 140, height: 320)
+        revealedHome.didMove(toParent: host)
+        revealedHome.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        func containsVideoHost(_ view: UIView) -> Bool {
+            view is HeroTrailerVideoLayer.HostView || view.subviews.contains(where: containsVideoHost)
+        }
+        XCTAssertFalse(containsVideoHost(revealedHome.view), "Home must remain poster-only behind detail.")
+        XCTAssertTrue(fixture.controller.player.currentItem === original)
+        revealedHome.willMove(toParent: nil)
+        revealedHome.view.removeFromSuperview()
+        revealedHome.removeFromParent()
         host.rootView = TrailerHandoffRoot(fixture: fixture, isVisible: false)
         let departureDeadline = ContinuousClock.now + .seconds(2)
         while fixture.controller.player.currentItem != nil, ContinuousClock.now < departureDeadline {

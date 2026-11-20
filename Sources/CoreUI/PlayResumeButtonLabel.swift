@@ -170,6 +170,8 @@ public struct PlayResumeButtonLabel: View {
     /// width-constrained caller can request a shorter form to avoid wrapping.
     public var resumeTrailingStyle: ResumeTrailingStyle
     public var isPlaceholder: Bool
+    /// Keeps the placeholder's footprint while revealing the ready label.
+    public var crossfadesPlaceholder: Bool
     public var isLoading: Bool
     public var separatesEpisodeText: Bool
     public var wrapsText: Bool
@@ -177,6 +179,7 @@ public struct PlayResumeButtonLabel: View {
 
     /// Supplies the default bar height, which tracks the reader's text size.
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
         title: LocalizedStringResource,
@@ -189,6 +192,7 @@ public struct PlayResumeButtonLabel: View {
         barHeight: CGFloat? = nil,
         resumeTrailingStyle: ResumeTrailingStyle = .full,
         isPlaceholder: Bool = false,
+        crossfadesPlaceholder: Bool = false,
         isLoading: Bool = false,
         separatesEpisodeText: Bool = false,
         wrapsText: Bool = false,
@@ -204,6 +208,7 @@ public struct PlayResumeButtonLabel: View {
         self.barHeight = barHeight
         self.resumeTrailingStyle = resumeTrailingStyle
         self.isPlaceholder = isPlaceholder
+        self.crossfadesPlaceholder = crossfadesPlaceholder
         self.isLoading = isLoading
         self.separatesEpisodeText = separatesEpisodeText
         self.wrapsText = wrapsText
@@ -250,7 +255,18 @@ public struct PlayResumeButtonLabel: View {
     public var body: some View {
         ZStack(alignment: .leading) {
             Text(title).lineLimit(1).hidden().frame(width: 0).accessibilityHidden(true)
-            if isPlaceholder {
+            if crossfadesPlaceholder {
+                resolvedContent
+                    .opacity(isPlaceholder ? 0 : 1)
+                    .accessibilityHidden(isPlaceholder)
+                    .overlay(alignment: .leading) {
+                        placeholderContent
+                            .opacity(isPlaceholder ? 1 : 0)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(Text(title))
+                            .accessibilityHidden(!isPlaceholder)
+                    }
+            } else if isPlaceholder {
                 placeholderContent
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text(title))
@@ -258,6 +274,22 @@ public struct PlayResumeButtonLabel: View {
                 resolvedContent
             }
         }
+        // The label changes from "Play" to "Resume · 43m" when the detail data
+        // lands; crossfade it instead of letting the words snap.
+        .contentTransition(.opacity)
+        .transaction(value: isPlaceholder) { transaction in
+            guard crossfadesPlaceholder else { return }
+            // Resolution also changes the title; its existing animation must not
+            // override the shorter placeholder transition.
+            transaction.animation = reduceMotion ? nil : .easeInOut(duration: 0.15)
+            transaction.disablesAnimations = true
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: transitionKey)
+    }
+
+    private var transitionKey: String {
+        "\(String(describing: title))|\(isPlaceholder)|\(isLoading)"
+            + "|\(resumeTrailing ?? "")|\(resumeProgress != nil)|\(seasonEpisodeText ?? "")"
     }
 
     private var placeholderContent: some View {
@@ -266,7 +298,7 @@ public struct PlayResumeButtonLabel: View {
             Text(title)
                 .lineLimit(1)
                 .hidden()
-                .padding(.trailing, capsuleWidth)
+                .padding(.trailing, crossfadesPlaceholder ? 0 : capsuleWidth)
                 .overlay {
                     Capsule()
                         .fill(onLight ? Color.black.opacity(0.18) : Color.white.opacity(0.18))
