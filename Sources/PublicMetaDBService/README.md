@@ -39,6 +39,22 @@ not the app UI or its Keychain. Cleanup of just the new resume returned
 HTTP 403 and was not retried. The row remained present, so replay prevention
 *after removal* is still unverified for this lost-reply case.
 
+On `c1c30c2b2`, the production comparison code read that same *Dune* resume
+and compared three dedicated server users together. Independent reads matched
+the TMDB and IMDb IDs, file size and runtime on all three, even though Plex
+calls the film *Dune: Part One*. Jellyfin already matched the tracker at
+2,400.688 seconds. Emby and Plex had no resume; each was ready for a
+**reviewed** import. Restricting the comparison to any one account returned
+only that account's row. No change was applied. All three server histories,
+the tracker history and the private-list controls were unchanged on reread.
+
+Separately, the normal iPhone app showed the configured Emby user's row as
+**Set resume to 2,401 seconds**, unselected. The tracker detail showed 25.7%,
+consistent with the independent read; all 15 comparison controls stayed off.
+This was verified through native accessibility after an XCTest attempt timed
+out without a result. The three-server result above is a service test, not
+three servers shown in the same UI or evidence of automatic managed-server writes.
+
 The rebuilt iPhone export prompts now show **Titles to export: 1** instead
 of “1 selected titles.” Two hosted UI checks passed with fixtures; these
 were not additional live transfers.
