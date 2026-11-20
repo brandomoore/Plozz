@@ -3251,6 +3251,13 @@
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|controlsAutoHideRows|Picker|\"Auto-hide controls\"": {
+      "count": 1,
+      "reason": "The enclosing auto-hide menu is the search destination; the picker provides its choices.",
+      "covered_by": [
+        "auto-hide-controls"
+      ]
+    },
     "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|discRows|SettingsMenuRow|\"Disc playback\"": {
       "count": 1,
       "reason": "The containing stack owns the disc-playback anchor, keeping its compatibility notice with the menu.",

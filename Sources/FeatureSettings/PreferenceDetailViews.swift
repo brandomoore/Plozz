@@ -709,6 +709,7 @@ struct PlaybackDetailView: View {
                     ForEach(PlaybackControlsAutoHide.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
             }
+            .settingsSearchAnchor("auto-hide-controls")
         }.labeledControl()]
     }
 

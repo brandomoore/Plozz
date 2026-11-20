@@ -2496,7 +2496,9 @@ struct PlozziOSPlaybackSettingsView: View {
                     ForEach(PlaybackControlsAutoHide.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.menu)
+                .settingsSearchAnchor("auto-hide-controls")
             }
+            .settingsSearchGroup(["auto-hide-controls"])
             if UIDevice.current.userInterfaceIdiom == .phone {
                 SettingsSectionGroup {
                     Picker("Player orientation", selection: $model.settings.orientation) {
