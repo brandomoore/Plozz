@@ -4,8 +4,18 @@
 
 The feature branch now includes `main` through `58127facaf60`. The normal
 iPhone simulator app built after reconciliation, and Settings search passed
-all 25 guard tests and checked 921 source components. These checks do not
-repeat the real-account transfers below on this newer build.
+all 25 guard tests and checked 921 source components.
+
+On `91d3a9faa`, the normal iPhone simulator app played *Charge* (2022) muted
+from NFS with playback reporting and ongoing sync off. The local resume was
+76.535823 seconds of 262.763. Independent reads found no PublicMetaDB resume
+after playback or after cancelling a one-time export. Confirming the export
+created exactly one resume at 76,535 of 262,763 milliseconds. Cold relaunch
+left its ID and timestamp unchanged. After the test resume was removed, a
+second cold relaunch did not recreate it. The source record was unchanged
+through export; Jellyfin, 40 unrelated watches and four unrelated resumes
+were unchanged throughout. The original settings and volume were restored.
+This tests confirmed export and replay prevention, not a lost write reply.
 
 The preceding integration, `4ff869675cca` (`main` through `18990651b3ee`),
 changed the player and SMB dependency revisions. On that
