@@ -2,8 +2,18 @@
 
 ## Tracker-sync acceptance status: 19 November 2026
 
-The feature branch incorporates `main` through `669783d95`. On the reconciled
-source, the normal iPhone simulator app opened the dedicated account's private
+The feature branch incorporates `main` through `18990651b3ee` at `4ff869675cca`.
+This integration changed the player and SMB dependency revisions. On the integrated
+source, the iPhone simulator app built; 4,340 tests passed with seven skipped in
+CoreModels, PublicMetaDBService, ProviderShare and MediaTransportSMB. Separately,
+all 381 tests in the Trakt, Simkl, WeTrakr, AniList, MyAnimeList and Last.fm
+packages passed. These are package results, not tests with real tracker accounts.
+The Settings search guard still fails with the same 115 diagnostics as that
+`main` revision (ignoring source line numbers). The live playback results below
+predate this integration.
+
+On the earlier reconciliation through `669783d95`, the normal iPhone simulator
+app opened the dedicated account's private
 list and showed the expected empty contents. Independent reads before and after
 found no change to watch or resume history. This verifies account access, not
 playback reporting or return sync.

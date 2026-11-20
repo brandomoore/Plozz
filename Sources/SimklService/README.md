@@ -51,8 +51,9 @@ The destination is the exact active Plex/Jellyfin server user, not a parallel
 tracker-owned history store. Existing conflict, parental authorization,
 current-item revalidation, cancellation, outbox and readback safeguards apply.
 
-After comparison, the separate **Ongoing sync** page can retain explicit
-server-user/watched-state permission and a baseline of existing history.
+After comparison, **Ongoing sync** can save permission to import new watched
+states into Plozz history for selected media shares, not managed server users.
+Enrollment records a baseline of existing history.
 **Sync now** checks new evidence through the same activity-gated reader; Simkl
 never participates in foreground automatic checks. Existing history, removals,
 aggregate counts and percentage-only progress are not backfilled by enrollment.

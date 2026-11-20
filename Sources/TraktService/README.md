@@ -137,8 +137,9 @@ Unconfirmed identities remain unmatched. Trakt percentages remain visible,
 non-importable observations: catalog runtimes do not establish the played file's
 runtime, and neither 0% nor 100% implies an explicit clear or completed watch.
 
-The separate **Ongoing sync** enrollment can authorize new watched-state imports
-for selected server users; it does not backfill the reviewed history. Its
+The separate **Ongoing sync** enrollment can import new watched states into
+Plozz history for selected media shares. It does not write to managed server
+users or backfill the reviewed history. Its
 connection identity survives coordinated refresh/relaunch and changes on each
 new sign-in, including identical returned tokens. Disconnect revokes device-local
 permission before coordinated credential removal. Percentage-only resume remains
