@@ -64,6 +64,10 @@ targets:
   Plozz:
     type: application
     platform: tvOS
+    preBuildScripts:
+      - name: Verify prepared subtitle engine
+        script: '"$SRCROOT/tools/prepare-frame-ass-engine.sh" --verify-only'
+        basedOnDependencyAnalysis: false
     postBuildScripts:
       - name: Embed disc runtime
         script: python3 "$SRCROOT/tools/embed-disc-runtime.py"

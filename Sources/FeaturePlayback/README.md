@@ -1912,8 +1912,14 @@ and live auxiliary players.
 Local tvOS builds can also compose the primary ASS directly into the decoded
 picture before it is enqueued. Run `tools/prepare-frame-ass-engine.sh` before
 generating/building; it accepts an optional local Git clone as its source.
-It verifies the pinned revision and patch in an isolated checkout. Unprepared
+The tvOS app build rechecks the prepared checkout against the pinned revision
+and patch; a mismatch stops the build rather than packaging a different engine. Unprepared
 builds keep the remote dependency and existing rendering paths.
+
+On the ordinary ASS overlay, a rewind can leave later packets cached while the
+reader is still filling the opening lyrics. New overlapping packets behind the
+decode cursor reopen that part of the window without another seek. Reading
+the same packet again does not restart decoding.
 
 Admission uses the same embedded tracks, registered sidecars and profile
 preferences as playback. An unselected server rendition does not veto an
