@@ -1650,7 +1650,7 @@ public struct HomeView: View {
                 navigationStyle: navigationStyle,
                 isFrontmost: heroIsFrontmost,
                 featuredHero: settings.style == .heroShowcase && settings.hasFeaturedHero
-                    ? { _ in AnyView(HomeHeroSkeletonView()) } : nil
+                    ? { _, _ in AnyView(HomeHeroSkeletonView()) } : nil
             ) { row, _ in
                 // Redacted rows draw their names as skeleton pills at a real
                 // title's exact height.
@@ -1713,10 +1713,10 @@ public struct HomeView: View {
             enrich: heroMetadataEnricher,
             featuredHero: settings.style == .heroShowcase && settings.hasFeaturedHero
                 && showsFeaturedHero
-                ? { suspended in
+                ? { suspended, onActionFocused in
                     AnyView(showcaseFeaturedHero(
                         items: discoverItems, settings: settings, suspended: suspended,
-                        content: content
+                        content: content, onActionFocused: onActionFocused
                     ))
                 } : nil
         ) { row, reporter in
@@ -1734,7 +1734,8 @@ public struct HomeView: View {
     #if os(tvOS)
     @ViewBuilder
     private func showcaseFeaturedHero(
-        items: [MediaItem], settings: HeroSettings, suspended: Bool, content: HomeViewModel.Content
+        items: [MediaItem], settings: HeroSettings, suspended: Bool, content: HomeViewModel.Content,
+        onActionFocused: @escaping () -> Void
     ) -> some View {
         if items.isEmpty {
             HomeHeroSkeletonView()
@@ -1758,6 +1759,7 @@ public struct HomeView: View {
                 seerConnected: heroSeerConnected, canRequestDiscoveryItem: heroRequestIdentity,
                 onRequest: onRequestItem, requestAvailability: onRequestAvailability,
                 onRequestSeasons: onRequestSeasonsItem,
+                onFocusGained: onActionFocused,
                 onPinnedItemsChanged: { heroRuntime.pinnedItemIDs = $0 },
                 onTrailerReturnItemChanged: { heroRuntime.trailerReturnItemID = $0 },
                 onItemExposed: { viewModel.recordHeroExposure($0) },
@@ -1863,6 +1865,7 @@ public struct HomeView: View {
                 notice: notice,
                 onReload: { Task { await viewModel.load() } }
             )
+            .background { NativeFocusRegionObserver(onFocusEntered: reporter.entered) }
         case .discover(let items, let isLoading):
             MediaRowView(
                 title: Text(LocalizedStringResource(

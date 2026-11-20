@@ -29,6 +29,77 @@ private actor HeldHomeArtworkLoader: ArtworkNetworkFileLoading {
     }
 }
 
+/// #472: keep the first shelf's SwiftUI focus report pending across both remote
+/// presses. The real row controller still receives UIKit's focus commit.
+struct StaleShowcaseEntryFixture: View {
+    @Namespace private var heroFocusScope
+    @State private var trailer = HeroTrailerController()
+    @State private var recede = HomeHeroRecedeModel()
+    @State private var lastDown = ""
+    @State private var startupRequest: UInt64? = 1
+
+    private let featured = MediaItem(
+        id: "featured", title: "Harbor Signal", kind: .movie, runtime: 7200, resumePosition: 1800,
+        allowsTitleBasedMetadataMatching: false
+    )
+    private let rows: [FocusHeroRow] = (1...5).map { number in
+        let item = MediaItem(id: "movie-\(number)", title: "Shelf \(number) movie", kind: .movie,
+                             allowsTitleBasedMetadataMatching: false)
+        return FocusHeroRow(id: "shelf-\(number)", itemIDs: [item.stablePresentationID], leadItem: item, items: [item])
+    }
+
+    var body: some View {
+        NavigationRailFocusHost { _ in
+            showcase.background {
+                NavigationContentFocusRequester(request: startupRequest, onCompleted: { _, _ in
+                    startupRequest = nil
+                }, isStartupRequest: true)
+            }
+        }
+    }
+
+    private var showcase: some View {
+        var settings = HeroSettings.default
+        settings.style = .heroShowcase
+        settings.autoAdvance = false
+        settings.trailersEnabled = false
+        return FocusHeroHomeView(
+            rows: rows, settings: settings, spoilerSettings: .default, navigationStyle: .rail, isFrontmost: true,
+            featuredHero: { suspended, onActionFocused in
+                AnyView(HomeHeroView(
+                    items: [featured], settings: settings, backgroundSettings: .default,
+                    trailerController: trailer, trailerResolver: { _ in nil },
+                    isFrontmost: true, spoilerSettings: .default, navigationStyle: .rail,
+                    focusScope: heroFocusScope, onSelect: { _ in }, onPlay: { _ in },
+                    onFocusGained: onActionFocused, recedeModel: recede, showcaseSuspended: suspended
+                ).focusScope(heroFocusScope))
+            }
+        ) { row, reporter in
+            let reportsEntry = row.id != rows[0].id
+            MediaRowView(
+                title: Text(verbatim: row.id), items: row.items,
+                onFocusEntered: { if reportsEntry { reporter.entered() } },
+                onFocusChange: { if reportsEntry, let item = $0 { reporter.focusedItem(item) } },
+                onCardFocused: { if reportsEntry { reporter.cardFocused($0) } },
+                onSelect: { _ in }
+            )
+        }
+        .environment(\.plozzCardFocusStyle, .system)
+        .preferredColorScheme(.dark)
+        .background(.black)
+        .overlay(alignment: .topTrailing) {
+            Text(verbatim: lastDown).accessibilityIdentifier("showcase-native-down")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIFocusSystem.didUpdateNotification)) { event in
+            guard let update = event.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext,
+                  update.focusHeading.contains(.down),
+                  let from = (update.previouslyFocusedItem as? NSObject)?.accessibilityLabel,
+                  let to = (update.nextFocusedItem as? NSObject)?.accessibilityLabel else { return }
+            lastDown = "\(from) → \(to)"
+        }
+    }
+}
+
 struct ProductionHomeFixture: View {
     @State private var fixture: ProductionHomeState?
     @State private var path = NavigationPath()

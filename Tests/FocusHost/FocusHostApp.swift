@@ -160,6 +160,8 @@ struct FocusHostApp: App {
                 }
             } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-home") {
                 LiveJellyfinHomeFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--stale-showcase-entry") {
+                StaleShowcaseEntryFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
                 ProductionHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-artwork-focus-comparison") {

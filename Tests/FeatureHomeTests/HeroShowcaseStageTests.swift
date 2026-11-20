@@ -218,7 +218,7 @@ final class HeroShowcaseStageTests: XCTestCase {
         let host = UIHostingController(rootView: FocusHeroHomeView(
             rows: rows, settings: .default, spoilerSettings: .default,
             navigationStyle: .rail, isFrontmost: true,
-            featuredHero: { suspended in
+            featuredHero: { suspended, _ in
                 AnyView(StageFeaturedArtwork(item: featured, suspended: suspended))
             }
         ) { _, _ in
@@ -260,7 +260,7 @@ final class HeroShowcaseStageTests: XCTestCase {
         let host = UIHostingController(rootView: FocusHeroHomeView(
             rows: rows, settings: .default, spoilerSettings: .default,
             navigationStyle: .tabBar, isFrontmost: true,
-            featuredHero: { suspended in
+            featuredHero: { suspended, _ in
                 AnyView(
                     Button("Featured") {}
                         .background(StageEnvironmentReader { environments["foreground"] = $0 })

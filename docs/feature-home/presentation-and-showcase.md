@@ -131,8 +131,10 @@ the featured hero, Showcase details/artwork, and the row viewport. Down admits
 the first row before animating its viewport into place; Up from that row restores
 the existing hero action and slide, without a separate arrow-button focus stop.
 For long featured pages, Home measures every row but attaches the first shelves
-and upcoming focus targets first. Once the stage has focus, more shelves join
-while Home remains active, even without scrolling. Attached rows stay available
+and upcoming focus targets first. Once a featured action or usable shelf control
+receives focus, more shelves join while Home remains active, even without scrolling.
+The loading skeleton can hold focus without starting that work. Only deferred
+shelves take an idle preparation slot. Attached rows stay available
 when moving back up. If an earlier shelf finishes loading, the nearest usable
 shelf above focus is prepared immediately, just like the next shelves below.
 Disabled recovery actions do not count as destinations. VoiceOver keeps the

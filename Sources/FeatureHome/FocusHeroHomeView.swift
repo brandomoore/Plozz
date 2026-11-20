@@ -25,8 +25,10 @@ struct FocusHeroRow: Identifiable {
     var liveChannels: [HomeLiveTVChannel] = []
 
     func acceptsEntry(at index: Int) -> Bool {
-        (index == 0 && isPlaceholder) || !itemIDs.isEmpty || !liveChannels.isEmpty || hasFocusableControls
+        (index == 0 && isPlaceholder) || hasUsableContent
     }
+
+    var hasUsableContent: Bool { !itemIDs.isEmpty || !liveChannels.isEmpty || hasFocusableControls }
 
     static let initialShelfCount = 4
 
@@ -39,6 +41,10 @@ struct FocusHeroRow: Identifiable {
             ids.insert(rows[prior].id)
         }
         return ids
+    }
+
+    static func idleShelfIDs(in rows: [Self], nearby: Set<String>) -> [String] {
+        rows.dropFirst(initialShelfCount).compactMap { nearby.contains($0.id) ? nil : $0.id }
     }
 
     /// The picture a focused card in this row is most likely showing.
@@ -190,7 +196,7 @@ enum FocusHeroSubject: Equatable {
 @Observable
 @MainActor
 final class FocusHeroModel {
-    var hasFeaturedContentFocus = false
+    private(set) var hasFocusedUsableContent = false
     private(set) var activeRowID: String?
     private(set) var subject: FocusHeroSubject?
     /// The picture the focused card shows, which the backdrop avoids.
@@ -215,7 +221,12 @@ final class FocusHeroModel {
     @ObservationIgnored private var pendingShow: DispatchWorkItem?
     @ObservationIgnored let motion = FocusHeroRowMotion()
 
+    func didFocusUsableContent() {
+        if !hasFocusedUsableContent { hasFocusedUsableContent = true }
+    }
+
     func activate(_ row: FocusHeroRow, in rows: [FocusHeroRow]) {
+        if row.hasUsableContent { didFocusUsableContent() }
         if row.isPlaceholder && row.leadItem == nil {
             pendingShow?.cancel()
             pendingShow = nil
@@ -407,7 +418,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
     let enrich: FocusHeroMetadata.Enrich?
     let minimumDetailsTop: CGFloat?
     let onReturnToTop: () -> Void
-    let featuredHero: ((Bool) -> AnyView)?
+    typealias FeaturedHero = (_ suspended: Bool, _ onActionFocused: @escaping () -> Void) -> AnyView
+    let featuredHero: FeaturedHero?
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
 
     init(
@@ -419,7 +431,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         enrich: FocusHeroMetadata.Enrich? = nil,
         minimumDetailsTop: CGFloat? = nil,
         onReturnToTop: @escaping () -> Void = {},
-        featuredHero: ((Bool) -> AnyView)? = nil,
+        featuredHero: FeaturedHero? = nil,
         @ViewBuilder rowContent: @escaping (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     ) {
         self.rows = rows
@@ -448,7 +460,9 @@ struct FocusHeroHomeView<RowContent: View>: View {
             if let featuredHero {
                 HeroShowcaseStage(
                     state: featuredState, model: model, rows: rows,
-                    hero: AnyView(HeroShowcaseFeaturedContent(state: featuredState, content: featuredHero)),
+                    hero: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { suspended in
+                        featuredHero(suspended, model.didFocusUsableContent)
+                    }),
                     showcase: AnyView(HeroShowcaseFeaturedContent(state: featuredState) { active in
                         AnyView(showcaseDetails(active: active && isFrontmost))
                     }),
@@ -743,7 +757,8 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             && rows.first.map { $0.isPlaceholder || !$0.itemIDs.isEmpty || !$0.liveChannels.isEmpty } == true
         let stages = stagesRowViews && rows.count > FocusHeroRow.initialShelfCount
         let nearby = stages ? FocusHeroRow.nearbyShelves(in: rows, active: model.activeIndex(in: rows)) : []
-        let idleRows = stages && allowsIdlePreparation && model.hasFeaturedContentFocus ? rows.map(\.id) : []
+        let idleRows = stages && allowsIdlePreparation && model.hasFocusedUsableContent
+            ? FocusHeroRow.idleShelfIDs(in: rows, nearby: nearby) : []
         VStack(alignment: .leading, spacing: FocusHeroLayout.rowSpacing) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 rowBody(row, index: index, mount: !stages || index < FocusHeroRow.initialShelfCount
@@ -759,10 +774,10 @@ private struct FocusHeroRowStack<RowContent: View>: View {
         }
         .focusScope(focusScope)
         .task(id: idleRows) {
-            for id in idleRows where !prepared.contains(id) {
-                // Pace idle attachments. Native navigation takes the nearby path
-                // immediately; it never waits on the idle queue.
+            for id in idleRows where !prepared.contains(id) && !model.motion.isRowAttached(id) {
+                // A shelf mounted by navigation stays attached even if it is no longer nearby.
                 do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+                guard !Task.isCancelled, !model.motion.isRowAttached(id) else { continue }
                 prepared.insert(id)
             }
         }
@@ -1071,6 +1086,8 @@ final class FocusHeroRowMotion {
         rowSurfaces[id] = surface
         surface.motion.move(view, to: rowOffsets[id] ?? 0, animated: false)
     }
+
+    func isRowAttached(_ id: String) -> Bool { rowSurfaces[id]?.view?.superview != nil }
 
     func unbindRow(_ id: String, view: UIView) {
         guard rowSurfaces[id]?.view === view else { return }

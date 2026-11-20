@@ -81,6 +81,29 @@ final class FocusHeroModelTests: XCTestCase {
         XCTAssertTrue(FocusHeroRow.nearbyShelves(in: rows, active: 10).contains("newly-inserted"))
     }
 
+    func testFocusedLoadingReservationDoesNotStartIdlePreparationUntilItBecomesUsable() {
+        let model = FocusHeroModel()
+        var first = row("continue", [])
+        first.isPlaceholder = true
+        let second = row("recent", ["movie"])
+        model.seed(from: [first, second])
+        model.activate(first, in: [first, second])
+        XCTAssertEqual(model.activeRowID, first.id)
+        XCTAssertFalse(model.hasFocusedUsableContent)
+
+        first = row("continue", ["resume"])
+        model.seed(from: [first, second])
+        XCTAssertFalse(model.hasFocusedUsableContent, "Publishing content is not a focus event.")
+        model.activate(first, in: [first, second])
+        XCTAssertTrue(model.hasFocusedUsableContent, "The same row now holds a real card.")
+    }
+
+    func testIdlePreparationOnlyPacesShelvesOutsideBothEagerGroupsInDisplayOrder() {
+        let rows = (0..<11).map { row("row-\($0)", $0 >= 4 ? ["movie"] : []) }
+        let nearby = FocusHeroRow.nearbyShelves(in: rows, active: 7)
+        XCTAssertEqual(FocusHeroRow.idleShelfIDs(in: rows, nearby: nearby), ["row-4", "row-5"])
+    }
+
     func testTheFirstRowStandsInUntilSomethingIsFocused() {
         let model = FocusHeroModel()
         let watchlist = row("watchlist", ["terror", "dune"])

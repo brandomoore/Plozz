@@ -4,6 +4,51 @@ import notify
 
 @MainActor
 final class ShowcaseNavigationTests: XCTestCase {
+    func testRapidDownTwiceFromFeaturedHeroFocusesSecondShelf() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--stale-showcase-entry", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+
+        let hero = app.buttons["home-hero-action-row"]
+        var before: XCUIScreenshot?
+        let ready = NSPredicate { [self] _, _ in
+            guard hero.exists, hero.hasFocus, hero.label == "Harbor Signal, Resume" else { return false }
+            // The focus leaf is transparent and can be ready before Resume is drawn.
+            // Look for its broad bright fill, not just a few pixels of text.
+            let frame = hero.frame
+            let viewport = app.frame
+            let shot = app.screenshot()
+            before = shot
+            guard frame.width >= 160, frame.height > 0, viewport.contains(frame),
+                  let image = shot.image.cgImage else { return false }
+            let sx = CGFloat(image.width) / viewport.width, sy = CGFloat(image.height) / viewport.height
+            let primary = CGRect(x: (frame.minX - viewport.minX) * sx, y: (frame.midY - 12 - viewport.minY) * sy,
+                                 width: 160 * sx, height: 24 * sy)
+            guard let crop = image.cropping(to: primary), let bright = try? brightPixelCount(in: crop) else { return false }
+            return bright > crop.width * crop.height / 3
+        }
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: 15)
+        let witness = XCTAttachment(screenshot: before ?? app.screenshot())
+        witness.name = "Featured hero before Down"
+        witness.lifetime = .keepAlways
+        add(witness)
+        XCTAssertEqual(result, .completed, "Expected a painted, focused Resume action before input.")
+
+        let remote = XCUIRemote.shared
+        remote.press(.down)
+        remote.press(.down)
+
+        let second = app.buttons["Shelf 2 movie"]
+        let move = app.staticTexts["showcase-native-down"]
+        let arrived = NSPredicate { _, _ in
+            second.exists && second.hasFocus && move.exists && move.label == "Shelf 1 movie → Shelf 2 movie"
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: arrived, object: nil)], timeout: 5),
+                       .completed, "Expected native Down from shelf 1 to shelf 2.\n\(app.debugDescription)")
+    }
+
     func testLoadingDiscoveryCannotHideShortRowGutters() throws {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
@@ -733,8 +778,19 @@ final class ShowcaseNavigationTests: XCTestCase {
         let scale = CGFloat(image.width) / app.frame.width
         let region = CGRect(x: 20 * scale, y: 20 * scale, width: 480 * scale, height: 140 * scale)
         let crop = try XCTUnwrap(image.cropping(to: region))
+        let visiblePixels = try brightPixelCount(in: crop)
+        if visible {
+            XCTAssertGreaterThan(visiblePixels, 100,
+                                 "The native sidebar label must be visibly painted, not merely present in accessibility.")
+        } else {
+            XCTAssertLessThanOrEqual(visiblePixels, 100,
+                                     "Preserve native chrome auto-hiding when browsing below the first row.")
+        }
+    }
+
+    private func brightPixelCount(in crop: CGImage) throws -> Int {
         var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
-        let visiblePixels = try bytes.withUnsafeMutableBytes { buffer -> Int in
+        return try bytes.withUnsafeMutableBytes { buffer -> Int in
             let context = try XCTUnwrap(CGContext(
                 data: buffer.baseAddress, width: crop.width, height: crop.height,
                 bitsPerComponent: 8, bytesPerRow: crop.width * 4,
@@ -745,13 +801,6 @@ final class ShowcaseNavigationTests: XCTestCase {
             return stride(from: 0, to: buffer.count, by: 4).filter {
                 min(buffer[$0], buffer[$0 + 1], buffer[$0 + 2]) > 160
             }.count
-        }
-        if visible {
-            XCTAssertGreaterThan(visiblePixels, 100,
-                                 "The native sidebar label must be visibly painted, not merely present in accessibility.")
-        } else {
-            XCTAssertLessThanOrEqual(visiblePixels, 100,
-                                     "Preserve native chrome auto-hiding when browsing below the first row.")
         }
     }
 

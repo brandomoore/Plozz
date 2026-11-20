@@ -11,6 +11,55 @@ import XCTest
 
 @MainActor
 final class HomeVerticalMotionHostedTests: XCTestCase {
+    func testFocusedPendingHeroLeavesDeferredShelvesUnmountedUntilAUsableRowTakesFocus() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = FocusHeroModel()
+        let state = HeroShowcaseState()
+        let rows = (1...6).map { index in
+            let item = MediaItem(id: "movie-\(index)", title: "Movie \(index)", kind: .movie)
+            return FocusHeroRow(id: "shelf-\(index)", itemIDs: [item.id], leadItem: item, items: [item])
+        }
+        let shelves = FocusHeroScrollingRows(rows: rows, model: model, rowContent: { row, reporter in
+            MediaRowView(title: Text(verbatim: row.id), items: row.items, style: .poster,
+                         onFocusEntered: reporter.entered,
+                         onFocusChange: { if let item = $0 { reporter.focusedItem(item) } },
+                         onCardFocused: reporter.cardFocused, onSelect: { _ in })
+        }, stagesRowViews: true, allowsIdlePreparation: true)
+        let host = UIHostingController(rootView: HeroShowcaseStage(
+            state: state, model: model, rows: rows,
+            hero: AnyView(HomeHeroSkeletonView().focusable().navigationEntryFocus(.pending)),
+            showcase: AnyView(Color.clear), rowContent: AnyView(shelves)
+        ))
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        host.view.layoutIfNeeded()
+        let stage = try XCTUnwrap(host.children.compactMap { $0 as? HeroShowcaseStage.Controller }.first)
+        defer { stage.stopAnimations() }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: stage.view))
+        func eventually(_ description: String, _ condition: @escaping @MainActor () -> Bool) async {
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                MainActor.assumeIsolated { condition() }
+            }, object: nil)
+            ready.expectationDescription = description
+            await fulfillment(of: [ready], timeout: 8)
+        }
+        await eventually("Skeleton owns native focus and initial shelves are attached") {
+            stage.contains(system.focusedItem, in: stage.hero) && model.motion.isRowAttached("shelf-4")
+        }
+        XCTAssertFalse(model.hasFocusedUsableContent)
+        XCTAssertFalse(model.motion.isRowAttached("shelf-5"))
+
+        stage.present(expanded: false, focus: true)
+        await eventually("First card owns focus and idle shelves are attached") {
+            stage.contains(system.focusedItem, in: stage.rows) && model.motion.isRowAttached("shelf-6")
+        }
+        XCTAssertEqual(model.activeRowID, "shelf-1", "Deferred shelves must prepare without scrolling to them.")
+    }
+
     func testBoundarySwipesDoNotCompeteWithNativeFocusPanning() throws {
         let stage = HeroShowcaseStage.Controller(
             state: HeroShowcaseState(), hero: AnyView(Color.clear),

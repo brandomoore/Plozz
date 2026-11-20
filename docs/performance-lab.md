@@ -491,6 +491,33 @@ in both versions. Those checks remain unresolved, not passes. Native Jellyfin
 logs showed session lifecycle rather than successful GET paths; a bounded
 Plex log slice was not isolated to this client.
 
+#### Review follow-up: wait for a usable target, skip shelves already attached
+
+The comparison here is against `7fd4ad1f7`, **not** the unstaged Home above.
+It used the same 40-shelf simulator fixture, recording before launch, with one
+returning-profile launch per build and input pattern. All four runs reached shelf
+2 on Down 2, continued to shelf 8, returned to Resume, and fetched every shelf once.
+
+| Metric | Immediate (before → after) | 10 s dwell (before → after) |
+|---|---:|---:|
+| Profile selection → first shelf artwork | 2.07 → 2.22 s | 2.31 → 2.26 s |
+| Profile selection → visibly highlighted Resume | 6.15 → 5.20 s | 4.07 → 5.62 s |
+| Down 2 → shelf 2 native focus | 35 → 29 ms | 568 → 446 ms |
+| Artwork GETs through navigation report | 624 → 704 | 684 → 704 |
+| Of those, repeated artwork GETs | 12 → 30 | 32 → 32 |
+
+These runs establish navigation correctness, not a consistent startup speedup.
+Most additional reads were distinct URLs; the immediate run also made 18 more
+repeats. Counts stop at the navigation report, not after the server settles.
+They do not establish eventual traffic, real-server CPU, or scrolling frame rate.
+
+The checked-in `ShowcaseNavigationTests/testRapidDownTwiceFromFeaturedHeroFocusesSecondShelf`
+tests the native handoff independently of timing luck. It waits for the painted
+Resume action and withholds the first shelf's SwiftUI focus report. Nothing is
+polled between the two remote presses; the expected result is a native shelf 1
+→ shelf 2 transition and final focus on shelf 2. Disconnecting just the native
+row-entry callback made this assertion fail; restoring it made the test pass.
+
 ## Baseline → attribution → candidate → regression
 
 ### tvOS: rapid vertical IPTV guide travel
