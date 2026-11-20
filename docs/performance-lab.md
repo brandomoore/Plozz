@@ -290,15 +290,77 @@ native focus measured returning-profile selection independently of data loading.
 | Peak sampled app resident memory | 432–438 MiB | 937–957 MiB |
 | Requests reaching loopback, selection through completion report | 113–164 | 1,364–1,979 |
 
-All 40 dense row requests succeeded exactly once. Artwork (918–1,157 requests)
-and single-item detail (382–758) accounted for most traffic. No traffic reached
-a real Jellyfin server. Gaps of up to 1.7 s between recorded frames limit the
+All 40 dense row requests succeeded exactly once. In the two dense runs, **917
+of 918** and **1,157 of 1,157** artwork reads had distinct path/query keys:
+most of that traffic was not retrying the same image request. Single-item
+detail did repeat: **382 reads for 270 distinct keys**, and **758 for 640**.
+By first native content focus the origin had already received 108 and 146
+artwork reads respectively, although only 13 and 14 of the 40 row queries
+had started. No traffic reached a real Jellyfin server.
+Gaps of up to 1.7 s between recorded frames limit the
 precision of first-pixel timing. Full dense Home loads took 151–153 s with
 recording, versus 23 s in a separately paced, unrecorded navigation run; these
 are not hardware load-time estimates. In that run the same six verified focus
 moves took 11.47 s while rows were arriving and 3.65 s once settled, including
 XCTest overhead. Focus subsequently reached row nine. This isolates a repeatable
 row-count problem, not the cause of the earlier intermittent small-Home stalls.
+
+**What other clients defer.** Jellyfin Android TV [starts a query-backed rail's
+initial request when adding it](https://github.com/jellyfin/jellyfin-androidtv/blob/45c52925661ff51427cea46ebabcd3de656276cc/app/src/main/java/org/jellyfin/androidtv/ui/home/HomeFragmentBrowseRowDefRow.kt#L27-L44),
+but binds cards through [reusable presenters](https://github.com/jellyfin/jellyfin-androidtv/blob/45c52925661ff51427cea46ebabcd3de656276cc/app/src/main/java/org/jellyfin/androidtv/ui/presentation/CardPresenter.kt#L84-L95).
+Jellyfin Web likewise [resumes every Home section](https://github.com/jellyfin/jellyfin-web/blob/fa7831bd1fd72e61b3133d2234832201d6dc803e/src/components/homesections/homesections.js#L130-L140),
+then [registers the returned cards' images for lazy loading](https://github.com/jellyfin/jellyfin-web/blob/fa7831bd1fd72e61b3133d2234832201d6dc803e/src/elements/emby-itemscontainer/emby-itemscontainer.js#L423-L446)
+with a [viewport margin of 50%](https://github.com/jellyfin/jellyfin-web/blob/fa7831bd1fd72e61b3133d2234832201d6dc803e/src/components/lazyLoader/lazyLoaderIntersectionObserver.js#L7-L21).
+Neither requires a vertical scroll to fetch every kind of row metadata. For
+Plozz, count row queries separately from poster and detail reads: deferring
+the latter can leave all 40 rows indexed without making the viewer wait for
+800 cards to be prepared.
+
+#### Does limiting the classic carousel to the first four rows help?
+
+**No clear startup win; worse rapid navigation.** An optimized tvOS simulator
+host ran the full returning-profile picker and Home, using a local
+Jellyfin-shaped origin with 40 shelves of 20 distinct movies and one additional
+resumable movie for the carousel hero. The comparison kept the dataset, hero,
+provider and enabled rows fixed. All versions completed 40 successful, unique
+shelf reads (24,520 compressed body bytes), publishing 41 nonempty rows and
+801 entries including Continue Watching. The four-row experiment deferred row
+**views**, not row data. A second experiment simply wrapped each row in one
+`VStack` without limiting the number of views.
+
+| From profile selection (two recorded starts per version) | Original carousel | Four-row limit | Single wrapper, no limit |
+|---|---:|---:|---:|
+| First recognizable shelf 1 artwork | 913–990 ms | 894–899 ms | 849–909 ms |
+| First visible bright Resume action | 994–1,230 ms | 988–1,000 ms | 1,029–1,066 ms |
+| Image requests received by visible Resume | 17–18 | 17–35 | 19–36 |
+
+Recording began before process launch. Original launch-command to visible Resume
+was 3.25–3.53 s including the chooser and test gate; this was not initial
+password sign-in. Native focus and video pixels were observed separately.
+Two starts per version with fresh profiles/ports but shared OS caches do not
+establish a small timing difference. This fixture explicitly selects carousel;
+it does not invalidate the slower dense Home measurements above.
+
+To collide scrolling with unfinished work, a separate run delayed shelf reads
+from shelf 4 onward. The remote sent eight Downs about 220 ms apart, then
+eight Ups. With no intentional dwell after XCTest verified focused Resume,
+17–18 shelves had finished before the first press. Original Home reached shelf 8
+and returned to Resume in both trials: on shelves 2–8, native focus took
+11–37 ms from input; the first recognizable posters took 137–279 ms, including
+scroll animation. The four-row limit **missed the third Down twice**, reaching
+only shelf 7; first posters on shelves it did reach took 163–471 ms. The
+wrapper-only version reached shelf 8 and returned, with first posters in
+95–192 ms in its one immediate trial.
+
+After **10 s without input**, every version had all 40 shelves' titles and
+none had requested a poster for shelves 2–40. Original and wrapper each had
+requested 20 distinct shelf-1 posters; the four-row version had requested 7.
+Subsequent first visits to shelves 2–8 showed recognizable posters after
+151–188 ms (original), 114–187 ms (wrapper), or 289–358 ms (four-row).
+Brief placeholders were visible; the pixel test did **not** require every
+poster or even the focused poster to be painted. No traffic reached a real
+server. Keep classic Home unchanged: neither the four-row limit nor preloading
+all posters is justified by these trials.
 
 ## Baseline → attribution → candidate → regression
 
