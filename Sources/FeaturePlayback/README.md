@@ -1915,8 +1915,10 @@ generating/building; it accepts an optional local Git clone as its source.
 It verifies the pinned revision and patch in an isolated checkout. Unprepared
 builds keep the remote dependency and existing rendering paths.
 
-Admission uses the normal subtitle preference/series memory on the probed
-tracks, not a filename or launch flag. The current envelope is seekable SDR
+Admission uses the same embedded tracks, registered sidecars and profile
+preferences as playback. An unselected server rendition does not veto an
+embedded ASS track; if the sidecar wins, it stays on the overlay.
+The current envelope is seekable SDR
 Matroska H.264 through 1080p30 with mono/stereo AAC, FLAC, Opus, Vorbis or MP3
 on all audio tracks. With exact 2× line-art upscaling, authored regions are
 composited onto the upscaler's output at the original frame timestamp. The

@@ -162,7 +162,11 @@ private struct LocalPlaybackFile: MediaProvider {
     }
     func item(id: String) async throws -> MediaItem { .init(id: id, title: "Test", kind: .movie) }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
-        .init(item: try await item(id: itemID), streamURL: url)
+        // A server can offer its own rendition alongside the same embedded track.
+        let sidecar = MediaTrack(id: 3, kind: .subtitle, displayTitle: "English", language: "en",
+                                 codec: "webvtt", deliverySource: .localFile(url.appendingPathExtension("vtt")),
+                                 isExternal: true)
+        return .init(item: try await item(id: itemID), streamURL: url, subtitleTracks: [sidecar])
     }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }

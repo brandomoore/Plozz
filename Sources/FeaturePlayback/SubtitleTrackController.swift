@@ -196,7 +196,7 @@ final class SubtitleTrackController {
         // A session rebuild temporarily empties tracks; those aren't removed selections.
         guard !host.trackEngine.isSessionReloading else { return }
         host.trackControls.primarySubtitleIsBurnedIn = host.trackRequest?.burnedInSubtitleTrackID != nil
-        registerProviderSidecars()
+        if host.trackEngineKind == .plozzigen { registerProviderSidecars(host.trackRequest?.subtitleTracks ?? []) }
         let engine = host.trackEngine
         #if canImport(UIKit)
         if let disc = engine.discMenu {
@@ -425,19 +425,12 @@ final class SubtitleTrackController {
             initialSubtitleApplied = true
             applyDefaultSubtitleThroughOverlay(from: request.subtitleTracks)
         case .plozzigen:
-            registerProviderSidecars()
-            let embedded = host.trackEngine.subtitleTracks.map { track in
-                track.enriched(withProvider: request.subtitleTracks.first {
-                    !$0.isExternal && $0.id == track.id
-                        && ($0.language == nil || track.language == nil
-                            || LanguageMatch.matches($0.language, track.language))
-                })
-            }
+            let embedded = host.trackEngine.subtitleTracks
             // A server sidecar is known before demux completes. Don't let it
             // consume the initial selection before embedded tracks arrive.
             guard !embedded.isEmpty
                     || (host.trackEngine.status == .ready && pendingImageSubtitleMatch == nil) else { return }
-            let tracks = embedded + hotLoadedSubtitleTracks
+            let tracks = initialPlozzigenTracks(embedded, request: request)
             guard !tracks.isEmpty else { return }
             initialSubtitleApplied = true
             if let picked = pendingImageSubtitleMatch {
@@ -537,19 +530,27 @@ final class SubtitleTrackController {
         return select(rule?.mode ?? behavior.subtitleMode, rule?.preferredLanguage ?? behavior.resolvedPreferredLanguage)
     }
 
-    func frameSubtitleCandidate(_ probed: [MediaTrack], request: PlaybackRequest) -> Int? {
-        guard let host, !request.subtitleTracks.contains(where: \.isExternal),
-              host.trackStyle.permitsFrameSubtitle, host.trackLiveSubtitles.offset == 0 else { return nil }
-        let tracks = probed.map { track in
+    private func initialPlozzigenTracks(_ embedded: [MediaTrack], request: PlaybackRequest) -> [MediaTrack] {
+        registerProviderSidecars(request.subtitleTracks)
+        return embedded.map { track in
             track.enriched(withProvider: request.subtitleTracks.first {
-                $0.id == track.id && ($0.language == nil || track.language == nil || LanguageMatch.matches($0.language, track.language))
+                !$0.isExternal && $0.id == track.id
+                    && ($0.language == nil || track.language == nil || LanguageMatch.matches($0.language, track.language))
             })
-        }
-        return Self.preferredTrack(remembered: host.trackRememberedSubtitle(for: request.item),
+        } + hotLoadedSubtitleTracks
+    }
+
+    func frameSubtitleCandidate(_ probed: [MediaTrack], request: PlaybackRequest) -> Int? {
+        guard let host, pendingImageSubtitleMatch == nil,
+              host.trackStyle.permitsFrameSubtitle, host.trackLiveSubtitles.offset == 0 else { return nil }
+        let tracks = initialPlozzigenTracks(probed, request: request)
+        let winner = Self.preferredTrack(remembered: host.trackRememberedSubtitle(for: request.item),
                                    rule: host.trackEffectiveSubtitleRule(for: request.item), behavior: host.trackBehavior) {
             tracks.defaultSubtitleSelection(mode: $0, preferredLanguage: $1,
                                             hearingImpairedPreference: host.trackBehavior.hearingImpairedPreference)
-        }?.id
+        }
+        guard let winner, !winner.isExternal else { return nil }
+        return winner.id
     }
 
     #if DEBUG
@@ -794,9 +795,8 @@ final class SubtitleTrackController {
 
     /// A demuxer cannot discover files downloaded alongside the media. Bring the
     /// provider's external tracks into the same overlay route on every playback.
-    private func registerProviderSidecars() {
-        guard let host, host.trackEngineKind == .plozzigen else { return }
-        for track in host.trackRequest?.subtitleTracks ?? []
+    private func registerProviderSidecars(_ tracks: [MediaTrack]) {
+        for track in tracks
         where track.isExternal && track.deliverySource != nil && !track.isBitmapSubtitle {
             _ = registerSidecar(track, preferredLanguage: track.language, forced: track.isForced)
         }
