@@ -1,8 +1,30 @@
 import XCTest
+import CoreModels
 
 @testable import FeaturePlayback
 
 final class ControlsAutoHidePolicyTests: XCTestCase {
+
+    func testPausedOptInReturnsFocusBeforeHidingButNotDuringInteraction() {
+        func outcome(scrubbing: Bool = false, menu: Bool = false) -> ControlsAutoHidePolicy.Outcome {
+            ControlsAutoHidePolicy.outcome(focus: .controlBar, isScrubbing: scrubbing, isPaused: true,
+                                           isPanelOpen: menu, mode: .whilePlayingOrPaused)
+        }
+        XCTAssertEqual(outcome(), .returnFocusThenHide)
+        XCTAssertEqual(outcome(scrubbing: true), .stayVisible)
+        XCTAssertEqual(outcome(menu: true), .stayVisible)
+        XCTAssertEqual(ControlsAutoHidePolicy.outcome(focus: .surface, isScrubbing: false, isPaused: false,
+                                                      isPanelOpen: false, mode: .never), .stayVisible)
+    }
+
+    func testLegacyProfileKeepsPausedControlsAndOptInRoundTrips() throws {
+        var settings = try JSONDecoder().decode(PlaybackSettings.self, from: Data("{}".utf8))
+        XCTAssertTrue(settings.controlsAutoHide.allowsHiding(paused: false))
+        XCTAssertFalse(settings.controlsAutoHide.allowsHiding(paused: true))
+        settings.controlsAutoHide = .whilePlayingOrPaused
+        let saved = try JSONEncoder().encode(settings)
+        XCTAssertEqual(try JSONDecoder().decode(PlaybackSettings.self, from: saved).controlsAutoHide, .whilePlayingOrPaused)
+    }
 
     // MARK: hideDate — max(load+1s, input+4s)
 

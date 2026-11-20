@@ -1,5 +1,21 @@
 import Foundation
 
+public enum PlaybackControlsAutoHide: String, Codable, CaseIterable, Sendable {
+    case whilePlaying, whilePlayingOrPaused, never
+
+    public func allowsHiding(paused: Bool) -> Bool {
+        self == .whilePlayingOrPaused || (self == .whilePlaying && !paused)
+    }
+
+    public var title: LocalizedStringResource {
+        switch self {
+        case .whilePlaying: "While playing"
+        case .whilePlayingOrPaused: "While playing or paused"
+        case .never: "Never"
+        }
+    }
+}
+
 /// Per-profile playback preferences (pure data model, mirrors `SpoilerSettings`
 /// / `CaptionSettings`).
 ///
@@ -78,6 +94,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     public var backgroundAudio: Bool
     /// iPhone/iPad vertical swipes: brightness on the left, system volume on the right.
     public var volumeBrightnessGestures: Bool
+    public var controlsAutoHide: PlaybackControlsAutoHide = .whilePlaying
     /// iPhone full-screen player preference. iPad follows system rotation.
     public var orientation: PlaybackOrientation
     public var videoZoom: VideoZoomDefaults
@@ -440,6 +457,7 @@ public extension PlaybackSettings {
         case discPlayback
         case backgroundAudio
         case volumeBrightnessGestures
+        case controlsAutoHide
         case orientation
         case videoZoom
         case streaming
@@ -554,6 +572,8 @@ public extension PlaybackSettings {
         self.volumeBrightnessGestures =
             try container.decodeIfPresent(Bool.self, forKey: .volumeBrightnessGestures)
             ?? defaults.volumeBrightnessGestures
+        controlsAutoHide = try container.decodeIfPresent(PlaybackControlsAutoHide.self, forKey: .controlsAutoHide)
+            ?? defaults.controlsAutoHide
         self.orientation = (try? container.decode(PlaybackOrientation.self, forKey: .orientation))
             ?? defaults.orientation
         self.videoZoom = try container.decodeIfPresent(VideoZoomDefaults.self, forKey: .videoZoom)
@@ -665,6 +685,7 @@ public extension PlaybackSettings {
         try container.encode(discPlayback, forKey: .discPlayback)
         try container.encode(backgroundAudio, forKey: .backgroundAudio)
         try container.encode(volumeBrightnessGestures, forKey: .volumeBrightnessGestures)
+        try container.encode(controlsAutoHide, forKey: .controlsAutoHide)
         try container.encode(orientation, forKey: .orientation)
         try container.encode(videoZoom, forKey: .videoZoom)
         try container.encode(streaming, forKey: .streaming)

@@ -675,7 +675,7 @@ struct PlaybackDetailView: View {
                         }
                     }
                 }
-            ] + displayFadeRows + discRows + advancedRows
+            ] + controlsAutoHideRows + displayFadeRows + discRows + advancedRows
         }
         #endif
         return subtitleRows
@@ -689,6 +689,7 @@ struct PlaybackDetailView: View {
             + readAheadRows
             + scrubbingRows
             + displayFadeRows
+            + controlsAutoHideRows
             + upNextRows
             + playerTabRows
             + discRows
@@ -699,6 +700,16 @@ struct PlaybackDetailView: View {
         [SettingsSplitRow(id: "player-tabs", title: "Player tabs") {
             PlayerTabSettingsControls(model: playback)
         }]
+    }
+
+    private var controlsAutoHideRows: [SettingsSplitRow] {
+        [SettingsSplitRow(id: "auto-hide-controls", title: "Auto-hide controls") {
+            SettingsMenuRow(title: "Auto-hide controls", value: Text(playback.settings.controlsAutoHide.title)) {
+                Picker("Auto-hide controls", selection: $playback.settings.controlsAutoHide) {
+                    ForEach(PlaybackControlsAutoHide.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            }
+        }.labeledControl()]
     }
 
     var zoomRows: [SettingsSplitRow] {

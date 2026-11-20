@@ -328,6 +328,8 @@ struct LiveTVMultiviewOverlay: View {
     @Namespace private var controlsFocusScope
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
+    @Environment(PlaybackSettingsModel.self) private var playbackSettings: PlaybackSettingsModel?
 
     private enum ExitDestination { case player, guide }
 
@@ -457,6 +459,8 @@ struct LiveTVMultiviewOverlay: View {
     }
 
     private var autoHideRequest: TimeInterval? {
+        let mode = playbackSettings?.settings.controlsAutoHide ?? PlaybackSettings.default.controlsAutoHide
+        guard !switchControl, mode.allowsHiding(paused: false) else { return nil }
         #if os(tvOS)
         let editingBlocks = false
         #else

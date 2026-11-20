@@ -43,6 +43,14 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var touchGestures = PlayerTouchGestureState()
     @State private var availableSize: CGSize = .zero
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(PlaybackSettingsModel.self) private var playbackSettings: PlaybackSettingsModel?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
+    private var allowsAutoHide: Bool {
+        let mode = playbackSettings?.settings.controlsAutoHide ?? PlaybackSettings.default.controlsAutoHide
+        return mode.allowsHiding(paused: viewModel.controls.intendsPause) && !voiceOver && !switchControl
+    }
     @StateObject private var pictureInPicture = PlozziOSPictureInPictureController()
 
     init(
@@ -219,7 +227,7 @@ struct PlozziOSPlayerControlsOverlay: View {
         } action: {
             availableSize = $0
         }
-        .animation(.easeInOut(duration: 0.2), value: controlsVisible)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: controlsVisible)
         .onChange(of: controlsVisible) { _, visible in
             if !visible { viewModel.controls.timelineClock.isEnabled = false }
         }
@@ -287,11 +295,10 @@ struct PlozziOSPlayerControlsOverlay: View {
             if paused {
                 cancelTouchInteraction()
                 controlsVisible = true
-                cancelAutoHide()
-            } else {
-                scheduleAutoHide()
             }
+            scheduleAutoHide()
         }
+        .onChange(of: allowsAutoHide) { scheduleAutoHide() }
         .onChange(of: viewModel.controls.diagnosticsEnabled) { _, enabled in
             if enabled { cancelAutoHide() } else { scheduleAutoHide() }
         }
@@ -542,7 +549,7 @@ struct PlozziOSPlayerControlsOverlay: View {
         // Reading a synopsis or scrolling a cast row involves long stretches
         // with no taps, and the timer cannot tell that from abandonment — so it
         // took the card away mid-read. It resumes when the card closes.
-        guard !viewModel.controls.intendsPause,
+        guard allowsAutoHide, !viewModel.showsDiscVideos,
               presentedSheet == nil,
               !versionsPresented,
               !nativeMenuPresented,
@@ -560,7 +567,7 @@ struct PlozziOSPlayerControlsOverlay: View {
         // without tapping first.
         guard !isPlayingElsewhere else { return }
         autoHideTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(PlaybackControlsInactivity.defaultGrace))
             guard !Task.isCancelled else { return }
             controlsVisible = false
         }

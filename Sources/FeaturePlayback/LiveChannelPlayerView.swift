@@ -122,6 +122,8 @@ public struct LiveChannelPlayerView: View {
     #endif
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var autoHideVoiceOver
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(GlassPerformanceModel.self) private var glassPerformance: GlassPerformanceModel?
     @State private var model: LiveChannelPlayerModel?
@@ -680,8 +682,7 @@ public struct LiveChannelPlayerView: View {
         .task(id: autoHideRevision) {
             let startedAt = ProcessInfo.processInfo.systemUptime
             while !Task.isCancelled {
-                guard hasInteractiveControls, controlsVisible, !tracksArePresented, !guidePresented,
-                      model?.phase == .playing else { return }
+                guard hasInteractiveControls, controlsVisible, allowsAutoHide else { return }
                 let remaining = hudInactivity.remainingDelay(
                     startedAt: startedAt,
                     now: ProcessInfo.processInfo.systemUptime
@@ -799,7 +800,7 @@ public struct LiveChannelPlayerView: View {
         .onChange(of: model?.videoAspectRatio, initial: true) { _, ratio in
             onVideoAspectRatioChange(ratio)
         }
-        .onChange(of: tracksArePresented) { _, _ in autoHideRevision &+= 1 }
+        .onChange(of: allowsAutoHide) { autoHideRevision &+= 1 }
         .onChange(of: diagnosticsEnabled) { _, enabled in updateDiagnosticsSampling(enabled) }
         .onChange(of: GlassDemandKey(
             expanded: isExpanded, presentedFrame: model?.hasPresentedFrame ?? false, reportingID: reportingID
@@ -1170,8 +1171,16 @@ public struct LiveChannelPlayerView: View {
         controlsVisible = false
     }
 
+    private var allowsAutoHide: Bool {
+        guard !autoHideVoiceOver, !switchControl, !tracksArePresented, !guidePresented,
+              !touchScrubbing, !touchGestures.isActive, !diagnosticsEnabled,
+              let phase = model?.phase, phase == .playing || phase == .paused else { return false }
+        let mode = playbackSettingsModel?.settings.controlsAutoHide ?? displayTransitionSettings().controlsAutoHide
+        return mode.allowsHiding(paused: phase == .paused)
+    }
+
     private func hideControls() {
-        guard hasInteractiveControls, model?.phase == .playing else { return }
+        guard hasInteractiveControls, allowsAutoHide else { return }
         focusedControl = nil
         controlsVisible = false
         focusAfterPresentation(.surface)
