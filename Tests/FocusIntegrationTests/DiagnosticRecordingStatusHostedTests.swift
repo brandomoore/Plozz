@@ -43,7 +43,7 @@ final class DiagnosticRecordingStatusHostedTests: XCTestCase {
         }.first { $0.accessibilityIdentifier == "diagnostic-recording-status" })
         XCTAssertFalse(badge.window === window)
         XCTAssertGreaterThan(try XCTUnwrap(badge.window).windowLevel, window.windowLevel)
-        try assertVisibleText("Preparing recording", in: scene)
+        try await assertVisibleText("Preparing recording", in: scene)
         let directory = try FileManager.default.url(
             for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: false
         )
@@ -123,7 +123,7 @@ final class DiagnosticRecordingStatusHostedTests: XCTestCase {
         #endif
         XCTAssertTrue(overlay.bounds.contains(badge.convert(badge.bounds, to: overlay)))
         XCTAssertEqual(badge.layer.animation(forKey: "recording-expiry")?.duration, 15)
-        let screenshot = try assertVisibleText("Recording", in: scene)
+        let screenshot = try await assertVisibleText("Recording", in: scene)
         let attachment = XCTAttachment(image: screenshot)
         attachment.name = "Recording badge does not take focus"
         attachment.lifetime = .keepAlways
@@ -164,13 +164,12 @@ final class DiagnosticRecordingStatusHostedTests: XCTestCase {
         controller.attach(to: cover)
         for phase in DiagnosticRecordingPhase.allCases {
             controller.receive(phase)
-            try await Task.sleep(for: .milliseconds(100))
             let overlay = try XCTUnwrap(controller.overlayWindow)
             XCTAssertGreaterThan(overlay.windowLevel, cover.windowLevel)
             XCTAssertTrue(cover.isKeyWindow)
             XCTAssertNil(overlay.hitTest(overlay.bounds.origin, with: nil))
             XCTAssertEqual(controller.badge?.accessibilityLabel, String(localized: phase.text))
-            try assertVisibleText(phase == .preparing ? "Preparing recording" : String(localized: phase.text), in: scene)
+            try await assertVisibleText(phase == .preparing ? "Preparing recording" : String(localized: phase.text), in: scene)
         }
         controller.clearBadge()
         XCTAssertNil(controller.overlayWindow)
@@ -178,8 +177,31 @@ final class DiagnosticRecordingStatusHostedTests: XCTestCase {
     }
 
     @discardableResult
-    private func assertVisibleText(_ expected: String, in scene: UIWindowScene) throws -> UIImage {
-        let image = UIGraphicsImageRenderer(bounds: scene.coordinateSpace.bounds).image { _ in
+    private func assertVisibleText(
+        _ expected: String, in scene: UIWindowScene, file: StaticString = #filePath, line: UInt = #line
+    ) async throws -> UIImage {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while true {
+            let image = compositedImage(in: scene)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLanguages = ["en-US"]
+            request.minimumTextHeight = 0.008
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            if text.contains(expected) { return image }
+            if ContinuousClock.now >= deadline {
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Last composited scene for \(expected)"
+                add(attachment)
+                XCTFail("Composited scene must show \(expected); read \(text)", file: file, line: line)
+                return image
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
+    private func compositedImage(in scene: UIWindowScene) -> UIImage {
+        UIGraphicsImageRenderer(bounds: scene.coordinateSpace.bounds).image { _ in
             for window in scene.windows.sorted(by: { $0.windowLevel < $1.windowLevel })
                 where !window.isHidden && window.alpha > 0 {
                 window.layoutIfNeeded()
@@ -188,13 +210,6 @@ final class DiagnosticRecordingStatusHostedTests: XCTestCase {
                 )
             }
         }
-        let request = VNRecognizeTextRequest()
-        request.recognitionLanguages = ["en-US"]
-        request.minimumTextHeight = 0.008
-        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
-        let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        XCTAssertTrue(text.contains(expected), "Composited scene must show \(expected); read \(text)")
-        return image
     }
 }
 #endif

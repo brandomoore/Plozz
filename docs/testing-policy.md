@@ -1699,8 +1699,11 @@ instead of choosing an older installed runtime. The full package matrix has a
 Run `39888935447` spent about 23 minutes on setup and compilation, then passed
 41 complete test bundles before the former 40-minute limit interrupted the
 still-progressing CoreModels bundle. The longer total budget preserves the
-runner's existing no-progress watchdog and result-finalization checks, with
-outer headroom for setup, termination, and retained diagnostic uploads.
+runner's result-finalization checks and leaves outer headroom for setup,
+termination, and retained diagnostic uploads. Cold Swift batch compilation has
+a ten-minute no-output limit. When the built test manifest starts executing,
+the silence clock resets and the three-minute test limit applies. Neither
+phase gets more time on the combined shard deadline.
 Hosted integration builds once with
 `build-for-testing`, then runs `test-without-building`, with separate build/test
 deadlines and retained build/test logs and result bundles. It uses optimized
