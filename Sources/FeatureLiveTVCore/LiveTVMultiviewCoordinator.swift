@@ -10,6 +10,11 @@ public final class LiveTVMultiviewPane: Identifiable {
     public fileprivate(set) var requestedChannel: LiveTVPrototypeChannel?
     public fileprivate(set) var hasPresentedFrame = false
     public fileprivate(set) var playPauseRequest = 0
+    fileprivate var pausedPreparationID: UUID?
+    public var isPaused: Bool {
+        guard let pausedPreparationID else { return false }
+        return preparation.current?.id == pausedPreparationID
+    }
     public fileprivate(set) var videoAspectRatio: Double?
     fileprivate var retired = false
     @ObservationIgnored fileprivate var task: Task<Void, Never>?
@@ -306,6 +311,8 @@ public final class LiveTVMultiviewCoordinator {
         guard active, let pane = panes.first(where: { $0.id == paneID }),
               pane.preparation.current?.id == preparedID else { return }
         let previous = pane.reportTail
+        let pausedID = update.state == .paused ? preparedID : nil
+        if pane.pausedPreparationID != pausedID { pane.pausedPreparationID = pausedID }
         pane.reportTail = Task { @MainActor [weak self, weak pane] in
             await previous?.value
             guard let self, self.active, let pane, !pane.retired,

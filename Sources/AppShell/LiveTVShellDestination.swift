@@ -54,6 +54,7 @@ struct LiveTVShellDestination: View {
     let onExpandedChange: (Bool) -> Void
 
     @Environment(ProfilesModel.self) private var profiles
+    @Environment(PlaybackSettingsModel.self) private var playbackSettings: PlaybackSettingsModel?
     @Environment(LiveTVGuidePreparationModel.self) private var guidePreparation: LiveTVGuidePreparationModel?
     @Environment(NavigationStyleSettingsModel.self) private var navigationStyle: NavigationStyleSettingsModel?
     @Environment(GlassPerformanceModel.self) private var glassPerformance: GlassPerformanceModel?
@@ -112,6 +113,7 @@ struct LiveTVShellDestination: View {
         RetainedFullscreenWorkspace {
             navigationContent
                 .environment(profiles)
+                .environment(playbackSettings)
                 .environment(guidePreparation)
                 .environment(navigationStyle)
                 .environment(glassPerformance)

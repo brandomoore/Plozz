@@ -1710,6 +1710,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
                     continue
                 }
                 guard let self, !Task.isCancelled else { return }
+                guard !UIAccessibility.isVoiceOverRunning, !UIAccessibility.isSwitchControlRunning else { return }
                 switch ControlsAutoHidePolicy.outcome(
                     focus: self.focusContext.policyFocus,
                     isScrubbing: self.model.isScrubbing,
