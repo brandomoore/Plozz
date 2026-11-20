@@ -11,6 +11,14 @@ screen matched independent PublicMetaDB reads for all ten rated episodes of
 expected episode instead of obsolete help text. No rating was changed. The
 corrected tvOS driver compiled; this was not a live TV season test.
 
+On `7636ca222`, the iPhone app showed the same four individual ratings for
+episode 1 as the authenticated API. Each row offered **Delete rating**. Opening
+and cancelling one confirmation left all 40 season ratings, votes, history
+and list contents unchanged. The responses included contributor display names
+but no field identifying a rating as the signed-in user's. A visible button
+therefore proves neither ownership nor permission to delete. This check
+verified cancellation, not server enforcement of ownership.
+
 On that integration, `FeaturePlaybackTests` passed 1,403 tests with eight
 skipped and no failures. Of the two tests that failed on an earlier `main`,
 auto-crop framing passed; audio/upscaling navigation was skipped, not verified.
