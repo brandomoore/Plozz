@@ -61,6 +61,31 @@ final class ASSSubtitleRendererTests: XCTestCase {
         }
     }
 
+    func testWideBlendMatchesSinglePixelsWithTransparentRunsAndUnpaddedLastRow() {
+        let w = 27, h = 3, maskStride = 31, outStride = 117
+        let mask: [UInt8] = (0..<(maskStride * (h - 1) + w)).map { i in
+            i % maskStride < 8 ? 0 : UInt8(truncatingIfNeeded: i * 41)
+        }
+        var wide = (0..<(outStride * h)).map { UInt8(truncatingIfNeeded: $0 * 13) }
+        var reference = wide
+        for color: UInt32 in [0x193E8B00, 0x7DA36203, 0xCC226E83, 0xFF7700FE, 0x112233FF] {
+            mask.withUnsafeBufferPointer { source in
+                wide.withUnsafeMutableBufferPointer {
+                    plozz_ass_blend_bitmap($0.baseAddress, outStride, source.baseAddress, maskStride, w, h, color)
+                }
+                reference.withUnsafeMutableBufferPointer { dst in
+                    for y in 0..<h {
+                        for x in 0..<w {
+                            plozz_ass_blend_bitmap(dst.baseAddress! + y * outStride + x * 4, outStride,
+                                                   source.baseAddress! + y * maskStride + x, maskStride, 1, 1, color)
+                        }
+                    }
+                }
+            }
+            XCTAssertEqual(wide, reference)
+        }
+    }
+
     private static let header = """
     [Script Info]
     ScriptType: v4.00+

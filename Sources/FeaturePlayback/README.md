@@ -2009,7 +2009,10 @@ rules or pixel scanning. Ordinary PGS/DVD bitmap avoidance is unchanged.
 The pinned libass 0.17.5 source target enables ARM NEON acceleration and uses
 checksum-pinned font dependencies without adding another FFmpeg or MPV. Glyph
 masks blend directly into premultiplied RGBA, avoiding one CoreGraphics mask
-allocation and clip per layer. Raster output is capped at 1080p;
+allocation and clip per layer. On ARM64 the compositor blends eight mask pixels
+at a time and skips transparent groups without touching the destination. The
+scalar tail uses the same rounding; cue timestamps and pacing are unchanged.
+Raster output is capped at 1080p;
 render caches and retained events are bounded. Turning off source position or
 colour uses the ordinary styled-text fallback, which discards vector drawing
 commands rather than displaying coordinates. System-style matching also retains

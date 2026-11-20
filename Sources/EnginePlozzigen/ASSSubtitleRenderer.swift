@@ -269,11 +269,12 @@ actor ASSSubtitleRasterizer {
                 pointer = image.next
             }
             return try regionLayout.regions(for: rectangles, canvas: size).map {
-                try composite(layers, region: $0)
+                try composite(layers, clippedBounds: rectangles, region: $0)
             }
         }
 
-        private func composite(_ layers: [ASS_Image], region: ASSSubtitleRegionLayout.Region) throws -> SubtitleImage {
+        private func composite(_ layers: [ASS_Image], clippedBounds: [CGRect],
+                               region: ASSSubtitleRegionLayout.Region) throws -> SubtitleImage {
             let bounds = region.bounds.integral
             guard let context = CGContext(
                 data: nil, width: Int(bounds.width), height: Int(bounds.height),
@@ -283,22 +284,21 @@ actor ASSSubtitleRasterizer {
             ), let output = context.data?.assumingMemoryBound(to: UInt8.self) else {
                 throw ASSSubtitleRenderError.allocation
             }
+            let stride = context.bytesPerRow
             for index in region.indices {
                 let image = layers[index]
-                let rect = CGRect(x: Int(image.dst_x), y: Int(image.dst_y), width: Int(image.w), height: Int(image.h))
                 guard let bitmap = image.bitmap, image.stride >= image.w,
                       image.w <= 16_384, image.h <= 16_384,
                       Int64(image.stride) * Int64(image.h) <= 64 * 1_024 * 1_024 else {
                     throw ASSSubtitleRenderError.invalidBitmap
                 }
-                let clipped = rect.intersection(bounds)
-                guard !clipped.isEmpty, !clipped.isNull else { continue }
-                let maskOffset = Int(clipped.minY - rect.minY) * Int(image.stride)
-                    + Int(clipped.minX - rect.minX)
-                let outputOffset = Int(clipped.minY - bounds.minY) * context.bytesPerRow
+                let clipped = clippedBounds[index]
+                let maskOffset = (Int(clipped.minY) - Int(image.dst_y)) * Int(image.stride)
+                    + Int(clipped.minX) - Int(image.dst_x)
+                let outputOffset = Int(clipped.minY - bounds.minY) * stride
                     + Int(clipped.minX - bounds.minX) * 4
                 plozz_ass_blend_bitmap(
-                    output.advanced(by: outputOffset), context.bytesPerRow,
+                    output.advanced(by: outputOffset), stride,
                     bitmap.advanced(by: maskOffset), Int(image.stride),
                     Int(clipped.width), Int(clipped.height), image.color
                 )
