@@ -40,12 +40,16 @@ struct MediaRowRefreshIndicator: View {
         if let status {
             ZStack {
                 if status.isRefreshing {
-                    if reduceMotion {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .accessibilityLabel("Refreshing")
-                    } else {
-                        ProgressView().accessibilityLabel("Refreshing")
+                    Group {
+                        if reduceMotion {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundStyle(palette.primaryText)
+                        } else {
+                            ProgressView()
+                        }
                     }
+                        .scaleEffect(0.85, anchor: .leading)
+                        .accessibilityLabel("Refreshing")
                 } else if status.failure != nil {
                     Button("Details", systemImage: "exclamationmark.circle") { showsDetails = true }
                         .labelStyle(.iconOnly)
@@ -56,7 +60,7 @@ struct MediaRowRefreshIndicator: View {
                 }
             }
             .font(.callout)
-            .frame(width: Self.size, height: Self.size)
+            .frame(width: Self.size, height: Self.size, alignment: status.isRefreshing ? .leading : .center)
             .tint(palette.primaryText)
             .accessibilityIdentifier("media-row-refresh-status")
             .plozzSheet(isPresented: $showsDetails) {

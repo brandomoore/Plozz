@@ -8,20 +8,24 @@ public struct BrowseRowHeading: View {
     @Environment(\.homeRowEditAction) private var editAction
     private let title: Text
     private let action: (() -> Void)?
+    private let reservesChevronSpace: Bool
 
-    public init(title: Text, action: (() -> Void)?) {
+    public init(title: Text, action: (() -> Void)?, reservesChevronSpace: Bool = true) {
         self.title = title
         self.action = action
+        self.reservesChevronSpace = reservesChevronSpace
     }
 
     public var body: some View {
         let label = HStack(spacing: 6) {
             title.fixedSize(horizontal: false, vertical: true)
-            Image(systemName: "chevron.forward")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .opacity(action == nil ? 0 : 1)
-                .accessibilityHidden(true)
+            if action != nil || reservesChevronSpace {
+                Image(systemName: "chevron.forward")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .opacity(action == nil ? 0 : 1)
+                    .accessibilityHidden(true)
+            }
         }
         // Keep the native hit target without making a loaded heading taller than its placeholder.
         if let action {
