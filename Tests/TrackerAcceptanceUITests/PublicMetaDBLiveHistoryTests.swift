@@ -2819,6 +2819,10 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(apply.isEnabled)
         apply.tap()
         XCTAssertTrue(app.buttons["Export selected titles"].waitForExistence(timeout: 5))
+        let message = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Titles to export: 1.")).firstMatch
+        try require(message.exists, "Expected the reviewed export count")
+        XCTAssertTrue(message.label.contains("Other apps using this tracker account see the changes."))
+        XCTAssertTrue(message.label.contains("Servers and sync settings stay unchanged."))
     }
 
     func testCancelHistoryImportAndReopen() throws {

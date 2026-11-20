@@ -280,6 +280,10 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         activate(element("tracker-export.select.movie"))
         activate(app.buttons["tracker-export.apply"])
         XCTAssertTrue(app.buttons["Export selected titles"].firstMatch.waitForExistence(timeout: 5))
+        let message = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Titles to export: 1.")).firstMatch
+        XCTAssertTrue(message.exists)
+        XCTAssertTrue(message.label.contains("Copy history from Movies to \(trackerName)?"))
+        XCTAssertTrue(message.label.contains("Servers and sync settings stay unchanged."))
         cancelConfirmation()
         assertExportReport(writes: 0)
         activate(app.buttons["tracker-export.apply"])

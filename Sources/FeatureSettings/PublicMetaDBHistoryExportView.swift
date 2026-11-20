@@ -171,7 +171,7 @@ private struct PublicMetaDBHistoryExportContent: View {
         } message: {
             let rows = session.rows.filter { selected.contains($0.id) }
             publicMetaDBConfirmationMessage(
-                Text("Export \(rows.count) selected titles to PublicMetaDB? Other apps using this tracker account see the changes. Servers and sync settings stay unchanged."),
+                Text("Titles to export: \(rows.count). Other apps using this tracker account see the changes. Servers and sync settings stay unchanged."),
                 mode == .resume ? Text("Positions replace conflicting progress and can restore progress on completed titles.") : nil,
                 mode == .watched && rows.contains(where: { $0.content?.episode != nil })
                     ? Text("Adding watched episodes restores dropped shows.") : nil,

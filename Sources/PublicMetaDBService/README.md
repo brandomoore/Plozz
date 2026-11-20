@@ -17,6 +17,23 @@ through export; Jellyfin, 40 unrelated watches and four unrelated resumes
 were unchanged throughout. The original settings and volume were restored.
 This tests confirmed export and replay prevention, not a lost write reply.
 
+A separate iPhone simulator test linked the production export service and
+Jellyfin provider to the real dedicated accounts. It used an existing resume,
+not new playback. The tracker accepted one write at 2,400,688 of 9,326,656 ms.
+The test transport discarded its HTTP 200 reply and withheld the immediate
+verification read. Plozz left the export unconfirmed. An independent read
+found exactly one matching resume. A fresh process with the same receipt then
+reported **Already present — no change** without sending another write.
+Jellyfin history, 40 unrelated watches and four unrelated resumes were
+unchanged. This exercised the service with isolated file-backed receipts,
+not the app UI or its Keychain. Cleanup of just the new resume returned
+HTTP 403 and was not retried. The row remained present, so replay prevention
+*after removal* is still unverified for this lost-reply case.
+
+The rebuilt iPhone export prompts now show **Titles to export: 1** instead
+of “1 selected titles.” Two hosted UI checks passed with fixtures; these
+were not additional live transfers.
+
 The preceding integration, `4ff869675cca` (`main` through `18990651b3ee`),
 changed the player and SMB dependency revisions. On that
 source, the iPhone simulator app built; 4,340 tests passed with seven skipped in

@@ -229,7 +229,7 @@ private struct TrackerHistoryExportContent<Target: Codable & Hashable & Sendable
         } message: {
             let library = libraries.first { $0.id == libraryID }?.title ?? ""
             publicMetaDBConfirmationMessage(
-                Text("Copy \(selected.count) selected titles from \(library) to \(session.trackerName)?"),
+                Text("Copy history from \(library) to \(session.trackerName)? Titles to export: \(selected.count)."),
                 Text(summary),
                 Text("Other apps using this tracker account see the changes. Recent tracker edits may conflict. Servers and sync settings stay unchanged.")
             )
