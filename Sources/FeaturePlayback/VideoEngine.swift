@@ -108,6 +108,9 @@ public protocol VideoEngine: AnyObject {
     /// Optional association for system Now Playing; custom decoders use the
     /// app-level center and still receive transport through this protocol.
     var nowPlayingPlayer: AVPlayer? { get }
+    /// True while a custom output is running or refilling its own presentation queue.
+    /// A stationary clock in this state isn't a request to pause or restart it.
+    var isDrivingPostSeekPlayback: Bool { get }
 
     #if os(iOS) || os(tvOS)
     /// Borrowed software output for infrequent preview-color analysis, not a second decoder.
@@ -451,6 +454,7 @@ public extension VideoEngine {
     var isSessionReloading: Bool { false }
     var maximumPlaybackSpeed: Double { 4 }
     var nowPlayingPlayer: AVPlayer? { nil }
+    var isDrivingPostSeekPlayback: Bool { false }
     #if os(iOS) || os(tvOS)
     func previewVideoFrame() -> CVPixelBuffer? { nil }
     var previewFrameGeneration: UInt64? { nil }

@@ -212,6 +212,41 @@ final class SeekScrubCoordinatorTests: XCTestCase {
         await waitUntil { engine.pauseCount > 0 && engine.playCount > 1 }
     }
 
+    func testThreeBackSkipsDoNotPauseRefillingSoftwareOutput() async {
+        let (sut, _, engine, controls) = makeSUT()
+        defer { sut.cancelAll() }
+        engine.isDrivingPostSeekPlayback = true
+        sut.requestSeek(to: 154.6)
+        await waitUntil { engine.playCount == 1 && !controls.isSeeking }
+        // The first Left landed before the next pair; its confirmation is superseded.
+        sut.requestSeek(to: 144.6)
+        sut.requestSeek(to: 134.6)
+        await waitUntil { engine.playCount == 2 && !controls.isSeeking }
+        XCTAssertEqual(engine.lastSeekTarget, 134.6)
+        // Longer than the old non-AVPlayer give-up window, as on the reported landing.
+        try? await Task.sleep(for: .seconds(5))
+        XCTAssertEqual(engine.pauseCount, 0)
+        XCTAssertEqual(engine.playCount, 2)
+        XCTAssertFalse(controls.intendsPause)
+        XCTAssertTrue(controls.isResumeConfirming)
+        engine.startAdvancingClock()
+        await waitUntil { !controls.isResumeConfirming }
+        XCTAssertEqual(engine.pauseCount, 0)
+        XCTAssertFalse(controls.isPaused)
+    }
+
+    func testSoftwareRefillOutlivingConfirmationKeepsPlaybackIntent() async {
+        let (sut, _, engine, controls) = makeSUT()
+        defer { sut.cancelAll() }
+        engine.isDrivingPostSeekPlayback = true
+        sut.requestSeek(to: 134)
+        await waitUntil { engine.playCount == 1 && controls.isResumeConfirming }
+        await waitUntil(timeout: 20) { !controls.isResumeConfirming }
+        XCTAssertFalse(controls.intendsPause)
+        XCTAssertEqual(engine.pauseCount, 0)
+        XCTAssertEqual(engine.playCount, 1)
+    }
+
     func testResumeConfirmBoundsAnIndefinitelyWaitingPlayer() async {
         let (sut, _, engine, controls) = makeSUT()
         defer { sut.cancelAll() }
@@ -966,6 +1001,7 @@ private final class SeekSpyEngine: VideoEngine {
     var playCount = 0
     var pauseCount = 0
     var nowPlayingPlayer: AVPlayer?
+    var isDrivingPostSeekPlayback = false
 
     /// When true, `currentTime` advances with wall-clock while playing, so the
     /// resume-confirm loop observes forward motion and resolves.

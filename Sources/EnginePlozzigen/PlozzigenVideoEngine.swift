@@ -1907,6 +1907,13 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public var nowPlayingPlayer: AVPlayer? { engine.currentAVPlayer }
+    public var isDrivingPostSeekPlayback: Bool {
+        guard engine.videoRoute == .software else { return false }
+        switch engine.playbackPhase {
+        case .playing, .seeking, .rebuffering, .loading, .stalled: return true
+        case .idle, .paused, .ended, .error: return false
+        }
+    }
     #if os(iOS) || os(tvOS)
     public func previewVideoFrame() -> CVPixelBuffer? { engine.latestSoftwareVideoFrame() }
     public var previewFrameGeneration: UInt64? { engine.softwareVideoFrameGeneration }

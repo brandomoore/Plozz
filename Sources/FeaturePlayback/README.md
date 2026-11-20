@@ -1492,6 +1492,10 @@ sessions are not rewound. Paused/recovering heartbeat callbacks cannot report
 false playback at zero, and a stop retains the saved position even after load
 generation invalidation.
 
+After a committed seek, a software output that is playing or refilling is
+allowed to prime its queues without a pause/play kick. The resume check has a
+bounded lifetime, but its timeout is not a viewer pause.
+
 On iPhone/iPad, `PlayerSceneLifecycleReader` forwards UIKit lifecycle notifications
 from the player's own window scene, including when a full-screen UIKit host has
 retained an active SwiftUI environment. It detaches with the player and ignores
