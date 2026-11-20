@@ -35,6 +35,20 @@ final class PlexUserChooserInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["Done"].isEnabled)
     }
 
+    func testPlexQuestionFollowsProfilePickAndClosesOnSelection() {
+        app.launchArguments = ["--plex-user-chooser-fixture", "--pending-profile-chooser"]
+        app.launch()
+        let profile = app.buttons["Other viewer"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10), app.debugDescription)
+        let user = app.buttons["plex-user-korra"]
+        XCTAssertFalse(user.exists, "The restored profile cannot ask ahead of the picker.")
+        profile.tap()
+        XCTAssertTrue(user.waitForExistence(timeout: 10), app.debugDescription)
+        user.tap()
+        XCTAssertTrue(user.waitForNonExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 2), "Switching profiles must not abort the app.")
+    }
+
     func testSlowSelectionGivesFeedbackAndCancelPreservesOwner() {
         launch(["--slow-chooser"])
         let korra = app.buttons["plex-user-korra"]

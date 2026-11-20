@@ -231,8 +231,11 @@ public struct PersonDetailView: View {
                         .plozzForeground(.secondary)
                 }
                 if let biography = viewModel.biography {
+                    // Providers return prose as HTML (`<p><strong>Hobbies…</strong></p>`).
+                    // Rendering it raw showed the tags to the viewer; convert at the
+                    // point of display so truncation measures visible characters.
                     ExpandableOverviewText(
-                        text: biography,
+                        text: HTMLText.plainText(from: biography),
                         title: person.name,
                         lineLimit: 3,
                         font: bodyFont

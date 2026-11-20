@@ -2483,6 +2483,14 @@ struct PlozziOSPlaybackSettingsView: View {
             LivePlaybackBufferControl()
                 .settingsSearchAnchor("live-buffer")
             DefaultVideoZoomControl(model: model)
+            SettingsSectionGroup {
+                Picker("Auto-hide controls", selection: $model.settings.controlsAutoHide) {
+                    ForEach(PlaybackControlsAutoHide.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.menu)
+                .settingsSearchAnchor("auto-hide-controls")
+            }
+            .settingsSearchGroup(["auto-hide-controls"])
             if UIDevice.current.userInterfaceIdiom == .phone {
                 SettingsSectionGroup {
                     Picker("Player orientation", selection: $model.settings.orientation) {

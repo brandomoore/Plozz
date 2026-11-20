@@ -38,6 +38,7 @@ final class SettingsSearchTests: XCTestCase {
             "background playback": "background-audio",
             "forward skip": "skip-forward",
             "backward skip": "skip-backward",
+            "hide player controls": "auto-hide-controls",
             "show poster titles": "card-labels",
             "show external ratings": "detail-ratings",
             "bottom of video": "subtitle-reference",

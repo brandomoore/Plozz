@@ -176,6 +176,28 @@ public struct MetadataQuery: Sendable, Hashable {
         (.seriesMal, .myAnimeList), (.seriesAniDB, .aniDB),
     ]
 
+    /// Only IDs explicitly attributed to the parent; the child's own IDs identify a different work.
+    public static func parentSeriesIDs(in childIDs: [String: String]) -> [String: String] {
+        var result: [String: String] = [:]
+        for (series, base) in seriesIDPromotions {
+            result[base.canonicalKey] = childIDs.providerID(series)
+        }
+        return result
+    }
+
+    /// An episode-derived show may carry both SeriesTmdb and its promoted Tmdb.
+    /// The server's full show record needs only one copy to confirm that identity.
+    public var logoSubjectIDs: [String: String] {
+        guard kind == .series, !providerIDs.isEmpty else { return providerIDs.normalizedProviderIDs }
+        var ids = providerIDs
+        for (series, base) in Self.seriesIDPromotions {
+            if let parent = ids.providerID(series), parent == ids.providerID(base) {
+                ids.removeProviderID(series)
+            }
+        }
+        return ids.normalizedProviderIDs
+    }
+
     /// A copy carrying on-disk disambiguation evidence a file-scanning caller holds.
     public func offering(
         episodeHints: [SeriesEpisodeHint] = [],

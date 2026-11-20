@@ -623,4 +623,49 @@ final class HeroLiveMergeTests: XCTestCase {
             showing = merged.items
         }
     }
+
+    // MARK: - Launch snapshot
+
+    func testFirstLiveCurationReplacesTitlesLastSessionNoLongerOffers() {
+        let cached = [item("cached-a"), item("cached-b")]
+        let fresh = [item("fresh-a"), item("fresh-b")]
+
+        let replaced = HeroLiveMerge.replaceLaunchSnapshot(
+            showing: cached, fresh: fresh, limit: 4
+        )
+
+        XCTAssertEqual(replaced.items.map(\.id), ["fresh-a", "fresh-b"])
+        XCTAssertEqual(replaced.admitted, ["fresh-a", "fresh-b"])
+    }
+
+    func testFirstLiveCurationKeepsAFrontedSlideThatIsStillOffered() {
+        let cached = [item("cached-a"), item("cached-b")]
+        let fresh = [item("fresh-a"), item("cached-b")]
+
+        let replaced = HeroLiveMerge.replaceLaunchSnapshot(
+            showing: cached, fresh: fresh, limit: 4, pinnedItemIDs: ["cached-b"]
+        )
+
+        XCTAssertEqual(replaced.items.map(\.id), ["cached-b", "fresh-a"],
+                       "A still-valid fronted slide must not move under the viewer.")
+    }
+
+    func testFailedFirstCurationLeavesTheLaunchSnapshotAlone() {
+        let cached = [item("cached-a"), item("cached-b")]
+
+        let replaced = HeroLiveMerge.replaceLaunchSnapshot(
+            showing: cached, fresh: [], limit: 4, freshIsAuthoritative: false
+        )
+
+        XCTAssertEqual(replaced.items.map(\.id), ["cached-a", "cached-b"])
+        XCTAssertTrue(replaced.admitted.isEmpty)
+    }
+
+    func testConfirmedEmptyFirstCurationClearsTheLaunchSnapshot() {
+        let replaced = HeroLiveMerge.replaceLaunchSnapshot(
+            showing: [item("cached-a")], fresh: [], limit: 4, freshIsAuthoritative: true
+        )
+
+        XCTAssertTrue(replaced.items.isEmpty)
+    }
 }

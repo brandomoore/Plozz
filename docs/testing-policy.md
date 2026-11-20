@@ -550,9 +550,14 @@ On iOS, Settings can be hidden from the tab bar because page-header controls
 remain available. The default tvOS policy still keeps Settings visible.
 `NavigationStyleSettingsStoreTests` covers cross-platform persistence, the
 last-destination safeguard, and iPhone overflow labels when six tabs are enabled.
-On iPhone and compact iPad layouts, overflow uses four direct native tabs plus a
-Plozz More destination with themed shortcut rows. Overflow destinations share
-that tab's navigation stack; Settings opens its existing sheet directly.
+On compact layouts with overflow, UIKit's More list pushes the existing tab
+stacks. Check placement before selecting a row: Search should already use its
+subpage header, and the same placement should survive the push and return.
+A pending More row selection must not push another page once the list has left
+or while it is returning. After Back settles, the same row must open again.
+More uses the same page background as Search, including the flat fill when
+Gradient Backgrounds is off, both on entry and after returning from a row.
+Settings opens its existing sheet directly.
 Returning to More stops the hidden Live TV preview, and changing the enabled
 order re-resolves the current destination. Regular-width iPad tabs remain native.
 
@@ -631,6 +636,12 @@ driver, recheck external state and rerun affected scenarios; never promote an
 old result or an incomplete task to a fresh pass.
 
 ## App-hosted focus integration
+
+The guide’s elapsed-time boundary test runs in the app-hosted targets: tvOS’s
+native button labels and scroll views need a scene-backed capture. It samples
+both sides of the time line for an empty row and a gap before a later listing.
+The pinned-rail fixture measures the hero through loading and the page bounds
+through native guide entry, when the category pane intentionally collapses.
 
 Episode-panel fixtures activate native window focus before reissuing their
 SwiftUI Browse entry request. Repeated window handoffs must start on Browse and

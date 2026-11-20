@@ -83,6 +83,7 @@ struct HomeHeroInteractionFixture: View {
     @State private var settingsCount = 0
     @State private var isMuted = true
     @State private var presentsSeasons = false
+    @State private var homePageIsVisible = false
     @State private var pinnedIDs = ""
     private var testsAutoAdvance: Bool {
         ProcessInfo.processInfo.arguments.contains("--hero-auto-advance")
@@ -156,7 +157,7 @@ struct HomeHeroInteractionFixture: View {
         }
         model.accountsProviders.reloadAccounts()
         model.settings.heroBackground.settings.homeTrailerEnabled = false
-        model.settings.heroBackground.settings.detailMode = .off
+        model.settings.heroBackground.settings.detailMode = HeroInteractionProvider.hasDetailTrailer ? .trailer : .off
         _appModel = State(initialValue: model)
     }
 
@@ -172,7 +173,7 @@ struct HomeHeroInteractionFixture: View {
                     autoAdvanceSeconds: 3,
                     onPlay: { _ in playCount += 1 },
                     onPinnedItemsChanged: { pinnedIDs = $0.sorted().joined(separator: ",") },
-                    isFrontmost: !presentsSeasons,
+                    isFrontmost: homePageIsVisible && !presentsSeasons,
                     pullModel: pull
                 )
             } rows: {
@@ -208,6 +209,7 @@ struct HomeHeroInteractionFixture: View {
                 )
             }
             .scrollClipDisabled()
+            .plozzOnPageAppearanceChange { homePageIsVisible = $0 }
             .overlay(alignment: .topTrailing) {
                 if testsAutoAdvance {
                     Button("Open Seasons") { presentsSeasons = true }
@@ -230,7 +232,7 @@ struct HomeHeroInteractionFixture: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar(
-                usesScrollingPageActions ? .hidden : (usesVerticalToolbar ? .visible : .automatic),
+                usesScrollingPageActions || usesVerticalToolbar ? .visible : .automatic,
                 for: .navigationBar
             )
             .toolbar {
@@ -354,6 +356,8 @@ private final class HeroInteractionLookupGate {
 }
 
 private struct HeroInteractionProvider: MediaProvider {
+    static var hasDetailTrailer: Bool { ProcessInfo.processInfo.arguments.contains("--hero-detail-trailer") }
+    static let clip = MediaItem(id: "local-trailer", title: "Trailer", kind: .video, isTrailer: true)
     let kind: ProviderKind
     var seriesLookup: HeroInteractionLookupGate?
     static let logoURL = URL(string: "https://hero.invalid/logo.png")!
@@ -376,6 +380,8 @@ private struct HeroInteractionProvider: MediaProvider {
             MediaItem(
                 id: "movie", title: "Hero Movie", kind: .movie,
                 overview: "A movie description in the Home hero.",
+                runtime: hasDetailTrailer ? 7_200 : nil,
+                resumePosition: hasDetailTrailer ? 600 : nil,
                 backdropURL: ProcessInfo.processInfo.arguments.contains("--hero-native-chrome") ? artworkURL : nil,
                 logoURL: ProcessInfo.processInfo.arguments.contains("--hero-logo") ? logoURL : nil
             ).taggingSource(ProviderKind.jellyfin.rawValue),
@@ -423,7 +429,16 @@ private struct HeroInteractionProvider: MediaProvider {
     }
     func children(of itemID: String) async throws -> [MediaItem] { [] }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
-    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func trailers(for itemID: String) async throws -> [MediaItem] {
+        Self.hasDetailTrailer && itemID == "movie" ? [Self.clip] : []
+    }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
+        guard Self.hasDetailTrailer, itemID == Self.clip.id,
+              let url = Bundle.main.url(forResource: "live-continuity", withExtension: "mp4") else {
+            throw AppError.notFound
+        }
+        return PlaybackRequest(item: Self.clip, streamURL: url)
+    }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }

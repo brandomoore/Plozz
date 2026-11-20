@@ -139,6 +139,15 @@ Both databases use `MetadataHTTP`, which sends the identifying
 `User-Agent: Plozz/1.0 (+https://github.com/thatcube/Plozz)` header.
 Request-level tests cover that header on TheIntroDB movie and episode lookups.
 
+Server markers remain authoritative per kind on every surface: the community
+service only fills kinds the server did not report (IntroDB first, then
+TheIntroDB for gaps). Community reports never extend, replace or union with a
+server window. Both lists pass the same `SegmentPlausibility` coverage rules in
+CoreModels, so a malformed server or community marker is absent before it can
+offer a skip (no runtime share above half, nothing but an opening inside the
+opening, no opening pinned to the final frame). Open ends resolve to the runtime
+only for closing credits; any other open-ended record is dropped.
+
 TheIntroDB prefers TVDB identity, then TMDB/IMDb when ordering is unspecified.
 An episode's own TVDB ID is sent as `tvdb_episode_id`, never as the show's ID.
 Series IDs and explicit episode ordering come from the owning provider.

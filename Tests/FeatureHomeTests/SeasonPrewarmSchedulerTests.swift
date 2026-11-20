@@ -75,7 +75,8 @@ final class SeasonPrewarmSchedulerTests: XCTestCase {
             provider: provider, itemID: show.id, initialItem: show,
             onlineTrailerResolver: { _ in [] },
             playableVideoIDResolver: { _ in nil },
-            trailerCache: TrailerResolutionCache()
+            trailerCache: TrailerResolutionCache(),
+            prefetchesOpeningSeason: false
         )
         await vm.load()
         XCTAssertEqual(vm.state.value?.children.map(\.id), ["s1", "s2", "s3", "s4", "s5"])

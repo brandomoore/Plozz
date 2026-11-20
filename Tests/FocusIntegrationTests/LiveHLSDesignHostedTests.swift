@@ -37,7 +37,9 @@ final class LiveHLSDesignHostedTests: XCTestCase {
         }
 
         for backdrop in [Color.black, .white] {
-            let model = PlayerControlsModel()
+            // Make More the sole VOD control regardless of simulator audio settings.
+            let audio = SystemPlaybackAudio(backend: SystemPlaybackAudioPreferences(readState: { .init(values: [:]) }))
+            let model = PlayerControlsModel(systemAudio: audio)
             model.controlsVisible = true
             model.duration = 3600
             model.currentSeconds = 600
@@ -52,6 +54,7 @@ final class LiveHLSDesignHostedTests: XCTestCase {
             )
             try await Task.sleep(for: .milliseconds(1800))
             let referenceFrame = try XCTUnwrap(model.subtitleLayout.frame(for: .trackControls))
+            XCTAssertEqual(model.trackControlCategories, [.playback])
             try assertFocus(window, controls: referenceFrame, menuOpen: menuOpen)
             let reference = try buttonSnapshot(window, frame: referenceFrame, name: "vod-menu-\(menuOpen)-\(backdrop)")
 
@@ -69,7 +72,10 @@ final class LiveHLSDesignHostedTests: XCTestCase {
                     .environment(\.locale, Locale(identifier: "en_US"))
             )
             try await Task.sleep(for: .milliseconds(1800))
-            let liveFrame = try XCTUnwrap(tracks.subtitles.controlsLayout.frame(for: .trackControls))
+            // Live may also offer Audio; More is the trailing native button.
+            let row = try XCTUnwrap(tracks.subtitles.controlsLayout.frame(for: .trackControls))
+            let liveFrame = CGRect(x: row.maxX - referenceFrame.width, y: row.minY,
+                                   width: referenceFrame.width, height: row.height)
             try assertFocus(window, controls: liveFrame, menuOpen: menuOpen)
             let live = try buttonSnapshot(window, frame: liveFrame, name: "live-menu-\(menuOpen)-\(backdrop)")
             XCTAssertEqual(live.darkPixels, reference.darkPixels, accuracy: 100,
@@ -114,7 +120,7 @@ final class LiveHLSDesignHostedTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         let crop = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
-            x: frame.minX + 24, y: frame.midY - 18, width: 48, height: 36
+            x: frame.midX - 24, y: frame.midY - 18, width: 48, height: 36
         ).integral))
         var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
         try bytes.withUnsafeMutableBytes { buffer in

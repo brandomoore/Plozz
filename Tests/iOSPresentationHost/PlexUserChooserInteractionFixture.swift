@@ -11,6 +11,7 @@ struct PlexUserChooserInteractionFixture: View {
     @State private var isPresented = true
     @State private var presentations = 0
     @State private var account: Account
+    private static let usesProfilePicker = ProcessInfo.processInfo.arguments.contains("--pending-profile-chooser")
 
     init() {
         SyncSetupFeatureFlag().isEnabled = false
@@ -24,7 +25,21 @@ struct PlexUserChooserInteractionFixture: View {
         _account = State(initialValue: account)
         do { try accounts.add(account, token: "FIXTURE-OWNER") }
         catch { preconditionFailure("Could not create chooser fixture: \(error)") }
-        let model = PlozziOSAppModel(accountStore: accounts, profileStore: ProfileStore(defaults: defaults))
+        let profileStore = ProfileStore(defaults: defaults)
+        if Self.usesProfilePicker {
+            let profiles = ProfilesModel(store: profileStore)
+            let original = profiles.activeProfileID
+            let other = profiles.add(name: "Other viewer", isAwaitingSetup: false)
+            for id in [original, other.id] {
+                profiles.setActiveAccountIDs([account.id], for: id)
+                profiles.noteIdentityQuestions(for: [account.id], forProfile: id, knownNonPlexAccountIDs: [])
+            }
+            profiles.select(original)
+            profiles.markFirstRunProfileSetupComplete()
+        }
+        let model = PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults), accountStore: accounts, profileStore: profileStore
+        )
         let transport = PlexChooserFixtureTransport(
             slow: ProcessInfo.processInfo.arguments.contains("--slow-chooser"),
             failsOnce: ProcessInfo.processInfo.arguments.contains("--failed-chooser")
@@ -38,6 +53,14 @@ struct PlexUserChooserInteractionFixture: View {
     }
 
     var body: some View {
+        if Self.usesProfilePicker {
+            PlozziOSRootView(appModel: appModel)
+        } else {
+            manualChooser
+        }
+    }
+
+    private var manualChooser: some View {
         Text("Home").id(appModel.plexHomeUsers.plexIdentityGeneration)
             .plozzSheet(isPresented: $isPresented) {
                 PlozziOSServerIdentityPromptView(

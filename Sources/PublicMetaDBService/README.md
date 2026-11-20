@@ -2,14 +2,19 @@
 
 ## Tracker-sync acceptance status: 20 November 2026
 
-The feature branch incorporates `main` through `18990651b3ee` at `4ff869675cca`.
-This integration changed the player and SMB dependency revisions. On the integrated
+The feature branch now includes `main` through `58127facaf60`. The normal
+iPhone simulator app built after reconciliation, and Settings search passed
+all 25 guard tests and checked 921 source components. These checks do not
+repeat the real-account transfers below on this newer build.
+
+The preceding integration, `4ff869675cca` (`main` through `18990651b3ee`),
+changed the player and SMB dependency revisions. On that
 source, the iPhone simulator app built; 4,340 tests passed with seven skipped in
 CoreModels, PublicMetaDBService, ProviderShare and MediaTransportSMB. Separately,
 all 381 tests in the Trakt, Simkl, WeTrakr, AniList, MyAnimeList and Last.fm
 packages passed. These are package results, not tests with real tracker accounts.
-The Settings search guard still fails with the same 115 diagnostics as that
-`main` revision (ignoring source line numbers).
+At that checkpoint, Settings search failed with the same 115 diagnostics as
+that `main` revision (ignoring source line numbers).
 
 On the integrated iPhone simulator app at `d6d6ca20f`, muted NFS playback of
 *Charge* (2022) reached 100.264 seconds. Independent reads found the same

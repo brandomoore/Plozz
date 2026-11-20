@@ -48,6 +48,13 @@ index refs and applies fresh native stream facts without inventing playable
 versions for series containers. Cold discovery-to-library recovery uses the same
 deterministic policy as native navigation.
 
+Discovery openings restore their language-qualified snapshot immediately and
+overlap external metadata with the library-ownership probe. Native adoption
+cancels speculative metadata without waiting for it, and source-generation
+fences prevent late external results from replacing library details. Cancelling
+the opening also cancels that speculative request. Newly enriched catalog IDs
+still trigger an ownership recheck before external artwork is released.
+
 Explicit episode information, season navigation, edition opens and server/version
 choices remain deliberate exceptions. Provider-local child IDs stay on their
 owning account. A fresh alternate response must agree on item, account, kind and
@@ -176,6 +183,57 @@ zero network or immediate cold-provider responses. See the controlled
 for timing scope and scrolling limitations.
 
 ## Pending primary action
+
+During an iPhone swipe back, detail follows the finger while the Home hero and
+rows slide back into place together. With horizontal navigation bars, the system
+Back button fades in place; Home’s profile and audio controls still scroll away
+with its content. Only the
+page that owns the trailer displays video. Home does not restart its carousel
+or claim playback until the return finishes. Cancelling leaves the detail
+trailer playing and restores Back.
+
+On iPhone, the detail artwork uses Home's responsive portrait height and mirrored
+continuation, with the title at its lower edge. Metadata and actions grow below
+the artwork; they must not be squeezed into its fixed height. Series seasons
+remain directly below the complete header. Cast & Crew precedes Related. Related
+renders only real results, including short rows, without a speculative skeleton.
+Its request still starts during page entry, not when the row scrolls into view.
+
+The native push is the mobile detail entrance. The title or ready logo, synopsis,
+badges, actions, and rows appear as soon as each is available, without an extra
+fade, slide, or stagger. The plain Play button fits its icon and
+label; a progress bar or episode number takes space only when displayed.
+Cached metadata does not wait for live artwork-source resolution.
+Artwork handed off from Home or ready on the first frame displays immediately.
+Reopening a title from any mobile row can reuse the detail backdrop that actually
+painted on its previous visit, while that bitmap is resident. It does not need
+to wait for live source verification or substitute the row's poster. The replay
+is scoped to the current profile, server access, title, artwork policy and shape;
+ordinary row browsing does not download every title's full-size hero.
+After a relaunch, a visible Home row card that opens detail checks for a
+previous visit in the current profile, server and language. On a match it
+prepares the detail-size preview and wordmark before the tap, using the
+existing artwork caches. An episode card prepares its parent show's hero.
+Navigation never waits for this work; if the card is tapped before the
+artwork is ready, the normal late-artwork reveal still applies.
+If the page opens without a usable bitmap, the first artwork and its reflections
+fade together over 350 ms, starting no earlier than the end of navigation.
+Reduce Motion shows it immediately. Later enrichment and optional sections
+do not replay the entrance. If the logo is still loading, its space stays
+empty; the logo itself fades in when it arrives, without delaying Play.
+Row reopens can also reuse the title logo previously displayed for the same
+profile, source and compatible artwork lookup. Continue Watching also reuses a
+matching logo its landscape card has already displayed or prepared: a movie
+opens with its own logo, an episode with its parent show's. A sparse opening
+record can preview that scoped logo without starting a lookup; a conflicting
+source or provider ID cannot. A known schedule badge appears
+with a ready logo or text title. If the logo is late, the badge reserves its
+space but stays hidden until the fade finishes. Reduce Motion skips that wait.
+On a quick reopen, the series can show its last unexpired premiere or cadence
+without waiting for the saved schedule to reload. A thinner record for the
+same confirmed show does not restart the logo fade or hide the badge.
+A conflicting identity cannot reuse the logo or announcement, and a confirmed
+empty schedule clears the announcement.
 
 tvOS detail entry keeps the real primary action focusable while its play target
 loads. An early press queues one activation, replacing the icon with a spinner
@@ -319,7 +377,9 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   deep-link entry retain their episode/season selection without changing that
   subject, including the first paint while parent metadata is loading.
   Episode descriptions stay in the browser; explicit Episode Info pages retain
-  their own synopsis, ratings and spoiler rules. Play/Resume, versions and watched
+  their own synopsis and ratings. On Apple TV, Episode Info uses the same
+  prepared thumbnail as the rail, including series art in spoiler-placeholder
+  mode. Play/Resume, versions and watched
   actions still target the selected episode, while Watchlist and Trailer target
   the series. No series-versus-episode setting is needed.
   Season lists publish independently of the server resume lookup on both

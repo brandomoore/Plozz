@@ -43,6 +43,7 @@ public final class UpcomingFeedModel {
     @ObservationIgnored private nonisolated(unsafe) var task: Task<Void, Never>?
     @ObservationIgnored private nonisolated(unsafe) var interestObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var isRetired = false
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let cache: UpcomingFeedCache?
 
@@ -54,7 +55,10 @@ public final class UpcomingFeedModel {
             .personalRequestsDidChange
         ].map { name in
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshRevision += 1 }
+                MainActor.assumeIsolated {
+                    guard let self, !self.isRetired else { return }
+                    self.refreshRevision += 1
+                }
             }
         }
     }
@@ -97,7 +101,7 @@ public final class UpcomingFeedModel {
     }
 
     public func refreshIfStale(now: Date = Date()) {
-        guard task == nil, needsRefresh(now: now) else { return }
+        guard !isRetired, task == nil, needsRefresh(now: now) else { return }
         refreshRevision += 1
     }
 
@@ -108,10 +112,21 @@ public final class UpcomingFeedModel {
             || now.timeIntervalSince(refreshedAt) >= freshness
     }
 
-    public func invalidate() {
+    private func cancelRefresh() {
         generation = UUID()
         task?.cancel()
         task = nil
+    }
+
+    /// Called while SwiftUI may be building the replacement Home. Fence work
+    /// immediately but don't publish empty rows into the outgoing view graph.
+    func retire() {
+        isRetired = true
+        cancelRefresh()
+    }
+
+    public func invalidate() {
+        cancelRefresh()
         scopeKey = nil
         releases = []
         refreshedAt = nil
@@ -148,7 +163,7 @@ public final class UpcomingFeedModel {
                 @escaping @MainActor @Sendable ([UpcomingRelease]) -> Void
             ) async throws -> UpcomingFeedSnapshot
     ) async {
-        guard !Task.isCancelled else { return }
+        guard !isRetired, !Task.isCancelled else { return }
         let changedScope = scopeKey != scope
         if scopeKey != scope {
             invalidate()

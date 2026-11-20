@@ -213,10 +213,27 @@ public struct URLSessionHTTPClient: HTTPClient {
         try OfflineMode.shared.requireNetworkAccess()
         var request = try Self.makeRequest(endpoint, baseURL: baseURL)
         let started = HTTPResponseDiagnostics.isCapturing ? ProcessInfo.processInfo.systemUptime : nil
+        let ledgerStarted = NetworkLedger.isEnabled ? ProcessInfo.processInfo.systemUptime : nil
         var capturedStatus: Int?
         var capturedNetworkCode: Int?
         var capturedBytes = 0
         var capturedFormat = PlaybackFailureDiagnostic.Format.unknown
+        var joinedSharedTransfer = false
+        defer {
+            if let ledgerStarted {
+                NetworkLedger.emit(NetworkLedger.makeLine(
+                    method: endpoint.method.rawValue,
+                    path: endpoint.path,
+                    status: capturedStatus,
+                    milliseconds: Int((ProcessInfo.processInfo.systemUptime - ledgerStarted) * 1_000),
+                    bytes: capturedBytes,
+                    coalesced: joinedSharedTransfer,
+                    route: HTTPResponseDiagnostics.effectiveRoute.rawValue,
+                    query: NetworkLedger.querySummary(endpoint.queryItems),
+                    error: capturedNetworkCode
+                ))
+            }
+        }
         defer {
             if let started {
                 HTTPResponseDiagnostics.recordRequest(ResponseRequestDiagnostic(
@@ -281,6 +298,7 @@ public struct URLSessionHTTPClient: HTTPClient {
                     return HTTPRequestCoalescer.Payload(data: data, response: response)
                 }
                 (data, response) = (shared.payload.data, shared.payload.response)
+                joinedSharedTransfer = shared.joined
             } else {
                 (data, response) = try await session.data(for: request, delegate: delegate)
             }

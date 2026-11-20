@@ -13,6 +13,21 @@ import FeatureSettings
     var supportedPresentationOrientations: UIInterfaceOrientationMask { get }
 }
 
+private extension View {
+    /// Exercise a conventional iPhone's horizontal bars on the Duo-only 27.1 simulator.
+    @ViewBuilder func fixtureNavigationBarAxis() -> some View {
+        #if canImport(SwiftUI, _version: 8.0.85)
+        if #available(iOS 27.1, *), ProcessInfo.processInfo.arguments.contains("--back-interaction") {
+            toolbarVerticalBehavior(.disabled)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+}
+
 @main
 struct PresentationHostApp: App {
     @UIApplicationDelegateAdaptor(PresentationOrientationDelegate.self) private var orientationDelegate
@@ -79,7 +94,8 @@ struct PresentationHostApp: App {
         } else if ProcessInfo.processInfo.arguments.contains("--search-black-theme") {
             model.settings.theme.theme = .pureBlack
         }
-        model.settings.theme.gradientEnabled = true
+        model.settings.theme.gradientEnabled =
+            !ProcessInfo.processInfo.arguments.contains("--navigation-flat-background")
         model.settings.transparency.preference =
             ProcessInfo.processInfo.arguments.contains("--opaque-navigation") ? .off : .system
         model.settings.playback.settings = .default
@@ -125,7 +141,8 @@ struct PresentationHostApp: App {
                 enabled = [
                     NavigationLibraryLayout.homeKey, NavigationLibraryLayout.liveTVKey,
                     NavigationLibraryLayout.settingsKey, NavigationLibraryLayout.watchlistKey,
-                    NavigationLibraryLayout.searchKey, NavigationLibraryLayout.downloadsKey
+                    NavigationLibraryLayout.searchKey, NavigationLibraryLayout.downloadsKey,
+                    NavigationLibraryLayout.upcomingKey
                 ]
             } else if ProcessInfo.processInfo.arguments.contains("--profile-rail-fixture") {
                 enabled = [
@@ -292,6 +309,7 @@ struct PresentationHostApp: App {
                 DetailInformationFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--continue-watching-details-fixture") {
                 ContinueWatchingDetailsFixture()
+                    .fixtureNavigationBarAxis()
             } else if ProcessInfo.processInfo.arguments.contains("--search-keyboard-fixture") {
                 SearchKeyboardInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--diagnostics-sharing-fixture") {
@@ -312,6 +330,7 @@ struct PresentationHostApp: App {
                 ThemeMusicMuteFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-hero-fixture") {
                 HomeHeroInteractionFixture()
+                    .fixtureNavigationBarAxis()
             } else if ProcessInfo.processInfo.arguments.contains("--player-layout-fixture") {
                 PlayerLayoutFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--device-setup-fixture") {
@@ -855,6 +874,7 @@ private struct SettingsInteractionFixture: View {
         .environment(\.themePalette, ThemePalette.palette(
             for: appModel.settings.theme.theme, systemColorScheme: .dark
         ))
+        .environment(\.gradientBackgroundsEnabled, appModel.settings.theme.gradientEnabled)
         .environment(\.plozzMetrics, .touch(density: .standard))
         .preferredColorScheme(appModel.settings.theme.theme.preferredColorScheme ?? .dark)
         .overlay(alignment: .bottomLeading) {

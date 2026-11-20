@@ -328,6 +328,8 @@ struct LiveTVMultiviewOverlay: View {
     @Namespace private var controlsFocusScope
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
+    @Environment(PlaybackSettingsModel.self) private var playbackSettings: PlaybackSettingsModel?
 
     private enum ExitDestination { case player, guide }
 
@@ -399,6 +401,7 @@ struct LiveTVMultiviewOverlay: View {
                     if enabled { activity() }
                     if focusedPaneID != nil { presentFocus() }
                 }
+                .onChange(of: coordinator.audiblePane?.isPaused) { activity() }
                 .task(id: autoHideRequest) {
                     guard autoHideRequest != nil else { return }
                     let now = ProcessInfo.processInfo.systemUptime
@@ -457,6 +460,8 @@ struct LiveTVMultiviewOverlay: View {
     }
 
     private var autoHideRequest: TimeInterval? {
+        let mode = playbackSettings?.settings.controlsAutoHide ?? PlaybackSettings.default.controlsAutoHide
+        guard !switchControl, mode.allowsHiding(paused: coordinator.audiblePane?.isPaused == true) else { return nil }
         #if os(tvOS)
         let editingBlocks = false
         #else

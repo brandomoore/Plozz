@@ -95,6 +95,38 @@ public enum HeroLiveMerge {
         }
     }
 
+    /// Replaces the launch snapshot with the first live curation.
+    ///
+    /// The snapshot exists to paint the hero on the first frame, not to define
+    /// the lineup for the session. Folding it through ``merge`` gave every cached
+    /// title ``retentionGrace`` more curations even when the live feed no longer
+    /// offered it, so a relaunch could show last session's dead or unplayable
+    /// slides for several refreshes — and swiping could land on one with no
+    /// artwork. Keep a failed first curation from blanking the cache, but once
+    /// fresh content arrives it is the lineup.
+    public static func replaceLaunchSnapshot(
+        showing: [MediaItem],
+        fresh: [MediaItem],
+        limit: Int,
+        pinnedItemIDs: Set<String> = [],
+        freshIsAuthoritative: Bool = false
+    ) -> Outcome {
+        guard limit > 0 else { return Outcome(items: []) }
+        guard !fresh.isEmpty || freshIsAuthoritative else {
+            return Outcome(items: Array(showing.prefix(limit)))
+        }
+        var ordered = fresh
+        if let pinned = pinnedItemIDs.first(where: { id in
+            ordered.contains { $0.id == id || $0.stablePresentationID == id }
+        }), let index = ordered.firstIndex(where: {
+            $0.id == pinned || $0.stablePresentationID == pinned
+        }) {
+            ordered.insert(ordered.remove(at: index), at: 0)
+        }
+        let admitted = Array(ordered.prefix(limit))
+        return Outcome(items: admitted, admitted: admitted.map(\.id))
+    }
+
     /// - Parameters:
     ///   - showing: what the hero is displaying right now, in carousel order.
     ///     Already watch-reconciled by the caller.

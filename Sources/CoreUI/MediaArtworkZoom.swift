@@ -54,12 +54,20 @@ public struct MediaArtworkZoomLink<Destination: View, Label: View>: View {
         self.label = label
     }
 
+    @State private var isPresented = false
+
     public var body: some View {
         let source = MediaArtworkZoomSource(id: id, namespace: namespace)
-        NavigationLink {
-            destination().mediaArtworkZoomDestination(source)
+        // A NavigationLink keeps its highlighted/presented state on the source card
+        // after a pop in some stacks, leaving that one card inert until another link
+        // is activated. An explicit presentation binding resets on dismissal.
+        Button {
+            isPresented = true
         } label: {
             label().environment(\.mediaArtworkZoomSource, source)
+        }
+        .navigationDestination(isPresented: $isPresented) {
+            destination().mediaArtworkZoomDestination(source)
         }
     }
 }

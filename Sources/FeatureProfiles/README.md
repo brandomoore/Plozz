@@ -176,12 +176,13 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   launch keeps that identity stable through PIN entry and cancellation.
   Cancelling a PIN returns to the retained picker, not Home. Authorization
   still belongs to the existing profile/Plex models.
-  Selection carries the Plozz profile's own avatar and name into authorization
-  using native matched geometry while the other tiles fade away. PIN type is
-  secondary copy, not a replacement server-user identity. Live Plex verification
-  keeps that identity in place without an avatar spinner; only a longer check
-  shows loading feedback below it. Confirmed PIN keys reveal progressively;
-  unprotected users never mount a keypad. Errors retain the identity and expose
+  When Plex is the first gate, the profile tiles stay in place while Plex checks
+  the selected user. The check is cancellable; only a slower response shows
+  progress in the toolbar. A PIN-free user goes straight from the picker to Home
+  after authorization. When a PIN is required, the other tiles fade and native
+  matched geometry carries the Plozz avatar and name into the PIN screen. PIN
+  type is secondary copy, not a replacement server-user identity. Confirmed
+  PIN keys reveal progressively. Errors retain the identity and expose
   Retry/Cancel. Cancelling returns to the retained tile order, while profile
   details still reflect live edits. Reduce Motion removes the movement and
   reveal delays. Existing parental and separate-PIN steps remain explicit.

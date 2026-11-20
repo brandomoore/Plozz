@@ -155,6 +155,7 @@ struct PlozziOSHomeView: View {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.plozziOSHomeIsFrontmost) private var homeIsFrontmost
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.locale) private var locale
     @Environment(HeroTrailerController.self) private var trailerController
     private let viewModel: HomeViewModel
@@ -173,6 +174,38 @@ struct PlozziOSHomeView: View {
     /// curation instead of folding into the old one.
     @State private var heroCuratedConfiguration: HeroConfigurationKey?
     @State private var heroCompletedLoadKey: HeroCurationLoadKey?
+    /// Whether the first live curation has replaced the launch snapshot. Until it
+    /// has, `heroItems` is last session's lineup: it is useful for the first frame,
+    /// but one refresh fold must replace it rather than aging its titles through
+    /// `HeroLiveMerge.retentionGrace`, which kept dead or unplayable cached slides
+    /// in the carousel for several refreshes after relaunch.
+    @State private var heroHasCompletedLiveCuration = false
+    /// Whether the hero stage has ever painted real content this session. Once it
+    /// has, the band must stay reserved: `heroActive` drives BOTH the conditional
+    /// hero in `PlozziOSHomeScrollView` and its `ignoresSafeArea(edges: .top)`, so
+    /// flipping it re-lays out the entire page (hero band unreserved + status-bar
+    /// inset inserted) and then flips back — the "another render of Home with the
+    /// wrong hero spacing, flickering until it settles" symptom.
+    /// Key for the hero-freshness run loop. Extracted from the modifier because the
+    /// inline five-term boolean made the view body expensive enough to blow the
+    /// type-checker's budget once the diagnostics grew.
+    private var heroFreshnessRunKey: Bool {
+        let active = homeIsFrontmost && homePageIsVisible && scenePhase == .active
+        let idle = playbackRequest == nil
+        let heroOn = appModel.settings.hero.effectiveSettings.isActive
+        return active && idle && heroOn
+    }
+    /// Compact identity of what Home is presenting right now, for the millisecond
+    /// frame trace (see the `HOMEFRAME` emit in `body`).
+    private var frameTelemetryKey: String {  // l10n:content — PLZXFAN frame telemetry, never rendered
+        let state = HomePresentationRow.displayState(
+            viewModel.state, liveTV: liveTV,
+            visibility: appModel.settings.homeVisibility.visibility
+        ).diagnosticName
+        return "state=\(state) snapshot=\(viewModel.hasPersistedSnapshot) "
+            + "loadingRows=\(viewModel.loadingRows.count) heroItems=\(heroItems.count) "
+            + "heroShown=\(viewModel.hasCompletedLiveLoad)"
+    }
     @State private var heroCuratedDisabledLibraryKeys: Set<String> = []
     /// How many consecutive curations have failed to offer each retained title,
     /// so a deleted or un-watchlisted one eventually leaves. See `HeroLiveMerge`.
@@ -214,6 +247,8 @@ struct PlozziOSHomeView: View {
     @State private var watchlistIntentRevision = 0
     @State private var discoveryIdentityRevision = 0
     @State private var homeHasAppeared = false
+    @State private var homePageIsVisible = false
+    @State private var contentEntrance = PlozziOSHomeContentEntrance.initial
     @State private var rowBrowser: HomeRowBrowseModel?
     @State private var showingHomeCustomization = false
     @State private var showingUpcoming = false
@@ -276,12 +311,30 @@ struct PlozziOSHomeView: View {
         // and the fresh curation folds into it rather than replacing it, so the
         // slides on screen keep their slots when it lands. Same policy as tvOS.
         let settings = appModel.settings.hero.effectiveSettings
-        let initialLanguage = (appModel.appLanguage.language.locale ?? .current).identifier
+        // Launch-time seed report. Gated by the existing PLZXFAN_STDOUT switch, so it
+        // is silent in normal use; it exists to answer ONE question on the device:
+        // why the first frame of a relaunch still paints a hero skeleton. Prints
+        // counts and source kinds only — never titles, ids or URLs.
+        if FanoutDiagnostics.isEnabled {
+            let cachedHero = viewModel.cachedHeroItems(for: settings)
+            let rowSeed = Self.cachedRowHeroSeed(for: settings, content: viewModel.state.value)
+            FanoutDiagnostics.emit(
+                "HOMESEED launch active=\(settings.isActive) "
+                + "sources=\(settings.sources.map(\.rawValue).joined(separator: ",")) "
+                + "cached=\(cachedHero.map { String($0.count) } ?? "nil") "
+                + "rowSeed=\(rowSeed.map { String($0.count) } ?? "nil") "
+                + "cachedContent=\(viewModel.state.value != nil) "
+                + "store=\(viewModel.hasPersistedSnapshot) "
+                + "cw=\(viewModel.state.value?.continueWatching.count ?? -1) "
+                + "liveLoadDone=\(viewModel.hasCompletedLiveLoad)"
+            )
+        }
         if settings.isActive,
-           let seed = viewModel.cachedHeroItems(for: settings, language: initialLanguage) {
+           let seed = viewModel.cachedHeroItems(for: settings)
+                ?? Self.cachedRowHeroSeed(for: settings, content: viewModel.state.value) {
             _heroItems = State(initialValue: HeroDiscoveryStatus.clearingRequestStatus(in: seed))
             _heroCuratedConfiguration = State(
-                initialValue: HeroConfigurationKey(settings: settings, language: initialLanguage)
+                initialValue: HeroConfigurationKey(settings: settings)
             )
             _heroCuratedDisabledLibraryKeys = State(
                 initialValue: appModel.settings.homeVisibility.visibility.disabledKeys
@@ -327,22 +380,44 @@ struct PlozziOSHomeView: View {
                 }
             }
         }
-        .environment(\.shimmerAnimationsEnabled, homeIsFrontmost && scenePhase == .active)
+        // Simplify-toward-upstream (testing step R5): bffac44 has no fork-only
+        // shimmer-animations environment gate on the Home content column; it is
+        // absent upstream. Re-introduce .environment(\.shimmerAnimationsEnabled,
+        // homeIsFrontmost && scenePhase == .active) once the settled flicker is
+        // gone on phone AND tester, and the Shimmer.swift consumer is verified
+        // fold-safe. Consumer is Sources/CoreUI/Shimmer.swift only.
+        // .environment(\.shimmerAnimationsEnabled, homeIsFrontmost && scenePhase == .active)
         // The portrait hero is sized to the phone, not to a constant — see
         // `HeroStageMetrics`. Published here so the loading skeleton reserves the
         // same height the real hero will take, rather than reflowing when it lands.
+        .task(id: viewModel.state.diagnosticName) {
+            seedHeroFromCachedRowsIfNeeded()
+        }
+        .modifier(
+            HomePresentationDiagnostics(
+                frameKey: frameTelemetryKey,
+                cwCount: viewModel.state.value?.continueWatching.count ?? -1,
+                cwPlaceholder: viewModel.loadingRows.contains(.continueWatching),
+                cachedSnapshot: viewModel.isShowingCachedSnapshot
+            )
+        )
         .plozziOSTracksHeroContainerHeight()
         .artworkGradientBackground(
             scope: ObjectIdentifier(viewModel), isVisible: homeIsFrontmost && homeHasAppeared,
             tintSaturation: AmbientGradientBackground.fullscreenHeroTintSaturation
         )
         .onAppear { homeHasAppeared = true }
+        .plozzOnPageAppearanceChange { visible in
+            if homePageIsVisible && !visible { contentEntrance = .revealed }
+            homePageIsVisible = visible
+        }
+        .onChange(of: homePageIsVisible && !hasScrollingContent, initial: true) { _, isEmpty in
+            if isEmpty, contentEntrance == .initial { contentEntrance = .waiting }
+        }
         .environment(\.plozzCardCaptionView, .home)
         .onDisappear { homeHasAppeared = false }
-        .navigationDestination(isPresented: $showingUpcoming) { [appModel, viewModel, onShowSettings] in
-            UpcomingView(model: viewModel.upcoming, interval: UpcomingFeedLoader.window()) {
-                PlozziOSSettingsToolbarItem(action: onShowSettings)
-            }
+        .navigationDestination(isPresented: $showingUpcoming) { [appModel, viewModel] in
+            UpcomingView(model: viewModel.upcoming, interval: UpcomingFeedLoader.window())
                 .plozziOSItemNavigation(appModel: appModel)
         }
         .navigationDestination(item: $editingHomeRow) { [appModel] route in
@@ -390,10 +465,10 @@ struct PlozziOSHomeView: View {
             heroRetainedMisses = [:]
             let settings = appModel.settings.hero.effectiveSettings
             heroItems = HeroDiscoveryStatus.retainingRequestStatus(
-                in: viewModel.cachedHeroItems(for: settings, language: locale.identifier) ?? [], from: heroItems,
+                in: viewModel.cachedHeroItems(for: settings) ?? [], from: heroItems,
                 sameRequestContext: heroStatusContext == appModel.plozziOSSeasonRequestContextID
             )
-            heroCuratedConfiguration = HeroConfigurationKey(settings: settings, language: locale.identifier)
+            heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
             heroCuratedDisabledLibraryKeys = disabled
             heroCandidatePool = .empty
             refreshHeroSourceEligibility()
@@ -405,17 +480,15 @@ struct PlozziOSHomeView: View {
             heroRequestStatusSetAt = [:]
             heroStatusContext = context
         }
-        .task(id: homeIsFrontmost && homeHasAppeared && scenePhase == .active
-            && playbackRequest == nil && appModel.settings.hero.effectiveSettings.isActive) {
-            guard homeIsFrontmost, homeHasAppeared, scenePhase == .active,
-                  playbackRequest == nil, appModel.settings.hero.effectiveSettings.isActive else { return }
+        .task(id: heroFreshnessRunKey) {
+            guard heroFreshnessRunKey else { return }
             await heroFreshnessRefresh.runWhileVisible()
         }
         .navigationTitle(Text(verbatim: ""))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar(
-            usesScrollingPageActions ? .hidden : (usesVerticalToolbar ? .visible : .automatic),
+            usesScrollingPageActions || usesVerticalToolbar ? .visible : .automatic,
             for: .navigationBar
         )
         .toolbar {
@@ -438,6 +511,46 @@ struct PlozziOSHomeView: View {
                 }, action: onShowSettings)
             }
         }
+        .onAppear {
+            #if DEBUG
+            appModel.screenshotDirector.firstDetailItem = {
+                guard let content = viewModel.state.value else { return nil }
+                func isFullPage(_ item: MediaItem) -> Bool {
+                    item.kind == .movie || item.kind == .series
+                }
+                if let item = content.latest.first(where: isFullPage) { return item }
+                if let item = content.watchlist.first(where: isFullPage) { return item }
+                if let item = content.continueWatching.first(where: isFullPage) { return item }
+                return nil
+            }
+            appModel.screenshotDirector.detailItemAt = { index in
+                guard let content = viewModel.state.value else { return nil }
+                func isFullPage(_ item: MediaItem) -> Bool {
+                    item.kind == .movie || item.kind == .series
+                }
+                var seen = Set<String>()
+                var items: [MediaItem] = []
+                var rowItems: [MediaItem] = []
+                for group in content.librarySections {
+                    for section in group.sections {
+                        rowItems.append(contentsOf: section.items)
+                    }
+                }
+                let serverItems: [MediaItem] = content.serverRows.flatMap { row in row.items }
+                let collectionItems: [MediaItem] = content.collectionRows.flatMap { row in row.items }
+                let candidates: [MediaItem] = content.latest + content.watchlist
+                    + content.continueWatching + rowItems + serverItems + collectionItems
+                for candidate in candidates.sorted(by: { lhs, rhs in
+                    (lhs.kind == .movie ? 0 : 1) < (rhs.kind == .movie ? 0 : 1)
+                }) where isFullPage(candidate)
+                    && seen.insert(candidate.stablePresentationID).inserted {
+                    items.append(candidate)
+                }
+                guard items.indices.contains(index) else { return nil }
+                return items[index]
+            }
+            #endif
+        }
         .task(
             id: PlozziOSHomeLoadID(
                 visibility: appModel.settings.homeVisibility.visibility.intent,
@@ -455,7 +568,7 @@ struct PlozziOSHomeView: View {
         }
         .contentRefreshSurface(
             id: ContentRefreshSurfaceID(kind: .home),
-            isVisible: homeIsFrontmost && homeHasAppeared && appModel.allowsHomeContentLoading
+            isVisible: homeIsFrontmost && homePageIsVisible && appModel.allowsHomeContentLoading
                 && playbackRequest == nil && pendingResumeRequest == nil
         ) { request in
             switch request.action {
@@ -621,10 +734,40 @@ struct PlozziOSHomeView: View {
             content: heroContent, randomLibraries: randomLibraries,
             candidates: heroItems, supportingCandidates: heroCandidatePool
         )
-        let displayHeroItems = HeroCurator().reconcile(
+        // Before the first live load completes the source eligibility is still
+        // provisional — watchlist readiness and per-source resolution are landing.
+        // Filtering the visible carousel with it makes the set collapse and expand
+        // (measured on device: count 8 → 3 → 8 → 7 → 8 within seconds, with the
+        // selected slide changing each time) which is exactly the reported "hero
+        // changes images a few times on load". Hold the slides the page already has
+        // until a real load has confirmed the filter; the live pass then applies it
+        // once, and `preservesLineup` covers the hide-watched half of the same rule.
+        let visibleEligibility: HeroSourceEligibility = viewModel.hasCompletedLiveLoad
+            ? sourceEligibility
+            : .unrestricted
+        let curatedHeroItems = HeroCurator().reconcile(
             heroItems, settings: settings, watchMutations: [],
-            sourceEligibility: sourceEligibility
+            // First paint (before any live load has completed) must not run the
+            // hide-watched rule over cached slides: those copies carry last
+            // session's local watch state, so a title the server still considers
+            // in-progress can look watched and the WHOLE carousel filters to empty
+            // — the slot then paints a skeleton until curation lands. Measured on
+            // device: heroItems=8, eligibilityAllows=4, display=0. `preservesLineup`
+            // is this curator's own switch for exactly that (it only clears
+            // `hideWatched`); the live curation re-applies the real filter.
+            preservesLineup: !viewModel.hasCompletedLiveLoad,
+            sourceEligibility: visibleEligibility
         )
+        // First-paint bridge. The durable snapshot can be non-empty yet curate to
+        // NOTHING once the real filters run: measured on device as
+        // heroItems=8, eligibilityAllows=4, display=0 — the stored slides are
+        // discovery-tagged while this viewer's sources have discovery off, so the
+        // curator drops every one and the slot paints a skeleton for seconds.
+        // Before the first live load completes, fall back to the titles the rows are
+        // ALREADY painting from cache; the live curation then takes over as usual.
+        let displayHeroItems = curatedHeroItems.isEmpty && !viewModel.hasCompletedLiveLoad
+            ? (Self.cachedRowHeroSeed(for: settings, content: content) ?? [])
+            : curatedHeroItems
         let heroLoadKey = HeroCurationLoadKey(
             content: heroContent,
             settings: settings,
@@ -635,16 +778,27 @@ struct PlozziOSHomeView: View {
             scopeID: ObjectIdentifier(viewModel),
             seerRevision: appModel.seerService.connectionRevision,
             isPreparingHome: isPreparingHome,
-            loadingRows: loadingRows,
-            language: locale.identifier
+            loadingRows: loadingRows
         )
-        let heroConfigurationMatches = heroCuratedConfiguration == HeroConfigurationKey(settings: settings, language: locale.identifier)
+        let heroConfigurationMatches = heroCuratedConfiguration == HeroConfigurationKey(settings: settings)
             && heroCuratedDisabledLibraryKeys == visibility.visibility.disabledKeys
-        let heroSlotState = HomeHeroSlotState.resolve(
+        var heroSlotState = HomeHeroSlotState.resolve(
             settings: settings,
             hasItems: heroConfigurationMatches && !displayHeroItems.isEmpty,
             recomputeComplete: !heroLoadKey.isAwaitingSources && heroCompletedLoadKey == heroLoadKey
         )
+        if FanoutDiagnostics.isEnabled, heroSlotState == .placeholder, !heroItems.isEmpty {
+            // The anomaly this line exists for: a seeded hero that still renders as
+            // a skeleton. Distinguishes "reconcile filtered every slide out" from
+            // "the configuration key no longer matches" from "curation incomplete".
+            FanoutDiagnostics.emit(
+                "HOMESLOT placeholder heroItems=\(heroItems.count) "
+                + "display=\(displayHeroItems.count) "
+                + "configMatches=\(heroConfigurationMatches) "
+                + "complete=\(heroCompletedLoadKey == heroLoadKey) "
+                + "eligibilityAllows=\(heroEligibility.filtering(heroItems).count)"
+            )
+        }
         let rows = HomeRow.rows(
             for: content,
             libraryOrder: appModel.settings.navigation.libraryOrderingKeys,
@@ -667,8 +821,14 @@ struct PlozziOSHomeView: View {
             containerHeight: heroContainerHeight,
             isRunningOnMac: isRunningOnMac
         ) / 2
+        let presentationRows = viewModel.presentationRows(
+            rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
+            presentation: appModel.settings.libraryPresentation.settings
+        )
+        let hasMedia = heroSlotState == .content || presentationRows.contains(where: \.showsHomeMedia)
         let scroll = PlozziOSHomeScrollView(
-            heroActive: heroSlotState != .hidden, showsPageActions: usesScrollingPageActions
+            heroActive: heroSlotState != .hidden, showsPageActions: usesScrollingPageActions,
+            mediaOpacity: hasMedia ? contentEntrance.opacity : 1
         ) {
             // Retire a carousel the viewer's own settings just invalidated
             // WITHOUT waiting for the async re-curation, exactly as tvOS's
@@ -712,7 +872,9 @@ struct PlozziOSHomeView: View {
                     onItemExposed: { viewModel.recordHeroExposure($0) },
                     exposureScopeID: ObjectIdentifier(viewModel),
                     identityIndexRevision: discoveryIdentityRevision,
-                    isFrontmost: homeIsFrontmost && homeHasAppeared
+                    // SwiftUI's onAppear runs while an interactive pop can still
+                    // be cancelled. Don't let Home take the detail trailer then.
+                    isFrontmost: homeIsFrontmost && homePageIsVisible
                         && playbackRequest == nil && heroRequestConfirmItem == nil
                         && heroRequestError == nil && heroSeasonRequestItem == nil,
                     pullModel: heroPullModel
@@ -746,10 +908,7 @@ struct PlozziOSHomeView: View {
             // `PlozziOSFeaturedRow(items: featuredItems, appModel: appModel)`
             // here — the view itself is left in place.
 
-            ForEach(viewModel.presentationRows(
-                rows: rows, content: content, visibility: visibility.visibility, liveTV: liveTV,
-                presentation: appModel.settings.libraryPresentation.settings
-            )) { presentation in
+            ForEach(presentationRows) { presentation in
                 PlozziOSHomeRowSlot(
                     presentation: presentation, captions: appModel.settings.cardStyle.captions,
                     continueWatchingLayout: visibility.continueWatchingLayout,
@@ -784,7 +943,7 @@ struct PlozziOSHomeView: View {
                             appModel: appModel, viewModel: viewModel,
                             coordinator: featuredTrailers, controller: trailerController,
                             isActive: row.collectionCardStyle == .featured
-                                && homeIsFrontmost && homeHasAppeared && !homeIsScrolling,
+                                && homeIsFrontmost && homePageIsVisible && !homeIsScrolling,
                             rowBrowser: $rowBrowser, showingHomeCustomization: $showingHomeCustomization
                         )
                         .equatable()
@@ -805,13 +964,16 @@ struct PlozziOSHomeView: View {
             }
         } pageActions: {
             PlozziOSHomePageActions(
-                showsAudio: trailerController.isPlaying,
+                showsAudio: trailerController.isPlaying && trailerController.activeSurfaceRole == .home,
                 isMuted: trailerController.isMuted,
                 onToggleMute: toggleTrailerMute, onShowSettings: onShowSettings
             )
         }
         return scroll
             .id(ObjectIdentifier(viewModel))
+            .modifier(PlozziOSObserveHomeContent(
+                entrance: $contentEntrance, visibleContent: homePageIsVisible ? hasMedia : nil
+            ))
             .scrollClipDisabled()
             .onScrollPhaseChange { _, phase in homeIsScrolling = phase != .idle }
             .homeResponsivenessDiagnostics(
@@ -984,6 +1146,10 @@ struct PlozziOSHomeView: View {
             guard !Task.isCancelled else { return }
             let references = item.artworkReferences(for: .logo)
             guard !references.isEmpty else { continue }
+            // References only: asking every slide for its TMDb fallback here issued a
+            // metadata request per slide and held the shared artwork limiter, which
+            // starved the backdrop and Continue Watching prefetches. The fronted
+            // slide still prepares its fallback in the reveal gate.
             await HeroLogoPreloader.warm(references: references)
         }
     }
@@ -1267,16 +1433,55 @@ struct PlozziOSHomeView: View {
         heroPinnedItemIDs = []
         heroRetainedMisses = [:]
         heroCompletedLoadKey = nil
+        heroHasCompletedLiveCuration = false
+        // A different profile/viewer starts from scratch: its hero stage must be
+        // allowed to resolve to `.hidden` until it paints content of its own.
         featuredItems = []
         featuredConfiguration = nil
         featuredDisabledLibraryKeys = []
         let settings = appModel.settings.hero.effectiveSettings
         heroItems = HeroDiscoveryStatus.clearingRequestStatus(
-            in: viewModel.cachedHeroItems(for: settings, language: locale.identifier) ?? []
+            in: viewModel.cachedHeroItems(for: settings) ?? []
         )
-        heroCuratedConfiguration = HeroConfigurationKey(settings: settings, language: locale.identifier)
+        heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
         heroCuratedDisabledLibraryKeys = appModel.settings.homeVisibility.visibility.disabledKeys
         discoveryIdentityRevision = appModel.identityIndex.identityRevisionProvider()
+    }
+
+    /// First-paint hero seed taken from the rows the page is already painting.
+    ///
+    /// `cachedHeroItems` only carries what the durable snapshot stores, and that
+    /// snapshot deliberately excludes Continue Watching — so a hero sourced from
+    /// Continue Watching had NO seed and every relaunch painted a hero skeleton
+    /// (empty backdrop + placeholder bars) until the network curation landed. The
+    /// rows themselves paint immediately from `HomeContentStore`, so seeding the
+    /// carousel from those same cached rows keeps the first frame complete; the
+    /// live curation still folds into this set and replaces slides as before.
+    private static func cachedRowHeroSeed(
+        for settings: HeroSettings, content: HomeViewModel.Content?
+    ) -> [MediaItem]? {
+        guard let content else { return nil }
+        var items: [MediaItem] = []
+        if settings.isEnabled(.continueWatching) { items += content.continueWatching }
+        if settings.isEnabled(.recentlyAdded) { items += content.latest }
+        guard !items.isEmpty else { return nil }
+        return Array(items.prefix(settings.maxItems))
+    }
+
+    /// Paint the cached rows' hero on the first frame even when no durable hero
+    /// snapshot exists (Continue Watching sources are deliberately excluded from
+    /// that snapshot). Runs when the cached content actually lands — it is NOT
+    /// available at `init`, which is why the constructor seed alone still painted a
+    /// skeleton on the phone — and never overrides a live curation.
+    private func seedHeroFromCachedRowsIfNeeded() {
+        guard heroItems.isEmpty, !viewModel.hasCompletedLiveLoad else { return }
+        let settings = appModel.settings.hero.effectiveSettings
+        guard settings.isActive,
+              let seed = Self.cachedRowHeroSeed(for: settings, content: viewModel.state.value),
+              !seed.isEmpty else { return }
+        heroItems = HeroDiscoveryStatus.clearingRequestStatus(in: seed)
+        heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
+        heroCuratedDisabledLibraryKeys = appModel.settings.homeVisibility.visibility.disabledKeys
     }
 
     private func refreshHeroSourceEligibility() {
@@ -1366,7 +1571,7 @@ struct PlozziOSHomeView: View {
                 }
             }
         }
-        let configuration = HeroConfigurationKey(settings: settings, language: locale.identifier)
+        let configuration = HeroConfigurationKey(settings: settings)
         let featured = HeroDiscoveryStatus.cachedCandidates(
             featuredItems, configuration: featuredConfiguration,
             disabledLibraryKeys: featuredDisabledLibraryKeys,
@@ -1385,7 +1590,7 @@ struct PlozziOSHomeView: View {
             identitySources: appModel.identityIndex.identitySourcesProvider,
             allowsDiscovery: { await heroModel.allowsDiscovery }
         )
-        let discoveryLanguage = Locale.canonicalLanguageIdentifier(from: locale.identifier)
+        let discoveryLanguage = locale.language.languageCode?.identifier ?? "en"
         let discoveryRegion = locale.region?.identifier ?? "US"
         let currentVisibility = appModel.settings.homeVisibility.visibility
         let pendingMutations = await viewModel.pendingHeroWatchMutations()
@@ -1468,7 +1673,9 @@ struct PlozziOSHomeView: View {
             featuredDiscoveryEnabled: !settings.discoverySources.isEmpty,
             collectionState: result.collectionState
         )
-        let foldsIntoLoadedSet = heroCuratedConfiguration == configuration
+        let isLaunchCuration = !heroHasCompletedLiveCuration
+        let foldsIntoLoadedSet = !isLaunchCuration
+            && heroCuratedConfiguration == configuration
             && heroCuratedDisabledLibraryKeys == disabledLibraryKeys
         let updatedPool = result.candidatePool.updatingItems(enriched)
         let sourceEligibility = heroSourceEligibility(
@@ -1486,23 +1693,70 @@ struct PlozziOSHomeView: View {
                 verifiedWatchItems: enriched
             )
             : []
-        let merge = HeroLiveMerge.merge(
-            showing: showing,
-            fresh: curated,
-            limit: settings.maxItems,
-            pinnedItemIDs: heroPinnedItemIDs,
-            misses: foldsIntoLoadedSet ? heroRetainedMisses : [:],
-            freshIsAuthoritative: freshIsAuthoritative,
-            preservesPinnedItems: true,
-            preservesRequestStatus: heroStatusContext == appModel.plozziOSSeasonRequestContextID,
-            sourceEligibility: sourceEligibility
-        )
+        let merge: HeroLiveMerge.Outcome
+        if isLaunchCuration {
+            // The launch snapshot is provisional. Replace it with the first live
+            // curation instead of letting every cached title age through
+            // `retentionGrace`, which kept last session's lineup (including dead or
+            // unplayable slides) for several refreshes after relaunch.
+            merge = HeroLiveMerge.replaceLaunchSnapshot(
+                showing: heroItems,
+                fresh: sourceEligibility.filtering(curated),
+                limit: settings.maxItems,
+                pinnedItemIDs: heroPinnedItemIDs,
+                freshIsAuthoritative: freshIsAuthoritative
+            )
+            if !merge.items.isEmpty || freshIsAuthoritative {
+                heroHasCompletedLiveCuration = true
+            }
+        } else {
+            merge = HeroLiveMerge.merge(
+                showing: showing,
+                fresh: curated,
+                limit: settings.maxItems,
+                pinnedItemIDs: heroPinnedItemIDs,
+                misses: foldsIntoLoadedSet ? heroRetainedMisses : [:],
+                freshIsAuthoritative: freshIsAuthoritative,
+                preservesPinnedItems: true,
+                preservesRequestStatus: heroStatusContext == appModel.plozziOSSeasonRequestContextID,
+                sourceEligibility: sourceEligibility
+            )
+        }
         heroEligibility = sourceEligibility
         heroCandidatePool = sourceEligibility.filtering(updatedPool)
         heroCuratedConfiguration = configuration
         heroCuratedDisabledLibraryKeys = disabledLibraryKeys
         heroRetainedMisses = merge.misses
-        if merge.items != heroItems { heroItems = merge.items }
+        // Never blank a painted carousel from a refresher that is still folding.
+        // Measured on device at millisecond resolution: on every launch `heroItems`
+        // went 8 → 0 → 8 within ~1.8s, and that empty window is the hero painting its
+        // no-image cover between the cached artwork and the live curation — exactly
+        // the reported "hero loads the image, then drops to the no-image cover and
+        // reloads". The first curation pass can legitimately resolve before the
+        // sources it needs are ready (`foldsIntoLoadedSet` is false on the very first
+        // pass), so an empty result there proves nothing and must not clear the
+        // slides already on screen. A *confirmed* empty curation is different: if the
+        // viewer removed the last eligible title, the hero must retire rather than
+        // leave a skeleton behind. `freshIsAuthoritative` is what separates them.
+        let mayClearPaintedHero =
+            !(merge.items.isEmpty && !heroItems.isEmpty) || freshIsAuthoritative
+        if merge.items != heroItems, mayClearPaintedHero {
+            heroItems = merge.items
+            // Hero-set trace (PLZXFAN-gated; a hash, never titles). The user-visible
+            // symptom "the hero changes images a few times while loading" is exactly
+            // this assignment firing repeatedly, so record every change with a
+            // timestamp. On a warm launch there should be exactly ONE such line.
+            if FanoutDiagnostics.isEnabled {
+                let ids: [String] = heroItems.map { $0.id }
+                let joined: String = ids.joined(separator: "|")
+                let signature: Int = joined.hashValue
+                let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                FanoutDiagnostics.emit(
+                    "HEROFRAME t=\(stamp) count=\(ids.count) "
+                    + "sig=\(signature) folds=\(foldsIntoLoadedSet)"
+                )
+            }
+        }
         heroStatusContext = appModel.plozziOSSeasonRequestContextID
         // What the next launch may repaint instead of a skeleton, re-checked
         // against the final payload (see `HeroDurableSnapshot`).
@@ -1512,10 +1766,15 @@ struct PlozziOSHomeView: View {
         // `showing` is deliberately empty — and deleting the snapshot there is the
         // very thing `saveHero`'s empty-write refusal exists to prevent.
         let durablePool = heroCandidatePool.durable()
-        if durablePool.isEmpty, freshIsAuthoritative {
+        // Never treat an empty pool as "the viewer has nothing" before a live load
+        // has actually completed. On the phone the first curation can run while
+        // accounts are still warming, and clearing here deleted the snapshot the
+        // next launch paints instantly — so every relaunch showed a hero skeleton
+        // with an empty backdrop for seconds before the art arrived.
+        if durablePool.isEmpty, freshIsAuthoritative, viewModel.hasCompletedLiveLoad {
             viewModel.clearCachedHeroItems()
         } else {
-            viewModel.cacheHeroCandidatePool(durablePool, for: settings, language: locale.identifier)
+            viewModel.cacheHeroCandidatePool(durablePool, for: settings)
         }
     }
 }
@@ -1529,6 +1788,12 @@ struct PlozziOSHomeHeroCarousel: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HeroTrailerController.self) private var trailerController
     @State private var selectedItemID: String?
+    /// Identity of the title currently on screen, used to stay on it when a
+    /// curation/enrichment pass hands back the same title under a different copy id
+    /// (the "hero changes images a few times while loading" report). Deliberately a
+    /// small local key — the hero's internal dedupe tokens are not public outside
+    /// FeatureHomeCore.
+    @State private var seatedHeroIdentity: String?
     @State private var dwellStart = Date()
     /// Seconds of this slide's dwell spent showing a trailer, which the countdown
     /// does not charge for. Everything else is derived from `dwellStart` — the
@@ -1542,6 +1807,11 @@ struct PlozziOSHomeHeroCarousel: View {
     /// the clock on screen actually belongs to the slide being shown.
     @State private var dwellItemID: String?
     @State private var dragOffset: CGFloat = 0
+    /// The slide the current drag is actually targeting. Locking it once the
+    /// finger has moved past a small threshold stops a slow horizontal wiggle
+    /// from swapping the incoming artwork/text between the previous and next
+    /// slide (the "competing options" flicker).
+    @State private var dragTargetID: String?
     @State private var rootItems: [String: HeroResolutionCacheEntry] = [:]
     @State private var playTargets: [String: HeroResolutionCacheEntry] = [:]
     @State private var transitionTargetID: String?
@@ -1599,9 +1869,10 @@ struct PlozziOSHomeHeroCarousel: View {
             // enters from the opposite edge and settles into place by the same
             // amount — both tracking the finger via `progress`, in either direction.
             let slideTravel = proxy.size.width * 0.35
+            let lockedForward = dragTargetItem.flatMap(isForwardTarget)
             let slideDir: CGFloat = dragOffset == 0
                 ? transitionDirection
-                : (dragOffset < 0 ? -1 : 1)
+                : (lockedForward.map { $0 ? -1 : 1 } ?? (dragOffset < 0 ? -1 : 1))
             let outgoingX = slideDir * slideTravel * progress
             let incomingX = -slideDir * slideTravel * (1 - progress)
             ZStack {
@@ -1700,21 +1971,18 @@ struct PlozziOSHomeHeroCarousel: View {
                         style: style,
                         onPlay: onPlay,
                         heroRequest: heroRequest(for: currentItem),
-                        scheduleLine: scheduleLine
+                        scheduleLine: scheduleLine,
+                        scheduleLines: schedules
                     )
                     .id(currentItem.id)
-                    .transition(.opacity)
-                    .opacity(
-                        max(1 - (progress * 2), 0)
-                            * (foregroundVisible ? 1 : 0)
-                    )
+                    .transition(.identity)
+                    // The title swaps at zero opacity. Fade the column, not its
+                    // layout: each title's centered badges start in their final positions.
+                    .opacity(foregroundVisible ? max(1 - progress * 2, 0) : 0)
+                    .allowsHitTesting(foregroundVisible && !transitionInProgress && dragOffset == 0)
                     // Shared with the loading placeholder — see
                     // `PlozziOSHeroForegroundPlacement`.
                     .plozziOSHeroForegroundPlacement(style: style, logoSize: appModel.settings.hero.settings.logoSize)
-                    .animation(
-                        .easeInOut(duration: 0.24),
-                        value: currentItem.id
-                    )
 
                 }
             }
@@ -1724,6 +1992,9 @@ struct PlozziOSHomeHeroCarousel: View {
                 PlozziOSHorizontalHeroDragGesture(
                     isEnabled: isActive && !transitionInProgress,
                     onChanged: { translation in
+                        if dragTargetID == nil, abs(translation.width) >= 8, items.count > 1 {
+                            dragTargetID = adjacentItem(forward: translation.width < 0)?.id
+                        }
                         dragOffset = translation.width
                     },
                     onEnded: { translation, velocity in
@@ -1812,8 +2083,40 @@ struct PlozziOSHomeHeroCarousel: View {
                 }
             }
         }
+        .onChange(of: selectedItemID, initial: true) { _, id in
+            guard let id, let item = items.first(where: { $0.id == id }) else {
+                seatedHeroIdentity = nil
+                return
+            }
+            seatedHeroIdentity = Self.heroSeatIdentity(item)
+        }
         .onChange(of: items.map(\.id), initial: true) { oldIDs, itemIDs in
+            // Carousel-set trace (PLZXFAN-gated; hash only). The hero's carried set is
+            // stable on warm launches (HEROFRAME = 0 changes), so an image that swaps
+            // after first paint must come from THIS filtered set changing — eligibility
+            // narrowing as watchlist readiness arrives — or from the artwork reference
+            // for the same slide. This line distinguishes the first case.
+            if FanoutDiagnostics.isEnabled {
+                let joined: String = itemIDs.joined(separator: "|")
+                let signature: Int = joined.hashValue
+                let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                FanoutDiagnostics.emit(
+                    "HOMECAROUSEL t=\(stamp) count=\(itemIDs.count) sig=\(signature) "
+                    + "selected=\(selectedItemID ?? "none")"
+                )
+            }
             guard selectedItemID == nil || !itemIDs.contains(selectedItemID ?? "") else {
+                return
+            }
+            // The slide on screen is still the same TITLE wearing a new copy id (an
+            // enrichment/curation pass or another server's edition): keep the viewer
+            // on it rather than re-seating them to a different slide.
+            if let identity = seatedHeroIdentity,
+               let current = items.first(where: { Self.heroSeatIdentity($0) == identity }) {
+                selectedItemID = current.id
+                dwellStart = .now
+                dwellTrailerSeconds = 0
+                dwellItemID = current.id
                 return
             }
             // Re-seat by POSITION, not to the front. A curation folding into the
@@ -1893,6 +2196,10 @@ struct PlozziOSHomeHeroCarousel: View {
             async let play: Void = resolvePlayTarget(for: currentItem)
             _ = await (root, play)
         }
+        // Simplify-toward-upstream (testing step R1): upstream bffac44 keys the
+        // neighbour warm on the fronted slide only and has no drag-start warm
+        // task. Re-introduce the fork's set-keyed re-warm and drag warm
+        // individually once the settled flicker is gone and each is proven.
         .task(id: selectedItemID) {
             await warmAdjacentArtwork()
         }
@@ -1917,6 +2224,11 @@ struct PlozziOSHomeHeroCarousel: View {
             }
         }
         .onAppear(perform: installTrailerEndHandler)
+        .onAppear {
+            #if DEBUG
+            appModel.screenshotDirector.firstHomeItem = { items.first }
+            #endif
+        }
         .onDisappear {
             pointerActivity.reset()
             trailerController.clearEndHandler(ownerID: endHandlerOwnerID)
@@ -2020,8 +2332,16 @@ struct PlozziOSHomeHeroCarousel: View {
         if let transitionTargetID {
             return items.first { $0.id == transitionTargetID }
         }
-        guard dragOffset != 0, items.count > 1 else { return nil }
-        return adjacentItem(forward: dragOffset < 0)
+        guard dragOffset != 0, items.count > 1, let dragTargetID else { return nil }
+        return items.first { $0.id == dragTargetID }
+    }
+
+    private func isForwardTarget(_ item: MediaItem) -> Bool? {
+        guard items.count > 1,
+              let targetIndex = items.firstIndex(where: { $0.id == item.id }),
+              let currentIndex = items.firstIndex(where: { $0.id == selectedItemID })
+        else { return nil }
+        return targetIndex == (currentIndex + 1) % items.count
     }
 
     /// Whether this item's hero backdrop is already decoded and resident.
@@ -2209,29 +2529,35 @@ struct PlozziOSHomeHeroCarousel: View {
         let projectedWidth = translation.width + (velocity.width * 0.15)
         let shouldCommit = abs(translation.width) >= stageWidth * 0.18
             || abs(projectedWidth) >= stageWidth * 0.28
+        let forward = translation.width < 0
+        let target = dragTargetItem
+        let directionMatches = target.flatMap(isForwardTarget).map { $0 == forward } ?? false
         guard abs(translation.width) > abs(translation.height) * 1.2,
-              shouldCommit else {
+              shouldCommit, let target, directionMatches else {
             withAnimation(.easeOut(duration: 0.2)) {
                 dragOffset = 0
             }
+            dragTargetID = nil
             return
         }
         beginTransition(
-            forward: translation.width < 0,
-            releaseVelocity: velocity.width
+            forward: forward,
+            releaseVelocity: velocity.width,
+            target: target
         )
     }
 
     private func beginTransition(
         forward: Bool,
-        releaseVelocity: CGFloat? = nil
+        releaseVelocity: CGFloat? = nil,
+        target explicitTarget: MediaItem? = nil
     ) {
         guard isActive, !transitionInProgress,
-              let target = adjacentItem(forward: forward) else {
+              let target = explicitTarget ?? adjacentItem(forward: forward) else {
             return
         }
         transitionInProgress = true
-        transitionDirection = forward ? -1 : 1
+        transitionDirection = isForwardTarget(target).map { $0 ? -1 : 1 } ?? (forward ? -1 : 1)
         transitionTargetID = target.id
         HeroArtDiagnostics.emit(
             "slide BEGIN from=\(currentItem?.title ?? "?") to=\(target.title) "
@@ -2271,7 +2597,9 @@ struct PlozziOSHomeHeroCarousel: View {
                 transitionTargetID = nil
                 transitionDirection = 0
                 dragOffset = 0
+                dragTargetID = nil
                 foregroundVisible = false
+                transitionInProgress = false
             }
             HeroArtDiagnostics.emit(
                 "slide COMMIT now=\(target.title) "
@@ -2283,13 +2611,29 @@ struct PlozziOSHomeHeroCarousel: View {
             withAnimation(.easeInOut(duration: 0.24)) {
                 foregroundVisible = true
             }
-            transitionInProgress = false
         }
     }
 
     /// Current slide index, clamped. The warm helpers below both key off this.
     private var currentIndex: Int {
         items.firstIndex { $0.id == selectedItemID } ?? 0
+    }
+
+    /// Identity of the full-size artwork-warming job: the curated set plus the
+    /// fronted slide. Including the set means a curation that folds new media in
+    /// re-warms the new neighbours instead of leaving the first swipe onto them
+    /// with only a 768px preview.
+    private var heroArtworkWarmKey: String {
+        items.map(\.id).joined(separator: "|") + "#" + (selectedItemID ?? "")
+    }
+
+    /// Small local identity for "is this the same title?", used only for keeping the
+    /// viewer's slide seated across copy changes. Title + kind + year is enough to
+    /// recognise a re-issued copy and deliberately public-API only.
+    static func heroSeatIdentity(_ item: MediaItem) -> String {
+        let title = (item.parentTitle ?? item.title).lowercased()
+        let year = item.productionYear.map(String.init) ?? ""
+        return "\(item.kind.rawValue)|\(title)|\(year)"
     }
 
     private func heroReferences(for item: MediaItem) -> [ArtworkReference] {
@@ -2303,24 +2647,26 @@ struct PlozziOSHomeHeroCarousel: View {
         ).artworkReferences(settings: artworkPolicy.settings, in: .home)
     }
 
-    /// Decodes the full-size artwork for the slides either side of this one.
+    /// Decodes the full-size artwork for the slide on screen and its neighbours.
     ///
-    /// Deliberately skips the slide on screen: the view is already downloading
-    /// that one, and this used to warm it *first*, serially, so on a cold start
-    /// the neighbours did not begin until the current slide's own 2000px pass
-    /// had finished — which is exactly when they were needed. The neighbours are
-    /// warmed concurrently for the same reason, through the shared artwork
-    /// limiter so they queue behind visible work rather than competing with it.
+    /// The fronted slide is included deliberately. It used to be skipped on the
+    /// theory that the view was already downloading it, but the carousel's own load
+    /// is asynchronous — on device that is exactly what leaves the fronted slide
+    /// showing its placeholder band for the first second after a relaunch (measured
+    /// in device screenshots). It is warmed CONCURRENTLY with the neighbours, never
+    /// serially ahead of them (the original serial version starved them), and
+    /// `hasUsableCachedBackdrop` short-circuits immediately when the art is already
+    /// on disk, so a warm launch costs nothing. Through the shared artwork limiter,
+    /// so this queues behind visible work instead of competing with it.
     private func warmAdjacentArtwork() async {
         guard !items.isEmpty else { return }
-        let neighbours = HeroArtworkWindow
+        let targets = HeroArtworkWindow
             .indices(count: items.count, centeredAt: currentIndex)
-            .dropFirst()
             .map { items[$0] }
-        guard !neighbours.isEmpty else { return }
+        guard !targets.isEmpty else { return }
 
         await withTaskGroup(of: Void.self) { group in
-            for target in neighbours {
+            for target in targets {
                 let references = heroReferences(for: target)
                 guard !references.isEmpty else { continue }
                 group.addTask(priority: .utility) {
@@ -2404,11 +2750,22 @@ private struct PlozziOSPullResponsiveHomeBackdrop<Backdrop: View>: View {
     var body: some View {
         // The image and its dissolve must share the window-wide bounds; masking
         // only the safe-area column cuts off artwork underneath side chrome.
-        PlozziOSFullWidthHeroStage(height: heroHeight) {
+        if style == .compactPortrait {
+            // Sidebars use window coordinates. On phone those coordinates
+            // include the navigation slide; the image must move with its title.
             composite
+                .frame(maxWidth: .infinity)
+                .frame(height: heroHeight)
+                .ignoresSafeArea(.container, edges: .horizontal)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        } else {
+            PlozziOSFullWidthHeroStage(height: heroHeight) {
+                composite
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
     private var composite: some View {
@@ -3117,6 +3474,7 @@ struct PlozziOSHomeMediaRail: View {
     #endif
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.locale) private var locale
 
     let title: Text
     let items: [MediaItem]
@@ -3153,7 +3511,16 @@ struct PlozziOSHomeMediaRail: View {
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSMediaSection(
+        let revisit = PlozziOSDetailArtworkRevisit(
+            scope: appModel.detailArtworkScopeID,
+            language: locale.identifier,
+            style: horizontalSizeClass == .compact ? .compactPortrait : .landscape,
+            policy: ArtworkPresentationPolicy(
+                area: .details, settings: appModel.settings.cardStyle.artwork,
+                providers: appModel.metadataProviderSettingsModel.settings, logoLanguage: locale.identifier
+            )
+        )
+        return PlozziOSMediaSection(
             title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0,
             reservesBrowseSpace: true, onBrowse: onBrowse
         ) {
@@ -3186,7 +3553,8 @@ struct PlozziOSHomeMediaRail: View {
                             isPendingRemoval: pendingRemovalIDs.contains(
                                 item.stablePresentationID
                             ),
-                            provider: provider(for: item)
+                            provider: provider(for: item),
+                            revisit: revisit
                         )
                         .frame(
                             width: metrics.cardSlotWidth(
@@ -3239,6 +3607,7 @@ struct PlozziOSHomeMediaRail: View {
             seriesArtworkPrefetch.cancelAll()
         }
         .environment(\.plozzCardCaptionView, .home)
+        .environment(\.continueWatchingLogoScope, detailLogoScope)
         .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
         .environment(\.plozzArtworkSettings, appModel.settings.cardStyle.artwork)
         .environment(\.plozzArtworkProviders, appModel.metadataProviderSettingsModel.settings)
@@ -3253,10 +3622,13 @@ struct PlozziOSHomeMediaRail: View {
 
     private var artworkPrefetchIdentity: PlozziOSArtworkPrefetchIdentity? {
         guard prefetchesArtwork else { return nil }
-        // Compare retained inputs instead of rebuilding metadata queries for the
-        // entire row during layout. Only the bounded lookahead needs those queries.
+        // Only a changed *row* should cancel and restart the prefetch. Comparing
+        // whole `MediaItem`s restarted it on every progress/played-state publication,
+        // so a silent fold or a return from playback cancelled the artwork that was
+        // about to be swiped to. Per-card `.onAppear` still fills late enrichment.
         return PlozziOSArtworkPrefetchIdentity(
-            items: items,
+            itemIDs: items.map(\.stablePresentationID),
+            logoScope: detailLogoScope, language: locale.identifier,
             isPortrait: style == .poster,
             showsSeriesArtwork: showsSeriesArtwork,
             spoilers: appModel.settings.spoilers.settings,
@@ -3272,6 +3644,10 @@ struct PlozziOSHomeMediaRail: View {
         prefetchedPreviewIDs.removeAll(keepingCapacity: true)
         lastArtworkPrefetchIndex = nil
         artworkPrefetchDirection = 1
+    }
+
+    private var detailLogoScope: String? {
+        prefetchesArtwork && showsSeriesArtwork && style == .landscape ? appModel.detailArtworkScopeID : nil
     }
 
     /// Mirrors tvOS rail look-ahead. UIKit's lazy stack only creates nearby cards;
@@ -3306,9 +3682,10 @@ struct PlozziOSHomeMediaRail: View {
             lookahead: MediaRowPrefetchWindow.fullArtworkLookahead
         )
         if showsSeriesArtwork {
+            let scope = detailLogoScope
             seriesArtworkPrefetch.update(fullIndices.map {
                 let source = seriesArtworkSource(for: items[$0])
-                return .init(id: source.identity) { await source.prepare() }
+                return .init(id: source.identity) { await source.prepare(detailLogoScope: scope) }
             })
             return
         }
@@ -3374,7 +3751,8 @@ struct PlozziOSHomeMediaRail: View {
             policy: .init(
                 area: .continueWatching,
                 settings: appModel.settings.cardStyle.artwork,
-                providers: appModel.metadataProviderSettingsModel.settings
+                providers: appModel.metadataProviderSettingsModel.settings,
+                logoLanguage: locale.identifier
             )
         )
     }
@@ -3390,7 +3768,9 @@ struct PlozziOSHomeMediaRail: View {
 }
 
 private struct PlozziOSArtworkPrefetchIdentity: Equatable {
-    let items: [MediaItem]
+    let itemIDs: [String]
+    let logoScope: String?
+    let language: String
     let isPortrait: Bool
     let showsSeriesArtwork: Bool
     let spoilers: SpoilerSettings
@@ -3429,6 +3809,7 @@ struct PlozziOSHomeMediaCard: View {
     var showsSeriesArtwork: Bool = false
     var isPendingRemoval: Bool = false
     let provider: (any MediaProvider)?
+    var revisit: PlozziOSDetailArtworkRevisit? = nil
     @State private var downloadRecord: DownloadedMediaRecord?
     @Environment(\.plozziOSRailPlay) private var railPlay
 
@@ -3457,6 +3838,11 @@ struct PlozziOSHomeMediaCard: View {
                     card
                 }
                 .buttonStyle(.plain)
+                .task(id: revisit, priority: .utility) {
+                    guard let revisit, revisit.scope == appModel.detailArtworkScopeID else { return }
+                    await revisit.prepare(for: item, snapshots: appModel.detailSnapshotCache,
+                                          replay: appModel.detailArtworkReplay)
+                }
             } else {
                 card
             }
@@ -3679,8 +4065,12 @@ struct PlozziOSScreenshotRouter: View {
 
     private func perform() async {
         guard let request = director.request else { return }
+        // Clearing before the work started changed this `.task(id:)`'s identity
+        // and cancelled the burst mid-flight. Hold the request until the screen
+        // (and any capture) has actually finished.
+        let outcome = await reach(request)
         director.request = nil
-        director.finish(await reach(request))
+        director.finish(outcome)
     }
 
     /// Reaches the requested screen and answers with what the capture script
@@ -3727,6 +4117,27 @@ struct PlozziOSScreenshotRouter: View {
             PlozziOSScreenshotSeed.pausesPlayback = pause
             PlozziOSScreenshotSeed.pendingPlayerSeek = pause ? seconds : nil
             director.startPlayback?(item, seconds)
+
+        case let .burstFirst(index, frames, fps):
+            guard let item = director.detailItemAt?(index)
+                    ?? (index == 0 ? director.firstDetailItem?() : nil)
+                    ?? (index == 0 ? director.firstHomeItem?() : nil)
+            else { return notFound }
+            await popToRoot()
+            return await director.captureDetailEntryBurst(
+                item: item, frames: frames, fps: fps
+            ) {
+                director.navigateToItem?(item)
+            }
+
+        case let .burst(title, frames, fps):
+            guard let item = await find(title) else { return notFound }
+            await popToRoot()
+            return await director.captureDetailEntryBurst(
+                item: item, frames: frames, fps: fps
+            ) {
+                director.navigateToItem?(item)
+            }
 
         case let .rotate(landscape):
             await rotate(landscape: landscape)
@@ -3890,3 +4301,43 @@ private struct PlozziOSScreenshotPlaybackRegistration: ViewModifier {
     }
 }
 #endif
+
+/// Presentation telemetry for Home, kept out of the page body.
+///
+/// These are `onChange` observers with string formatting, and inline they pushed
+/// the view body past the SwiftUI type-checker's budget (repeated
+/// "unable to type-check this expression in reasonable time" failures). A
+/// modifier keeps the body readable and the compiler fast. Everything is gated by
+/// `PLZXFAN_STDOUT=1` and prints counts, kinds and hashes only — never titles,
+/// ids or URLs.
+private struct HomePresentationDiagnostics: ViewModifier {
+    let frameKey: String
+    let cwCount: Int
+    let cwPlaceholder: Bool
+    let cachedSnapshot: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: frameKey, initial: true) { _, key in
+                guard FanoutDiagnostics.isEnabled else { return }
+                let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                FanoutDiagnostics.emit("HOMEFRAME t=\(stamp) \(key)")
+            }
+            .onChange(of: cwCount, initial: true) { _, count in
+                guard FanoutDiagnostics.isEnabled else { return }
+                let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                FanoutDiagnostics.emit(
+                    "HOMECW t=\(stamp) count=\(count) "
+                    + "placeholder=\(cwPlaceholder) cachedSnapshot=\(cachedSnapshot)"
+                )
+            }
+            .onChange(of: cwPlaceholder, initial: true) { _, loading in
+                guard FanoutDiagnostics.isEnabled else { return }
+                let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                FanoutDiagnostics.emit(
+                    "HOMECWLOADING t=\(stamp) placeholder=\(loading) count=\(cwCount)"
+                )
+            }
+    }
+}
+

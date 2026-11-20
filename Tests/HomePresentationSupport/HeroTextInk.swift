@@ -21,12 +21,22 @@ enum HeroTextInk {
             ))
             context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
         }
+        // Vision occasionally splits the leading glyph of a native button into a
+        // bullet and misreads "Play" as "Plav" at some sizes; the rendered pixels
+        // are the evidence, so accept the known OCR variant for matching.
+        let aliases: [String: [String]] = ["Play": ["Plav"]]
         return try Dictionary(uniqueKeysWithValues: terms.map { term in
-            let observation = try XCTUnwrap(request.results?.first {
-                $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains(term) == true
-            }, "Missing \(term): \(request.results?.compactMap { $0.topCandidates(1).first?.string } ?? [])")
+            let spellings = [term] + (aliases[term] ?? [])
+            let match = try XCTUnwrap(request.results?.compactMap { observation -> (VNRecognizedTextObservation, String)? in
+                guard let text = observation.topCandidates(1).first else { return nil }
+                guard let spelling = spellings.first(where: {
+                    text.string.localizedCaseInsensitiveContains($0)
+                }) else { return nil }
+                return (observation, spelling)
+            }.first, "Missing \(term): \(request.results?.compactMap { $0.topCandidates(1).first?.string } ?? [])")
+            let observation = match.0
             let text = try XCTUnwrap(observation.topCandidates(1).first)
-            let range = try XCTUnwrap(text.string.range(of: term, options: .caseInsensitive))
+            let range = try XCTUnwrap(text.string.range(of: match.1, options: .caseInsensitive))
             let box = try XCTUnwrap(text.boundingBox(for: range)).boundingBox
             // Character estimates can miss the baseline; the detected line owns vertical bounds.
             let recognized = CGRect(

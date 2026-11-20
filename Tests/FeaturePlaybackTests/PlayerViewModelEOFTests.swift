@@ -516,12 +516,17 @@ final class PlayerViewModelEOFTests: XCTestCase {
             let suite = "MovieAutoCrop-\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let visits: [(id: String, namespace: String?, expectedSafe: Bool, pinchToEdges: Bool?)] = [
-                ("first", nil, false, false),
-                ("second", nil, true, nil),
-                ("old-title", nil, true, true),
-                ("first", nil, false, nil),
-                ("second", "guest", false, nil)
+            // Normal cropping is the shared default for every platform. A title
+            // preference saved after the opt-in schema keeps its choice and is
+            // applied before the first frame; a profile with no preference gets
+            // the shared default.
+            let visits: [(id: String, namespace: String?, expectedMode: VideoZoomPreference.Mode,
+                          expectedSafe: Bool, pinchToEdges: Bool?)] = [
+                ("first", nil, .fit, false, false),
+                ("second", nil, .fit, false, nil),
+                ("old-title", nil, .picture, false, true),
+                ("first", nil, .fit, false, nil),
+                ("second", "guest", .fit, false, nil)
             ]
             for visit in visits {
                 let settings = PlaybackSettingsModel(store: PlaybackSettingsStore(
@@ -548,9 +553,9 @@ final class PlayerViewModelEOFTests: XCTestCase {
                 )
                 model.controls.videoZoom.bindAutoCropFraming(to: settings, platform: .current)
                 engine.onLoad = { [weak model] in
-                    XCTAssertEqual(model?.controls.videoZoom.settings.mode, .picture)
+                    XCTAssertEqual(model?.controls.videoZoom.settings.mode, visit.expectedMode)
                     XCTAssertEqual(model?.controls.videoZoom.settings.pictureFitsInsideSafeArea, visit.expectedSafe,
-                                   "Apply shared framing before the first frame, even for an old title preference.")
+                                   "Apply shared framing before the first frame, including the Auto-crop reset.")
                 }
                 await model.load()
                 XCTAssertEqual(model.phase, .ready)
@@ -895,6 +900,90 @@ final class PlayerViewModelEOFTests: XCTestCase {
                 await model.stop()
             }
         }
+    }
+
+    func testAutoSkipNeverChainsIntoABogusMarkerAtTheLanding() async throws {
+        let item = MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 2_400)
+        // The server's outro starts at the intro's end and covers the rest of the
+        // item. It is not closing credits and must be absent entirely, so an
+        // automatic intro skip has nothing to chain into.
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+            segments: [
+                .init(id: "intro", kind: .intro, start: 54.346, end: 82.5),
+                .init(id: "credits", kind: .credits, start: 82.5, end: 2_400)
+            ]
+        )
+        let engine = SpyVideoEngine()
+        engine.duration = 2_400
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(
+                skipIntros: .autoInstant, useCommunityMarkers: false, autoPlayNextEpisode: false
+            ),
+            engineFactory: .init(makeNative: { _ in engine })
+        )
+        await model.load()
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.controls.skipSegments.segments.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.controls.skipSegments.segments.map(\.kind), [.intro],
+                       "The outro that runs from the intro's end to EOF is malformed and absent.")
+
+        model.controls.currentSeconds = 60
+        model.autoSkipActiveSegment()
+
+        XCTAssertEqual(model.controls.pendingSeekTarget, 82.5)
+        XCTAssertEqual(model.controls.skipSegments.skippedLanding, 82.5)
+        XCTAssertNil(model.controls.activeSkipSegment)
+        model.controls.currentSeconds = 88
+        XCTAssertNil(model.controls.activeSkipSegment,
+                     "A skip only skips its own segment; there is nothing else to chain into.")
+        await model.stop()
+    }
+
+    func testOneSkipPressSeeksToTheWholeSegmentEndOnceAndRemovesTheButton() async throws {
+        let item = MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 1_800)
+        // TheIntroDB's shape for The Paper S02E02: a finite 28-second intro.
+        let intro = MediaSegment(
+            id: "theintrodb-intro-0", kind: .intro, start: 54.346, end: 82.5
+        )
+        let provider = RecordingPlaybackProvider(
+            request: .init(item: item, streamURL: URL(string: "https://fixture.invalid/video.mp4")!),
+            segments: [intro]
+        )
+        let engine = SpyVideoEngine()
+        engine.duration = 1_800
+        let model = PlayerViewModel(
+            provider: provider, itemID: item.id,
+            playbackSettings: .init(skipIntros: .on, useCommunityMarkers: false),
+            engineFactory: .init(makeNative: { _ in engine })
+        )
+        await model.load()
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.controls.skipSegments.segments.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.controls.skipSegments.segments.map(\.end), [82.5])
+        model.controls.currentSeconds = 54.4
+        XCTAssertTrue(model.controls.skipButtonVisible)
+
+        model.skipActiveSegment()
+
+        XCTAssertEqual(
+            model.controls.pendingSeekTarget, 82.5,
+            "Skip seeks to the whole segment's end, never a ±skip interval."
+        )
+        XCTAssertFalse(model.controls.skipButtonVisible, "The button leaves after its single press.")
+        let seekDeadline = ContinuousClock.now + .seconds(3)
+        while engine.currentTime != 82.5, ContinuousClock.now < seekDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(engine.currentTime, 82.5)
+        XCTAssertEqual(model.controls.currentSeconds, 82.5)
+        XCTAssertNil(model.controls.activeSkipSegment, "One press skips the segment exactly once.")
+        await model.stop()
     }
 
     func testDisabledSkipContentStillLoadsUpNextMarkersWithoutCommunityLookupOrSkipButton() async {

@@ -36,6 +36,40 @@ import UIKit
 @MainActor
 @Observable
 final class PlozziOSAppModel {
+
+    /// One scoped detail-snapshot cache per profile/account identity, memoized for
+    /// the app's lifetime. The iOS detail pages previously used
+    /// `DetailSnapshotCache.ephemeral`, so nothing they loaded was restored: every
+    /// visit rebuilt the page instead of painting the cached hero/seasons.
+    @ObservationIgnored private let detailCacheFactory = DetailSnapshotCacheFactory()
+    @ObservationIgnored private var recentDetailArtwork: (scope: String, replay: ArtworkBitmapReplay)?
+    let detailSchedules = PlozziOSDetailScheduleReplay()
+
+    /// The cache for the active profile and its current servers. Switching profile
+    /// or Plex Home user switches scope, so one household member never restores
+    /// another's cached page.
+    var detailSnapshotCache: DetailSnapshotCache {
+        detailCacheFactory.cache(for: detailCacheScope)
+    }
+
+    var detailArtworkReplay: ArtworkBitmapReplay {
+        let scope = detailCacheScope.digest
+        if let recentDetailArtwork, recentDetailArtwork.scope == scope { return recentDetailArtwork.replay }
+        let replay = ArtworkBitmapReplay()
+        recentDetailArtwork = (scope, replay)
+        return replay
+    }
+
+    var detailArtworkScopeID: String { detailCacheScope.digest }
+
+    private var detailCacheScope: DetailSnapshotCacheScope {
+        let accounts = accountsProviders.homeAccounts.map(\.account)
+        let profile = profiles.activeProfile
+        let material = profile.plexPlaybackIdentityKey(for: accounts)
+            + "|" + accounts.map(\.connectionScopeKey).sorted().joined(separator: "|")
+        return DetailSnapshotCacheScope(profileID: profiles.activeProfileID, identityMaterial: material)
+    }
+
     let music: PlozziOSMusicRuntime? = AppReleaseChannel.current.isBeta ? PlozziOSMusicRuntime() : nil
     private let appAdmission: AppAdmissionModel
     let offlineMode: PlozziOSOfflineModeModel
@@ -1728,11 +1762,26 @@ final class PlozziOSAppModel {
         profiles.update(profile)
     }
 
-    /// Closes whichever question is on screen (the sheet was swiped away, or
-    /// Done was tapped).
-    func resolveIdentityPromptForPending() {
-        guard let account = pendingIdentityAccount else { return }
-        concludeIdentityPrompt(for: account.id)
+    struct ServerIdentityQuestion: Identifiable {
+        struct ID: Hashable {
+            let profileID: String
+            let accountID: String
+        }
+        let id: ID
+        let account: Account
+    }
+
+    /// The import stays gated by the persisted question even when a profile
+    /// picker or unlock screen must come first.
+    var presentableIdentityQuestion: ServerIdentityQuestion? {
+        guard canEnterApp, !mustChooseProfile,
+              !requiresLaunchProfileSelection || didCompleteLaunchProfileSelection,
+              lockedSwitch == nil, parentalSwitch == nil, !activeProfileNeedsUnlock,
+              !profiles.activeProfile.needsSetup, pendingFirstRunStep == nil, profileOnboardingStep == nil,
+              pendingLibrarySelection == nil, plexHomeUsers.pendingPlexUserSelection == nil,
+              !isManagedServerPresentationActive, plexPINRequestForAppPresentation == nil,
+              let account = pendingIdentityAccount else { return nil }
+        return .init(id: .init(profileID: profiles.activeProfileID, accountID: account.id), account: account)
     }
 
     /// Closes the question when the sheet goes away.
@@ -1744,8 +1793,10 @@ final class PlozziOSAppModel {
     /// watchlist completely. Declining has to be something a person chooses,
     /// which is what `declineIdentityPrompt` and the button that calls it are
     /// for.
-    func concludeIdentityPrompt(for accountID: String) {
-        resolveIdentityPrompt(for: accountID)
+    func concludeIdentityPrompt(_ question: ServerIdentityQuestion, decline: Bool = false) {
+        guard presentableIdentityQuestion?.id == question.id, inlinePlexPINRequest == nil else { return }
+        if decline { declineIdentityPrompt(for: question.account.id) }
+        else { resolveIdentityPrompt(for: question.account.id) }
     }
 
     /// Re-reads everything scoped to the Plex identity after "watching as"

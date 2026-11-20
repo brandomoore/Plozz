@@ -356,7 +356,7 @@ struct PlayerControls: View {
                 bottomCluster
                     .opacity(model.controlsVisible ? 1 : 0)
             }
-            .animation(.easeInOut(duration: 0.25), value: model.controlsVisible)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: model.controlsVisible)
             .animation(.easeInOut(duration: 0.3), value: styleEditing)
             // A member of the ZStack, NOT an `.overlay` on it. An overlay attached
             // after `.ignoresSafeArea()` still gets the system safe area in its
@@ -823,7 +823,7 @@ struct PlayerControls: View {
         .frame(height: height)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .opacity((model.controlsVisible && !styleEditing) ? 1 : 0)
-        .animation(.easeInOut(duration: 0.3), value: model.controlsVisible)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: model.controlsVisible)
         .animation(.easeInOut(duration: 0.3), value: styleEditing)
         .allowsHitTesting(false)
         .ignoresSafeArea()
