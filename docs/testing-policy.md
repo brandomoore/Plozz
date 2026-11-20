@@ -418,7 +418,9 @@ build lease through remaining delivery and retain exact artifacts as usual.
 
 For hosted UI speed, replace setup sleeps only with observable readiness.
 `waitForHostedLayout` bounds waits for stable layer geometry and completed
-animations in static library/multiview matrices. Keep loading/shimmer waits and
+animations in static library/multiview matrices. Stable geometry does not mean
+tvOS has assigned focus: the PIN keypad fixture waits for native focus inside
+its host before settling the layout and capturing each appearance. Keep loading/shimmer waits and
 negative focus-observation windows intact; continuously animated fixtures are
 not candidates for this helper. Viewport, Dynamic Type, OCR, and pixel assertions
 must remain unchanged. Record actual timings rather than assuming a shorter
