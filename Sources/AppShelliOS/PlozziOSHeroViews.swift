@@ -957,25 +957,13 @@ struct PlozziOSHeroStage<Foreground: View>: View {
               !Task.isCancelled, !trailerController.isPlaybackSuppressed else {
             return
         }
-        trailerController.prepare(
+        guard trailerController.prepare(
             itemID: item.id,
-            resolvedURL: source.url,
+            source: source,
             muted: surfaceMuteDefault
-        )
+        ) else { return }
         trailerController.claimSurface(surfaceRole, itemID: item.id)
-        while !trailerController.isReady {
-            do {
-                try await Task.sleep(for: .milliseconds(50))
-            } catch {
-                return
-            }
-            guard !Task.isCancelled,
-                  !trailerController.isPlaybackSuppressed,
-                  isActive,
-                  trailerController.isShowing(item.id) else {
-                return
-            }
-        }
+        guard (try? await trailerController.waitUntilReady(itemID: item.id)) == true else { return }
         await startPreparedAfterLeadIn()
     }
 

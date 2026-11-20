@@ -1224,7 +1224,9 @@ final class PlozziOSAppModel {
         )
         guard !Task.isCancelled else { return nil }
 
-        // Signed playback URLs can expire, so positive entries stay short-lived.
+        // A session grant belongs to one player; even a short TTL outlives a stop.
+        if let source, !source.isCacheable { return source }
+        // Other signed playback URLs can expire, so positive entries stay short-lived.
         // Negative entries use an even shorter TTL so a newly-added trailer appears
         // without requiring an app restart.
         let ttl: TimeInterval = source == nil ? 120 : 600

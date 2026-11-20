@@ -15,6 +15,12 @@ require server verification. Each connection retains that server profile's
 library restrictions and watch history; Plozz profiles choose which connections
 they use.
 
+Silo's [native item detail](https://github.com/Silo-Server/silo-server/blob/66b836f82a32de2fb3e5dfae6c285c19eea1096d/contracts/api/v2/openapi.json)
+lists local trailer and teaser files in `extras`. Plozz plays the extra's own
+`content_id`, not the parent title or `file_id`. YouTube trailers and teasers
+in `videos` are external links; they never autoplay. Browsing a title does
+not trigger a server metadata refresh.
+
 Nearby-server search probes Silo's standard HTTP port 8090 on directly connected
 private IPv4 LANs. It validates the native v2 system identity and pairing
 capability before displaying a result. The scan is bounded and stops when the

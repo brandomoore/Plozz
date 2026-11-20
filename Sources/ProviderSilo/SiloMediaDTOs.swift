@@ -62,6 +62,26 @@ struct SiloItem: Decodable, Sendable {
     let preview: SiloMarker?
 }
 
+struct SiloTrailerDetail: Decodable, Sendable {
+    struct Extra: Decodable, Sendable {
+        let content_id: String?
+        let kind: String?
+        let title: String?
+        let duration_seconds: Double?
+    }
+
+    struct Video: Decodable, Sendable {
+        let site: String?
+        let site_key: String?
+        let kind: String?
+        let name: String?
+    }
+
+    let title: String
+    let extras: [Extra]?
+    let videos: [Video]?
+}
+
 struct SiloRating: Decodable, Sendable {
     let source: String
     let name: String

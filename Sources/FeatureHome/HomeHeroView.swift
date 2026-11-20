@@ -202,9 +202,7 @@ struct HomeHeroView: View {
     /// restarts it to sleep for the remaining dwell. Slide changes / manual pages
     /// go through `advanceToken`; this is purely the pause/resume lifecycle.
     @State private var runEpoch = 0
-    /// Resolved fast trailer for the fronted item. `nil` keeps today's static
-    /// image/timer behavior.
-    @State private var activeTrailerSource: HeroTrailerSource?
+    @State private var hasActiveTrailerSource = false
     @State private var activeTrailerDuration: TimeInterval = 0
     /// Trailer reached its end while interaction/recede blocked automatic paging.
     /// The video and gauge are allowed to finish; paging occurs once interaction
@@ -213,8 +211,7 @@ struct HomeHeroView: View {
     /// Separate from interaction `pausedAt`: only transport-level pauses (recede
     /// or full-screen playback) freeze trailer/static progress.
     @State private var trailerPausedAt: Date?
-    /// Per-carousel memo so wrapping back to a slide never re-runs provider
-    /// trailer/playback resolution. Bounded by the curated item set (max 20).
+    /// Only reusable URLs survive a trip around the carousel (max 20 items).
     @State private var trailerSourceCache: [String: HeroTrailerSource] = [:]
     @State private var noFastTrailerIDs: Set<String> = []
     /// Drives the first-appearance fade-in, matching the detail hero's polish.
@@ -756,7 +753,7 @@ struct HomeHeroView: View {
                 source = await trailerResolver(item)
                 guard !Task.isCancelled, current?.id == item.id else { return }
                 if let source {
-                    trailerSourceCache[item.id] = source
+                    if source.isCacheable { trailerSourceCache[item.id] = source }
                 } else {
                     noFastTrailerIDs.insert(item.id)
                 }
@@ -764,12 +761,12 @@ struct HomeHeroView: View {
             guard let source,
                   !Task.isCancelled,
                   current?.id == item.id else { return }
-            activeTrailerSource = source
-            trailerController.prepare(
+            guard trailerController.prepare(
                 itemID: item.id,
-                resolvedURL: source.url,
+                source: source,
                 muted: backgroundSettings.homeTrailerMuted
-            )
+            ) else { return }
+            hasActiveTrailerSource = true
             trailerController.claimSurface(.home, itemID: item.id)
             // Loading and failed trailers keep the normal artwork dwell. Only a
             // playable item earns the longer trailer timeline.
@@ -777,7 +774,7 @@ struct HomeHeroView: View {
                 guard try await trailerController.waitUntilReady(itemID: item.id) else {
                     guard !Task.isCancelled, current?.id == item.id else { return }
                     trailerSourceCache[item.id] = nil
-                    noFastTrailerIDs.insert(item.id)
+                    if source.isCacheable { noFastTrailerIDs.insert(item.id) }
                     resetTrailer(stopPlayer: false)
                     return
                 }
@@ -808,7 +805,7 @@ struct HomeHeroView: View {
             trailerController.startPrepared()
         }
         .onChange(of: trailerController.currentItemID) { _, itemID in
-            guard itemID == nil, isFrontmost, activeTrailerSource != nil else { return }
+            guard itemID == nil, isFrontmost, hasActiveTrailerSource, !pendingTrailerAdvance else { return }
             resetTrailer(stopPlayer: false)
         }
         .onChange(of: trailerController.isPaused) { _, paused in
@@ -2277,7 +2274,7 @@ struct HomeHeroView: View {
 
     private func resetTrailer(stopPlayer: Bool) {
         activeTrailerDuration = 0
-        activeTrailerSource = nil
+        hasActiveTrailerSource = false
         pendingTrailerAdvance = false
         trailerPausedAt = nil
         trailerController.clearEndHandler(ownerID: "home-hero")
