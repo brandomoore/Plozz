@@ -79,6 +79,40 @@ docs/ tools/
 - Move view logic into view models or coordinators. Views register, render, and
   call typed actions.
 
+### Hero continuity
+
+Hero animation is about continuity, not decoration. Keep these rules shared
+between Home and detail:
+
+- **One wordmark reveal.** Do not let a text title appear first and then swap
+  for a logo. Home crossfades its resolved wordmark without gating Play/Watchlist.
+  A ready wordmark leads the mobile detail entrance. If it arrives later,
+  fade in the logo itself without replaying the entrance.
+  Reuse Home's displayed wordmark on detail entry when subject, profile and
+  artwork policy still match; discovery ownership must not delay that handoff.
+  On mobile, also reuse the same detail page's cached wordmark on a row reopen.
+  Show a ready schedule badge with the title, or after a genuinely late logo
+  finishes fading so the visible badge never moves to accommodate the logo.
+- **Home slides stay opaque.** A carousel slide whose artwork is already loaded
+  must not fade when the slide changes or while the page is pulled. An
+  opacity animation tied to `backdropResolved` on every slide causes dimming and
+  black flashes during pull.
+- **Ready detail artwork stays immediate.** The native push is the mobile
+  entrance; text, controls and rows do not run a second entrance. Only missing
+  artwork gets an arrival fade. See [detail and playback](feature-home/detail-and-playback.md)
+  for backdrop, reflection and Reduce Motion behavior.
+- **Reserve async action slots.** A trailer button (or any action resolved after
+  first paint) must reserve its final size from the start, or Play shifts when
+  it arrives.
+- **Landscape seeds only.** Never seed the landscape detail hero with a portrait
+  poster; scaling it to fill and later swapping in the backdrop reads as the
+  hero resizing.
+- **Scope navigation requests.** A request owned by one tab must be observed only by that tab's navigation
+  stack. Other tabs must keep their pushed pages and scroll positions.
+
+See [page loading scaffold](page-loading-scaffold.md#hero-stages) for the
+loading/reveal side of the same surfaces.
+
 ## State and lifecycle
 
 For cross-screen state coordination, follow [state management](state-management.md):
@@ -90,6 +124,50 @@ For cross-screen state coordination, follow [state management](state-management.
 - tests for each platform profile.
 
 Do not add ad-hoc foreground/background refresh logic to view bodies.
+
+### Never hide a transient state behind a wall-clock delay
+
+A loading affordance must be chosen from **known state**, not from "has it been
+long enough". Delays are untestable (they depend on network and device speed),
+they behave differently on the same build, and they turn a deterministic rule
+into a threshold nobody can verify. Two concrete cases:
+
+- The Home skeleton paints only when no snapshot exists to restore
+  (`hasPersistedSnapshot == false`); it is not armed after N milliseconds.
+- The detail episode rail paints its skeleton only when the viewer explicitly
+  switched season (`hasExplicitSeasonSelection`) and those episodes are not in
+  hand yet. A page's first load holds the rail's geometry and fills it in place.
+
+Both of these previously shipped with `Task.sleep` graces (250 ms, 2 s, 6 s).
+Each one produced a measured failure that a state rule does not: the skeleton
+still appeared whenever the real fetch outran the delay. If a transient state
+needs to be hidden, hide it while the *data* says it is provisional, not while a
+timer says so.
+
+### Reserve geometry with `PlozzReservedPlaceholder`
+
+Loading placeholders do two different jobs, and conflating them causes reflow:
+reserving the final space, and signalling that work is happening. Use
+`PlozzReservedPlaceholder` (`CoreUI`) instead of writing the rule per view:
+
+```swift
+PlozzReservedPlaceholder(isPending: episodes == nil, revealsPlaceholder: seasonChanged) {
+    EpisodeSkeletonRail()      // must be the real card height
+} content: {
+    EpisodeRail(episodes)
+}
+```
+
+`isPending` decides whether the placeholder is **laid out** — so the page never
+jumps when content lands. `revealsPlaceholder` decides only whether it is
+**painted** — so a first load does not flash a skeleton the viewer never asked
+for. Both are state, never time.
+
+This came from the detail page: the episode rail painted its skeleton on every
+open (a flash), and when that was suppressed the rail reserved no height at all
+and the cards pushed the page down (a reflow). Reserving without revealing fixes
+both. Use it for known content geometry, not optional recommendations whose existence
+and count are unknown. Related titles render only actual entries, below cast.
 
 ## Tests
 

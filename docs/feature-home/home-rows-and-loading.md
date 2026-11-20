@@ -2,6 +2,12 @@
 
 [Home task map](../../Sources/FeatureHome/README.md#where-to-look-first)
 
+On iPhone and iPad, switching profiles shows the incoming profile's ready hero
+or rows immediately. Only a Home that was visible without any media fades in
+its first content, together over 350 ms. Skeletons and page controls remain
+visible while waiting. Refreshing, scrolling and returning from detail or
+playback do not start another fade. Reduce Motion skips the animation.
+
 ## Upcoming and Coming Soon
 
 `UpcomingFeedLoader` builds the personal release agenda from the active profile's
@@ -777,6 +783,10 @@ On iPhone and iPad, the loading and loaded Home layouts share the hero visibilit
 gate. Disabling the hero or deselecting all its sources removes both the carousel
 and its placeholder, including the reserved height. Only an active hero extends
 under the top safe area; a rows-only Home keeps its first row below navigation.
+On compact Home, the first layout after profile selection places the hero behind
+the status bar and the profile button below it. While a selected title's artwork
+loads, a single fill occupies the final artwork frame; only a real picture gets
+reflected. The metadata, actions and following row do not wait for the picture.
 The Home artwork, legibility scrim, and dissolve mask share window-wide bounds,
 including behind native side chrome. The title, actions, paging, and touch targets
 retain their safe-area layout; extending the artwork does not extend hit testing.
@@ -957,7 +967,9 @@ freshness or carry across changed choices.
 Replacing an account/profile-scoped Home model on either
 platform permanently invalidates it before creating the next one. Late results
 and queued reloads from that retired model cannot publish or restart work; do
-not rely on `deinit` while an outstanding load retains its model.
+not rely on `deinit` while an outstanding load retains its model. Retirement
+cancels Upcoming without clearing observed rows: SwiftUI may be constructing
+the replacement tabs. A scope change within a still-live feed resets it normally.
 
 Identity verification does not imply a membership change. `IdentityIndex` compares
 completed account rebuilds on its own actor and keeps its cached snapshot when

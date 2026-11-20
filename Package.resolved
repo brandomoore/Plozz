@@ -6,7 +6,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/brandomoore/AetherEngine",
       "state" : {
-        "revision" : "754eadcb5f6c6018c9e2ce53fd554777b89c6b50"
+        "revision" : "d98f93de1bc05635279ab5ce7831910327452e3f"
       }
     },
     {
@@ -41,7 +41,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/thatcube/SMBClient.git",
       "state" : {
-        "revision" : "5d5bceb6fa0833c98b0eecc676609c9476bd9423"
+        "revision" : "c778237de5e2525a46005241dc5e7926703bddcf"
       }
     },
     {

@@ -23,18 +23,25 @@ class CISimulatorTests(unittest.TestCase):
         }}
         self.assertEqual(MODULE.select_device(devices, "26.2")[0], "matching")
 
-    def test_prefers_available_1080p_4k_device(self):
+    def test_prefers_full_size_4k_over_1080p_variant(self):
         devices = {"devices": {"com.apple.CoreSimulator.SimRuntime.tvOS-26-2": [
             self.device("unavailable", "Apple TV 4K (at 1080p)", False),
             self.device("regular"),
-            self.device("preferred", "Apple TV 4K (at 1080p)"),
+            self.device("preferred1080", "Apple TV 4K (at 1080p)"),
         ]}}
-        self.assertEqual(MODULE.select_device(devices, "26.2")[0], "preferred")
+        self.assertEqual(MODULE.select_device(devices, "26.2")[0], "regular")
 
-    def test_missing_runtime_fails_instead_of_falling_back(self):
-        with self.assertRaisesRegex(ValueError, "tvOS-26-2"):
+    def test_newest_available_runtime_wins_over_exact_sdk_runtime(self):
+        devices = {"devices": {
+            "com.apple.CoreSimulator.SimRuntime.tvOS-27-0": [self.device("broken")],
+            "com.apple.CoreSimulator.SimRuntime.tvOS-27-2": [self.device("healthy")],
+        }}
+        self.assertEqual(MODULE.select_device(devices, "27.0")[0], "healthy")
+
+    def test_missing_apple_tv_runtime_fails(self):
+        with self.assertRaisesRegex(ValueError, "No available Apple TV simulator"):
             MODULE.select_device({"devices": {
-                "com.apple.CoreSimulator.SimRuntime.tvOS-18-5": [self.device("old")]
+                "com.apple.CoreSimulator.SimRuntime.tvOS-18-5": [self.device("old", "iPhone")]
             }}, "26.2")
 
     def test_unavailable_or_non_tv_devices_are_rejected(self):

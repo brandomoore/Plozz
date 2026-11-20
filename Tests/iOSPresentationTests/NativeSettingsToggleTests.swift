@@ -2,6 +2,7 @@
 import CoreModels
 @testable import CoreUI
 import FeatureProfiles
+import FeatureHomeCore
 @testable import FeaturePlayback
 @testable import FeatureSettings
 import Observation
@@ -12,6 +13,28 @@ import XCTest
 
 @MainActor
 final class NativeSettingsToggleTests: XCTestCase {
+    func testHomeTrailersAndMusicUsesActiveProfilesThemeMusicModel() throws {
+        let suite = "HomeThemeMusic-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = ThemeMusicSettingsModel(store: ThemeMusicSettingsStore(defaults: defaults))
+        let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore())
+        background.settings.detailMode = .themeMusic
+        let page = HeroSettingsScreen(page: .trailers, libraries: [], accounts: [])
+            .environment(HeroSettingsModel(store: InMemoryHeroSettingsStore()))
+            .environment(background)
+            .themeMusicScope(
+                controller: ThemeMusicController(), model: model, background: background.settings,
+                isBlocked: true, authorization: .denied, authenticatedHTTPResolver: UnusedThemeResolver()
+            )
+        let host = UIHostingController(rootView: page)
+        XCTAssertGreaterThan(host.sizeThatFits(in: CGSize(width: 390, height: 900)).height, 0)
+    }
+
+    private struct UnusedThemeResolver: AuthenticatedHTTPResourceResolving {
+        func resolve(_ locator: AuthenticatedHTTPPlaybackLocator) async throws -> URL { throw AppError.notFound }
+    }
+
     func testVideoUpscalingShowsProfileSelectionOnPhoneAndTablet() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)

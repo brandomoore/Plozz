@@ -10,7 +10,7 @@ let package = Package(
                  revision: "5eacfcdc5b76f9c330336810c9adc6d30b673531", traits: []),
         // Preserve the host's root override of the engine's optional SMB package.
         .package(url: "https://github.com/thatcube/SMBClient.git",
-                 revision: "5d5bceb6fa0833c98b0eecc676609c9476bd9423"),
+                 revision: "c778237de5e2525a46005241dc5e7926703bddcf"),
     ],
     targets: [
         .target(name: "DiscMenuPlayer", dependencies: [

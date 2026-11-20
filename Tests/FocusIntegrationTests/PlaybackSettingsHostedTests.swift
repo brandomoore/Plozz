@@ -53,7 +53,8 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(350))
         let initial = try visibleText(in: window, attachment: nil)
         XCTAssertTrue(initial.contains("Default zoom"), initial)
-        XCTAssertTrue(initial.contains("Auto-crop black bars"), initial)
+        XCTAssertEqual(playback.settings.videoZoom.television.mode, .fit)
+        XCTAssertTrue(initial.contains("Normal"), initial)
         XCTAssertEqual(nativeFocusItems(in: window).count, 1)
         playback.settings.videoZoom.television = .init(mode: .custom, customPercent: 117)
         try await Task.sleep(for: .milliseconds(350))
@@ -367,8 +368,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
             audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
         )
-        XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround"]
-            + (AppReleaseChannel.current.isBeta ? ["dolby-vision-fel"] : []))
+        XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround", "dolby-vision-fel"])
         let outputRow = try XCTUnwrap(page.audioRows.first { $0.id == "lossless-surround" })
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)

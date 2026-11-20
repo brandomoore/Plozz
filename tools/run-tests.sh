@@ -86,14 +86,16 @@ fi
 #   1. A per-worktree DerivedData dir (PLOZZ_DERIVED_DATA) so this checkout never
 #      contends with another worktree's build DB, and so a wedge can be cleared
 #      by nuking just this dir — never the shared cache.
-#   2. A no-progress watchdog: if the build log stops growing for
-#      PLOZZ_HANG_SECS, the xcodebuild process tree is killed, this worktree's
+#   2. A phase-specific no-output watchdog: if the log stops growing past its
+#      deadline, the xcodebuild process tree is killed, this worktree's
 #      DerivedData is cleared, and the invocation is retried ONCE from clean.
 PLOZZ_DERIVED_DATA="${PLOZZ_DERIVED_DATA:-$PWD/.build/test-derived-data}"
 PLOZZ_TEST_RESULTS_DIR="${PLOZZ_TEST_RESULTS_DIR:-$PWD/.build/test-results}"
 PLOZZ_CLONED_SOURCE_PACKAGES="${PLOZZ_CLONED_SOURCE_PACKAGES:-$PLOZZ_DERIVED_DATA/SourcePackages}"
 configure_plozz_package_resolution "$PLOZZ_CLONED_SOURCE_PACKAGES"
 PLOZZ_HANG_SECS="${PLOZZ_HANG_SECS:-180}"
+# Cold Swift batch compilation can stay quiet longer than a running test.
+PLOZZ_COMPILE_HANG_SECS="${PLOZZ_COMPILE_HANG_SECS:-600}"
 # How long to let xcodebuild wind down AFTER every test bundle has reported its
 # result. Surviving tests can report success after a crash/restart, so these
 # lines only start the teardown grace period; xcresult decides the verdict.
@@ -375,6 +377,7 @@ _xcb_build_and_test() {
     echo "run-tests.sh: expected exactly one built xctestrun for $scheme; found ${#manifests[@]}." >&2
     return 1
   fi
+  touch "$result_dir/executing-tests" || return 1
   xcodebuild test-without-building -xctestrun "${manifests[0]}" \
     -destination "platform=tvOS Simulator,id=$PLOZZ_SIM_ID" \
     -parallel-testing-enabled "$PARALLEL" \
@@ -384,7 +387,7 @@ _xcb_build_and_test() {
 
 # _xcb_once <log> <xcb-arg>...  -> runs one xcodebuild test invocation with a
 # no-progress watchdog. Returns xcodebuild's exit status, or 124 if the watchdog
-# killed it for making no progress for PLOZZ_HANG_SECS.
+# killed it for exceeding the current phase's no-output budget.
 _xcb_once() {
   local log="$1"; shift
   local result_dir result_bundle summary="$log.summary.json"
@@ -401,14 +404,20 @@ _xcb_once() {
   ( tail -n +1 -F "$log" 2>/dev/null | grep --line-buffered -E "$SUMMARY_RE" || true ) &
   local tail_pid=$!
 
-  # Watchdog: poll the log size; if it doesn't grow for PLOZZ_HANG_SECS, the
-  # build is wedged — kill the tree and report a hang (124).
+  # Reset the silence clock when the newly built manifest starts executing.
   #
   # Console summaries start the grace period, not a success verdict. Do not
   # interrupt result finalization: only reap teardown once xcresult is readable.
   local last_size=-1 stalled=0 hung=0 size verdict_wait=0 reported_at=-1 reaped_after_verdict=0
+  local phase=compile silence_limit=$PLOZZ_COMPILE_HANG_SECS
   while kill -0 "$xcb_pid" 2>/dev/null; do
     sleep "$POLL_SECS"
+    if [[ $phase == compile && -f "$result_dir/executing-tests" ]]; then
+      phase=test
+      silence_limit=$PLOZZ_HANG_SECS
+      last_size=-1
+      stalled=0
+    fi
     if [[ ${EXPECTED_BUNDLES:-0} -gt 0 ]] \
        && [[ $(reported_bundles_count "$log") -ge ${EXPECTED_BUNDLES} ]]; then
       [[ $reported_at -lt 0 ]] && reported_at=$SECONDS
@@ -437,8 +446,8 @@ _xcb_once() {
     size=$(stat -f%z "$log" 2>/dev/null || echo 0)
     if [[ "$size" == "$last_size" ]]; then
       stalled=$(( stalled + POLL_SECS ))
-      if [[ $stalled -ge $PLOZZ_HANG_SECS ]]; then
-        echo "" ; echo "run-tests.sh: WATCHDOG — no build output for ${PLOZZ_HANG_SECS}s; xcodebuild is wedged. Killing it." >&2
+      if [[ $stalled -ge $silence_limit ]]; then
+        echo "" ; echo "run-tests.sh: WATCHDOG — no $phase output for ${silence_limit}s; stopping xcodebuild." >&2
         kill_tree "$xcb_pid"
         hung=1
         break

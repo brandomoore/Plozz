@@ -92,6 +92,9 @@ Back, the control and Reset remain vertically reachable. On submenu entry,
 Back and Reset become eligible only after the stepper reports actual native
 focus; writing the panel's row FocusState does not focus a separately hosted
 stepper. This entry gate resets on reopening, not on ordinary Up/Down movement.
+Reset clears the offset and explicitly returns focus to the stepper's own
+button. Disabling Reset at zero does not itself move tvOS focus; the next Up
+from the stepper must reach Back.
 
 Automatic on-demand subtitle selection applies the profile's **SDH subtitles**
 preference to embedded tracks and external files, including network shares and
@@ -564,14 +567,12 @@ processing for every engine route. Undocumented integration carries OS
 compatibility and App Review risk. This system-preference bridge is tvOS-only.
 
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
-controls. Portrait uses one ellipsis; landscape exposes the available menus as
-separate controls, with Version and Multiview opening their existing destinations
-directly. Audio, Subtitles and Video reuse the existing player-category icons
-(waveform, captions and adjustment sliders) in both VOD and Live TV. Video combines
-zoom choices with Quality in both layouts; Quality opens its existing editor and
-never acts as a selectable zoom mode. The standalone Video popup omits its redundant
-category heading; portrait retains the named Video entry. Quality remains
-available in Video even when zoom is unsupported. Layout follows the actual player
+controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles, the
+current speed (on demand), and an ellipsis, omitting unavailable controls.
+Quality lists the server-supported presets and marks the current limit. Selecting
+a preset keeps the codec and other stream settings; Advanced opens the full editor
+for custom limits, transcoding and stream details. Version (on demand) or Multiview (live) also lives
+in overflow when available. Layout follows the actual player
 viewport, including iPad split windows, not the device's global orientation.
 Subtitles and Audio offer their existing tracks directly with real active-track
 checkmarks. Audio has no redundant track-section heading. Subtitles lists all
@@ -579,13 +580,13 @@ tracks first, then Search & Download, then Advanced. Native menu configurations
 preserve this top-to-bottom order even when opening upward. Advanced opens a touch sheet for supported
 appearance, timing and dual-track controls. Live TV
 does not offer search/download or dual subtitles. Native speed presets and Video
-modes apply immediately; Custom, Quality, Version and supported sync controls
+modes apply immediately; Custom Speed, Advanced Quality, Version and supported sync controls
 open their existing editors. Live multiview is another menu action; Go Live
 remains a transport action. A sole audio track stays visible as disabled metadata.
 Opening a menu pins transport controls; playback-clock updates do not rebuild
 its snapshot. `PlayerMenuPresentation` releases editor requests only after native
 menu dismissal completes. Context changes invalidate pending requests and old
-audio/subtitle/speed/zoom actions, and programme transitions release live controls.
+audio/subtitle/speed/quality/zoom actions, and programme transitions release live controls.
 Each native popup has its own presentation owner, so overlapping dismissal and
 teardown callbacks cannot unpin a newer popup or release a sheet too early.
 Popup rows are text-only: checkmarks belong to real track/mode/rate choices.
@@ -751,9 +752,12 @@ without tint or a colored backing. Like AVKit video chrome, their symbols and
 progress remain white in both appearances. Mobile Live TV's top presentation
 group contains only available Picture in Picture and AirPlay controls, with no
 separate Stop button. Pause/resume, player dismissal, and session cleanup retain
-their existing behavior. Playback options, track selection, and multiview sit
+their existing behavior. When playback is behind live, a separate **Jump to live**
+button returns to the live edge and disappears. Scheduled channels use **Jump to
+now**. In landscape the button sits immediately before the playback menus.
+Playback options, track selection, and multiview sit
 at the bottom trailing edge above the timeline. Portrait keeps the title on its
-own row above those actions; track menus open upward without covering the seek
+own row above a single options menu; track menus open upward without covering the seek
 bar. The controls scrim dims the video
 beneath the transport as well as the edge chrome, so white scenes remain legible
 without coloring the glass itself. Mobile Info, Cast, and Live TV Info/On Now/Guide
@@ -808,7 +812,13 @@ badge during transient phases and while paused at the edge, retaining its
 localized layout space so the header and timeline do not shift.
 VOD and Live chrome use the larger of the
 window safe area and native edge margins (21 horizontal, 24 vertical), rather
-than adding the two. Adjacent
+than adding the two. When UIKit identifies a landscape corner occlusion on a
+phone with a one-sided safe inset, main and Live use the ordinary margin on
+unobstructed rows. Close moves inward when its corner is occupied. The timeline
+keeps both time labels aligned with the title and options; if its 44-point hit
+area meets a lower camera corner, it rises just enough to clear it. Video is not inset.
+Compact Live TV controls do not reserve fullscreen camera clearance.
+Without that geometry, the controls keep the conservative safe margins. Adjacent
 routing and playback-option controls share one untinted glass capsule while
 retaining independent actions. Grouped children have no individual glass
 backgrounds or circular clipping, including UIKit menu buttons; Close and the
@@ -847,7 +857,10 @@ cancelling a scrub restores the controls. TV's remote scrub presentation is unch
 Double-tap skip, speed, and unavailable-level feedback are Plozz components
 using native media glass and SF Symbols, not stock AVKit HUDs. They share the
 transport's foreground pairing: light ink on native media glass in either theme,
-theme-aware ink on the reduced-glass fallback.
+theme-aware ink on the reduced-glass fallback. A press that lands on the Skip
+button belongs to it, never to the shortcut surface, so it cannot become a
+±interval skip or pair into a double-tap; shortcuts stay live everywhere else
+while that button is visible.
 
 ## Skip-marker timeline
 
@@ -865,14 +878,38 @@ delay, including the credits-based Up Next countdown when autoplay is enabled.
 Countdown deadlines and rings share that duration and remain tied to playback
 time, preserving pause, seek-entry, dismissal and focus behavior.
 
+Server markers are authoritative per kind; community markers only fill kinds the
+server does not report (IntroDB first, then TheIntroDB for gaps). A server window
+is never extended or replaced by a community report, and overlapping reports are
+not unioned into a new one.
+
+Every marker passes one coverage policy before it can drive the player
+(`SegmentPlausibility`, shared by server and community lists): a segment may
+cover at most half the known runtime, only an opening (`intro`, `recap`) may sit
+inside the opening, and an opening may not reach the final frame. A marker that
+fails is absent entirely — no button, no automatic skip and no Up Next window —
+so a server outro running from an intro's end to EOF cannot turn Skip into a jump
+through the episode. Contiguous same-kind pieces are coalesced (a server can split
+an intro at a chapter boundary), while exact duplicates collapse and windows with
+a real gap — a scene between credits — stay separate.
+
+One press, or one automatic skip, moves to that window's end and retires it for
+the rest of the load. Consumption is per window, not per report id, so markers
+re-published under another id cannot bring the button back, and re-entering the
+window by seeking never offers it again. A skip's own landing offers nothing until
+playback has moved the opening grace window into whatever begins there, so a
+marker starting where the skipped one ended cannot appear as a second press of the
+same gesture.
+
 Separate credits windows remain separate: a mid-credits scene is not a duplicate
 marker. Up Next owns only a credits window that reaches the known playback
 duration. A finite earlier window retains its normal Skip Credits behavior and
 lands at its own end; neither a short unmarked tail nor a missing scene marker
 justifies skipping to the next item. Natural EOF still follows episode/playlist
 autoplay preferences. Unknown duration defers the credits-based handoff.
-Exact duplicate ranges and invalid markers are removed without coalescing
-different windows or overriding a kind's Off/manual/automatic setting.
+Exact duplicate ranges collapse, and only directly abutting same-kind pieces
+coalesce; windows with a real gap stay separate, and none of this overrides a
+kind's Off/manual/automatic setting.
 
 The on-demand and Live touch timelines keep the native glass surface continuous wherever
 segment cuts would strand tiny pieces. Each uses its measured track width, not
@@ -881,6 +918,13 @@ orientation or device type: a cut needs enough room on both sides for the
 marker or short unmarked interval are omitted, including near the track ends.
 The same threshold applies at rest and while dragging, so touching does not
 change which cuts appear. Wider layouts retain cuts wherever they fit.
+
+Segment marks are guaranteed independently of that cut threshold: a dedicated
+overlay draws one gap per segment, floored to a legible minimum width, so a short
+intro (~1% of a long episode) is still visible even though the cut mask omits it.
+The overlay only floors subpixel widths; wider segments keep their proportional
+width. The player's secondary line uses the app's separator (`S2 · E2 · Title`),
+never a comma.
 
 The timeline does not enlarge or retime normalized marker ranges; linear seeking
 and existing touch targets remain unchanged. On iPhone and iPad, progress is shown
@@ -2751,8 +2795,9 @@ the single control the pressed direction targets.
 
 `LiveChannelTransport.swift` is the expanded live player's chrome, assembled from
 the VOD transport's parts rather than drawn separately: the title block and
-`playerGlassButton` badges (Audio · Subtitles · Multiview, plus Go Live when
-time-shifted), `PlayerScrubTrackSurface` for the timeline, `PlayerTabButtonStyle`
+track controls (Audio · Subtitles · More, with Zoom and Multiview under More).
+The separate Jump to live action precedes them when time-shifted. The player uses
+`PlayerScrubTrackSurface` for the timeline, `PlayerTabButtonStyle`
 tabs, the shared `PlayerOptionsPanel` for track/style menus, and
 `PlayerOverVideoCardStyle` cards. The card parks by one cluster offset exactly as
 rules 2–3 above describe, with the same constants on tvOS. Track menus live in

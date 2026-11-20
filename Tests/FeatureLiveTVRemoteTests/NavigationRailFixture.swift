@@ -33,6 +33,7 @@ struct NavigationRailFixture<SearchContent: View>: View {
             },
             contentDestination: model.selection
         )
+        .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--rtl") ? .rightToLeft : .leftToRight)
     }
 }
 

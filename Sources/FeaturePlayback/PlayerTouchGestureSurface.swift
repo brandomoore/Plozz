@@ -15,6 +15,11 @@ public struct PlayerTouchGestureSurface: UIViewRepresentable {
     let canSeek: Bool
     let canBoost: Bool
     let canZoom: Bool
+    /// A native control's frame, in this surface's coordinate space. Taps that
+    /// land inside it belong to that control, so they never count as a shortcut
+    /// touch or pair into a double-tap. Playback shortcuts stay live everywhere
+    /// else — a double-tap next to a visible Skip Intro button still skips.
+    let shortcutExclusion: CGRect?
     let onTap: () -> Void
     let onSkip: (PlayerTouchSkipDirection) -> Void
     let onBoostChanged: (Bool) -> Void
@@ -25,6 +30,7 @@ public struct PlayerTouchGestureSurface: UIViewRepresentable {
         state: PlayerTouchGestureState, shortcutsEnabled: Bool,
         levelsEnabled: Bool = false, isActive: Bool = true,
         canSeek: Bool, canBoost: Bool, canZoom: Bool,
+        shortcutExclusion: CGRect? = nil,
         onTap: @escaping () -> Void,
         onSkip: @escaping (PlayerTouchSkipDirection) -> Void,
         onBoostChanged: @escaping (Bool) -> Void,
@@ -38,6 +44,7 @@ public struct PlayerTouchGestureSurface: UIViewRepresentable {
         self.canSeek = canSeek
         self.canBoost = canBoost
         self.canZoom = canZoom
+        self.shortcutExclusion = shortcutExclusion
         self.onTap = onTap
         self.onSkip = onSkip
         self.onBoostChanged = onBoostChanged
@@ -149,7 +156,16 @@ public struct PlayerTouchGestureSurface: UIViewRepresentable {
         @objc private func tapped(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view else { return }
             owner.state.clearLevel()
-            let x = gesture.location(in: view).x
+            let location = gesture.location(in: view)
+            if let exclusion = owner.shortcutExclusion, !exclusion.isEmpty,
+               exclusion.insetBy(dx: -6, dy: -6).contains(location) {
+                // Owned by a native control on top of the surface. Drop any tap
+                // awaiting a partner so it can't become a double-tap, and leave
+                // the control's own action untouched.
+                cancelPendingTap()
+                return
+            }
+            let x = location.x
             let direction: PlayerTouchSkipDirection? = x < view.bounds.width * 0.35
                 ? .backward : (x > view.bounds.width * 0.65 ? .forward : nil)
             guard owner.shortcutsEnabled, owner.canSeek,

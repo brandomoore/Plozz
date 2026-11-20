@@ -1,4 +1,5 @@
 import CoreUI
+import CoreModels
 import Foundation
 
 /// Pure auto-hide decisions for the player transport (the control bar), extracted
@@ -64,8 +65,9 @@ enum ControlsAutoHidePolicy {
     static func outcome(focus: Focus,
                         isScrubbing: Bool,
                         isPaused: Bool,
-                        isPanelOpen: Bool) -> Outcome {
-        if isScrubbing || isPaused || isPanelOpen { return .stayVisible }
+                        isPanelOpen: Bool,
+                        mode: PlaybackControlsAutoHide = PlaybackSettings.default.controlsAutoHide) -> Outcome {
+        if isScrubbing || isPanelOpen || !mode.allowsHiding(paused: isPaused) { return .stayVisible }
         switch focus {
         case .surface: return .hide
         case .controlBar: return .returnFocusThenHide

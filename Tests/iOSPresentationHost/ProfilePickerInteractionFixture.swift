@@ -79,9 +79,10 @@ struct ProfileSelectionInteractionFixture: View {
         first.avatarSymbol = "person.fill"
         first.colorIndex = 0
         profiles.update(first)
-        var protected = profiles.add(name: "Protected", avatarSymbol: "person.fill", colorIndex: 1)
+        let isProtected = !ProcessInfo.processInfo.arguments.contains("--unprotected-plex-check")
+        var protected = profiles.add(name: isProtected ? "Protected" : "Family", avatarSymbol: "person.fill", colorIndex: 1)
         protected = protected.settingHomeUserBinding(
-            .init(homeUserID: "protected", name: "Protected", requiresPIN: true, pinRequirementVerified: true),
+            .init(homeUserID: "protected", name: protected.name, requiresPIN: isProtected, pinRequirementVerified: true),
             forPlexAccount: "plex"
         )
         if ProcessInfo.processInfo.arguments.contains("--two-pins") {
@@ -123,11 +124,13 @@ struct ProfileSelectionInteractionFixture: View {
         let model = PlozziOSAppModel(accountStore: accounts, profileStore: store)
         let slowCheck = ProcessInfo.processInfo.arguments.contains("--slow-plex-check")
         let failedCheck = ProcessInfo.processInfo.arguments.contains("--failed-plex-check")
-        let isProtected = !ProcessInfo.processInfo.arguments.contains("--unprotected-plex-check")
         model.plexHomeUsers.plexHomeUsersFetch = { _, _ in
             try await Task.sleep(for: slowCheck ? .seconds(5) : .milliseconds(350))
             if failedCheck { throw URLError(.notConnectedToInternet) }
-            return [PlexHomeUser(id: "protected", name: "Server identity", requiresPIN: isProtected)]
+            return [
+                PlexHomeUser(id: "owner", name: "Owner", requiresPIN: true),
+                PlexHomeUser(id: "protected", name: "Server identity", requiresPIN: isProtected)
+            ]
         }
         model.plexHomeUsers.plexHomeUserSwitch = { _, pin, _, _ in
             guard pin == (isProtected ? "2468" : nil) else { throw URLError(.userAuthenticationRequired) }

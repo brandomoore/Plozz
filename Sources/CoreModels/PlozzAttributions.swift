@@ -97,7 +97,7 @@ public enum PlozzAttributions {
                 "Playback is powered by AetherEngine by Vincent Herbst, under "
                 + "LGPL-3.0 with an Apple Store exception. "
                 + "Upstream: https://github.com/superuser404notfound/AetherEngine. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/cc3cb49f4014a208f841bde8d1e0a5af0ff885e9",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/d98f93de1bc05635279ab5ce7831910327452e3f",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -192,7 +192,7 @@ public enum PlozzAttributions {
                 "SMB network shares use SMBClient by Kishikawa Katsumi, "
                 + "with Plozz's SMB3 and connection-handling changes. "
                 + "Upstream: https://github.com/kishikawakatsumi/SMBClient. "
-                + "Source: https://github.com/thatcube/SMBClient/tree/5d5bceb6fa0833c98b0eecc676609c9476bd9423.",
+                + "Source: https://github.com/thatcube/SMBClient/tree/c778237de5e2525a46005241dc5e7926703bddcf.",
             licenses: [.init("MIT", family: .mit)]
         ),
         PlozzAttribution(

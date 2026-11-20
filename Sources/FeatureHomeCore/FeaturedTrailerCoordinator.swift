@@ -101,7 +101,7 @@ public final class FeaturedTrailerCoordinator {
                   !candidate.controller.isPlaybackSuppressed,
                   let source else { return }
             candidate.controller.play(
-                itemID: playerItemID, resolvedURL: source.url,
+                itemID: playerItemID, source: source,
                 muted: candidate.controller.isMuted, featuredOwner: owner
             )
             candidate.controller.claimSurface(.featured, itemID: playerItemID)

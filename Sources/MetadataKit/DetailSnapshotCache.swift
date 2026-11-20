@@ -125,11 +125,25 @@ public final class DetailSnapshotCache: Sendable {
     /// the coordinator as a self-free closure — no retain cycle, no locking.
     private let pruneCoordinator: DetailSnapshotPruneCoordinator
 
+    /// Entry and byte budgets sized to the device, mirroring `ArtworkMemoryBudget`.
+    ///
+    /// The smallest supported Apple TV has 3 GB, and a detail snapshot carries a
+    /// title's children plus its episodes; the phone-sized budget is not something a
+    /// low-RAM device should pay for on every prune scan. Disk, not RAM, but the scan
+    /// and the JSON decode cost are real there.
+    public static let budget: (entries: Int, bytes: Int) = {
+        let physical = ProcessInfo.processInfo.physicalMemory
+        if physical >= 2_560 << 20 {
+            return (800, 48 << 20)
+        }
+        return (300, 16 << 20)
+    }()
+
     public init(
         directory: URL? = DetailSnapshotCache.defaultDirectory(),
         scope: String? = nil,
-        maxEntries: Int = 800,
-        maxBytes: Int = 48 * 1024 * 1024,
+        maxEntries: Int = DetailSnapshotCache.budget.entries,
+        maxBytes: Int = DetailSnapshotCache.budget.bytes,
         maxAge: TimeInterval = 60 * 60 * 24 * 30
     ) {
         let resolved = Self.resolvedDirectory(base: directory, scope: scope)
@@ -208,6 +222,27 @@ public final class DetailSnapshotCache: Sendable {
         await withCheckedContinuation { continuation in
             ioQueue.async {
                 continuation.resume(returning: self.readSnapshot(for: key))
+            }
+        }
+    }
+
+    /// Browsing a Home row is not a detail visit. Read only the title, without
+    /// decoding the episode lists or extending the snapshot's LRU lifetime.
+    public func artworkItem(for key: String) async -> MediaItem? {
+        struct Header: Decodable {
+            let item: MediaItem
+            let savedAt: Date
+        }
+        return await withCheckedContinuation { continuation in
+            ioQueue.async {
+                guard let url = self.fileURL(for: key),
+                      let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+                      let header = try? JSONDecoder().decode(Header.self, from: data),
+                      Date().timeIntervalSince(header.savedAt) < self.maxAge else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: header.item)
             }
         }
     }

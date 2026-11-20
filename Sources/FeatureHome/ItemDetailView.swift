@@ -385,7 +385,7 @@ public struct ItemDetailView: View {
                   viewModel.state.value?.item.id == item.id else { return }
             heroTrailerController.play(
                 itemID: item.id,
-                resolvedURL: source.url,
+                source: source,
                 muted: heroBackground.settings.detailTrailerMuted
             )
             heroTrailerController.claimSurface(.detail, itemID: item.id)

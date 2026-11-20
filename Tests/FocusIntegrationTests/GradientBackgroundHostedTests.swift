@@ -149,7 +149,10 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
                 XCTAssertNotNil(focus.focusedItem)
                 for card in cards {
-                    XCTAssertFalse(card.isEnabled, "Setup actions must wait for explicit content entry.")
+                    let center = card.convert(CGPoint(x: card.bounds.midX, y: card.bounds.midY), to: window)
+                    let hit = window.hitTest(center, with: nil)
+                    XCTAssertTrue(card.isEnabled, "The navigation gate must not dim resting setup cards.")
+                    XCTAssertFalse(hit?.isDescendant(of: card) == true, "Setup actions must wait for explicit content entry.")
                     XCTAssertFalse(card.isFocused, "Setup must not steal focus from horizontal navigation.")
                 }
             }
@@ -604,8 +607,13 @@ final class GradientBackgroundHostedTests: XCTestCase {
         state.visible = false
         try await Task.sleep(for: .seconds(1))
         let inactive = try pixel(capture(window), at: CGPoint(x: 600, y: 400))
-        XCTAssertLessThan(abs(inactive[0] - inactive[2]), 15, "Hidden Home must drop its artwork tint.")
-        XCTAssertNotEqual(card.cardBackgroundColor, tintedCard)
+        // The tint is presentation, not a live readout. Holding the last artwork
+        // palette while Home is covered is what stops every return from crossfading
+        // the whole page to stock and back (the reported re-render). It changes when
+        // a different slide is displayed, not merely because Home went off screen.
+        XCTAssertGreaterThan(inactive[0], inactive[2] + 10,
+                             "Hidden Home keeps its last artwork palette until a different slide shows.")
+        XCTAssertEqual(card.cardBackgroundColor, tintedCard)
 
         let restoreToken = UUID()
         let session = TVDetailEntranceSession()

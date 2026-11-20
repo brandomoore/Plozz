@@ -1,4 +1,6 @@
 #if DEBUG && os(tvOS)
+import CoreUI
+import CoreModels
 import FeatureLiveTVCore
 import Observation
 import SwiftUI
@@ -8,6 +10,142 @@ import XCTest
 
 @MainActor
 final class LiveTVGuideFocusTests: XCTestCase {
+    func testNativeProgramFocusKeepsElapsedBrightAndDimsRemainingTime() async throws {
+        try await requireNativeFocus()
+        let window = makeWindow(
+            Button {} label: {
+                Text("Current programme")
+                    .frame(width: 320, height: 72)
+                    .background { PrototypeElapsedProgramFill(elapsedWidth: 160) }
+            }
+            .buttonStyle(PrototypeGuideButtonStyle(surface: .program))
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.themePalette, .dark)
+            .preferredColorScheme(.dark)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
+        )
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        window.rootViewController?.setNeedsFocusUpdate()
+        window.rootViewController?.updateFocusIfNeeded()
+        await waitUntil { system.focusedItem != nil }
+        try await Task.sleep(for: .milliseconds(350))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        func brightness(x: CGFloat) throws -> Int {
+            let strip = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
+                x: x, y: window.bounds.midY - 24, width: 8, height: 4
+            )))
+            var pixel = [UInt8](repeating: 0, count: 4)
+            return try pixel.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(
+                    data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(strip, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                return Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])
+            }
+        }
+        let elapsed = try brightness(x: window.bounds.midX - 80)
+        let remaining = try brightness(x: window.bounds.midX + 80)
+        XCTAssertGreaterThan(elapsed, 600, "Elapsed time must retain the native focus brightness.")
+        XCTAssertGreaterThan(elapsed - remaining, 100, "Remaining time must stay visibly distinct.")
+    }
+
+    func testNativeStationFocusIlluminatesTheOriginalPlateWithoutReplacingItsOwner() async throws {
+        try await requireNativeFocus()
+        let channels = Array(LiveTVPrototypeModel().channels.prefix(2))
+        XCTAssertEqual(channels.count, 2)
+        let window = makeWindow(
+            VStack(spacing: 16) {
+                ForEach(channels) { channel in
+                    PrototypeGuideStation(
+                        channel: channel, section: .channels, favorite: false, playing: false,
+                        tune: {}, toggleFavorite: {}, controls: {}, top: {}
+                    )
+                }
+            }
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.themePalette, .dark)
+            .preferredColorScheme(.dark)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
+        )
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        window.rootViewController?.setNeedsFocusUpdate()
+        window.rootViewController?.updateFocusIfNeeded()
+        await waitUntil { system.focusedItem != nil }
+        let item = try XCTUnwrap(system.focusedItem)
+        try await Task.sleep(for: .milliseconds(350))
+        XCTAssertTrue(system.focusedItem === item, "Changing the material must retain the native focus item.")
+        var parent = item.parentFocusEnvironment
+        while let current = parent, current.focusItemContainer == nil {
+            parent = current.parentFocusEnvironment
+        }
+        let container = try XCTUnwrap(parent?.focusItemContainer)
+        let frame = window.convert(item.frame, from: container.coordinateSpace)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Native focus through the original station plate"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        func brightness(at y: CGFloat) throws -> Int {
+            let strip = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
+                x: frame.midX - 20, y: y + 12, width: 40, height: 4
+            )))
+            var pixel = [UInt8](repeating: 0, count: 4)
+            return try pixel.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(
+                    data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.draw(strip, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                return Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])
+            }
+        }
+        let focusedBrightness = try brightness(at: frame.minY)
+        XCTAssertGreaterThan(focusedBrightness, 250,
+                             "Native focus must remain visible through the restored plate.")
+        XCTAssertLessThan(focusedBrightness, 550,
+                          "Focus must not replace the original plate with a white surface.")
+        if #available(tvOS 26.1, *) {
+            let direction: CGFloat = frame.midY < window.bounds.midY ? 1 : -1
+            let restingBrightness = try brightness(at: frame.minY + direction * (frame.height + 16))
+            XCTAssertGreaterThan(focusedBrightness - restingBrightness, 90)
+            XCTAssertLessThan(restingBrightness, 200,
+                              "Unfocused tiles must not keep the prominent glass background.")
+        }
+    }
+
+    func testChannelRowKeepsTwentyPointInsetsWithoutReducingTheTextSize() {
+        let proposal = CGSize(width: 500, height: 1_000)
+        let text = UIHostingController(rootView: Text("Weather")
+            .font(.system(size: 26))
+            .dynamicTypeSize(.large))
+            .sizeThatFits(in: proposal)
+        for style in [CardFocusStyle.system, .outlined] {
+            let row = UIHostingController(rootView: Button {} label: {
+                PrototypeGuideGap(channelName: "Weather", height: PrototypeLayout.rowHeight)
+            }
+            .buttonStyle(PrototypeGuideButtonStyle())
+            .environment(\.plozzCardFocusStyle, style)
+            .dynamicTypeSize(.large))
+                .sizeThatFits(in: proposal)
+
+            XCTAssertEqual((row.height - text.height) / 2, 20, accuracy: 0.5, "\(style)")
+            XCTAssertLessThan(row.height, 128 * 0.7, "\(style)")
+        }
+    }
+
     func testSearchPresentationConfiguration() {
         let controller = PrototypeSearchController(searchResultsController: UIViewController())
         controller.modalPresentationStyle = .custom

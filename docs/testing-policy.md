@@ -418,7 +418,9 @@ build lease through remaining delivery and retain exact artifacts as usual.
 
 For hosted UI speed, replace setup sleeps only with observable readiness.
 `waitForHostedLayout` bounds waits for stable layer geometry and completed
-animations in static library/multiview matrices. Keep loading/shimmer waits and
+animations in static library/multiview matrices. Stable geometry does not mean
+tvOS has assigned focus: the PIN keypad fixture waits for native focus inside
+its host before settling the layout and capturing each appearance. Keep loading/shimmer waits and
 negative focus-observation windows intact; continuously animated fixtures are
 not candidates for this helper. Viewport, Dynamic Type, OCR, and pixel assertions
 must remain unchanged. Record actual timings rather than assuming a shorter
@@ -550,9 +552,14 @@ On iOS, Settings can be hidden from the tab bar because page-header controls
 remain available. The default tvOS policy still keeps Settings visible.
 `NavigationStyleSettingsStoreTests` covers cross-platform persistence, the
 last-destination safeguard, and iPhone overflow labels when six tabs are enabled.
-On iPhone and compact iPad layouts, overflow uses four direct native tabs plus a
-Plozz More destination with themed shortcut rows. Overflow destinations share
-that tab's navigation stack; Settings opens its existing sheet directly.
+On compact layouts with overflow, UIKit's More list pushes the existing tab
+stacks. Check placement before selecting a row: Search should already use its
+subpage header, and the same placement should survive the push and return.
+A pending More row selection must not push another page once the list has left
+or while it is returning. After Back settles, the same row must open again.
+More uses the same page background as Search, including the flat fill when
+Gradient Backgrounds is off, both on entry and after returning from a row.
+Settings opens its existing sheet directly.
 Returning to More stops the hidden Live TV preview, and changing the enabled
 order re-resolves the current destination. Regular-width iPad tabs remain native.
 
@@ -586,6 +593,12 @@ Runner verdict regressions use the existing host-side unittest runner:
 `python3 -m unittest discover -s tools/tests -p 'test_xcresult_summary.py'`.
 
 ## App-hosted focus integration
+
+The guide’s elapsed-time boundary test runs in the app-hosted targets: tvOS’s
+native button labels and scroll views need a scene-backed capture. It samples
+both sides of the time line for an empty row and a gap before a later listing.
+The pinned-rail fixture measures the hero through loading and the page bounds
+through native guide entry, when the category pane intentionally collapses.
 
 Episode-panel fixtures activate native window focus before reissuing their
 SwiftUI Browse entry request. Repeated window handoffs must start on Browse and
@@ -682,6 +695,32 @@ variables need the `TEST_RUNNER_` prefix when forwarded through `xcodebuild`.
 Its separate status-inspection method uses `PLOZZ_CAPTURE_INSPECT_STATUS=1`
 and `PLOZZ_CAPTURE_BUNDLE_ID` to retain the actual TV badge screenshot and
 accessibility tree without sending input.
+
+For iPhone Duo captures, build the host with the **iOS 27.1 SDK or newer**.
+Selecting a 27.1 simulator alone is not enough: a 27.0-linked host runs in a
+678 × 386 pt compatibility window on the folded 678 × 466 pt landscape display.
+Select Xcode per command with `DEVELOPER_DIR`; verify the installed host's
+`DTSDKName`. Do not change the deployment target or compensate with player insets.
+Launch `PlozziOSPresentationHost` with `--player-layout-fixture --live-player --video --capture-player-landscape`
+for a repeatable live-controls capture; use `--capture-player-landscape-left`
+instead of `--capture-player-landscape` for the opposite camera corner.
+`PlayerLayoutInteractionTests.testLandscapePlayerCaptureFillsPhoneDisplay`
+compares the app frame with the raw display before any screenshot resizing.
+`testLandscapePlayerMarginsInBothRotations` checks the main and behind-live
+controls against both edges and the folded Duo's reserved camera corner,
+including both time-label edges, their alignment with the ellipsis, and clearance
+for the full 44-point hit area. Use its AX frames for measurements.
+`testCompactLivePresentationRowDropsFullscreenCameraClearance` collapses the
+same Live player with its presentation-controls row over the upper-left corner.
+The fullscreen row must clear the camera; the compact row must use only its
+preview-local spacing.
+For visual evidence capture the whole folded display with
+`xcrun simctl io "$PLOZZ_SIM_ID" screenshot --display=1 player.png`, not an
+XCTest app crop. For the Big Buck Bunny footage capture, place a rights-cleared
+excerpt of the [Blender Foundation trailer](https://download.blender.org/peach/trailer/)
+in the test host's `Documents/player-capture.mp4` and add `--capture-open-movie`
+to `--video`. Omit `--live-player` for the main player. Credit the film and
+its [CC BY 3.0 license](https://creativecommons.org/licenses/by/3.0/) with the captures.
 
 The `PlozziOSPresentationTests` scheme supplies a separate iOS app scene for
 native Form/picker and sheet rendering. Run it on an explicitly owned iOS
@@ -1660,8 +1699,11 @@ instead of choosing an older installed runtime. The full package matrix has a
 Run `39888935447` spent about 23 minutes on setup and compilation, then passed
 41 complete test bundles before the former 40-minute limit interrupted the
 still-progressing CoreModels bundle. The longer total budget preserves the
-runner's existing no-progress watchdog and result-finalization checks, with
-outer headroom for setup, termination, and retained diagnostic uploads.
+runner's result-finalization checks and leaves outer headroom for setup,
+termination, and retained diagnostic uploads. Cold Swift batch compilation has
+a ten-minute no-output limit. When the built test manifest starts executing,
+the silence clock resets and the three-minute test limit applies. Neither
+phase gets more time on the combined shard deadline.
 Hosted integration builds once with
 `build-for-testing`, then runs `test-without-building`, with separate build/test
 deadlines and retained build/test logs and result bundles. It uses optimized

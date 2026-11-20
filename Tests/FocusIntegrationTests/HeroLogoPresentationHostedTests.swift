@@ -201,6 +201,44 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
         }
     }
 
+    func testEpisodeInfoPaintsTheRailsPreparedStillAndSpoilerAlternative() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let item = MediaItem(id: UUID().uuidString, title: "Episode", kind: .episode,
+                             allowsTitleBasedMetadataMatching: false)
+        let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+            HeroBackgroundSettings(homeTrailerEnabled: false, detailMode: .off)
+        ))
+        let hidden = SpoilerSettings(isEnabled: true, mode: .placeholder)
+        for (settings, color) in [(SpoilerSettings.default, UIColor.red), (hidden, UIColor.green)] {
+            let source = EpisodeArtworkSource(item: item, spoilerSettings: settings,
+                                              policy: .init(area: .episodes, logoLanguage: "en"))
+            let rect = CGRect(x: 0, y: 0, width: 160, height: 90)
+            let image = UIGraphicsImageRenderer(bounds: rect).image {
+                color.setFill()
+                $0.fill(rect)
+            }
+            let url = try XCTUnwrap(URL(string: "https://art.invalid/\(UUID()).png"))
+            ArtworkSeedMemo.store(.init(image: image, reference: .remote(url), variant: .landscapeCard),
+                                  for: source.requestIdentity)
+        }
+        for settings in [SpoilerSettings.default, hidden] {
+            fixture.window.rootViewController = UIHostingController(rootView:
+                DetailHeroView(item: item, presentsEpisodeStill: true, spoilerSettings: settings,
+                               playTitle: "Play", onPlay: {})
+                    .environment(background)
+                    .environment(HeroTrailerController())
+                    .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.themePalette, .dark)
+            )
+            let channel = settings.isEnabled ? 1 : 0
+            // The whole TV hero has its own entrance. The fixture has no fetchable
+            // references; only the rail's prepared bitmap can supply these pixels.
+            try await waitUntil { (try colorBounds(in: fixture.window, channel: channel)?.width ?? 0) > 200 }
+            if settings.isEnabled { XCTAssertNil(try redBounds(in: fixture.window)) }
+        }
+    }
+
     func testDetailDescriptionHasFourLinesAtDefaultAndMaximum() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

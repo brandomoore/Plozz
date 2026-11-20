@@ -16,7 +16,9 @@ configuration and credentials out of committed guidance.
   historical context, not a specification.
 - Keep changes focused on the requested behavior. Reuse existing helpers,
   ownership boundaries, naming, and error handling instead of creating a
-  parallel implementation.
+  parallel implementation. A page or rail that loads content after its header
+  follows the [page loading scaffold](docs/page-loading-scaffold.md) rather than
+  growing another fetch/placeholder path.
 - Put shared behavior in the appropriate `Feature*Core`, core, or runtime
   module; keep the app shells thin. See the
   [architecture map](.github/CONTRIBUTING.md#architecture).
@@ -31,6 +33,25 @@ configuration and credentials out of committed guidance.
 - Follow the existing native controls, focus behavior, accessibility, and
   reduced-effects fallbacks. Finalize UI behavior and source copy with the
   maintainer before starting translation work.
+
+## Hero and navigation continuity
+
+- Home and detail share one transparent-wordmark reveal: resolved logo plus a
+  short crossfade. Home's Play/Watchlist row must remain usable immediately; do
+  not gate the whole foreground on artwork.
+- A Home hero slide that is already loaded must not fade or dim when the slide
+  changes or when the page is pulled. First-load fades belong to the detail
+  stage only.
+- Reserve the slot for every asynchronously resolved hero action (for example
+  the trailer button) from the first frame so Play does not move when it lands.
+- Seed the detail stage only with landscape artwork. A portrait poster
+  stretched into the landscape hero and then replaced by the backdrop reads as
+  resizing.
+- Scope shell navigation requests to the stack that owns them. Other tabs
+  must keep their pushed pages and scroll positions.
+- Keep these invariants covered by hosted/rendered tests; see
+  [SwiftUI guidelines](docs/swiftui-guidelines.md#hero-continuity) and
+  [page loading scaffold](docs/page-loading-scaffold.md#hero-stages).
 
 For state ownership, cancellation, lifecycle adapters, and deterministic tests,
 follow [state management](docs/state-management.md). Language, view, fixture,
@@ -50,6 +71,12 @@ Select the smallest checks that cover the actual risk using
 behavior, check affected platforms and providers, and expand coverage when the
 evidence requires it. Do not describe a focused run, skipped test, or missing
 result as a full pass.
+
+For observing real behaviour on a simulator or a physical device — log capture,
+frame recording, in-app presentation diagnostics, and which paths need a human —
+follow [agent device debugging](docs/agent-device-debugging.md). It records the
+constraints (locked devices, unavailable screen recording, ~2.4 s screenshots) and
+the rule that transient states are gated on data, never on timers.
 
 For performance work, measure the real workload before and after under comparable
 conditions. Explain CPU, memory, I/O, and cancellation tradeoffs; a benchmark must

@@ -22,6 +22,7 @@ struct PlozzChannelWordmark: View {
     let mood: LibraryChannelArtworkMood
     let size: CGSize
     let cornerRadius: CGFloat
+    var usesControlBackground = false
     @Environment(\.themePalette) private var palette
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -54,17 +55,30 @@ struct PlozzChannelWordmark: View {
         .background {
             palette.cardOpaqueSurface
                 .overlay(mood.tint.opacity(palette.isLight ? 0.14 : 0.24))
+                .modifier(ChannelLogoNativeBackdrop(enabled: usesControlBackground))
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    palette.primaryText.opacity(contrast == .increased ? 0.4 : 0.12),
-                    lineWidth: contrast == .increased ? 2 : 1
-                )
-                .allowsHitTesting(false)
+            if !usesControlBackground {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        palette.primaryText.opacity(contrast == .increased ? 0.4 : 0.12),
+                        lineWidth: contrast == .increased ? 2 : 1
+                    )
+                    .allowsHitTesting(false)
+            }
         }
         .accessibilityHidden(true)
+    }
+}
+
+struct ChannelLogoNativeBackdrop: ViewModifier {
+    let enabled: Bool
+    @Environment(\.isFocused) private var isFocused
+
+    func body(content: Content) -> some View {
+        // Let native focus illuminate the plate without replacing its colour or dimming the logo.
+        content.opacity(enabled && isFocused ? 0.72 : 1)
     }
 }
 #endif

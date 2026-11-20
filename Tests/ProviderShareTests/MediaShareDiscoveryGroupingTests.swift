@@ -8,6 +8,38 @@ final class MediaShareDiscoveryGroupingTests: XCTestCase {
 
     // MARK: - Grouping
 
+    #if canImport(Network) && canImport(Darwin)
+    func testWindowsReplyMustAnswerOurProbeAndMayOmitMetadata() throws {
+        let id = UUID()
+        let endpoint = UUID()
+        let host = "192.0.2.10"
+        let url = "http://\(host):5357/\(endpoint)"
+        func reply(metadata: String) -> Data {
+            Data("""
+            <S:Envelope xmlns:S="http://www.w3.org/2003/05/soap-envelope" xmlns:A="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:D="http://schemas.xmlsoap.org/ws/2005/04/discovery">
+              <S:Header><A:RelatesTo>urn:uuid:\(id)</A:RelatesTo><A:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</A:Action></S:Header>
+              <S:Body><D:ProbeMatches><D:ProbeMatch><A:EndpointReference><A:Address>urn:uuid:\(endpoint)</A:Address></A:EndpointReference>\(metadata)</D:ProbeMatch></D:ProbeMatches></S:Body>
+            </S:Envelope>
+            """.utf8)
+        }
+        let data = reply(metadata: "<D:XAddrs>\(url)</D:XAddrs>")
+        XCTAssertEqual(WindowsShareDiscovery.match(data, id: id, host: host)?.metadata?.absoluteString, url)
+        XCTAssertNil(WindowsShareDiscovery.match(data, id: UUID(), host: host))
+        XCTAssertNil(WindowsShareDiscovery.match(data, id: id, host: "192.0.2.11")?.metadata)
+        XCTAssertEqual(WindowsShareDiscovery.match(reply(metadata: ""), id: id, host: host)?.host, host)
+    }
+
+    func testWindowsDiscoveryRequiresSMBNegotiateResponse() {
+        var header = Data(repeating: 0, count: 68)
+        header[3] = 128
+        header.replaceSubrange(4..<10, with: [0xfe, 0x53, 0x4d, 0x42, 64, 0])
+        XCTAssertFalse(WindowsShareDiscovery.isSMBReply(header))
+        header[20] = 1
+        XCTAssertTrue(WindowsShareDiscovery.isSMBReply(header))
+        XCTAssertFalse(WindowsShareDiscovery.isSMBReply(header.dropLast()))
+    }
+    #endif
+
     func testServicesOnOneHostCollapseToOneBox() {
         let services = [
             DiscoveredNetworkService(transport: .smb, name: "MyNAS", host: "192.168.68.71", port: nil),

@@ -231,7 +231,7 @@ final class HomeModelLifetimeTests: XCTestCase {
         XCTAssertEqual(constructions, 1, "Root presentation updates must not rehydrate disposable Home models.")
     }
 
-    func testProfileSwitchReplacesTheModelBeforeRenderingTheNewScope() {
+    func testProfileSwitchReplacesTheModelBeforeRenderingTheNewScope() async {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID
         let profile = app.profiles.add(name: "Home lifetime fixture")
@@ -249,10 +249,35 @@ final class HomeModelLifetimeTests: XCTestCase {
         }
         let first = model()
         XCTAssertTrue(first === model())
+        let started = expectation(description: "Outgoing feed is loading")
+        let finish = AsyncStream<Void>.makeStream()
+        let load = Task {
+            await first.upcoming.refresh(scope: original, namespace: nil, isCurrent: { true }) {
+                started.fulfill()
+                for await _ in finish.stream { break }
+                return .init(failedSourceCount: 1)
+            }
+        }
+        await fulfillment(of: [started], timeout: 3)
+        withObservationTracking {
+            _ = first.upcoming.releases
+            _ = first.upcoming.isLoading
+            _ = first.upcoming.scopeKey
+        } onChange: {
+            XCTFail("Replacing Home must not publish into the observed outgoing feed.")
+        }
         app.profiles.select(profile.id)
         let second = model()
         XCTAssertFalse(first === second)
         XCTAssertTrue(second === model())
+        finish.continuation.finish()
+        await load.value
+        XCTAssertEqual(first.upcoming.failedSourceCount, 0)
+        XCTAssertNil(second.upcoming.scopeKey)
+        await first.upcoming.refresh(scope: original, namespace: nil, isCurrent: { true }) {
+            XCTFail("A discarded Home cannot start a second feed load.")
+            return .init()
+        }
         app.profiles.select(original)
         let restored = model()
         XCTAssertFalse(second === restored)

@@ -12,14 +12,17 @@ public struct DisplayedHeroArtwork: Sendable {
     }
 }
 
-/// One presentation's actual bitmap. Consumers never resolve another backdrop.
+/// One presentation's actual backdrop and wordmark. Consumers never resolve
+/// another image just to sample or hand off what is already displayed.
 @MainActor @Observable
 public final class HeroArtworkDisplayState {
     public private(set) var displayed: DisplayedHeroArtwork?
+    public private(set) var displayedLogo: DisplayedHeroLogo?
     public private(set) var backgroundSample: HeroBackgroundSample?
     @ObservationIgnored private var owner: UUID?
     @ObservationIgnored private var activeItemID: String?
     @ObservationIgnored private var pendingReports: [UUID: [String: UUID]] = [:]
+    @ObservationIgnored private var pendingLogoReports: [UUID: [String: UUID]] = [:]
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var sampleTask: Task<Void, Never>?
 
@@ -32,8 +35,25 @@ public final class HeroArtworkDisplayState {
     }
 
     func activate(owner: UUID, itemID: String?) {
+        if self.owner != owner || activeItemID != itemID {
+            displayedLogo = nil
+        }
         self.owner = owner
         activeItemID = itemID
+    }
+
+    func enqueueLogo(_ logo: DisplayedHeroLogo?, itemID: String, owner: UUID) {
+        let ticket = UUID()
+        pendingLogoReports[owner, default: [:]][itemID] = ticket
+        Task { @MainActor [weak self] in
+            guard let self, self.pendingLogoReports[owner]?[itemID] == ticket else { return }
+            self.pendingLogoReports[owner]?[itemID] = nil
+            if self.pendingLogoReports[owner]?.isEmpty == true {
+                self.pendingLogoReports[owner] = nil
+            }
+            guard self.owner == owner, self.activeItemID == itemID else { return }
+            self.displayedLogo = logo
+        }
     }
 
     func enqueue(_ artwork: FirstPaintArtwork?, itemID: String, owner: UUID) {
@@ -76,6 +96,7 @@ public final class HeroArtworkDisplayState {
 
     func release(owner: UUID) {
         pendingReports[owner] = nil
+        pendingLogoReports[owner] = nil
         guard self.owner == owner else { return }
         generation &+= 1
         sampleTask?.cancel()
@@ -83,6 +104,7 @@ public final class HeroArtworkDisplayState {
         self.owner = nil
         activeItemID = nil
         displayed = nil
+        displayedLogo = nil
         backgroundSample = nil
     }
 }
@@ -109,6 +131,11 @@ public struct HeroArtworkDisplayReporter {
         guard isActive, self.itemID == itemID else { return }
         state?.enqueue(artwork, itemID: itemID, owner: owner)
     }
+
+    func publishLogo(_ logo: DisplayedHeroLogo?, itemID: String) {
+        guard isActive, self.itemID == itemID else { return }
+        state?.enqueueLogo(logo, itemID: itemID, owner: owner)
+    }
 }
 
 private struct HeroArtworkDisplayStateKey: EnvironmentKey {
@@ -119,7 +146,16 @@ private struct HeroArtworkDisplayReporterKey: EnvironmentKey {
     static let defaultValue: HeroArtworkDisplayReporter? = nil
 }
 
+private struct OpeningHeroLogoKey: EnvironmentKey {
+    static let defaultValue: DisplayedHeroLogo? = nil
+}
+
 public extension EnvironmentValues {
+    var openingHeroLogo: DisplayedHeroLogo? {
+        get { self[OpeningHeroLogoKey.self] }
+        set { self[OpeningHeroLogoKey.self] = newValue }
+    }
+
     var heroArtworkDisplayState: HeroArtworkDisplayState? {
         get { self[HeroArtworkDisplayStateKey.self] }
         set { self[HeroArtworkDisplayStateKey.self] = newValue }

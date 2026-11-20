@@ -114,9 +114,19 @@ final class DiscReviewScreenshotTests: XCTestCase {
 
     func testCaptureTransportAction() {
         let app = launch("transport")
-        let button = app.buttons["player-control-opticaldisc"]
         #if os(tvOS)
         XCUIRemote.shared.press(.playPause)
+        let more = app.buttons["player-control-ellipsis"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        XCUIRemote.shared.press(.up)
+        focus(more, in: app)
+        XCUIRemote.shared.press(.select)
+        let button = app.buttons["Disc videos"]
+        #else
+        let options = app.buttons[app.frame.width > app.frame.height ? "player-settings" : "player-playback-options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 10))
+        options.tap()
+        let button = app.buttons["Disc videos"]
         #endif
         XCTAssertTrue(button.waitForExistence(timeout: 10))
         capture(app, "Player disc action")

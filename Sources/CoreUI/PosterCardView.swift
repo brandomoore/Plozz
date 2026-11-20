@@ -1341,6 +1341,8 @@ public struct PosterCardView: View {
         seriesSource.fallback()
     }
 
+    @Environment(\.continueWatchingLogoScope) private var continueWatchingLogoScope
+
     private var seriesLogo: ContinueWatchingSeriesLogo {
         ContinueWatchingSeriesLogo(
             title: seriesDisplayTitle,
@@ -1348,6 +1350,7 @@ public struct PosterCardView: View {
             artworkReferences: seriesArtworkReferences,
             artworkVariant: artworkVariant,
             asyncFallbackURL: seriesLogoFallback,
+            logoVisit: seriesSource.logoVisit(in: continueWatchingLogoScope),
             bottomContentInset: artworkOnlyConfiguration?.showsPlaybackIndicators == true && showsResumeChip
                 ? artworkOnlyPlaybackHeight : 0
         )
@@ -1407,6 +1410,7 @@ struct ContinueWatchingSeriesLogo: View {
     let artworkReferences: [ArtworkReference]
     let artworkVariant: ArtworkImageVariant
     let asyncFallbackURL: HeroLogoFallback?
+    var logoVisit: DetailLogoVisit? = nil
     var bottomContentInset: CGFloat = 0
     var onArtworkDimming: ((CGFloat) -> Void)?
 
@@ -1451,6 +1455,7 @@ struct ContinueWatchingSeriesLogo: View {
                 }
                 // The card's artwork is darkened independently of the page theme.
                 .environment(\.colorScheme, .dark)
+                .environment(\.detailLogoVisit, logoVisit)
                 .frame(width: width, height: box.height)
                 .offset(y: logoStageHeight * ContinueWatchingCardShape.logoCenter - box.height / 2)
             }

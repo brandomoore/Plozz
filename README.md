@@ -56,6 +56,8 @@ You can still browse each source separately and pick up where you left off.
 </p>
 
 Play directly from your NAS or file server over **SMB, WebDAV, NFS, SFTP or FTP**.
+Windows shared folders use SMB. If your PC doesn't appear in discovery, enter
+its local IP address and use a Windows account that has access to the folder.
 Find artwork and details for your movies and shows, use your own artwork and metadata files,
 or browse personal videos as folders. No media server required.
 

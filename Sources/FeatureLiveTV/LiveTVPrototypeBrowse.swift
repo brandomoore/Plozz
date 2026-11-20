@@ -91,7 +91,7 @@ struct PrototypeBrowser: View {
                                 showsNowMarker: !isLoading, isLoading: isLoading, span: guideSpan
                             )
                         }
-                        .disabled(railActive || isRestoringFocus)
+                        .prototypeFocusGate(railActive || isRestoringFocus)
                     } else {
                         PrototypeGuideSectionLabel(section: currentSection)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -817,7 +817,9 @@ struct PrototypeTimeRuler: View {
                             : .dateTime.hour().minute())
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
+                            #if os(iOS)
                             .padding(.leading, PrototypeLayout.rowInset)
+                            #endif
                             .frame(width: tickWidth, alignment: .leading)
                     }
                 }
@@ -847,7 +849,8 @@ struct PrototypeTimeRuler: View {
                 if showsNowMarker {
                     PrototypeNowMarker(
                         start: start, now: now, timelineOffset: timelineOffset,
-                        viewportSeconds: PrototypeLayout.viewportSeconds(for: width)
+                        viewportSeconds: PrototypeLayout.viewportSeconds(for: width),
+                        timelineWidth: PrototypeLayout.timelineWidth(for: width)
                     )
                         .offset(y: PrototypeNowMarker.rulerOffset)
                 }
@@ -897,19 +900,22 @@ struct PrototypeNowMarker: View {
     let now: Date
     let timelineOffset: CGFloat
     var viewportSeconds: TimeInterval = 7_200
+    let timelineWidth: CGFloat
     @Environment(\.themePalette) private var palette
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         GeometryReader { geometry in
-            let x = geometry.size.width * now.timeIntervalSince(start) / viewportSeconds - timelineOffset
+            // Use the row's time scale, not the ruler's in-flight presentation width.
+            let x = timelineWidth * now.timeIntervalSince(start) / viewportSeconds - timelineOffset
             if x >= 0, x <= geometry.size.width {
                 Image(systemName: "arrowtriangle.down.fill")
                     .resizable()
                     .foregroundStyle(palette.primaryText)
                     .frame(width: Self.size.width, height: Self.size.height)
                     .shadow(color: .black.opacity(contrast == .increased ? 0.95 : 0.65), radius: 1, y: 1)
-                    .position(x: x, y: Self.size.height / 2)
+                    // The guide animates its origin. Don't interpolate this local offset a second time.
+                    .transformEffect(CGAffineTransform(translationX: x - Self.size.width / 2, y: 0))
             }
         }
         .frame(height: Self.size.height)
@@ -920,6 +926,23 @@ struct PrototypeNowMarker: View {
 
 struct PrototypeElapsedProgramFill: View {
     let elapsedWidth: CGFloat
+    @Environment(\.isFocused) private var focused
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
+
+    var body: some View {
+        #if os(tvOS)
+        PrototypeProgramProgressShading(
+            elapsedWidth: elapsedWidth, dimsRemaining: focused && focusStyle.usesSystemEffect
+        )
+        #else
+        PrototypeProgramProgressShading(elapsedWidth: elapsedWidth, dimsRemaining: false)
+        #endif
+    }
+}
+
+struct PrototypeProgramProgressShading: View {
+    let elapsedWidth: CGFloat
+    let dimsRemaining: Bool
     @Environment(\.themePalette) private var palette
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -928,9 +951,13 @@ struct PrototypeElapsedProgramFill: View {
             let width = min(geometry.size.width, max(0, elapsedWidth))
             if width > 0 {
                 Rectangle()
-                    .fill(palette.primaryText.opacity(contrast == .increased ? 0.16 : 0.08))
-                    .frame(width: width, height: geometry.size.height)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .fill(dimsRemaining
+                        ? Color.black.opacity(contrast == .increased ? 0.3 : 0.22)
+                        : palette.primaryText.opacity(contrast == .increased ? 0.16 : 0.08))
+                    .frame(width: dimsRemaining ? geometry.size.width - width : width,
+                           height: geometry.size.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: dimsRemaining ? .trailing : .leading)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.programRadius, style: .continuous))
@@ -1011,9 +1038,10 @@ struct PrototypeGuideRow: View {
             )
                 .frame(width: PrototypeLayout.stationWidth(for: width))
                 .focused(focus, equals: channelFocus)
-                .disabled(isFocusDisabled(channelFocus))
+                .prototypeFocusGate(isFocusDisabled(channelFocus))
             if programs.isEmpty {
                 channelContent(
+                    width: timelineWidth,
                     elapsedWidth: timelineWidth * now.timeIntervalSince(start) / viewportSeconds,
                     followsTimeline: true
                 )
@@ -1050,18 +1078,22 @@ struct PrototypeGuideRow: View {
                                             )
                                         }
                                     }
-                                    .buttonStyle(PrototypeButtonStyle(
+                                    .buttonStyle(PrototypeGuideButtonStyle(
                                         selected: selectedTarget == programFocus(program.id),
-                                        padded: false, surface: .program,
+                                        surface: .program,
                                         focusChanged: { focusChanged(programFocus(program.id), $0) }
                                     ))
-                                    .focusEffectDisabled()
+                                    #if os(tvOS)
+                                    .frame(width: cellWidth(slot), height: rowHeight)
+                                    .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.programRadius, style: .continuous))
+                                    #endif
                                     .padding(.vertical, PrototypeLayout.programInset)
                                     .padding(.trailing, min(PrototypeLayout.cellGap, slotWidth(slot) / 4))
                                     .frame(width: slotWidth(slot), height: rowHeight)
                                     .clipped()
                                     .focused(focus, equals: programFocus(program.id))
-                                    .disabled(isFocusDisabled(programFocus(program.id)))
+                                    .zIndex(focus.wrappedValue == programFocus(program.id) ? 1 : 0)
+                                    .prototypeFocusGate(isFocusDisabled(programFocus(program.id)))
                                     .contextMenu {
                                         Button("Program details", systemImage: "info.circle") { details(program) }
                                         PrototypeChannelActions(
@@ -1084,6 +1116,7 @@ struct PrototypeGuideRow: View {
                                 } else {
                                     channelContent(
                                         slotID: slot.id,
+                                        width: cellWidth(slot),
                                         elapsedWidth: timelineWidth * now.timeIntervalSince(slot.start) / viewportSeconds
                                     )
                                         .frame(width: cellWidth(slot))
@@ -1123,7 +1156,16 @@ struct PrototypeGuideRow: View {
             return slots.map { TimelineItem(id: $0.id, slot: $0, width: slotWidth($0)) }
         }
         let windowStart = start.addingTimeInterval(Double(timeline.page - 1) * viewportSeconds)
-        let windowEnd = start.addingTimeInterval(Double(timeline.page + 3) * viewportSeconds)
+        var windowEnd = start.addingTimeInterval(Double(timeline.page + 3) * viewportSeconds)
+        #if os(tvOS)
+        if timeline.atLeadingEdge, !railActive, focusPolicy?.usesNativeNavigation == false {
+            // Vertical browsing stays at Now. Keep one offscreen candidate
+            // for the first horizontal move, not two extra screens of menus.
+            // Spatial navigation, VoiceOver and focus handoffs keep their window.
+            let visibleEnd = start.addingTimeInterval(viewportSeconds)
+            windowEnd = slots.first(where: { $0.start >= visibleEnd })?.end ?? visibleEnd
+        }
+        #endif
         var items: [TimelineItem] = []
         var skipped: CGFloat = 0
         for slot in slots {
@@ -1149,7 +1191,7 @@ struct PrototypeGuideRow: View {
     }
 
     private func channelContent(
-        slotID: String? = nil, elapsedWidth: CGFloat = 0, followsTimeline: Bool = false
+        slotID: String? = nil, width: CGFloat, elapsedWidth: CGFloat = 0, followsTimeline: Bool = false
     ) -> some View {
         let target = PrototypeBrowseFocus.channelContent(channel.id, slotID: slotID, section: section)
         return Button {
@@ -1161,31 +1203,42 @@ struct PrototypeGuideRow: View {
             tune()
             #endif
         } label: {
-            PrototypeGuideGap(
-                channelName: channel.name, height: rowHeight,
-                state: guideGapState, showsStatus: focus.wrappedValue?.rowID == channelFocus.rowID
-            )
-                .frame(maxWidth: .infinity)
-                .background {
-                    if followsTimeline {
-                        PrototypeTimelineReader(timeline: timeline) {
-                            PrototypeElapsedProgramFill(elapsedWidth: elapsedWidth - $0)
+            // Fill the proposed button bounds. Freezing a second copy of the
+            // timeline width inside the native label centers it at the *new*
+            // width while its station is still moving.
+            Color.clear.frame(height: rowHeight).overlay(alignment: .leading) {
+                PrototypeGuideGap(channelName: channel.name, height: rowHeight)
+                    #if os(iOS)
+                    .frame(width: width)
+                    #endif
+                    .background {
+                        if followsTimeline {
+                            PrototypeTimelineReader(timeline: timeline) {
+                                PrototypeElapsedProgramFill(elapsedWidth: elapsedWidth - $0)
+                            }
+                        } else {
+                            PrototypeElapsedProgramFill(elapsedWidth: elapsedWidth)
                         }
-                    } else {
-                        PrototypeElapsedProgramFill(elapsedWidth: elapsedWidth)
                     }
-                }
-                .contentShape(Rectangle())
+            }
+            .contentShape(Rectangle())
         }
-        .buttonStyle(PrototypeButtonStyle(
+        .buttonStyle(PrototypeGuideButtonStyle(
             selected: selectedTarget == target,
-            padded: false, surface: .guide, focusChanged: { focusChanged(target, $0) }
+            surface: .guide, focusChanged: { focusChanged(target, $0) }
         ))
-        .focusEffectDisabled()
+        #if os(tvOS)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: rowHeight)
+        .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous))
+        #endif
         .focused(focus, equals: target)
-        .disabled(isFocusDisabled(target))
+        .zIndex(focus.wrappedValue == target ? 1 : 0)
+        .prototypeFocusGate(isFocusDisabled(target))
         .accessibilityLabel(Text(channel.name))
-        .accessibilityValue(guideGapState.map { Text($0.title) } ?? Text(verbatim: ""))
+        .accessibilityValue(guideGapState.flatMap {
+            $0 == .loading || $0 == .unrequested || $0 == .failed ? nil : Text($0.title)
+        } ?? Text(verbatim: ""))
         .accessibilityHint(Text(selectionAction ?? "Play channel"))
         .accessibilityAddTraits(selectionMarked ? .isSelected : [])
         .accessibilityIdentifier("live-tv-channel-content-\(section.rawValue)-\(channel.number)-\(slotID ?? "whole")")
@@ -1258,11 +1311,12 @@ struct PrototypeGuideStation: View {
     var libraryItem: LibraryChannelItem?
     var openLibraryItem: ((LibraryChannelItem) -> Void)?
     var selectForPreview: (() -> Void)?
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     var body: some View {
         Group {
             if selectionAction != nil {
-                Button(action: tune) { stationMark }
+                Button(action: tune) { stationLabel }
                     .contextMenu {
                         PrototypeChannelActions(
                             favorite: favorite, play: tune, toggleFavorite: toggleFavorite, hide: hide,
@@ -1273,19 +1327,23 @@ struct PrototypeGuideStation: View {
                     focusChanged?(true)
                     selectForPreview()
                 } label: {
-                    stationMark
+                    stationLabel
                 }
                 .contextMenu { channelActions }
             } else {
                 Menu {
                     channelActions
                 } label: {
-                    stationMark
+                    stationLabel
                 }
             }
         }
-        .buttonStyle(PrototypeButtonStyle(padded: false, surface: .station, focusChanged: focusChanged))
-        .focusEffectDisabled()
+        .modifier(PrototypeGuideStationStyle(focusChanged: focusChanged))
+        #if os(tvOS)
+        .menuStyle(.button)
+        .frame(width: width ?? PrototypeLayout.stationColumnWidth, height: height ?? PrototypeLayout.rowHeight)
+        .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.rowRadius, style: .continuous))
+        #endif
         .accessibilityLabel(Text(channel.name))
         .accessibilityValue(Text("Channel \(channel.number)"))
         .accessibilityHint(Text(selectionAction ?? (selectForPreview == nil ? "Channel actions" : "Play channel")))
@@ -1315,13 +1373,29 @@ struct PrototypeGuideStation: View {
         }
     }
 
+    @ViewBuilder
+    private var stationLabel: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            PrototypeNativeGuideLabel(content: stationMark, surface: .station, focusChanged: focusChanged)
+        } else {
+            stationMark
+        }
+        #else
+        stationMark
+        #endif
+    }
+
     private var stationMark: some View {
         PrototypeStationMark(
             channel: channel,
             plateSize: CGSize(
                 width: width ?? PrototypeLayout.stationColumnWidth, height: height ?? PrototypeLayout.rowHeight
             ),
-            cornerRadius: PrototypeLayout.rowRadius
+            cornerRadius: PrototypeLayout.rowRadius,
+            contentInset: PrototypeLayout.guideStationArtworkInset,
+            horizontalContentInset: PrototypeLayout.guideStationHorizontalArtworkInset,
+            usesControlBackground: usesNativeStationBackground
         )
         .clipped()
         .overlay(alignment: .topTrailing) {
@@ -1334,6 +1408,14 @@ struct PrototypeGuideStation: View {
                     .accessibilityHidden(true)
             }
         }
+    }
+
+    private var usesNativeStationBackground: Bool {
+        #if os(tvOS)
+        focusStyle.usesSystemEffect
+        #else
+        false
+        #endif
     }
 }
 
@@ -1404,27 +1486,21 @@ struct PrototypeProgramLabel: View {
 struct PrototypeGuideGap: View {
     let channelName: String
     let height: CGFloat
-    var state: LiveTVGuideGapState?
-    var showsStatus = false
     @Environment(\.themePalette) private var palette
     @ScaledMetric(relativeTo: .subheadline) private var fontSize = PrototypeLayout.guideFontSize
     var body: some View {
-        VStack(alignment: .leading, spacing: PrototypeLayout.smallGap) {
-            Text(channelName)
-                .font(.system(size: fontSize))
-                .foregroundStyle(palette.primaryText.opacity(0.8))
-                .lineLimit(2)
-            if showsStatus, let state, state == .loading || state == .failed || state == .unrequested {
-                Text(state.title)
-                    .font(.caption)
-                    .foregroundStyle(palette.secondaryText)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.horizontal, PrototypeLayout.rowInset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: height)
-        .accessibilityHint("No program listing for this time.")
+        Text(channelName)
+            .font(.system(size: fontSize))
+            #if os(tvOS)
+            .foregroundStyle(.primary)
+            #else
+            .foregroundStyle(palette.primaryText.opacity(0.8))
+            #endif
+            .lineLimit(2)
+            .padding(.horizontal, PrototypeLayout.rowInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: height)
+            .accessibilityHint("No program listing for this time.")
     }
 }
 
@@ -1438,6 +1514,7 @@ final class PrototypeTimelineScroll {
     /// Which screen-width of the timeline the leading edge is on. Rows build
     /// their cells around it, so they rebuild per screen rather than per frame.
     private(set) var page = 0
+    private(set) var atLeadingEdge = true
     /// The visible timeline's width; zero builds every cell.
     @ObservationIgnored var pageWidth: CGFloat = 0 { didSet { updatePage() } }
     /// Programme time one page spans.
@@ -1451,9 +1528,12 @@ final class PrototypeTimelineScroll {
 
     init(offset: CGFloat = 0) {
         self.offset = offset
+        self.atLeadingEdge = offset <= 0
     }
 
     private func updatePage() {
+        let leading = offset <= 0
+        if atLeadingEdge != leading { atLeadingEdge = leading }
         let next = pageWidth > 0 ? Int(max(0, offset) / pageWidth) : 0
         if next != page { page = next }
         let seconds = pageWidth > 0 ? Double(max(0, offset) / pageWidth) * pageSeconds : 0

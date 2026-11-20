@@ -18,6 +18,16 @@ private enum PlozziOSPlayerSheet: String, Identifiable {
     var id: Self { self }
 }
 
+/// The space `PlayerTouchGestureSurface` reports its tap locations in.
+private let playerTouchSurfaceSpace = "player-touch-surface"
+
+private struct SkipButtonFramePreference: PreferenceKey {
+    static var defaultValue: CGRect? { nil }
+    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
+        value = nextValue() ?? value
+    }
+}
+
 struct PlozziOSPlayerControlsOverlay: View {
     let viewModel: PlayerViewModel
     let keyboardActions: PlozziOSPlayerKeyboardActions
@@ -42,7 +52,18 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var autoHideTask: Task<Void, Never>?
     @State private var touchGestures = PlayerTouchGestureState()
     @State private var availableSize: CGSize = .zero
+    /// The Skip button's interactive frame, measured in the touch surface's space
+    /// so taps on it never become a ±skip shortcut or pair into a double-tap.
+    @State private var skipButtonFrame: CGRect?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(PlaybackSettingsModel.self) private var playbackSettings: PlaybackSettingsModel?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
+    private var allowsAutoHide: Bool {
+        let mode = playbackSettings?.settings.controlsAutoHide ?? PlaybackSettings.default.controlsAutoHide
+        return mode.allowsHiding(paused: viewModel.controls.intendsPause) && !voiceOver && !switchControl
+    }
     @StateObject private var pictureInPicture = PlozziOSPictureInPictureController()
 
     init(
@@ -62,7 +83,7 @@ struct PlozziOSPlayerControlsOverlay: View {
     }
 
     private var isScrubbing: Bool { viewModel.controls.isScrubbing }
-    private var nativeMenuPresented: Bool { menuPresentation.isBusy }
+    private var nativeMenuPresented: Bool { menuPresentation.isBusy || viewModel.showsDiscVideos }
     private var menuSourceID: [String?] {
         let item = viewModel.currentPlaybackItem
         return [item?.sourceAccountID, item?.id, item?.selectedVersionID]
@@ -80,6 +101,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                 canBoost: !viewModel.controls.intendsPause
                     && viewModel.controls.engineCapabilities.contains(.playbackSpeed),
                 canZoom: viewModel.controls.engineCapabilities.contains(.videoZoom),
+                shortcutExclusion: skipButtonFrame,
                 onTap: backgroundTapped,
                 onSkip: touchSkip,
                 onBoostChanged: touchBoostChanged,
@@ -123,6 +145,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                             },
                             onClose: onClose
                         )
+                        .playerCameraSafeRow()
                     }
                     Spacer(minLength: 0)
                     PlozziOSPlayerTransport(
@@ -180,7 +203,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                         availableSize: availableSize
                     )
                 }
-                .modifier(PlayerTouchChromePadding())
+                .modifier(PlayerTouchChromePadding(clearsCameraByRow: true))
             }
 
             if controlsVisible && !isScrubbing && !isCardOpen && !showsUpNext {
@@ -204,6 +227,14 @@ struct PlozziOSPlayerControlsOverlay: View {
                         .font(.headline)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: SkipButtonFramePreference.self,
+                                    value: proxy.frame(in: .named(playerTouchSurfaceSpace))
+                                )
+                            }
+                        )
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.white)
@@ -213,12 +244,14 @@ struct PlozziOSPlayerControlsOverlay: View {
             }
 
         }
+        .coordinateSpace(name: playerTouchSurfaceSpace)
+        .onPreferenceChange(SkipButtonFramePreference.self) { skipButtonFrame = $0 }
         .onGeometryChange(for: CGSize.self) {
             $0.size
         } action: {
             availableSize = $0
         }
-        .animation(.easeInOut(duration: 0.2), value: controlsVisible)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: controlsVisible)
         .onChange(of: controlsVisible) { _, visible in
             if !visible { viewModel.controls.timelineClock.isEnabled = false }
         }
@@ -286,16 +319,18 @@ struct PlozziOSPlayerControlsOverlay: View {
             if paused {
                 cancelTouchInteraction()
                 controlsVisible = true
-                cancelAutoHide()
-            } else {
-                scheduleAutoHide()
             }
+            scheduleAutoHide()
         }
+        .onChange(of: allowsAutoHide) { scheduleAutoHide() }
         .onChange(of: viewModel.controls.diagnosticsEnabled) { _, enabled in
             if enabled { cancelAutoHide() } else { scheduleAutoHide() }
         }
         .onChange(of: versionsPresented) { _, presented in
             if presented { cancelAutoHide() } else { scheduleAutoHide() }
+        }
+        .onChange(of: viewModel.showsDiscVideos) { _, presented in
+            if presented { cancelAutoHide() } else { noteInteraction() }
         }
         .plozzSheet(item: $presentedSheet, onDismiss: scheduleAutoHide) { sheet in
             switch sheet {
@@ -339,6 +374,13 @@ struct PlozziOSPlayerControlsOverlay: View {
         case .zoom: presentedSheet = .zoom
         case .quality: presentedSheet = .quality
         case .versions: onShowVersions()
+        case .discMenu: viewModel.videoEngine.discMenu?.openMenu()
+        case .discVideos: viewModel.showsDiscVideos = true
+        case .playVideo: viewModel.playVideoWithoutMenus()
+        case .discRegion:
+            if let state = viewModel.videoEngine.discMenu {
+                viewModel.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
+            }
         case .multiview:
             PlozzLog.playback.error("VOD menu requested unavailable multiview destination.")
         }
@@ -531,7 +573,7 @@ struct PlozziOSPlayerControlsOverlay: View {
         // Reading a synopsis or scrolling a cast row involves long stretches
         // with no taps, and the timer cannot tell that from abandonment — so it
         // took the card away mid-read. It resumes when the card closes.
-        guard !viewModel.controls.intendsPause,
+        guard allowsAutoHide, !viewModel.showsDiscVideos,
               presentedSheet == nil,
               !versionsPresented,
               !nativeMenuPresented,
@@ -549,7 +591,7 @@ struct PlozziOSPlayerControlsOverlay: View {
         // without tapping first.
         guard !isPlayingElsewhere else { return }
         autoHideTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(PlaybackControlsInactivity.defaultGrace))
             guard !Task.isCancelled else { return }
             controlsVisible = false
         }
@@ -747,7 +789,6 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let supportsVideoZoom: Bool
     let hasVersions: Bool
     let menuPresentation: PlayerMenuPresentation
-    @State private var discPresentationOwner = UUID()
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The full player bounds, not this bottom cluster's intrinsic size.
@@ -824,6 +865,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                     )
             }
             .foregroundStyle(.white)
+            .playerCameraSafeRow()
             .playerTouchChromeHidden(isCardOpen || timelineOnly || !showsTransport)
 
             PlozziOSPlayerTimeline(
@@ -847,6 +889,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                         .padding(.bottom, PlayerTouchLayout.timelineRowHeight + 12)
                 }
             }
+            .playerCameraSafeTimeline()
 
             // Info / Cast tabs sit BELOW the scrubber, matching tvOS, and the
             // card grows upward out of them.
@@ -889,28 +932,18 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
 
     private var trackControlGroup: some View {
         let item = viewModel.currentPlaybackItem
-        return PlayerGlassControlGroup {
-            HStack(spacing: 0) {
-                if viewModel.isDiscMenuPlayback || viewModel.hasDiscVideos {
-                    PlayerDiscControlsButton(
-                        model: viewModel, onInteraction: onInteraction,
-                        onPresentationChanged: {
-                            menuPresentation.setPresented($0, owner: discPresentationOwner)
-                        }
-                    )
-                }
-                PlayerMoreMenuButton(
-                    model: viewModel.controls,
-                    availability: .init(
-                        maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
-                        quality: viewModel.streamingQualityAvailable, versions: hasVersions
-                    ),
-                    presentation: menuPresentation,
-                    layout: .init(size: availableSize),
-                    actions: menuActions(for: item)
-                )
-            }
-        }
+        return PlayerMoreMenuButton(
+            model: viewModel.controls,
+            availability: .init(
+                maximumSpeed: viewModel.maximumPlaybackSpeed, video: supportsVideoZoom,
+                quality: viewModel.streamingQualityAvailable ? viewModel.streamingOptions?.quality : nil,
+                qualitySupport: viewModel.streamingQualitySupport,
+                versions: hasVersions, disc: .init(player: viewModel)
+            ),
+            presentation: menuPresentation,
+            layout: .init(size: availableSize),
+            actions: menuActions(for: item)
+        )
         .accessibilityIdentifier("player-track-controls")
     }
 
@@ -925,6 +958,13 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         actions.selectSubtitle = { viewModel.selectSubtitleOption(id: $0); onInteraction() }
         actions.setDialogueEnhancement = { viewModel.setDialogEnhanceEnabled($0); onInteraction() }
         actions.setSpeed = { viewModel.setPlaybackSpeed($0); onInteraction() }
+        actions.setQuality = { quality in
+            guard viewModel.streamingQualityAvailable, var options = viewModel.streamingOptions,
+                  viewModel.streamingQualitySupport.validationMessage(for: quality) == nil else { return }
+            options.quality = quality
+            viewModel.changeStreamingOptions(options)
+            onInteraction()
+        }
         actions.setDolbyVisionFELConversion = { viewModel.setDolbyVisionFELConversion($0); onInteraction() }
         actions.setVideoUpscaling = { viewModel.setVideoUpscaling($0); onInteraction() }
         return actions

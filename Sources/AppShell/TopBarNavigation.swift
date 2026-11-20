@@ -112,8 +112,12 @@ private struct TopBarNavigationContent: View {
     }
 
     var body: some View {
+        let holdsPageFocus = destinationFocus.isWaiting || (isNavigating && contentRequest == nil && !hasEnteredContent)
         ZStack(alignment: .top) {
             pages
+                // While the top bar owns focus, keep the guide's native controls at their resting brightness.
+                .allowsHitTesting(current != .liveTV || !holdsPageFocus)
+                .accessibilityHidden(current == .liveTV && holdsPageFocus)
                 .background {
                     NavigationContentFocusRequester(
                         request: contentRequest, onCompleted: contentFocused,
@@ -135,7 +139,7 @@ private struct TopBarNavigationContent: View {
                         onPresented: destinationPresented
                     )
                 }
-                .disabled(destinationFocus.isWaiting || (isNavigating && contentRequest == nil && !hasEnteredContent))
+                .disabled(current != .liveTV && holdsPageFocus)
                 .environment(\.plozzTopNavigationContentInsets, contentInsets)
                 .environment(\.plozzTopNavigationScroll, scroll)
             TopBarNavigationBar(

@@ -112,7 +112,11 @@ struct LiveChannelOverlay: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.locale) private var locale
     @State private var openMenu: LiveChannelTrackMenuKind?
+    #if os(tvOS)
+    @State private var returningMenu: LiveChannelTrackMenuKind?
+    #else
     @State private var menuReturnFocus: LiveChannelControl?
+    #endif
     /// The VOD player's options panel, fed the channel's tracks: its model, the
     /// Subtitles screen it shows, its remembered heights, the Menu press that
     /// steps it back, and the focus inside it.
@@ -276,6 +280,12 @@ struct LiveChannelOverlay: View {
         #endif
         #if os(tvOS)
         .observingSystemPlaybackAudio(trackOptions.systemAudio, isVisible: true)
+        .onChange(of: openMenu.map(hasTVMenu) ?? true) { _, available in
+            if !available { closeMenu() }
+        }
+        .onChange(of: returningMenu.map(hasTVMenu) ?? true) { _, available in
+            if !available { returningMenu = nil; focus = .timeline }
+        }
         .onExitCommand(perform: handleExit)
         .background(TVFocusActivityObserver(onActivity: onControlActivity))
         #endif
@@ -513,7 +523,7 @@ struct LiveChannelOverlay: View {
                 LibraryChannelNavigationButton(item: libraryItem, action: openLibraryItem)
                     .focused($focus, equals: .openLibraryTitle)
             )
-            .disabled(openMenu != nil || cardOpen)
+            .disabled(openMenu != nil || cardOpen || menuReturnLocksOut(.openLibraryTitle))
         }
     }
 
@@ -563,8 +573,15 @@ struct LiveChannelOverlay: View {
             audio: tracks.audioTracks, subtitles: tracks.subtitleTracks,
             selectedAudio: tracks.selectedAudioID, selectedSubtitle: tracks.selectedSubtitleID,
             style: tracks.subtitles.style, isHDR: tracks.subtitles.isHDR,
-            capabilities: tracks.engine.capabilities
+            capabilities: menuCapabilities
         )
+    }
+
+    private var menuCapabilities: PlayerEngineCapabilities {
+        #if os(tvOS)
+        if tracks.continuesExternally { return tracks.engine.capabilities.subtracting(.videoZoom) }
+        #endif
+        return tracks.engine.capabilities
     }
 
     /// The channel's tracks as the VOD menus list them (`TrackMenuBuilder`: the
@@ -636,13 +653,22 @@ struct LiveChannelOverlay: View {
             // A live channel draws one subtitle line.
             offersDualSubtitles: false,
             playbackScreen: $playbackScreen, videoZoom: tracks.videoZoom,
-            offersPlaybackSpeed: false, audioScreen: $audioScreen
+            audioScreen: $audioScreen, additionalPlaybackRows: multiviewRows
         )
         .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .menu, isVisible: !styleEditing)
         .id(kind)
         .plozzFocusSection()
     }
     #endif
+
+    // Let tvOS recover directly to the opener when the focused menu row disappears.
+    // Otherwise the much wider timeline wins the native recovery before the badge.
+    private func menuReturnLocksOut(_ control: LiveChannelControl) -> Bool {
+        #if os(tvOS)
+        if let returningMenu { return returningMenu.control != control }
+        #endif
+        return false
+    }
 
     // MARK: Badges
 
@@ -659,6 +685,22 @@ struct LiveChannelOverlay: View {
     static func showsAudio(trackCount: Int, systemAudio: SystemPlaybackAudio) -> Bool {
         trackCount > 1 || !systemAudio.availableSettings.isEmpty
     }
+
+    private func hasTVMenu(_ kind: LiveChannelTrackMenuKind) -> Bool {
+        switch kind {
+        case .audio: showsAudio
+        case .subtitles: showsSubtitles
+        case .playback: showsZoom || onMultiview != nil
+        }
+    }
+
+    private var multiviewRows: [PlayerOptionsRowSpec] {
+        guard let onMultiview else { return [] }
+        return [.init(slot: PlaybackOptionsPane.multiviewSlot, title: "Multiview", kind: .action {
+            closeMenu()
+            onMultiview()
+        })]
+    }
     #endif
 
     /// Subtitles once the stream offers any, as VOD.
@@ -671,19 +713,15 @@ struct LiveChannelOverlay: View {
     private var badges: some View {
         HStack(spacing: 20) {
             if canGoLive {
-                badge(
-                    LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: plozzChannelID != nil),
-                    systemImage: plozzChannelID != nil ? "clock.arrow.circlepath" : "dot.radiowaves.left.and.right",
-                    control: .goLive, prominent: true, action: onGoLive
-                )
+                Button(action: onGoLive) {
+                    Label(LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: plozzChannelID != nil),
+                          systemImage: "forward.end.fill").labelStyle(.titleAndIcon)
+                }
+                .playerGlassButton(prominent: true)
+                .focused($focus, equals: .goLive)
+                .disabled(openMenu != nil || cardOpen || menuReturnLocksOut(.goLive))
+                .padding(.trailing, 16)
                 .accessibilityIdentifier("live-channel-go-live")
-            }
-            if showsZoom {
-                badge(
-                    LiveChannelTrackMenuKind.playback.title, systemImage: LiveChannelTrackMenuKind.playback.icon,
-                    control: .playback, prominent: openMenu == .playback
-                ) { toggleMenu(.playback) }
-                    .accessibilityIdentifier("live-channel-playback")
             }
             if showsAudio {
                 badge(
@@ -699,9 +737,11 @@ struct LiveChannelOverlay: View {
                 ) { toggleMenu(.subtitles) }
                     .accessibilityIdentifier("live-channel-subtitles")
             }
-            if let onMultiview {
-                badge("Multiview", systemImage: "rectangle.split.2x2", control: .multiview, action: onMultiview)
-                    .accessibilityIdentifier("live-channel-multiview")
+            if showsZoom || onMultiview != nil {
+                badge("More", systemImage: "ellipsis", control: .playback, prominent: openMenu == .playback) {
+                    toggleMenu(.playback)
+                }
+                .accessibilityIdentifier("live-channel-playback")
             }
         }
         .reportSubtitleControlsFrame(
@@ -723,7 +763,14 @@ struct LiveChannelOverlay: View {
     ) -> some View {
         PlayerControlButton(title, systemImage: systemImage, prominent: prominent, action: action)
         .focused($focus, equals: control)
-        .disabled(openMenu != nil || cardOpen)
+        .disabled(openMenu != nil || cardOpen || menuReturnLocksOut(control))
+        #if os(tvOS)
+        .background {
+            if returningMenu?.control == control {
+                NativeFocusRegionObserver { returningMenu = nil }
+            }
+        }
+        #endif
     }
 
     /// The open track menu, resting just above the badges that opened it.
@@ -799,7 +846,7 @@ struct LiveChannelOverlay: View {
             }
             .focusEffectDisabled()
             .focused($focus, equals: .timeline)
-            .disabled(openMenu != nil)
+            .disabled(openMenu != nil || menuReturnLocksOut(.timeline))
             .accessibilityIdentifier("live-channel-timeline")
             .accessibilityLabel(Text(status))
         #else
@@ -1084,7 +1131,7 @@ struct LiveChannelOverlay: View {
     private func isFocusable(_ control: LiveChannelControl) -> Bool {
         guard openMenu == nil else { return false }
         #if os(tvOS)
-        return cardOpen || control == .cardTab(cardTab)
+        return !menuReturnLocksOut(control) && (cardOpen || control == .cardTab(cardTab))
         #else
         return true
         #endif
@@ -1170,7 +1217,7 @@ struct LiveChannelOverlay: View {
         switch control {
         case .cardTab(let tab):
             tabFocused(tab)
-        case .timeline, .audio, .subtitles, .goLive, .multiview, .openLibraryTitle:
+        case .timeline, .audio, .subtitles, .goLive, .playback, .openLibraryTitle:
             // Leaving the tab row upward is leaving the card, as in VOD.
             if cardOpen { closeCard() }
         case .cardExit:
@@ -1253,11 +1300,16 @@ struct LiveChannelOverlay: View {
     }
 
     private func toggleMenu(_ kind: LiveChannelTrackMenuKind) {
+        #if os(tvOS)
+        guard hasTVMenu(kind) else { return }
+        #endif
         if openMenu == kind {
             closeMenu()
             return
         }
+        #if !os(tvOS)
         menuReturnFocus = focus ?? kind.control
+        #endif
         subtitleScreen = .tracks
         playbackScreen = .options
         audioScreen = .options
@@ -1266,7 +1318,7 @@ struct LiveChannelOverlay: View {
         // `PlayerControls.restoreFocus`.
         #if os(tvOS)
         let target = PlayerOptionsPanel.preferredFocus(
-            for: kind.category, subtitleScreen: .tracks, model: trackOptions
+            for: kind.category, subtitleScreen: .tracks, model: trackOptions, additionalPlaybackRows: multiviewRows
         )
         DispatchQueue.main.async { panelFocus = target }
         #else
@@ -1277,12 +1329,13 @@ struct LiveChannelOverlay: View {
 
     private func closeMenu() {
         #if os(tvOS)
-        let returnFocus: LiveChannelControl? = menuReturnFocus == .audio && !showsAudio ? .timeline : menuReturnFocus
+        returningMenu = openMenu.flatMap { hasTVMenu($0) ? $0 : nil }
+        let returnFocus = returningMenu?.control ?? .timeline
         #else
         let returnFocus = menuReturnFocus
+        menuReturnFocus = nil
         #endif
         openMenu = nil
-        menuReturnFocus = nil
         subtitleScreen = .tracks
         playbackScreen = .options
         audioScreen = .options
@@ -1365,13 +1418,14 @@ extension LiveChannelOverlay {
                     .allowsHitTesting(false)
                 VStack(spacing: 0) {
                     topBar
+                        .playerCameraSafeRow()
                         .playerTouchChromeHidden(touchChromeHidden)
                     Spacer(minLength: 0)
                     touchBottomCluster
                 }
                 menuLayer
             }
-            .modifier(PlayerTouchChromePadding())
+            .modifier(PlayerTouchChromePadding(clearsCameraByRow: true))
             if !cardOpen, openMenu == nil {
                 centerTransport
                     .reportSubtitleControlsFrame(
@@ -1537,7 +1591,7 @@ extension LiveChannelOverlay {
                                 touchGoLiveBadge
                                 libraryButton
                             }
-                            touchTrackBadges()
+                            touchTrackBadges
                                 .reportSubtitleControlsFrame(
                                     in: tracks.subtitles.controlsLayout, region: .trackControls,
                                     isVisible: !touchChromeHidden
@@ -1552,6 +1606,7 @@ extension LiveChannelOverlay {
                         }
                     }
                 }
+                .playerCameraSafeRow()
                 .playerTouchChromeHidden(touchChromeHidden)
                 .transition(.opacity)
                 timeline
@@ -1559,6 +1614,7 @@ extension LiveChannelOverlay {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("live-channel-timeline")
                     .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .timeline)
+                    .playerCameraSafeTimeline()
                     .transition(.opacity)
             }
             HStack(spacing: 12) {
@@ -1572,10 +1628,12 @@ extension LiveChannelOverlay {
                     .accessibilityIdentifier("live-channel-exit-fullscreen")
                 }
             }
-                .playerTouchChromeHidden(touchChromeHidden)
+            .playerCameraSafeRow()
+            .playerTouchChromeHidden(touchChromeHidden)
             if cardOpen {
                 card
                     .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .card)
+                    .playerCameraSafeRow()
                     .padding(.top, PlayerTouchLayout.cardSpacing)
                     // Grows upward out of the tabs, as VOD's touch card does.
                     .transition(.scale(scale: 0.94, anchor: .bottom).combined(with: .opacity))
@@ -1647,7 +1705,10 @@ extension LiveChannelOverlay {
 
     /// The same actions as the tvOS badges, as VOD's touch glass circles.
     private var touchBadges: some View {
-        touchTrackBadges(includesGoLive: true)
+        HStack(spacing: 8) {
+            touchGoLiveBadge
+            touchTrackBadges
+        }
         .reportSubtitleControlsFrame(
             in: tracks.subtitles.controlsLayout, region: .trackControls, isVisible: !touchChromeHidden
         )
@@ -1656,11 +1717,15 @@ extension LiveChannelOverlay {
     @ViewBuilder
     private var touchGoLiveBadge: some View {
         if canGoLive {
-            touchBadge(
-                LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: plozzChannelID != nil),
-                systemImage: plozzChannelID != nil ? "clock.arrow.circlepath" : "dot.radiowaves.left.and.right",
-                action: onGoLive
-            )
+            Button(action: onGoLive) {
+                Label {
+                    Text(LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: plozzChannelID != nil))
+                } icon: {
+                    Image(systemName: "forward.end.fill")
+                }
+                .labelStyle(.titleAndIcon)
+            }
+            .playerTouchTab(selected: false)
             .accessibilityIdentifier("live-channel-go-live")
             .reportSubtitleControlsFrame(
                 in: tracks.subtitles.controlsLayout, region: .trackControls, isVisible: !touchChromeHidden
@@ -1669,15 +1734,12 @@ extension LiveChannelOverlay {
     }
 
     /// Track actions stay above the timeline, below the title in portrait.
-    private func touchTrackBadges(includesGoLive: Bool = false) -> some View {
-        PlayerGlassControlGroup {
-            if includesGoLive { touchGoLiveBadge }
-            PlayerMoreMenuButton(
-                model: trackOptions, availability: mobileMenuAvailability, presentation: mobileMenu,
-                layout: .init(size: touchViewportSize),
-                accessibilityIdentifier: "live-channel-playback-options", actions: mobileMenuActions
-            )
-        }
+    private var touchTrackBadges: some View {
+        PlayerMoreMenuButton(
+            model: trackOptions, availability: mobileMenuAvailability, presentation: mobileMenu,
+            layout: .init(size: touchViewportSize),
+            accessibilityIdentifier: "live-channel-playback-options", actions: mobileMenuActions
+        )
         // GLOBAL, so the menu layer can rest the open menu just above them.
         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
             badgesTop = top
@@ -1734,7 +1796,7 @@ extension LiveChannelOverlay {
         case .multiview:
             if let onMultiview { onMultiview() }
             else { PlozzLog.playback.debug("Ignoring unavailable live multiview menu selection.") }
-        case .subtitleSearch, .speed, .quality, .versions:
+        case .subtitleSearch, .speed, .quality, .versions, .discMenu, .discVideos, .playVideo, .discRegion:
             PlozzLog.playback.error("Live menu requested an unavailable destination.")
         }
     }
@@ -1794,6 +1856,8 @@ struct WindowSafeAreaPadding: ViewModifier {
     var isEnabled = true
     var minimumInset: CGFloat = 0
     var minimumHorizontalInset: CGFloat = 0
+    var balancesLandscapeMargins = false
+    var clearsCameraByRow = false
 
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var window = WindowSafeArea()
@@ -1803,10 +1867,18 @@ struct WindowSafeAreaPadding: ViewModifier {
         let minimum = isEnabled ? minimumInset : 0
         let horizontal = isEnabled ? minimumHorizontalInset : 0
         let rtl = layoutDirection == .rightToLeft
+        let balance = isEnabled && balancesLandscapeMargins && window.size.width > window.size.height
+        let corners = balance && clearsCameraByRow ? window.cameraCorners : []
+        // Only relax a one-sided inset when UIKit identifies what occupies it.
+        // Older SDKs, ordinary sensor housings and unadapted overlays stay safe.
+        let common = corners.isEmpty ? max(insets.left, insets.right) : min(insets.left, insets.right)
+        let leading = balance ? common : (rtl ? insets.right : insets.left)
+        let trailing = balance ? common : (rtl ? insets.left : insets.right)
         content
+            .environment(\.playerCameraCorners, corners)
             .padding(EdgeInsets(
-                top: max(minimum, insets.top), leading: max(horizontal, rtl ? insets.right : insets.left),
-                bottom: max(minimum, insets.bottom), trailing: max(horizontal, rtl ? insets.left : insets.right)
+                top: max(minimum, insets.top), leading: max(horizontal, leading),
+                bottom: max(minimum, insets.bottom), trailing: max(horizontal, trailing)
             ))
             .ignoresSafeArea()
             // Zero-sized: a full-size UIKit view here sat above the controls in
@@ -1818,6 +1890,7 @@ struct WindowSafeAreaPadding: ViewModifier {
 struct WindowSafeArea: Equatable {
     var insets: UIEdgeInsets = .zero
     var size: CGSize = .zero
+    var cameraCorners: [CGRect] = []
 }
 
 private struct WindowSafeAreaReader: UIViewRepresentable {
@@ -1854,7 +1927,17 @@ private struct WindowSafeAreaReader: UIViewRepresentable {
 
         private func report() {
             guard let window else { return }
-            let value = WindowSafeArea(insets: window.safeAreaInsets, size: window.bounds.size)
+            let insets = window.safeAreaInsets
+            let bounds = window.bounds
+            var value = WindowSafeArea(insets: insets, size: bounds.size)
+            #if canImport(SwiftUI, _version: 8.0.85)
+            if #available(iOS 27.1, *), bounds.width > bounds.height, insets.left != insets.right {
+                value.cameraCorners = window.reservedRegions(kind: .occlusion).map(\.frame).filter { rect in
+                    (rect.minY <= bounds.minY || rect.maxY >= bounds.maxY) && rect.height < bounds.height
+                        && (insets.left > insets.right ? rect.minX <= bounds.minX : rect.maxX >= bounds.maxX)
+                }
+            }
+            #endif
             guard value != reported else { return }
             reported = value
             // Never during SwiftUI's own update pass.

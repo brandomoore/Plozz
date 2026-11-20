@@ -12,6 +12,12 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+Settings search opens **Auto-hide controls** in Playback on TV, iPhone, and iPad.
+It defaults to **While playing**. **While playing
+or paused** also clears the paused picture after four idle seconds without
+resuming playback. **Never** leaves dismissal to the viewer. VoiceOver and
+Switch Control suspend automatic dismissal regardless of the profile setting.
+
 Playback's **Default zoom** uses the shared native menu on TV and mobile.
 Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
 control edits only its own choice. Custom exposes the existing 50-200% range.

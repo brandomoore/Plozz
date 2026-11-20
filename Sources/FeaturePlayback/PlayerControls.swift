@@ -41,7 +41,7 @@ struct PlayerOptionsActions {
 ///  * **Options panel slot** — the now-playing title, which cross-fades to an open
 ///    options panel. It sits ABOVE the track-control row, so a menu always opens
 ///    over its own buttons rather than under them.
-///  * **Track controls** — Playback · Audio · Subtitles, directly above the scrub bar.
+///  * **Track controls** — Audio · Subtitles · current speed · More above the scrub bar.
 ///    Reached by pressing **Up** from the scrub surface; Menu (or the idle
 ///    auto-hide) returns to the video, since nothing sits above them.
 ///  * **Scrub bar** — buffered/played fill + floating trickplay thumbnail.
@@ -67,7 +67,7 @@ struct PlayerControls: View {
     let onExitToSurface: () -> Void
 
     enum Category: Hashable {
-        case subtitles, audio, playback, sync, info, cast, chapters, episodes, playlist, version
+        case subtitles, audio, speed, playback, sync, info, cast, chapters, episodes, playlist, version
         case continueWatching
 
         var title: LocalizedStringResource {
@@ -86,7 +86,8 @@ struct PlayerControls: View {
                     defaultValue: "Audio",
                     comment: "Tab in the in-player options panel listing audio tracks."
                 )
-            case .playback: return "Playback"
+            case .speed: return "Playback Speed"
+            case .playback: return "More"
             case .sync:
                 return LocalizedStringResource(
                     "player.category.sync",
@@ -142,7 +143,13 @@ struct PlayerControls: View {
             case .version: return "rectangle.stack"
             case .subtitles: return "captions.bubble"
             case .audio: return "waveform"
-            case .playback: return "slider.horizontal.3"
+            case .speed: return "speedometer"
+            case .playback:
+                #if os(tvOS)
+                return "ellipsis"
+                #else
+                return "slider.horizontal.3"
+                #endif
             case .sync: return "slider.horizontal.below.square.and.square.filled"
             case .info: return "info.circle"
             case .cast: return "person.2"
@@ -156,7 +163,6 @@ struct PlayerControls: View {
 
     enum FocusSlot: Hashable {
         case button(Category)
-        case disc
         /// Invisible strip above the Info tab. Focusing it IS the "leave the card"
         /// gesture — see `infoExitGuide`.
         case infoExit
@@ -221,7 +227,7 @@ struct PlayerControls: View {
     }
 
     enum PlaybackScreen: Equatable {
-        case options, zoom, upscaling
+        case options, zoom, upscaling, version
 
         var parent: Self { .options }
     }
@@ -317,6 +323,18 @@ struct PlayerControls: View {
     @State private var parkedCardTab: Category = .info
 
     var body: some View {
+        controlsSurface
+            .onChange(of: player?.hasDiscVideos == true || player?.isDiscMenuPlayback == true, initial: true) {
+                model.controlBar.hasDiscActions = $1
+            }
+            .onChange(of: model.trackControlCategories) { _, available in
+                if let panel = optionsPanel, panel != .version, !available.contains(panel) {
+                    openPanel = nil
+                }
+            }
+    }
+
+    private var controlsSurface: some View {
         ZStack {
             // Measures the box the ZStack's CHILDREN are laid out in. The outer
             // `.background` reports a different one (960 tall, ending at 1020) than
@@ -338,7 +356,7 @@ struct PlayerControls: View {
                 bottomCluster
                     .opacity(model.controlsVisible ? 1 : 0)
             }
-            .animation(.easeInOut(duration: 0.25), value: model.controlsVisible)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: model.controlsVisible)
             .animation(.easeInOut(duration: 0.3), value: styleEditing)
             // A member of the ZStack, NOT an `.overlay` on it. An overlay attached
             // after `.ignoresSafeArea()` still gets the system safe area in its
@@ -544,7 +562,8 @@ struct PlayerControls: View {
                 // the whole bar is hiding — focus is intentionally cleared then).
                 // Then let the title fade back in after a short beat.
                 if model.controlBarVisible {
-                    if panelReturnFocus == .button(.audio), !model.hasAudioControls {
+                    if case let .button(category) = panelReturnFocus, !Self.usesBottomCard(category),
+                       !model.trackControlCategories.contains(category) {
                         if model.trackControlCategories.isEmpty { onExitToSurface() }
                         else { restoreFocus(initialFocus) }
                     } else {
@@ -617,10 +636,6 @@ struct PlayerControls: View {
             // focus order, so the engine can't complete its own move onto the Info
             // tab — Info stays a deliberate Down-from-the-scrubber gesture.
             guard openPanel == nil else { return }
-            if focus == .disc {
-                onExitToSurface()
-                return
-            }
             guard case .button(let category) = focus, category != .info else { return }
             onExitToSurface()
         case .left, .right:
@@ -808,7 +823,7 @@ struct PlayerControls: View {
         .frame(height: height)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .opacity((model.controlsVisible && !styleEditing) ? 1 : 0)
-        .animation(.easeInOut(duration: 0.3), value: model.controlsVisible)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: model.controlsVisible)
         .animation(.easeInOut(duration: 0.3), value: styleEditing)
         .allowsHitTesting(false)
         .ignoresSafeArea()
@@ -894,7 +909,7 @@ struct PlayerControls: View {
         }
     }
 
-    /// The track controls (Playback · Audio · Subtitles), at the trailing edge their
+    /// The track controls at the trailing edge their
     /// panels open from. An open options panel floats above the whole transport, so
     /// the menu always sits above its own buttons.
     ///
@@ -902,14 +917,19 @@ struct PlayerControls: View {
     /// screen then), so hiding it never reflows the scrub bar.
     private var trackControlButtons: some View {
         HStack(spacing: 20) {
-            if let player, player.isDiscMenuPlayback || player.hasDiscVideos {
-                PlayerDiscControlsButton(model: player)
-                    .focused($focus, equals: .disc)
-                    .disabled(entryLocksOut(.disc))
-            }
             ForEach(model.trackControlCategories, id: \.self) { category in
-                PlayerControlButton(category.title, systemImage: category.icon, prominent: openPanel == category) {
-                    toggle(category)
+                Group {
+                    if category == .speed {
+                        let rate = Self.speedLabel(model.playbackSpeed)
+                        Button { toggle(category) } label: { Text(verbatim: rate).monospacedDigit() }
+                            .playerGlassButton(prominent: openPanel == category)
+                            .accessibilityLabel(Text(category.title))
+                            .accessibilityValue(Text(verbatim: rate))
+                    } else {
+                        PlayerControlButton(category.title, systemImage: category.icon, prominent: openPanel == category) {
+                            toggle(category)
+                        }
+                    }
                 }
                 .accessibilityIdentifier("player-control-\(category.icon)")
                 .focused($focus, equals: .button(category))
@@ -1246,7 +1266,8 @@ struct PlayerControls: View {
                     close: { openPanel = nil }, backRequest: panelBackRequest,
                     maximumHeight: max(0, availableHeight - Self.horizontalMargin
                         - (styleEditing ? Self.horizontalMargin : menuBottomInset)),
-                    playbackScreen: $playbackScreen, audioScreen: $audioScreen
+                    playbackScreen: $playbackScreen, audioScreen: $audioScreen,
+                    additionalPlaybackRows: discRows
                 )
                 .reportSubtitleControlsFrame(
                     in: model.subtitleLayout, region: .menu, isVisible: model.controlsVisible && !styleEditing
@@ -1513,8 +1534,31 @@ struct PlayerControls: View {
     private var preferredPanelFocus: FocusSlot? {
         guard let panel = openPanel else { return nil }
         return PlayerOptionsPanel.preferredFocus(
-            for: panel, subtitleScreen: subtitleScreen, model: model, playbackScreen: playbackScreen
+            for: panel, subtitleScreen: subtitleScreen, model: model, playbackScreen: playbackScreen,
+            additionalPlaybackRows: discRows
         )
+    }
+
+    private var discRows: [PlayerOptionsRowSpec] {
+        guard let player, player.hasDiscVideos || player.isDiscMenuPlayback else { return [] }
+        func action(_ slot: Int, _ title: LocalizedStringResource, _ perform: @escaping () -> Void) -> PlayerOptionsRowSpec {
+            .init(slot: slot, title: title, kind: .action {
+                openPanel = nil
+                perform()
+            })
+        }
+        var rows: [PlayerOptionsRowSpec] = []
+        if player.isDiscMenuPlayback, let state = player.videoEngine.discMenu {
+            rows.append(action(20, "Disc menu") { state.openMenu() })
+            rows.append(action(21, "Try another region") {
+                player.retryDiscMenu(region: state.region == 1 ? 2 : state.region == 2 ? 4 : 1)
+            })
+        }
+        rows.append(action(22, "Disc videos") { player.showsDiscVideos = true })
+        if player.isDiscMenuPlayback || player.isSelectedDiscVideo {
+            rows.append(action(23, "Play video") { player.playVideoWithoutMenus() })
+        }
+        return rows
     }
 
     // MARK: Panels
@@ -1722,8 +1766,7 @@ extension PlayerControlsModel {
     }
 
     /// The track controls the current engine/source can actually offer, in the
-    /// order the track row lays them out: Playback · Audio · **Subtitles** (Subtitles
-    /// nearest the trailing edge, where its panel opens from).
+    /// order the track row lays them out, with the overflow at the trailing edge.
     ///
     /// Lives on the model rather than the view so `CustomPlayerContainer` can ask
     /// the same question before dropping focus into the row on an Up press — an
@@ -1733,18 +1776,15 @@ extension PlayerControlsModel {
     /// removed. `Category.sync` + `syncPane` are kept so it can be restored later.
     var trackControlCategories: [PlayerControls.Category] {
         var result: [PlayerControls.Category] = []
-        if versions.isAvailable {
-            result.append(.version)
-        }
-        if upscaling.isAvailable || !engineCapabilities.intersection([.playbackSpeed, .videoZoom]).isEmpty {
-            result.append(.playback)
-        }
         if hasAudioControls {
             result.append(.audio)
         }
         if hasSelectableSubtitles || subtitleDownload.canSearch {
             result.append(.subtitles)
         }
+        if engineCapabilities.contains(.playbackSpeed) { result.append(.speed) }
+        if engineCapabilities.contains(.videoZoom) || upscaling.isAvailable || felConversion.isAvailable
+            || versions.isAvailable || controlBar.hasDiscActions { result.append(.playback) }
         return result
     }
 }

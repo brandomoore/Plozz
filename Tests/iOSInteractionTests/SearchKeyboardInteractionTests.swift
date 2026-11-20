@@ -29,6 +29,7 @@ final class SearchKeyboardInteractionTests: XCTestCase {
 
     func testBlankSpaceDismissesKeyboardBeforeEnteringQuery() {
         let field = launch()
+        assertKeyboardDismissed()
         focus(field)
         tapBelowHeader(field)
         assertKeyboardDismissed()

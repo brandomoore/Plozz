@@ -1,6 +1,88 @@
 #if os(tvOS)
 import SwiftUI
 import UIKit
+import CoreNetworking
+
+public extension EnvironmentValues {
+    @Entry var plozzNativeControlFocusRequest: (@MainActor (UIView) -> Bool)? = nil
+}
+
+/// Requests a rendered control through the native owner shared with nested content hosts.
+public struct NativeControlFocusRequest: UIViewRepresentable {
+    let request: Int?
+    @Environment(\.plozzNativeControlFocusRequest) private var requestFocus
+    @Environment(\.isEnabled) private var isEnabled
+
+    public init(request: Int?) { self.request = request }
+
+    public func makeUIView(context: Context) -> RequestView { RequestView() }
+
+    public func updateUIView(_ view: RequestView, context: Context) {
+        view.requestFocus = requestFocus
+        view.request = isEnabled ? request : nil
+    }
+
+    public static func dismantleUIView(_ view: RequestView, coordinator: ()) {
+        view.request = nil
+        view.requestFocus = nil
+    }
+
+    public final class RequestView: UIView {
+        var requestFocus: (@MainActor (UIView) -> Bool)?
+        var request: Int? {
+            didSet {
+                guard request != oldValue else { return }
+                pending?.cancel()
+                pending = nil
+                completed = nil
+                schedule()
+            }
+        }
+        private var completed: Int?
+        private var pending: Task<Void, Never>?
+
+        public override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+            accessibilityElementsHidden = true
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        public override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil {
+                request = nil
+                return
+            }
+            schedule()
+        }
+
+        public override func layoutSubviews() {
+            super.layoutSubviews()
+            schedule()
+        }
+
+        private func schedule() {
+            guard pending == nil, let request, completed != request,
+                  requestFocus != nil, window != nil, !bounds.isEmpty else { return }
+            pending = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard !Task.isCancelled, let self, self.request == request, let window = self.window else { return }
+                window.layoutIfNeeded()
+                guard !Task.isCancelled, self.request == request, self.window === window else { return }
+                self.completed = request
+                if self.requestFocus?(self) == false {
+                    PlozzLog.app.error("Native control focus handoff did not reach its target")
+                }
+                if self.request == request { self.pending = nil }
+            }
+        }
+
+        deinit { pending?.cancel() }
+    }
+}
 
 @MainActor
 public enum NativeFocusRegion {

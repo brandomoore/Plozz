@@ -344,28 +344,9 @@ private struct PlozziOSMyLibrariesContent: View {
         // asking from the root would silently never appear.
         //
         // Suppressed during setup, which asks the same question inline.
-        .plozzSheet(item: identityPromptBinding) { account in
-            PlozziOSServerIdentityPromptView(
-                appModel: appModel,
-                account: account,
-                onFinish: { appModel.concludeIdentityPrompt(for: account.id) },
-                onDecline: { appModel.declineIdentityPrompt(for: account.id) }
-            )
-        }
-    }
-
-    private var identityPromptBinding: Binding<Account?> {
-        Binding(
-            // Only while Settings is actually up: the root presents the same
-            // question when it isn't, and two presenters racing one piece of
-            // state is undefined. Suppressed during setup, which asks inline.
-            get: {
-                presentation == .settings && appModel.isSettingsPresented
-                    ? appModel.pendingIdentityAccount
-                    : nil
-            },
-            set: { if $0 == nil { appModel.resolveIdentityPromptForPending() } }
-        )
+        .modifier(PlozziOSServerIdentityPresenter(
+            appModel: appModel, isEnabled: presentation == .settings && appModel.isSettingsPresented
+        ))
     }
 
     @ViewBuilder

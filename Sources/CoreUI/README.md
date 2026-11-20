@@ -425,6 +425,16 @@ layout: a name-first title and inset pixel-mascot signature. Its optional
 Category tint blends over `themePalette.cardOpaqueSurface`, so Light, Dark,
 and Black keep their own brightness and foreground contrast. Supplied logos
 always retain precedence; external channels keep the ordinary name fallback.
+Native guide controls opt into `usesControlBackground` so native focus can
+illuminate the original full-tile plate. The plate stays opaque at rest and
+becomes partly translucent on focus; artwork and text stay opaque with their
+existing contrast treatment. The shared cached logo analysis supplies source
+background colours or a restrained brand tint, without additional image work.
+Generated Plozz wordmarks use the same backdrop behavior. Standalone artwork
+keeps its existing plate and colours by default.
+Independent `horizontalArtworkInset` lets dense guide cells reserve side clearance
+for wide marks without reducing the height available to square or tall marks.
+Stacked marks also respect a square logo's area budget; the backing plate is unchanged.
 
 `PlozzStartupLogo` starts from a smile and rotates through wink, delight, and
 surprise on successive cold launches. The device-local choice is saved once per
@@ -452,6 +462,8 @@ default delay; individual callers can still supply an explicit grace period.
 
 Continue Watching's profile-scoped Playback details choice applies to Artwork + logo,
 Thumbnail, and Poster, on Home and library rows.
+Mobile Home's reserved row includes the refresh indicator's header height even
+when idle, so the fixed row cannot compress the artwork and remove its reflection.
 Detailed keeps the existing play/progress/text overlay; Progress only uses the
 shared white progress bar without that overlay. Other cards are unaffected.
 The previously stored portrait-only preference is retained.
@@ -627,8 +639,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   top for a softly faded reflection, shifting the original artwork below more
   of the status-bar chrome without moving metadata or growing the hero.
   Home and Details share this still-image layout, including swipe reflections.
-  Only Home adds progressive blur across the top reflection; Details keep it sharp
-  rather than stacking that treatment with native navigation chrome.
+  Home and Details share progressive blur across the top reflection, with the
+  same sharp fallback when Reduce Transparency is enabled.
   The bottom reflection and minimum dissolve span remain intact; trailers keep
   their full-stage presentation. Landscape and tvOS heroes are unchanged.
 
@@ -653,6 +665,24 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   settles, before request status, children, ratings or trailers. List/snapshot seeds must not
   establish a preferred source prematurely; recoverable offline failures may
   release an already usable cached detail instead.
+  Mobile Home hero navigation can reuse its actual displayed bitmap before that
+  gate opens. This page-local handoff requires the same subject, profile and
+  effective artwork policy, and a landscape bitmap for a landscape destination;
+  it does not select or authorize a different preferred source.
+  The handoff also carries the actual processed Home wordmark, independently of
+  backdrop readiness. Detail paints it synchronously and retains it when source
+  resolution completes, without another logo lookup. The existing logo request
+  identity rejects changed subjects, accounts, languages, policies, credential
+  revisions or conflicting metadata; compatible enrichment keeps the wordmark.
+  Only the active hero's displayed logo is eligible, not a speculative preload.
+  Mobile detail uses `FallbackAsyncImage.resolvedBitmap(reportingHeroArtwork:)`
+  to share one resolved bitmap across the original and reflected images. Only a
+  late first image fades, after native entry completes with the artwork still
+  missing: the composed layer reveals over 0.15 seconds, or immediately with
+  Reduce Motion. Images arriving during navigation or while the page is covered,
+  cached and handed-off images remain immediate. Resolution upgrades do not
+  restart the reveal. `plozzOnPageAppearanceChange` shares the native lifecycle
+  reader; metadata opts into entry start while artwork observes entry completion.
   TV transition prefetches are reusable work, not permission to paint. The
   transition cover receives its image only from the ready destination renderer.
   `ArtworkDisplayIdentity` separates the visible subject/policy from changing

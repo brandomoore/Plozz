@@ -63,6 +63,12 @@ struct PlayerActions {
 /// `PlayerActions` closures, so any engine (AVPlayer or Plozzigen)
 /// reuses it without change.
 struct CustomPlayerContainer: UIViewControllerRepresentable {
+    @Environment(PlaybackSettingsModel.self) private var playbackSettings: PlaybackSettingsModel?
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
+    private var autoHideMode: PlaybackControlsAutoHide {
+        voiceOver || switchControl ? .never : playbackSettings?.settings.controlsAutoHide ?? PlaybackSettings.default.controlsAutoHide
+    }
     let engine: any VideoEngine
     let model: PlayerControlsModel
     let subtitleModel: LiveSubtitleModel
@@ -104,6 +110,7 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
             engine: engine, model: model, actions: actions, fitsInsideSafeArea: fitsInsideSafeArea
         )
         if showsSharedControls {
+            controller.autoHideMode = autoHideMode
             controller.configureScrubPreview(
                 scrubPreview,
                 authenticatedHTTPResolver: authenticatedHTTPResolver,
@@ -120,6 +127,7 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: PlayerInputViewController, context: Context) {
         controller.actions = actions
+        if showsSharedControls { controller.autoHideMode = autoHideMode }
         controller.fitsInsideSafeArea = fitsInsideSafeArea
     }
 
@@ -263,6 +271,11 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private var scrubPreviewCoordinator: ScrubPreviewCoordinator?
 
     private var autoHideTask: Task<Void, Never>?
+    var autoHideMode = PlaybackSettings.default.controlsAutoHide {
+        didSet {
+            if oldValue != autoHideMode, model.controlsVisible { scheduleAutoHide() }
+        }
+    }
     private var refreshTask: Task<Void, Never>?
     private var skipHintTask: Task<Void, Never>?
     private var scanTask: Task<Void, Never>?
@@ -1666,6 +1679,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
 
     private func scheduleAutoHide() {
         cancelAutoHide()
+        guard autoHideMode.allowsHiding(paused: model.intendsPause) else { return }
         autoHideTask = Task { [weak self] in
             // Anchor the idle countdown to the playhead ACTUALLY ADVANCING, not to
             // the reveal request, the engine's .ready status, or a single
@@ -1688,6 +1702,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
                 var lastTime: TimeInterval = -1
                 var advancingTicks = 0
                 while !Task.isCancelled {
+                    if self?.model.intendsPause == true { return true }
                     guard let sample = self.map({ ($0.engine.preventsDisplaySleep, $0.engine.currentTime) })
                     else { return false } // container torn down
                     let (playing, now) = sample
@@ -1727,16 +1742,18 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
                 // A re-resolve / transcode reload dropped frames mid-window:
                 // re-anchor to the re-presented playback rather than hiding over
                 // a spinner. Checked weakly so a torn-down container isn't held.
-                if self?.engine.preventsDisplaySleep == false, self?.engine.status == .loading {
+                if self?.model.intendsPause == false, self?.engine.preventsDisplaySleep == false, self?.engine.status == .loading {
                     guard await awaitPlaybackPresenting() else { return }
                     continue
                 }
                 guard let self, !Task.isCancelled else { return }
+                guard !UIAccessibility.isVoiceOverRunning, !UIAccessibility.isSwitchControlRunning else { return }
                 switch ControlsAutoHidePolicy.outcome(
                     focus: self.focusContext.policyFocus,
                     isScrubbing: self.model.isScrubbing,
-                    isPaused: self.model.isPaused,
-                    isPanelOpen: self.model.isPanelOpen
+                    isPaused: self.model.isPaused || self.model.intendsPause,
+                    isPanelOpen: self.model.isPanelOpen,
+                    mode: self.autoHideMode
                 ) {
                 case .stayVisible:
                     // Mid-interaction (scrub in flight, paused, or a menu open);

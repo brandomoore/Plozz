@@ -43,6 +43,7 @@ public final class BorrowedTrailerPlayer: UIViewController {
         )
         input = PlayerInputViewController(engine: engine, model: model, actions: actions)
         super.init(nibName: nil, bundle: nil)
+        input.autoHideMode = settings.controlsAutoHide
         input.attachVideoSurface()
         input.attachControls(themePalette: ThemePaletteBox(
             makeControls: { model, actions, exit in

@@ -36,6 +36,47 @@ add an inline progress block or resize the guide. It briefly shows
 the outcome. Dismissal hides only that request's notification; loading continues
 and its final result remains in Sources. Unrelated transient messages
 take priority. Ordinary background refreshes stay quiet.
+Guide rows do not repeat source refresh failures as subtitles or accessibility
+values. Failures remain available in Sources. Nearby channel/time windows still
+load in the background.
+On Apple TV, a standard guide row is one unchanged 26-point text line plus
+20 points above and below (about 72 points total), rather than 128 points.
+Row gaps remain 16 points, and rows still grow with
+Dynamic Type. Long channel names can wrap; moving focus never adds a status line.
+The logo-to-timeline gutter matches the programme gutter. A channel without
+listings retains a full-width focus highlight, with progress measured from the
+timeline edge rather than from the native button's inset label.
+TV rows use the shared 16-point content corners rather than the old 32-point
+radius. With System card focus selected, each channel-logo action, channel-name
+button and programme keeps a native control as its focus owner.
+Each control's rendering stays inside its own cell, including focused content;
+no focus effect may cover a neighboring logo, programme or row. Custom focus
+preferences retain the existing fallback. Row heights and font sizes are unchanged.
+Guide labels read native focus directly to switch their neutral highlight and
+contrasting text together, without glass or a focus animation. Resting controls
+retain their lightweight tile fills. Sidebar controls keep native Liquid Glass.
+Focused elapsed time keeps the highlight brightness; a translucent dark
+shading behind the label dims only the remaining time. It follows the time
+direction in RTL, clamps to the cell, and does not invent progress for future
+programmes. Resting progress shading and custom-focus styles are unchanged.
+Time labels start at
+their tick, flush with the corresponding cell edge. While a TV preview connects
+or buffers, its player supplies a small activity indicator beside the matching
+channel's header metadata, without resizing the title or guide.
+The TV logo column is 140 points wide. Artwork has 20-point side
+clearance and four-point vertical clearance, giving compact marks more height
+without letting wide marks crowd the edges. Stacked wordmarks fit within the
+same area as a square logo, leaving space above and below their lettering.
+Compact marks on a detected source background have extra vertical clearance;
+the background itself still fills the tile.
+Logo labels retain their original
+full-tile backgrounds, using cached source-background colours or a restrained
+brand tint. Only the plate becomes partly translucent on focus, allowing the
+native control to illuminate it without a white replacement or small nested
+contrast patches. Artwork and text stay opaque with their original contrast
+treatment, including lightening near-black monochrome ink on dark plates.
+Large preview artwork, mobile logo sizing,
+and custom-focus backing treatments keep their existing presentation.
 
 Source details offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
@@ -208,11 +249,26 @@ are contextual actions in **More**; Live TV has no separate profile button.
 Other pages' profile shortcuts are unchanged. Category tiles use
 shorter minimum heights while retaining channel counts and Dynamic Type growth.
 On Apple TV, the categories sidebar places the same source menu above
-**Search**. It shows the current source, supports **All**, and opens the existing
+**Search**, with icon-only **Multiviews** and **Manage channels** buttons beside
+Search. These use the same native Liquid Glass treatment as detail-page actions,
+with native regular sizing and the detail actions' 30-point icons in 38-point
+labels. Both control rows span the same width as the categories. The viewport
+leaves room outside those bounds for native shadows while the leading fade
+still ends before pinned navigation icons. There is no second custom background or focus outline,
+and accessible names and help text are retained.
+Directional handling belongs to the originating control, not a parent reading
+the newly focused control. Focus moves across the action row before entering
+the guide, and mirrors in RTL. Down from Manage channels enters the category
+list without selecting a filter. Focus handoffs do not dim controls, including
+on first arrival while the top navigation still owns focus.
+Ordinary sidebar-to-guide handoff does not hide
+app navigation or change its content insets; fullscreen playback return and
+Search retain their separate navigation suppression.
+The source menu shows the current source, supports **All**, and opens the existing
 **Add Source** choices. Source filtering shares the mobile authorization and
 category-retention behavior without changing connected sources or active playback.
 Closing the menu returns focus to its button; entering the sidebar from the guide
-still lands on the selected category.
+returns to its last focused control, with the selected category as a fallback.
 
 On every platform, a single enabled source shows its name on the button and in
 the menu alongside **Add Source**, without a redundant **All** option. Disabled
@@ -351,15 +407,38 @@ replacement, including when the saved playlist has no channels.
 
 Search and the active-channel artwork stay aligned, with an additional 16-point
 clearance below native navigation. Pinned navigation keeps its existing inset.
-The full-height Search/categories pane remains beside the guide during TV
-browsing. Moving focus between panes does not move or resize the guide.
+The full-height source/Search/categories pane collapses when focus enters the TV
+guide and returns on a leading-edge move. The pane slides and fades as one unit
+over 0.28 seconds while the guide resizes; Reduce Motion suppresses the animation.
+The reveal interceptor is active only while the pane is collapsed; the same
+leading-edge press must restore the pane's last focused control, not merely open
+the pane while the guide continues intercepting focus exits.
+With pinned navigation, category entry requests focus after the opening layout
+commits, while the pane is still sliding and fading in. The shared native owner
+contains both the sidebar and the guide's collection-view host; a SwiftUI focus
+binding alone can leave focus inside that nested guide. Hosts without that
+native owner retain the reveal-completion fallback. Once the target has focus,
+ordinary navigation is available immediately and animation completion must not
+replay the request.
+The request is cancelled when its control is disabled or detached and is not
+replayed by later scrolling/layout. Restoring a retained category sends no scroll
+command; only initial entry or an unavailable-category fallback reveals a row.
+Leaving categories for pinned navigation does not rearm the completed request;
+navigation owns focus until the viewer returns. New-page entry prefers the
+first category over the source switcher, while closing navigation restores the
+actual control from which it was opened. The remembered control is also the
+entry preference if navigation interrupts the opening before its moving native
+focus item can be captured.
+With pinned navigation, the moving pane fades through the extra content inset,
+reaching full transparency before the navigation icons. The stationary feather
+does not dim the resting controls or leave a translucent copy behind the rail.
 The category list remains lazy; no per-row animation timers or rasterized
 snapshots are used. Mobile layouts choose the sidebar or category directory
 from the available window dimensions, not the device name.
 Native guide row hosts accept both growing and shrinking widths with leading
 alignment, so explicit-width programme timelines do not recenter independently
 of channels without listings during the sidebar transition.
-Native-menu round trips, selected-category restoration, and preview-session
+Native-menu round trips, sidebar focus restoration, and preview-session
 identity have remote regressions; hosted rendered-pixel tests cover synchronized
 Search/Multiviews/category movement, mixed-source guide rows, guide travel, and
 rapid reversal.
@@ -1269,17 +1348,24 @@ is no prior in-memory history to migrate on the first updated launch.
   200, 224, or 272 points according to available width.
   Its sidebar runs the full content height, beside both the channel details and
   guide. Loading and loaded layouts use the same two-column container.
-  The category panel remains visible when native focus enters the TV guide;
-  channel details and the mounted guide keep their geometry, channel,
-  vertical position, and time. A leading-edge move out of the guide focuses the
-  selected category. Back belongs to native app navigation. Internal
+  The category panel collapses when native focus enters the TV guide;
+  channel details and the same mounted guide expand into its space without
+  resetting the channel, vertical position, or time. A leading-edge move out of
+  the guide reveals the panel and restores its last focused control or category,
+  even when that category is not the selected filter. The collapsed TV pane keeps
+  its native scroll view mounted, disabled, and hidden from accessibility, preserving
+  the exact category viewport. Returning focus does not center an already-visible
+  category; it stays at the same vertical position. Unavailable controls fall back
+  to the selected category, scrolling only as far as needed to reveal it.
+  Back closes Search and restores its sidebar Search control; the next Back
+  belongs to native app navigation. Internal
   programme-to-programme moves keep their normal timeline behavior.
   Once a category-entry focus request completes, transient focus loss during
   native fast scrolling must not re-arm its eligibility gate. Only a new
   entry request or a real native focus departure to another region may gate
   the other controls; otherwise an offscreen selected category can leave every
-  visible category disabled. Real menu round trips still restore the selected
-  category before releasing that gate.
+  visible category disabled. Real menu round trips restore the remembered
+  control before releasing that gate.
   Left/Right continues across the guide normally. Exactly one leading press
   from the far-left channel column (far-right in RTL) must enter categories,
   without entering them early or also opening app navigation.
@@ -1326,27 +1412,28 @@ is no prior in-memory history to migrate on the first updated launch.
   uses the app's standard Settings controls.
 - The guide sits in one rounded tray with roomier channel rows and
   quieter programme tiles. Logo plates, channel tiles and the outer tray use
-  concentric radii derived from their insets. TV rows are 128 points tall,
-  with full-height 200 x 128-point logo plates and 16-point row spacing.
+  shared content radii. Standard TV rows are about 72 points tall, with
+  140-point logo columns and 16-point row spacing.
   On first entry, focus moves to the first available channel's current programme
   to the right of its logo. With no guide data, the channel-name area remains
   separately focusable and playable. Missing-listing gaps have their own focus
   identities rather than pretending to be programmes. Subsequent playback/Search
   returns keep their remembered row; an explicit visit to a logo is still
   preserved when returning from browsing controls.
-  The backing fills the complete station focus bounds, with the same corner
-  radius and no outside gutter. Artwork fits inside without stretching, with
-  eight additional points of inner padding; the full-height plate stays unchanged.
+  Native glass illuminates the focused station plate; resting plates have no glass.
+  Artwork fits without stretching, with 20-point side and four-point vertical padding.
   Guide, Search, preview metadata and the player use the same `ChannelLogoArtwork`
-  component. Solid logo plates replace the gradients that faded into the page.
+  component. Every logo keeps its full-tile plate, including native-focus controls.
   Detected source backings are extended unchanged, including white boxes inside
   transparent margins. Otherwise a restrained, desaturated brand tint sits over
   a light or charcoal plate; even a small bright wordmark can require charcoal.
   A quiet perimeter stroke keeps
-  the plate boundary visible. Brand pixels are not recoloured or haloed.
+  the standalone plate boundary visible. Native controls let the system focus
+  surface show through the plate without dimming the artwork or adding an outline.
+  Boxed source colours remain intact.
   The existing shared hero preparation cache and synchronous memo resolve the
   logo and its backing together, so a warmed guide logo appears immediately in
-  the player with the same appearance. Hero/search/player sizes remain
+  the player without another fetch. Hero/search/player sizes and plates remain
   independent of the full-row guide treatment.
   Plozz library channels without supplied artwork use the locally rendered Byline:
   a prominent, original-case channel name above a small pixel-mascot and Plozz
@@ -1390,8 +1477,10 @@ is no prior in-memory history to migrate on the first updated launch.
   with a small shadow for contrast rather than a line through the channel rows.
   A subtle fill marks elapsed time inside programme cells, no-guide rows and
   gaps between listings, staying aligned with the pointer when the timeline
-  scrolls. The pointer disappears when the current time is outside the visible
-  window. Wide guides retain the time ruler and pointer even when
+  scrolls or categories open or close. The pointer uses the rows’ time scale
+  and scroll offset without a second position animation during the 280 ms reveal.
+  It disappears when the current time is outside the visible window. Wide
+  guides retain the time ruler and pointer even when
   no channel has listings. On no-guide rows this indicates elapsed clock time,
   not a known programme duration; channel names remain stationary. Compact
   channel-only layouts without a time ruler do not imply programme progress.
@@ -2071,7 +2160,10 @@ The selected picture's lift remains the native tvOS focus effect.
 During idle/native label replacement, temporary live renderer hosts track the
 incoming labels' animated presentation geometry even before those labels reach
 full opacity. Motion coverage uses real decoders, native style replacement and
-display-link samples without forcing layout from the test.
+timestamped display-link samples without forcing layout from the test. The next
+transition starts after the unfocused pictures reach their expected width; native
+focus lift is not an endpoint for the whole grid. Sidebar motion tests likewise
+check the rendered guide edge before reversing direction.
 The close confirmation and playback errors share `playerPlatformAppearance`
 with transport controls, preserving native focused-label contrast without a
 dialog-specific button style.
