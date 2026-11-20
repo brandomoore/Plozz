@@ -395,6 +395,9 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         )
         controller.canReturn = { model.activeIndex(in: rows) == 0 }
         controller.canEnterRows = { rows.first.map { !$0.isPlaceholder } ?? false }
+        controller.contentFocused = {
+            if !model.hasFeaturedContentFocus { model.hasFeaturedContentFocus = true }
+        }
         controller.updatePeek(firstRowHeight: model.scrollOrigin(in: rows))
         state.returnToHero = { [weak controller] focus in controller?.resetToFeatured(focus: focus) }
     }
@@ -423,6 +426,7 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         let rows: UIHostingController<AnyView>
         var canReturn: () -> Bool = { true }
         var canEnterRows: () -> Bool = { true }
+        var contentFocused: () -> Void = {}
         private weak var heroTarget: (any UIFocusItem)?
         private weak var rowTarget: (any UIFocusItem)?
         private var requestingFocus = false
@@ -582,9 +586,11 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
         override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
             super.didUpdateFocus(in: context, with: coordinator)
             if contains(context.nextFocusedItem, in: hero) {
+                contentFocused()
                 heroTarget = context.nextFocusedItem
                 if !state.isExpanded { present(expanded: true, focus: false) }
             } else if contains(context.nextFocusedItem, in: rows) {
+                contentFocused()
                 rowTarget = context.nextFocusedItem
                 if state.isExpanded { present(expanded: false, focus: false) }
             } else if context.nextFocusedItem != nil {

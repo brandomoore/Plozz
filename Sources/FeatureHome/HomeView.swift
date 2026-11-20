@@ -1563,6 +1563,8 @@ public struct HomeView: View {
                     leadItem: row.items.first,
                     items: row.items,
                     isPlaceholder: row.loadingPlaceholderCount > 0,
+                    hasFocusableControls: (row.kind == .libraries && !row.libraries.isEmpty && row.loadingPlaceholderCount == 0)
+                        || (row.failure != nil && !viewModel.isRefreshing),
                     cardArtwork: row.style == .landscape
                         && !(row.kind == .continueWatching && visibility.continueWatchingLayout == .portrait)
                         ? { PosterCardView.leadingLandscapeArtwork(
@@ -1597,6 +1599,7 @@ public struct HomeView: View {
                         itemIDs: section.items.map(\.stablePresentationID),
                         leadItem: section.items.first, items: section.items,
                         isPlaceholder: row.isLoading,
+                        hasFocusableControls: (row.issue != nil || row.failure != nil) && !viewModel.isRefreshing,
                         cardArtwork: section.style == .landscape
                             ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: false) }
                             : nil
@@ -1608,7 +1611,10 @@ public struct HomeView: View {
         // First, as in the classic layout: it names the setting hiding everything
         // else, and is what keeps a Home with nothing else to focus escapable.
         if let notice = contentNotice {
-            result.insert((FocusHeroRow(id: "home-notice", itemIDs: [], leadItem: nil), .notice(notice)), at: 0)
+            result.insert((
+                FocusHeroRow(id: "home-notice", itemIDs: [], leadItem: nil, hasFocusableControls: true),
+                .notice(notice)
+            ), at: 0)
         }
         // After Continue Watching, or first when there is none.
         if discoverState != .hidden {

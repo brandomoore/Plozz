@@ -18,10 +18,28 @@ struct FocusHeroRow: Identifiable {
     /// The row's titles, so their details can load before focus reaches them.
     var items: [MediaItem] = []
     var isPlaceholder: Bool = false
+    var hasFocusableControls = false
     /// The wide picture a card in this row leads with, for rows whose cards show
     /// wide art. The hero steers its backdrop off it. `nil` for poster rows.
     var cardArtwork: ((MediaItem) -> [ArtworkReference])? = nil
     var liveChannels: [HomeLiveTVChannel] = []
+
+    func acceptsEntry(at index: Int) -> Bool {
+        (index == 0 && isPlaceholder) || !itemIDs.isEmpty || !liveChannels.isEmpty || hasFocusableControls
+    }
+
+    static let initialShelfCount = 4
+
+    static func nearbyShelves(in rows: [Self], active: Int) -> Set<String> {
+        let next = rows.indices.dropFirst(active).lazy.filter { rows[$0].acceptsEntry(at: $0) }
+        var ids = Set(next.prefix(initialShelfCount).map { rows[$0].id })
+        // A previously loading shelf can become the next Up destination before
+        // idle preparation reaches it. Keep native targets on both sides.
+        if let prior = rows.indices.prefix(active).last(where: { rows[$0].acceptsEntry(at: $0) }) {
+            ids.insert(rows[prior].id)
+        }
+        return ids
+    }
 
     /// The picture a focused card in this row is most likely showing.
     func shownArtwork(for item: MediaItem) -> [ArtworkReference] {
@@ -172,6 +190,7 @@ enum FocusHeroSubject: Equatable {
 @Observable
 @MainActor
 final class FocusHeroModel {
+    var hasFeaturedContentFocus = false
     private(set) var activeRowID: String?
     private(set) var subject: FocusHeroSubject?
     /// The picture the focused card shows, which the backdrop avoids.
@@ -419,6 +438,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
     @State private var metadata = FocusHeroMetadata()
     @State private var featuredState = HeroShowcaseState()
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     // Reads nothing from `model`: this body builds the rows, and must not run
     // again when the pinned row or the hero title changes.
@@ -504,7 +525,9 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 if featuredHero != nil { featuredState.returnToHero?(true) }
                 onReturnToTop()
             } : nil,
-            backReturnsToHero: featuredHero != nil
+            backReturnsToHero: featuredHero != nil,
+            stagesRowViews: featuredHero != nil && !voiceOver,
+            allowsIdlePreparation: isFrontmost && scenePhase == .active
         )
         .ignoresSafeArea(.container, edges: .trailing)
         .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
@@ -705,8 +728,12 @@ private struct FocusHeroRowStack<RowContent: View>: View {
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     var onBackToTop: (() -> Void)?
     var backReturnsToHero = false
+    var stagesRowViews = false
+    var allowsIdlePreparation = false
     @Namespace private var focusScope
     @State private var hasEnteredContent = false
+    @State private var featuredEntry = FeaturedRowEntryGate()
+    @State private var prepared: Set<String> = []
     @Environment(\.resetFocus) private var resetFocus
 
     var body: some View {
@@ -714,11 +741,16 @@ private struct FocusHeroRowStack<RowContent: View>: View {
         // from winning while the first native target is still being realized.
         let awaitsFirstEntry = !hasEnteredContent && model.activeRowID == nil
             && rows.first.map { $0.isPlaceholder || !$0.itemIDs.isEmpty || !$0.liveChannels.isEmpty } == true
+        let stages = stagesRowViews && rows.count > FocusHeroRow.initialShelfCount
+        let nearby = stages ? FocusHeroRow.nearbyShelves(in: rows, active: model.activeIndex(in: rows)) : []
+        let idleRows = stages && allowsIdlePreparation && model.hasFeaturedContentFocus ? rows.map(\.id) : []
         VStack(alignment: .leading, spacing: FocusHeroLayout.rowSpacing) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                rowBody(row, index: index)
+                rowBody(row, index: index, mount: !stages || index < FocusHeroRow.initialShelfCount
+                        || nearby.contains(row.id) || prepared.contains(row.id),
+                        waitsForEntry: awaitsFirstEntry && index > 0)
                     .navigationEntryFocus(index == 0 ? (row.isPlaceholder ? .pending : .content) : nil)
-                    .disabled(awaitsFirstEntry && index > 0)
+                    .disabled(!stagesRowViews && awaitsFirstEntry && index > 0)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         model.record(height: height, for: row.id)
                     }
@@ -726,6 +758,14 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             }
         }
         .focusScope(focusScope)
+        .task(id: idleRows) {
+            for id in idleRows where !prepared.contains(id) {
+                // Pace idle attachments. Native navigation takes the nearby path
+                // immediately; it never waits on the idle queue.
+                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+                prepared.insert(id)
+            }
+        }
         // The native scroll-to-top cannot override Showcase's owned offset.
         // Once at the top, leave Back to the native sidebar.
         .onExitCommand(perform: onBackToTop != nil && (backReturnsToHero || model.activeIndex(in: rows) > 0)
@@ -739,7 +779,7 @@ private struct FocusHeroRowStack<RowContent: View>: View {
     }
 
     @ViewBuilder
-    private func rowBody(_ row: FocusHeroRow, index: Int) -> some View {
+    private func rowBody(_ row: FocusHeroRow, index: Int, mount: Bool, waitsForEntry: Bool) -> some View {
         let content = rowContent(row, reporter(for: row))
             .environment(\.plozzRowTitleOffset, {
                 model.resolvedActiveRowID(in: rows) == row.id ? -FocusHeroLayout.activeTitleLift : 0
@@ -749,7 +789,8 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             content: content.fixedSize(horizontal: false, vertical: true)
                 .safeAreaPadding(.leading, FocusHeroLayout.maskHorizontalOverhang),
             motion: model.motion, kind: .row(row.id),
-            entrySourceRowIDs: entrySourceRowIDs(at: index)
+            entrySourceRowIDs: entrySourceRowIDs(at: index), mount: mount,
+            entryGate: stagesRowViews ? featuredEntry : nil, waitsForEntry: waitsForEntry
         )
         .padding(.leading, -FocusHeroLayout.maskHorizontalOverhang)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -758,10 +799,7 @@ private struct FocusHeroRowStack<RowContent: View>: View {
 
     private func entrySourceRowIDs(at index: Int) -> Set<String> {
         func hasEntryTarget(_ index: Int) -> Bool {
-            let row = rows[index]
-            // Only the first row reserves loading focus. Partially loaded rows
-            // and non-media rows (such as notices) can still contain controls.
-            return index == 0 || !row.isPlaceholder || !row.itemIDs.isEmpty || !row.liveChannels.isEmpty
+            rows[index].acceptsEntry(at: index)
         }
         guard hasEntryTarget(index) else { return [] }
         let previous = rows.indices.prefix(index).last(where: hasEntryTarget)
@@ -815,6 +853,8 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
     var onReturnToTop: () -> Void = {}
     var onBackToTop: (() -> Void)?
     var backReturnsToHero = false
+    var stagesRowViews = false
+    var allowsIdlePreparation = false
     var body: some View {
         FocusHeroMotionSurface(
             content: scroll.safeAreaPadding(.leading, FocusHeroLayout.maskHorizontalOverhang),
@@ -829,7 +869,8 @@ struct FocusHeroScrollingRows<RowContent: View>: View {
         return ScrollView(.vertical) {
             FocusHeroRowStack(
                 rows: rows, model: model, rowContent: rowContent,
-                onBackToTop: onBackToTop, backReturnsToHero: backReturnsToHero
+                onBackToTop: onBackToTop, backReturnsToHero: backReturnsToHero,
+                stagesRowViews: stagesRowViews, allowsIdlePreparation: allowsIdlePreparation
             )
                 .padding(.top, bottom - model.scrollOrigin(in: rows) + topInset)
                 .padding(.bottom, FocusHeroLayout.screenHeight - bottom)
@@ -1901,6 +1942,32 @@ extension EnvironmentValues {
 }
 #endif
 
+/// Reserve first entry on the real row hosts. Once UIKit commits row focus,
+/// the next directional press must not wait for SwiftUI to re-enable every card.
+@MainActor
+final class FeaturedRowEntryGate {
+    private let waiting = NSHashTable<UIView>.weakObjects()
+    private var entered = false
+
+    func update(_ host: UIView, waitsForEntry: Bool) {
+        if waitsForEntry && !entered {
+            guard host.isUserInteractionEnabled else { return }
+            host.isUserInteractionEnabled = false
+            waiting.add(host)
+        } else if waiting.contains(host) {
+            host.isUserInteractionEnabled = true
+            waiting.remove(host)
+        }
+    }
+
+    func didEnter() {
+        guard !entered else { return }
+        entered = true
+        for host in waiting.allObjects { host.isUserInteractionEnabled = true }
+        waiting.removeAllObjects()
+    }
+}
+
 /// Scroll callers expand the leading viewport and reserve matching safe area.
 /// SwiftUI otherwise hides native cards in the visible overscan gutter even
 /// with clipping disabled; expanding only the child hosting view is insufficient.
@@ -1911,30 +1978,40 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
     let kind: Kind
     var columnFit: FocusHeroColumnFit? = nil
     var entrySourceRowIDs: Set<String> = []
+    var mount = true
+    var entryGate: FeaturedRowEntryGate?
+    var waitsForEntry = false
 
     func makeUIViewController(context: Context) -> Controller {
-        Controller(content: hostedContent(environment: context.environment), motion: motion,
+        let controller = Controller(content: hostedContent(environment: context.environment, deferred: !mount), motion: motion,
                    kind: kind, columnFit: columnFit, entrySourceRowIDs: entrySourceRowIDs)
+        controller.configureEntry(entryGate, waiting: waitsForEntry)
+        controller.startedDeferred = !mount
+        controller.mount = mount
+        return controller
     }
 
     func updateUIViewController(_ controller: Controller, context: Context) {
         if kind == .column { motion.configureColumnFit(columnFit) }
+        controller.configureEntry(entryGate, waiting: waitsForEntry)
         controller.entrySourceRowIDs = entrySourceRowIDs
+        if mount { controller.mount = true }
         #if DEBUG
         controller.measurement = context.environment.focusHeroLayoutMeasurement
         #endif
-        controller.host.rootView = hostedContent(environment: context.environment)
+        controller.host.rootView = hostedContent(environment: context.environment, deferred: controller.startedDeferred)
     }
 
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
         controller.unbind()
     }
 
-    private func hostedContent(environment source: EnvironmentValues) -> AnyView {
+    private func hostedContent(environment source: EnvironmentValues, deferred: Bool) -> AnyView {
         // Preserve public presentation/actions, not another hosting tree's
         // internal accessibility environment, which hides this tree's children.
         AnyView(content.transformEnvironment(\.self) { target in
             target.copyHostedPresentation(from: source)
+            target.plozzPosterWarmOnFocus = deferred
             #if DEBUG
             target.focusHeroLayoutMeasurement = source.focusHeroLayoutMeasurement
             #endif
@@ -1970,6 +2047,33 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
         private let columnContainer = UIView()
         private var rowEntryGuides: [RowEntryGuide] = []
         var entrySourceRowIDs: Set<String>
+        private weak var entryGate: FeaturedRowEntryGate?
+        private var waitsForEntry = false
+
+        func configureEntry(_ gate: FeaturedRowEntryGate?, waiting: Bool) {
+            if entryGate !== gate, let content = host.viewIfLoaded {
+                entryGate?.update(content, waitsForEntry: false)
+            }
+            entryGate = gate
+            waitsForEntry = waiting
+            if let content = host.viewIfLoaded { gate?.update(content, waitsForEntry: waiting) }
+        }
+
+        override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+            super.didUpdateFocus(in: context, with: coordinator)
+            if let entryGate, let target = context.nextFocusedItem, view.contains(target) {
+                entryGate.didEnter()
+            }
+        }
+
+        var startedDeferred = false
+        var mount = true {
+            didSet {
+                guard mount, !oldValue, isViewLoaded else { return }
+                view.addSubview(host.view)
+                view.setNeedsLayout()
+            }
+        }
         #if DEBUG
         weak var measurement: FocusHeroLayoutMeasurement?
         #endif
@@ -1995,7 +2099,7 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             if kind == .column {
                 view.addSubview(columnContainer)
                 columnContainer.addSubview(host.view)
-            } else {
+            } else if mount {
                 view.addSubview(host.view)
             }
             host.didMove(toParent: self)
@@ -2004,6 +2108,7 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
                 motion.column = columnContainer
                 motion.columnContent = host.view
             case .row(let id):
+                entryGate?.update(host.view, waitsForEntry: waitsForEntry)
                 motion.bindRow(id, view: host.view)
                 rowEntryGuides = [RowEntryGuide(in: host.view), RowEntryGuide(in: host.view)]
                 return

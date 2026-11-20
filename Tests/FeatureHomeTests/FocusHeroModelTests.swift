@@ -68,6 +68,19 @@ final class FocusHeroModelTests: XCTestCase {
         FocusHeroRow(id: id, itemIDs: items, leadItem: items.first.map(item), items: items.map(item))
     }
 
+    func testNeighborsSkipDisabledAndEmptyRowsButIncludeNewlyReachableUpTarget() {
+        var rows = (0..<12).map { row("row-\($0)", $0 == 0 || $0 >= 9 ? ["card"] : []) }
+        rows[3].isPlaceholder = true
+        XCTAssertTrue(FocusHeroRow.nearbyShelves(in: rows, active: 0).contains(rows[9].id))
+        rows[8].hasFocusableControls = true // recovery action became enabled above current focus
+        let neighbors = FocusHeroRow.nearbyShelves(in: rows, active: 9)
+        XCTAssertTrue(neighbors.contains(rows[8].id))
+        XCTAssertTrue(neighbors.contains(rows[10].id))
+        XCTAssertFalse(neighbors.contains(rows[7].id))
+        rows.insert(row("newly-inserted", ["new"]), at: 9)
+        XCTAssertTrue(FocusHeroRow.nearbyShelves(in: rows, active: 10).contains("newly-inserted"))
+    }
+
     func testTheFirstRowStandsInUntilSomethingIsFocused() {
         let model = FocusHeroModel()
         let watchlist = row("watchlist", ["terror", "dune"])

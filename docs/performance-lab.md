@@ -450,6 +450,47 @@ shelf **6 / 7 / 7**. All six runs fetched each of 40 shelves once, published
 receipts, not estimates of server CPU or production traffic. The correction
 isolates a real prefetch cost, not a fix for the missed early navigation.
 
+#### Final featured Showcase: startup and rapid navigation
+
+The second Down really reached the app. Row 1 already owned native focus, but
+SwiftUI was still propagating the change that re-enabled the other rows. UIKit
+found no eligible destination until the next press. The final implementation
+releases the first-entry reservation at the row host when UIKit commits focus;
+it does not wait for an animation or replay the input. The staging policy also
+prepares the nearest eligible shelf above focus if it becomes ready or the
+order changes, without spending its lookahead on disabled recovery controls.
+
+Final comparison: same optimized Apple TV simulator host, full returning-profile
+picker, local Jellyfin-shaped origin and 40 shelves of 20 distinct movies plus
+Continue Watching. Video was armed before launch. The driver verified a
+visible highlighted Resume button before pressing Down, either immediately
+or after a 10 s dwell. Times run **from profile selection**, not password sign-in.
+One original and one final start per input pattern:
+
+| Immediate / dwell runs, respectively | Original | Final |
+|---|---:|---:|
+| First recognizable shelf 1 artwork | 13.76 / 39.45 s | 1.93 / 2.54 s |
+| First native Home content focus | 23.68 / 48.68 s | 5.45 / 6.20 s |
+| First recorded highlighted Resume | 24.11 / 49.55 s | 5.64 / 6.47 s |
+| Completed HTTP response bodies through navigation report | 6.36 / 6.94 MB | 4.83 / 4.99 MB |
+| Repeated artwork GETs through report | 3 / 1 | 6 / 29 |
+
+Every run reached shelf 8 in order, returned to Resume in eight Ups, fetched
+each shelf exactly once and published 41 nonempty rows / 801 entries. The
+final version used fewer total bytes, **not fewer repeated artwork reads**
+than the original. Recognizable shelf 2 artwork followed Down 2 by 729 / 691 ms;
+accepting focus is not the same as painting a poster. In a separate controlled
+case, one Up reached a newly enabled Retry above focus with idle preparation
+disabled. Neither simulator times nor local HTTP body bytes measure physical
+Apple TV performance or real-server CPU.
+
+The real Jellyfin and Plex viewers authenticated and loaded Home, but the
+adjacent-row navigation assertion failed on **both original and final**.
+The native-sidebar one-card-row check also skipped to the same wrong card
+in both versions. Those checks remain unresolved, not passes. Native Jellyfin
+logs showed session lifecycle rather than successful GET paths; a bounded
+Plex log slice was not isolated to this client.
+
 ## Baseline → attribution → candidate → regression
 
 ### tvOS: rapid vertical IPTV guide travel

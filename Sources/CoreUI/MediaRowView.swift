@@ -107,7 +107,14 @@ public struct MediaRowHeader: View {
     }
 }
 
+extension EnvironmentValues {
+    @Entry public var plozzPosterWarmOnFocus = false
+}
+
 public struct MediaRowView: View {
+    @Environment(\.plozzPosterWarmOnFocus) private var warmsPosterOnFocus
+    private var usesFocusDrivenWarm: Bool { warmsPosterOnFocus && presentation == .poster && !showsSeriesArtwork }
+
     public enum Presentation: Equatable, Sendable {
         case poster
         case landscape
@@ -1015,7 +1022,7 @@ public struct MediaRowView: View {
             }
             .onAppear {
                 activity.visibleIDs.insert(item.stablePresentationID)
-                prefetchArtwork(around: item)
+                if !usesFocusDrivenWarm { prefetchArtwork(around: item) }
             }
             .onDisappear {
                 activity.visibleIDs.remove(item.stablePresentationID)
@@ -1419,6 +1426,7 @@ public struct MediaRowView: View {
         // (focus actually left the row, up to the season bar).
         guard let newValue else { return }
         activity.hasBrowsedSinceTargetChange = true
+        if usesFocusDrivenWarm, let item = itemByID[newValue] { prefetchArtwork(around: item) }
         if let onCardFocused, let item = itemByID[newValue] { onCardFocused(item) }
         if !activity.focusEngaged { onFocusEntered?() }
         activity.lastFocusedID = newValue

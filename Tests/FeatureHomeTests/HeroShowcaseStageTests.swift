@@ -10,6 +10,32 @@ import XCTest
 
 @MainActor
 final class HeroShowcaseStageTests: XCTestCase {
+    func testNativeEntryReleasesLowerHostsBeforeSwiftUIRefreshesTheirReservation() {
+        let gate = FeaturedRowEntryGate()
+        let lowerHost = UIView()
+        let otherwiseDisabled = UIView()
+        otherwiseDisabled.isUserInteractionEnabled = false
+        gate.update(lowerHost, waitsForEntry: true)
+        gate.update(otherwiseDisabled, waitsForEntry: true)
+        XCTAssertFalse(lowerHost.isUserInteractionEnabled)
+        gate.didEnter()
+        XCTAssertTrue(lowerHost.isUserInteractionEnabled)
+        XCTAssertFalse(otherwiseDisabled.isUserInteractionEnabled)
+        gate.update(lowerHost, waitsForEntry: true) // stale SwiftUI update after native row entry
+        XCTAssertTrue(lowerHost.isUserInteractionEnabled)
+    }
+
+    func testReorderedFirstHostIsReleasedWithoutOpeningEveryLowerRow() {
+        let gate = FeaturedRowEntryGate()
+        let newFirst = UIView()
+        let other = UIView()
+        gate.update(newFirst, waitsForEntry: true)
+        gate.update(other, waitsForEntry: true)
+        gate.update(newFirst, waitsForEntry: false)
+        XCTAssertTrue(newFirst.isUserInteractionEnabled)
+        XCTAssertFalse(other.isUserInteractionEnabled)
+    }
+
     func testNativeScrollOriginCanFollowAnAlreadyAdmittedStage() {
         let state = HeroShowcaseState()
         state.setExpanded(false, deferNativeRows: true)

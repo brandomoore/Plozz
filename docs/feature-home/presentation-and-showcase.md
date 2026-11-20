@@ -130,6 +130,20 @@ the same Showcase rows. Its native stage preserves the three hosting trees:
 the featured hero, Showcase details/artwork, and the row viewport. Down admits
 the first row before animating its viewport into place; Up from that row restores
 the existing hero action and slide, without a separate arrow-button focus stop.
+For long featured pages, Home measures every row but attaches the first shelves
+and upcoming focus targets first. Once the stage has focus, more shelves join
+while Home remains active, even without scrolling. Attached rows stay available
+when moving back up. If an earlier shelf finishes loading, the nearest usable
+shelf above focus is prepared immediately, just like the next shelves below.
+Disabled recovery actions do not count as destinations. VoiceOver keeps the
+full row tree. This changes presentation
+work only: base row queries do not wait for focus. Deferred poster shelves still
+load displayed art normally, but start directional prefetch on card focus rather
+than warming the same posters again when the host joins the screen.
+
+The featured row host releases its first-entry reservation when UIKit commits
+focus to a row. A second Down must not wait for the focus animation or a later
+SwiftUI update to make the next row eligible.
 Each hosted root anchors its content at the top leading edge. The featured host
 uses symmetric horizontal viewport insets so its screen-wide backdrop stays
 centered on the display, including under pinned navigation's asymmetric row
