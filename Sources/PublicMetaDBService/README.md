@@ -60,7 +60,18 @@ applying that row sent no POST and the resume stayed absent.
 This verifies the export service's replay protection after actual removal.
 The test had cleared the local resume too early, so the final comparison used
 the original real playback snapshot rather than a still-live local resume.
-It does not verify that native sequence or cleanup of the separate *Dune* row.
+It did not verify that native sequence or cleanup of the separate *Dune* row.
+
+On `4358697e7`, the follow-up kept the NFS resume intact. PublicMetaDB
+accepted one POST at 100,207 of 262,763 ms. After the lost HTTP 200 reply,
+a fresh process recognized the write without reposting. The normal iPhone app
+removed that row with one confirmation. Replay used the local resume read
+**after** removal: its stored bytes matched both the original and a read taken
+immediately after replay. The same receipt rejected another export, sent zero
+POSTs, and the tracker row stayed absent. The unrelated histories, grants and
+settings were unchanged or restored. This closes the local-source gap above.
+Playback and removal used the normal app; fault injection and replay used the
+production exporter in separate processes, not the installed export UI.
 
 On `c1c30c2b2`, the production comparison code read that same *Dune* resume
 and compared three dedicated server users together. Independent reads matched
@@ -70,6 +81,16 @@ calls the film *Dune: Part One*. Jellyfin already matched the tracker at
 **reviewed** import. Restricting the comparison to any one account returned
 only that account's row. No change was applied. All three server histories,
 the tracker history and the private-list controls were unchanged on reread.
+
+On `4358697e7`, the production comparison also distinguished three states for
+the same watched episode, *The Crown* S1E3 (“Windsor”). Jellyfin already
+matched. Plex had no watch or resume and was ready for reviewed import.
+Emby reported two past plays **and** a 388.823-second resume, so Plozz flagged
+a conflict rather than treating an unfinished rewatch as complete. Exact
+parent and episode IDs, file sizes and runtimes agreed across all three.
+Each single-account comparison returned only that user's row. S1E4 did not
+match on any server, and independent reads found no history changes.
+This was a read-only service comparison; no import was applied.
 
 Separately, the normal iPhone app showed the configured Emby user's row as
 **Set resume to 2,401 seconds**, unselected. The tracker detail showed 25.7%,
