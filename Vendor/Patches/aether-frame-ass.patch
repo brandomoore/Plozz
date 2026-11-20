@@ -314,7 +314,7 @@ index f870dac8..2f1bb78b 100644
  
          if let extractor = stillExtractorSlot.reset() {
 diff --git a/Sources/AetherEngine/Renderer/SampleBufferRenderer.swift b/Sources/AetherEngine/Renderer/SampleBufferRenderer.swift
-index 319107b1..bf6cf523 100644
+index 2e21ac1e..ddfb0a45 100644
 --- a/Sources/AetherEngine/Renderer/SampleBufferRenderer.swift
 +++ b/Sources/AetherEngine/Renderer/SampleBufferRenderer.swift
 @@ -34,6 +34,8 @@ final class SampleBufferRenderer: @unchecked Sendable {
@@ -425,7 +425,7 @@ index 319107b1..bf6cf523 100644
 +        }
          _lastEnqueuedFrame = pixelBuffer
          if accepted, let analysisGeneration,
-            analysisGeneration == activePictureTimeline.generation(at: pts.seconds), pts.isNumeric {
+            analysisGeneration == activePictureTimeline.generation(at: pts.seconds), pts.isNumeric,
 diff --git a/Sources/AetherEngine/Renderer/SoftwareASSArtwork.swift b/Sources/AetherEngine/Renderer/SoftwareASSArtwork.swift
 new file mode 100644
 index 00000000..7242061f
