@@ -144,6 +144,8 @@ extension SettingsSearchCatalog {
               keywords: "subtitles captions appearance customize style", subtitlePage: .formatting),
         .init("file-emphasis", page: .subtitleStyle, title: "Use Bold and Italic",
               keywords: "subtitles captions appearance customize style", subtitlePage: .formatting),
+        .init("file-ass-override", page: .subtitleStyle, title: "Override ASS/SSA styling",
+              keywords: "subtitles captions anime karaoke signs appearance", subtitlePage: .formatting),
         .init("dual-placement", page: .subtitleStyle, title: "Placement",
               keywords: "subtitles captions appearance customize style", subtitlePage: .dual),
         .init("dual-distinct", page: .subtitleStyle, title: "Distinct Style",

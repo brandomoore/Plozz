@@ -273,8 +273,7 @@ struct LiveSubtitleOverlay: View {
 
 extension SubtitleStyle {
     var permitsFrameSubtitle: Bool {
-        !followsSystemStyle && usesSourcePosition && usesSourceColors && usesSourceEmphasis
-            && positionReference == .screen && opacity == 1
+        !overridesASSStyling && positionReference == .screen && opacity == 1
     }
 }
 

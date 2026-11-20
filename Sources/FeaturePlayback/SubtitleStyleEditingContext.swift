@@ -8,6 +8,7 @@ import SwiftUI
 public struct SubtitleStyleEditingContext {
     public let controls: PlayerControlsModel
     let offersDualSubtitles: Bool
+    let showsASSOverride: Bool
     let secondaryPreview: Binding<Bool>?
     private let update: (SubtitleStyle) -> Void
     private let selectSecondary: (Int) -> Void
@@ -16,6 +17,7 @@ public struct SubtitleStyleEditingContext {
     public init(player: PlayerViewModel) {
         controls = player.controls
         offersDualSubtitles = true
+        showsASSOverride = false
         systemCaptionStyle = .shared
         secondaryPreview = nil
         update = { player.applySubtitleStyle($0) }
@@ -24,10 +26,12 @@ public struct SubtitleStyleEditingContext {
 
     init(
         controls: PlayerControlsModel, style: Binding<SubtitleStyle>, secondaryPreview: Binding<Bool>,
-        systemCaptionStyle: SystemCaptionStyle = .shared, offersDualSubtitles: Bool = true
+        systemCaptionStyle: SystemCaptionStyle = .shared, offersDualSubtitles: Bool = true,
+        showsASSOverride: Bool = false
     ) {
         self.controls = controls
         self.offersDualSubtitles = offersDualSubtitles
+        self.showsASSOverride = showsASSOverride
         self.systemCaptionStyle = systemCaptionStyle
         self.secondaryPreview = secondaryPreview
         update = {
@@ -56,6 +60,13 @@ public struct SubtitleStyleEditingContext {
 }
 
 enum SubtitleStyleEditorValues {
+    static func formattingHelp(showsASSOverride: Bool) -> LocalizedStringResource {
+        if showsASSOverride {
+            return "Overriding ASS/SSA replaces styled signs and karaoke effects with your caption style."
+        }
+        return "Some subtitle files specify colors, bold or italic text, or where a line should appear. Turn these off to use your chosen style instead."
+    }
+
     static func edgeName(_ style: SubtitleStyle) -> LocalizedStringResource {
         if let raw = style.captionEdgeStyleRawValue {
             if raw == Int(MACaptionAppearanceTextEdgeStyle.undefined.rawValue) { return "Unspecified (Shadow)" }

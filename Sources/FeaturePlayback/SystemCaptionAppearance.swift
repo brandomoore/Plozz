@@ -212,11 +212,13 @@ final class SystemCaptionStyle {
         var next = effective
         mutate(&next)
         guard next != effective else { return style }
-        var controlsOnly = effective
-        controlsOnly.avoidsPlayerControls = next.avoidsPlayerControls
-        if next == controlsOnly {
+        var policyOnly = effective
+        policyOnly.avoidsPlayerControls = next.avoidsPlayerControls
+        policyOnly.overridesASSStyling = next.overridesASSStyling
+        if next == policyOnly {
             var saved = style
             saved.avoidsPlayerControls = next.avoidsPlayerControls
+            saved.overridesASSStyling = next.overridesASSStyling
             return saved
         }
         if next.followsSystemStyle != effective.followsSystemStyle {

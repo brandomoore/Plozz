@@ -11,7 +11,7 @@ public struct SubtitleStylePreferences: Codable, Equatable, Sendable {
     public var overrides: [SubtitleContentCategory: SubtitleStyle]
     public var liveTV: SubtitleStyle?
 
-    public var resolvedLiveTV: SubtitleStyle { liveTV ?? base }
+    public var resolvedLiveTV: SubtitleStyle { base.applyingAppearance(liveTV) }
 
     public init(base: SubtitleStyle = .profileDefault,
                 overrides: [SubtitleContentCategory: SubtitleStyle] = [:],
@@ -23,7 +23,7 @@ public struct SubtitleStylePreferences: Codable, Equatable, Sendable {
 
     /// The appearance for a category: its override if present, else the base.
     public func resolved(for category: SubtitleContentCategory) -> SubtitleStyle {
-        overrides[category] ?? base
+        base.applyingAppearance(overrides[category])
     }
 
     public static let `default` = SubtitleStylePreferences()
@@ -148,7 +148,7 @@ public final class SubtitleStyleModel {
     }
 
     public var resolvedLiveTVStyle: SubtitleStyle {
-        get { liveTVStyle ?? style }
+        get { style.applyingAppearance(liveTVStyle) }
         set { liveTVStyle = newValue }
     }
 
@@ -177,7 +177,7 @@ public final class SubtitleStyleModel {
     /// The appearance to render for a content category: its override if present,
     /// else the global base. Today always the base (overrides empty).
     public func resolved(for category: SubtitleContentCategory) -> SubtitleStyle {
-        overrides[category] ?? style
+        style.applyingAppearance(overrides[category])
     }
 
     private func persist() {
@@ -195,5 +195,14 @@ public final class SubtitleStyleModel {
         style = preferences.base
         overrides = preferences.overrides
         liveTVStyle = preferences.liveTV
+    }
+}
+
+private extension SubtitleStyle {
+    func applyingAppearance(_ appearance: Self?) -> Self {
+        guard var appearance else { return self }
+        // ASS handling is a single profile preference, not part of a separate look.
+        appearance.overridesASSStyling = overridesASSStyling
+        return appearance
     }
 }

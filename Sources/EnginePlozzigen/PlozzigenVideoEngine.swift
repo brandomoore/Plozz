@@ -1997,6 +1997,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func updateSubtitleStyle(_ style: SubtitleStyle) {
         avPlayerSubtitleStyle = style
+        applyASSStyle(style)
         applyAVPlayerSubtitleStyle(to: engine.currentAVPlayer)
     }
 
@@ -2056,19 +2057,27 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         artworkSink = sink
     }
 
-    private func renderASS(at presentationTime: Double, offset: Double, style: SubtitleStyle, canSchedule: Bool) {
+    private func applyASSStyle(_ style: SubtitleStyle) {
+        let authored = !style.overridesASSStyling
+        guard authored != rendersAuthoredASS else { return }
+        rendersAuthoredASS = authored
         guard let assDocument, !wantsNativeSubtitles else { return }
+        if authored {
+            onSubtitleCues?([])
+            assRenderer.update(document: assDocument, events: assEvents)
+        } else {
+            resetScheduledArtwork()
+            assRenderer.clear()
+            publishPlainASS()
+        }
+    }
+
+    private func renderASS(at presentationTime: Double, offset: Double, style: SubtitleStyle, canSchedule: Bool) {
+        applyASSStyle(style)
+        guard assDocument != nil, rendersAuthoredASS, !wantsNativeSubtitles else { return }
         #if PLOZZ_FRAME_ASS
         if engine.hasSoftwareASSArtworkProvider && engine.softwareFrameOwnsPrimarySubtitle { return }
         #endif
-        let authored = !style.followsSystemStyle && style.usesSourcePosition
-            && style.usesSourceColors && style.usesSourceEmphasis
-        if authored != rendersAuthoredASS {
-            rendersAuthoredASS = authored
-            if authored { assRenderer.update(document: assDocument, events: assEvents) }
-            else { resetScheduledArtwork(); assRenderer.clear(); publishPlainASS() }
-        }
-        guard authored else { return }
         let item = canSchedule && artworkSink != nil && engine.softwarePresentationTimebase == nil
             && engine.hasFirstFrameReadyForDisplay && !engine.isSeeking
             && engine.presentationAxisMap.itemSeconds(forSourceSeconds: presentationTime) != nil
@@ -2104,7 +2113,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private func resetASSFrameForSeek() {
         resetScheduledArtwork()
         assRenderer.clear()
-        if let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
+        if rendersAuthoredASS, let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
     }
 
     private func publishPlainASS() {
@@ -2116,7 +2125,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         let cues = events.enumerated().compactMap { index, event -> CoreModels.SubtitleCue? in
             let text = SubtitleCueParser.textFromASSPacket(event.packet, header: assDocument.header)
             guard !text.string.isEmpty else { return nil }
-            return CoreModels.SubtitleCue(id: index, start: event.start, end: event.end, body: .text(text))
+            return CoreModels.SubtitleCue(id: index, start: event.start, end: event.end, body: .text(.init(text.string)))
         }
         onSubtitleCues?(cues)
     }

@@ -435,6 +435,15 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
 
     // MARK: Source formatting
 
+    /// Opt in to viewer-styled text rather than the ASS/SSA script's artwork.
+    public var overridesASSStyling: Bool
+
+    public var resettingAppearance: Self {
+        var style = Self.default
+        style.overridesASSStyling = overridesASSStyling
+        return style
+    }
+
     /// Draw text cues where the subtitle file places them (ASS `\an`/`\pos`,
     /// SRT `{\an8}`, WebVTT `line`/`position`). Off seats every cue in the
     /// dialogue lane at ``verticalPosition``. Cues without placement always
@@ -467,6 +476,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         border: Border = Border(),
         secondary: Secondary? = nil,
         followsSystemStyle: Bool = false,
+        overridesASSStyling: Bool = false,
         usesSourcePosition: Bool = true,
         usesSourceColors: Bool = true
     ) {
@@ -491,6 +501,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         self.border = border
         self.secondary = secondary
         self.followsSystemStyle = followsSystemStyle
+        self.overridesASSStyling = overridesASSStyling
         self.usesSourcePosition = usesSourcePosition
         self.usesSourceColors = usesSourceColors
     }
@@ -624,7 +635,7 @@ extension SubtitleStyle {
         case fontFamily, systemFont, fontDescriptor, captionSourceOverrides, fontWeight, fontScale, verticalPosition, verticalAnchor, horizontalOffset
         case textColor, glyphBackground, opacity, hdrLuminanceScale
         case background, edge, border, secondary, followsSystemStyle, captionEdgeStyleRawValue
-        case usesSourcePosition, usesSourceColors, positionReference, avoidsPlayerControls
+        case overridesASSStyling, usesSourcePosition, usesSourceColors, positionReference, avoidsPlayerControls
     }
 
     /// Custom decoder so a style persisted by an older build (missing keys added
@@ -655,6 +666,7 @@ extension SubtitleStyle {
             border: try c.decodeIfPresent(Border.self, forKey: .border) ?? d.border,
             secondary: try c.decodeIfPresent(Secondary.self, forKey: .secondary),
             followsSystemStyle: try c.decodeIfPresent(Bool.self, forKey: .followsSystemStyle) ?? d.followsSystemStyle,
+            overridesASSStyling: try c.decodeIfPresent(Bool.self, forKey: .overridesASSStyling) ?? false,
             usesSourcePosition: try c.decodeIfPresent(Bool.self, forKey: .usesSourcePosition) ?? d.usesSourcePosition,
             usesSourceColors: try c.decodeIfPresent(Bool.self, forKey: .usesSourceColors) ?? d.usesSourceColors
         )

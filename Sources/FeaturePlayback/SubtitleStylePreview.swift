@@ -24,6 +24,9 @@ final class SubtitlePreviewOptions {
     @ObservationIgnored private var lastPaletteChange = ContinuousClock.now
 
     func styleDidChange(from previous: SubtitleStyle, to current: SubtitleStyle) {
+        if previous.overridesASSStyling != current.overridesASSStyling {
+            showsFileFormatting = true
+        }
         if previous.hdrLuminanceScale != current.hdrLuminanceScale {
             showsHDRBrightness = true
         }
@@ -258,7 +261,7 @@ struct SubtitleStylePreviewCanvas: View {
         if showsFileFormatting {
             cues.append(.init(id: 1, start: 0, end: 60, body: .text(.init(
                 runs: [.init(SubtitlePreviewSample.positioned.resolve(locale: locale), color: .yellow)],
-                layout: SubtitleCueLayout(alignment: .topCenter)
+                layout: SubtitleCueLayout(alignment: .topCenter), rawASS: #"{\an8}"#
             ))))
         }
         return cues

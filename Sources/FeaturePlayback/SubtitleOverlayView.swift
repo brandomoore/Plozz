@@ -506,8 +506,8 @@ public struct SubtitleOverlayView: View {
         controlsFrame: CGRect? = nil,
         controlsFrames: [CGRect] = []
     ) {
-        self.primary = primary
-        self.secondary = secondary
+        self.primary = style.overridesASSStyling ? primary.map(\.removingASSMarkup) : primary
+        self.secondary = style.overridesASSStyling ? secondary.map(\.removingASSMarkup) : secondary
         self.secondaryActive = secondaryActive
         self.style = style
         self.isHDR = isHDR

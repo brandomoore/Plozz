@@ -1797,7 +1797,7 @@ Turning matching back on resumes the current device settings. New/default styles
 start with matching enabled, while persisted choices and legacy custom migration
 retain their existing behavior.
 `Reset to App Default` restores Plozz's own Atkinson/outline appearance and turns
-matching off; it is intentionally different from the new-profile default.
+matching off; it leaves the profile's ASS/SSA override unchanged.
 Enabling matching over a custom style requires confirmation in both editors;
 Cancel leaves the style untouched. Disabling matching and the first custom edit
 remain immediate.
@@ -1829,8 +1829,8 @@ data. Apple does not expose native padding, base point-size/layout rules, line
 spacing, or edge color/thickness; those controls remain explicitly Plozz values.
 The low-level per-field source policies are retained as compatibility data, not
 exposed as a long list of switches. The separate **Subtitle file formatting**
-page offers only supported controls: authored positions, colors, and bold/italic
-emphasis. The primary appearance page contains the viewer's own style controls.
+page controls file positions, colors, and bold/italic emphasis for text captions.
+Library subtitle settings also offer the profile-wide ASS/SSA override.
 
 `Font > System Fonts` puts all eight Apple subtitle families first, separated from the
 device's installed font families by a divider on TV and native sections on mobile.
@@ -1858,9 +1858,12 @@ rendering supports fewer effects than the overlay.
 ### Caption timing and control avoidance
 
 Plozzigen's primary embedded ASS/SSA tracks preserve their packet text, script
-header and embedded font attachments for libass. With source position, colour and
-emphasis enabled (and system-style matching off), the adapter composites authored layers, vector drawings, transforms and
+header and embedded font attachments for libass. By default, even with device style matching on,
+the adapter composites authored layers, vector drawings, transforms and
 karaoke into bitmap cues; it does not flatten animation fragments into dialogue.
+**Override ASS/SSA styling** in the profile's Settings → Subtitle file formatting
+uses the viewer's device or Plozz appearance instead. It is not a player control
+and does not change ordinary text captions or the saved system-matching choice.
 The main-thread cue bridge passes raw packet strings through without scanning or
 rebuilding their contents. Only newly admitted events are split on the rasterizer
 actor; replayed read-ahead snapshots must not reparse thousands of old packets
