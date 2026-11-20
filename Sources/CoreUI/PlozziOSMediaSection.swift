@@ -140,6 +140,7 @@ public struct PlozziOSPosterGridLayout {
 }
 
 public struct PlozziOSMediaSection<Content: View>: View {
+    @Environment(\.mediaRowRefreshStatus) private var refreshStatus
     @Environment(\.homeRowEditAction) private var editAction
     @Environment(\.themePalette) private var palette
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -175,10 +176,10 @@ public struct PlozziOSMediaSection<Content: View>: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.headingSpacing) {
-            HStack {
+            HStack(spacing: refreshStatus == nil ? nil : 4) {
                 Group {
                     if onBrowse != nil || reservesBrowseSpace || editAction != nil {
-                        BrowseRowHeading(title: title, action: onBrowse)
+                        BrowseRowHeading(title: title, action: onBrowse, reservesChevronSpace: refreshStatus == nil)
                     }
                     else if let onHeadingTap { title.onTapGesture(perform: onHeadingTap) }
                     else { title }
