@@ -2,6 +2,7 @@ import CoreModels
 import CoreNetworking
 import CryptoKit
 import Foundation
+import SQLite3
 import Synchronization
 import XCTest
 @testable import FeatureLiveTVCore
@@ -527,6 +528,304 @@ final class LiveTVGuideIndexTests: XCTestCase {
         }
         let validated = try await restored.cachedPrograms(from: url, channels: channels, range: range) { channels }
         XCTAssertEqual(validated?.map(\.title).sorted(), ["Bulletin", "Match"])
+    }
+
+    func testWarmDocumentRechecksSameGenerationExpiryAfterAwaitingLineup() async throws {
+        let fixture = try documentFixture()
+        let now = now, url = url, range = range
+        let sourceID = LiveTVGuideIndex.sourceID(url)
+        let channels = [channel("a")]
+        let initial = httpDocument(try httpMetadata(headers: ["Cache-Control": "max-age=600", "ETag": "v1"]))
+        let writer = LiveTVGuideIndex(cache: fixture.cache, clock: { now })
+        let reader = LiveTVGuideIndex(cache: fixture.reopen(), clock: { now })
+        let expected = try await writer.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        let primed = try await reader.cachedPrograms(from: url, channels: channels, range: range) { channels }
+        XCTAssertEqual(primed, expected)
+        let oldFreshness = try await fixture.cache.freshness(kind: "guide", sourceID: sourceID)
+        let initialMetadata = try XCTUnwrap(initial.cacheMetadata)
+        let expired = try httpMetadata(headers: ["Cache-Control": "max-age=0", "ETag": "v2"],
+                                       status: 304, previous: initialMetadata)
+        let writerCache = fixture.cache
+        let directory = fixture.directory
+        let result = try await reader.cachedPrograms(from: url, channels: channels, range: range) {
+            // Emulate an older process which updates sealed metadata without touching the timestamps.
+            try Self.documentSQL(directory, """
+            CREATE TRIGGER keep_refresh AFTER UPDATE OF payload ON documents
+            BEGIN UPDATE documents SET refreshed=OLD.refreshed WHERE kind=OLD.kind AND source=OLD.source; END
+            """)
+            await writer.invalidate()
+            let revalidated = try await writer.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+                XCTAssertEqual(previous, initialMetadata)
+                return .notModified(expired)
+            }
+            XCTAssertEqual(revalidated, expected)
+            return channels
+        }
+        let newFreshness = try await writerCache.freshness(kind: "guide", sourceID: sourceID)
+        XCTAssertEqual(newFreshness, oldFreshness)
+        let authoritative = try await writerCache.guideIndexState(sourceID: sourceID, sourceURL: url)
+        XCTAssertEqual(authoritative?.cacheMetadata, expired)
+        XCTAssertNil(result, "Eligibility must reflect the same-generation commit during the lineup await")
+    }
+
+    func testWarmDocumentRejectsReplacedDatabaseFile() async throws {
+        let fixture = try documentFixture()
+        let replacement = try documentFixture()
+        let now = now, url = url, range = range
+        let channels = [channel("a")]
+        let original = response(document())
+        let other = response(document(title: "Replacement"))
+        let reader = LiveTVGuideIndex(cache: fixture.cache, clock: { now })
+        let writer = LiveTVGuideIndex(cache: replacement.cache, clock: { now })
+        let primed = try await reader.programs(from: url, catalog: channels, channels: channels, range: range) { original }
+        XCTAssertEqual(primed.map(\.title), ["Bulletin"])
+        let written = try await writer.programs(from: url, catalog: channels, channels: channels, range: range) { other }
+        XCTAssertEqual(written.map(\.title), ["Replacement"])
+        await replacement.lifecycle.setApplicationActive(false, revision: 1)
+
+        // Rename rather than unlink the live database/WAL, and restore its path before closing.
+        let parked = fixture.directory.appendingPathExtension("parked")
+        let fm = FileManager.default
+        try fm.moveItem(at: fixture.directory, to: parked)
+        defer { XCTAssertNoThrow(try fm.moveItem(at: parked, to: fixture.directory)) }
+        try fm.moveItem(at: replacement.directory, to: fixture.directory)
+        defer { XCTAssertNoThrow(try fm.moveItem(at: fixture.directory, to: replacement.directory)) }
+        do {
+            let result = try await reader.cachedPrograms(from: url, channels: channels, range: range) { channels }
+            XCTAssertNil(result, "An open connection to the old file must not return old listings")
+        } catch { XCTAssertEqual(error as? LiveTVCacheError, .unavailable) }
+    }
+
+    func testWarmDocumentDiscardsSpeculativeRowsAfterCommitBeforeSnapshot() async throws {
+        let fixture = try documentFixture()
+        let now = now, url = url, range = range
+        let channels = [channel("a")]
+        let reader = LiveTVGuideIndex(cache: fixture.cache, clock: { now })
+        let initial = response(document())
+        let seeded = try await reader.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        XCTAssertEqual(seeded.map(\.title), ["Bulletin"])
+        let before = await fixture.cache.guideSQLWorkForTesting
+        let directory = fixture.directory
+        let invoked = Mutex(false)
+        await fixture.cache.setBeforeMemoProgrammeSnapshotForTesting {
+            // An older writer commits after memo validation, before the reader's first SQL read.
+            try Self.documentSQL(directory, "BEGIN IMMEDIATE; DELETE FROM programs; DELETE FROM documents; COMMIT")
+            invoked.withLock { $0 = true }
+        }
+        let result = try await reader.cachedPrograms(from: url, channels: channels, range: range) { channels }
+        XCTAssertNil(result, "Discard the speculative empty rows; the new snapshot has no document")
+        XCTAssertTrue(invoked.withLock { $0 })
+        let after = await fixture.cache.guideSQLWorkForTesting
+        XCTAssertEqual(after.programmeSelects - before.programmeSelects, 1)
+        XCTAssertEqual(after.documentSelects - before.documentSelects, 1, "Use one uncached snapshot, without retrying the memo")
+    }
+
+    func testWarmDocumentRollbackRetainsMemoButLocalReplacementAndRemovalDoNot() async throws {
+        let fixture = try documentFixture()
+        let now = now, url = url, range = range
+        let channels = [channel("a", guideID: "News")]
+        let reader = LiveTVGuideIndex(cache: fixture.cache, clock: { now })
+        let initial = response(document())
+        let replacement = response(Data(String(decoding: document(title: "Replacement"), as: UTF8.self)
+            .replacingOccurrences(of: "\"news\"", with: "\"NEWS\"").utf8))
+        func cached() async throws -> [LiveTVPrototypeProgram]? {
+            try await reader.cachedPrograms(from: url, channels: channels, range: range, trustsGuideIDs: true) { channels }
+        }
+        let seeded = try await reader.programs(from: url, catalog: channels, channels: channels, range: range,
+                                               trustsGuideIDs: true) { _ in .document(initial) }
+        XCTAssertEqual(seeded.map(\.title), ["Bulletin"])
+        let before = await fixture.cache.guideSQLWorkForTesting
+        try Self.documentSQL(fixture.directory, "BEGIN IMMEDIATE; DELETE FROM programs; DELETE FROM documents; ROLLBACK")
+        let rolledBack = try await cached()
+        XCTAssertEqual(rolledBack, seeded)
+        let afterRollback = await fixture.cache.guideSQLWorkForTesting
+        XCTAssertEqual(afterRollback.documentSelects, before.documentSelects)
+        await reader.invalidate()
+        let replaced = try await reader.programs(from: url, catalog: channels, channels: channels, range: range,
+                                                 trustsGuideIDs: true) { _ in .document(replacement) }
+        XCTAssertEqual(replaced.map(\.title), ["Replacement"], "Replacement must not inherit the old station spellings")
+        let cachedReplacement = try await cached()
+        XCTAssertEqual(cachedReplacement, replaced)
+        try await fixture.cache.removeDownloadedGuide(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        let removed = try await cached()
+        XCTAssertNil(removed)
+    }
+
+    func testWarmDocumentCancellationAfterLineupAwaitDoesNotReadProgrammes() async throws {
+        let fixture = try documentFixture()
+        let now = now, url = url, range = range
+        let channels = [channel("a")]
+        let reader = LiveTVGuideIndex(cache: fixture.cache, clock: { now })
+        let initial = response(document())
+        let seeded = try await reader.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        let before = await fixture.cache.guideSQLWorkForTesting
+        let task = Task {
+            try await reader.cachedPrograms(from: url, channels: channels, range: range) {
+                await Task.yield()
+                withUnsafeCurrentTask { $0?.cancel() }
+                return channels
+            }
+        }
+        do { _ = try await task.value; XCTFail("A cancelled query must not publish") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let after = await fixture.cache.guideSQLWorkForTesting
+        XCTAssertEqual(after.programmeSelects, before.programmeSelects)
+        let next = try await reader.cachedPrograms(from: url, channels: channels, range: range) { channels }
+        XCTAssertEqual(next, seeded)
+    }
+
+    func testWarmDocumentDoesNotOverwriteNewValidatorsWithAnOlder304() async throws {
+        let fixture = try documentFixture()
+        let now = now, url = url, range = range
+        let channels = [channel("a")]
+        let original = try httpMetadata(headers: ["Cache-Control": "max-age=600", "ETag": "original"])
+        let initial = httpDocument(original)
+        let older = try httpMetadata(headers: ["ETag": "older"], status: 304, previous: original)
+        let newer = try httpMetadata(headers: ["ETag": "newer"], status: 304, previous: original)
+        let first = LiveTVGuideIndex(cache: fixture.cache, clock: { now })
+        let secondCache = fixture.reopen()
+        let second = LiveTVGuideIndex(cache: secondCache, clock: { now })
+        let seeded = try await first.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        await first.invalidate()
+        await second.invalidate()
+        do {
+            _ = try await first.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+                XCTAssertEqual(previous, original)
+                let result = try await second.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+                    XCTAssertEqual(previous, original)
+                    return .notModified(newer)
+                }
+                XCTAssertEqual(result, seeded)
+                return .notModified(older)
+            }
+            XCTFail("The older validation must not overwrite the newer validators")
+        } catch LiveTVGuideIndexError.generationChanged {}
+        let committed = try await secondCache.guideIndexState(sourceID: LiveTVGuideIndex.sourceID(url), sourceURL: url)
+        XCTAssertEqual(committed?.cacheMetadata, newer)
+    }
+
+    func testWarmDocument304NoStoreRevocationSurvivesAReplacementFailure() async throws {
+        let fixture = try documentFixture()
+        let now = now, url = url, range = range
+        let channels = [channel("a")]
+        let original = try httpMetadata(headers: ["Cache-Control": "max-age=600", "ETag": "original"])
+        let initial = httpDocument(original)
+        let noStore = try httpMetadata(headers: ["Cache-Control": "no-store"], status: 304, previous: original)
+        let writer = LiveTVGuideIndex(cache: fixture.cache, clock: { now })
+        let reader = LiveTVGuideIndex(cache: fixture.reopen(), clock: { now })
+        let seeded = try await writer.programs(from: url, catalog: channels, channels: channels, range: range) { initial }
+        let warm = try await reader.cachedPrograms(from: url, channels: channels, range: range) { channels }
+        XCTAssertEqual(warm, seeded)
+        await writer.invalidate()
+        let calls = Mutex(0)
+        do {
+            _ = try await writer.programs(from: url, catalog: channels, channels: channels, range: range) { previous in
+                if calls.withLock({ $0 += 1; return $0 }) == 1 {
+                    XCTAssertEqual(previous, original)
+                    return .notModified(noStore)
+                }
+                XCTAssertNil(previous)
+                let revoked = try await reader.cachedPrograms(from: url, channels: channels, range: range) { channels }
+                XCTAssertNil(revoked)
+                throw URLError(.notConnectedToInternet)
+            }
+            XCTFail("Failure of the unconditional replacement must surface")
+        } catch { XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet) }
+        XCTAssertEqual(calls.withLock { $0 }, 2)
+        let after = try await reader.cachedPrograms(from: url, channels: channels, range: range) { channels }
+        XCTAssertNil(after)
+    }
+
+    private static func documentSQL(_ directory: URL, _ sql: String) throws {
+        var handle: OpaquePointer?
+        let path = directory.appendingPathComponent("catalog.sqlite").path
+        let opened = sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE, nil)
+        defer { if let handle { XCTAssertEqual(sqlite3_close(handle), SQLITE_OK) } }
+        guard opened == SQLITE_OK, let handle, sqlite3_exec(handle, sql, nil, nil, nil) == SQLITE_OK else {
+            throw LiveTVCacheError.unavailable
+        }
+    }
+
+    private func documentFixture() throws -> CacheFixture {
+        let lifecycle = ApplicationStorageLifecycle()
+        let fixture = try CacheFixture(lifecycle: lifecycle)
+        addTeardownBlock {
+            await lifecycle.setApplicationActive(false, revision: UInt64.max)
+            fixture.removeOwnedFiles()
+        }
+        return fixture
+    }
+
+    func testFiveWarmGuideReadsDoNotReloadDocumentPayload() async throws {
+        let fixture = try documentFixture()
+        let now = now
+        let url = url
+        let range = range
+        let channels = [channel("a")]
+        let stationCount = 20_000
+        let stations = (1..<stationCount).map {
+            "<channel id=\"unused-\($0)\"><display-name>Unused Station \($0)</display-name></channel>"
+        }.joined()
+        let data = Data("""
+        <tv><channel id="news"><display-name>News</display-name></channel>
+        \(stations)
+        <programme channel="news" start="19700101000140 +0000" stop="19700101000820 +0000">
+        <title>Bulletin</title><sub-title>Headlines</sub-title><desc>Synopsis</desc>
+        </programme></tv>
+        """.utf8)
+        let download = DownloadCounter(response(data))
+        let writer = LiveTVGuideIndex(cache: fixture.cache, clock: { now })
+        let readerCache = fixture.reopen()
+        let reader = LiveTVGuideIndex(cache: readerCache, clock: { now })
+
+        func read(_ index: LiveTVGuideIndex) async throws -> [LiveTVPrototypeProgram] {
+            try await index.programs(from: url, catalog: channels, channels: channels, range: range) {
+                await download.get()
+            }
+        }
+
+        let expected = [LiveTVPrototypeProgram(
+            id: "xmltv-dc07b9f3cdab579e6749807a6683fee11590e011a92a769960fbad0c4396956d",
+            channelID: "a", title: "Bulletin", subtitle: "Headlines", start: range.start, end: range.end,
+            details: .init(description: "Synopsis")
+        )]
+        let seeded = try await read(writer)
+        XCTAssertEqual(seeded, expected)
+        let seedDownloads = await download.count
+        XCTAssertEqual(seedDownloads, 1)
+
+        let primed = try await read(reader)
+        XCTAssertEqual(primed, expected)
+        let before = await readerCache.guideSQLWorkForTesting
+        let decodesBefore = await readerCache.guideDocumentDecodesForTesting
+        let httpBefore = await download.count
+        let sealedBytes = before.lastDocumentBytesCopied
+        XCTAssertGreaterThan(sealedBytes, 500_000, "The retained station document must be large")
+        XCTAssertEqual(before.documentSelects, 1, "A reopened reader must load one document")
+        XCTAssertEqual(before.documentBytesCopied, sealedBytes)
+        XCTAssertEqual(decodesBefore, 1, "A reopened reader must decode the saved document")
+        XCTAssertEqual(before.programmeSelects, 1)
+        XCTAssertEqual(httpBefore, seedDownloads, "The reopened reader must use the saved index")
+
+        let warmReads = 5
+        for _ in 0..<warmReads {
+            let answer = try await read(reader)
+            XCTAssertEqual(answer, expected)
+        }
+        let after = await readerCache.guideSQLWorkForTesting
+        let selects = after.documentSelects - before.documentSelects
+        let copied = after.documentBytesCopied - before.documentBytesCopied
+        let decodes = await readerCache.guideDocumentDecodesForTesting - decodesBefore
+        let programmeQueries = after.programmeSelects - before.programmeSelects
+        let http = await download.count - httpBefore
+        print("Guide document probe: B=\(sealedBytes) warmReads=\(warmReads) "
+              + "payloadSELECTs=\(selects) copiedBytes=\(copied) decodes=\(decodes) "
+              + "programmeQueries=\(programmeQueries) fixtureHTTP=\(http)")
+        XCTAssertEqual(programmeQueries, warmReads)
+        XCTAssertEqual(http, 0)
+        XCTAssertEqual(decodes, 0)
+        XCTAssertEqual(selects, 0, "Warm reads must not SELECT the guide-document payload")
+        XCTAssertEqual(copied, 0, "Warm reads must not copy guide-document BLOB bytes from SQLite")
     }
 
     func testCachedBatchesValidateLargeLineupOncePerCommittedRevision() async throws {
@@ -1082,6 +1381,70 @@ final class LiveTVGuideIndexTests: XCTestCase {
         XCTAssertEqual(rows.map(\.title), ["Bulletin"])
         let count = await download.count
         XCTAssertEqual(count, 1)
+    }
+
+    func testCancelledPinnedProjectionDoesNotInstallMemoForNextConsumer() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let index = LiveTVGuideIndex(cache: fixture.cache)
+        let channels = [channel("a")]
+        let url = url
+        let range = range
+        let download = DownloadCounter(response(document()))
+        let cancelled = Task {
+            try await index.programs(from: url, channels: channels, range: range, catalogRevision: "pinned",
+                                     pinnedCatalog: {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return channels
+            }, revalidate: { _ in
+                XCTFail("A cancelled projection must not reach guide resolution")
+                return .document(await download.get())
+            })
+        }
+        do { _ = try await cancelled.value; XCTFail("Cancelled builder returned normally") }
+        catch is CancellationError {}
+        let maps = Mutex(0)
+        let rows = try await index.programs(from: url, channels: channels, range: range, catalogRevision: "pinned",
+                                            pinnedCatalog: {
+            maps.withLock { $0 += 1 }
+            return channels
+        }, revalidate: { _ in .document(await download.get()) })
+        XCTAssertEqual(rows.map(\.title), ["Bulletin"])
+        XCTAssertEqual(maps.withLock { $0 }, 1, "The cancelled builder must not prime the projection memo")
+        let downloads = await download.count
+        XCTAssertEqual(downloads, 1)
+    }
+
+    func testPinnedProjectionSharesColdImportAndCancellationRemainsPerCaller() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.removeOwnedFiles() }
+        let index = LiveTVGuideIndex(cache: fixture.cache)
+        let channels = [channel("a")]
+        let url = url
+        let range = range
+        let download = HeldDownload(response(document()))
+        let maps = Mutex(0)
+        let catalog: LiveTVGuideIndex.PinnedCatalog = {
+            maps.withLock { $0 += 1 }
+            return channels
+        }
+        let read: @Sendable () async throws -> [LiveTVPrototypeProgram] = {
+            try await index.programs(from: url, channels: channels, range: range, catalogRevision: "pinned",
+                                     pinnedCatalog: catalog, revalidate: { _ in .document(try await download.get()) })
+        }
+        let first = Task { try await read() }
+        await download.waitUntilStarted()
+        let second = Task { try await read() }
+        await index.waitForWaitersForTesting(2)
+        first.cancel()
+        do { _ = try await first.value; XCTFail("Cancelled caller returned normally") }
+        catch is CancellationError {}
+        await download.release()
+        let rows = try await second.value
+        XCTAssertEqual(rows.map(\.title), ["Bulletin"])
+        XCTAssertEqual(maps.withLock { $0 }, 1)
+        let downloads = await download.count
+        XCTAssertEqual(downloads, 1)
     }
 
     func testInvalidationCancelsAndDrainsInFlightImport() async throws {
