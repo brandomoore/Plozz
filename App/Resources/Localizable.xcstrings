@@ -641232,6 +641232,238 @@
         }
       }
     },
+    "Override ASS/SSA styling" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تجاوز تنسيق ملف ASS/SSA"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Замяна на форматирането от ASS/SSA"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA ফাইলের স্টাইল উপেক্ষা করুন"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Substitueix el format d’ASS/SSA"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nahradit formátování ASS/SSA"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tilsidesæt ASS/SSA-formatering"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA-Formatierung überschreiben"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Παράκαμψη μορφοποίησης ASS/SSA"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reemplazar el formato de ASS/SSA"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "جایگزینی قالب‌بندی ASS/SSA"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ohita ASS/SSA-muotoilu"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Remplacer la mise en forme ASS/SSA"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "התעלמות מהעיצוב של קובצי ASS/SSA"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA की फ़ॉर्मैटिंग को अनदेखा करें"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zanemari oblikovanje iz ASS/SSA datoteke"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA-formázás felülbírálása"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Abaikan Pemformatan File ASS/SSA"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ignora la formattazione ASS/SSA"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSAの書式を置き換える"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA 서식 대신 내 자막 스타일 사용"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gantikan pemformatan ASS/SSA"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Overstyr formatering fra ASS/SSA-filen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA-opmaak vervangen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zastępuj formatowanie z pliku ASS/SSA"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Substituir a formatação ASS/SSA"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Înlocuiește formatarea ASS/SSA"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Заменять оформление ASS/SSA"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nahradiť formátovanie ASS/SSA"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zamenjaj oblikovanje ASS/SSA"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zameni oblikovanje ASS/SSA"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Åsidosätt ASS/SSA-stilen"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "แทนที่รูปแบบ ASS/SSA"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA stilini geçersiz kıl"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Замінювати стиль ASS/SSA"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA پر اپنی منتخب کردہ طرز لاگو کریں"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thay thế kiểu phụ đề ASS/SSA"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "替换 ASS/SSA 字幕样式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "取代 ASS/SSA 字幕樣式"
+          }
+        }
+      }
+    },
     "Overrides" : {
       "comment" : "Card label settings that override the selected page's Default choice.",
       "localizations" : {
@@ -641461,6 +641693,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "覆寫設定"
+          }
+        }
+      }
+    },
+    "Overriding ASS/SSA replaces styled signs and karaoke effects with your caption style." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "عند تجاوز تنسيق ASS/SSA، يحلّ نمط الترجمة الذي اخترته محلّ تنسيق اللافتات وتأثيرات الكاريوكي في الملف."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ако включите тази настройка, избраният от вас стил на субтитрите ще замени оформлението на надписите и ефектите за караоке от ASS/SSA файла."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "এই সেটিং চালু করলে ASS/SSA ফাইলের সাইনবোর্ডের লেখার সাজসজ্জা ও কারাওকে ইফেক্টের বদলে আপনার বেছে নেওয়া সাবটাইটেল স্টাইল ব্যবহার করা হবে।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Si actives aquesta opció, l’estil de subtítols que has triat substitueix el format dels rètols i els efectes de karaoke del fitxer ASS/SSA."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Po zapnutí se formátování nápisů a karaoke efekty ze souboru ASS/SSA nahradí zvoleným stylem titulků."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hvis du slår denne indstilling til, erstatter din valgte undertekststil formateringen af skiltetekst og karaokeeffekterne fra ASS/SSA-filen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wenn du die ASS/SSA-Formatierung überschreibst, erscheinen Schildertexte und Karaoke-Untertitel in deinem Untertitelstil, ohne die Effekte aus der Datei."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αν παρακάμψετε τη μορφοποίηση ASS/SSA, τα κείμενα των πινακίδων και οι υπότιτλοι καραόκε εμφανίζονται με το δικό σας στυλ υποτίτλων, χωρίς τα εφέ του αρχείου."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Al reemplazar el formato de ASS/SSA, los textos de los carteles y los subtítulos de karaoke se muestran con tu estilo de subtítulos, sin los efectos del archivo."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "با جایگزینی قالب‌بندی ASS/SSA، متن تابلوها و زیرنویس‌های کارائوکه با سبک زیرنویس شما و بدون جلوه‌های فایل نمایش داده می‌شوند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kun ohitat ASS/SSA-muotoilun, kylttien tekstit ja karaoketekstitykset näytetään valitsemallasi tekstitystyylillä ilman tiedoston tehosteita."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Si vous remplacez la mise en forme ASS/SSA, le texte des panneaux et les paroles de karaoké s’affichent dans votre style de sous-titres, sans les effets du fichier."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "כשהאפשרות מופעלת, כיתובים מעוצבים על המסך ומילות קריוקי מקובצי ASS/SSA מוצגים בסגנון הכתוביות שלך, ללא העיצוב והאפקטים המקוריים."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA की फ़ॉर्मैटिंग को अनदेखा करने पर स्क्रीन पर लिखावट और कराओके के बोल आपके चुने हुए सबटाइटल स्टाइल में दिखेंगे, मूल फ़ॉर्मैटिंग और इफ़ेक्ट के बिना।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kad zanemarite oblikovanje iz ASS/SSA datoteke, natpisi i tekst karaoka prikazuju se u odabranom stilu titlova, bez izvornog oblikovanja i efekata."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az ASS/SSA-fájlok formázásának felülbírálásakor a képen lévő feliratok és a karaokeszövegek a kiválasztott feliratstílusban jelennek meg, az eredeti formázás és effektek nélkül."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jika pemformatan file ASS/SSA diabaikan, tulisan di layar dan lirik karaoke ditampilkan dengan gaya subtitle pilihan Anda, tanpa pemformatan dan efek aslinya."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se ignori la formattazione dei file ASS/SSA, le scritte in sovrimpressione e i testi del karaoke vengono mostrati con lo stile dei sottotitoli che hai scelto, senza la formattazione e gli effetti originali."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "オンにすると、ASS/SSAファイルで指定された看板などの文字装飾やカラオケ演出に代わり、選択した字幕スタイルが使われます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 옵션을 켜면 ASS/SSA 파일에 지정된 간판 등 화면 속 글자의 서식과 노래방 자막 효과 대신 선택한 자막 스타일이 적용됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apabila pilihan ini dihidupkan, gaya sari kata anda menggantikan pemformatan teks papan tanda dan kesan karaoke daripada fail ASS/SSA."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Når dette er på, brukes undertekststilen din i stedet for formateringen av skilttekst og karaokeeffektene fra ASS/SSA-filen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Als je dit inschakelt, vervangt je ondertitelstijl de opmaak van tekst op borden en de karaoke-effecten uit het ASS/SSA-bestand."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Po włączeniu tej opcji wybrany styl napisów zastępuje formatowanie tekstu na szyldach i efekty karaoke z pliku ASS/SSA."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ao ativar esta opção, seu estilo de legendas substitui a formatação original dos letreiros e os efeitos de karaokê do arquivo ASS/SSA."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Când activezi această opțiune, stilul tău de subtitrare înlocuiește formatarea textelor afișate pe ecran și efectele de karaoke din fișierul ASS/SSA."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "При включении этой настройки ваш стиль субтитров заменит оформление надписей и эффекты караоке из файла ASS/SSA."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Po zapnutí tejto možnosti váš štýl titulkov nahradí pôvodné formátovanie nápisov a efekty karaoke zo súboru ASS/SSA."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Če vklopite to možnost, vaš slog podnapisov nadomesti izvirno oblikovanje napisov in učinke karaok iz datoteke ASS/SSA."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kada uključite ovu opciju, vaš stil titlova zamenjuje izvorno oblikovanje natpisa i karaoke efekte iz datoteke ASS/SSA."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "När du åsidosätter ASS/SSA-stilen visas skylttexter och karaoketexter med din undertextstil, utan filens formatering och effekter."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เมื่อแทนที่รูปแบบ ASS/SSA ข้อความบนป้ายและเนื้อร้องคาราโอเกะจะแสดงด้วยรูปแบบคำบรรยายของคุณแทนการจัดรูปแบบและเอฟเฟ็กต์จากไฟล์"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ASS/SSA stilini geçersiz kıldığınızda tabela yazıları ve karaoke sözleri, dosyadaki biçimlendirme ve efektler yerine kendi altyazı stilinizle gösterilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Якщо замінити стиль ASS/SSA, написи на екрані й текст караоке відображатимуться у вашому стилі субтитрів без форматування та ефектів із файлу."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "یہ اختیار فعال کرنے پر ASS/SSA میں سائن بورڈز کی عبارت اور کراوکے کے بول فائل کی فارمیٹنگ اور اثرات کے بجائے سب ٹائٹلز کے لیے آپ کی منتخب کردہ طرز میں دکھائے جائیں گے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Khi thay thế kiểu phụ đề ASS/SSA, chữ trên biển hiệu và lời karaoke sẽ hiển thị theo kiểu phụ đề của bạn thay vì dùng định dạng và hiệu ứng từ tệp."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "将 ASS/SSA 字幕文件中的画面文字样式和卡拉 OK 特效替换为你设置的字幕样式。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "以你設定的字幕樣式取代 ASS/SSA 字幕檔案中的畫面文字樣式和卡拉 OK 特效。"
           }
         }
       }
@@ -1192634,6 +1193098,238 @@
         }
       }
     },
+    "hide player controls fade keep visible while playing paused" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إخفاء عناصر التحكم في المشغّل اختفاء تدريجي إبقاء عناصر التحكم ظاهرة أثناء التشغيل الإيقاف المؤقت"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "скриване на контролите на плейъра постепенно изчезване да останат видими при възпроизвеждане и пауза"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "প্লেয়ারের নিয়ন্ত্রণ লুকানো ধীরে মিলিয়ে যাওয়া দৃশ্যমান রাখা প্লেব্যাক চলাকালীন বিরতিতে"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "amagar controls del reproductor esvair mantenir visibles durant la reproducció en pausa"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "skrýt ovládací prvky přehrávače postupné mizení ponechat zobrazené při přehrávání pozastavení pauza"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "skjul afspilningskontroller ton ud hold synlige under afspilning på pause"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wiedergabesteuerung ausblenden verblassen sichtbar lassen Wiedergabe Pause"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "απόκρυψη χειριστήρια αναπαραγωγής σταδιακή εξαφάνιση να παραμένουν ορατά αναπαραγωγή παύση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ocultar controles de reproducción desvanecer mantener visibles reproducción pausa"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پنهان کردن کنترل‌های پخش محو شدن نمایان ماندن پخش مکث توقف موقت"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "piilota toistosäätimet häivytys pidä näkyvissä toisto tauko"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "masquer commandes de lecture fondu garder visibles lecture pause"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הסתרת פקדי הניגון בקרי הנגן היעלמות הדרגתית השארה על המסך בזמן ניגון בהשהיה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेयर कंट्रोल छिपाएँ धीरे-धीरे गायब हमेशा दिखाएँ प्लेबैक के दौरान पॉज़ पर रुका हुआ"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sakrij kontrole reproduktora postupno nestajanje zadrži vidljivima tijekom reprodukcije na pauzi"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "lejátszó vezérlők elrejtése elhalványulás maradjanak láthatók lejátszás közben szüneteltetve"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sembunyikan kontrol pemutar memudar tetap tampil saat diputar saat dijeda"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nascondi controlli del lettore comandi dissolvenza mantieni visibili durante la riproduzione in pausa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プレーヤー 再生コントロール 自動で隠す 非表示 フェードアウト 常に表示 再生中 一時停止中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "플레이어 재생 컨트롤 자동 숨기기 페이드아웃 계속 표시 재생 중 일시 정지"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sembunyikan kawalan pemain secara automatik pudar kekal dipaparkan semasa main balik semasa dijeda"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "skjul avspillingskontroller automatisk ton ut hold synlig under avspilling på pause"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "afspeelbediening automatisch verbergen vervagen uitfaden zichtbaar houden tijdens afspelen gepauzeerd pauze"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "automatycznie ukrywaj elementy sterowania odtwarzaczem zanikanie zawsze widoczne odtwarzanie pauza wstrzymanie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ocultar controles do player sumir aos poucos manter visíveis durante a reprodução em pausa"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ascunde comenzile playerului estompare menține vizibile în timpul redării în pauză"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "скрыть элементы управления плеером плавное исчезновение оставить видимыми при воспроизведении на паузе"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "skryť ovládacie prvky prehrávača postupné miznutie ponechať viditeľné počas prehrávania pri pozastavení"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "skrij kontrolnike predvajalnika postopno izginjanje ohrani vidne med predvajanjem med premorom"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sakrij kontrole plejera postepeno nestajanje zadrži vidljive tokom reprodukcije na pauzi"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dölj uppspelningskontroller tona ut håll synliga under uppspelning paus pausad"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ซ่อน ตัวควบคุมการเล่น ค่อย ๆ จางหาย แสดงไว้ ขณะเล่น หยุดชั่วคราว"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "oynatma kontrollerini gizle yavaşça kaybolma görünür tut oynatırken duraklatıldığında"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "приховати елементи керування відтворенням плавне зникнення залишати видимими під час відтворення на паузі"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پلے بیک کنٹرولز چھپائیں دھیرے دھیرے غائب ہونا دکھائی دیتے رہیں چلتے وقت توقف"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ẩn nút điều khiển phát mờ dần giữ hiển thị khi đang phát tạm dừng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自动隐藏 播放控件 播放器 淡出 保持显示 播放中 暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自動隱藏 播放控制項 播放器 淡出 保持顯示 播放中 暫停"
+          }
+        }
+      }
+    },
     "hide spoilers blur thumbnails unwatched episodes plot" : {
       "localizations" : {
         "ar" : {
@@ -1285295,6 +1285991,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "極細體"
+          }
+        }
+      }
+    },
+    "subtitles captions anime karaoke signs appearance" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ترجمات ترجمة نصية تسميات توضيحية أنمي كاريوكي لافتات مظهر"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитри надписи аниме караоке табели изглед външен вид"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "সাবটাইটেল ক্যাপশন অ্যানিমে কারাওকে সাইনবোর্ড রূপ চেহারা"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtítols descriptius anime karaoke rètols aparença"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titulky skryté titulky anime karaoke nápisy vzhled"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertekster tekstning anime karaoke skilte skiltetekst udseende"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Untertitel Untertitel für Hörgeschädigte Anime Karaoke Schilder Darstellung"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "υπότιτλοι υπότιτλοι για κωφούς άνιμε καραόκε πινακίδες εμφάνιση"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtítulos subtítulos para sordos anime karaoke carteles apariencia"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "زیرنویس کپشن زیرنویس ناشنوایان انیمه کارائوکه تابلوها ظاهر"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tekstitykset kuulovammaistekstitys anime karaoke kyltit ulkoasu"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sous-titres sous-titrage anime animation japonaise karaoké panneaux apparence"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "כתוביות כיתובים אנימה קריוקי שילוט כיתובים על המסך מראה"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "सबटाइटल उपशीर्षक कैप्शन ऐनिमे एनीमे कराओके स्क्रीन पर लिखावट दिखावट"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titlovi titlovi za gluhe i nagluhe anime karaoke natpisi izgled"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "feliratok akadálymentes feliratok anime karaoke képernyőfeliratok megjelenés"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtitle takarir teks tertulis anime karaoke tulisan di layar tampilan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sottotitoli didascalie anime karaoke scritte in sovrimpressione aspetto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 キャプション アニメ カラオケ 看板 画面内の文字 見た目 字幕スタイル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자막 청각 장애인용 자막 애니메이션 애니 노래방 가라오케 간판 화면 속 글자 자막 모양 스타일"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sari kata kapsyen anime karaoke papan tanda teks pada skrin rupa gaya"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertekster teksting anime karaoke skilt skilttekst utseende undertekststil"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ondertitels ondertiteling anime karaoke borden tekst in beeld uiterlijk ondertitelstijl"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "napisy napisy dla niesłyszących anime karaoke szyldy znaki tekst na ekranie wygląd styl napisów"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "legendas legendas ocultas anime karaokê letreiros aparência"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "subtitrări anime karaoke inscripții texte pe ecran aspect"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитры скрытые субтитры аниме караоке надписи внешний вид"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titulky skryté titulky anime karaoke nápisy vzhľad"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "podnapisi podnapisi za gluhe in naglušne anime karaoke napisi videz"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "titlovi titlovi za gluve i nagluve anime karaoke natpisi izgled"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "undertexter textning anime karaoke skylttext skyltar utseende"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "คำบรรยาย คำบรรยายแทนเสียง อนิเมะ คาราโอเกะ ป้าย ข้อความบนป้าย รูปลักษณ์"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "altyazı açıklamalı altyazı anime karaoke tabela yazıları görünüm"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "субтитри приховані субтитри аніме караоке написи вивіски вигляд"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سب ٹائٹلز زیرنویس کیپشنز اینیمے کراوکے سائن بورڈ عبارت ظاہری شکل"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "phụ đề phụ đề cho người khiếm thính anime karaoke biển hiệu giao diện kiểu dáng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 隐藏式字幕 动漫 卡拉OK 画面文字 招牌 外观 样式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "字幕 隱藏式字幕 動漫 動畫 卡拉OK 畫面文字 招牌 外觀 樣式"
           }
         }
       }
