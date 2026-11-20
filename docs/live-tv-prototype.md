@@ -2160,7 +2160,10 @@ The selected picture's lift remains the native tvOS focus effect.
 During idle/native label replacement, temporary live renderer hosts track the
 incoming labels' animated presentation geometry even before those labels reach
 full opacity. Motion coverage uses real decoders, native style replacement and
-display-link samples without forcing layout from the test.
+timestamped display-link samples without forcing layout from the test. The next
+transition starts after the unfocused pictures reach their expected width; native
+focus lift is not an endpoint for the whole grid. Sidebar motion tests likewise
+check the rendered guide edge before reversing direction.
 The close confirmation and playback errors share `playerPlatformAppearance`
 with transport controls, preserving native focused-label contrast without a
 dialog-specific button style.
