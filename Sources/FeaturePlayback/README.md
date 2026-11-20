@@ -1936,9 +1936,12 @@ the load. The engine can already be playing: registration alone does not mean
 that a presented frame owns the subtitle. This does not move the video playhead
 or advance subtitles.
 
-Far landings can also use a complete, track-specific mkvmerge cue index. The
-reader checks the track header, declared frame count, distinct block locations
-and cue durations; it reads the referenced block when a duration is omitted.
+Far landings can also use a complete mkvmerge cue index for the embedded track
+chosen at admission, even before the player publishes its active track. If the
+track metadata extends beyond the first HTTP range, the reader fetches the
+missing bytes within the same transfer budget. It checks the track header,
+declared frame count, distinct block locations and cue durations; it reads the
+referenced block when a duration is omitted.
 Bounded, version-checked HTTP ranges use spare request slots only; indexing
 is skipped for serial or rate-limited origins. A frame
 is eligible only when every indexed overlap is present in the packet store,
