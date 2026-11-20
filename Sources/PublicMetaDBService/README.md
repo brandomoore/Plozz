@@ -163,6 +163,16 @@ unchanged. The run's tracker resume and temporary sources were removed and
 the original settings and volume restored. Plozz retained the measured file
 durations, not a playable resume, after clearing the local test history.
 
+On `5a860ab05`, the production iPhone player played *Charge* muted from NFS.
+Both NFS and WebDAV were eligible for the same 117.705-second PublicMetaDB
+resume. With the player at 1.985 seconds, the sync coordinator skipped the
+playing NFS item but imported the resume for WebDAV. Independent reads found
+NFS still at zero and WebDAV at 117.705 seconds; stopping playback saved the
+player's own 2.485-second position to NFS. The run removed its tracker resume
+and left the app's grants untouched. This verifies the active-item guard in a
+separate simulator process that explicitly invoked sync, not an automatic
+foreground sync while the native player screen was open.
+
 On `18f41e069`, a separate one-time import used an existing *Big Buck Bunny*
 watch on PublicMetaDB. Cancelling the review left the selected NFS share
 unwatched. After explicit confirmation, Plozz marked only that share watched;
