@@ -748,15 +748,15 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
         let closed = try fixture.guideX()
 
         fixture.model.collapsed = false
-        let opening = try await fixture.sample()
-        let opened = try fixture.guideX()
+        let opening = try await fixture.sample(until: closed + 408)
+        let opened = try XCTUnwrap(opening.last)
         XCTAssertEqual(opened - closed, 408, accuracy: 1)
         XCTAssertTrue(opening.contains { $0 > closed + 12 && $0 < opened - 12 },
                       "Opening must animate, not jump between final layouts: \(opening)")
 
         fixture.model.collapsed = true
-        let closing = try await fixture.sample()
-        XCTAssertEqual(try fixture.guideX(), closed, accuracy: 1)
+        let closing = try await fixture.sample(until: closed)
+        XCTAssertEqual(try XCTUnwrap(closing.last), closed, accuracy: 1)
         XCTAssertTrue(closing.contains { $0 > closed + 12 && $0 < opened - 12 },
                       "Closing must animate, not jump between final layouts: \(closing)")
     }
@@ -935,12 +935,14 @@ final class LiveTVBrowseMotionHostedTests: XCTestCase {
             return leading.map(CGFloat.init)
         }
 
-        func sample(duration: Duration = .milliseconds(450)) async throws -> [CGFloat] {
-            let deadline = ContinuousClock.now + duration
+        func sample(duration: Duration = .milliseconds(450), until endpoint: CGFloat? = nil) async throws -> [CGFloat] {
+            let deadline = ContinuousClock.now + (endpoint == nil ? duration : .seconds(2))
             var samples: [CGFloat] = []
             while ContinuousClock.now < deadline {
                 window.layoutIfNeeded()
-                samples.append(try guideX())
+                let x = try guideX()
+                samples.append(x)
+                if let endpoint, abs(x - endpoint) <= 1 { break }
                 try await Task.sleep(for: .milliseconds(16))
             }
             return samples

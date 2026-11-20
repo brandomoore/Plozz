@@ -2,9 +2,9 @@
 
 ## Tracker-sync acceptance status: 20 November 2026
 
-The branch is not merge-ready. It includes `main` through `48975ad6bbc1`;
-that last upstream commit changed a PIN appearance test and its documentation,
-not the app or tracker code.
+The branch is not merge-ready. It includes `main` through `a32d482e18aa`.
+The two commits after `48975ad6bbc1` changed hosted tests, test tooling and
+documentation, not the app or tracker code.
 The signed iPhone simulator app built at `d3da98cea`. Its season ratings
 screen matched independent PublicMetaDB reads for all ten rated episodes of
 *The Crown* season 1 (40 ratings). The live test now waits for an independently
