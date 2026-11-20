@@ -49,6 +49,31 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         #endif
     }
 
+    func testExperimentalOpensOnItsNoticeAndBackRestoresTheRow() throws {
+        let app = try launchSettings(syncEnabled: false)
+        defer { app.terminate() }
+        let row = section("experimental", in: app)
+        try focus(row, in: app)
+        capture("experimental-row", in: app)
+        XCUIRemote.shared.press(.select)
+        let notice = app.descendants(matching: .any)
+            .matching(identifier: "settings-experimental-notice").firstMatch
+        let entered = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.hasFocus(notice) }, object: nil
+        )
+        let arrival = XCTWaiter.wait(for: [entered], timeout: 5)
+        capture("experimental-page", in: app)
+        XCTAssertEqual(arrival, .completed,
+                       "A page with no features must still give the remote somewhere to land. \(app.debugDescription)")
+        XCTAssertTrue(app.staticTexts["settings-experimental-empty"].exists, app.debugDescription)
+        assertCenteredSettingsColumn(in: app)
+        // Back stays out of reach until the page's own content has taken focus.
+        try focus(pageBack("settings-category-back", in: app), in: app)
+        capture("experimental-page-resting", in: app)
+        XCUIRemote.shared.press(.menu)
+        waitForCategoryFocus("experimental", in: app)
+    }
+
     func testNewRowExitOnlyPromptsForChangesAndCanDiscard() throws {
         let app = try launchCollectionExitFixture()
         defer { app.terminate() }
