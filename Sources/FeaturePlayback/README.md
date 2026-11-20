@@ -1942,10 +1942,12 @@ track metadata extends beyond the first HTTP range, the reader fetches the
 missing bytes within the same transfer budget. It checks the track header,
 declared frame count, distinct block locations and cue durations; it reads the
 referenced block when a duration is omitted.
-Bounded, version-checked HTTP ranges use spare request slots only; indexing
-is skipped for serial or rate-limited origins. A frame
-is eligible only when every indexed overlap is present in the packet store,
-including multiple layers with identical timestamps. An incomplete index or
+Index reads use spare request slots only and skip serial or rate-limited
+origins. Once the file version is known, the reader may retry one range per
+index if the response headers time out. Both attempts count toward the same
+byte budget and deadline. A frame is eligible only when every indexed overlap
+is present in the packet store, including multiple layers with identical
+timestamps. An incomplete index or
 missing packet leaves the existing fallback intact.
 
 `FrameASSArtworkTests` can exercise ordinary route and track selection on local

@@ -617,10 +617,10 @@ index 8dcf16e6..bdd1a90c 100644
      nonisolated static func renderColorSpace(for buffer: CVPixelBuffer) -> CGColorSpace {
 diff --git a/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift b/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift
 new file mode 100644
-index 00000000..6ebe49ea
+index 00000000..09a20db8
 --- /dev/null
 +++ b/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,277 @@
 +import Foundation
 +
 +/// A Matroska seek table alone isn't a subtitle inventory. Accept only the
@@ -721,6 +721,20 @@ index 00000000..6ebe49ea
 +}
 +
 +extension MatroskaASSIndex {
++    /// One spare-slot retry for the entire inventory. Only a timeout before headers returns
++    /// nil from `attempt`; entity, body, budget and cancellation errors propagate unchanged.
++    struct HeaderRetry {
++        private var used = false
++        mutating func read<T>(entityPinned: Bool, attempt: () async throws -> T?) async throws -> T {
++            if let value = try await attempt() { return value }
++            try Task.checkCancellation()
++            guard entityPinned, !used else { throw URLError(.timedOut) }
++            used = true
++            guard let value = try await attempt() else { throw URLError(.timedOut) }
++            return value
++        }
++    }
++
 +    /// Resolve only the nominated embedded stream; never select a track on the user's behalf.
 +    static func track(for id: Int, in tracks: [TrackInfo]) -> TrackInfo? {
 +        tracks.first { $0.id == id && !$0.isExternal && $0.assHeader != nil }
@@ -771,34 +785,46 @@ index 00000000..6ebe49ea
 +        defer { session.invalidateAndCancel() }
 +        let deadline = ContinuousClock.now + .seconds(12)
 +        var tag: String?, length: Int?, spent = 0
-+        func read(_ offset: Int, _ count: Int) async throws -> Elements {
++        var retry = HeaderRetry()
++        func attempt(_ offset: Int, _ count: Int) async throws -> Elements? {
 +            try Task.checkCancellation()
 +            guard ContinuousClock.now < deadline, count > 0, offset >= 0,
 +                  offset <= (1<<52)-count, spent + count <= 2_500_000,
 +                  length.map({ offset+count <= $0 }) ?? true else { throw Invalid.index }
 +            guard let ticket = Self.reserveRange(for: url) else { throw Invalid.index }
 +            defer { OriginRequestBudget.shared.release(ticket) }
-+            var request = URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:3)
++            let remaining = (deadline - ContinuousClock.now).components
++            let timeout = min(3, Double(remaining.seconds) + Double(remaining.attoseconds) / 1e18)
++            guard timeout > 0 else { throw Invalid.index }
++            var request = URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:timeout)
 +            request.allHTTPHeaderFields = headers
 +            request.setValue("bytes=\(offset)-\(offset+count-1)",forHTTPHeaderField:"Range")
 +            request.setValue("identity",forHTTPHeaderField:"Accept-Encoding")
 +            if let tag { request.setValue(tag,forHTTPHeaderField:"If-Match") }
-+            let (body,response) = try await session.bytes(for:request)
++            // Charge the requested range even if transport fails before reporting how much arrived.
++            spent += count
++            let body: URLSession.AsyncBytes, response: URLResponse
++            do { (body,response) = try await session.bytes(for:request) }
++            catch let error as URLError where error.code == .timedOut { return nil }
 +            guard let http = response as? HTTPURLResponse, http.statusCode == 206,
 +                  let etag = http.value(forHTTPHeaderField:"ETag"), etag.hasPrefix("\""), etag.hasSuffix("\""),
 +                  tag == nil || tag == etag,
 +                  let cr = http.value(forHTTPHeaderField:"Content-Range")?.split(separator:"/"), cr.count == 2,
 +                  cr[0] == "bytes \(offset)-\(offset+count-1)", let size = Int(cr[1]), size >= offset+count,
 +                  size < 1<<52, length == nil || length == size else { throw Invalid.index }
-+            tag = etag; length = size; spent += count
++            tag = etag; length = size
 +            var data: [UInt8] = []; data.reserveCapacity(count)
 +            for try await b in body {
 +                guard data.count < count else { throw Invalid.index }
 +                if data.count & 4095 == 0 { try Task.checkCancellation(); guard ContinuousClock.now < deadline else { throw Invalid.index } }
 +                data.append(b)
 +            }
-+            guard data.count == count else { throw Invalid.index }
++            try Task.checkCancellation()
++            guard data.count == count, ContinuousClock.now < deadline else { throw Invalid.index }
 +            return Elements(bytes:data)
++        }
++        func read(_ offset: Int, _ count: Int) async throws -> Elements {
++            try await retry.read(entityPinned: tag != nil) { try await attempt(offset,count) }
 +        }
 +        let head = try await read(0,131072)
 +        let ebml = try head.element(0); guard ebml.id == 0x1a45dfa3 else { throw Invalid.index }
@@ -866,7 +892,8 @@ index 00000000..6ebe49ea
 +                cues.append(.init(interval:.init(start:start,duration:duration),location:cluster+rel))
 +            }
 +        }
-+        guard let index = Self(cues,expected:expected) else { throw Invalid.index }
++        try Task.checkCancellation()
++        guard let index = Self(cues,expected:expected), ContinuousClock.now < deadline else { throw Invalid.index }
 +        EngineLog.emit("[SoftwareASS] verified cue inventory stream=\(track.id) frames=\(expected) bytes=\(spent) blockChecks=\(repairs)", category:.engine)
 +        return index
 +    }
@@ -1073,15 +1100,59 @@ index 4a0b65e9..df272cbd 100644
  /// Whether a load takes the low-resolution upscale route, and if not, why. Pure so every exit is
 diff --git a/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift b/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift
 new file mode 100644
-index 00000000..e649a781
+index 00000000..a2fe2517
 --- /dev/null
 +++ b/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,146 @@
 +import XCTest
 +import CoreMedia
 +@testable import AetherEngine
 +
 +final class SoftwareArtworkGateTests: XCTestCase {
++    func testHeaderTimeoutRetryIsSharedAcrossRangesAndRequiresPinnedEntity() async throws {
++        var retry = MatroskaASSIndex.HeaderRetry(), calls = 0
++        func miss() -> Int? { calls += 1; return nil }
++        do {
++            _ = try await retry.read(entityPinned:false) { miss() }
++            XCTFail("Unpinned entity retried")
++        } catch { XCTAssertEqual((error as? URLError)?.code,.timedOut) }
++        XCTAssertEqual(calls,1)
++        let value: Int = try await retry.read(entityPinned:true) {
++            calls += 1
++            return calls == 3 ? 17 : nil
++        }
++        XCTAssertEqual(value,17)
++        do {
++            _ = try await retry.read(entityPinned:true) { miss() }
++            XCTFail("Retried a second range")
++        } catch { XCTAssertEqual((error as? URLError)?.code,.timedOut) }
++        XCTAssertEqual(calls,4)
++    }
++
++    func testBodyTimeoutDoesNotRetryAndCancelledHeaderWaitCannotRetry() async {
++        var retry = MatroskaASSIndex.HeaderRetry(), calls = 0
++        do {
++            let _: Int = try await retry.read(entityPinned:true) {
++                calls += 1
++                throw URLError(.timedOut) // thrown by body iteration, not the pre-header sentinel
++            }
++            XCTFail("Body failed")
++        } catch { XCTAssertEqual((error as? URLError)?.code,.timedOut) }
++        XCTAssertEqual(calls,1)
++        let cancelled = await Task {
++            var retry = MatroskaASSIndex.HeaderRetry(), calls = 0
++            do {
++                let _: Int = try await retry.read(entityPinned:true) {
++                    calls += 1
++                    withUnsafeCurrentTask { $0?.cancel() }
++                    return nil
++                }
++                return false
++            } catch { return error is CancellationError && calls == 1 }
++        }.value
++        XCTAssertTrue(cancelled)
++    }
++
 +    func testIndexUsesNominatedEmbeddedASSRatherThanFirstOrExternalTrack() {
 +        func track(_ id: Int, header: String? = "ASS", external: Bool = false) -> TrackInfo {
 +            .init(id:id, name:"test", codec:"ass", language:"en", isDefault:id == 3,
