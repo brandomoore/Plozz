@@ -164,11 +164,8 @@ if [ -n "${PLOZZ_SENTRY_DSN:-}" ]; then
 fi
 
 # --- Release channel bake ----------------------------------------------------
-# The runtime fallback for "is this a TestFlight build?" sniffs
-# `Bundle.main.appStoreReceiptURL`, which on tvOS can be nil (a receipt is only
-# written after a purchase) — so a TestFlight install could read as production
-# and silently default crash reporting OFF. The fastlane `beta`/`release` lanes
-# set PLOZZ_RELEASE_CHANNEL so the answer is decided at build time instead.
+# The lanes stamp distribution archives. Runtime gates use the install source,
+# not this stamp, because App Store Connect can promote the same binary.
 release_channel="${PLOZZ_RELEASE_CHANNEL:-}"
 if [ -n "$release_channel" ]; then
   case "$release_channel" in

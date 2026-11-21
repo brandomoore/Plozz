@@ -102,6 +102,45 @@ final class CrashReportingConsentDefaultTests: XCTestCase {
         XCTAssertEqual(AppReleaseChannel.production.crashReportEnvironment, "production")
     }
 
+    func testPromotingTheSameArchiveChangesBetaGatesNotConsent() throws {
+        let tester = try XCTUnwrap(InstallChannel(archive: .testflight, receipt: "sandboxReceipt").resolved)
+        let storeInstall = try XCTUnwrap(InstallChannel(archive: .testflight, receipt: "receipt").resolved)
+        XCTAssertTrue(tester.isBeta)
+        XCTAssertFalse(storeInstall.isBeta)
+        XCTAssertEqual(storeInstall.crashReportEnvironment, "production")
+
+        for enabled in [false, true] {
+            let store = MemoryStore(stored: nil)
+            CrashReportingSettingsModel(store: store).isEnabled = enabled
+            let promoted = CrashReportingSettingsModel(store: store)
+            XCTAssertEqual(promoted.isEnabled, enabled)
+            XCTAssertFalse(promoted.needsConsent)
+            XCTAssertEqual(tester.isBeta && promoted.isEnabled, enabled)
+            XCTAssertFalse(storeInstall.isBeta && promoted.isEnabled)
+        }
+    }
+
+    func testReceiptlessArchivesUseVerifiedInstallNotBuildLane() {
+        for archive in [AppReleaseChannel.testflight, .production] {
+            for verified in [AppReleaseChannel.testflight, .production] {
+                let install = InstallChannel(archive: archive, receipt: nil)
+                XCTAssertNil(install.resolved)
+                install.finish(verifiedChannel: verified)
+                XCTAssertEqual(install.resolved, verified)
+                install.finish(verifiedChannel: nil)
+                XCTAssertEqual(install.resolved, verified)
+            }
+        }
+    }
+
+    func testUnavailableInstallEvidenceFailsClosedEvenIfSandboxReplyArrivesLate() {
+        let install = InstallChannel(archive: .testflight, receipt: "unrecognized")
+        install.finish(verifiedChannel: nil)
+        install.finish(verifiedChannel: .testflight)
+        XCTAssertEqual(install.resolved, .production)
+        XCTAssertEqual(InstallChannel(archive: nil, receipt: nil).resolved, .production)
+    }
+
     func testBakedChannelIsParsedCaseInsensitively() {
         XCTAssertEqual(AppReleaseChannel.baked("testflight"), .testflight)
         XCTAssertEqual(AppReleaseChannel.baked("TestFlight"), .testflight)
