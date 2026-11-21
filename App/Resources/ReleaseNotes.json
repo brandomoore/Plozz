@@ -2,6 +2,64 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/074",
+      "version": "2026.11.20",
+      "marketingVersion": "2026.11.20",
+      "build": 74,
+      "releasedAt": "2026-11-20",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "See track names such as Commentary or Signs & Songs in the audio and subtitle menus.",
+            "Choose when playback controls hide, including while paused.",
+            "Use your own caption style instead of a subtitle file’s ASS/SSA styling."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Video cropping now defaults to Normal. If you used Auto Crop, select it again to keep using it.",
+            "Steadier artwork on Home and title pages, and spoiler-aware episode titles in Continue Watching.",
+            "Library Recently Added rows follow your server’s order on Plex, Jellyfin, Emby and Silo.",
+            "Clearer intro and credits markers, with fewer repeated Skip prompts.",
+            "Silo plays local trailers first and opens YouTube trailers externally.",
+            {
+              "text": "Clearer channel logos and easier category navigation in the Live TV guide.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Easier week navigation in Upcoming.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Updated Search and player menus, with direct video quality selection and a Jump to Live button.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Plex account prompts now wait until you finish choosing your Plozz profile.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Styled subtitle signs and karaoke lyrics could appear late or linger into the next scene.",
+            "Connecting to a Windows file share could close Plozz.",
+            {
+              "text": "Some videos could crash during upscaling or black-bar detection.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Opening theme music settings could close Plozz.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/073.1",
       "version": "2026.11.17",
       "marketingVersion": "2026.11.16",
