@@ -154,13 +154,11 @@ public actor PublicMetaDBWatchlistDestination: WatchlistBatchApplying {
     ) async throws {
         let before = try await records(access)
         let matching = before.filter { $0.value == content }
-        try access.receipts.observe(content: content, isPresent: !matching.isEmpty)
-        if (desiredState == .present) == !matching.isEmpty {
-            try access.receipts.confirm(deliveryID: deliveryID, content: content)
-            return
-        }
-        do { try access.receipts.begin(deliveryID: deliveryID, content: content, desiredState: desiredState) }
-        catch {
+        do {
+            guard try access.receipts.prepare(
+                deliveryID: deliveryID, content: content, desiredState: desiredState, isPresent: !matching.isEmpty
+            ) == .dispatch else { return }
+        } catch {
             PlozzLog.networking.error("PublicMetaDB watchlist delivery evidence blocks automatic replay")
             throw WatchlistDestinationError.permanent
         }

@@ -175,6 +175,49 @@ final class PublicMetaDBWatchlistTests: XCTestCase {
         XCTAssertEqual(http.sent.count, 3)
     }
 
+    func testReplayingAnAlreadyMatchedDeliveryDoesNotUndoAnExternalEdit() async throws {
+        for desired in [WatchlistDesiredState.present, .absent] {
+            let saved = credentials()
+            let selected = try selection(saved)
+            let store = try receiptStore()
+            let http = RecordingHTTPClient()
+            http.stub(pathSuffix: "/items", json: page(desired == .present ? [movie] : []))
+            http.stub(pathSuffix: "/items", json: page(desired == .present ? [] : [movie]))
+            let first = PublicMetaDBWatchlistDestination(receiptStore: store)
+            try configure(first, http: http, saved: saved, selected: selected)
+            try await apply(desired, to: first)
+
+            // The outbox lost its acknowledgement; a remote editor has since reversed the membership.
+            let restored = PublicMetaDBWatchlistDestination(receiptStore: store)
+            try configure(restored, http: http, saved: saved, selected: selected)
+            do { try await apply(desired, to: restored); XCTFail("Replayed a settled delivery") }
+            catch { XCTAssertEqual(error as? WatchlistDestinationError, .permanent) }
+            XCTAssertEqual(http.sentPaths, Array(repeating: "/api/external/lists/list-a/items", count: 2))
+            XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
+        }
+    }
+
+    func testAnAlreadyAbsentDeliveryCannotClearAnUnconfirmedAdd() async throws {
+        let saved = credentials()
+        let selected = try selection(saved)
+        let store = try receiptStore()
+        let http = RecordingHTTPClient()
+        let destination = PublicMetaDBWatchlistDestination(receiptStore: store)
+        try configure(destination, http: http, saved: saved, selected: selected)
+        http.stub(pathSuffix: "/items", json: page([]))
+        http.stub(pathSuffix: "/items", json: "{}", status: 503)
+        http.stub(pathSuffix: "/items", json: page([]))
+        do { try await apply(.present, to: destination); XCTFail("Acknowledged an uncertain add") }
+        catch { XCTAssertEqual(error as? WatchlistDestinationError, .permanent) }
+
+        for (intent, id) in [(WatchlistDesiredState.absent, "new-remove"), (.present, "new-add")] {
+            do { try await apply(intent, to: destination, deliveryID: id); XCTFail("Discarded unresolved add") }
+            catch { XCTAssertEqual(error as? WatchlistDestinationError, .permanent) }
+        }
+        XCTAssertEqual(http.sentPaths, Array(repeating: "/api/external/lists/list-a/items", count: 5))
+        XCTAssertEqual(http.sent.filter { $0.body != nil }.count, 1)
+    }
+
     func testFailedReadbackAndRelaunchDoNotRepeatAnUncertainWrite() async throws {
         let saved = credentials()
         let selected = try selection(saved)
@@ -200,7 +243,8 @@ final class PublicMetaDBWatchlistTests: XCTestCase {
         let selected = try selection(saved)
         let store = try receiptStore()
         let receipts = PublicMetaDBWatchlistReceipts(store: store, selectionID: selected.id)
-        try receipts.begin(deliveryID: "delivery-a", content: .init(tmdbID: 550, mediaType: .movie), desiredState: .present)
+        XCTAssertEqual(try receipts.prepare(deliveryID: "delivery-a", content: .init(tmdbID: 550, mediaType: .movie),
+                                            desiredState: .present, isPresent: false), .dispatch)
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/items", json: page([]))
         let destination = PublicMetaDBWatchlistDestination(receiptStore: store)
@@ -216,7 +260,8 @@ final class PublicMetaDBWatchlistTests: XCTestCase {
         let selected = try selection(saved)
         let store = try receiptStore()
         let receipts = PublicMetaDBWatchlistReceipts(store: store, selectionID: selected.id)
-        try receipts.begin(deliveryID: "old-add", content: .init(tmdbID: 550, mediaType: .movie), desiredState: .present)
+        XCTAssertEqual(try receipts.prepare(deliveryID: "old-add", content: .init(tmdbID: 550, mediaType: .movie),
+                                            desiredState: .present, isPresent: false), .dispatch)
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/items", json: page([movie]))
         http.stub(pathSuffix: "/items/movie-row", json: #"{"success":true}"#)

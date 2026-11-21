@@ -259,6 +259,13 @@ and left the app's grants untouched. This verifies the active-item guard in a
 separate simulator process that explicitly invoked sync, not an automatic
 foreground sync while the native player screen was open.
 
+On `4a65fddfc956`, a native preflight found three films with matching NFS
+and SMB copies, no tracker history for those films, and no existing local
+history in the six source namespaces. Enrolling either new share on the
+tested profile would replace a grant with an unresolved review. The test
+left that grant intact and stopped before playback. No automatic foreground
+check, active-item skip, or second-copy update was measured.
+
 On `18f41e069`, a separate one-time import used an existing *Big Buck Bunny*
 watch on PublicMetaDB. Cancelling the review left the selected NFS share
 unwatched. After explicit confirmation, Plozz marked only that share watched;
@@ -283,6 +290,11 @@ It was not retried. Fresh reads confirmed no new list or membership and
 unchanged watch and resume history. Cancellation passed; live membership
 sync and recovery after a lost write reply remain unverified. The existing
 private list was not used as a substitute write target.
+
+The watchlist destination now records a delivery even when the first read
+already matches. Regression tests cover retry after an external add or removal
+and an opposite request while an earlier add is unconfirmed. All 265
+`PublicMetaDBServiceTests` passed; these are not live list-write results.
 
 A separate read-only tvOS simulator check exercised the production service
 against the real account, without driving the TV UI. Independent API reads
@@ -737,9 +749,11 @@ item, never the list itself.
 The existing outbox's stable delivery ID is recorded before dispatch in the
 durable local-state store. Receipts contain no keys. A lost or stale reply requires
 fresh complete membership readback; failed verification parks delivery rather
-than automatically repeating it, including after relaunch. A later observation
-can resolve an earlier uncertain membership change. Confirmed receipts prevent
-replaying an old delivery after someone independently changes the remote list.
+than automatically repeating it, including after relaunch. A membership that
+already matches is also recorded before acknowledging the outbox. If the
+outbox retries that delivery after an external edit, it must not undo the edit.
+An opposite intent cannot settle a still-unobserved write: seeing an item
+absent does not prove that a pending add was refused.
 Read-before-write cannot provide a transaction against concurrent remote editors.
 
 Confirmation discloses existing/future watchlist changes, propagation to other

@@ -15,25 +15,32 @@ struct PublicMetaDBWatchlistReceipts: Sendable {
     let store: DurableLocalStateStore
     let selectionID: UUID
 
-    func begin(deliveryID: String, content: PublicMetaDB.Content, desiredState: WatchlistDesiredState) throws {
-        try Self.lock.withLock {
-            let key = try key(content)
-            if let previous = try store.load(Receipt.self, for: key),
-               previous.phase == .attempted || (previous.deliveryID == deliveryID && previous.phase == .confirmed) {
-                throw PublicMetaDB.Failure.uncertainWrite
-            }
-            try store.save(Receipt(deliveryID: deliveryID, desiredState: desiredState, phase: .attempted), for: key)
-        }
-    }
+    enum Preparation { case alreadyMatched, dispatch }
 
-    func observe(content: PublicMetaDB.Content, isPresent: Bool) throws {
+    func prepare(
+        deliveryID: String, content: PublicMetaDB.Content, desiredState: WatchlistDesiredState, isPresent: Bool
+    ) throws -> Preparation {
         try Self.lock.withLock {
             let key = try key(content)
-            guard let previous = try store.load(Receipt.self, for: key), previous.phase == .attempted,
-                  (previous.desiredState == .present) == isPresent else { return }
+            let matches = (desiredState == .present) == isPresent
+            if let previous = try store.load(Receipt.self, for: key) {
+                if previous.phase == .attempted, (previous.desiredState == .present) != isPresent {
+                    // A matching opposite intent does not settle a still-unobserved write.
+                    throw PublicMetaDB.Failure.uncertainWrite
+                }
+                if previous.deliveryID == deliveryID {
+                    guard previous.desiredState == desiredState else { throw PublicMetaDB.Failure.uncertainWrite }
+                    if previous.phase == .confirmed {
+                        guard matches else { throw PublicMetaDB.Failure.uncertainWrite }
+                        return .alreadyMatched
+                    }
+                }
+            }
+            // Even a read-only match must survive loss of the outbox acknowledgement.
             try store.save(Receipt(
-                deliveryID: previous.deliveryID, desiredState: previous.desiredState, phase: .confirmed
+                deliveryID: deliveryID, desiredState: desiredState, phase: matches ? .confirmed : .attempted
             ), for: key)
+            return matches ? .alreadyMatched : .dispatch
         }
     }
 
