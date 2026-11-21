@@ -757,6 +757,20 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try selectNFSShare(onlyShare: true)
     }
 
+    func testEnableDeclaredNFSShare() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let name = try XCTUnwrap(environment["PLOZZ_TRACKER_SHARE_NAME"])
+        try require(!name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    "Expected the dedicated NFS share name")
+        let label = "NFS, \(name)"
+        try testOpenLibrarySettings()
+        try setSourceServer(label, selected: true)
+        try testOpenLibrarySettings()
+        let saved = app.switches[label]
+        try tapVisible(saved, tapping: false)
+        XCTAssertEqual(saved.value as? String, "1")
+    }
+
     func testRestoreSourcesAfterNFSShare() throws {
         try selectNFSShare(onlyShare: false)
     }

@@ -12,14 +12,21 @@ data across cold launches (B → A → B): A showed its private list and dated
 plays; B showed no records in either view on both visits. This was a read
 test, not evidence that new playback writes go to the right account.
 
-On `8ae592a88caa`, the native iPhone consent test enabled reporting for B.
-B retained that consent across an A → B switch without restarting Plozz.
-The test NFS library was scanned but not enabled in B, and the movie detail
-selected Jellyfin instead. The run stopped before playback rather than
-changing the managed user's history. B's reporting was turned back off and
-the temporary source was removed. **Playback write routing after a profile
-switch remains unverified.** Neither an empty tracker history nor a successful
-consent test proves delivery.
+**PublicMetaDB received playback on B only after an A → B profile switch.**
+On iPhone simulator build `8ae592a88caa`, neither account had a watch or
+resume for *Charge* (2022, TMDB 1062079) before playback. The test enabled
+reporting and the named NFS share for B without disabling any managed
+library. After switching A → B without restarting Plozz, the player opened
+the NFS copy muted and stopped at **01:22** in the same process.
+Independent, paginated API reads found one new B resume at **81,830 of
+262,763 ms**. A's 40 watches, five resumes, private list and its contents
+were unchanged. B gained no watch or list. After a cold launch on B, the
+same resume ID, position and timestamp remained; no duplicate appeared.
+
+Two earlier setup attempts stopped before Play: one did not enable reporting;
+the other selected Jellyfin rather than the test share. Neither measured
+delivery. The passing run verifies iPhone PublicMetaDB resume reporting, not
+completion, tvOS or another tracker provider.
 
 The signed iPhone simulator app built at `d3da98cea`. Its season ratings
 screen matched independent PublicMetaDB reads for all ten rated episodes of
