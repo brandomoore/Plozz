@@ -2,6 +2,23 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/074.1",
+      "version": "2026.11.21",
+      "marketingVersion": "2026.11.20",
+      "build": "74.1",
+      "releasedAt": "2026-11-21",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": ["Clearer audio and subtitle track names."]
+        },
+        {
+          "category": "Fixed",
+          "items": ["Fixed subtitles appearing twice in the track picker during Silo playback."]
+        }
+      ]
+    },
+    {
       "id": "release/074",
       "version": "2026.11.20",
       "marketingVersion": "2026.11.20",
