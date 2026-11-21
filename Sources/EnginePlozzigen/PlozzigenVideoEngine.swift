@@ -635,6 +635,19 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         guard let outputGeneration = await beginOutputLoad() else { return }
+        #if PLOZZ_FRAME_ASS
+        resetFrameArtwork()
+        if !request.isManifestStream, !request.isTranscoding, request.burnedInSubtitleTrackID == nil,
+           !request.suppressOrdinaryWatchReporting, request.externalAudioURL == nil,
+           request.discPlayback == .playVideo, !request.usesUnidentifiedDiscTimeline,
+           SourceDynamicRange.providerHint(from: request.sourceMetadata)?.isHDR != true,
+           let select = nextFrameSelection {
+            if case .networkDisc = request.playbackSource {} else {
+                engine.frameASSSelection = { select(Self.selectableSubtitleTracks(from: $0, route: .software)) }
+            }
+        }
+        nextFrameSelection = nil
+        #endif
         allowsFELConversionOverride = Self.supportsFELConversion(for: request)
         allowsVideoUpscalingOverride = Self.supportsVideoUpscalingChanges(for: request)
         #if canImport(DiscNavigation) && canImport(UIKit)
@@ -931,6 +944,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 MediaChapter(start: $0.startSeconds, title: $0.name)
             }, duration: engine.duration)
             onChaptersChanged?()
+            #if PLOZZ_FRAME_ASS
+            await engine.prerollResumedFrameASS(at: startPosition)
+            guard !Task.isCancelled, probePublicationGate.accepts(probeGeneration),
+                  outputLoadGeneration == outputGeneration else { return }
+            #endif
             engine.play()
             syncTracks()
         } catch is CancellationError {
@@ -969,6 +987,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func loadLive(url: URL, httpHeaders: [String: String]) async {
         guard let outputGeneration = await beginOutputLoad() else { return }
+        #if PLOZZ_FRAME_ASS
+        resetFrameArtwork()
+        nextFrameSelection = nil
+        #endif
         allowsFELConversionOverride = false
         serverRenditionAudio = nil
         chapters = []
@@ -1587,6 +1609,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func stopEngine(resetDisplayCriteria: Bool) {
+        #if PLOZZ_FRAME_ASS
+        resetFrameArtwork()
+        nextFrameSelection = nil
+        #endif
         allowsFELConversionOverride = false
         allowsVideoUpscalingOverride = false
         #if canImport(DiscNavigation) && canImport(UIKit)
@@ -1881,6 +1907,13 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public var nowPlayingPlayer: AVPlayer? { engine.currentAVPlayer }
+    public var isDrivingPostSeekPlayback: Bool {
+        guard engine.videoRoute == .software else { return false }
+        switch engine.playbackPhase {
+        case .playing, .seeking, .rebuffering, .loading, .stalled: return true
+        case .idle, .paused, .ended, .error: return false
+        }
+    }
     #if os(iOS) || os(tvOS)
     public func previewVideoFrame() -> CVPixelBuffer? { engine.latestSoftwareVideoFrame() }
     public var previewFrameGeneration: UInt64? { engine.softwareVideoFrameGeneration }
@@ -1950,7 +1983,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// the way out and then double-draws with the overlay on the way back.
     public func setNativeSubtitlesActive(_ active: Bool) {
         wantsNativeSubtitles = active
-        if active { assRenderer.clear() }
+        if active { resetScheduledArtwork(); assRenderer.clear() }
         else if let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
         nativeSubtitleOutput?.setSystemPresentation(active)
         applyNativeSubtitleSelection()
@@ -1971,30 +2004,123 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func updateSubtitleStyle(_ style: SubtitleStyle) {
         avPlayerSubtitleStyle = style
+        applyASSStyle(style)
         applyAVPlayerSubtitleStyle(to: engine.currentAVPlayer)
     }
 
     public func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {
-        guard let assDocument, !wantsNativeSubtitles else { return }
-        let authored = !style.followsSystemStyle && style.usesSourcePosition
-            && style.usesSourceColors && style.usesSourceEmphasis
-        if authored != rendersAuthoredASS {
-            rendersAuthoredASS = authored
-            if authored { assRenderer.update(document: assDocument, events: assEvents) }
-            else { assRenderer.clear(); publishPlainASS() }
+        renderASS(at: time, offset: 0, style: style, canSchedule: false)
+    }
+
+    public func renderSubtitles(at presentationTime: TimeInterval, offset: TimeInterval, style: SubtitleStyle) {
+        renderASS(at: presentationTime, offset: offset, style: style, canSchedule: true)
+    }
+
+    private weak var artworkSink: (any ScheduledASSArtworkSink)?
+    private var scheduledItem: AVPlayerItem?
+    private var scheduledOffset = 0.0
+    #if PLOZZ_FRAME_ASS
+    private var nextFrameSelection: (@MainActor ([MediaTrack]) -> Int?)?
+    private var lastFrameOwner: Bool?
+    public func setFrameSubtitleSelection(_ select: @escaping @MainActor ([MediaTrack]) -> Int?) {
+        nextFrameSelection = select
+    }
+
+    private func resetFrameArtwork() {
+        lastFrameOwner = nil
+        engine.frameASSSelection = nil
+        if engine.hasSoftwareASSArtworkProvider { engine.setSoftwareASSArtworkProvider(nil) }
+    }
+
+    public func updateFrameSubtitlePresentation(eligible: Bool, offset: Double) -> Bool {
+        guard engine.frameASSRouteAdmitted, engine.videoRoute == .software else { return false }
+        let enabled = eligible && offset == 0 && !wantsNativeSubtitles && !continuesPlaybackInBackground
+            && engine.sidecarASSHeader == nil && engine.subtitleTracks.contains {
+                $0.id == engine.activeSubtitleTrackIndex && !$0.isExternal && $0.assHeader != nil
+            }
+        if enabled != engine.hasSoftwareASSArtworkProvider {
+            if enabled {
+                let artwork = FrameASSArtwork()
+                engine.setSoftwareASSArtworkProvider { artwork.resolve($0) }
+            } else {
+                engine.setSoftwareASSArtworkProvider(nil)
+            }
+            HandoffDiagnostics.emit("subtitle FRAME provider=\(enabled) track=\(engine.activeSubtitleTrackIndex ?? -1)")
         }
-        if authored { assRenderer.tick(time, frameRate: engine.sourceVideoFrameRate) }
+        let owns = engine.softwareFrameOwnsPrimarySubtitle
+        if enabled, lastFrameOwner != owns {
+            HandoffDiagnostics.emit("subtitle FRAME sampleOwner=\(owns ? "video" : "overlay") track=\(engine.activeSubtitleTrackIndex ?? -1) offset=\(offset)")
+        }
+        lastFrameOwner = enabled ? owns : nil
+        return owns
+    }
+    #endif
+    private var scheduleStart = 0.0
+    private var previousScheduledTime: Double?
+
+    public func setScheduledASSArtworkSink(_ sink: (any ScheduledASSArtworkSink)?) {
+        guard artworkSink !== sink else { return }
+        if scheduledItem != nil { resetASSFrameForSeek() }
+        artworkSink = sink
+    }
+
+    private func applyASSStyle(_ style: SubtitleStyle) {
+        let authored = !style.overridesASSStyling
+        guard authored != rendersAuthoredASS else { return }
+        rendersAuthoredASS = authored
+        guard let assDocument, !wantsNativeSubtitles else { return }
+        if authored {
+            onSubtitleCues?([])
+            assRenderer.update(document: assDocument, events: assEvents)
+        } else {
+            resetScheduledArtwork()
+            assRenderer.clear()
+            publishPlainASS()
+        }
+    }
+
+    private func renderASS(at presentationTime: Double, offset: Double, style: SubtitleStyle, canSchedule: Bool) {
+        applyASSStyle(style)
+        guard assDocument != nil, rendersAuthoredASS, !wantsNativeSubtitles else { return }
+        #if PLOZZ_FRAME_ASS
+        if engine.hasSoftwareASSArtworkProvider && engine.softwareFrameOwnsPrimarySubtitle { return }
+        #endif
+        let item = canSchedule && artworkSink != nil && engine.softwarePresentationTimebase == nil
+            && engine.hasFirstFrameReadyForDisplay && !engine.isSeeking
+            && engine.presentationAxisMap.itemSeconds(forSourceSeconds: presentationTime) != nil
+            ? engine.currentAVPlayer?.currentItem : nil
+        let jumped = previousScheduledTime.map { presentationTime < $0 - 0.05 || presentationTime > $0 + 1 } ?? false
+        if item !== scheduledItem || (item != nil && (scheduledOffset != offset || jumped)) {
+            resetASSFrameForSeek()
+            scheduledItem = item
+            scheduledOffset = offset
+            scheduleStart = presentationTime
+        }
+        previousScheduledTime = item == nil ? nil : presentationTime
+        // Seat the current picture first (including paused seeks), then build a
+        // short queue. The compositor, not the queue depth, decides when to draw.
+        let ahead = item == nil ? 0 : min(ASSSubtitleRenderer.scheduleLookahead, max(0, presentationTime - scheduleStart))
+        assRenderer.tick(presentationTime - offset + ahead, frameRate: engine.sourceVideoFrameRate,
+                         scheduled: item != nil)
+    }
+
+    private func resetScheduledArtwork() {
+        artworkSink?.reset()
+        scheduledItem = nil
+        previousScheduledTime = nil
     }
 
     private func clearASS() {
+        resetScheduledArtwork()
         assDocument = nil
         assEvents = []
         assRenderer.clear()
     }
 
     private func resetASSFrameForSeek() {
+        resetScheduledArtwork()
         assRenderer.clear()
-        if let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
+        if rendersAuthoredASS, let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
     }
 
     private func publishPlainASS() {
@@ -2006,7 +2132,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         let cues = events.enumerated().compactMap { index, event -> CoreModels.SubtitleCue? in
             let text = SubtitleCueParser.textFromASSPacket(event.packet, header: assDocument.header)
             guard !text.string.isEmpty else { return nil }
-            return CoreModels.SubtitleCue(id: index, start: event.start, end: event.end, body: .text(text))
+            return CoreModels.SubtitleCue(id: index, start: event.start, end: event.end, body: .text(.init(text.string)))
         }
         onSubtitleCues?(cues)
     }
@@ -2025,6 +2151,14 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         assEvents = events
         assRenderer.onFrame = { [weak self] cues in
             guard let self, self.assDocument != nil, !self.wantsNativeSubtitles, self.rendersAuthoredASS else { return }
+            if let item = self.scheduledItem, let sink = self.artworkSink {
+                guard let time = self.assRenderer.sampledTime,
+                      item === self.engine.currentAVPlayer?.currentItem,
+                      let deadline = self.engine.presentationAxisMap.itemSeconds(forSourceSeconds: time + self.scheduledOffset)
+                else { sink.reset(); return }
+                sink.display(cues, at: deadline, item: item)
+                return
+            }
             self.onSubtitleCues?(cues)
         }
         if rendersAuthoredASS { assRenderer.update(document: document, events: events) }

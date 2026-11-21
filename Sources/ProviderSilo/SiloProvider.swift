@@ -73,6 +73,25 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         return map(dto)
     }
 
+    public func trailers(for itemID: String) async throws -> [MediaItem] {
+        guard Self.collectionIdentity(itemID) == nil else { return [] }
+        let detail: SiloTrailerDetail = try await client.request("/catalog/items/\(try SiloAPI.pathComponent(itemID))")
+        func isTrailer(_ kind: String?) -> Bool { kind == "trailer" || kind == "teaser" }
+        let local = (detail.extras ?? []).compactMap { extra -> MediaItem? in
+            guard isTrailer(extra.kind), let id = extra.content_id, id != itemID,
+                  (try? SiloAPI.pathComponent(id)) != nil else { return nil }
+            return MediaItem(id: id, title: extra.title ?? detail.title, kind: .video,
+                             isTrailer: true, isExtra: true, parentTitle: detail.title,
+                             runtime: extra.duration_seconds, sourceAccountID: accountID)
+        }
+        let remote = (detail.videos ?? []).compactMap { video -> MediaItem? in
+            guard isTrailer(video.kind), video.site?.lowercased() == "youtube",
+                  let key = video.site_key, MediaItem.youTubeVideoID(fromURL: key) == key else { return nil }
+            return .youTubeTrailer(videoID: key, title: video.name ?? detail.title, parentTitle: detail.title)
+        }
+        return local + remote
+    }
+
     public func children(of itemID: String) async throws -> [MediaItem] {
         if Self.collectionIdentity(itemID) != nil {
             var items: [MediaItem] = []
@@ -400,7 +419,8 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         for (key, value) in [("Imdb", dto.imdb_id), ("Tmdb", dto.tmdb_id), ("Tvdb", dto.tvdb_id)] {
             if let value, !value.isEmpty { ids[key] = value }
         }
-        let itemKind = kind ?? MediaItemKind(rawValue: dto.type ?? "") ?? .unknown
+        let isExtra = dto.type == "extra"
+        let itemKind = kind ?? (isExtra ? .video : MediaItemKind(rawValue: dto.type ?? "") ?? .unknown)
         let anchor = SiloCatalogIdentity.parse(dto.content_id, kind: itemKind)
         if let anchor, dto.series_id == nil || dto.series_id == anchor.seriesID {
             ids.merge(anchor.providerIDs) { declared, _ in declared }
@@ -441,7 +461,7 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         }
         return MediaItem(
             id: dto.content_id, title: dto.title, originalTitle: dto.original_title,
-            kind: itemKind,
+            kind: itemKind, isExtra: isExtra,
             overview: dto.overview, parentTitle: dto.series_title,
             seasonNumber: dto.season_number ?? anchor?.seasonNumber,
             episodeNumber: dto.episode_number ?? anchor?.episodeNumber,

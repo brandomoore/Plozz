@@ -55,6 +55,15 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
     public static let videoZoom = PlayerEngineCapabilities(rawValue: 1 << 5)
 }
 
+/// A primary authored ASS frame replaces the preceding frame at `itemTime`
+/// (an empty array clears it). The UI owns the sink; engines retain it weakly
+/// and reset it when the track, item, or timing epoch changes.
+@MainActor
+public protocol ScheduledASSArtworkSink: AnyObject {
+    func display(_ cues: [CoreModels.SubtitleCue], at itemTime: Double, item: AVPlayerItem)
+    func reset()
+}
+
 /// Engine-agnostic abstraction over a single playback session.
 ///
 /// `VideoEngine` captures everything `PlayerViewModel` needs from a player while
@@ -99,6 +108,9 @@ public protocol VideoEngine: AnyObject {
     /// Optional association for system Now Playing; custom decoders use the
     /// app-level center and still receive transport through this protocol.
     var nowPlayingPlayer: AVPlayer? { get }
+    /// True while a custom output is running or refilling its own presentation queue.
+    /// A stationary clock in this state isn't a request to pause or restart it.
+    var isDrivingPostSeekPlayback: Bool { get }
 
     #if os(iOS) || os(tvOS)
     /// Borrowed software output for infrequent preview-color analysis, not a second decoder.
@@ -252,6 +264,13 @@ public protocol VideoEngine: AnyObject {
     var subtitlePresentationTime: TimeInterval { get }
     /// Advances authored animated subtitles on the same clock as ordinary cues.
     func renderSubtitles(at time: TimeInterval, style: SubtitleStyle)
+    /// Keeps the picture clock and viewer delay distinct for item-time scheduling.
+    func renderSubtitles(at presentationTime: TimeInterval, offset: TimeInterval, style: SubtitleStyle)
+    func setScheduledASSArtworkSink(_ sink: (any ScheduledASSArtworkSink)?)
+    /// Ask the normal track picker which probed stream would actually play, before routing.
+    func setFrameSubtitleSelection(_ select: @escaping @MainActor ([MediaTrack]) -> Int?)
+    /// Returns ownership of the currently presented sample, not the next sample being decoded.
+    func updateFrameSubtitlePresentation(eligible: Bool, offset: Double) -> Bool
 
     /// Whether position is settled enough for corrective seeks. A decoder can
     /// report ready before its initial frame/seek or a retained reload settles.
@@ -416,6 +435,12 @@ public extension VideoEngine {
     var subtitlePresentationTime: TimeInterval { currentTime }
     var audioTapPresentationTime: TimeInterval { currentTime }
     func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {}
+    func renderSubtitles(at presentationTime: TimeInterval, offset: TimeInterval, style: SubtitleStyle) {
+        renderSubtitles(at: presentationTime - offset, style: style)
+    }
+    func setScheduledASSArtworkSink(_ sink: (any ScheduledASSArtworkSink)?) {}
+    func setFrameSubtitleSelection(_ select: @escaping @MainActor ([MediaTrack]) -> Int?) {}
+    func updateFrameSubtitlePresentation(eligible: Bool, offset: Double) -> Bool { false }
     func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool { true }
     var streamingFailure: StreamingPlaybackFailure? { nil }
     var streamingOutputDynamicRange: SourceDynamicRange? { nil }
@@ -429,6 +454,7 @@ public extension VideoEngine {
     var isSessionReloading: Bool { false }
     var maximumPlaybackSpeed: Double { 4 }
     var nowPlayingPlayer: AVPlayer? { nil }
+    var isDrivingPostSeekPlayback: Bool { false }
     #if os(iOS) || os(tvOS)
     func previewVideoFrame() -> CVPixelBuffer? { nil }
     var previewFrameGeneration: UInt64? { nil }

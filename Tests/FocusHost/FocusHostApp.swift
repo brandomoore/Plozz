@@ -2,12 +2,55 @@ import SwiftUI
 import UIKit
 import CoreUI
 import CoreModels
-import FeaturePlayback
+@testable import FeaturePlayback
+import EnginePlozzigen
 @testable import AppShell
 import AppRuntime
 import CoreSecureStore
 import FeatureAuth
 @testable import FeatureSettings
+
+private struct ASSSyncCapture: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        do {
+            let engine = try PlozzigenVideoEngine()
+            let model = LiveSubtitleModel()
+            model.beginLiveFeed()
+            engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+            let player = PlayerInputViewController(engine: engine, model: PlayerControlsModel(), actions: PlayerActions())
+            player.loadViewIfNeeded()
+            player.attachVideoSurface()
+            player.attachSubtitleOverlay(model)
+            engine.onSubtitleCues = { [weak engine] cues in
+                guard let engine else { return }
+                model.tick(engine.subtitlePresentationTime)
+                model.updateLiveCues(cues)
+            }
+            Task {
+                let url = URL.cachesDirectory.appendingPathComponent("ass-sync.mkv")
+                await engine.load(request: PlaybackRequest(
+                    item: MediaItem(id: "sync", title: "ASS timing marker", kind: .movie),
+                    streamURL: url
+                ), startPosition: 0)
+                let deadline = ContinuousClock.now + .seconds(15)
+                while engine.subtitleTracks.isEmpty && ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                guard let track = engine.subtitleTracks.first(where: { $0.codec == "ass" }) else {
+                    print("ASS capture failed: no ASS track")
+                    return
+                }
+                engine.selectSubtitleTrack(track)
+                engine.play()
+            }
+            return player
+        } catch {
+            return UIHostingController(rootView: Text(verbatim: String(describing: error)))
+        }
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {}
+}
 
 private struct LiveJellyfinOnboardingFixture: View {
     @State private var app: AppState
@@ -41,6 +84,8 @@ struct FocusHostApp: App {
                 TrackerHistoryImportFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--publicmetadb-pairing-fixture") {
                 PublicMetaDBPairingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--ass-sync-capture") {
+                ASSSyncCapture().ignoresSafeArea()
             } else if ProcessInfo.processInfo.arguments.contains("--upcoming-capture-fixture") {
                 UpcomingCaptureFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-onboarding") {

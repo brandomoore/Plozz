@@ -9,6 +9,50 @@ import XCTest
 
 @MainActor
 final class SubtitleStyleSettingsTests: XCTestCase {
+    func testASSOverrideIsIndependentOfDeviceMatchingAndSurvivesAppearanceReset() throws {
+        let name = "SubtitleASSOverrideTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SubtitleStyleStore(defaults: defaults, namespace: "one")
+        let profile = SubtitleStyleModel(store: store)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(profile.style)) as? [String: Any])
+        legacy.removeValue(forKey: "overridesASSStyling")
+        let original = try JSONDecoder().decode(SubtitleStyle.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertTrue(original.followsSystemStyle)
+        XCTAssertTrue(original.permitsFrameSubtitle)
+        profile.style = SystemCaptionStyle.shared.editing(original) { $0.overridesASSStyling = true }
+        var expected = original
+        expected.overridesASSStyling = true
+        XCTAssertEqual(store.load().base, expected, "Do not freeze the device appearance when changing ASS policy.")
+        XCTAssertFalse(expected.permitsFrameSubtitle)
+        XCTAssertFalse(expected.resettingAppearance.permitsFrameSubtitle)
+        XCTAssertTrue(SubtitleStyleStore(defaults: defaults, namespace: "two").load().base.permitsFrameSubtitle)
+        profile.liveTVStyle = .default
+        XCTAssertTrue(store.load().resolvedLiveTV.overridesASSStyling)
+    }
+
+    func testASSOverrideOnlyFlattensASSAndDoesNotDependOnMatching() throws {
+        let sign = SubtitleCueParser.textFromASSPacket(#"0,0,Default,,0,0,0,,{\an8\i1}Sign"#, header: "")
+        let ass = SubtitleCue(id: 1, start: 2, end: 4, body: .text(sign))
+        let srt = try XCTUnwrap(SubtitleCueParser.parseCues("1\n00:00:02,000 --> 00:00:04,000\n<i>SRT</i>\n").first)
+        for matching in [false, true] {
+            for override in [false, true] {
+                var style = SubtitleStyle.default
+                style.followsSystemStyle = matching
+                style.overridesASSStyling = override
+                style.usesSourceColors = false
+                style.usesSourcePosition = false
+                style.usesSourceEmphasis = false
+                XCTAssertEqual(style.permitsFrameSubtitle, !override)
+                let overlay = SubtitleOverlayView(primary: [ass, srt], secondary: [ass], style: style)
+                let expected = override ? SubtitleCue.Body.text(.init("Sign")) : ass.body
+                XCTAssertEqual(overlay.primary.first?.body, expected)
+                XCTAssertEqual(overlay.secondary.first?.body, expected)
+                XCTAssertEqual(overlay.primary.last, srt)
+            }
+        }
+    }
+
     func testEditorDisplaysEffectiveValuesWithoutWritingUntilTheFirstRealEdit() throws {
         let name = "SubtitleStyleEffectiveEditorTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

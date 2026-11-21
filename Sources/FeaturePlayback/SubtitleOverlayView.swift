@@ -5,6 +5,36 @@ import CoreModels
 import CoreUI
 
 enum SubtitleOverlayGeometry {
+    struct BitmapLayout: Equatable {
+        var style: SubtitleStyle
+        var videoRect: CGRect?
+        var activePictureRect: CGRect?
+        var sourceAspectRatio: CGFloat?
+        var controls: [CGRect]
+
+        func frames(for images: [SubtitleImage], in bounds: CGRect) -> [CGRect] {
+            let video = videoRect ?? bounds
+            let reference = positionReference(style: style, video: video, active: activePictureRect, bounds: bounds)
+            let offsets = pictureBitmapOffsets(
+                images: images, style: style, video: video, reference: reference, bounds: bounds,
+                controls: controls, sourceAspectRatio: sourceAspectRatio
+            )
+            return images.enumerated().map { index, image in
+                let frame = bitmapRect(normalizedRect: image.normalizedRect, canvasSize: image.canvasSize,
+                                       videoRect: video, sourceAspectRatio: sourceAspectRatio)
+                let lift = offsets[index] ?? bitmapOffset(for: image, videoRect: video, controls: controls,
+                                                          bounds: bounds, sourceAspectRatio: sourceAspectRatio)
+                let width = max(1, frame.width), height = max(1, frame.height)
+                return CGRect(x: frame.midX - width / 2, y: frame.midY + lift - height / 2,
+                              width: width, height: height)
+            }
+        }
+    }
+
+    static func localControls(_ frames: [CGRect], style: SubtitleStyle, origin: CGPoint) -> [CGRect] {
+        style.avoidsPlayerControls ? frames.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) } : []
+    }
+
     static func positionReference(style: SubtitleStyle, video: CGRect, active: CGRect?, bounds: CGRect) -> CGRect {
         guard style.positionReference == .picture else { return bounds }
         let visible = (active ?? video).intersection(bounds)
@@ -476,8 +506,8 @@ public struct SubtitleOverlayView: View {
         controlsFrame: CGRect? = nil,
         controlsFrames: [CGRect] = []
     ) {
-        self.primary = primary
-        self.secondary = secondary
+        self.primary = style.overridesASSStyling ? primary.map(\.removingASSMarkup) : primary
+        self.secondary = style.overridesASSStyling ? secondary.map(\.removingASSMarkup) : secondary
         self.secondaryActive = secondaryActive
         self.style = style
         self.isHDR = isHDR
@@ -505,8 +535,9 @@ public struct SubtitleOverlayView: View {
         GeometryReader { geo in
             let rect = videoRect ?? CGRect(origin: .zero, size: geo.size)
             let origin = geo.frame(in: .global).origin
-            let controls = (style.avoidsPlayerControls ? controlsFrames + (controlsFrame.map { [$0] } ?? []) : [])
-                .map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+            let controls = SubtitleOverlayGeometry.localControls(
+                controlsFrames + (controlsFrame.map { [$0] } ?? []), style: style, origin: origin
+            )
             ZStack {
                 bitmapLayer(in: rect, bounds: CGRect(origin: .zero, size: geo.size), controls: controls)
                 textLayer(in: geo.size, videoRect: rect, controls: controls)
@@ -527,35 +558,18 @@ public struct SubtitleOverlayView: View {
             if case .image(let image) = cue.body { return image }
             return nil
         }
-        let reference = SubtitleOverlayGeometry.positionReference(
-            style: style, video: rect, active: activePictureRect, bounds: bounds
-        )
-        let offsets = SubtitleOverlayGeometry.pictureBitmapOffsets(
-            images: images, style: style, video: rect, reference: reference, bounds: bounds,
-            controls: controls, sourceAspectRatio: sourceVideoAspectRatio.map { CGFloat($0) }
-        )
+        let frames = SubtitleOverlayGeometry.BitmapLayout(
+            style: style, videoRect: rect, activePictureRect: activePictureRect,
+            sourceAspectRatio: sourceVideoAspectRatio.map { CGFloat($0) }, controls: controls
+        ).frames(for: images, in: bounds)
         ForEach(Array(cues.enumerated()), id: \.element.id) { index, cue in
             if case .image(let img) = cue.body {
-                let frame = SubtitleOverlayGeometry.bitmapRect(
-                    normalizedRect: img.normalizedRect,
-                    canvasSize: img.canvasSize,
-                    videoRect: rect,
-                    sourceAspectRatio: sourceVideoAspectRatio.map { CGFloat($0) }
-                )
-                let w = max(1, frame.width)
-                let h = max(1, frame.height)
-                let lift = offsets[index] ?? SubtitleOverlayGeometry.bitmapOffset(
-                    for: img, videoRect: rect, controls: controls, bounds: bounds,
-                    sourceAspectRatio: sourceVideoAspectRatio.map { CGFloat($0) }
-                )
+                let frame = frames[index]
                 Image(decorative: img.cgImage, scale: 1)
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: w, height: h)
-                    .position(
-                        x: frame.midX,
-                        y: frame.midY + lift
-                    )
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
                     // HDR-only luminance clamp on the bitmap (white-multiply dims).
                     .colorMultiply(Color(white: lumaScale))
             }

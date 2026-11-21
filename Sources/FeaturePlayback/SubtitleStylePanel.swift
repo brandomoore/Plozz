@@ -33,6 +33,7 @@ struct SubtitleStylePanel: View {
     /// live channel) the Dual Subtitles entry is left out.
     var offersDualSubtitles = true
     var separatesSettingsRows = false
+    var showsASSOverride = false
 
     @State private var systemStyleConfirmation = SystemCaptionStyleConfirmation()
     @Environment(\.locale) private var locale
@@ -253,25 +254,35 @@ struct SubtitleStylePanel: View {
             rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
         }
         rows.append(StyleRowSpec(slot: slot, title: "Subtitle file formatting", kind: .submenu(summary: Text(verbatim: ""), open: { openScreen(.styleFileFormatting) }))); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Reset to App Default", kind: .action(run: { actions.setSubtitleStyle(.default) }))); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Reset to App Default", kind: .action(run: { actions.setSubtitleStyle(model.subtitleStyle.resettingAppearance) }))); slot += 1
         return (rows, dividerBefore)
     }
 
-    private var fileFormattingScreen: some View {
+    private var fileFormattingRows: [StyleRowSpec] {
         let style = effectiveStyle
-        return VStack(alignment: .leading, spacing: 16) {
-            styleScreen([
-                StyleRowSpec(slot: 0, title: "Use File Positions", kind: .toggle(
-                    isOn: style.usesSourcePosition, flip: { updateStyle { $0.usesSourcePosition.toggle() } }
-                )).settingsSearchAnchor("file-position"),
-                StyleRowSpec(slot: 1, title: "Use File Colors", kind: .toggle(
-                    isOn: style.usesSourceColors, flip: { updateStyle { $0.usesSourceColors.toggle() } }
-                )).settingsSearchAnchor("file-colors"),
-                StyleRowSpec(slot: 2, title: "Use Bold and Italic", kind: .toggle(
-                    isOn: style.usesSourceEmphasis, flip: { updateStyle { $0.usesSourceEmphasis.toggle() } }
-                )).settingsSearchAnchor("file-emphasis")
-            ])
-            Text("Some subtitle files specify colors, bold or italic text, or where a line should appear. Turn these off to use your chosen style instead.")
+        var rows = [
+            StyleRowSpec(slot: 0, title: "Use File Positions", kind: .toggle(
+                isOn: style.usesSourcePosition, flip: { updateStyle { $0.usesSourcePosition.toggle() } }
+            )).settingsSearchAnchor("file-position"),
+            StyleRowSpec(slot: 1, title: "Use File Colors", kind: .toggle(
+                isOn: style.usesSourceColors, flip: { updateStyle { $0.usesSourceColors.toggle() } }
+            )).settingsSearchAnchor("file-colors"),
+            StyleRowSpec(slot: 2, title: "Use Bold and Italic", kind: .toggle(
+                isOn: style.usesSourceEmphasis, flip: { updateStyle { $0.usesSourceEmphasis.toggle() } }
+            )).settingsSearchAnchor("file-emphasis")
+        ]
+        if showsASSOverride {
+            rows.append(StyleRowSpec(slot: 3, title: "Override ASS/SSA styling", kind: .toggle(
+                isOn: style.overridesASSStyling, flip: { updateStyle { $0.overridesASSStyling.toggle() } }
+            )).settingsSearchAnchor("file-ass-override"))
+        }
+        return rows
+    }
+
+    private var fileFormattingScreen: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            styleScreen(fileFormattingRows)
+            Text(SubtitleStyleEditorValues.formattingHelp(showsASSOverride: showsASSOverride))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

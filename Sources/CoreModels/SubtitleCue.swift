@@ -54,6 +54,13 @@ public struct SubtitleCue: Identifiable, Sendable, Equatable {
         if case .image = body { return true }
         return false
     }
+
+    /// Text-only sidecar routes carry the original ASS event. Do not remove
+    /// positions, colors or emphasis from SRT or WebVTT cues.
+    public var removingASSMarkup: Self {
+        guard case .text(let text) = body, text.rawASS != nil else { return self }
+        return Self(id: id, start: start, end: end, body: .text(.init(text.string)))
+    }
 }
 
 /// The text payload of a cue. A struct (not a bare `String`) so the model can

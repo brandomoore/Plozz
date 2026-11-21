@@ -161,7 +161,7 @@ public struct MobileSubtitleStyleEditor: View {
 
             Section {
                 Button("Reset to App Default", role: .destructive) {
-                    viewModel.applySubtitleStyle(.default)
+                    viewModel.applySubtitleStyle(viewModel.controls.subtitleStyle.resettingAppearance)
                 }
             }
         }
@@ -218,8 +218,12 @@ struct MobileSubtitleFileFormattingView: View {
                 Toggle("Use File Positions", isOn: subtitleStyleBinding(viewModel, \.usesSourcePosition)).settingsSearchAnchor("file-position")
                 Toggle("Use File Colors", isOn: subtitleStyleBinding(viewModel, \.usesSourceColors)).settingsSearchAnchor("file-colors")
                 Toggle("Use Bold and Italic", isOn: subtitleStyleBinding(viewModel, \.usesSourceEmphasis)).settingsSearchAnchor("file-emphasis")
+                if viewModel.showsASSOverride {
+                    Toggle("Override ASS/SSA styling", isOn: subtitleStyleBinding(viewModel, \.overridesASSStyling))
+                        .settingsSearchAnchor("file-ass-override")
+                }
             } footer: {
-                Text("Some subtitle files specify colors, bold or italic text, or where a line should appear. Turn these off to use your chosen style instead.")
+                Text(SubtitleStyleEditorValues.formattingHelp(showsASSOverride: viewModel.showsASSOverride))
             }
         }
         .toggleStyle(SettingsSwitchToggleStyle())

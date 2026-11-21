@@ -10,14 +10,44 @@ import UIKit
 import SwiftUI
 #endif
 
+/// A negotiated grant belongs first to the resolved source, then exclusively to
+/// the player. Copies of the source cannot extend or reuse the player's grant.
+@MainActor
+final class HeroTrailerSession: Equatable {
+    private var cleanup: (@Sendable () async -> Void)?
+
+    init(_ cleanup: @escaping @Sendable () async -> Void) { self.cleanup = cleanup }
+
+    func transfer() -> HeroTrailerSession? {
+        guard let cleanup else { return nil }
+        self.cleanup = nil
+        return HeroTrailerSession(cleanup)
+    }
+
+    func release() async {
+        guard let cleanup else { return }
+        self.cleanup = nil
+        // A cancelled resolve must still finish releasing before trying another source.
+        await Task { await cleanup() }.value
+    }
+
+    deinit {
+        if let cleanup { Task { await cleanup() } }
+    }
+
+    nonisolated static func == (lhs: HeroTrailerSession, rhs: HeroTrailerSession) -> Bool { lhs === rhs }
+}
+
 /// A fast, shared hero-trailer source already resolved to a directly playable URL.
 /// Home intentionally accepts only local/server-resolved sources here — never
 /// a YouTube id that would require the slow/heavy on-device extraction path.
 public struct HeroTrailerSource: Sendable, Equatable {
     public let ownerItemID: String
     public let trailerItemID: String
-    public let url: URL
+    fileprivate let url: URL
     public let duration: TimeInterval
+    fileprivate let session: HeroTrailerSession?
+    public var isCacheable: Bool { session == nil }
 
     public init(
         ownerItemID: String,
@@ -25,10 +55,15 @@ public struct HeroTrailerSource: Sendable, Equatable {
         url: URL,
         duration: TimeInterval
     ) {
+        self.init(ownerItemID: ownerItemID, trailerItemID: trailerItemID, url: url, duration: duration, session: nil)
+    }
+
+    init(ownerItemID: String, trailerItemID: String, url: URL, duration: TimeInterval, session: HeroTrailerSession?) {
         self.ownerItemID = ownerItemID
         self.trailerItemID = trailerItemID
         self.url = url
         self.duration = duration
+        self.session = session
     }
 }
 
@@ -119,6 +154,8 @@ public final class HeroTrailerController {
     private var endHandler: (@MainActor () -> Void)?
 
     private var endObserver: NSObjectProtocol?
+    private var failureObserver: NSObjectProtocol?
+    @ObservationIgnored private var currentSession: HeroTrailerSession?
     private var statusObservation: NSKeyValueObservation?
     private var hasStartedPlayback = false
     private var autoplayWhenReady = false
@@ -253,12 +290,11 @@ public final class HeroTrailerController {
         endHandler = nil
     }
 
-    /// Loads and plays `resolvedURL` as the trailer for `itemID`. No-op (keeps
+    /// Loads and plays `source` as the trailer for `itemID`. No-op (keeps
     /// playing) if the same item is already showing. `muted` follows the profile's
     /// trailer-audio preference.
-    public func play(itemID: String, resolvedURL: URL, muted: Bool, featuredOwner: UUID? = nil) {
-        guard !isFullScreen, !isPlaybackSuppressed, featuredOwnerID == featuredOwner else { return }
-        prepare(itemID: itemID, resolvedURL: resolvedURL, muted: muted, featuredOwner: featuredOwner)
+    public func play(itemID: String, source: HeroTrailerSource, muted: Bool, featuredOwner: UUID? = nil) {
+        guard prepare(itemID: itemID, source: source, muted: muted, featuredOwner: featuredOwner) else { return }
         autoplayWhenReady = true
         beginPlaybackIfReady()
     }
@@ -266,18 +302,23 @@ public final class HeroTrailerController {
     /// Queues and preloads a trailer without starting it. Home uses this to make
     /// the item ready behind the still image, then starts one exact 3s+duration
     /// timeline only after readiness is known.
-    public func prepare(itemID: String, resolvedURL: URL, muted: Bool, featuredOwner: UUID? = nil) {
-        guard !isFullScreen, !isPlaybackSuppressed, featuredOwnerID == featuredOwner else { return }
+    @discardableResult
+    public func prepare(itemID: String, source: HeroTrailerSource, muted: Bool, featuredOwner: UUID? = nil) -> Bool {
+        // Consume even on rejection or same-item reuse: that fresh negotiation
+        // is not the grant backing the already loaded item.
+        let session = source.session?.transfer()
+        guard !isFullScreen, !isPlaybackSuppressed, featuredOwnerID == featuredOwner else { return false }
         if currentItemID == itemID, player.currentItem != nil {
             player.isMuted = muted
             isMuted = muted
-            return
+            return true
         }
+        guard source.isCacheable || session != nil else { return false }
 
         stopPlayback(resetItem: false)
         activateSession()
 
-        let item = AVPlayerItem(url: resolvedURL)
+        let item = AVPlayerItem(url: source.url)
         let output = AVPlayerItemVideoOutput(
             pixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String:
@@ -296,11 +337,13 @@ public final class HeroTrailerController {
         observeEnd(of: item)
         observeStatus(of: item)
         player.replaceCurrentItem(with: item)
+        currentSession = session
         disableCaptions(on: item)
 
         playbackIdentity = (itemID, nil)
         HandoffDiagnostics.emit("trailer QUEUED item=\(HandoffDiagnostics.correlationID(itemID)) owner=\(HandoffDiagnostics.correlationID(endHandlerOwnerID))")
-        PlozzLog.app.info("Hero trailer: queued item=\(itemID) muted=\(muted) url=\(PlozzLog.redact(url: resolvedURL))")
+        PlozzLog.app.info("Hero trailer: queued item=\(itemID) muted=\(muted)")
+        return true
     }
 
     /// Starts a previously prepared item (or arms it to start when ready).
@@ -311,8 +354,9 @@ public final class HeroTrailerController {
     }
 
     public func waitUntilReady(itemID: String, timeout: Duration = .seconds(8)) async throws -> Bool {
+        guard let item = player.currentItem else { return false }
         let deadline = ContinuousClock.now.advanced(by: timeout)
-        while isShowing(itemID), player.currentItem != nil {
+        while isShowing(itemID), player.currentItem === item {
             try Task.checkCancellation()
             if isReady { return true }
             if ContinuousClock.now >= deadline {
@@ -569,8 +613,7 @@ public final class HeroTrailerController {
         #endif
         let position = player.currentTime().seconds
         if duration > 0, position.isFinite, position >= duration - 0.1 {
-            isPlaying = false
-            endHandler?()
+            finishAmbientPlayback()
         } else {
             requestedPaused = false
             applyPauseState()
@@ -636,10 +679,15 @@ public final class HeroTrailerController {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
         }
+        if let failureObserver {
+            NotificationCenter.default.removeObserver(failureObserver)
+            self.failureObserver = nil
+        }
         statusObservation?.invalidate()
         statusObservation = nil
         if resetItem {
             player.replaceCurrentItem(with: nil)
+            currentSession = nil
             #if canImport(UIKit)
             surfaceView.playerLayer.player = player
             #endif
@@ -678,21 +726,36 @@ public final class HeroTrailerController {
         player.play()
     }
 
-    private func observeEnd(of item: AVPlayerItem) {
-        if let endObserver {
-            NotificationCenter.default.removeObserver(endObserver)
+    private func finishAmbientPlayback() {
+        let finishedItem = player.currentItem
+        isPlaying = false
+        endHandler?()
+        // A handler may already have stopped or replaced this item. If it
+        // didn't (e.g. a single slide), don't keep a finished server grant.
+        if currentSession != nil, player.currentItem === finishedItem {
+            stopPlayback(resetItem: true)
         }
+    }
+
+    private func observeEnd(of item: AVPlayerItem) {
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self, weak item] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                guard let self, let item, self.player.currentItem === item else { return }
                 // Native controls retain the finished item for replay and seeking.
                 guard !self.isFullScreen else { return }
-                self.isPlaying = false
-                self.endHandler?()
+                self.finishAmbientPlayback()
+            }
+        }
+        failureObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
+        ) { [weak self, weak item] _ in
+            MainActor.assumeIsolated {
+                guard let self, let item, self.player.currentItem === item else { return }
+                self.stop()
             }
         }
     }
@@ -709,8 +772,8 @@ public final class HeroTrailerController {
                     self.isReady = true
                     self.beginPlaybackIfReady()
                 case .failed:
-                    let detail = item.error.map(String.init(describing:)) ?? "unknown"
-                    PlozzLog.app.error("Hero trailer: failed error=\(detail)")
+                    // AVFoundation errors can contain the signed playback URL.
+                    PlozzLog.app.error("Hero trailer: failed code=\((item.error as NSError?)?.code ?? 0)")
                     HandoffDiagnostics.emit("trailer FAILED item=\(HandoffDiagnostics.correlationID(self.currentItemID)) code=\((item.error as NSError?)?.code ?? 0)")
                     self.stop()
                 default:

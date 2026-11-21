@@ -61,6 +61,31 @@ final class ASSSubtitleRendererTests: XCTestCase {
         }
     }
 
+    func testWideBlendMatchesSinglePixelsWithTransparentRunsAndUnpaddedLastRow() {
+        let w = 27, h = 3, maskStride = 31, outStride = 117
+        let mask: [UInt8] = (0..<(maskStride * (h - 1) + w)).map { i in
+            i % maskStride < 8 ? 0 : UInt8(truncatingIfNeeded: i * 41)
+        }
+        var wide = (0..<(outStride * h)).map { UInt8(truncatingIfNeeded: $0 * 13) }
+        var reference = wide
+        for color: UInt32 in [0x193E8B00, 0x7DA36203, 0xCC226E83, 0xFF7700FE, 0x112233FF] {
+            mask.withUnsafeBufferPointer { source in
+                wide.withUnsafeMutableBufferPointer {
+                    plozz_ass_blend_bitmap($0.baseAddress, outStride, source.baseAddress, maskStride, w, h, color)
+                }
+                reference.withUnsafeMutableBufferPointer { dst in
+                    for y in 0..<h {
+                        for x in 0..<w {
+                            plozz_ass_blend_bitmap(dst.baseAddress! + y * outStride + x * 4, outStride,
+                                                   source.baseAddress! + y * maskStride + x, maskStride, 1, 1, color)
+                        }
+                    }
+                }
+            }
+            XCTAssertEqual(wide, reference)
+        }
+    }
+
     private static let header = """
     [Script Info]
     ScriptType: v4.00+
@@ -76,6 +101,18 @@ final class ASSSubtitleRendererTests: XCTestCase {
 
     private func document(_ id: String = "test") -> ASSSubtitleDocument {
         .init(identity: id, header: Self.header, fonts: [], size: .init(width: 640, height: 360))
+    }
+
+    func testOversizedHeaderDropsOnlyNonRenderingEventComments() throws {
+        let payload = String(repeating: "x", count: 6 * 1_024 * 1_024)
+        func header(_ value: String) throws -> String {
+            try ASSSubtitleDocument(identity: "large", header: value, fonts: [], size: .zero).rendererHeader()
+        }
+        let retained = "\r\nDialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,Comment: visible\r\n"
+        XCTAssertEqual(try header(Self.header + "\r\nComment: \(payload)" + retained),
+                       Self.header + retained)
+        XCTAssertThrowsError(try header(Self.header + "\nDialogue: \(payload)"))
+        XCTAssertThrowsError(try header("[Fonts]\nComment: \(payload)"))
     }
 
     func testVectorDrawingIsRasterizedAtAuthoredPositionAndRepeatedReadOrderKeepsLayers() async throws {
@@ -128,6 +165,7 @@ final class ASSSubtitleRendererTests: XCTestCase {
                 end: 1.28 + Double(index) * 0.5
             )
         }
+
         var visible = false
         for event in events {
             for (time, expected) in [(event.start - 0.001, false), (event.start, true),
@@ -139,6 +177,16 @@ final class ASSSubtitleRendererTests: XCTestCase {
                 XCTAssertEqual(visible, expected, "Authored sign at \(time)")
             }
         }
+    }
+
+    func testRewindRecomputesNextBoundaryWithAnUnchangedPacketSnapshot() async throws {
+        let renderer = ASSSubtitleRasterizer()
+        let doc = document()
+        let events = [ASSSubtitleEvent(packet: "0,0,Default,,0,0,0,,Sign", start: 2, end: 3)]
+        let past = try await renderer.render(document: doc, events: events, time: 4, snapshotRevision: 1)
+        XCTAssertNil(past.nextCueBoundary)
+        let rewind = try await renderer.render(document: doc, events: events, time: 1.99, snapshotRevision: 1)
+        XCTAssertEqual(rewind.nextCueBoundary, 2)
     }
 
     func testSlowSteadyStateASSFramesMatchTheMediaTimeAtCompletion() async throws {
@@ -455,6 +503,55 @@ final class ASSSubtitleRendererTests: XCTestCase {
         XCTAssertEqual(replacement.images.count, 1, "The expired glyph must not remain behind the new line")
         XCTAssertEqual(try XCTUnwrap(replacement.images.first).normalizedRect.minX,
                        120.0 / 640, accuracy: 0.01)
+    }
+
+    @MainActor
+    func testScheduledArtworkUsesAuthoredReplacementAndClearDeadlines() async throws {
+        let renderer = ASSSubtitleRenderer()
+        var frames: [(Double, Bool)] = []
+        renderer.onFrame = { [weak renderer] cues in
+            if let time = renderer?.sampledTime { frames.append((time, cues.isEmpty)) }
+        }
+        renderer.update(document: document(), events: [
+            .init(packet: #"0,0,Default,,0,0,0,,{\an7\pos(10,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+                  start: 0, end: 1.01),
+            .init(packet: #"1,0,Default,,0,0,0,,{\an7\pos(90,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+                  start: 1.01, end: 1.51)
+        ])
+        for (index, time) in [0.8, 1.035, 1.528].enumerated() {
+            renderer.tick(time, frameRate: 24, scheduled: true)
+            let deadline = ContinuousClock.now + .seconds(3)
+            while frames.count <= index && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        XCTAssertEqual(frames.map(\.0), [0.8, 1.01, 1.51])
+        XCTAssertEqual(frames.map(\.1), [false, false, true])
+        renderer.clear()
+        XCTAssertNil(renderer.sampledTime)
+    }
+
+    @MainActor
+    func testScheduledBurstDrainsThroughClearWithoutFurtherTicks() async throws {
+        let renderer = ASSSubtitleRenderer()
+        var frames: [(Double, Bool)] = []
+        renderer.onFrame = { [weak renderer] cues in
+            if let t = renderer?.sampledTime { frames.append((t, cues.isEmpty)) }
+        }
+        let packet = #"0,0,Default,,0,0,0,,{\an7\pos(10,20)\p1}m 0 0 l 30 0 30 30 0 30"#
+        renderer.update(document: document(), events: [
+            .init(packet: packet, start: 0, end: 1.04),
+            .init(packet: packet, start: 1.08, end: 1.12)
+        ])
+        renderer.tick(1, frameRate: 25, scheduled: true)
+        renderer.tick(1.16, frameRate: 25, scheduled: true)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while frames.count < 4 && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(frames.map(\.0), [1, 1.04, 1.08, 1.12])
+        XCTAssertEqual(frames.map(\.1), [false, true, false, true])
+        renderer.clear()
     }
 
     @MainActor

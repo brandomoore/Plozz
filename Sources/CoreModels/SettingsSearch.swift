@@ -381,7 +381,7 @@ public enum SettingsSearchCatalog {
     }
 
     public static let entries: [SettingsSearchEntry] = baseEntries + baseEntries.filter {
-        $0.page == .subtitleStyle && $0.subtitlePage != .dual
+        $0.page == .subtitleStyle && $0.subtitlePage != .dual && $0.id != "file-ass-override"
     }.map { entry in
         SettingsSearchEntry(
             "live-\(entry.id)", page: .liveSubtitleStyle, title: entry.title, keywords: entry.keywords,

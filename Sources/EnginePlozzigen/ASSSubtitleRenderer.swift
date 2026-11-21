@@ -34,6 +34,33 @@ struct ASSSubtitleDocument: Sendable {
     let header: String
     let fonts: [ASSSubtitleFont]
     let size: CGSize
+
+    func rendererHeader() throws -> String {
+        let limit = 4 * 1_024 * 1_024
+        let bytes = header.utf8
+        guard bytes.count > limit else { return header }
+        guard bytes.count <= 32 * 1_024 * 1_024 else { throw ASSSubtitleRenderError.allocation }
+        // Some Matroska tracks store megabytes of authoring comments in CodecPrivate.
+        // Preserve the other sections verbatim (in particular embedded font data).
+        var result: [UInt8] = []
+        var inEvents = false
+        var start = bytes.startIndex
+        while start < bytes.endIndex {
+            let end = bytes[start...].firstIndex(of: 10) ?? bytes.endIndex
+            let next = end == bytes.endIndex ? end : bytes.index(after: end)
+            let line = bytes[start..<end]
+            if line.first == 91 {
+                inEvents = line.elementsEqual("[Events]".utf8) || line.elementsEqual("[Events]\r".utf8)
+            }
+            if !inEvents || !line.starts(with: "Comment:".utf8) {
+                let retained = bytes[start..<next]
+                guard retained.count <= limit - result.count else { throw ASSSubtitleRenderError.allocation }
+                result.append(contentsOf: retained)
+            }
+            start = next
+        }
+        return String(decoding: result, as: UTF8.self)
+    }
 }
 
 enum ASSSubtitleRenderError: Error {
@@ -114,7 +141,7 @@ actor ASSSubtitleRasterizer {
             snapshot = incoming
             snapshotRevision = revision
         }
-        if changedSnapshot || time >= nextCueBoundary {
+        if movedBackward || changedSnapshot || time >= nextCueBoundary {
             nextCueBoundary = .infinity
             for event in incoming where event.start.isFinite && event.end.isFinite && event.end > event.start {
                 if event.start > time { nextCueBoundary = min(nextCueBoundary, event.start) }
@@ -147,7 +174,7 @@ actor ASSSubtitleRasterizer {
                      nextCueBoundary: nextCueBoundary.isFinite ? nextCueBoundary : nil)
     }
 
-    private final class Context {
+    final class Context {
         let library: OpaquePointer
         let renderer: OpaquePointer
         let track: UnsafeMutablePointer<ASS_Track>
@@ -159,8 +186,8 @@ actor ASSSubtitleRasterizer {
                   document.size.width <= 3_840, document.size.height <= 2_160 else {
                 throw ASSSubtitleRenderError.invalidCanvas
             }
-            guard document.header.utf8.count <= 4 * 1_024 * 1_024,
-                  document.fonts.count <= 128,
+            let rendererHeader = try document.rendererHeader()
+            guard document.fonts.count <= 128,
                   document.fonts.allSatisfy({ $0.data.count <= 32 * 1_024 * 1_024 }),
                   document.fonts.reduce(0, { $0 + $1.data.count }) <= 128 * 1_024 * 1_024 else {
                 throw ASSSubtitleRenderError.allocation
@@ -193,7 +220,7 @@ actor ASSSubtitleRasterizer {
                 }
             }
             ass_set_fonts(renderer, nil, "Arial", Int32(ASS_FONTPROVIDER_CORETEXT.rawValue), nil, 1)
-            var header = Array(document.header.replacingOccurrences(of: "\0", with: "").utf8CString)
+            var header = Array(rendererHeader.replacingOccurrences(of: "\0", with: "").utf8CString)
             let count = header.count - 1
             header.withUnsafeMutableBufferPointer {
                 ass_process_codec_private(track, $0.baseAddress, Int32(count))
@@ -242,11 +269,12 @@ actor ASSSubtitleRasterizer {
                 pointer = image.next
             }
             return try regionLayout.regions(for: rectangles, canvas: size).map {
-                try composite(layers, region: $0)
+                try composite(layers, clippedBounds: rectangles, region: $0)
             }
         }
 
-        private func composite(_ layers: [ASS_Image], region: ASSSubtitleRegionLayout.Region) throws -> SubtitleImage {
+        private func composite(_ layers: [ASS_Image], clippedBounds: [CGRect],
+                               region: ASSSubtitleRegionLayout.Region) throws -> SubtitleImage {
             let bounds = region.bounds.integral
             guard let context = CGContext(
                 data: nil, width: Int(bounds.width), height: Int(bounds.height),
@@ -256,22 +284,21 @@ actor ASSSubtitleRasterizer {
             ), let output = context.data?.assumingMemoryBound(to: UInt8.self) else {
                 throw ASSSubtitleRenderError.allocation
             }
+            let stride = context.bytesPerRow
             for index in region.indices {
                 let image = layers[index]
-                let rect = CGRect(x: Int(image.dst_x), y: Int(image.dst_y), width: Int(image.w), height: Int(image.h))
                 guard let bitmap = image.bitmap, image.stride >= image.w,
                       image.w <= 16_384, image.h <= 16_384,
                       Int64(image.stride) * Int64(image.h) <= 64 * 1_024 * 1_024 else {
                     throw ASSSubtitleRenderError.invalidBitmap
                 }
-                let clipped = rect.intersection(bounds)
-                guard !clipped.isEmpty, !clipped.isNull else { continue }
-                let maskOffset = Int(clipped.minY - rect.minY) * Int(image.stride)
-                    + Int(clipped.minX - rect.minX)
-                let outputOffset = Int(clipped.minY - bounds.minY) * context.bytesPerRow
+                let clipped = clippedBounds[index]
+                let maskOffset = (Int(clipped.minY) - Int(image.dst_y)) * Int(image.stride)
+                    + Int(clipped.minX) - Int(image.dst_x)
+                let outputOffset = Int(clipped.minY - bounds.minY) * stride
                     + Int(clipped.minX - bounds.minX) * 4
                 plozz_ass_blend_bitmap(
-                    output.advanced(by: outputOffset), context.bytesPerRow,
+                    output.advanced(by: outputOffset), stride,
                     bitmap.advanced(by: maskOffset), Int(image.stride),
                     Int(clipped.width), Int(clipped.height), image.color
                 )
@@ -354,6 +381,8 @@ final class ASSSubtitleRenderer {
     private var renderLead = ASSSubtitleRenderLead()
     private var failed = false
     var onFrame: (([SubtitleCue]) -> Void)?
+    private(set) var sampledTime: Double?
+    private var scheduled = false
 
     func update(document: ASSSubtitleDocument, events: [ASSSubtitleEvent]) {
         if self.document?.identity != document.identity || events.isEmpty { clear() }
@@ -363,8 +392,9 @@ final class ASSSubtitleRenderer {
         lastTime = nil
     }
 
-    func tick(_ time: Double, frameRate: Double? = nil) {
+    func tick(_ time: Double, frameRate: Double? = nil, scheduled: Bool = false) {
         guard !failed, document != nil, time.isFinite else { return }
+        self.scheduled = scheduled
         renderLead.tick(time, uptime: ProcessInfo.processInfo.systemUptime)
         requestedTime = time
         self.frameRate = frameRate
@@ -376,11 +406,21 @@ final class ASSSubtitleRenderer {
         // ticks on 59.94 Hz displays; libass itself uses millisecond timestamps.
         guard pending == nil, let document, let time = requestedTime,
               lastTime.map({ abs(time - $0) >= 0.001 }) ?? true else { return }
-        guard pacer.admit(time, frameRate: frameRate, cueBoundary: nextCueBoundary) else { return }
-        requestedTime = nil
-        lastTime = time
+        let crossedBoundary = nextCueBoundary.flatMap { boundary in
+            lastTime.map { $0 < boundary && boundary <= time } == true ? boundary : nil
+        }
+        // The pacer tracks the requested horizon, not the cue actually drawn.
+        // Consume every pending edge inside the lookahead before pacing animation.
+        let scheduledEdge = scheduled ? crossedBoundary.flatMap {
+            time - $0 <= Self.scheduleLookahead ? $0 : nil
+        } : nil
+        guard scheduledEdge != nil || pacer.admit(time, frameRate: frameRate, cueBoundary: nextCueBoundary) else { return }
+        if scheduledEdge == nil { requestedTime = nil }
         let revision = revision, events = events, eventSnapshotRevision = eventSnapshotRevision, rasterizer = rasterizer
-        let renderTime = renderLead.time(for: time)
+        // A scheduled frame has a real presentation deadline; drawing it faster
+        // must not change its timestamp. Snap cue edges to the authored instant.
+        let renderTime = scheduled ? (scheduledEdge ?? time) : renderLead.time(for: time)
+        lastTime = scheduled ? renderTime : time
         let started = ProcessInfo.processInfo.systemUptime
         pending = Task(priority: .userInitiated) { [weak self] in
             do {
@@ -393,6 +433,7 @@ final class ASSSubtitleRenderer {
                 nextCueBoundary = frame.nextCueBoundary
                 defer { renderPendingFrame() }
                 guard frame.changed else { return }
+                sampledTime = renderTime
                 onFrame?(frame.images.map {
                     frameID &+= 1
                     return SubtitleCue(id: frameID, start: 0, end: .greatestFiniteMagnitude, body: .image($0))
@@ -402,6 +443,7 @@ final class ASSSubtitleRenderer {
                 pending = nil
                 requestedTime = nil
                 failed = true
+                sampledTime = nil
                 onFrame?([])
                 PlozzLog.playback.error("ASS subtitle rendering failed: \(String(describing: error))")
             }
@@ -422,6 +464,9 @@ final class ASSSubtitleRenderer {
         renderLead = ASSSubtitleRenderLead()
         failed = false
         rasterizer = ASSSubtitleRasterizer()
+        sampledTime = nil
         onFrame?([])
     }
+
+    static let scheduleLookahead = 0.35
 }

@@ -2235,6 +2235,11 @@ public final class PlayerViewModel {
             engineHandoff.armPlaybackWatchdog(startPosition: startPosition)
         }
         let loadStart = Date()
+        #if os(tvOS)
+        engine.setFrameSubtitleSelection { [weak self] tracks in
+            self?.subtitleController.frameSubtitleCandidate(tracks, request: request)
+        }
+        #endif
         engine.setBackgroundAudioEnabled(playbackSettings.backgroundAudio)
         let titles = Self.titleLines(for: request.item)
         nowPlaying?.begin(

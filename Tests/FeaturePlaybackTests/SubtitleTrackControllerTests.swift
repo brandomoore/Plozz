@@ -289,6 +289,51 @@ final class SubtitleTrackControllerTests: XCTestCase {
 
     // MARK: - Load-time default: once-per-load guard
 
+    func testFrameRouteUsesActualLanguageAndOffMemoryAndDefersForOffset() {
+        let (sut, host, _) = makeSUT(engineKind: .plozzigen)
+        let tracks = [embeddedText(3, language: "ja"), embeddedText(4)]
+        let request = PlaybackRequest(item: .init(id: "show", title: "Show", kind: .episode),
+                                      streamURL: URL(fileURLWithPath: "/episode.mkv"), subtitleTracks: tracks)
+        host.rule = .init(mode: .all, preferredLanguages: ["en"])
+        XCTAssertEqual(sut.frameSubtitleCandidate(tracks, request: request), 4)
+        host.remembered = .off
+        XCTAssertNil(sut.frameSubtitleCandidate(tracks, request: request))
+        host.remembered = .language("ja")
+        XCTAssertEqual(sut.frameSubtitleCandidate(tracks, request: request), 3)
+        host.style.opacity = 0.5
+        XCTAssertNil(sut.frameSubtitleCandidate(tracks, request: request))
+        host.style = .default
+        host.liveSubtitles.offset = -0.5
+        XCTAssertNil(sut.frameSubtitleCandidate(tracks, request: request))
+    }
+
+    func testFrameAdmissionUsesTheActualWinnerWhenServerAlsoOffersSidecars() throws {
+        for language in ["en", "ja"] {
+            let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
+            var embedded = embeddedText(3)
+            embedded.codec = "ass"
+            var duplicate = textSidecar(3)
+            duplicate.isExternal = true
+            var japanese = textSidecar(4, language: "ja")
+            japanese.isExternal = true
+            let request = PlaybackRequest(item: .init(id: "show", title: "Show", kind: .episode),
+                                          streamURL: URL(fileURLWithPath: "/episode.mkv"),
+                                          subtitleTracks: [duplicate, japanese])
+            host.request = request
+            host.remembered = .language(language)
+            let candidate = sut.frameSubtitleCandidate([embedded], request: request)
+            engine.subtitleTracks = [embedded]
+            sut.applyInitialSubtitleSelectionIfReady(for: request)
+            if language == "en" {
+                XCTAssertEqual(sut.selectedSubtitleTrackID, 3)
+                XCTAssertEqual(candidate, 3, "An unused server rendition must not veto an embedded ASS track.")
+            } else {
+                XCTAssertGreaterThanOrEqual(try XCTUnwrap(sut.selectedSubtitleTrackID), 900_000)
+                XCTAssertNil(candidate, "A winning sidecar must not switch the video to frame composition.")
+            }
+        }
+    }
+
     func testSDHDefaultsApplyAcrossEnginesAndPreserveManualChoice() throws {
         for kind in [PlaybackEngineKind.native, .plozzigen] {
             let (sut, host, engine) = makeSUT(engineKind: kind)

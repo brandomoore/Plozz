@@ -130,6 +130,10 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
         if showsSharedControls { controller.autoHideMode = autoHideMode }
         controller.fitsInsideSafeArea = fitsInsideSafeArea
     }
+
+    static func dismantleUIViewController(_ controller: PlayerInputViewController, coordinator: ()) {
+        controller.stopSubtitleClock()
+    }
 }
 
 /// Minimal, controls-free host for an engine's bare video surface. Used during
@@ -372,6 +376,8 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// until the view model loads a cue stream into `subtitleModel`.
     private var subtitleOverlayHost: UIHostingController<LiveSubtitleOverlay>?
     private var subtitleModel: LiveSubtitleModel?
+    private let scheduledArtwork = ScheduledASSArtworkView()
+    private var hasArtworkSink = false
     /// Drives the subtitle timeline off the engine clock every frame. The model
     /// only republishes on cue-boundary crossings, so this stays cheap.
     private var subtitleClock: CADisplayLink?
@@ -436,6 +442,11 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
 #endif
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopSubtitleClock()
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         refreshTask?.cancel()
@@ -445,8 +456,6 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         cancelScrubCommit()
         resetSwipePreviewCadence()
         if ScrubDiagnostics.forceScrubRefresh { engine.setScrubRefreshBoost(false) }
-        subtitleClock?.invalidate()
-        subtitleClock = nil
         #if !os(iOS)
         // Leaving playback: let the screensaver / Apple TV sleep resume.
         idleSleepGuard.allowSleep()
@@ -533,7 +542,9 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// display-link then drives the cue timeline off the engine clock.
     func attachSubtitleOverlay(_ model: LiveSubtitleModel) {
         subtitleModel = model
-        let host = UIHostingController(rootView: LiveSubtitleOverlay(model: model, controls: self.model))
+        let host = UIHostingController(rootView: LiveSubtitleOverlay(
+            model: model, controls: self.model, scheduledArtwork: scheduledArtwork
+        ))
         host.view.backgroundColor = .clear
         host.view.isUserInteractionEnabled = false
         host.view.frame = view.bounds
@@ -575,12 +586,38 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         subtitleClock = link
     }
 
+    fileprivate func stopSubtitleClock() {
+        subtitleClock?.invalidate()
+        subtitleClock = nil
+        setArtworkSinkEnabled(false)
+        _ = engine.updateFrameSubtitlePresentation(eligible: false, offset: 0)
+        subtitleModel?.primaryInVideoFrame = false
+    }
+
+    private func setArtworkSinkEnabled(_ enabled: Bool) {
+        guard hasArtworkSink != enabled else { return }
+        hasArtworkSink = enabled
+        engine.setScheduledASSArtworkSink(enabled ? scheduledArtwork : nil)
+        if !enabled { scheduledArtwork.reset() }
+    }
+
     @objc private func tickSubtitleClock() {
         updateSubtitleVideoRect()
-        if let subtitleModel, subtitleModel.hasContent {
-            engine.renderSubtitles(at: engine.subtitlePresentationTime - subtitleModel.offset, style: subtitleModel.style)
+        setArtworkSinkEnabled(subtitleModel?.permitsScheduledASSArtwork == true)
+        if let subtitleModel {
+            let style = subtitleModel.style
+            let eligible = subtitleModel.permitsScheduledASSArtwork && !subtitleModel.isHDR && !subtitleModel.hasSecondaryTrack
+                && style.permitsFrameSubtitle && subtitleModel.offset == 0 && model.videoZoom.settings.mode == .fit
+                && (!style.avoidsPlayerControls || model.subtitleLayout.frames.isEmpty)
+            let owns = engine.updateFrameSubtitlePresentation(eligible: eligible, offset: subtitleModel.offset)
+            if owns != subtitleModel.primaryInVideoFrame { subtitleModel.primaryInVideoFrame = owns }
         }
-        subtitleModel?.tick(engine.subtitlePresentationTime)
+        let time = engine.subtitlePresentationTime
+        if let subtitleModel, subtitleModel.hasContent {
+            engine.renderSubtitles(at: time, offset: subtitleModel.offset, style: subtitleModel.style)
+        }
+        scheduledArtwork.pruneElapsedFrames()
+        subtitleModel?.tick(time)
     }
 
     /// Hosts the combined transport + focusable control bar. It stays attached
