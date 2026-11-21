@@ -1385,6 +1385,51 @@ it traverses the same page only after content finishes loading. Neither mounts
 the complete root shell or reproduces real share scans, network image decoding,
 slow-provider failures, or physical-device presented-frame timing.
 
+For touch scrolling, run `HomeScrollGestureTests` in `PlozziOSInteractionTests`
+on a phone and a full-width tablet. The hosted programmatic-scroll controls
+above use a **390 × 844 compact window even on an iPad simulator**. The UI
+tests instead assert the native window width and size class, drive a finger
+drag, and require the page to coast farther than the finger moved. The settled
+case repeats the same traversal; the during-publication case relaunches for
+each swipe, starts with four complete shelves, and requires more to publish
+during native motion. It checks document height, painted posters, all 40
+shelves / 800 titles, and 100 fixture provider reads. This is a hero-disabled
+Home with locally seeded poster responses, not sign-in timing or live traffic.
+
+Check which metrics the simulator actually exported. On iOS 26.2 with
+Xcode 27.1, the dragging/deceleration interval had a duration but neither it
+nor `XCTHitchMetric(application:)` returned hitch measurements, even with a
+verified 350 ms main-thread stall during motion. Do not treat a missing metric
+as zero, shorter coast time as smoother scrolling, or a passing gesture test
+as evidence of a frame-pacing improvement.
+
+On the `ea15c2325` baseline, full-width simulator recordings showed the
+difference the duration metric missed: the median longest gap between visible
+poster movements during a swipe was 408 ms on iPad and 222 ms on iPhone while
+the remaining shelves loaded, versus 35 ms on both once loaded. A trial that
+reused unfiltered shelf arrays yielded 307 / 255 ms during loading and 30 /
+33 ms after loading, respectively. It was not retained as a scrolling fix.
+These are three loading and five settled swipes per build/device, tracking
+original video timestamps between 5% and 85% of travel. The injected stall
+was distinguishable in recordings on both devices. These are simulator video
+gaps, not physical display hitch ratios or proof of the same cause on hardware.
+
+A separate experiment traced a burst of unchanged headings updating to the
+Edit action that Home passes to each shelf. Giving that action stable identity
+cut heading evaluations on an instrumented iPhone swipe from 1,512 to 36.
+In uninstrumented comparisons against `ea15c2325`, the median longest visible
+pause during publication went from 330 to 249 ms on iPad but from 210 to
+236 ms on iPhone (six fresh-process swipes per arm and device). Settled values
+were 27.5 to 28.3 ms and 34.2 to 35.0 ms, respectively (ten swipes each).
+Reducing layout work was real; it did not demonstrate smoother iPhone scrolling.
+Across three further instrumented iPhone swipes on that candidate, 27 of 30
+rail-body evaluations during the visible pauses were more than one viewport
+away. No distant card appeared, started artwork resolution, or bound a bitmap.
+The instrumented distant rail builders and card bodies used only 1.4–1.9 ms
+of main-thread CPU during 218–300 ms pauses. This does not account for
+framework layout, commit, or compositing; it is not evidence to delay loading
+offscreen shelves.
+
 Matched startup-scroll runs `4019d336b4b041708f291bb8c258f96c` and
 `b6cd29350be84d0e9de813b972c764fc` retained the same completed work and 24
 scroll targets during loading. Lazy horizontal placeholders and a stable
