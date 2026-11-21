@@ -374,6 +374,7 @@ public struct StreamingPlaybackOptions: Hashable, Sendable {
     public func selectedSubtitle(in tracks: [MediaTrack]) -> MediaTrack? {
         guard !subtitlesOff else { return nil }
         if let subtitleTrack {
+            if subtitleTrack.isExternal { return subtitleTrack.matchingSidecar(in: tracks) }
             return tracks.first { $0.id == subtitleTrack.id && $0.language == subtitleTrack.language }
                 ?? tracks.first {
                     LanguageMatch.matches($0.language, subtitleTrack.language)
@@ -386,6 +387,22 @@ public struct StreamingPlaybackOptions: Hashable, Sendable {
             mode: subtitleMode, preferredLanguage: subtitleLanguage,
             hearingImpairedPreference: hearingImpairedPreference
         )
+    }
+}
+
+extension MediaTrack {
+    /// A renewed session can replace a sidecar's URL and menu ID. Never restore
+    /// "Signs & Songs" as "Full" just because both are English.
+    public func matchingSidecar(in tracks: [MediaTrack]) -> MediaTrack? {
+        let sidecars = tracks.filter(\.isExternal)
+        if let deliverySource, let same = sidecars.first(where: { $0.deliverySource == deliverySource }) { return same }
+        let candidates = sidecars.filter {
+            ($0.language == language || LanguageMatch.matches($0.language, language))
+                && $0.isForced == isForced && $0.isSDHSubtitle == isSDHSubtitle
+                && $0.isBitmapSubtitle == isBitmapSubtitle
+                && ($0.sourceTitle ?? $0.displayTitle) == (sourceTitle ?? displayTitle)
+        }
+        return candidates.first(where: { $0.id == id }) ?? (candidates.count == 1 ? candidates.first : nil)
     }
 }
 

@@ -389,7 +389,7 @@ public enum TrackLabeling {
             }
         } else if let languageNm {
             base = .content(languageNm)
-        } else if generatedFormatTitle, let format {
+        } else if generatedFormatTitle || compactDisplay, let format {
             base = .content(format)
             formatIsBase = true
         } else if !isGenericTitle(title) {
@@ -422,7 +422,7 @@ public enum TrackLabeling {
         }
 
         return retainingSourceTitle(
-            matchesDDP ? (hasBTM ? "BTM" : nil) : sourceTitle, in: TrackLabel(base: base, qualifiers: qualifiers),
+            matchesDDP ? nil : sourceTitle, in: TrackLabel(base: base, qualifiers: qualifiers),
             language: language, locale: locale
         )
     }

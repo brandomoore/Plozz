@@ -95,6 +95,7 @@ final class SubtitleTrackController {
         guard let host else { return false }
         func match(_ track: MediaTrack?, in tracks: [MediaTrack]) -> MediaTrack? {
             guard let track else { return nil }
+            if track.kind == .subtitle, track.isExternal { return track.matchingSidecar(in: tracks) }
             return tracks.first { $0.id == track.id && $0.language == track.language }
                 ?? tracks.first {
                     LanguageMatch.matches($0.language, track.language)
@@ -107,18 +108,26 @@ final class SubtitleTrackController {
             selectedAudioTrackID = audio.id
         }
         let subs = selectableSubtitles
-        if snapshot.primary == nil {
+        func sidecarIsGone(_ track: MediaTrack?) -> Bool {
+            guard let track, track.isExternal, let request = host.trackRequest,
+                  engine.status == .ready, !engine.isSessionReloading else { return false }
+            return track.matchingSidecar(in: request.subtitleTracks) == nil
+        }
+        let primary = match(snapshot.primary, in: subs)
+        if snapshot.primary == nil || (primary == nil && sidecarIsGone(snapshot.primary)) {
             selectSubtitleOption(id: PlayerTrackOption.offID, userInitiated: false)
-        } else if let track = match(snapshot.primary, in: subs) {
+        } else if let track = primary {
             selectSubtitleOption(id: track.id, userInitiated: false)
         }
-        if let track = match(snapshot.secondary, in: eligibleSecondarySubtitleTracks()),
-           track.id != selectedSecondarySubtitleTrackID {
-            selectSecondarySubtitleOption(id: track.id)
+        let secondary = match(snapshot.secondary, in: eligibleSecondarySubtitleTracks())
+        if let secondary, secondary.id != selectedSecondarySubtitleTrackID {
+            selectSecondarySubtitleOption(id: secondary.id)
+        } else if secondary == nil, selectedSecondarySubtitleTrackID != nil, sidecarIsGone(snapshot.secondary) {
+            selectSecondarySubtitleOption(id: PlayerTrackOption.offID)
         }
         return (snapshot.audio == nil || match(snapshot.audio, in: engine.audioTracks) != nil)
-            && (snapshot.primary == nil || match(snapshot.primary, in: subs) != nil)
-            && (snapshot.secondary == nil || match(snapshot.secondary, in: eligibleSecondarySubtitleTracks()) != nil)
+            && (snapshot.primary == nil || primary != nil || sidecarIsGone(snapshot.primary))
+            && (snapshot.secondary == nil || secondary != nil || sidecarIsGone(snapshot.secondary))
     }
 
     /// Server sidecars and subtitles downloaded during this session, kept

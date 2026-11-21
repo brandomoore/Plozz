@@ -603,6 +603,44 @@ final class SubtitleTrackControllerTests: XCTestCase {
         }
     }
 
+    func testRenegotiationRestoresBothNamedSidecarsWithNewURLsAndMenuIDs() throws {
+        let (sut, host, _) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
+        func load(session: Int, names: [String] = ["Full", "Signs & Songs", "Commentary"]) -> [MediaTrack] {
+            let tracks = names.enumerated().map { index, name in
+                var track = textSidecar(index + 10 * session)
+                track.sourceTitle = name
+                track.isExternal = true
+                return track
+            }
+            host.request = PlaybackRequest(item: .init(id: "movie", title: "Movie", kind: .movie),
+                                           streamURL: URL(fileURLWithPath: "/fixture/movie.mkv"),
+                                           playSessionID: String(session), subtitleTracks: tracks)
+            sut.loadTrackOptions()
+            return tracks
+        }
+        _ = load(session: 1)
+        func id(_ name: String) throws -> Int {
+            try XCTUnwrap(host.controls.subtitleOptions.first { sut.subtitleTrack(id: $0.id)?.sourceTitle == name }?.id)
+        }
+        sut.selectSubtitleOption(id: try id("Signs & Songs"))
+        sut.selectSecondarySubtitleOption(id: try id("Commentary"))
+        let saved = sut.streamSnapshot()
+        let newTracks = load(session: 2)
+        var options = StreamingPlaybackOptions(quality: .original)
+        options.subtitleTrack = saved.primary
+        XCTAssertEqual(options.selectedSubtitle(in: newTracks)?.deliverySource, newTracks[1].deliverySource)
+        XCTAssertNil(options.selectedSubtitle(in: [newTracks[0]]), "A missing selection is not a different English track")
+        XCTAssertTrue(sut.restoreStreamSnapshot(saved))
+        let restored = sut.streamSnapshot()
+        XCTAssertEqual(restored.primary?.deliverySource, newTracks[1].deliverySource)
+        XCTAssertEqual(restored.secondary?.deliverySource, newTracks[2].deliverySource)
+        _ = load(session: 3, names: ["Full"])
+        sut.selectSubtitleOption(id: try id("Full"), userInitiated: false)
+        XCTAssertTrue(sut.restoreStreamSnapshot(saved))
+        XCTAssertNil(sut.selectedSubtitleTrackID)
+        XCTAssertNil(sut.selectedSecondarySubtitleTrackID)
+    }
+
     func testServerSidecarRemainsAvailableOnReplayWithoutCollidingWithPGS() async throws {
         let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
         var sidecar = textSidecar(5)

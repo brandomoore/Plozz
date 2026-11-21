@@ -256,7 +256,7 @@ final class TrackMenuBuilderTests: XCTestCase {
             + Text(LocalizedStringResource("Audio Description", locale: Locale(identifier: "en"))) + Text(verbatim: ")"))
     }
 
-    func testSharedAudioPrefixAndDuplicateDDPSpellingDoNotHideTheFormatChoice() {
+    func testCompactDDPNamesShowTheFormatWithoutBTMAndPreserveAuthoredMixNames() {
         func track(_ id: Int, _ language: String, _ title: String, atmos: Bool = false) -> MediaTrack {
             .init(id: id, kind: .audio, displayTitle: title, sourceTitle: title, language: language,
                   codec: "eac3", channels: 6, isAtmos: atmos)
@@ -270,7 +270,10 @@ final class TrackMenuBuilderTests: XCTestCase {
         XCTAssertEqual(rows(tracks), ["English (Dolby Digital+ Atmos)", "English (Dolby Digital+ 5.1)",
                                       "French (Dolby Digital+ 5.1)"])
         XCTAssertEqual(rows([tracks[1], track(4, "en", "Director mix")]),
-                       ["English (BTM, Dolby Digital+ 5.1)", "English (Director mix, Dolby Digital+ 5.1)"])
+                       ["English (Dolby Digital+ 5.1)", "English (Director mix, Dolby Digital+ 5.1)"])
+        var untaggedLanguage = tracks[1]
+        untaggedLanguage.language = nil
+        XCTAssertEqual(rows([untaggedLanguage]), ["Dolby Digital+ 5.1"])
         var serverTracks = tracks
         serverTracks[0].displayTitle = "BTM DDP5.1 Atmos - English - Dolby Digital Plus + Dolby Atmos - Default"
         serverTracks[1].displayTitle = "BTM DDP5.1 - English - Dolby Digital+"
