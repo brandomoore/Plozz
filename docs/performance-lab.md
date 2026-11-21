@@ -1430,6 +1430,30 @@ of main-thread CPU during 218–300 ms pauses. This does not account for
 framework layout, commit, or compositing; it is not evidence to delay loading
 offscreen shelves.
 
+`HomeScrollGestureTests/testMinuteHeroProgressiveAndSettledSwipes` covers a
+different startup workload: the shipping mobile hero is enabled and synthetic
+providers deliver shelves over roughly 56 seconds, without waiting for input.
+Record before launch. Verify the first painted hero and shelf separately from
+the first usable control; on a phone the first shelf may lie below the hero.
+Compare only swipes that actually overlap new content with the post-load
+swipes, using movement of painted content rather than gesture duration.
+Expected work here is 40 shelves / 800 items, 100 content reads **plus** 20
+layout reads. This is a simulator fixture, not a password sign-in or a live
+provider benchmark. Its launch interval includes constructing synthetic
+accounts and preparing compressed fixture images before Home appears.
+
+An iOS trial resolved the viewer's detail-artwork stores once per visible card
+instead of three times. Reversing the run order mattered: the median worst
+iPad pause during the 36-shelf burst went from 340 to 247 ms in the first
+round but from 350 to 448 ms in the second. The phone's first poster appeared
+115 and 118 ms later, respectively, measured from the first fixture marker.
+In eight hero-enabled launches, all 64 gestures had validated movement; the
+trial did not consistently improve the first minute on both devices and was
+rejected. A separate baseline iPhone trace placed 206–315 ms of main-thread
+CPU within a 357 ms burst pause. Nearby stacks showed SwiftUI transactions
+and card construction; the clock uncertainty precludes assigning the pause
+to one function.
+
 Matched startup-scroll runs `4019d336b4b041708f291bb8c258f96c` and
 `b6cd29350be84d0e9de813b972c764fc` retained the same completed work and 24
 scroll targets during loading. Lazy horizontal placeholders and a stable

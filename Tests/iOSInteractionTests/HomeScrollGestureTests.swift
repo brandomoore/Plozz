@@ -81,6 +81,149 @@ final class HomeScrollGestureTests: XCTestCase {
         try measureDuringPublication(calibrate: true)
     }
 
+    /// One fresh normal process. Six alternating startup swipes; the final pair follows
+    /// the identical path after delivery completes. All eight have endpoint/clock evidence,
+    /// though XCTest discards the first signpost sample as its warm-up.
+    func testMinuteHeroProgressiveAndSettledSwipes() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        XCUIDevice.shared.orientation = .portrait
+        app.launchArguments = ["--dense-home-scroll", "--minute-hero", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        func now() -> Int { Int(Date().timeIntervalSince1970 * 1_000) }
+        let launchMs = now()
+        app.launch()
+        defer { app.terminate() }
+        let inspect = app.buttons["dense-inspect"], hero = app.buttons["home-hero-artwork-detail"].firstMatch
+        XCTAssertTrue(hero.waitForExistence(timeout: 25))
+        XCTAssertEqual(hero.value as? String, "Striped Horizon")
+        XCTAssertTrue(hero.isHittable)
+        let usableMs = now(), heroFrame = hero.frame
+        self.checkMinuteHero(app)
+        let paintedMs = now()
+        var first = snapshot(inspect)
+        let deadline = Date().addingTimeInterval(10)
+        while (first["rows"] ?? 0) < 4 && Date() < deadline { first = snapshot(inspect) }
+        let origin = try XCTUnwrap(first["originMs"])
+        let pad = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"]?.hasPrefix("iPad")
+            ?? (UIDevice.current.userInterfaceIdiom == .pad)
+        XCTAssertEqual(first["y"], 0)
+        XCTAssertEqual(first["moving"], 0)
+        XCTAssertEqual(first["pad"], pad ? 1 : 0)
+        XCTAssertEqual(first["regular"], pad ? 1 : 0)
+        XCTAssertEqual(first["width"], first["screen"])
+        if pad { XCTAssertGreaterThanOrEqual(first["width"] ?? 0, 740) }
+        XCTAssertGreaterThanOrEqual(first["rows"] ?? 0, 4)
+        XCTAssertLessThan(first["rows"] ?? 40, 40)
+        XCTAssertEqual(first["pan"], 0)
+        let launch = XCTAttachment(string: """
+        launchRequestMs: \(launchMs)
+        usableHeroObservedMs: \(usableMs)
+        paintedHeroObservedMs: \(paintedMs)
+        scheduleOriginMs: \(origin)
+        heroFrame: \(heroFrame), viewport: \(app.frame)
+        first-shelves: \(first)
+        """)
+        launch.name = "minute-launch"; launch.lifetime = .keepAlways; add(launch)
+
+        let lower = app.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.74))
+        let upper = app.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.40))
+        let finger = Int(app.frame.height * 0.34)
+        let options = XCTMeasureOptions()
+        options.iterationCount = 7
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
+        // Aim just before absolute release deadlines. The fixture never knows about
+        // these targets. Only observed UIKit motion + completed publication count.
+        let targetMs = [0, 10_400, 19_400, 28_400, 37_400, 49_400, 63_000, 71_000]
+        var i = 0, overlaps = 0
+        measure(metrics: [XCTOSSignpostMetric.scrollingAndDecelerationMetric], options: options) {
+            let forward = i.isMultiple(of: 2), settled = i >= 6
+            // Return paths can coast to a slightly different offset. Reset only between
+            // pairs, outside the interval, to compare forward passes from the same origin.
+            if forward && i > 0 { app.buttons["dense-top"].tap() }
+            if i == 6 { Thread.sleep(forTimeInterval: max(0, Double(origin + 61_000 - now()) / 1_000)) }
+            let before = self.snapshot(inspect)
+            let a = XCTAttachment(screenshot: app.screenshot())
+            a.name = "minute-before-\(i)"; a.lifetime = .keepAlways; self.add(a)
+            if forward { XCTAssertEqual(before["y"], 0) }
+            XCTAssertEqual(before["moving"], 0)
+            if settled {
+                for (field, n) in [("rows",40),("total",40),("shelves",40),("delivered",40),("items",800),
+                                   ("distinctItems",800),("posters",800),("layouts",20),("latest",20),
+                                   ("history",20),("libraries",20),("loading",0)] {
+                    XCTAssertEqual(before[field], n, "\(field): \(before)")
+                }
+                XCTAssertGreaterThanOrEqual(before["lastDeliveryMs"] ?? 0, 55_990)
+                XCTAssertLessThan(before["lastDeliveryMs"] ?? Int.max, 61_000)
+                XCTAssertGreaterThan(before["idleRows"] ?? 0, 0, "Home must also publish after motion stops")
+            }
+            Thread.sleep(forTimeInterval: max(0, Double(origin + targetMs[i] - now()) / 1_000))
+            let commandMs = now()
+            self.startMeasuring()
+            (forward ? lower : upper).press(forDuration: 0.03, thenDragTo: forward ? upper : lower,
+                                            withVelocity: 1_650, thenHoldForDuration: 0)
+            Thread.sleep(forTimeInterval: 3)
+            self.stopMeasuring()
+            let after = self.snapshot(inspect)
+            let b = XCTAttachment(screenshot: app.screenshot())
+            b.name = "minute-after-\(i)"; b.lifetime = .keepAlways; self.add(b)
+            let evidence = XCTAttachment(string: """
+            before: \(before)
+            after: \(after)
+            launchRequestMs: \(launchMs)
+            commandMs: \(commandMs)
+            direction: \(forward ? "forward" : "reverse"), finger: \(finger)
+            """)
+            evidence.name = "minute-pass-\(i)"; evidence.lifetime = .keepAlways; self.add(evidence)
+            XCTAssertEqual(after["pan"], i + 1)
+            XCTAssertGreaterThanOrEqual(after["panMs"] ?? 0, commandMs)
+            XCTAssertEqual(after["moving"], 0)
+            let dy = (after["y"] ?? 0) - (before["y"] ?? 0)
+            XCTAssertGreaterThan(forward ? dy : -dy, finger + 20, "No verified deceleration on pass \(i)")
+            if i == 0 { self.checkPaintedPosters(app, name: "minute-first-shelves-painted") }
+            if settled {
+                XCTAssertEqual(after["rowsInMotion"], 0)
+                XCTAssertEqual(after["artInMotion"], 0)
+            } else {
+                let overlap = (after["rowsInMotion"] ?? 0) > 0 && (after["artInMotion"] ?? 0) >= 20
+                if overlap { overlaps += 1 }
+            }
+            i += 1
+        }
+        XCTAssertEqual(i, 8)
+        XCTAssertGreaterThanOrEqual(overlaps, 2, "Require multiple independent in-motion row AND artwork deliveries")
+    }
+
+    private func checkMinuteHero(_ app: XCUIApplication) {
+        let shot = app.screenshot(), w = 96, h = 144
+        let a = XCTAttachment(screenshot: shot)
+        a.name = "minute-painted-hero"; a.lifetime = .keepAlways; add(a)
+        guard let image = shot.image.cgImage else { return XCTFail("No hero screenshot") }
+        var rgba = [UInt8](repeating: 0, count: w*h*4)
+        let matches = rgba.withUnsafeMutableBytes { raw -> Int in
+            guard let c = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                    bytesPerRow: w*4, space: CGColorSpaceCreateDeviceRGB(),
+                                    bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return 0 }
+            c.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            // A signed magenta/cyan transition repeated across a scan line distinguishes
+            // this specific painted backdrop from labels, skeletons or the shelf bands.
+            let bytes = raw.bindMemory(to: UInt8.self)
+            return (0..<h).filter { row in
+                var previous = 0, changes = 0
+                for x in 0..<w {
+                    let p = (row*w+x)*4
+                    let r = Int(bytes[p]), g = Int(bytes[p+1]), b = Int(bytes[p+2])
+                    let color = r-g > 48 && b-g > 40 ? 1 : (g-r > 48 && b-r > 48 ? -1 : 0)
+                    if color != 0 {
+                        if previous != 0 && previous != color { changes += 1 }
+                        previous = color
+                    }
+                }
+                return changes >= 4
+            }.count
+        }
+        XCTAssertGreaterThan(matches, 8, "Shipping hero did not paint the local striped backdrop")
+    }
+
     private func snapshot(_ inspect: XCUIElement) -> [String: Int] {
         inspect.tap()
         let report = inspect.value as? String ?? ""
