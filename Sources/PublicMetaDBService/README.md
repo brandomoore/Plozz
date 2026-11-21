@@ -266,6 +266,19 @@ tested profile would replace a grant with an unresolved review. The test
 left that grant intact and stopped before playback. No automatic foreground
 check, active-item skip, or second-copy update was measured.
 
+On `b7ce8bff812b`, an isolated iPhone simulator profile verified the same
+case with *Sintel* (2010, TMDB 45745). PublicMetaDB held a fresh resume at
+162.395 of 888.042 seconds. After the 15-minute interval, muted NFS playback
+advanced from 6 to 16 seconds before backgrounding. On return, the same
+player remained open and paused at 19 seconds. The app logged an automatic
+sync start, an active-playback skip, and completion in that same process.
+Independent reads placed the enrolled SMB copy's change from zero to
+**162.395 seconds** inside that sync window. NFS saved its own **18.909
+seconds**, not the tracker position. No manual sync ran. The managed-server
+controls and the original profile's grant and pending review were unchanged.
+The temporary profile, sources and test history were removed. This verifies
+an open player paused on return, not playback advancing throughout sync.
+
 On `18f41e069`, a separate one-time import used an existing *Big Buck Bunny*
 watch on PublicMetaDB. Cancelling the review left the selected NFS share
 unwatched. After explicit confirmation, Plozz marked only that share watched;
