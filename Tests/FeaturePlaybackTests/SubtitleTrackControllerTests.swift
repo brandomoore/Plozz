@@ -548,6 +548,61 @@ final class SubtitleTrackControllerTests: XCTestCase {
         XCTAssertTrue(engine.lastSubtitleSelectionCleared)
     }
 
+    func testEmbeddedExtractionsKeepOneSelectableRowPerSourceStreamWhenDemuxArrives() throws {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
+        var french = textSidecar(0, language: "fr")
+        french.originalSubtitleStreamIndex = 7
+        french.sourceTitle = "French (France)"
+        var english = textSidecar(7, language: "en")
+        english.originalSubtitleStreamIndex = 9
+        english.isHearingImpaired = true
+        var otherFrench = textSidecar(8, language: "fr")
+        otherFrench.isExternal = true
+        host.request = PlaybackRequest(
+            item: .init(id: "episode", title: "Episode", kind: .episode),
+            streamURL: URL(fileURLWithPath: "/fixture/episode.mkv"), subtitleTracks: [french, english, otherFrench])
+        sut.loadTrackOptions()
+        let originalIDs = host.controls.subtitleOptions.map(\.id)
+        XCTAssertEqual(Set(originalIDs), [-1, 7, 9, 900_000])
+        sut.selectSubtitleOption(id: 7)
+        XCTAssertTrue(engine.lastSubtitleSelectionCleared, "Before demux the same row uses its extraction URL")
+        engine.subtitleTracks = [embeddedText(7, language: "fr"), embeddedText(9, language: "en-US")]
+        sut.loadTrackOptions()
+        XCTAssertEqual(host.controls.subtitleOptions.map(\.id), originalIDs)
+        XCTAssertEqual(host.controls.subtitleOptions.first { $0.id == 7 }?.nativeTitle, "French (France)")
+        XCTAssertEqual(host.controls.subtitleOptions.first { $0.id == 9 }?.nativeTitle, "English (United States) (SDH)")
+        XCTAssertEqual(host.controls.subtitleOptions.filter(\.isSelected).map(\.id), [7])
+        XCTAssertEqual(Set(host.controls.secondarySubtitleOptions.map(\.id)), [-1, 9, 900_000])
+        sut.selectSubtitleOption(id: 7)
+        sut.selectSecondarySubtitleOption(id: 9)
+        XCTAssertEqual(engine.lastSelectedSubtitleID, 7)
+        XCTAssertEqual(engine.secondarySelections.last.flatMap { $0 }?.id, 9)
+    }
+
+    func testHotLoadingSameNativeDeliveryDoesNotAddASecondRow() {
+        let (sut, host, engine) = makeSUT()
+        let existing = textSidecar(5)
+        engine.subtitleTracks = [existing, textSidecar(6)]
+        sut.loadTrackOptions()
+        XCTAssertEqual(sut.hotLoadSubtitleTrack(existing, preferredLanguage: "en", forced: false), 5)
+        XCTAssertEqual(host.controls.subtitleOptions.map(\.id), [-1, 5, 6])
+    }
+
+    func testRenegotiatedSessionDoesNotKeepTheOldSidecarInEitherMenu() {
+        let (sut, host, _) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
+        for session in [1, 2] {
+            var track = textSidecar(session)
+            track.isExternal = true
+            host.request = PlaybackRequest(item: .init(id: "movie", title: "Movie", kind: .movie),
+                                           streamURL: URL(fileURLWithPath: "/fixture/movie.mkv"),
+                                           playSessionID: String(session), subtitleTracks: [track])
+            sut.loadTrackOptions()
+            for options in [host.controls.subtitleOptions, host.controls.secondarySubtitleOptions] {
+                XCTAssertEqual(options.filter { $0.id != PlayerTrackOption.offID }.count, 1)
+            }
+        }
+    }
+
     func testServerSidecarRemainsAvailableOnReplayWithoutCollidingWithPGS() async throws {
         let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
         var sidecar = textSidecar(5)

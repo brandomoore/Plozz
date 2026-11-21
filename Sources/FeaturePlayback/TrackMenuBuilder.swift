@@ -51,8 +51,8 @@ enum TrackMenuBuilder {
         preferred: [String?],
         locale: Locale = .current
     ) -> [PlayerTrackOption] {
-        let options = tracks.sortedByPreferredLanguage(preferred).map { track in
-            let label = presentation(for: TrackLabeling.audioLabel(
+        let labeled = tracks.sortedByPreferredLanguage(preferred).map { track in
+            (track, TrackLabeling.audioLabel(
                     displayTitle: track.displayTitle,
                     sourceTitle: track.sourceTitle,
                     language: track.language,
@@ -65,7 +65,13 @@ enum TrackMenuBuilder {
                     isVisualImpaired: track.isVisualImpaired,
                     trackID: track.id,
                     locale: locale
-                ), locale: locale)
+                ))
+        }
+        let sharedBTM = labeled.count > 1 && labeled.allSatisfy { $0.1.qualifiers.contains(.title("BTM")) }
+        let options = labeled.map { track, sourceLabel in
+            var visible = sourceLabel
+            if sharedBTM { visible.qualifiers.removeAll { $0 == .title("BTM") } }
+            let label = presentation(for: visible, locale: locale)
             return PlayerTrackOption(
                 id: track.id, title: label.text,
                 isSelected: track.id == selectedID, nativeTitle: label.nativeTitle

@@ -613,6 +613,13 @@ omits them. Its generated language/codec and numbered fallback labels are not
 treated as authored names. Real-world metadata regression cases cover release
 groups, translation credits, regional/script variants, colored SDH and commentary;
 names never change automatic selection or forced-subtitle disposition.
+`Full` is displayed only when authored. A regional subtitle name does not repeat
+the language or an already-displayed SDH/Forced flag. Compact `DDP5.1` audio
+names do not repeat a confirmed Dolby Digital+ layout; a `BTM` source tag common
+to all audio choices adds no distinction and is omitted.
+For original-file Silo playback, an embedded subtitle's extraction URL and its
+demuxed stream share one row, keyed by the absolute stream index, not the
+inventory position or language. Standalone sidecars remain separate.
 Colliding subtitle labels first expose known format differences, such as SRT,
 ASS or WebVTT. Codec aliases normalize to the same format, and missing/unknown
 formats are not invented. Labels still identical after that gain a localized
