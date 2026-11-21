@@ -1454,6 +1454,19 @@ CPU within a 357 ms burst pause. Nearby stacks showed SwiftUI transactions
 and card construction; the clock uncertainty precludes assigning the pause
 to one function.
 
+A returning-viewer launch of the signed-in mobile app against Jellyfin showed
+a different workload: five latest-library responses with 68 item slots all
+finished before the first swipe. Of 51 item-detail GETs in the first minute,
+26 repeated a request for the same path and query. All 26 followed or overlapped
+another HTTP 200 response; that alone does not establish that a read was wasted.
+Call-site tracing isolated one redundant read: the mobile hero fetched a movie
+and immediately requested the same movie again as its own metadata root. Reusing
+the successful same-account response brought item-detail GETs from 51 to 47;
+restoring the baseline brought them back to 51. Distinct item count stayed at
+25 in each run, though the title sets varied. This was one viewer on an iPhone
+simulator. It establishes a request reduction, not lower server CPU, faster
+Home readiness, or improved scroll frame pacing.
+
 Matched startup-scroll runs `4019d336b4b041708f291bb8c258f96c` and
 `b6cd29350be84d0e9de813b972c764fc` retained the same completed work and 24
 scroll targets during loading. Lazy horizontal placeholders and a stable

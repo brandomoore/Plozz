@@ -2449,11 +2449,16 @@ struct PlozziOSHomeHeroCarousel: View {
             rootItems[item.id] = HeroResolutionCacheEntry(key: key, item: item)
             return
         }
-        let response = (try? await provider.item(id: target.id)) ?? target
+        let response = try? await provider.item(id: target.id)
         guard !Task.isCancelled,
               let hydrated = HeroDiscoveryPlaybackTarget.validatedHydration(
-                response, original: item, selected: target
+                response ?? target, original: item, selected: target
               ) else { return }
+        if response != nil, hydrated.kind == .movie, hydrated.id == target.id,
+           hydrated.sourceAccountID == target.sourceAccountID {
+            rootItems[item.id] = HeroResolutionCacheEntry(key: key, item: hydrated)
+            return
+        }
         let metadataID: String
         if (hydrated.kind == .episode || hydrated.kind == .season),
            let seriesID = hydrated.seriesID {
