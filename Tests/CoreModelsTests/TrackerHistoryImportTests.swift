@@ -1273,6 +1273,37 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
+    func testOlderConsentCannotSyncOnForegroundOrManuallyUntilNewEnrollment() async throws {
+        let evidence = ImportEvidence(try snapshot([]))
+        let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
+        let provider = ImportProvider(.mediaShare, item: item())
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        await enable(sync, evidence: evidence)
+        var older = try XCTUnwrap(sync.grant)
+        let key = try DurableLocalStateKey(
+            collection: .trackerDeliveryReceipt, scope: .source(profileID: older.scope.profileID, sourceID: older.identity.trackerID),
+            recordID: "history-sync"
+        )
+        older.betaConsentVersion = nil
+        try store.save(older, for: key)
+        evidence.snapshot = try snapshot([observation()])
+        evidence.nextRead = { XCTFail("Old consent must not even read tracker history") }
+        let reopened = syncController(provider: provider, evidence: evidence, store: store)
+        XCTAssertFalse(reopened.isEnabled)
+        await reopened.synchronize(manual: false)
+        await reopened.synchronize()
+        XCTAssertEqual(reopened.grant, older)
+        evidence.nextRead = nil
+        reopened.disable()
+        await enable(reopened, evidence: evidence)
+        XCTAssertTrue(reopened.isEnabled)
+        await reopened.synchronize()
+        XCTAssertNil(reopened.error)
+        let writes = await provider.writes
+        XCTAssertEqual(writes, 0, "Re-enrollment must not backfill pre-consent activity")
+    }
+
+    @MainActor
     func testOngoingSyncRejectsLegacyServerAndMixedGrantsOnReload() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
@@ -1293,7 +1324,8 @@ final class TrackerHistoryImportTests: XCTestCase {
             // Keep the valid baseline and receipts, changing only the persisted destination list.
             let legacy = TrackerHistorySyncGrant(
                 id: valid.id, identity: valid.identity, scope: try context.selectingAccounts(selection),
-                categories: valid.categories, createdAt: valid.createdAt, enabled: true, reviewCount: 0
+                categories: valid.categories, createdAt: valid.createdAt, enabled: true, reviewCount: 0,
+                betaConsentVersion: valid.betaConsentVersion
             )
             try store.save(legacy, for: key)
             let reopened = syncController(provider: provider, evidence: evidence, store: store, serverScope: context)

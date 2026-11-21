@@ -41,7 +41,7 @@ struct TrackerHistorySyncNavigationRow: View {
         NavigationLink {
             TrackerHistorySyncSettingsView(session: session, sync: sync)
         } label: {
-            SettingsDisclosureLabel { Text("Ongoing sync") }
+            SettingsDisclosureLabel { Text("Ongoing sync (Beta)") }
         }
         .settingsActionRow()
         .accessibilityIdentifier("tracker-history.ongoing-sync")
@@ -53,6 +53,7 @@ struct TrackerHistorySyncSettingsView: View {
     let sync: TrackerHistorySyncController
     @State private var reviewedPlan: TrackerHistoryImportPlan?
     @State private var operation: Task<Void, Never>?
+    @State private var confirmingBeta = false
     @Environment(\.themePalette) private var palette
 
     init(session: TrackerHistoryImportSession, sync: TrackerHistorySyncController) {
@@ -62,12 +63,18 @@ struct TrackerHistorySyncSettingsView: View {
     }
 
     var body: some View {
-        GroupedSettingsPage(title: "Ongoing sync", backIdentifier: "tracker-history.sync-back") {
+        GroupedSettingsPage(title: "Ongoing sync (Beta)", backIdentifier: "tracker-history.sync-back") {
             if sync.isEnabled || (sync.grant?.enabled != true && !sync.eligibleAccountIDs.isEmpty && !sync.supportedCategories.isEmpty) {
                 SettingsSectionGroup {
                     Toggle("Sync watch history", isOn: Binding(get: { sync.isEnabled }, set: setEnabled))
                         .accessibilityIdentifier("tracker-history.sync-enabled")
                         .disabled(!sync.isEnabled && sync.isBusy)
+                        .confirmationDialog("Enable beta sync?", isPresented: $confirmingBeta, titleVisibility: .visible) {
+                            Button("Enable beta sync") { enroll() }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("New tracker activity can change watch history on all current media shares in this profile, not your servers. Turning it off won’t undo those changes.")
+                        }
                 } footer: {
                     if sync.isEnabled {
                         Text("Only new tracker activity updates the selected shares. Turning sync off keeps their history.")
@@ -136,16 +143,20 @@ struct TrackerHistorySyncSettingsView: View {
 
     private func setEnabled(_ enabled: Bool) {
         if enabled {
-            operation = Task {
-                if let reviewedPlan {
-                    await sync.enable(afterReview: reviewedPlan, accountIDs: sync.eligibleAccountIDs, categories: sync.supportedCategories)
-                } else {
-                    await sync.enable(from: session, accountIDs: sync.eligibleAccountIDs, categories: sync.supportedCategories)
-                }
-            }
-        } else if !enabled {
+            confirmingBeta = true
+        } else {
             operation?.cancel()
             sync.disable()
+        }
+    }
+
+    private func enroll() {
+        operation = Task {
+            if let reviewedPlan {
+                await sync.enable(afterReview: reviewedPlan, accountIDs: sync.eligibleAccountIDs, categories: sync.supportedCategories)
+            } else {
+                await sync.enable(from: session, accountIDs: sync.eligibleAccountIDs, categories: sync.supportedCategories)
+            }
         }
     }
 

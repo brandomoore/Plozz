@@ -79,9 +79,11 @@ competing changes to one destination item cannot be selected together. See
 [PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
 
-The separate **Ongoing sync** page offers only profile-scoped media shares, not
-managed servers. Legacy server permissions can be removed but cannot sync.
-**Sync watch history** starts off. Turning it on enrolls the profile’s current
+**Ongoing sync (Beta)** offers only profile-scoped media shares, not managed
+servers. Connecting a tracker, reporting playback, and approving a one-time
+import do not enroll anyone. Pre-beta permissions cannot authorize sync; remove
+the previous permission before enrolling again. **Sync watch history** starts
+off. Confirming **Enable beta sync** on this device enrolls the profile’s current
 eligible shares and supported history categories without backfilling old records.
 While it is on, share and category switches edit that selection. Turning it off
 stops future imports without clearing watch history. **Sync now** and revocation

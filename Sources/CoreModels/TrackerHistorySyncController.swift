@@ -36,6 +36,7 @@ public enum TrackerHistorySyncError: Error, Equatable {
 
 public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
     public static let durableLocalStateSchemaID = "tracker-history-sync-grant.v1"
+    static let currentBetaConsentVersion = 1
     public let id: UUID
     public let identity: TrackerHistorySyncIdentity
     public let scope: WatchMutationServerScope
@@ -47,6 +48,10 @@ public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
     // Shares added together share an observation baseline, not delivery receipts
     // or continuation proof. A re-added account starts a new enrollment.
     var enrollmentIDs: [String: UUID]?
+    // An absent version is a pre-beta grant, not consent to this beta.
+    var betaConsentVersion: Int?
+
+    var authorizesSync: Bool { enabled && betaConsentVersion == Self.currentBetaConsentVersion }
 }
 
 /// Device-local consent and receipts. No timer polls a tracker, and this never
@@ -116,7 +121,7 @@ public final class TrackerHistorySyncController {
 
     public var isEnabled: Bool {
         guard let grant, !revocationPending else { return false }
-        return grant.enabled && grant.identity == identity && permits(grant.scope)
+        return grant.authorizesSync && grant.identity == identity && permits(grant.scope)
             && grant.categories.isSubset(of: supportedCategories)
     }
 
@@ -213,7 +218,8 @@ public final class TrackerHistorySyncController {
             let previous: TrackerHistorySyncGrant? = try store.load(for: grantKey())
             var next = TrackerHistorySyncGrant(
                 id: UUID(), identity: identity, scope: selectedScope,
-                categories: categories, createdAt: Date(), enabled: false, reviewCount: 0
+                categories: categories, createdAt: Date(), enabled: false, reviewCount: 0,
+                betaConsentVersion: TrackerHistorySyncGrant.currentBetaConsentVersion
             )
             // Publish a disabled manifest first. An interrupted enrollment cannot
             // authorize writes or mistake missing baseline pages for new history.
@@ -291,7 +297,7 @@ public final class TrackerHistorySyncController {
             var next = TrackerHistorySyncGrant(
                 id: UUID(), identity: identity, scope: scope, categories: categories,
                 createdAt: latest.createdAt, enabled: true, lastAttemptAt: latest.lastAttemptAt,
-                reviewCount: latest.reviewCount, enrollmentIDs: enrollments
+                reviewCount: latest.reviewCount, enrollmentIDs: enrollments, betaConsentVersion: latest.betaConsentVersion
             )
             do {
                 var buckets = try loadBuckets(latest)
@@ -651,7 +657,7 @@ public final class TrackerHistorySyncController {
         try requireContext(current)
         guard !revocationPending, permits(expected.scope),
               let stored: TrackerHistorySyncGrant = try store.load(for: grantKey()),
-              stored.enabled, stored.id == expected.id, stored.identity == identity,
+              stored.authorizesSync, stored.id == expected.id, stored.identity == identity,
               stored.scope == expected.scope, stored.categories == expected.categories,
               stored.enrollmentIDs == expected.enrollmentIDs else {
             throw TrackerHistorySyncError.permissionChanged

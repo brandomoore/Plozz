@@ -319,7 +319,10 @@ final class DiscReviewScreenshotTests: XCTestCase {
         XCTAssertTrue(first.waitForExistence(timeout:8),app.debugDescription); shot("comparison-01-populated"); go(first); XCTAssertTrue(apply.isEnabled); shot("comparison-02-selected"); go(apply); XCTAssertTrue(app.buttons["Apply selected changes"].firstMatch.waitForExistence(timeout:5)); shot("comparison-03-confirmation"); app.terminate()
     }
     func testSync() {
-        start("sync",["--history-ongoing-sync"]); let enabled=el("tracker-history.sync-enabled"); XCTAssertTrue(enabled.waitForExistence(timeout:6)); shot("ongoing-sync-off"); go(enabled); XCTAssertTrue(el("tracker-history.sync-watched").waitForExistence(timeout:8)); shot("ongoing-sync-on"); app.terminate()
+        start("sync",["--history-ongoing-sync"]); let enabled=el("tracker-history.sync-enabled"); XCTAssertTrue(enabled.waitForExistence(timeout:6)); shot("ongoing-sync-off"); go(enabled)
+        let confirm = app.buttons["Enable beta sync"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5)); shot("ongoing-sync-beta-consent"); go(confirm)
+        XCTAssertTrue(el("tracker-history.sync-watched").waitForExistence(timeout:8)); shot("ongoing-sync-on"); app.terminate()
     }
 }
 

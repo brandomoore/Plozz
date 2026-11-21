@@ -2,6 +2,12 @@
 
 ## Tracker-sync acceptance status: 21 November 2026
 
+Only **Ongoing sync (Beta)** requires beta enrollment. Connecting PublicMetaDB
+and enabling one-way playback reporting are separate decisions. An existing
+pre-beta sync grant cannot authorize a foreground or manual sync. The opt-in
+and cancellation flow was checked on iPhone and Apple TV simulators; the live
+provider results below predate that change.
+
 The branch is not merge-ready. Integration `8ae592a88caa` includes `main`
 through `cd5468e5dd37`. The iPhone simulator app built and installed from
 that integration. The focus-test host retained both tracker fixtures and

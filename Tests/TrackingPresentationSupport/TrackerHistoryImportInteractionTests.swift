@@ -122,6 +122,12 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertTrue(master.waitForExistence(timeout: 5))
         waitForReport(";reads=0")
         activate(master)
+        XCTAssertTrue(app.buttons["Enable beta sync"].firstMatch.waitForExistence(timeout: 5))
+        cancelConfirmation()
+        waitForReport(";sync=false;")
+        waitForReport(";reads=0")
+        activate(master)
+        activate(app.buttons["Enable beta sync"].firstMatch)
         waitForReport(";sync=true;destinations=cedar,mariner;categories=resume,watched;")
         assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
     }
@@ -328,6 +334,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertTrue(master.waitForExistence(timeout: 5), app.debugDescription)
         assertOff()
         activate(master)
+        activate(app.buttons["Enable beta sync"].firstMatch)
         waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
         for option in [cedar, mariner, watched, syncNow] { XCTAssertTrue(option.exists && option.isEnabled) }
         XCTAssertEqual(resume.exists, !watchedOnly)
@@ -347,6 +354,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
             activate(master)
             assertOff()
             activate(master)
+            activate(app.buttons["Enable beta sync"].firstMatch)
             waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
             activate(resume)
             waitForReport(";sync=true;destinations=cedar,mariner;categories=watched;")

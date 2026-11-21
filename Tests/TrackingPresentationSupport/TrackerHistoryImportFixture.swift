@@ -27,6 +27,10 @@ struct TrackerHistoryImportFixture: View {
         }
         .sheet(isPresented: $comparing) {
             VStack(alignment: .leading, spacing: 8) {
+                #if os(tvOS)
+                // Keep fixture actions out of the Down path to offscreen Settings rows.
+                if testsOngoingSync { fixtureControls }
+                #endif
                 NavigationStack {
                     if ProcessInfo.processInfo.arguments.contains("--history-wetrakr-export") {
                         WetrakrHistoryExportView(service: model.wetrakr)
@@ -45,19 +49,10 @@ struct TrackerHistoryImportFixture: View {
                         TrackerHistoryImportView(makeSession: model.makeSession)
                     }
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    report
-                    if ProcessInfo.processInfo.arguments.contains("--history-ongoing-sync") {
-                        Button("New tracker play") { model.newPlay += 1 }
-                            .accessibilityIdentifier("fixture.history.new-play")
-                    }
-                    Button("Close comparison") { comparing = false }
-                        .accessibilityIdentifier("fixture.history.close")
-                }
-                .frame(maxWidth: 1200, alignment: .leading)
-                .frame(maxWidth: .infinity)
                 #if os(tvOS)
-                .focusSection()
+                if !testsOngoingSync { fixtureControls }
+                #else
+                fixtureControls
                 #endif
             }
             #if os(tvOS)
@@ -75,6 +70,25 @@ struct TrackerHistoryImportFixture: View {
                 await model.trakt.refreshStatus()
             }
         }
+    }
+
+    private var testsOngoingSync: Bool { ProcessInfo.processInfo.arguments.contains("--history-ongoing-sync") }
+
+    private var fixtureControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            report
+            if testsOngoingSync {
+                Button("New tracker play") { model.newPlay += 1 }
+                    .accessibilityIdentifier("fixture.history.new-play")
+            }
+            Button("Close comparison") { comparing = false }
+                .accessibilityIdentifier("fixture.history.close")
+        }
+        .frame(maxWidth: 1200, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        #if os(tvOS)
+        .focusSection()
+        #endif
     }
 
     private var report: some View {
