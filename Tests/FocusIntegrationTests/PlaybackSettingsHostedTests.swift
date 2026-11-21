@@ -113,12 +113,15 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         let initial = try visibleText(in: window, attachment: "Video-upscaling-default-TV")
         XCTAssertTrue(initial.contains("Video upscaling"), initial)
         XCTAssertTrue(initial.contains("Automatic"), initial)
+        XCTAssertTrue(initial.contains("Uses Animation"), initial)
         XCTAssertEqual(profileFocusFrames(in: window).count, 1)
         XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
         playback.settings.videoUpscaling = .off
         try await Task.sleep(for: .milliseconds(250))
         let disabled = try visibleText(in: window, attachment: "Video-upscaling-off-TV")
         XCTAssertTrue(disabled.contains("Off"), disabled)
+        XCTAssertFalse(disabled.contains("Uses Animation"), disabled)
+        XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
         XCTAssertEqual(store.load().videoUpscaling, .off)
     }
 

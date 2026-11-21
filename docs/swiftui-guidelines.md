@@ -79,6 +79,24 @@ docs/ tools/
 - Move view logic into view models or coordinators. Views register, render, and
   call typed actions.
 
+### Settings copy and placement
+
+Start with the label and current value. **Use Cellular** needs no subtitle.
+Add text only if it helps someone choose, act, or understand a consequence.
+Place it by what it explains, not by the number of rows:
+
+| If the text explains… | Put it… |
+| --- | --- |
+| Which value is selected, or how individual choices differ | In the row for the current value, or beside each choice when people need to compare them. Don't repeat the same information in a footer. |
+| A standalone preference or several related controls | Below the mobile `SettingsSectionGroup`, in its footer. **Video upscaling** explains Automatic only while it's selected; **Downloads → Speed** explains the background limit only when a cap is set. |
+| One control among unrelated rows | With that control, using `SettingsDescribedControl` if it needs a second line. Keep a disabled row's recovery instruction there, not below other settings. On Apple TV, keep help with its setting in the detail pane or form. |
+| A material consequence or a request for consent | Where someone can read it **before** deciding. Keep the disc-menu watch-progress warning with **Disc playback** and the diagnostics disclosure before the share buttons. |
+
+Keep engine eligibility tables in the [playback reference](playback-engines.md),
+not in a picker. For a visual comparison, Apple's [iPad Multitasking & Gestures](https://support.apple.com/en-us/111788)
+puts mode descriptions beside the choices and gesture instructions below the switches;
+[Charging](https://support.apple.com/en-us/108055) shows a footer for a single switch.
+
 ### Hero continuity
 
 Hero animation is about continuity, not decoration. Keep these rules shared

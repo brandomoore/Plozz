@@ -11,18 +11,31 @@ public struct VideoUpscalingControl: View {
     }
 
     public var body: some View {
+        #if os(tvOS)
         SettingsDescribedControl {
-            #if os(tvOS)
             SettingsMenuRow(title: "Video upscaling", value: Text(selection.title)) {
                 picker
             }
-            #else
-            picker
-            #endif
+            .accessibilityIdentifier("video-upscaling")
         } description: {
-            Text("Automatic selects Animation for anime or animation metadata, otherwise Standard. Standard enhances 8-bit SDR below 1080p; Animation enhances drawn SDR up to 1080p. Requires AetherEngine, supported hardware and a larger display. No HDR or 4K enhancement. Applies to new playback.")
+            help
         }
-        .accessibilityIdentifier("video-upscaling")
+        #else
+        SettingsSectionGroup {
+            picker
+                .accessibilityIdentifier("video-upscaling")
+                .settingsSearchAnchor("video-upscaling")
+        } footer: {
+            help
+        }
+        .settingsSearchGroup(["video-upscaling"])
+        #endif
+    }
+
+    @ViewBuilder private var help: some View {
+        if selection == .automatic {
+            Text("Uses Animation for titles marked as animated, and Standard otherwise.")
+        }
     }
 
     private var picker: some View {

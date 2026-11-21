@@ -51,12 +51,10 @@ final class NativeSettingsToggleTests: XCTestCase {
         for width: CGFloat in [390, 834] {
             window.frame = CGRect(x: 0, y: 0, width: width, height: 1000)
             window.rootViewController = UIHostingController(rootView:
-                SettingsSectionGroup {
-                    VideoUpscalingControl(selection: Binding(
-                        get: { model.settings.videoUpscaling },
-                        set: { model.settings.videoUpscaling = $0 }
-                    ))
-                }
+                VideoUpscalingControl(selection: Binding(
+                    get: { model.settings.videoUpscaling },
+                    set: { model.settings.videoUpscaling = $0 }
+                ))
                 .padding(16)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .environment(\.themePalette, .dark)
@@ -65,12 +63,13 @@ final class NativeSettingsToggleTests: XCTestCase {
                 .background(.black)
             )
             window.makeKeyAndVisible()
-            for mode in [VideoUpscaling.automatic, .off] {
+            for mode in [VideoUpscaling.automatic, .off, .standard, .animation] {
                 model.settings.videoUpscaling = mode
                 try await settle(window)
                 let text = try captureText(window, name: "Video-upscaling-\(width)-\(mode.rawValue)")
                 XCTAssertTrue(text.contains("Video upscaling"), text)
-                XCTAssertTrue(text.contains(mode == .automatic ? "Automatic" : "Off"), text)
+                XCTAssertTrue(text.contains(String(localized: mode.title)), text)
+                XCTAssertEqual(text.contains("Uses Animation"), mode == .automatic, text)
             }
         }
     }

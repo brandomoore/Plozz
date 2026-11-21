@@ -2482,10 +2482,7 @@ struct PlozziOSPlaybackSettingsView: View {
                 support: streamingSupport,
                 onShowAdvanced: { showsAdvancedStreaming = true }
             )
-            SettingsSectionGroup {
-                VideoUpscalingControl(selection: $model.settings.videoUpscaling)
-                    .settingsSearchAnchor("video-upscaling")
-            }
+            VideoUpscalingControl(selection: $model.settings.videoUpscaling)
             PlaybackReadAheadControl()
                 .settingsSearchAnchor("read-ahead")
             LivePlaybackBufferControl()
@@ -2651,24 +2648,20 @@ struct PlozziOSPlaybackSettingsView: View {
             .settingsSearchGroup(["lossless-audio", "identify-songs"])
             if AppReleaseChannel.current.isBeta {
                 SettingsSectionGroup("Video") {
-                    SettingsDescribedControl {
-                        Toggle("P7 FEL → P8.1 conversion", isOn: $model.settings.dolbyVisionFELConversion)
-                    } description: {
-                        Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
-                    }
+                    Toggle("P7 FEL → P8.1 conversion", isOn: $model.settings.dolbyVisionFELConversion)
+                } footer: {
+                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
                 }
             }
             SettingsSectionGroup("Discs") {
-                SettingsDescribedControl {
-                    Picker("Disc playback", selection: $model.settings.discPlayback) {
-                        ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
-                            Text($0.title).tag($0)
-                        }
+                Picker("Disc playback", selection: $model.settings.discPlayback) {
+                    ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
+                        Text($0.title).tag($0)
                     }
-                } description: {
-                    Text(DiscPlaybackBehavior.settingsNotice)
                 }
                 .settingsSearchAnchor("disc-playback")
+            } footer: {
+                Text(DiscPlaybackBehavior.settingsNotice)
             }
             .settingsSearchGroup(["disc-playback"])
             SettingsSectionGroup {
@@ -2752,12 +2745,8 @@ private struct PlozziOSSubtitleSettingsView: View {
                 .accessibilityIdentifier("subtitle-style")
             }
             SettingsSectionGroup("Live TV subtitle style") {
-                SettingsDescribedControl {
-                    Toggle("Use a separate style for Live TV", isOn: $style.usesSeparateLiveTVStyle)
-                } description: {
-                    Text("Use the same subtitle appearance everywhere, or choose a separate look for Live TV.")
-                }
-                .settingsSearchAnchor("live-subtitle-style")
+                Toggle("Use a separate style for Live TV", isOn: $style.usesSeparateLiveTVStyle)
+                    .settingsSearchAnchor("live-subtitle-style")
                 if style.usesSeparateLiveTVStyle {
                     Button { showsLiveSubtitleStyle = true } label: {
                         SettingsDisclosureLabel { Text("Customize Live TV subtitles") }

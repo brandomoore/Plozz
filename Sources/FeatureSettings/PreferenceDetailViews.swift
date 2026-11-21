@@ -858,8 +858,7 @@ struct PlaybackDetailView: View {
             },
             SettingsSplitRow(
                 id: "live-subtitle-style",
-                title: "Live TV subtitle style",
-                description: "Use the same subtitle appearance everywhere, or choose a separate look for Live TV."
+                title: "Live TV subtitle style"
             ) {
                 SettingsControlRows {
                     Toggle("Use a separate style for Live TV", isOn: $subtitleStyle.usesSeparateLiveTVStyle)
