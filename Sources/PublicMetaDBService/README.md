@@ -7,7 +7,20 @@ through `cd5468e5dd37`. The iPhone simulator app built and installed from
 that integration. The focus-test host retained both tracker fixtures and
 the upstream subtitle-capture entry point.
 
-On the preceding app, two signed-in PublicMetaDB accounts displayed different
+On the later `b7ce8bff812b` candidate, native iPhone foreground sync
+preserved an open NFS player's position while updating the enrolled SMB
+copy. A separate, explicitly reviewed import to Jellyfin verified
+cancellation after the server had accepted the change. Neither test enabled
+automatic writes to managed servers.
+
+The remaining live checks need dedicated accounts for Trakt, Simkl, WeTrakr,
+AniList, MyAnimeList and Last.fm; a writable, disposable private PublicMetaDB
+list for membership changes and lost-reply recovery; and a controlled
+contribution with known ownership. Separate from playback, revocation of one
+historical Jellyfin test session still lacks a matching receipt. The later
+logout receipts below apply only to the sessions that produced them.
+
+Before the warm-switch test below, two signed-in PublicMetaDB accounts displayed different
 data across cold launches (B → A → B): A showed its private list and dated
 plays; B showed no records in either view on both visits. This was a read
 test, not evidence that new playback writes go to the right account.
@@ -166,6 +179,16 @@ returned both flags as true and the unselected source returned both as false.
 The tracker history and list contents were unchanged. This used isolated
 Plozz storage and real NFS and PublicMetaDB reads, not a write to a media
 server. The share-provider suite passed with 733 tests passing and two skipped.
+
+On `b7ce8bff812b`, an explicit one-time import changed the dedicated Jellyfin
+user's resume for *Wedlocked* (TMDB 230652) from **120.394 to 242.374 seconds**.
+An independent read saw the new position while the successful HTTP reply
+was held. Cancelling then left the session **unconfirmed**: it did not undo
+or repeat the accepted write. Two new processes loaded an empty outbox and
+sent no requests. The test restored the original position and play date
+exactly; PublicMetaDB, Plex and Emby controls stayed unchanged. This used
+the production import components and a file-backed outbox, not the native
+import screen. The test's own Jellyfin and Emby logins were logged out.
 
 Separately, the normal iPhone app showed the configured Emby user's row as
 **Set resume to 2,401 seconds**, unselected. The tracker detail showed 25.7%,
