@@ -2,9 +2,25 @@
 
 ## Tracker-sync acceptance status: 20 November 2026
 
-The branch is not merge-ready. It includes `main` through `a32d482e18aa`.
-The two commits after `48975ad6bbc1` changed hosted tests, test tooling and
-documentation, not the app or tracker code.
+The branch is not merge-ready. Integration `8ae592a88caa` includes `main`
+through `cd5468e5dd37`. The iPhone simulator app built and installed from
+that integration. The focus-test host retained both tracker fixtures and
+the upstream subtitle-capture entry point.
+
+On the preceding app, two signed-in PublicMetaDB accounts displayed different
+data across cold launches (B → A → B): A showed its private list and dated
+plays; B showed no records in either view on both visits. This was a read
+test, not evidence that new playback writes go to the right account.
+
+On `8ae592a88caa`, the native iPhone consent test enabled reporting for B.
+B retained that consent across an A → B switch without restarting Plozz.
+The test NFS library was scanned but not enabled in B, and the movie detail
+selected Jellyfin instead. The run stopped before playback rather than
+changing the managed user's history. B's reporting was turned back off and
+the temporary source was removed. **Playback write routing after a profile
+switch remains unverified.** Neither an empty tracker history nor a successful
+consent test proves delivery.
+
 The signed iPhone simulator app built at `d3da98cea`. Its season ratings
 screen matched independent PublicMetaDB reads for all ten rated episodes of
 *The Crown* season 1 (40 ratings). The live test now waits for an independently
@@ -329,7 +345,8 @@ file-revision check; it is not a full pass for this candidate.
   above did not depend on deleting that play.
 - The episodes inspected on the existing NAS did not establish exact episode identity. A
   matching episode on Emby and Jellyfin is a control, not a share-sync pass.
-  Switching between two distinct dedicated tracker accounts remains untested.
+  That run did not switch between dedicated tracker accounts; see the current
+  acceptance status above.
 
 ## Live NFS movie verification: 19 November 2026
 
