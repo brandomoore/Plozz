@@ -1467,6 +1467,24 @@ restoring the baseline brought them back to 51. Distinct item count stayed at
 simulator. It establishes a request reduction, not lower server CPU, faster
 Home readiness, or improved scroll frame pacing.
 
+For live scrolling, use a fresh process as the unit of comparison. Keep the
+viewer, viewport, drag distance and cache policy fixed. Counterbalance clean
+and instrumented launches. Score movement of the painted page during the
+moving, in-bounds portion of the drag using the original video timestamps.
+Before scoring a capture path, check known smooth motion, a 100 ms hold, and
+a clip with samples deliberately omitted. The last case must be **unknown**,
+not a hitch: repeated images and absent images are different evidence.
+
+On `c6091e4c5`, the clean returning-viewer iPhone simulator had the same
+median longest gap (45 ms) at launch +8 s and +65 s across six paired launches.
+The initial iPad recordings had no scorable pairs. A separate full-width iPad
+simulator cohort using calibrated HEVC gave five of six scorable pairs:
+43.3 ms early and 40.0 ms settled (medians). One early drag had a 130 ms
+painted pause with continuous footage; none of the settled drags reached
+75 ms. A different early drag had 201.7 ms of *missing footage* and was
+excluded. These comparisons sample two short windows on simulators, not
+continuous first-minute behavior, first sign-in, or a physical 120 Hz display.
+
 Matched startup-scroll runs `4019d336b4b041708f291bb8c258f96c` and
 `b6cd29350be84d0e9de813b972c764fc` retained the same completed work and 24
 scroll targets during loading. Lazy horizontal placeholders and a stable
