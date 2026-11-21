@@ -1,6 +1,6 @@
 # PublicMetaDBService
 
-## Tracker-sync acceptance status: 20 November 2026
+## Tracker-sync acceptance status: 21 November 2026
 
 The branch is not merge-ready. Integration `8ae592a88caa` includes `main`
 through `cd5468e5dd37`. The iPhone simulator app built and installed from
@@ -38,7 +38,12 @@ dedicated Emby sign-in. It showed **Connect PublicMetaDB**, not **Browse**:
 the earlier PublicMetaDB pairing belonged to a simulator that had since been
 removed. The season test built but did not run. Independent API reads before
 and after agreed on all ten episodes and 40 ratings; they do not verify what
-the tvOS ratings screen displays.
+the tvOS ratings screen displays. A later native run on `1953982a3920`
+(build 6757, tvOS 27.0 simulator) closed that gap. Switching season 1 → 2 → 1
+showed each season's distinct episode averages and counts, matching fresh
+authenticated API reads on all three visits. Season 1 showed ten episodes
+with four ratings each. Neither the ratings nor the dedicated Emby user's
+episode history changed.
 
 On `7636ca222`, the iPhone app showed the same four individual ratings for
 episode 1 as the authenticated API. Each row offered **Delete rating**. Opening
@@ -140,6 +145,27 @@ emptied, and independent reads found no change to S1E3, S1E4 or tracker
 history. This verifies cancellation after apply starts but before dispatch in
 one process, using an in-memory queue. It does not test cancellation after a
 server accepts a write or recovery after app termination.
+
+On `1953982a3920`, a separate iPhone simulator check terminated the process
+at that same point, with the reviewed S1E3 import already persisted. A second
+process loaded the exact same mutation but could not reuse the previous
+process's approval: it removed the change without sending a network request
+during the drain. A third process found the queue empty. Independent reads
+after each process found both Plex episodes and PublicMetaDB history
+unchanged. This exercised the production outbox over isolated file storage,
+not the app UI or Keychain. No write had reached Plex before termination.
+
+For a write **already accepted** by Plozz's share history, cancellation cannot
+undo it. A reviewed import of *Big Buck Bunny* (TMDB 10378) exposed a mismatch:
+the selected NFS source had a stored watched record and returned `isPlayed`
+as true, but returned `hasBeenPlayed` as false. After correcting that
+projection, the production import was repeated with two NFS sources for the
+same file. An independent reader saw the selected record before cancellation.
+The session ended unconfirmed, with no pending retry; the selected source
+returned both flags as true and the unselected source returned both as false.
+The tracker history and list contents were unchanged. This used isolated
+Plozz storage and real NFS and PublicMetaDB reads, not a write to a media
+server. The share-provider suite passed with 733 tests passing and two skipped.
 
 Separately, the normal iPhone app showed the configured Emby user's row as
 **Set resume to 2,401 seconds**, unselected. The tracker detail showed 25.7%,

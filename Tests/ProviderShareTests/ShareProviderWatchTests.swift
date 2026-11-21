@@ -380,6 +380,9 @@ final class ShareProviderWatchTests: XCTestCase {
         )
         let watched = try await afterRestart.item(id: itemID)
         XCTAssertEqual(watched.isPlayed, true)
+        let history = try await afterRestart.trackerHistoryItem(id: itemID)
+        XCTAssertTrue(history.isPlayed)
+        XCTAssertTrue(history.hasBeenPlayed)
         XCTAssertEqual(watched.runtime, 205.152)
 
         try await afterRestart.setResumePosition(70.175, itemID: itemID, capturedAt: Date())

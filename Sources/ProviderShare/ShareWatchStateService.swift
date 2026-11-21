@@ -192,6 +192,7 @@ struct ShareWatchStateService: Sendable {
         guard let record else { return item }
         var copy = item
         copy.isPlayed = record.played
+        copy.hasBeenPlayed = record.played || item.hasBeenPlayed
         copy.resumePosition = (!record.played && record.position > 1) ? record.position : nil
         copy.lastPlayedAt = record.updatedAt
         if let duration = record.duration, duration.isFinite, duration > 0 {
