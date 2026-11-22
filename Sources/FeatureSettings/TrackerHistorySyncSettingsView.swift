@@ -5,17 +5,18 @@ import SwiftUI
 
 /// The account page may stay on screen across a reconnect or profile change.
 /// Keep the sheet and its captured session scoped to this connection.
-public struct TrackerAccountSyncLink: View {
+public struct TrackerAccountSettingsRows: View {
     private let tracker: any TrackerHistorySyncReading
-    private let makeSession: @MainActor () -> TrackerHistoryImportSession
+    private let makeSession: (@MainActor () -> TrackerHistoryImportSession)?
 
-    public init(tracker: any TrackerHistorySyncReading, makeSession: @escaping @MainActor () -> TrackerHistoryImportSession) {
+    public init(tracker: any TrackerHistorySyncReading, makeSession: (@MainActor () -> TrackerHistoryImportSession)?) {
         self.tracker = tracker
         self.makeSession = makeSession
     }
 
     public var body: some View {
-        if let connectionID = tracker.historyConnectionID {
+        TrackerActivationRow(tracker: tracker, trackerID: tracker.historySyncTrackerID)
+        if tracker.trackerEnabled, let connectionID = tracker.historyConnectionID, let makeSession {
             TrackerHistorySyncLink(makeSession: makeSession, accountTrackerID: tracker.historySyncTrackerID)
                 .id(connectionID)
         }

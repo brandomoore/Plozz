@@ -10,6 +10,7 @@ import Foundation
 /// treated as a confirmed write (so a Trakt 409 must be swallowed as success by the
 /// implementation, never rethrown).
 public protocol WatchMutationApplying: Sendable {
+    var trackerPlaybackAdmissions: [String: String]? { get }
     func reportTrackerPlayback(_ delivery: TrackerPlaybackDelivery) async throws
     func requireServerScope(_ scope: WatchMutationServerScope) async throws
     /// A newer server play can supersede a queued reset without being a local
@@ -51,6 +52,7 @@ public protocol WatchMutationApplying: Sendable {
 }
 
 public extension WatchMutationApplying {
+    var trackerPlaybackAdmissions: [String: String]? { nil }
     func reportTrackerPlayback(_ delivery: TrackerPlaybackDelivery) async throws {
         throw TrackerPlaybackDeliveryError.unsupportedIdentity
     }
@@ -403,7 +405,15 @@ public actor WatchStateReconciler {
             return false
         }
 
-        captureWetrakrWatch(&mutation)
+        if mutation.trakt != nil || mutation.traktProgress != nil {
+            let admissions = TrackerActivationStore.$eventDate.withValue(mutation.capturedAt) {
+                applier.trackerPlaybackAdmissions
+            }
+            mutation.trakt?.trackerAdmissions = admissions
+            mutation.traktProgress?.trackerAdmissions = admissions
+            captureWetrakrWatch(&mutation)
+            Self.filterTrackerDestinations(&mutation, current: admissions)
+        }
         let acceptedMutation: WatchMutation
         if let index = state.pending.firstIndex(where: {
             $0.coalesceKey == key && $0.authorization == mutation.authorization
@@ -647,9 +657,11 @@ public actor WatchStateReconciler {
                 merged.traktPending = existing.traktPending
             }
             // A still-owed tracker write survives later non-unwatch convergence.
-            merged.simklPending = incoming.simklPending || existing.simklPending
-            merged.anilistPending = incoming.anilistPending || existing.anilistPending
-            merged.malPending = incoming.malPending || existing.malPending
+            if incoming.trakt == nil {
+                merged.simklPending = incoming.simklPending || existing.simklPending
+                merged.anilistPending = incoming.anilistPending || existing.anilistPending
+                merged.malPending = incoming.malPending || existing.malPending
+            }
             if !incoming.wetrakrPending, existing.wetrakrPending, incoming.trakt == nil {
                 merged.wetrakrPending = true
                 merged.wetrakrAccountIdentity = existing.wetrakrAccountIdentity
@@ -678,6 +690,7 @@ public actor WatchStateReconciler {
         let session = mutation.optimisticTargets.first.map {
             LiveSession(target: $0, serverScope: mutation.serverScope)
         }
+
         let watch: WetrakrWatch
         if let session, liveSessions.contains(session),
            let existing = liveWetrakrWatches[session], existing.identity == identity {
@@ -697,6 +710,23 @@ public actor WatchStateReconciler {
         mutation.wetrakrCapturedAt = watch.capturedAt
         mutation.wetrakrIdempotencyKey = watch.key
         mutation.wetrakrPending = state.appliedWetrakr[watch.key] == nil
+    }
+
+    private static func filterTrackerDestinations(_ mutation: inout WatchMutation, current: [String: String]?) {
+        guard let current else { return }
+        func admits(_ tracker: String, _ captured: [String: String]?) -> Bool {
+            guard let active = current[tracker] else { return false }
+            // A pre-activation entry cannot prove which grant captured it.
+            // Retire only its tracker mirrors; server convergence is independent.
+            return captured?[tracker] == active
+        }
+        let captured = mutation.trakt?.trackerAdmissions
+        if !admits("trakt", captured) { mutation.traktPending = false }
+        if !admits("simkl", captured) { mutation.simklPending = false }
+        if !admits("wetrakr", captured) { mutation.wetrakrPending = false }
+        if !admits("anilist", captured) { mutation.anilistPending = false }
+        if !admits("myanimelist", captured) { mutation.malPending = false }
+        if !admits("trakt", mutation.traktProgress?.trackerAdmissions) { mutation.traktProgress = nil }
     }
 
     // MARK: - Drain
@@ -1088,6 +1118,10 @@ public actor WatchStateReconciler {
             onServerStateApplied(confirmed)
         }
 
+        if mutation.traktPending || mutation.traktProgress != nil || mutation.simklPending || mutation.wetrakrPending
+            || mutation.anilistPending || mutation.malPending {
+            Self.filterTrackerDestinations(&mutation, current: applier.trackerPlaybackAdmissions)
+        }
         if mutation.traktPending, let intent = mutation.trakt {
             let key = mutation.traktIdempotencyKey(dayBucket: WatchMutation.dayBucket(for: mutation.capturedAt))
             if state.appliedTrakt[key] != nil {

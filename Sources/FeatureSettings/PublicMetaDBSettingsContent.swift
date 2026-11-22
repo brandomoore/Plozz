@@ -23,6 +23,10 @@ public struct PublicMetaDBSettingsContent: View {
 
     public var body: some View {
         connectionSection {
+            if !service.hasSavedKey, service.phase == .disconnected, !showingEntry {
+                Text("Connect to send movie and episode playback to PublicMetaDB.")
+                    .plozzForeground(.secondary)
+            }
             if !showingEntry && (service.phase != .disconnected || service.hasSavedKey) {
                 PublicMetaDBConnectionStatus(phase: service.phase)
             }
@@ -110,7 +114,7 @@ public struct PublicMetaDBSettingsContent: View {
         #if os(iOS)
         SettingsSectionGroup(verbatim: "PublicMetaDB", content: rows)
         #else
-        VStack(alignment: .leading, spacing: SettingsFormMetrics.controlSpacing, content: rows)
+        rows()
         #endif
     }
 

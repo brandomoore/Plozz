@@ -2,6 +2,10 @@ import XCTest
 
 @MainActor
 enum PublicMetaDBLiveNavigation {
+    static func activation(in app: XCUIApplication) -> XCUIElement {
+        app.switches["publicmetadb.enabled"].firstMatch
+    }
+
     enum Failure: Error {
         case unavailableControl(String)
     }
@@ -31,6 +35,17 @@ enum PublicMetaDBLiveNavigation {
     }
 
     #if os(tvOS)
+    static func changeActivation(in app: XCUIApplication, from enabled: Bool) throws {
+        let control = activation(in: app)
+        try focus(app.buttons["settings-workspace-back"], moving: .up)
+        try focus(control, moving: .down)
+        guard control.value as? String == (enabled ? "1" : "0") else {
+            throw Failure.unavailableControl("Unexpected tracker state; refusing to toggle.")
+        }
+        XCUIRemote.shared.press(.select)
+        XCTAssertEqual(control.value as? String, enabled ? "0" : "1")
+    }
+
     static func requirePairingEntry(in app: XCUIApplication) throws {
         let manual = app.buttons["publicmetadb.pair.manual"]
         guard manual.waitForExistence(timeout: 5), manual.isEnabled,

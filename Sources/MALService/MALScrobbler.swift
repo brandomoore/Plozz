@@ -3,7 +3,7 @@ import CoreModels
 import CoreNetworking
 
 /// Sends anime watch progress to MyAnimeList. Only fires for anime content.
-public protocol MALScrobbling: Sendable {
+public protocol MALScrobbling: TrackerPlaybackAdmitting {
     func scrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async
     func scrobbleResult(item: MediaItem, progress: Double, event: PlaybackEvent) async throws
 }
@@ -58,6 +58,11 @@ public actor MALScrobbler: MALScrobbling {
     private let tokenStore: MALTokenStoring
     private let idMapper: AnimeIDMapper
     private let profileGeneration: MALProfileGeneration
+    private let activation: TrackerActivationStore
+
+    public nonisolated var playbackAdmissionID: String? {
+        activation.admission(for: tokenStore.load()?.stableAccountIdentity)
+    }
 
     public init(config: MALConfig, http: HTTPClient, tokenStore: MALTokenStoring, idMapper: AnimeIDMapper = .shared) {
         self.init(
@@ -74,22 +79,23 @@ public actor MALScrobbler: MALScrobbling {
         http: HTTPClient,
         tokenStore: MALTokenStoring,
         idMapper: AnimeIDMapper = .shared,
-        profileGeneration: MALProfileGeneration
+        profileGeneration: MALProfileGeneration, activation: TrackerActivationStore = .init("myanimelist")
     ) {
         self.client = MALClient(config: config, http: http)
         self.auth = MALAuthService(config: config, http: http)
         self.tokenStore = tokenStore
         self.idMapper = idMapper
         self.profileGeneration = profileGeneration
+        self.activation = activation
     }
 
     public func scrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async {
         guard event == .stop, progress >= 80 else { return }
         guard isAnime(item) else { return }
-        guard let token = await validAccessToken() else { return }
+        guard let grant = await validAccessToken() else { return }
 
         do {
-            try await updateList(item: item, accessToken: token)
+            try await updateList(item: item, accessToken: grant.token, admission: grant.admission)
             PlozzLog.playback.debug("MAL scrobble succeeded")
         } catch {
             PlozzLog.playback.debug("MAL scrobble failed (non-fatal)")
@@ -105,12 +111,12 @@ public actor MALScrobbler: MALScrobbling {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "mal", item: item, outcome: "skip(not anime)"))
             return
         }
-        guard let token = await validAccessToken() else {
+        guard let grant = await validAccessToken() else {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "mal", item: item, outcome: "skip(not connected)"))
             return
         }
         do {
-            try await updateList(item: item, accessToken: token)
+            try await updateList(item: item, accessToken: grant.token, admission: grant.admission)
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "mal", item: item, outcome: "OK"))
         } catch {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "mal", item: item, outcome: "THROW(\(error))"))
@@ -120,10 +126,11 @@ public actor MALScrobbler: MALScrobbling {
 
     // MARK: - Internal
 
-    private func updateList(item: MediaItem, accessToken: String) async throws {
+    private func updateList(item: MediaItem, accessToken: String, admission: String) async throws {
         // Most anime libraries (Shoko/Jellyfin) tag only AniDB; resolve a MAL id
         // on demand so MAL-only users still scrobble. No-op when one is present.
         let mapped = await idMapper.enrich(extractMappedIDs(from: item.providerIDs))
+        guard playbackAdmissionID == admission else { return }
         var malID = mapped.mal
         // ARM misses brand-new seasons; fall back to a MAL catalog title search.
         if malID == nil {
@@ -133,7 +140,7 @@ public actor MALScrobbler: MALScrobbling {
         } else {
             FanoutDiagnostics.emit("mal.resolve via=arm/native id=\(malID!)")
         }
-        guard let malID else { return }
+        guard let malID, playbackAdmissionID == admission else { return }
 
         let episodeProgress = item.episodeNumber
         try await client.updateAnimeListStatus(
@@ -145,18 +152,18 @@ public actor MALScrobbler: MALScrobbling {
     }
 
     /// Returns a usable access token, refreshing an expired one.
-    private func validAccessToken() async -> String? {  // l10n:content — returns an OAuth access token; string literals inside are developer diagnostics only
+    private func validAccessToken() async -> (token: String, admission: String)? {
         let generation = profileGeneration.current
-        guard let tokens = tokenStore.load() else { return nil }
-        guard tokens.isExpired else { return tokens.accessToken }
+        guard let (tokens, admission) = activation.capture(tokenStore.load, identity: \.stableAccountIdentity) else { return nil }
+        guard tokens.isExpired else { return (tokens.accessToken, admission) }
         do {
             let refreshed = try await auth.refresh(tokens.refreshToken)
                 .inheritingAccountIdentity(from: tokens)
-            guard profileGeneration.performIfCurrent(
-                generation,
-                operation: { try? tokenStore.save(refreshed) }
-            ) else { return nil }
-            return refreshed.accessToken
+            guard try profileGeneration.performIfCurrent(generation, operation: {
+                guard tokenStore.load() == tokens else { throw CancellationError() }
+                try tokenStore.save(refreshed)
+            }), playbackAdmissionID == admission else { return nil }
+            return (refreshed.accessToken, admission)
         } catch {
             PlozzLog.playback.debug("MAL token refresh failed (non-fatal)")
             return nil

@@ -13,7 +13,9 @@ public extension TrackerHistoryReading {
 }
 
 @MainActor
-public protocol TrackerHistorySyncReading: TrackerHistoryReading {
+public protocol TrackerHistorySyncReading: TrackerHistoryReading, TrackerActivationControlling {
+    /// Changes on resume; work admitted before a pause must not restart.
+    var historyActivationID: String? { get }
     var historySyncTrackerID: String { get }
     var historySyncNamespace: String? { get }
     var historySyncCategories: Set<TrackerHistorySyncCategory> { get }

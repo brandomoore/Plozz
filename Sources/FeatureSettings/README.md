@@ -1,9 +1,9 @@
 # FeatureSettings
 
-**Tracker v1 exposure:** The connected PublicMetaDB account shows **Playback reporting** and,
-for eligible media shares or an existing permission, **Ongoing sync (Beta)** directly below
-its connection status. Each row opens a settings page; Back returns to the account.
-The other supporting trackers also open ongoing sync directly, without a comparison.
+**Tracker v1 exposure:** Connecting a tracker starts its supported tracking activity.
+The connected account exposes the tracker switch directly; turning it off pauses
+tracking without removing the account. **Ongoing sync (Beta)** is a separate opt-in
+on supported trackers for eligible media shares, not part of connecting.
 One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
 discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
 The implementation notes for those tools below describe deferred code, not shipping entry points.

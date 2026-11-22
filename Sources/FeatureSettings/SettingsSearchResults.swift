@@ -6,18 +6,20 @@ public struct SettingsSearchResults: View {
     let query: String
     let platform: SettingsSearchEntry.Platform
     let isKids: Bool
+    let wetrakrConfigured: Bool
     let featureFlags: RuntimeFeatureFlags
     let onSelect: (SettingsSearchEntry, UUID?) -> Void
     @Environment(\.locale) private var locale
 
     public init(
         query: String, platform: SettingsSearchEntry.Platform, isKids: Bool = false,
-        featureFlags: RuntimeFeatureFlags = .buildDefault,
+        wetrakrConfigured: Bool = false, featureFlags: RuntimeFeatureFlags = .buildDefault,
         onSelect: @escaping (SettingsSearchEntry, UUID?) -> Void
     ) {
         self.query = query
         self.platform = platform
         self.isKids = isKids
+        self.wetrakrConfigured = wetrakrConfigured
         self.featureFlags = featureFlags
         self.onSelect = onSelect
     }
@@ -25,6 +27,7 @@ public struct SettingsSearchResults: View {
 
     private var results: [SettingsSearchEntry] {
         let available = SettingsSearchCatalog.entries(on: platform, isKids: isKids, featureFlags: featureFlags)
+            .filter { $0.page != .wetrakr || wetrakrConfigured }
         if isEmptyQuery {
             let suggestions = ["subtitle-size", "theme", "autoplay-next-episode", "resume-rewind", "display-size"]
             return suggestions.compactMap { id in available.first { $0.id == id } }
@@ -113,6 +116,7 @@ public struct SettingsSearchResults: View {
 #if os(tvOS)
 struct SettingsSearchTelevisionView<Content: View>: View {
     var isKids = false
+    var wetrakrConfigured: Bool
     @ViewBuilder var content: () -> Content
     @Environment(SettingsNavigationModel.self) private var navigation
     @Environment(\.settingsPageContext) private var page
@@ -144,7 +148,7 @@ struct SettingsSearchTelevisionView<Content: View>: View {
 
     private var searchResults: some View {
         SettingsSearchResults(
-            query: navigation.searchQuery, platform: .television, isKids: isKids
+            query: navigation.searchQuery, platform: .television, isKids: isKids, wetrakrConfigured: wetrakrConfigured
         ) { entry, source in
             navigation.pages.push(.searchResult(entry.id), sourceID: source)
         }

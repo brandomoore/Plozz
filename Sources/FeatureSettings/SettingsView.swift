@@ -420,7 +420,7 @@ public struct SettingsView: View {
     }
 
     private var settingsRoot: some View {
-        SettingsSearchTelevisionView(isKids: activeProfile.isKids) {
+        SettingsSearchTelevisionView(isKids: activeProfile.isKids, wetrakrConfigured: wetrakr.isConfigured) {
             VStack(alignment: .leading, spacing: 28) {
                 // The active profile's own container comes FIRST. Almost
                 // everything anyone opens Settings to change is in here —
@@ -956,7 +956,8 @@ public struct SettingsView: View {
                 searchPage: page
             )
         case .language: authorizedDestination(for: .language)
-        case .trackers, .publicMetaDB: authorizedDestination(for: .integrations)
+        case .trackers, .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm:
+            authorizedDestination(for: .integrations)
         case .topShelf: authorizedDestination(for: .topShelf)
         case .profiles: authorizedDestination(for: .profile)
         case .profileAppearance: authorizedDestination(for: .profileAppearance(profileID: activeProfile.id))

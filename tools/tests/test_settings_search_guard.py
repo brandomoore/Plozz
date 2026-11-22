@@ -220,13 +220,13 @@ class RepositoryCoverageTests(unittest.TestCase):
         self.assertEqual(GUARD.check(self.inventory, self.policy), [])
 
     def test_tracker_preferences_require_account_row_anchors(self):
-        account = next(item for item in self.inventory if item["name"] == "PublicMetaDBTrackingRows")
+        account = next(item for item in self.inventory if item["name"] == "TrackerActivationRow")
         # A match on the connection prerequisite alone cannot cover the controls
         # available directly on a connected account.
         catalog = component("SettingsSearchCatalog", "Sources/CoreModels/SettingsSearch.swift")
         catalog["registrations"] = [
             registration for item in self.inventory for registration in item["registrations"]
-            if registration["page"] == ".publicMetaDB" and registration["id"] != '"publicmetadb-account"'
+            if registration["id"].startswith('"tracker-enabled-')
         ]
         prefix = f'{account["file"]}|{account["name"]}|'
         policy = {
@@ -234,11 +234,14 @@ class RepositoryCoverageTests(unittest.TestCase):
             "exclusions": {k: v for k, v in self.policy["exclusions"].items() if k.startswith(prefix)},
         }
         self.assertEqual(GUARD.check([account, catalog], policy), [])
-        self.assertEqual([r["id"] for r in catalog["registrations"]], ['"publicmetadb-playback"'])
+        self.assertEqual({r["id"] for r in catalog["registrations"]}, {
+            f'"tracker-enabled-{provider}"' for provider in
+            ("trakt", "simkl", "wetrakr", "anilist", "myanimelist", "lastfm", "publicmetadb")
+        })
         changed = copy.deepcopy(account)
-        row, = [c for c in changed["controls"] if '"publicmetadb-playback"' in c["anchors"]]
+        row, = [c for c in changed["controls"] if c["kind"] == "Toggle"]
         row["anchors"] = []
-        self.assertTrue(any("unregistered" in error and "Playback reporting" in error
+        self.assertTrue(any("unregistered" in error and "Enable tracker" in error
                             for error in GUARD.check([changed, catalog], policy)))
 
     def guide_update_coverage_fixture(self):

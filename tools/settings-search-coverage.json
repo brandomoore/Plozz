@@ -4072,27 +4072,6 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/PublicMetaDBPlaybackSettingsView.swift|PublicMetaDBPlaybackSettingsView|body|Button|\"Cancel\"": {
-      "count": 1,
-      "reason": "Confirmation of device-local reporting for this connection; search must never grant consent.",
-      "covered_by": [
-        "publicmetadb-playback"
-      ]
-    },
-    "Sources/FeatureSettings/PublicMetaDBPlaybackSettingsView.swift|PublicMetaDBPlaybackSettingsView|body|Button|\"Enable reporting\"": {
-      "count": 1,
-      "reason": "Confirmation of device-local reporting for this connection; search must never grant consent.",
-      "covered_by": [
-        "publicmetadb-playback"
-      ]
-    },
-    "Sources/FeatureSettings/PublicMetaDBPlaybackSettingsView.swift|PublicMetaDBPlaybackSettingsView|body|Toggle|\"Report playback\"": {
-      "count": 1,
-      "reason": "Playback reporting opens this device-local consent switch for the active profile and connection.",
-      "covered_by": [
-        "publicmetadb-playback"
-      ]
-    },
     "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBSettingsContent|body|Button|\"Cancel\"": {
       "count": 2,
       "reason": "Connection removal, key replacement and their dialogs require explicit interaction with the current profile's saved connection.",

@@ -33,6 +33,7 @@ public final class AniListService: TrackerHistorySyncReading {
 
     @ObservationIgnored private let config: AniListConfig
     @ObservationIgnored private let tokenStore: AniListTokenStoring
+    @ObservationIgnored private let activation: TrackerActivationStore
     @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private var pendingSession: String?
     @ObservationIgnored private var profileGeneration: UInt64 = 0
@@ -50,8 +51,10 @@ public final class AniListService: TrackerHistorySyncReading {
         self.config = config
         self.http = http
         self.tokenStore = tokenStore
+        let activation = TrackerActivationStore(historySyncTrackerID, namespace: namespace)
+        self.activation = activation
         if config.isConfigured {
-            self.scrobbler = AniListScrobbler(config: config, http: http, tokenStore: tokenStore)
+            self.scrobbler = AniListScrobbler(config: config, http: http, tokenStore: tokenStore, activation: activation)
             self.watchlistDestination = AniListWatchlistDestination(
                 config: config,
                 http: http,
@@ -66,6 +69,12 @@ public final class AniListService: TrackerHistorySyncReading {
     }
 
     public var isConfigured: Bool { config.isConfigured }
+
+    public var historyActivationID: String? { activation.observedAdmission(for: historySyncIdentity?.connectionID) }
+    public var trackerEnabled: Bool { historyActivationID != nil }
+    public func setTrackerEnabled(_ enabled: Bool) throws {
+        try activation.setEnabled(enabled, for: historySyncIdentity?.connectionID)
+    }
 
     public var historyConnectionID: String? {
         guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
@@ -134,7 +143,7 @@ public final class AniListService: TrackerHistorySyncReading {
         historySyncNamespace = namespace
         profileGeneration &+= 1
         let generation = profileGeneration
-        tokenStore.setNamespace(namespace)
+        activation.setNamespace(namespace) { tokenStore.setNamespace(namespace) }
         phase = config.isConfigured ? .unknown : .unavailable
         await refreshStatus(generation: generation)
     }
@@ -207,6 +216,7 @@ public final class AniListService: TrackerHistorySyncReading {
             do {
                 try onHistorySyncDisconnect?()
                 try tokenStore.save(tokens)
+                activation.didConnect(tokens.stableAccountIdentity)
             } catch {
                 PlozzLog.app.error("AniList connection persistence failed")
                 phase = (error as? TrackerHistorySyncError) == .revocationFailed

@@ -250,27 +250,36 @@ final class AniListHistorySnapshotTests: XCTestCase {
 
     @MainActor
     func testDurableIdentitySurvivesLegacyReloadAndChangesOnSameTokenReconnect() async throws {
+        let profile = TrackerPauseFixture()
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/api/redeem", json: #"{"service":"anilist","accessToken":"fixture"}"#)
         http.stub(pathSuffix: "", json: #"{"data":{"Viewer":{"id":7,"name":"fixture"}}}"#)
         let config = AniListConfig(clientID: "fixture", clientSecret: "fixture")
         let legacy = try JSONDecoder().decode(AniListTokens.self, from: Data(#"{"accessToken":"fixture"}"#.utf8))
-        let store = InMemoryAniListTokenStore(tokens: legacy)
-        let service = AniListService(config: config, http: http, tokenStore: store)
+        let store = InMemoryAniListTokenStore()
+        store.setNamespace(profile.namespace)
+        try store.save(legacy)
+        let service = AniListService(config: config, http: http, tokenStore: store, namespace: profile.namespace)
         await service.refreshStatus()
         let first = try XCTUnwrap(service.historySyncIdentity)
+        try await profile.pause(service, http: http) {
+            await service.scrobbler.scrobble(item: profile.item, progress: 100, event: .stop)
+            try await service.scrobbler.scrobbleResult(item: profile.item, progress: 100, event: .stop)
+        }
         XCTAssertEqual(service.historySyncCategories, [.watched])
-        let restored = AniListService(config: config, http: http, tokenStore: store)
+        let restored = AniListService(config: config, http: http, tokenStore: store, namespace: profile.namespace)
         await restored.refreshStatus()
+        XCTAssertFalse(restored.trackerEnabled)
         XCTAssertEqual(restored.historySyncIdentity, first)
         var revocations = 0
         service.onHistorySyncDisconnect = { revocations += 1 }
         await service.setActiveProfile(namespace: "other")
         XCTAssertNil(service.historySyncIdentity)
-        await service.setActiveProfile(namespace: nil)
+        await service.setActiveProfile(namespace: profile.namespace)
         XCTAssertEqual(service.historySyncIdentity, first)
         await service.submitToken("fixture-code")
         let next = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertTrue(service.trackerEnabled)
         XCTAssertNotEqual(next, first)
         let saved = try XCTUnwrap(store.load())
         XCTAssertEqual(saved.accessToken, legacy.accessToken)

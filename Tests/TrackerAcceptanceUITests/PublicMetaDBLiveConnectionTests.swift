@@ -29,7 +29,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCTAssertEqual(simulator, environment["SIMULATOR_UDID"])
         XCTAssertEqual(environment["PLOZZ_TRACKER_CONNECTION_LIVE"], "1")
         XCTAssertEqual(app.state, .runningForeground)
-        if cancel.exists && !app.buttons["publicmetadb.playback"].exists {
+        if cancel.exists && !activation.exists {
             entered = true
             try cancelEntry()
         }
@@ -63,14 +63,15 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         qr.lifetime = .keepAlways
         add(qr)
 
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 120),
+        XCTAssertTrue(activation.waitForExistence(timeout: 120),
                       "The real browser handoff did not establish an authenticated native connection.")
         entered = false
         XCTAssertFalse(keyField.exists)
         XCTAssertEqual(enter.label, "Replace API key")
         XCTAssertTrue(app.staticTexts["Connected"].exists)
         try await verifyRevoked(code)
-        try verifyAccountLists()
+        try PublicMetaDBLiveNavigation.changeActivation(in: app, from: true)
+        assertInactiveAccount()
         let connected = XCTAttachment(screenshot: app.screenshot())
         connected.name = "production-publicmetadb-connected"
         connected.lifetime = .keepAlways
@@ -85,16 +86,16 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         XCTAssertEqual(simulator, environment["SIMULATOR_UDID"])
         XCTAssertEqual(environment["PLOZZ_TRACKER_CONNECTION_LIVE"], "1")
         XCTAssertEqual(app.state, .runningForeground)
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].exists)
+        assertInactiveAccount()
         XCTAssertTrue(app.launchArguments.isEmpty)
         XCTAssertTrue(app.launchEnvironment.isEmpty)
         app.terminate()
         app.launch()
         try PublicMetaDBLiveNavigation.openSettings(in: app)
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 60))
+        XCTAssertTrue(activation.waitForExistence(timeout: 60))
         XCTAssertEqual(enter.label, "Replace API key")
         XCTAssertTrue(app.staticTexts["Connected"].exists)
-        try verifyAccountLists()
+        assertInactiveAccount()
     }
 
     func testLiveManualConnection() async throws {
@@ -110,7 +111,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
             try cancelEntry()
         }
         try PublicMetaDBLiveNavigation.openSettings(in: app)
-        if !app.buttons["publicmetadb.playback"].exists && app.buttons["Retry saved connection"].exists {
+        if !activation.exists && app.buttons["Retry saved connection"].exists {
             try PublicMetaDBLiveNavigation.focus(back, moving: .up)
             try PublicMetaDBLiveNavigation.select(app.buttons["Retry saved connection"], moving: .down)
         }
@@ -118,7 +119,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
             try PublicMetaDBLiveNavigation.select(app.buttons["Done"], moving: .down)
             XCTAssertTrue(app.buttons["Done"].waitForNonExistence(timeout: 5))
         }
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 60))
+        XCTAssertTrue(activation.waitForExistence(timeout: 60))
         try PublicMetaDBLiveNavigation.focus(back, moving: .up)
         try PublicMetaDBLiveNavigation.select(enter, moving: .down)
         let replacement = app.sheets.firstMatch
@@ -137,12 +138,13 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         try move(.down, to: cancel)
         try move(.left, to: app.buttons["publicmetadb.connect"])
         XCUIRemote.shared.press(.select)
-        guard app.buttons["publicmetadb.playback"].waitForExistence(timeout: 60), !keyField.exists else {
+        guard activation.waitForExistence(timeout: 60), !keyField.exists else {
             throw Failure.precondition("The real manually entered key did not establish a native connection.")
         }
         entered = false
         XCTAssertTrue(app.staticTexts["Connected"].exists)
-        try verifyAccountLists()
+        try PublicMetaDBLiveNavigation.changeActivation(in: app, from: true)
+        assertInactiveAccount()
     }
 
     func testReplacementCancellationAndDisconnect() async throws {
@@ -163,15 +165,16 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
             try PublicMetaDBLiveNavigation.select(app.buttons["Done"], moving: .down)
             XCTAssertTrue(app.buttons["Done"].waitForNonExistence(timeout: 5))
         }
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 60))
+        XCTAssertTrue(activation.waitForExistence(timeout: 60))
+        let initialState = try XCTUnwrap(activation.value as? String)
         try PublicMetaDBLiveNavigation.focus(back, moving: .up)
         try PublicMetaDBLiveNavigation.select(enter, moving: .down)
         XCTAssertTrue(replacement.waitForExistence(timeout: 5))
         try PublicMetaDBLiveNavigation.select(replacement.buttons["Cancel"].firstMatch, moving: .left)
         XCTAssertTrue(replacement.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].exists)
+        XCTAssertTrue(activation.exists)
         XCTAssertFalse(keyField.exists)
-        try verifyAccountLists()
+        XCTAssertEqual(activation.value as? String, initialState)
 
         try PublicMetaDBLiveNavigation.focus(back, moving: .up)
         try PublicMetaDBLiveNavigation.select(enter, moving: .down)
@@ -189,7 +192,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         guard app.staticTexts["Connected"].waitForExistence(timeout: 45) else {
             throw Failure.precondition("Cancelling replacement did not restore the saved connection.")
         }
-        try verifyAccountLists()
+        XCTAssertEqual(activation.value as? String, initialState)
 
         try PublicMetaDBLiveNavigation.focus(back, moving: .up)
         try PublicMetaDBLiveNavigation.select(enter, moving: .down)
@@ -204,7 +207,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         guard app.staticTexts["Connected"].waitForExistence(timeout: 45) else {
             throw Failure.precondition("Cancelling a rejected replacement did not restore the saved connection.")
         }
-        try verifyAccountLists()
+        XCTAssertEqual(activation.value as? String, initialState)
 
         try PublicMetaDBLiveNavigation.focus(back, moving: .up)
         try PublicMetaDBLiveNavigation.select(app.buttons["Disconnect"], moving: .down)
@@ -225,18 +228,14 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
         try PublicMetaDBLiveNavigation.openSettings(in: app)
         try requireUnconnectedPage()
     }
-    private func verifyAccountLists() throws {
-        try PublicMetaDBLiveNavigation.focus(back, moving: .up)
-        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.browse"], moving: .down)
-        try PublicMetaDBLiveNavigation.select(app.buttons["Lists"], moving: .down)
-        let expectedName = ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"] ?? "No records"
-        XCTAssertFalse(expectedName.isEmpty)
-        PublicMetaDBLiveNavigation.assertSingleListPage(in: app, expectedRow: expectedName)
-        XCUIRemote.shared.press(.menu)
-        XCTAssertTrue(app.staticTexts[expectedName].waitForNonExistence(timeout: 5))
-        try PublicMetaDBLiveNavigation.select(app.buttons["Done"], moving: .down)
-        XCTAssertTrue(app.buttons["Done"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 5))
+    private var activation: XCUIElement { PublicMetaDBLiveNavigation.activation(in: app) }
+
+    private func assertInactiveAccount() {
+        XCTAssertEqual(activation.label, "Enable tracker")
+        XCTAssertEqual(activation.value as? String, "0")
+        XCTAssertEqual(enter.label, "Replace API key")
+        XCTAssertFalse(app.buttons["tracker-history.ongoing-sync"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
     }
 
     func testLivePairingCancellationAndInvalidKey() async throws {
@@ -273,7 +272,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
 
         let rejected = app.staticTexts["Your session has expired. Please sign in again."]
         guard rejected.waitForExistence(timeout: 50),
-              !app.buttons["publicmetadb.playback"].exists,
+              !activation.exists,
               keyField.exists else {
             throw Failure.precondition("The real app did not show the expected live invalid-key rejection.")
         }
@@ -316,7 +315,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
     private func requireUnconnectedPage() throws {
         guard app.state == .runningForeground, enter.waitForExistence(timeout: 5),
               enter.label == "Connect PublicMetaDB", enter.isEnabled, !app.buttons["Disconnect"].exists,
-              !app.buttons["publicmetadb.playback"].exists, !keyField.exists else {
+              !activation.exists, !keyField.exists else {
             throw Failure.precondition("Open English PublicMetaDB settings with no saved key; existing connections are never replaced.")
         }
     }
@@ -465,6 +464,7 @@ enum PublicMetaDBLiveManualInput {
         case requiresOneShotLoopbackInputURL
         case oneShotInputUnavailable
         case invalidOneShotKeyResponse
+        case dedicatedAccountNotVerified
     }
 
     static func readKey() async throws -> String {
@@ -506,6 +506,28 @@ enum PublicMetaDBLiveManualInput {
             throw Failure.invalidOneShotKeyResponse
         }
         return input.key
+    }
+
+    // Lists aren't exposed in tracking settings. Verify the dedicated key's marker
+    // read-only, before pasting it, rather than removing the account identity check.
+    static func verifyDedicatedAccount(key: String, expectedList: String) async throws {
+        struct Page: Decodable {
+            struct Item: Decodable { let name: String }
+            let items: [Item]
+            let totalPages: Int
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForResource = 15
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        let session = URLSession(configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: URL(string: "https://publicmetadb.com/api/external/lists?page=1&perPage=100")!)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1024 * 1024,
+              let page = try? JSONDecoder().decode(Page.self, from: data), page.totalPages == 1,
+              page.items.contains(where: { $0.name == expectedList }) else { throw Failure.dedicatedAccountNotVerified }
     }
 }
 

@@ -59,10 +59,24 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     case playbackAdvanced, streamingAdvanced, metadataDiagnostics, detailRatingSources
     case liveTVGuide, liveTVVisibility, profileAppearance, profileSettings, accountLibraries, seerr
     case releaseNotes, publicMetaDB
+    case trakt, simkl, wetrakr, anilist, myanimelist, lastfm
+
+    public var trackerAccount: (rowID: String, name: String)? {
+        switch self {
+        case .publicMetaDB: ("publicmetadb", "PublicMetaDB")
+        case .trakt: ("trakt", "Trakt")
+        case .simkl: ("simkl", "Simkl")
+        case .wetrakr: ("wetrakr", "WeTrakr")
+        case .anilist: ("anilist", "AniList")
+        case .myanimelist: ("mal", "MyAnimeList")
+        case .lastfm: ("lastfm", "Last.fm")
+        default: nil
+        }
+    }
 
     public var path: [SettingsSearchLabel] {
         if self == .seerr { return [.verbatim("Seerr")] }
-        if self == .publicMetaDB { return SettingsSearchPage.trackers.path + [.verbatim("PublicMetaDB")] }
+        if let trackerAccount { return SettingsSearchPage.trackers.path + [.verbatim(trackerAccount.name)] }
         return localizedPath.map(SettingsSearchLabel.localized)
     }
 
@@ -113,7 +127,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .profileAppearance: ["Profiles", "Appearance"]
         case .profileSettings: ["Profiles", "Manage profile"]
         case .accountLibraries: ["Libraries"]
-        case .seerr, .publicMetaDB: []
+        case .seerr, .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm: []
         case .detail: ["Screens & Navigation", "Movie & show details"]
         case .liveTV: ["Live TV"]
         case .language: ["Language"]
@@ -138,7 +152,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .sync: "icloud"
         case .metadata, .metadataDiagnostics: "sparkles.rectangle.stack"
         case .diagnostics: "ladybug"
-        case .trackers, .publicMetaDB: "link"
+        case .trackers, .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm: "link"
         case .seerr: "sparkles.tv"
         case .releaseNotes: "doc.text"
         }
@@ -158,7 +172,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     public var platform: SettingsSearchEntry.Platform? {
         switch self {
         case .downloads, .streamingAdvanced, .detailRatingSources: .mobile
-        case .topShelf: .television
+        case .topShelf, .lastfm: .television
         default: nil
         }
     }

@@ -46,6 +46,9 @@ public struct EpisodeOrigin: Codable, Hashable, Sendable {
 /// neutral (no `TraktService` types) so it can live in the outbox file and be
 /// replayed at launch by whatever scrobbler the app wires in.
 public struct TraktScrobbleIntent: Codable, Hashable, Sendable {
+    /// nil only for pre-activation outboxes/legacy adapters. An empty map
+    /// explicitly admits no destinations, including after restart or re-enable.
+    package var trackerAdmissions: [String: String]?
     public var kind: MediaItemKind
     public var title: String?  // l10n:content — media title
     /// Series title for episodes, so anime trackers can title-search brand-new
@@ -77,6 +80,10 @@ public struct TraktScrobbleIntent: Codable, Hashable, Sendable {
         self.episodeNumber = episodeNumber
         self.providerIDs = providerIDs
         self.progress = progress
+    }
+
+    package func withCapturedAdmissions<T>(_ deliver: () async throws -> T) async rethrows -> T {
+        try await TrackerActivationStore.$capturedAdmissions.withValue(trackerAdmissions, operation: deliver)
     }
 }
 

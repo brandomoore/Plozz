@@ -78,6 +78,18 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     public var playbackConnectionID: String? {
         phase == .connected ? playbackConsent?.deliveryScope : nil
     }
+    public var trackerEnabled: Bool { playbackConnectionID != nil }
+    public var historyActivationID: String? { playbackConnectionID }
+
+    public func setTrackerEnabled(_ enabled: Bool) throws {
+        guard phase == .connected, let connectionID else { throw PublicMetaDB.Failure.disconnected }
+        guard enabled != trackerEnabled else { return }
+        if enabled {
+            try enablePlayback(expectedConnectionID: connectionID)
+        } else {
+            disablePlayback()
+        }
+    }
     public let watchlistDestination: PublicMetaDBWatchlistDestination
     @ObservationIgnored public var onConnectionChanged: (@MainActor () -> Void)?
     @ObservationIgnored private var watchlistRequestID = UUID()
@@ -468,7 +480,13 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
                 )
                 watchlistSelection = selection
             }
-            if let consent = try playbackStore.load(), consent.connectionID == saved.connectionID {
+            if saving && !accountToolsEnabled {
+                // A new tracking connection starts enabled. Refreshing an existing
+                // key must never turn reporting back on or reuse an old delivery scope.
+                let consent = PublicMetaDBPlaybackConsent(connectionID: saved.connectionID)
+                try configurePlayback(saved, consent: consent)
+                try playbackStore.save(consent)
+            } else if let consent = try playbackStore.load(), consent.connectionID == saved.connectionID {
                 try configurePlayback(saved, consent: consent)
             }
             connectionID = saved.connectionID

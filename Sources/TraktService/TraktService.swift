@@ -56,6 +56,7 @@ public final class TraktService: TrackerHistorySyncReading {
     @ObservationIgnored private let auth: TraktAuthService
     @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let tokenStore: TraktTokenStoring
+    @ObservationIgnored private let activation: TrackerActivationStore
     @ObservationIgnored private let coordinator: TraktTokenCoordinator
     @ObservationIgnored private(set) var connectTask: Task<Void, Never>?
     @ObservationIgnored private let profileGeneration:
@@ -77,6 +78,8 @@ public final class TraktService: TrackerHistorySyncReading {
         self.auth = TraktAuthService(config: config, http: http)
         self.http = http
         self.tokenStore = tokenStore
+        let activation = TrackerActivationStore(historySyncTrackerID, namespace: namespace)
+        self.activation = activation
         self.coordinator = coordinator
         let profileGeneration = TraktProfileGeneration()
         self.profileGeneration = profileGeneration
@@ -85,7 +88,7 @@ public final class TraktService: TrackerHistorySyncReading {
                 config: config,
                 http: http,
                 tokenStore: tokenStore,
-                profileGeneration: profileGeneration
+                profileGeneration: profileGeneration, activation: activation
             )
             self.watchlistDestination = TraktWatchlistDestination(
                 config: config,
@@ -103,6 +106,12 @@ public final class TraktService: TrackerHistorySyncReading {
 
     /// Whether the feature is offered at all (client credentials present).
     public var isConfigured: Bool { config.isConfigured }
+
+    public var historyActivationID: String? { activation.observedAdmission(for: historySyncIdentity?.connectionID) }
+    public var trackerEnabled: Bool { historyActivationID != nil }
+    public func setTrackerEnabled(_ enabled: Bool) throws {
+        try activation.setEnabled(enabled, for: historySyncIdentity?.connectionID)
+    }
 
     public var historyConnectionID: String? {
         guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
@@ -174,7 +183,8 @@ public final class TraktService: TrackerHistorySyncReading {
 
     public func playbackScrobbler() -> any TraktScrobbling {
         guard config.isConfigured else { return DisabledTraktScrobbler() }
-        return TraktScrobbler(config: config, http: http, tokenStore: tokenStore.snapshot())
+        return TraktScrobbler(config: config, http: http, tokenStore: tokenStore.snapshot(),
+                              profileGeneration: TraktProfileGeneration(), activation: activation.snapshot())
     }
 
     /// Switches the service (and its shared scrobbler) to a household profile's
@@ -184,7 +194,7 @@ public final class TraktService: TrackerHistorySyncReading {
     public func setActiveProfile(namespace: String?) async {
         historySyncNamespace = namespace
         let generation = profileGeneration.advance {
-            tokenStore.setNamespace(namespace)
+            activation.setNamespace(namespace) { tokenStore.setNamespace(namespace) }
         }
         connectTask?.cancel()
         connectTask = nil
@@ -373,6 +383,7 @@ public final class TraktService: TrackerHistorySyncReading {
         try onHistorySyncDisconnect?()
         try await coordinator.save(tokens, store: store, context: context)
         guard generation == profileGeneration.current else { return }
+        activation.didConnect(tokens.stableAccountIdentity)
         phase = .connected(username: "Trakt")
         onConnectionAvailable?()
         do {

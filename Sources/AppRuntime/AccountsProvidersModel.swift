@@ -70,7 +70,7 @@ public final class AccountsProvidersModel {
     @ObservationIgnored
     private var liveTVAuthorizationCache: [String: (fingerprint: String, digest: String)] = [:]
     @ObservationIgnored private var sourceDiagnosticObserver: ObservationLease?
-    @ObservationIgnored private var historySyncControllers: [String: TrackerHistorySyncController] = [:]
+    @ObservationIgnored private var historySyncControllers: [String: (activation: String, controller: TrackerHistorySyncController)] = [:]
     public private(set) var trackerHistorySyncIsForeground = false
 
     /// The auth token to use for an account id, preferring an in-memory Plex
@@ -238,6 +238,8 @@ public final class AccountsProvidersModel {
         isAuthorized: @escaping @MainActor @Sendable () -> Bool
     ) -> TrackerHistoryImportSession {
         let connection = tracker.historyConnectionID
+        let syncTracker = tracker as? any TrackerHistorySyncReading
+        let activation = syncTracker?.historyActivationID
         let session = makeTrackerHistoryImportSession(
             purpose: .enrollment, reconciler: reconciler,
             readSnapshot: {
@@ -247,20 +249,21 @@ public final class AccountsProvidersModel {
             index: index, isPlexIdentityResolved: isPlexIdentityResolved,
             isAuthorized: {
                 isAuthorized() && connection != nil && tracker.historyConnectionID == connection
+                    && (syncTracker == nil || (activation != nil && syncTracker?.historyActivationID == activation))
             }
         )
-        if let syncStore, let tracker = tracker as? any TrackerHistorySyncReading,
+        if let syncStore, let tracker = syncTracker, let activation,
            let identity = tracker.historySyncIdentity, identity.trackerID == tracker.historySyncTrackerID,
            (tracker.historySyncNamespace ?? ProfileStore.defaultProfileID) == watchMutationServerScope.profileID {
             bindTrackerHistorySync(tracker, store: syncStore)
             let scope = watchMutationServerScope
             let controller: TrackerHistorySyncController
-            if let cached = historySyncControllers[identity.trackerID],
-               cached.identity == identity, cached.contextScope == scope,
-               cached.supportedCategories == tracker.historySyncCategories {
-                controller = cached
+            if let entry = historySyncControllers[identity.trackerID], entry.activation == activation,
+               entry.controller.identity == identity, entry.controller.contextScope == scope,
+               entry.controller.supportedCategories == tracker.historySyncCategories {
+                controller = entry.controller
             } else {
-                historySyncControllers[identity.trackerID]?.stop()
+                historySyncControllers[identity.trackerID]?.controller.stop()
                 controller = TrackerHistorySyncController(
                     identity: identity, scope: scope, store: syncStore,
                     supportedCategories: tracker.historySyncCategories,
@@ -270,7 +273,7 @@ public final class AccountsProvidersModel {
                             && !self.pendingHistorySyncRevocations.contains(.init(
                                 profileID: scope.profileID, trackerID: identity.trackerID
                             ))
-                            && tracker?.historySyncIdentity == identity
+                            && tracker?.historyActivationID == activation && tracker?.historySyncIdentity == identity
                             && self.watchMutationServerScope == scope
                             && self.isCurrentWatchMutationServerScope(scope, isPlexIdentityResolved: isPlexIdentityResolved)
                     },
@@ -293,7 +296,7 @@ public final class AccountsProvidersModel {
                         )
                     }
                 )
-                historySyncControllers[identity.trackerID] = controller
+                historySyncControllers[identity.trackerID] = (activation, controller)
             }
             session.ongoingSync = controller
         }
@@ -317,7 +320,7 @@ public final class AccountsProvidersModel {
             self.pendingHistorySyncRevocations.insert(scope)
             do {
                 guard let store else { throw TrackerHistorySyncError.revocationFailed }
-                if let controller = self.historySyncControllers[scope.trackerID],
+                if let controller = self.historySyncControllers[scope.trackerID]?.controller,
                    controller.contextScope.profileID == scope.profileID {
                     controller.disable()
                     if let error = controller.error { throw error }
@@ -334,7 +337,7 @@ public final class AccountsProvidersModel {
     }
 
     public func stopTrackerHistorySync() {
-        for controller in historySyncControllers.values { controller.stop() }
+        for entry in historySyncControllers.values { entry.controller.stop() }
     }
 
     public func setTrackerHistorySyncForeground(_ foreground: Bool) {

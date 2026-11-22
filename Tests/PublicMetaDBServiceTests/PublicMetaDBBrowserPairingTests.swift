@@ -1,5 +1,6 @@
 import CoreModels
 import CoreNetworking
+import CoreSecureStore
 import CryptoKit
 import Foundation
 import XCTest
@@ -33,7 +34,7 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
             await service.connectUsingBrowser()
             XCTAssertEqual(service.phase, .connected)
             XCTAssertEqual(store.load(namespace: nil)?.key, pairingTestKey)
-            XCTAssertNil(service.playbackConsent)
+            XCTAssertTrue(service.trackerEnabled)
             XCTAssertNil(service.watchlistSelection)
             XCTAssertFalse(service.browserPairing.isActive)
             let requests = await http.requests
@@ -110,7 +111,7 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
             await service.connectUsingBrowser()
             XCTAssertEqual(service.phase, .connected)
             XCTAssertEqual(store.load(namespace: nil)?.key, replacement)
-            XCTAssertNil(service.playbackConsent)
+            XCTAssertTrue(service.trackerEnabled)
         }
     }
 
@@ -119,6 +120,7 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
         try await withService(http) { service, store in
             await service.connect(key: pairingTestKey)
             let original = try XCTUnwrap(service.connectionID)
+            let delivery = try XCTUnwrap(service.playbackConnectionID)
             let oldClient = try XCTUnwrap(service.trackingClient)
             var revokedConsent = false
             service.onHistorySyncDisconnect = { revokedConsent = true }
@@ -127,6 +129,7 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
             await replacement.value
             XCTAssertEqual(service.phase, .connected)
             XCTAssertEqual(service.connectionID, original)
+            XCTAssertEqual(service.playbackConnectionID, delivery)
             XCTAssertEqual(store.load(namespace: nil)?.connectionID, original)
             XCTAssertFalse(revokedConsent)
             XCTAssertFalse(service.browserPairing.isActive)
@@ -231,7 +234,10 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         let store = PairingCredentialStore()
-        let service = PublicMetaDBService(credentials: store, http: http, defaults: defaults)
+        let service = PublicMetaDBService(
+            credentials: store, http: http, defaults: defaults,
+            watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
+        )
         try await body(service, store)
     }
 }

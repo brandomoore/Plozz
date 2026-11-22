@@ -89,7 +89,9 @@ final class PublicMetaDBPairingRemoteTests: XCTestCase {
         press(.down, expecting: app.buttons["publicmetadb.pair.cancel"])
         press(.left, expecting: app.buttons["publicmetadb.connect"])
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 5), app.debugDescription)
+        let activation = app.switches["publicmetadb.enabled"]
+        XCTAssertTrue(activation.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(activation.value as? String, "1")
         XCTAssertTrue(app.staticTexts["publicmetadb.status"].label.contains("Connected"))
         XCTAssertFalse(app.buttons["Tracking settings"].exists || app.buttons["Done"].exists)
         XCTAssertFalse(keyField.exists)

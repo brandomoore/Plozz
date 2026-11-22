@@ -263,8 +263,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(app.buttons["settings-category-trackers"])
         try tapVisible(app.buttons["publicmetadb.pair"], tapping: false)
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
-        XCTAssertFalse(app.buttons["publicmetadb.playback"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
+        XCTAssertFalse(activation.exists)
     }
 
     private func isolatedShareProfileName() throws -> String {
@@ -903,28 +902,24 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     func testEnablePlaybackReporting() throws {
-        try openPlaybackReporting()
-        try enableReporting()
+        try openPublicMetaDBAccount()
+        try changeActivation(from: false)
     }
 
     func testPlaybackReportingIsDisabled() throws {
-        try openPlaybackReporting()
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
+        try openPublicMetaDBAccount()
+        XCTAssertEqual(activation.value as? String, "0")
+        XCTAssertFalse(app.buttons["tracker-history.ongoing-sync"].exists)
         recordState()
     }
 
     func testConnectWithDirectAPIKey() async throws {
-        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
-        try require(!name.isEmpty && name != "No records", "Specify the dedicated account's expected test list.")
+        let marker = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
+        try require(!marker.isEmpty && marker != "No records", "Specify the dedicated account’s list marker.")
         try beginNewConnectionEntry()
-        try await pasteManualKeyAndConnect()
-        try tapVisible(app.buttons["publicmetadb.browse"])
-        try verifyAccountList(named: name)
-        let back = try XCTUnwrap(app.navigationBars.buttons.allElementsBoundByIndex.first(where: \.isHittable))
-        back.tap()
-        try tapVisible(app.buttons["Done"])
+        try await pasteManualKeyAndConnect(expectedList: marker)
         try assertSavedConnection()
+        XCTAssertEqual(activation.value as? String, "0")
     }
 
     func testDirectEntryCancellationAndInvalidKey() throws {
@@ -973,7 +968,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(app.buttons["publicmetadb.connect"])
         XCTAssertTrue(app.staticTexts["Your session has expired. Please sign in again."]
             .waitForExistence(timeout: 50))
-        XCTAssertFalse(app.buttons["publicmetadb.playback"].exists)
+        XCTAssertFalse(activation.exists)
         XCTAssertTrue(field.exists)
     }
 
@@ -998,23 +993,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         recordState()
     }
 
-    func testSavedConnectionAndListAfterRelaunch() throws {
+    func testSavedConnectionAndActivationAfterRelaunch() throws {
+        try openPublicMetaDBAccount()
+        let before = try XCTUnwrap(activation.value as? String)
         try openSettings()
         try tapVisible(app.buttons["settings-category-trackers"])
         try assertSavedConnection()
-        try tapVisible(app.buttons["publicmetadb.browse"])
-        let preference = app.switches["publicmetadb.ratings"]
-        try tapVisible(preference, tapping: false)
-        XCTAssertEqual(preference.value as? String, "0")
-        let name = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_TEST_LIST_NAME"])
-        XCTAssertFalse(name.isEmpty)
-        try verifyAccountList(named: name)
+        XCTAssertEqual(activation.value as? String, before)
+        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
         recordState()
-    }
-
-    private func verifyAccountList(named name: String) throws {
-        try tapVisible(app.buttons["Lists"])
-        PublicMetaDBLiveNavigation.assertSingleListPage(in: app, expectedRow: name)
     }
 
     func testInspectManualKeyPasteMenu() throws {
@@ -1045,7 +1032,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try await pasteManualKeyAndConnect()
     }
 
-    private func pasteManualKeyAndConnect() async throws {
+    private func pasteManualKeyAndConnect(expectedList: String? = nil) async throws {
         // A failure can leave the field or a system paste prompt onscreen. Never attach this run's UI.
         handlingLiveAPIKey = true
         let field = app.secureTextFields["publicmetadb.key"]
@@ -1054,6 +1041,9 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let connect = app.buttons["publicmetadb.connect"]
         XCTAssertFalse(connect.isEnabled)
         let input = try await PublicMetaDBLiveManualInput.readKey()
+        if let expectedList {
+            try await PublicMetaDBLiveManualInput.verifyDedicatedAccount(key: input, expectedList: expectedList)
+        }
         let board = UIPasteboard.general
         let previous = board.items
         do {
@@ -1075,11 +1065,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         try tapVisible(connect)
         try assertSavedConnection()
+        // A new connection reports playback by default. Leave connection-only runs disarmed.
+        try changeActivation(from: true)
     }
 
     private func assertSavedConnection() throws {
         XCTAssertTrue(app.secureTextFields["publicmetadb.key"].waitForNonExistence(timeout: 45))
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 45))
+        XCTAssertTrue(activation.waitForExistence(timeout: 45))
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Replace API key")
         XCTAssertTrue(app.staticTexts["Connected"].exists)
     }
@@ -1089,7 +1081,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(enter, tapping: false)
         XCTAssertEqual(enter.label, "Connect PublicMetaDB")
         XCTAssertTrue(enter.isEnabled)
-        XCTAssertFalse(app.buttons["publicmetadb.playback"].exists)
+        XCTAssertFalse(activation.exists)
         XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
     }
 
@@ -1124,34 +1116,33 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let enter = app.buttons["publicmetadb.pair"]
         try tapVisible(enter, tapping: false)
         XCTAssertEqual(enter.label, "Replace API key")
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 45))
+        XCTAssertTrue(activation.waitForExistence(timeout: 45))
         enter.tap()
         XCTAssertTrue(app.popovers.buttons["Replace API key"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
     }
 
     func testInspectPlaybackReporting() throws {
-        try openPlaybackReporting()
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
+        try openPublicMetaDBAccount()
+        XCTAssertEqual(activation.value as? String, "1")
     }
 
     func testInspectUnsupportedEpisodeReporting() throws {
-        try openPlaybackReporting()
+        try openPublicMetaDBAccount()
         try tapVisible(app.staticTexts[
-            "A session could not be reported because its content identity or episode order was not confirmed."
+            "Plozz couldn't match the title or episode."
         ], tapping: false)
     }
 
     func testRenewPlaybackConsent() throws {
-        try openPlaybackReporting()
-        try tapVisible(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch)
-        try enableReporting()
+        try openPublicMetaDBAccount()
+        try changeActivation(from: true)
+        try changeActivation(from: false)
     }
 
     func testDisablePlaybackReporting() throws {
-        try openPlaybackReporting()
-        try tapVisible(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch)
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.waitForExistence(timeout: 5))
+        try openPublicMetaDBAccount()
+        try changeActivation(from: true)
     }
 
     func testDisableCrossServerWatchSync() throws {
@@ -3148,12 +3139,13 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(apply)
     }
 
-    private func enableReporting() throws {
-        try tapVisible(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch)
-        let confirm = app.buttons["Enable reporting"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        confirm.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.waitForExistence(timeout: 10))
+    private var activation: XCUIElement { PublicMetaDBLiveNavigation.activation(in: app) }
+
+    private func changeActivation(from enabled: Bool) throws {
+        try tapVisible(activation, tapping: false)
+        try require(activation.value as? String == (enabled ? "1" : "0"), "Unexpected tracker state; refusing to toggle.")
+        try tapVisible(activation.switches.firstMatch.exists ? activation.switches.firstMatch : activation)
+        XCTAssertEqual(activation.value as? String, enabled ? "0" : "1")
     }
 
     func testOpenSelectedMovie() throws {
@@ -3533,22 +3525,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         app.buttons.containing(.image, identifier: "play.fill").firstMatch
     }
 
-    private func openPlaybackReporting() throws {
-        try openPublicMetaDBAccount()
-        try tapVisible(app.buttons["publicmetadb.playback"])
-    }
-
     func testTrackingOnlyAccountRoutes() throws {
         try openPublicMetaDBAccount()
         for id in ["publicmetadb.browse", "publicmetadb.watchlist", "publicmetadb.ratings", "publicmetadb.history",
                    "publicmetadb.history.bulk", "publicmetadb.compare-history", "publicmetadb.export-history"] {
             XCTAssertFalse(app.descendants(matching: .any)[id].firstMatch.exists, id)
         }
-        try tapVisible(app.buttons["publicmetadb.playback"])
-        let reporting = app.navigationBars["Playback reporting"]
-        XCTAssertTrue(reporting.waitForExistence(timeout: 10))
-        try tapVisible(reporting.buttons.firstMatch)
-        XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 10))
+        XCTAssertEqual(activation.label, "Enable tracker")
+        try require(activation.value as? String == "1",
+                    "This read-only route check needs an already active tracker and an eligible media share.")
         try tapVisible(app.buttons["tracker-history.ongoing-sync"])
         XCTAssertTrue(ongoingMaster.waitForExistence(timeout: 10))
         try tapVisible(app.navigationBars["Ongoing sync (Beta)"].buttons.firstMatch)
@@ -3558,7 +3543,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     private func openPublicMetaDBAccount(relaunch: Bool = true) throws {
         try openSettings(relaunch: relaunch)
         try tapVisible(app.buttons["settings-category-trackers"])
-        try tapVisible(app.buttons["publicmetadb.playback"], tapping: false)
+        try tapVisible(activation, tapping: false)
     }
 
     private func openSettings(relaunch: Bool = true) throws {

@@ -316,7 +316,7 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
     func testOpenPublicMetaDBSettings() throws {
         try PublicMetaDBLiveNavigation.openSettings(in: app)
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
-        XCTAssertFalse(app.buttons["publicmetadb.playback"].exists)
+        XCTAssertFalse(activation.exists)
     }
 
     func testConnectWithRealBrowserQR() throws {
@@ -352,6 +352,7 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         try data.write(to: URL(fileURLWithPath: handoff), options: .withoutOverwriting)
         try assertConnected()
         XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
+        try PublicMetaDBLiveNavigation.changeActivation(in: app, from: true)
     }
 
     func testSavedConnectionAfterRelaunch() throws {
@@ -389,27 +390,19 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
     }
 
     func testEnablePlaybackReporting() throws {
-        try openPlaybackReporting()
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.exists)
-        XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
-        try PublicMetaDBLiveNavigation.select(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch, moving: .down)
-        let confirm = app.sheets.buttons.matching(identifier: "Enable reporting").firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        try PublicMetaDBLiveNavigation.select(confirm, moving: .right)
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.waitForExistence(timeout: 10))
+        try openTrackerAccount()
+        try PublicMetaDBLiveNavigation.changeActivation(in: app, from: false)
     }
 
     func testPlaybackReportingIsDisabled() throws {
-        try openPlaybackReporting()
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
+        try openTrackerAccount()
+        XCTAssertEqual(activation.value as? String, "0")
+        XCTAssertFalse(app.buttons["tracker-history.ongoing-sync"].exists)
     }
 
     func testDisablePlaybackReporting() throws {
-        try openPlaybackReporting()
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
-        try PublicMetaDBLiveNavigation.select(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch, moving: .down)
-        XCTAssertTrue(app.descendants(matching: .any)["publicmetadb.playback.enable"].firstMatch.waitForExistence(timeout: 10))
+        try openTrackerAccount()
+        try PublicMetaDBLiveNavigation.changeActivation(in: app, from: true)
     }
 
     func testOpenSelectedMovie() throws {
@@ -680,15 +673,13 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         return cards.element
     }
 
-    private func openPlaybackReporting() throws {
+    private var activation: XCUIElement { PublicMetaDBLiveNavigation.activation(in: app) }
+
+    private func openTrackerAccount() throws {
         app.terminate()
         app.launch()
         try PublicMetaDBLiveNavigation.openSettings(in: app)
         try assertConnected()
-        try PublicMetaDBLiveNavigation.focus(app.buttons["settings-workspace-back"], moving: .up)
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 10))
-        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.playback"], moving: .down)
-        XCTAssertTrue(app.staticTexts["Playback reporting"].waitForExistence(timeout: 10))
     }
 
     private func enterNonsecretText(
@@ -731,7 +722,7 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
     }
 
     private func assertConnected() throws {
-        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 120))
+        XCTAssertTrue(activation.waitForExistence(timeout: 120))
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Replace API key")
         XCTAssertTrue(app.staticTexts["Connected"].exists)
     }

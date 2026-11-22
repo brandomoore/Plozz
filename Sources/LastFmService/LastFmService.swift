@@ -18,7 +18,7 @@ public enum LastFmConnectionPhase: Equatable, Sendable {
 /// App-level façade for the Last.fm music-scrobbling integration.
 @MainActor
 @Observable
-public final class LastFmService {
+public final class LastFmService: TrackerActivationControlling {
     public private(set) var phase: LastFmConnectionPhase
 
     /// Stable scrobbler handle. Captured ONCE by the audio controller — it is
@@ -30,16 +30,20 @@ public final class LastFmService {
     @ObservationIgnored private let auth: LastFmAuthService
     @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let tokenStore: LastFmTokenStoring
-    @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private let activation: TrackerActivationStore
+    @ObservationIgnored private(set) var connectTask: Task<Void, Never>?
     @ObservationIgnored private var historyGeneration: UInt64 = 0
 
-    public init(config: LastFmConfig, http: HTTPClient = URLSessionHTTPClient(), tokenStore: LastFmTokenStoring) {
+    public init(config: LastFmConfig, http: HTTPClient = URLSessionHTTPClient(),
+                tokenStore: LastFmTokenStoring, namespace: String? = nil) {
         self.config = config
         self.auth = LastFmAuthService(config: config, http: http)
         self.http = http
         self.tokenStore = tokenStore
+        let activation = TrackerActivationStore("lastfm", namespace: namespace)
+        self.activation = activation
         if config.isConfigured {
-            self.scrobbler = LastFmScrobbler(config: config, http: http, tokenStore: tokenStore)
+            self.scrobbler = LastFmScrobbler(config: config, http: http, tokenStore: tokenStore, activation: activation)
             self.phase = .unknown
         } else {
             self.scrobbler = DisabledLastFmScrobbler()
@@ -48,6 +52,16 @@ public final class LastFmService {
     }
 
     public var isConfigured: Bool { config.isConfigured }
+
+    private var connectedIdentity: String? {
+        guard case .connected = phase else { return nil }
+        return tokenStore.load()?.stableAccountIdentity
+    }
+
+    public var trackerEnabled: Bool { activation.observedAdmission(for: connectedIdentity) != nil }
+    public func setTrackerEnabled(_ enabled: Bool) throws {
+        try activation.setEnabled(enabled, for: connectedIdentity)
+    }
 
     public var historyConnectionID: String? {
         guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
@@ -72,7 +86,7 @@ public final class LastFmService {
         historyGeneration &+= 1
         connectTask?.cancel()
         connectTask = nil
-        tokenStore.setNamespace(namespace)
+        activation.setNamespace(namespace) { tokenStore.setNamespace(namespace) }
         phase = config.isConfigured ? .unknown : .unavailable
         await refreshStatus()
     }
@@ -103,9 +117,11 @@ public final class LastFmService {
                         expiresAt: Date().addingTimeInterval(LastFmAuthService.tokenLifetime)
                     )
                     do {
-                        let tokens = try await self.auth.awaitSession(token: token)
+                        var tokens = try await self.auth.awaitSession(token: token)
                         try Task.checkCancellation()
-                        try? self.tokenStore.save(tokens)
+                        tokens.accountIdentity = UUID().uuidString
+                        try self.tokenStore.save(tokens)
+                        self.activation.didConnect(tokens.stableAccountIdentity)
                         self.phase = .connected(username: tokens.username)
                         return
                     } catch let error as AppError where error == .quickConnectExpired {
@@ -151,7 +167,7 @@ public enum LastFmServiceFactory {
     ) -> LastFmService {
         let store = tokenStore ?? defaultTokenStore()
         store.setNamespace(namespace)
-        return LastFmService(config: config, http: http, tokenStore: store)
+        return LastFmService(config: config, http: http, tokenStore: store, namespace: namespace)
     }
 
     public static func defaultTokenStore() -> LastFmTokenStoring {

@@ -387,24 +387,33 @@ final class SimklHistorySnapshotTests: XCTestCase {
     }
 
     func testDurableIdentitySurvivesRelaunchButSameTokenReconnectCreatesNewConsentScope() async throws {
+        let profile = TrackerPauseFixture()
         let http = try http()
         http.stub(pathSuffix: "/oauth/pin", json: """
         {"user_code":"FIXTURE","verification_url":"https://example.test","expires_in":600,"interval":5}
         """)
         http.stub(pathSuffix: "/oauth/pin/FIXTURE", json: #"{"result":"OK","access_token":"fixture"}"#)
         let legacy = try JSONDecoder().decode(SimklTokens.self, from: Data(#"{"accessToken":"fixture"}"#.utf8))
-        let store = InMemorySimklTokenStore(tokens: legacy)
-        let service = SimklService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
+        let store = InMemorySimklTokenStore()
+        store.setNamespace(profile.namespace)
+        try store.save(legacy)
+        let service = SimklService(config: .init(clientID: "fixture"), http: http, tokenStore: store, namespace: profile.namespace)
         await service.refreshStatus()
         let first = try XCTUnwrap(service.historySyncIdentity)
-        let restored = SimklService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
+        try await profile.pause(service, http: http) {
+            await service.scrobbler.scrobble(item: profile.item, progress: 60, event: .pause)
+            try await service.scrobbler.scrobbleResult(item: profile.item, progress: 100, event: .stop)
+        }
+        let restored = SimklService(config: .init(clientID: "fixture"), http: http, tokenStore: store, namespace: profile.namespace)
         await restored.refreshStatus()
+        XCTAssertFalse(restored.trackerEnabled)
         XCTAssertEqual(restored.historySyncIdentity, first)
         var revocations = 0
         service.onHistorySyncDisconnect = { revocations += 1 }
         service.connect()
         await service.connectTask?.value
         let next = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertTrue(service.trackerEnabled)
         XCTAssertNotEqual(next, first)
         let saved = try XCTUnwrap(store.load())
         XCTAssertEqual(saved.accessToken, legacy.accessToken)

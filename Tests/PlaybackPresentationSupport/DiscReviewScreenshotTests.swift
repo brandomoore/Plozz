@@ -360,7 +360,7 @@ extension AtlasUI {
         let status = app.staticTexts["publicmetadb.status"]
         XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(status.label, "Connected")
-        XCTAssertEqual(el("publicmetadb.playback").label, "Playback reporting")
+        XCTAssertEqual(el("publicmetadb.enabled").label, "Enable tracker")
         XCTAssertFalse(app.buttons["Tracking settings"].exists)
         XCTAssertFalse(app.buttons["Done"].exists)
     }
@@ -383,9 +383,10 @@ extension AtlasUI {
     func testAccount() {
         openConnectedAccount()
         defer { app.terminate() }
-        let reporting = el("publicmetadb.playback"), sync = el("tracker-history.ongoing-sync")
+        let activation = el("publicmetadb.enabled"), sync = el("tracker-history.ongoing-sync")
         XCTAssertEqual(sync.label, "Ongoing sync (Beta)")
-        XCTAssertTrue(reporting.isHittable && sync.isHittable)
+        XCTAssertEqual(activation.value as? String, "1", "Connecting enables basic tracking.")
+        XCTAssertTrue(activation.isHittable && sync.isHittable)
         for id in ["publicmetadb.ratings", "publicmetadb.watchlist", "publicmetadb.compare-history",
                    "publicmetadb.export-history", "publicmetadb.history", "publicmetadb.history.bulk"] {
             XCTAssertFalse(el(id).exists, id)
@@ -395,12 +396,15 @@ extension AtlasUI {
         }
         shot("flat-connected")
 
-        go(reporting)
-        let reportingOff = el("publicmetadb.playback.enable")
-        go(reportingOff)
-        go(app.buttons["Enable reporting"].firstMatch)
-        XCTAssertTrue(el("publicmetadb.playback.disable").waitForExistence(timeout: 5))
-        returnToAccount(from: "Playback reporting", tvBackID: "publicmetadb.playback.back", row: reporting)
+        go(activation)
+        XCTAssertEqual(activation.value as? String, "0")
+        XCTAssertTrue(sync.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["publicmetadb.status"].label, "Connected")
+        XCTAssertTrue(app.buttons["Disconnect"].exists)
+        shot("tracker-disabled")
+        go(activation)
+        XCTAssertEqual(activation.value as? String, "1")
+        XCTAssertTrue(sync.waitForExistence(timeout: 5))
 
         go(sync)
         let syncSwitch = el("tracker-history.sync-enabled")
@@ -416,9 +420,9 @@ extension AtlasUI {
         openConnectedAccount(serversOnly: true)
         defer { app.terminate() }
         XCTAssertFalse(el("tracker-history.ongoing-sync").exists)
-        XCTAssertTrue(el("publicmetadb.playback").isHittable)
+        XCTAssertTrue(el("publicmetadb.enabled").isHittable)
     }
-    func testDisconnect() { scenario("connected",[("","account-connected","@publicmetadb.playback"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
+    func testDisconnect() { scenario("connected",[("","account-connected","@publicmetadb.enabled"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
     func testReplace() { scenario("connected",[("Replace API key","account-replace-confirm","Replace this profile")]) }
     func testPairing() {
         #if os(tvOS)
@@ -472,7 +476,6 @@ extension AtlasUI {
         XCTAssertTrue(connect.exists)
         XCTAssertFalse(connect.isEnabled)
     }
-    func testReport() { scenario("reporting",[("","reporting-off","@publicmetadb.playback.enable"),("@publicmetadb.playback.enable","reporting-consent","Enable reporting")]); scenario("reporting-on",[("","reporting-on","@publicmetadb.playback.disable")]) }
     func testWatchlist() { scenario("watchlist",[("","watchlist-off","Choose a list"),("Choose a list","watchlist-picker","Weekend matinees"),("Weekend matinees","watchlist-private-consent","Use this list")]); scenario("watchlist-on",[("","watchlist-on","Stop syncing this list")]) }
     func testPublicConsent() { scenario("watchlist",[("Choose a list","watchlist-picker","Harbor lights"),("Harbor lights","watchlist-public-consent","Use this list")]) }
     func testDrop() { scenario("drop-record",[("","drop-show","Drop show"),("@publicmetadb.history.action","drop-show-confirm","Change this PublicMetaDB record?")]) }
@@ -527,7 +530,16 @@ extension AtlasUI {
         XCTAssertFalse(el("\(id).compare-history").exists)
         XCTAssertFalse(el("\(id).export-history").exists)
         XCTAssertFalse(el("lastfm.history").exists)
-        let sync = el("\(id == "mal" ? "myanimelist" : id).ongoing-sync")
+        let provider = id == "mal" ? "myanimelist" : id
+        let sync = el("\(provider).ongoing-sync"), activation = el("\(provider).enabled")
+        XCTAssertEqual(activation.label, "Enable tracker")
+        XCTAssertEqual(activation.value as? String, "1")
+        go(activation)
+        XCTAssertEqual(activation.value as? String, "0")
+        XCTAssertFalse(sync.exists)
+        XCTAssertTrue(app.buttons["Disconnect"].exists)
+        go(activation)
+        XCTAssertEqual(activation.value as? String, "1")
         if supportsSync && !serversOnly {
             XCTAssertTrue(sync.waitForExistence(timeout: 5))
             shot("tracker-\(id)")
@@ -548,7 +560,7 @@ extension AtlasUI {
     func testTrackerAni() { checkTrackingAccount("anilist") }
     func testTrackerMAL() { checkTrackingAccount("mal") }
     func testTrackerLast() { checkTrackingAccount("lastfm", supportsSync: false) }
-    func testTrackerPub() {provider("publicmetadb","@publicmetadb.playback")}
+    func testTrackerPub() {provider("publicmetadb","@publicmetadb.enabled")}
     #endif
     func field(_ label:String,_ value:String) {
         let e=label.hasPrefix("@") ? el(String(label.dropFirst())) : app.textFields[label].firstMatch

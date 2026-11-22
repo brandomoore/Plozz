@@ -14,12 +14,7 @@ struct PlozziOSTrackerSettingsView: View {
 
     var body: some View {
         List {
-            Text(
-                """
-                Connections are stored separately for each Plozz profile. \
-                Existing trackers keep their playback settings. Connecting PublicMetaDB does not import history to your servers.
-                """
-            )
+            Text("Connect a tracker to report what you watch in this profile. Syncing history to media shares is optional.")
             .font(.footnote)
             .plozzForeground(.secondary)
             .listRowInsets(EdgeInsets())
@@ -29,23 +24,28 @@ struct PlozziOSTrackerSettingsView: View {
             SettingsSectionGroup(verbatim: "Trakt") {
                 TraktSettingsContent(service: appModel.traktService, makeHistoryImport: appModel.makeTraktHistoryImport)
             }
+            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .trakt))
 
             SettingsSectionGroup(verbatim: "Simkl") {
                 SimklSettingsContent(service: appModel.simklService, makeHistoryImport: appModel.makeSimklHistoryImport)
             }
+            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .simkl))
             if appModel.wetrakrService.isConfigured {
                 SettingsSectionGroup(verbatim: "WeTrakr") {
                     WetrakrSettingsContent(service: appModel.wetrakrService, makeHistoryImport: appModel.makeWetrakrHistoryImport)
                 }
+                .settingsSearchGroup(SettingsSearchCatalog.targets(on: .wetrakr))
             }
 
             SettingsSectionGroup(verbatim: "AniList") {
                 AniListSettingsContent(service: appModel.anilistService, makeHistoryImport: appModel.makeAniListHistoryImport)
             }
+            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .anilist))
 
             SettingsSectionGroup(verbatim: "MyAnimeList") {
                 MALSettingsContent(service: appModel.malService, makeHistoryImport: appModel.makeMALHistoryImport)
             }
+            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .myanimelist))
             PublicMetaDBSettingsContent(
                 service: appModel.publicMetaDBService, makeHistoryImport: appModel.makePublicMetaDBHistoryImport
             )
@@ -119,7 +119,7 @@ private struct TraktSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
+            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -204,7 +204,7 @@ private struct WetrakrSettingsContent: View {
                 .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
+            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) { Task { await service.disconnect() } }
                 .settingsActionRow()
         case let .error(message):
@@ -262,7 +262,7 @@ private struct SimklSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
+            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -305,7 +305,7 @@ private struct AniListSettingsContent: View {
             }
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
+            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -389,7 +389,7 @@ private struct MALSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
+            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }

@@ -10,19 +10,14 @@
         let makeHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
 
         var body: some View {
-            let isCurrent = { service.connectionID == connectionID && service.phase == .connected }
-            SettingsPageLink {
-                TrackerConnectionPage(isCurrent: isCurrent) {
-                    PublicMetaDBPlaybackSettingsView(service: service)
-                }
-            } label: {
-                SettingsDisclosureLabel { Text("Playback reporting") }
+            TrackerActivationRow(tracker: service, trackerID: "publicmetadb", fallbackTargets: ["publicmetadb-account"])
+            if let issue = service.playbackConsent?.lastFailure {
+                PublicMetaDBPlaybackFailure(failure: issue)
             }
-            .settingsActionRow()
-            .accessibilityIdentifier("publicmetadb.playback")
-            .settingsSearchAnchor("publicmetadb-playback", fallbackFor: ["publicmetadb-account"])
-            if let makeHistoryImport {
-                TrackerHistorySyncLink(makeSession: makeHistoryImport, isCurrent: isCurrent)
+            if service.trackerEnabled, let makeHistoryImport {
+                TrackerHistorySyncLink(makeSession: makeHistoryImport, isCurrent: {
+                    service.connectionID == connectionID && service.phase == .connected && service.trackerEnabled
+                })
             }
         }
     }

@@ -35,8 +35,8 @@ struct IntegrationsDetailView: View {
 
     @ViewBuilder private var trackerPage: some View {
         #if os(tvOS)
-        if let searchRequest, SettingsSearchCatalog.entry(id: searchRequest.targetID)?.page == .publicMetaDB {
-            if let row = rows.first(where: { $0.id == "publicmetadb" }) {
+        if let searchRequest, let account = SettingsSearchCatalog.entry(id: searchRequest.targetID)?.page.trackerAccount {
+            if let row = rows.first(where: { $0.id == account.rowID }) {
                 SettingsFormRowPage(row: row, showsBack: false)
             } else {
                 ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
@@ -89,14 +89,7 @@ struct IntegrationsDetailView: View {
             SettingsSplitRow(
                 id: "trakt",
                 verbatimTitle: "Trakt",
-                // Deliberately says nothing about WHERE the media came from.
-                // Naming Jellyfin was wrong twice over: scrobbling works from any
-                // provider — Plex, Emby and network shares included — and this
-                // integration also syncs the watchlist, which the old wording
-                // never mentioned. Describing what the connection does, rather
-                // than enumerating what it currently covers, is also what keeps
-                // this true the next time something is added to it.
-                description: "Scrobble and sync your watch history and watchlist with Trakt.",
+                description: "Report movie and episode playback to Trakt.",
             ) {
                 if case let .connecting(userCode, verificationURL, expiresAt) = trakt.phase {
                     DeviceCodeConnectingView(
@@ -120,16 +113,15 @@ struct IntegrationsDetailView: View {
                         onConnect: { trakt.connect() },
                         onCancel: { trakt.cancelConnect() },
                         onDisconnect: { Task { await trakt.disconnect() } }
-                    )
-                    if let makeTraktHistoryImport {
-                        TrackerAccountSyncLink(tracker: trakt, makeSession: makeTraktHistoryImport)
+                    ) {
+                        TrackerAccountSettingsRows(tracker: trakt, makeSession: makeTraktHistoryImport)
                     }
                 }
             },
             SettingsSplitRow(
                 id: "simkl",
                 verbatimTitle: "Simkl",
-                description: "Scrobble and sync your watch history and watchlist with Simkl.",
+                description: "Report movie and episode playback to Simkl.",
             ) {
                 if case let .connecting(userCode, verificationURL, expiresAt) = simkl.phase {
                     DeviceCodeConnectingView(
@@ -146,16 +138,15 @@ struct IntegrationsDetailView: View {
                         onConnect: { simkl.connect() },
                         onCancel: { simkl.cancelConnect() },
                         onDisconnect: { Task { await simkl.disconnect() } }
-                    )
-                    if let makeSimklHistoryImport {
-                        TrackerAccountSyncLink(tracker: simkl, makeSession: makeSimklHistoryImport)
+                    ) {
+                        TrackerAccountSettingsRows(tracker: simkl, makeSession: makeSimklHistoryImport)
                     }
                 }
             },
             SettingsSplitRow(
                 id: "wetrakr",
                 verbatimTitle: "WeTrakr",
-                description: "Scrobble movies and episodes and sync your watchlist with WeTrakr."
+                description: "Report movie and episode playback to WeTrakr."
             ) {
                 if case let .connecting(userCode, verificationURL, expiresAt) = wetrakr.phase {
                     DeviceCodeConnectingView(
@@ -174,16 +165,15 @@ struct IntegrationsDetailView: View {
                         phase: wetrakrRowPhase, onConnect: { wetrakr.connect() },
                         onCancel: { wetrakr.cancelConnect() },
                         onDisconnect: { Task { await wetrakr.disconnect() } }
-                    )
-                    if let makeWetrakrHistoryImport {
-                        TrackerAccountSyncLink(tracker: wetrakr, makeSession: makeWetrakrHistoryImport)
+                    ) {
+                        TrackerAccountSettingsRows(tracker: wetrakr, makeSession: makeWetrakrHistoryImport)
                     }
                 }
             },
             SettingsSplitRow(
                 id: "anilist",
                 verbatimTitle: "AniList",
-                description: "Scrobble and sync your anime progress and watchlist with AniList.",
+                description: "Track the anime you watch on AniList.",
             ) {
                 if case .awaitingToken = anilist.phase {
                     AniListTokenEntryView(anilist: anilist)
@@ -193,16 +183,15 @@ struct IntegrationsDetailView: View {
                         onConnect: { anilist.connect() },
                         onCancel: { anilist.cancelConnect() },
                         onDisconnect: { Task { await anilist.disconnect() } }
-                    )
-                    if let makeAniListHistoryImport {
-                        TrackerAccountSyncLink(tracker: anilist, makeSession: makeAniListHistoryImport)
+                    ) {
+                        TrackerAccountSettingsRows(tracker: anilist, makeSession: makeAniListHistoryImport)
                     }
                 }
             },
             SettingsSplitRow(
                 id: "mal",
                 verbatimTitle: "MyAnimeList",
-                description: "Scrobble and sync your anime progress and watchlist with MyAnimeList.",
+                description: "Track the anime you watch on MyAnimeList.",
             ) {
                 if case .awaitingAuthorizationCode = mal.phase {
                     MALAuthorizationCodeEntryView(mal: mal)
@@ -212,16 +201,15 @@ struct IntegrationsDetailView: View {
                         onConnect: { mal.connect() },
                         onCancel: { mal.cancelConnect() },
                         onDisconnect: { Task { await mal.disconnect() } }
-                    )
-                    if let makeMALHistoryImport {
-                        TrackerAccountSyncLink(tracker: mal, makeSession: makeMALHistoryImport)
+                    ) {
+                        TrackerAccountSettingsRows(tracker: mal, makeSession: makeMALHistoryImport)
                     }
                 }
             },
             SettingsSplitRow(
                 id: "lastfm",
                 verbatimTitle: "Last.fm",
-                description: lastfmRowPhase == .connecting ? nil : "Scrobble the music you play in Plozz to your Last.fm profile.",
+                description: lastfmRowPhase == .connecting ? nil : "Report the music you play to Last.fm.",
             ) {
                 if case let .connecting(authURL, _) = lastfm.phase {
                     LastFmConnectingView(
@@ -234,7 +222,9 @@ struct IntegrationsDetailView: View {
                         onConnect: { lastfm.connect() },
                         onCancel: { lastfm.cancelConnect() },
                         onDisconnect: { Task { await lastfm.disconnect() } }
-                    )
+                    ) {
+                        TrackerActivationRow(tracker: lastfm, trackerID: "lastfm")
+                    }
                 }
             }
         ]
@@ -292,11 +282,12 @@ struct IntegrationsDetailView: View {
     /// entry with its own Cancel). Reuses the same phase vocabulary as the old
     /// `TrackerRow` so behaviour is unchanged — just relocated to the detail pane.
     @ViewBuilder
-    private func trackerActionBar(
+    private func trackerActionBar<Settings: View>(
         phase: TrackerRowPhase,
         onConnect: @escaping () -> Void,
         onCancel: @escaping () -> Void,
-        onDisconnect: @escaping () -> Void
+        onDisconnect: @escaping () -> Void,
+        @ViewBuilder settings: () -> Settings
     ) -> some View {
         switch phase {
         case .loading:
@@ -319,11 +310,10 @@ struct IntegrationsDetailView: View {
                 Text("Cancel")
             }
         case let .connected(username):
-            VStack(alignment: .leading, spacing: 18) {
-                TrackerConnectedStatus(username: username)
-                Button(role: .destructive, action: onDisconnect) {
-                    Label("Disconnect", systemImage: "xmark.circle")
-                }
+            TrackerConnectedStatus(username: username)
+            settings()
+            Button(role: .destructive, action: onDisconnect) {
+                Label("Disconnect", systemImage: "xmark.circle")
             }
         case .error(let message):
             VStack(alignment: .leading, spacing: 18) {

@@ -3,7 +3,7 @@ import CoreModels
 import CoreNetworking
 
 /// Sends watch history to Simkl. Best-effort by contract (like Trakt).
-public protocol SimklScrobbling: Sendable {
+public protocol SimklScrobbling: TrackerPlaybackAdmitting {
     func scrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async
     func scrobbleResult(item: MediaItem, progress: Double, event: PlaybackEvent) async throws
 }
@@ -27,17 +27,28 @@ public actor SimklScrobbler: SimklScrobbling {
     private let client: SimklClient
     private let tokenStore: SimklTokenStoring
     private let idMapper: AnimeIDMapper
+    private let activation: TrackerActivationStore
+
+    public nonisolated var playbackAdmissionID: String? {
+        activation.admission(for: tokenStore.load()?.stableAccountIdentity)
+    }
 
     public init(config: SimklConfig, http: HTTPClient, tokenStore: SimklTokenStoring, idMapper: AnimeIDMapper = .shared) {
+        self.init(config: config, http: http, tokenStore: tokenStore, idMapper: idMapper, activation: .init("simkl"))
+    }
+
+    init(config: SimklConfig, http: HTTPClient, tokenStore: SimklTokenStoring, idMapper: AnimeIDMapper = .shared,
+         activation: TrackerActivationStore) {
         self.client = SimklClient(config: config, http: http)
         self.tokenStore = tokenStore
         self.idMapper = idMapper
+        self.activation = activation
     }
 
     public func scrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async {
         guard let action = Self.action(for: event) else { return }
         let generation = tokenStore.authorizationGeneration
-        guard let credentials = tokenStore.load() else {
+        guard let (credentials, admission) = activation.capture(tokenStore.load, identity: \.stableAccountIdentity) else {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl-rt", item: item, outcome: "skip(not connected)"))
             return
         }
@@ -49,7 +60,7 @@ public actor SimklScrobbler: SimklScrobbling {
         do {
             let resp = try await client.scrobble(
                 action: action, body: body, accessToken: credentials.accessToken,
-                validate: validation(for: credentials, generation: generation)
+                validate: validation(for: credentials, generation: generation, admission: admission)
             )
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl-rt", item: item, outcome: "OK(\(action)) resp=\(resp.prefix(200))"))
         } catch {
@@ -63,7 +74,7 @@ public actor SimklScrobbler: SimklScrobbling {
             return
         }
         let generation = tokenStore.authorizationGeneration
-        guard let credentials = tokenStore.load() else {
+        guard let (credentials, admission) = activation.capture(tokenStore.load, identity: \.stableAccountIdentity) else {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "skip(not connected)"))
             return
         }
@@ -76,7 +87,7 @@ public actor SimklScrobbler: SimklScrobbling {
         do {
             try await client.scrobble(
                 action: action, body: body, accessToken: credentials.accessToken,
-                validate: validation(for: credentials, generation: generation)
+                validate: validation(for: credentials, generation: generation, admission: admission)
             )
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "OK(\(action))"))
         } catch AppError.conflict {
@@ -94,7 +105,7 @@ public actor SimklScrobbler: SimklScrobbling {
             do {
                 try await client.addToHistory(
                     body: histBody, accessToken: credentials.accessToken,
-                    validate: validation(for: credentials, generation: generation)
+                    validate: validation(for: credentials, generation: generation, admission: admission)
                 )
                 FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "simkl", item: item, outcome: "history-backup OK"))
             } catch {
@@ -104,9 +115,9 @@ public actor SimklScrobbler: SimklScrobbling {
         }
     }
 
-    private func validation(for credentials: SimklTokens, generation: UUID) -> @Sendable () async throws -> Void {
-        { [tokenStore] in
-            guard tokenStore.authorizationGeneration == generation, tokenStore.load() == credentials,
+    private func validation(for credentials: SimklTokens, generation: UUID, admission: String) -> @Sendable () async throws -> Void {
+        { [self] in
+            guard playbackAdmissionID == admission, tokenStore.authorizationGeneration == generation, tokenStore.load() == credentials,
                   tokenStore.authorizationGeneration == generation else { throw AppError.unauthorized }
         }
     }

@@ -102,14 +102,14 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
         }
     }
 
-    func testPlaybackRequiresSeparateConsentAndDoesNotFollowReplacedKeys() async throws {
+    func testConnectingStartsTrackingAndPausingPersistsWithoutDisconnecting() async throws {
         try await withWatchlistService(accountToolsEnabled: false) { service, http, _ in
             var revocations = 0
             service.onHistorySyncDisconnect = { revocations += 1 }
-            XCTAssertNil(service.playbackConnectionID)
             let connection = try XCTUnwrap(service.connectionID)
-            try service.enablePlayback(expectedConnectionID: connection)
             let scope = try XCTUnwrap(service.playbackConnectionID)
+            try service.setTrackerEnabled(true)
+            XCTAssertEqual(service.playbackConnectionID, scope)
             XCTAssertNil(service.watchlistSelection)
             await service.refreshStatus()
             XCTAssertEqual(service.playbackConnectionID, scope)
@@ -117,17 +117,34 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
             XCTAssertNil(service.playbackConnectionID)
             await service.setActiveProfile(namespace: nil)
             XCTAssertEqual(service.playbackConnectionID, scope)
-            service.disablePlayback()
+            try service.setTrackerEnabled(false)
             await service.refreshStatus()
+            XCTAssertEqual(service.connectionID, connection)
+            XCTAssertFalse(service.trackerEnabled)
             XCTAssertNil(service.playbackConnectionID)
-            try service.enablePlayback(expectedConnectionID: connection)
+            try service.setTrackerEnabled(true)
             XCTAssertNotEqual(service.playbackConnectionID, scope)
+            let resumed = try XCTUnwrap(service.playbackConnectionID)
             await service.connect(key: testKey)
             XCTAssertEqual(revocations, 1, "Refreshing and switching profiles must not revoke; replacing a key must")
-            XCTAssertNil(service.playbackConnectionID)
+            XCTAssertNotEqual(try XCTUnwrap(service.playbackConnectionID), resumed)
             XCTAssertThrowsError(try service.enablePlayback(expectedConnectionID: connection))
             XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
         }
+    }
+
+    func testRefreshingALegacySavedKeyDoesNotSilentlyEnableTracking() async throws {
+        let defaultsName = "PublicMetaDBLifecycleTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/lists", json: verification)
+        let store = CredentialStore()
+        try store.save(.init(key: testKey), namespace: nil)
+        let service = PublicMetaDBService(credentials: store, http: http, defaults: defaults)
+        await service.refreshStatus()
+        XCTAssertEqual(service.phase, .connected)
+        XCTAssertFalse(service.trackerEnabled)
     }
 
     func testWatchlistConsentIsSeparateFromConnectionAndRestoresOnlyForSameProfileAndKey() async throws {

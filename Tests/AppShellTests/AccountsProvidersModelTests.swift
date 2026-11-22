@@ -9,6 +9,11 @@ import AppRuntime
 
 @MainActor
 private final class AccountsHistoryReader: TrackerHistorySyncReading {
+    var historyActivationID: String? = UUID().uuidString
+    var trackerEnabled: Bool { historyActivationID != nil }
+    func setTrackerEnabled(_ enabled: Bool) {
+        if enabled != trackerEnabled { historyActivationID = enabled ? UUID().uuidString : nil }
+    }
     let historySyncTrackerID = "fixture"
     var historySyncNamespace: String?
     var historySyncCategories: Set<TrackerHistorySyncCategory> = [.watched, .resume]
@@ -135,7 +140,7 @@ final class AccountsProvidersModelTests: XCTestCase {
             )
         }
         let first = makeSession()
-        let sync = try XCTUnwrap(first.ongoingSync)
+        var sync = try XCTUnwrap(first.ongoingSync)
         XCTAssertEqual(Set(first.destinations.map(\.id)), ["a", "server"])
         XCTAssertEqual(sync.eligibleAccountIDs, ["a"])
         XCTAssertTrue(sync === makeSession().ongoingSync)
@@ -157,6 +162,17 @@ final class AccountsProvidersModelTests: XCTestCase {
         let reads = tracker.reads
         await sync.synchronize(manual: false)
         XCTAssertEqual(tracker.reads, reads, "Repeated foreground/index callbacks obey the interval")
+        tracker.setTrackerEnabled(false)
+        XCTAssertNil(makeSession().ongoingSync)
+        await sync.synchronize(manual: true)
+        XCTAssertEqual(tracker.reads, reads, "A retained controller cannot sync a paused tracker")
+        tracker.setTrackerEnabled(true)
+        let resumed = try XCTUnwrap(makeSession().ongoingSync)
+        XCTAssertTrue(resumed.isEnabled, "Pausing preserves beta selection")
+        XCTAssertFalse(sync === resumed)
+        await sync.synchronize(manual: true)
+        XCTAssertEqual(tracker.reads, reads, "Resuming cannot revive work admitted before the pause")
+        sync = resumed
         let (coldModel, _) = try makeHistoryModel()
         defer { withExtendedLifetime(coldModel) {} }
         coldModel.bindTrackerHistorySync(tracker, store: store)

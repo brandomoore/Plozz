@@ -64,13 +64,14 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertEqual(index.results(for: "rewind").first?.id, "resume-rewind")
     }
 
-    func testPublicMetaDBPreferencesFindTheirAccountNotCrossServerSync() {
+    func testPublicMetaDBPreferencesFindTheirAccountNotCrossServerSync() throws {
         let locale = Locale(identifier: "en_US")
         for platform: SettingsSearchEntry.Platform in [.phone, .tablet, .television] {
             let index = SettingsSearchIndex(entries: SettingsSearchCatalog.entries(on: platform), locale: locale)
             for (query, expected) in [
                 ("PublicMetaDB API key", "publicmetadb-account"),
-                ("PublicMetaDB report playback", "publicmetadb-playback")
+                ("PublicMetaDB report playback", "tracker-enabled-publicmetadb"),
+                ("PublicMetaDB enable tracker", "tracker-enabled-publicmetadb")
             ] {
                 let result = index.results(for: query).first
                 XCTAssertEqual(result?.id, expected, query)
@@ -78,7 +79,16 @@ final class SettingsSearchTests: XCTestCase {
                                ["Trackers", "PublicMetaDB"])
             }
             XCTAssertEqual(Set(SettingsSearchCatalog.entries(on: platform).filter { $0.page == .publicMetaDB }.map(\.id)),
-                           ["publicmetadb-account", "publicmetadb-playback"])
+                           ["publicmetadb-account", "tracker-enabled-publicmetadb"])
+            for page: SettingsSearchPage in [.trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm] {
+                let account = try XCTUnwrap(page.trackerAccount)
+                let result = index.results(for: "\(account.name) enable tracker").first
+                if page == .lastfm && platform != .television {
+                    XCTAssertNotEqual(result?.page, .lastfm)
+                } else {
+                    XCTAssertEqual(result?.page, page)
+                }
+            }
         }
     }
 

@@ -27,6 +27,7 @@ public final class WetrakrService: TrackerHistorySyncReading {
     @ObservationIgnored private let client: WetrakrClient
     @ObservationIgnored private let auth: WetrakrAuthService
     @ObservationIgnored private let tokenStore: any TrackerTokenStoring
+    @ObservationIgnored private let activation: TrackerActivationStore
     @ObservationIgnored private let coordinator: TrackerTokenCoordinator
     @ObservationIgnored private let generation = TrackerProfileGeneration()
     @ObservationIgnored private let historyReader = WetrakrHistoryReader()
@@ -69,6 +70,7 @@ public final class WetrakrService: TrackerHistorySyncReading {
         self.client = WetrakrClient(config: config, http: http)
         self.auth = WetrakrAuthService(client: client)
         self.tokenStore = tokenStore
+        self.activation = TrackerActivationStore(historySyncTrackerID, namespace: namespace)
         self.coordinator = coordinator
         self.now = now
         phase = config.isConfigured ? .unknown : .unavailable
@@ -78,6 +80,12 @@ public final class WetrakrService: TrackerHistorySyncReading {
     }
 
     public var isConfigured: Bool { config.isConfigured }
+
+    public var historyActivationID: String? { activation.observedAdmission(for: historySyncIdentity?.connectionID) }
+    public var trackerEnabled: Bool { historyActivationID != nil }
+    public func setTrackerEnabled(_ enabled: Bool) throws {
+        try activation.setEnabled(enabled, for: historySyncIdentity?.connectionID)
+    }
 
     public var accountIdentity: String? {
         config.isConfigured ? tokenStore.load()?.stableAccountIdentity : nil
@@ -109,7 +117,8 @@ public final class WetrakrService: TrackerHistorySyncReading {
     }
 
     public func playbackScrobbler() -> WetrakrScrobbler {
-        WetrakrScrobbler(client: client, tokenStore: tokenStore.snapshot(), coordinator: coordinator)
+        WetrakrScrobbler(client: client, tokenStore: tokenStore.snapshot(), coordinator: coordinator,
+                         activation: activation.snapshot())
     }
 
     public func makeHistoryExportSession(
@@ -168,7 +177,9 @@ public final class WetrakrService: TrackerHistorySyncReading {
             return
         }
         activeNamespace = .some(namespace)
-        let version = generation.advance { tokenStore.setNamespace(namespace) }
+        let version = generation.advance {
+            activation.setNamespace(namespace) { tokenStore.setNamespace(namespace) }
+        }
         invalidateStatus()
         connectTask?.cancel()
         connectTask = nil
@@ -306,6 +317,7 @@ public final class WetrakrService: TrackerHistorySyncReading {
                 try onHistorySyncDisconnect?()
                 try await coordinator.save(tokens, store: store, context: context)
                 guard version == generation.current else { return }
+                activation.didConnect(tokens.stableAccountIdentity)
                 await watchlistDestination?.clearCache()
                 guard version == generation.current else { return }
                 phase = .connected(username: "WeTrakr")

@@ -2587,6 +2587,9 @@ final class PlozziOSAppModel {
                     event: .stop
                 )
             },
+            trackerPlaybackAdmissions: {
+                TrackerPlaybackAdmissions.capture(trakt: trakt, simkl: simkl, wetrakr: wetrakr, anilist: anilist, mal: mal)
+            },
             wetrakrAccountIdentity: { wetrakr.accountIdentity },
             applyWetrakr: { intent, capturedAt, key, identity in
                 try await wetrakr.recordWatch(

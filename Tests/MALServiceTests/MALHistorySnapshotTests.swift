@@ -232,6 +232,7 @@ final class MALHistorySnapshotTests: XCTestCase {
 
     @MainActor
     func testDurableIdentitySurvivesRefreshAndRelaunchButNotSameTokenReconnect() async throws {
+        let profile = TrackerPauseFixture()
         let http = http([])
         http.stub(pathSuffix: "/api/redeem", json: """
         {"service":"myanimelist","accessToken":"fixture","refreshToken":"refresh","expiresIn":3600}
@@ -241,28 +242,36 @@ final class MALHistorySnapshotTests: XCTestCase {
         """)
         let config = MALConfig(clientID: "fixture")
         let tokens = MALTokens(accessToken: "fixture", refreshToken: "refresh", expiresAt: .distantFuture)
-        let store = InMemoryMALTokenStore(tokens: tokens)
-        let service = MALService(config: config, http: http, tokenStore: store)
+        let store = InMemoryMALTokenStore()
+        store.setNamespace(profile.namespace)
+        try store.save(tokens)
+        let service = MALService(config: config, http: http, tokenStore: store, namespace: profile.namespace)
         await service.refreshStatus()
         let first = try XCTUnwrap(service.historySyncIdentity)
+        try await profile.pause(service, http: http) {
+            await service.scrobbler.scrobble(item: profile.item, progress: 100, event: .stop)
+            try await service.scrobbler.scrobbleResult(item: profile.item, progress: 100, event: .stop)
+        }
         XCTAssertEqual(service.historySyncCategories, [.watched])
         var expired = tokens
         expired.expiresAt = .distantPast
         try store.save(expired)
         await service.refreshStatus()
         XCTAssertEqual(service.historySyncIdentity, first)
-        let restored = MALService(config: config, http: http, tokenStore: store)
+        let restored = MALService(config: config, http: http, tokenStore: store, namespace: profile.namespace)
         await restored.refreshStatus()
+        XCTAssertFalse(restored.trackerEnabled)
         XCTAssertEqual(restored.historySyncIdentity, first)
         var revocations = 0
         service.onHistorySyncDisconnect = { revocations += 1 }
         await service.setActiveProfile(namespace: "other")
         XCTAssertNil(service.historySyncIdentity)
-        await service.setActiveProfile(namespace: nil)
+        await service.setActiveProfile(namespace: profile.namespace)
         XCTAssertEqual(service.historySyncIdentity, first)
         service.submitAuthorizationCode("fixture-code")
         await service.connectTask?.value
         let next = try XCTUnwrap(service.historySyncIdentity)
+        XCTAssertTrue(service.trackerEnabled)
         XCTAssertNotEqual(next, first)
         XCTAssertEqual(store.load()?.accessToken, tokens.accessToken)
         service.submitAuthorizationCode("fixture-code")

@@ -209,9 +209,10 @@ struct WetrakrClient: Sendable {
 
     func decode<T: Decodable & Sendable>(
         _ type: T.Type, endpoint: Endpoint, accessToken: String? = nil,
-        operation: WetrakrRequestOperation? = nil
+        operation: WetrakrRequestOperation? = nil,
+        validateScope: @escaping @Sendable () async throws -> Void = {}
     ) async throws -> T {
-        let (data, _) = try await send(endpoint, accessToken: accessToken, operation: operation)
+        let (data, _) = try await send(endpoint, accessToken: accessToken, operation: operation, validateScope: validateScope)
         do { return try JSONDecoder().decode(type, from: data) }
         catch {
             PlozzLog.networking.error("WeTrakr response could not be decoded")

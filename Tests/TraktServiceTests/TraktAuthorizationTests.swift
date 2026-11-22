@@ -143,23 +143,32 @@ private actor DelayRecorder {
 final class TraktCredentialLifecycleTests: XCTestCase {
     @MainActor
     func testOngoingConsentIdentitySurvivesRefreshAndRelaunchButNotReconnect() async throws {
+        let profile = TrackerPauseFixture()
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/oauth/token", json: rotatedJSON)
         http.stub(pathSuffix: "/users/settings", json: #"{"user":{"username":"viewer"}}"#)
         var tokens = expired
         tokens.expiresAt = .distantFuture
-        let store = InMemoryTrackerTokenStore(tokens: tokens)
-        let service = TraktService(config: config, http: http, tokenStore: store, coordinator: .init())
+        let store = InMemoryTrackerTokenStore()
+        store.setNamespace(profile.namespace)
+        try store.save(tokens)
+        let service = TraktService(config: config, http: http, tokenStore: store, coordinator: .init(), namespace: profile.namespace)
         await service.refreshStatus()
         let first = try XCTUnwrap(service.historySyncIdentity)
+        let bound = service.playbackScrobbler()
+        try await profile.pause(service, http: http) {
+            await bound.scrobble(item: profile.item, progress: 60, event: .pause)
+            try await service.scrobbler.scrobbleResult(item: profile.item, progress: 100, event: .stop)
+        }
         XCTAssertEqual(service.historySyncCategories, [.watched])
         XCTAssertTrue(first.allowsForegroundChecks)
         try store.save(expired)
         await service.refreshStatus()
         XCTAssertEqual(service.historySyncIdentity, first)
         XCTAssertEqual(store.load()?.accessToken, "new-access")
-        let restored = TraktService(config: config, http: http, tokenStore: store, coordinator: .init())
+        let restored = TraktService(config: config, http: http, tokenStore: store, coordinator: .init(), namespace: profile.namespace)
         await restored.refreshStatus()
+        XCTAssertFalse(restored.trackerEnabled)
         XCTAssertEqual(restored.historySyncIdentity, first)
         var previous = first
         var revocations = 0
@@ -172,6 +181,7 @@ final class TraktCredentialLifecycleTests: XCTestCase {
             }
             await service.connectTask?.value
             let next = try XCTUnwrap(service.historySyncIdentity)
+            XCTAssertTrue(service.trackerEnabled)
             XCTAssertNotEqual(next, previous)
             XCTAssertEqual(store.load()?.accessToken, "new-access")
             previous = next
@@ -179,7 +189,7 @@ final class TraktCredentialLifecycleTests: XCTestCase {
         XCTAssertEqual(revocations, 2)
         await service.setActiveProfile(namespace: "other")
         XCTAssertNil(service.historySyncIdentity)
-        await service.setActiveProfile(namespace: nil)
+        await service.setActiveProfile(namespace: profile.namespace)
         XCTAssertEqual(service.historySyncIdentity, previous)
     }
 

@@ -30,6 +30,7 @@ public final class MALService: TrackerHistorySyncReading {
     @ObservationIgnored private let auth: MALAuthService
     @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let tokenStore: MALTokenStoring
+    @ObservationIgnored private let activation: TrackerActivationStore
     @ObservationIgnored private(set) var connectTask: Task<Void, Never>?
     @ObservationIgnored private var pendingSession: String?
     @ObservationIgnored private let profileGeneration: MALProfileGeneration
@@ -48,6 +49,8 @@ public final class MALService: TrackerHistorySyncReading {
         self.auth = MALAuthService(config: config, http: http)
         self.http = http
         self.tokenStore = tokenStore
+        let activation = TrackerActivationStore(historySyncTrackerID, namespace: namespace)
+        self.activation = activation
         let profileGeneration = MALProfileGeneration()
         self.profileGeneration = profileGeneration
         if config.isConfigured {
@@ -55,7 +58,7 @@ public final class MALService: TrackerHistorySyncReading {
                 config: config,
                 http: http,
                 tokenStore: tokenStore,
-                profileGeneration: profileGeneration
+                profileGeneration: profileGeneration, activation: activation
             )
             self.watchlistDestination = MALWatchlistDestination(
                 config: config,
@@ -72,6 +75,12 @@ public final class MALService: TrackerHistorySyncReading {
     }
 
     public var isConfigured: Bool { config.isConfigured }
+
+    public var historyActivationID: String? { activation.observedAdmission(for: historySyncIdentity?.connectionID) }
+    public var trackerEnabled: Bool { historyActivationID != nil }
+    public func setTrackerEnabled(_ enabled: Bool) throws {
+        try activation.setEnabled(enabled, for: historySyncIdentity?.connectionID)
+    }
 
     public var historyConnectionID: String? {
         guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
@@ -151,7 +160,7 @@ public final class MALService: TrackerHistorySyncReading {
     public func setActiveProfile(namespace: String?) async {
         historySyncNamespace = namespace
         let generation = profileGeneration.advance {
-            tokenStore.setNamespace(namespace)
+            activation.setNamespace(namespace) { tokenStore.setNamespace(namespace) }
         }
         connectTask?.cancel()
         connectTask = nil
@@ -243,6 +252,7 @@ public final class MALService: TrackerHistorySyncReading {
                     guard try self.profileGeneration.performIfCurrent(
                         generation, operation: { try self.tokenStore.save(tokens) }
                     ) else { return }
+                    self.activation.didConnect(tokens.stableAccountIdentity)
                 } catch {
                     PlozzLog.app.error("MyAnimeList connection persistence failed")
                     self.connectTask = nil

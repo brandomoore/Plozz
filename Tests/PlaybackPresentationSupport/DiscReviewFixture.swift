@@ -365,7 +365,7 @@ private struct AtlasHTTP: HTTPClient {
     init(mode: String, data: AtlasModel) {
         self.mode = mode
         self.data = data
-        let trackingPage = ["connected", "disconnected", "account", "reporting", "reporting-on"].contains(mode)
+        let trackingPage = ["connected", "disconnected", "account"].contains(mode)
         _service = State(initialValue: PublicMetaDBService(
             accountToolsEnabled: !trackingPage, credentials: AtlasCreds(), http: AtlasHTTP(),
             defaults: UserDefaults(suiteName: "local-only.tracker-atlas")!,
@@ -380,10 +380,10 @@ private struct AtlasHTTP: HTTPClient {
     let savedList=AtlasHTTP.decode(AtlasHTTP.list,PublicMetaDB.List.self)
     @ViewBuilder var body: some View {
         Group { if ready { page } else { ProgressView() } }.environment(\.publicMetaDBCatalogService,service).task {
+            guard !ready else { return }
             service.makeHistoryExportSource={ data.makeExportSource() }
             service.resolveCatalogItem={ c in MediaItem(id:String(c.tmdbID),title:c.mediaType == .movie ? "The Last Lantern":"The Mariner's Almanac",kind:c.mediaType == .movie ? .movie:.series,providerIDs:["Tmdb":String(c.tmdbID)]) }
             if mode != "disconnected" { await service.connect(key:"pm-"+String(repeating:"9",count:60)) }
-            if mode == "reporting-on",let id=service.connectionID { try? service.enablePlayback(expectedConnectionID:id) }
             if mode == "watchlist-on",let id=service.connectionID { try? await service.enableWatchlist(savedList,expectedConnectionID:id) }
             if mode == "lastfm" { await last.refreshStatus() }
             ready=true
@@ -398,7 +398,6 @@ private struct AtlasHTTP: HTTPClient {
             SettingsSectionGroup(verbatim:"PublicMetaDB") { PublicMetaDBSettingsContent(service:service,makeHistoryImport:data.makeSession) }
             #endif
         }
-        case "reporting","reporting-on": PublicMetaDBPlaybackSettingsView(service:service)
         case "watchlist","watchlist-on": PublicMetaDBWatchlistSettingsView(service:service)
         case "create-list": PublicMetaDBCreateListView(service:service)
         case "open-list": PublicMetaDBOpenListView(service:service)

@@ -1342,6 +1342,7 @@ private struct PlozziOSSettingsSearch: ViewModifier {
                         query: query,
                         platform: UIDevice.current.userInterfaceIdiom == .phone ? .phone : .tablet,
                         isKids: appModel.profiles.activeProfile.isKids,
+                        wetrakrConfigured: appModel.wetrakrService.isConfigured,
                         featureFlags: appModel.runtimeFeatureFlags
                     ) { entry, _ in
                         isFocused = false
@@ -1539,7 +1540,7 @@ private struct PlozziOSSettingsSearchDestination: View {
             .id(ObjectIdentifier(appModel.settings.libraryPresentation))
         case .liveTV, .liveTVSources, .liveTVGuide, .liveTVVisibility: profilePage(.liveTV)
         case .language: profilePage(.language)
-        case .trackers, .publicMetaDB: profilePage(.trackers)
+        case .trackers, .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm: profilePage(.trackers)
         case .downloads: profilePage(.downloads)
         case .profiles:
             List {

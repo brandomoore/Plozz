@@ -3,6 +3,16 @@
 The Foundation-only, **zero-dependency** core of Plozz. Defines the domain
 language every other module speaks.
 
+## Tracker activation
+
+For Trakt, Simkl, WeTrakr, AniList, MyAnimeList and Last.fm, `TrackerActivationStore`
+keeps the device's pause decision separate from the credential, scoped to the
+profile and connection. Legacy credentials without a decision remain enabled.
+Connecting again creates a fresh grant; refreshing a token does not. Video watch
+intents capture which grants were enabled and recheck them on replay. Resuming
+a tracker admits new activity, not watches captured while it was paused. Last.fm
+uses the same gate for music and has no durable video destination.
+
 ## Ongoing tracker import
 
 `TrackerHistorySyncController` keeps device-local, profile/tracker/server-user

@@ -26,6 +26,8 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     private let applyTrakt: @Sendable (TraktScrobbleIntent) async throws -> Void
     private let applySimkl: @Sendable (TraktScrobbleIntent) async throws -> Void
     private let currentWetrakrAccountIdentity: @Sendable () -> String?
+    private let capturedTrackerAdmissions: @Sendable () -> [String: String]?
+    public var trackerPlaybackAdmissions: [String: String]? { capturedTrackerAdmissions() }
     private let applyWetrakr: @Sendable (TraktScrobbleIntent, Date, String, String) async throws -> Void
     private let applyAniList: @Sendable (TraktScrobbleIntent) async throws -> Void
     private let applyMAL: @Sendable (TraktScrobbleIntent) async throws -> Void
@@ -87,6 +89,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         applySimkl: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
         applyAniList: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
         applyMAL: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
+        trackerPlaybackAdmissions: @escaping @Sendable () -> [String: String]? = { nil },
         wetrakrAccountIdentity: @escaping @Sendable () -> String? = { nil },
         applyWetrakr: @escaping @Sendable (TraktScrobbleIntent, Date, String, String) async throws -> Void = { _, _, _, _ in
             throw AppError.invalidResponse
@@ -107,6 +110,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         self.applyTrakt = applyTrakt
         self.applySimkl = applySimkl
         self.currentWetrakrAccountIdentity = wetrakrAccountIdentity
+        self.capturedTrackerAdmissions = trackerPlaybackAdmissions
         self.applyWetrakr = applyWetrakr
         self.applyAniList = applyAniList
         self.applyMAL = applyMAL
@@ -243,7 +247,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     public func scrobbleTrakt(_ intent: TraktScrobbleIntent) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applyTrakt(intent)
+        try await intent.withCapturedAdmissions { try await applyTrakt(intent) }
     }
 
     public func scrobbleTrakt(_ intent: TraktScrobbleIntent, source: WatchMutationTarget?) async throws {
@@ -291,7 +295,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     public func scrobbleSimkl(_ intent: TraktScrobbleIntent) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applySimkl(intent)
+        try await intent.withCapturedAdmissions { try await applySimkl(intent) }
     }
 
     public var wetrakrAccountIdentity: String? { currentWetrakrAccountIdentity() }
@@ -302,19 +306,19 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     ) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applyWetrakr(intent, capturedAt, idempotencyKey, expectedAccountIdentity)
+        try await intent.withCapturedAdmissions { try await applyWetrakr(intent, capturedAt, idempotencyKey, expectedAccountIdentity) }
     }
 
     public func scrobbleAniList(_ intent: TraktScrobbleIntent) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applyAniList(intent)
+        try await intent.withCapturedAdmissions { try await applyAniList(intent) }
     }
 
     public func scrobbleMAL(_ intent: TraktScrobbleIntent) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applyMAL(intent)
+        try await intent.withCapturedAdmissions { try await applyMAL(intent) }
     }
 
     /// Resolves the cross-server twins for a queued mutation. Branches on the

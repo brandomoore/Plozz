@@ -243,6 +243,7 @@ final class WetrakrAuthorizationTests: XCTestCase {
 
     @MainActor
     func testOngoingIdentitySurvivesRefreshAndRelaunchButNotSameTokenReconnect() async throws {
+        let profile = TrackerPauseFixture()
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/oauth/token", json: tokenJSON)
         http.stub(pathSuffix: "/oauth/token/refresh", json: tokenJSON)
@@ -250,14 +251,22 @@ final class WetrakrAuthorizationTests: XCTestCase {
         let tokens = store()
         var expired = try XCTUnwrap(tokens.load())
         expired.expiresAt = .distantPast
+        tokens.setNamespace(profile.namespace)
         try tokens.save(expired)
-        let service = WetrakrService(config: config, http: http, tokenStore: tokens, coordinator: .init())
+        let service = WetrakrService(config: config, http: http, tokenStore: tokens, coordinator: .init(), namespace: profile.namespace)
         await service.refreshStatus()
         let first = try XCTUnwrap(service.historySyncIdentity)
+        let bound = service.playbackScrobbler()
+        try await profile.pause(service, http: http) {
+            await bound.scrobble(item: profile.item, progress: 60, event: .pause)
+            try await bound.recordWatch(item: profile.item, capturedAt: Date(), idempotencyKey: "once",
+                                        expectedAccountIdentity: first.connectionID)
+        }
         XCTAssertEqual(first.connectionID, expired.stableAccountIdentity)
         XCTAssertEqual(service.historySyncCategories, [.watched, .resume])
-        let restored = WetrakrService(config: config, http: http, tokenStore: tokens, coordinator: .init())
+        let restored = WetrakrService(config: config, http: http, tokenStore: tokens, coordinator: .init(), namespace: profile.namespace)
         await restored.refreshStatus()
+        XCTAssertFalse(restored.trackerEnabled)
         XCTAssertEqual(restored.historySyncIdentity, first)
         var previous = first
         var revocations = 0
@@ -266,6 +275,7 @@ final class WetrakrAuthorizationTests: XCTestCase {
             service.connect { url, callback in try Self.approvedCallback(url: url, callback: callback) }
             await service.connectTask?.value
             let next = try XCTUnwrap(service.historySyncIdentity)
+            XCTAssertTrue(service.trackerEnabled)
             XCTAssertNotEqual(next, previous)
             XCTAssertEqual(tokens.load()?.accessToken, "access")
             previous = next
@@ -273,7 +283,7 @@ final class WetrakrAuthorizationTests: XCTestCase {
         XCTAssertEqual(revocations, 2)
         await service.setActiveProfile(namespace: "other")
         XCTAssertNil(service.historySyncIdentity)
-        await service.setActiveProfile(namespace: nil)
+        await service.setActiveProfile(namespace: profile.namespace)
         XCTAssertEqual(service.historySyncIdentity, previous)
     }
 

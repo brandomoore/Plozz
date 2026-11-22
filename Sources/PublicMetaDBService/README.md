@@ -6,13 +6,17 @@ The v1 app exposes account connection, one-way playback reporting and opt-in
 watch-history sync for media shares. The one-time transfer, account browser,
 list, contribution and mapping workflows in the historical evidence below are
 not v1 features. Their prior acceptance runs are not release sign-off.
-The tracking-only routes were checked in the iPhone and Apple TV simulator
-apps. A separate read-only test opened tracking settings and ongoing sync
-using an existing dedicated PublicMetaDB account in the normal iPhone app.
-That check did not rerun playback delivery or write watch state.
+The activation change was checked in iPhone and Apple TV UI fixtures. In the
+normal iPhone simulator app, an existing dedicated PublicMetaDB account stayed
+connected while tracking was resumed and then paused. Both settings survived a
+relaunch, and the account was left paused as found. This run did not play media
+or independently verify provider writes; the playback evidence below is from
+earlier builds.
 
-Only **Ongoing sync (Beta)** requires beta enrollment. Connecting PublicMetaDB
-and enabling one-way playback reporting are separate decisions. An existing
+Connecting a new PublicMetaDB tracking account enables playback reporting. The
+account's tracker switch can pause it without disconnecting. Refreshing a saved
+key preserves the previous reporting choice; it never opts an existing user in.
+Only **Ongoing sync (Beta)** requires separate beta enrollment. An existing
 pre-beta sync grant cannot authorize a foreground or manual sync. The opt-in
 and cancellation flow was checked on iPhone and Apple TV simulators; the live
 provider results below predate that change.

@@ -3,34 +3,39 @@ import CoreNetworking
 import CoreTrackerAuth
 import Foundation
 
-public actor WetrakrScrobbler {
+public actor WetrakrScrobbler: TrackerPlaybackAdmitting {
     private let client: WetrakrClient
     private let auth: WetrakrAuthService
     private let tokenStore: any TrackerTokenStoring
     private let coordinator: TrackerTokenCoordinator
     private let playbackIdentity: String?
+    private let activation: TrackerActivationStore
     private let realtimeOperations = ConcurrencyLimiter(limit: 1)
 
-    init(client: WetrakrClient, tokenStore: any TrackerTokenStoring, coordinator: TrackerTokenCoordinator) {
+    init(client: WetrakrClient, tokenStore: any TrackerTokenStoring, coordinator: TrackerTokenCoordinator,
+         activation: TrackerActivationStore = .init("wetrakr")) {
         self.client = client
         self.auth = WetrakrAuthService(client: client)
         self.tokenStore = tokenStore
         self.coordinator = coordinator
         self.playbackIdentity = tokenStore.load()?.stableAccountIdentity
+        self.activation = activation
     }
 
     public nonisolated var accountIdentity: String? {
         client.config.isConfigured ? tokenStore.load()?.stableAccountIdentity : nil
     }
 
+    public nonisolated var playbackAdmissionID: String? { activation.admission(for: accountIdentity) }
+
     public func scrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async {
-        guard event != .progress else { return }
+        guard event != .progress, let admission = playbackAdmissionID else { return }
         await realtimeOperations.runUnlessCancelled { [self] in
-            await sendScrobble(item: item, progress: progress, event: event)
+            await sendScrobble(item: item, progress: progress, event: event, admission: admission)
         }
     }
 
-    private func sendScrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async {
+    private func sendScrobble(item: MediaItem, progress: Double, event: PlaybackEvent, admission: String) async {
         guard client.config.isConfigured, event != .progress,
               let expected = playbackIdentity, expected == accountIdentity else { return }
         guard let body = Self.body(for: item, progress: progress) else {
@@ -45,11 +50,11 @@ public actor WetrakrScrobbler {
         case .progress: return
         }
         do {
-            guard let token = try await accessToken(expectedIdentity: expected) else { return }
+            guard let token = try await accessToken(expectedIdentity: expected, admission: admission) else { return }
             let response = try await client.decode(WetrakrScrobbleResponse.self, endpoint: Endpoint(
                 method: .post, path: "/scrobble/\(action)",
                 queryItems: [.init(name: "min_progress", value: "90")]
-            ).jsonBody(body), accessToken: token)
+            ).jsonBody(body), accessToken: token, validateScope: validate(admission))
             guard response.ignored != true, response.success != false, response.action != nil
             else { throw WetrakrError.itemRejected }
         } catch {
@@ -60,7 +65,8 @@ public actor WetrakrScrobbler {
     public func recordWatch(
         item: MediaItem, capturedAt: Date, idempotencyKey: String, expectedAccountIdentity: String
     ) async throws {
-        guard let token = try await accessToken(expectedIdentity: expectedAccountIdentity) else {
+        guard let admission = playbackAdmissionID,
+              let token = try await accessToken(expectedIdentity: expectedAccountIdentity, admission: admission) else {
             PlozzLog.playback.debug("WeTrakr queued watch skipped: connection changed or disconnected")
             return
         }
@@ -68,14 +74,20 @@ public actor WetrakrScrobbler {
             PlozzLog.playback.debug("WeTrakr queued watch skipped: no supported media identity")
             return
         }
-        try await client.tracking(body, idempotencyKey: idempotencyKey, accessToken: token)
+        try await client.tracking(body, idempotencyKey: idempotencyKey, accessToken: token, validateScope: validate(admission))
     }
 
-    private func accessToken(expectedIdentity: String) async throws -> String? {
-        guard client.config.isConfigured, expectedIdentity == accountIdentity else { return nil }
+    private func validate(_ admission: String) -> @Sendable () async throws -> Void {
+        { [self] in guard admission == playbackAdmissionID else { throw CancellationError() } }
+    }
+
+    private func accessToken(expectedIdentity: String, admission: String) async throws -> String? {
+        guard client.config.isConfigured, expectedIdentity == accountIdentity,
+              admission == playbackAdmissionID else { return nil }
         let token = try await coordinator.accessToken(store: tokenStore, auth: auth)
         try Task.checkCancellation()
         guard expectedIdentity == accountIdentity else { throw CancellationError() }
+        guard admission == playbackAdmissionID else { return nil }
         return token
     }
 

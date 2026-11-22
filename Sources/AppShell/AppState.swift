@@ -544,6 +544,10 @@ public final class AppState {
                     event: .stop
                 )
             },
+            trackerPlaybackAdmissions: {
+                TrackerPlaybackAdmissions.capture(trakt: boundTraktScrobbler, simkl: boundSimklScrobbler,
+                    wetrakr: boundWetrakrScrobbler, anilist: boundAniListScrobbler, mal: boundMALScrobbler)
+            },
             wetrakrAccountIdentity: { boundWetrakrScrobbler.accountIdentity },
             applyWetrakr: { intent, capturedAt, key, identity in
                 try await boundWetrakrScrobbler.recordWatch(
